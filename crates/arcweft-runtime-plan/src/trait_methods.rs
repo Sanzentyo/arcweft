@@ -1,7 +1,7 @@
 //! Runtime-plan lowering for executable trait method bodies.
 
 use crate::errors::RuntimePlanLowerError;
-use crate::expr::lower_runtime_expr_strict_with_pure;
+use crate::expr::lower_runtime_expr_strict;
 use crate::labels::expr_label;
 use arcweft_core::plan::{
     RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethod,
@@ -72,7 +72,7 @@ fn lower_trait_method(
 ) -> Result<RuntimeTraitMethod, TraitMethodLowerDiagnostic> {
     let method = input.identity.method_name.clone();
     let (statements, value) = method_body_parts(&method, input.statements, input.value)?;
-    let body = lower_runtime_expr_strict_with_pure(value, &BTreeMap::new()).map_err(|reason| {
+    let body = lower_runtime_expr_strict(value).map_err(|reason| {
         TraitMethodLowerDiagnostic::UnsupportedBody {
             method: method.clone(),
             reason,
@@ -127,13 +127,12 @@ fn lower_prefix_statement(
                     reason: format!("unsupported let pattern `{pattern:?}`"),
                 }
             })?;
-            let expr =
-                lower_runtime_expr_strict_with_pure(expr, &BTreeMap::new()).map_err(|reason| {
-                    TraitMethodLowerDiagnostic::UnsupportedBody {
-                        method: method.to_owned(),
-                        reason,
-                    }
-                })?;
+            let expr = lower_runtime_expr_strict(expr).map_err(|reason| {
+                TraitMethodLowerDiagnostic::UnsupportedBody {
+                    method: method.to_owned(),
+                    reason,
+                }
+            })?;
             Ok(RuntimeExpr::Let {
                 name,
                 expr: Box::new(expr),
@@ -142,13 +141,12 @@ fn lower_prefix_statement(
         }
         Stmt::Assign { target, expr } => {
             let (target, field) = lower_direct_assignment_target(method, target)?;
-            let expr =
-                lower_runtime_expr_strict_with_pure(expr, &BTreeMap::new()).map_err(|reason| {
-                    TraitMethodLowerDiagnostic::UnsupportedBody {
-                        method: method.to_owned(),
-                        reason,
-                    }
-                })?;
+            let expr = lower_runtime_expr_strict(expr).map_err(|reason| {
+                TraitMethodLowerDiagnostic::UnsupportedBody {
+                    method: method.to_owned(),
+                    reason,
+                }
+            })?;
             Ok(RuntimeExpr::AssignField {
                 target: Box::new(target),
                 field,
@@ -176,13 +174,12 @@ fn lower_direct_assignment_target(
             ),
         });
     };
-    let receiver =
-        lower_runtime_expr_strict_with_pure(target, &BTreeMap::new()).map_err(|reason| {
-            TraitMethodLowerDiagnostic::UnsupportedBody {
-                method: method.to_owned(),
-                reason,
-            }
-        })?;
+    let receiver = lower_runtime_expr_strict(target).map_err(|reason| {
+        TraitMethodLowerDiagnostic::UnsupportedBody {
+            method: method.to_owned(),
+            reason,
+        }
+    })?;
     match receiver {
         RuntimeExpr::Local(_) => Ok((receiver, field.clone())),
         RuntimeExpr::Field { .. }

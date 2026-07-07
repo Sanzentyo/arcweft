@@ -72,14 +72,26 @@ if state |> alice_ready { ... }
 
 ## 関数値と適用
 
-クロージャーは関数値である。評価時にその lexical environment を決定的な
-capture binding として保持し、後続の call / apply で引数 binding より先に
-復元する。
+クロージャーと bare function name は関数値である。評価時にその lexical
+environment を決定的な capture binding として保持し、後続の call / apply で
+引数 binding より先に復元する。
 
 ```arcw
 let add_with_bonus = |score: i64| score + bonus
 let next = add_with_bonus(3i64)
 ```
+
+```arcw
+fn add(a: i64)(b: i64) -> i64 { a + b }
+
+let f = add
+let add_two = add(2i64)
+let seven = add_two(5i64)
+```
+
+実装は exact arity の既知 pure function call を最適化された helper call に
+落としてよい。ただし、関数が値位置に現れる場合や必要数より少ない引数で
+呼ばれる場合の言語意味は、関数値の apply と同じでなければならない。
 
 関数値に必要数より少ない引数を渡した場合は、渡した引数を capture した残り
 引数の関数値になる。これにより curried call は通常の apply の連鎖として扱える。

@@ -4,7 +4,10 @@ mod record_projection;
 
 use self::record_projection::rewrite_known_record_projections_in_op;
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
-use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict_with_pure, runtime_call_effect};
+use crate::expr::{
+    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_pure,
+    runtime_call_effect,
+};
 use crate::host_request::{lower_agent_host_task_request, lower_host_task_request};
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
@@ -193,28 +196,38 @@ pub fn lower_runtime_plan_with_stats_and_options(
     };
     let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
-    let lowered_flows = lower_runtime_flows(module, &pure_map, options)?;
-    let LoweredRuntimeFlows {
-        flows,
-        line_task_groups,
-        line_display_catalog,
-    } = lowered_flows;
     let entries = lower_runtime_entries(module);
+    let (flows, line_task_groups, line_display_catalog, stream_plans, source_plans) = {
+        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
+        let lowered_flows = lower_runtime_flows(module, pure_lookup, options)?;
+        let LoweredRuntimeFlows {
+            flows,
+            line_task_groups,
+            line_display_catalog,
+        } = lowered_flows;
+        let stream_plans = module
+            .functions()
+            .iter()
+            .filter(|function| function.kind() == FunctionKind::Stream)
+            .map(|function| lower_stream_function(function, pure_lookup))
+            .collect::<Vec<_>>();
+        let source_plans = module
+            .declarations()
+            .iter()
+            .filter_map(|decl| match decl {
+                HirTopLevelDecl::Source(source) => Some(lower_source_plan(source, pure_lookup)),
+                _ => None,
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        (
+            flows,
+            line_task_groups,
+            line_display_catalog,
+            stream_plans,
+            source_plans,
+        )
+    };
     let entry = implicit_entry_flow(&entries, &flows);
-    let stream_plans = module
-        .functions()
-        .iter()
-        .filter(|function| function.kind() == FunctionKind::Stream)
-        .map(|function| lower_stream_function(function, &pure_map))
-        .collect::<Vec<_>>();
-    let source_plans = module
-        .declarations()
-        .iter()
-        .filter_map(|decl| match decl {
-            HirTopLevelDecl::Source(source) => Some(lower_source_plan(source, &pure_map)),
-            _ => None,
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     stats.pure_helpers = pure_helpers.len();
     RuntimePlan::new(entry, flows, line_task_groups)
         .map(|plan| {
@@ -255,7 +268,10 @@ pub fn lower_agent_controller_plan_with_stats(
     };
     let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
-    let lowered = lower_agent_controller_flow(module, agent, &pure_map)?;
+    let lowered = {
+        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
+        lower_agent_controller_flow(module, agent, pure_lookup)?
+    };
     let entry_flow = lowered.id.clone();
     stats.pure_helpers = pure_helpers.len();
     RuntimePlan::new(Some(entry_flow.clone()), vec![lowered], Vec::new())
@@ -1195,7 +1211,7 @@ fn implicit_entry_flow(
 /// Lowers HIR flow bodies into executable Sans I/O flow operations.
 pub(crate) fn lower_runtime_flows(
     module: &HirModule,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
     options: &RuntimePlanLowerOptions,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
@@ -1240,7 +1256,7 @@ pub(crate) fn lower_runtime_flows(
 fn lower_agent_controller_flow(
     module: &HirModule,
     agent: &HirAgent,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(module, None)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
@@ -1283,7 +1299,7 @@ struct FlowRuntimeLowerer<'a> {
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
     presentation_handle_scopes: Vec<BTreeMap<String, PresentationHandleBinding>>,
     errors: Vec<RuntimePlanLowerError>,
-    pure_helpers: &'a BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'a>,
     for_iteration_evidence: &'a [RuntimeIteratorEvidence],
     for_iteration_cursor: usize,
 }

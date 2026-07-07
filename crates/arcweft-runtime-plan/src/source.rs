@@ -1,11 +1,13 @@
 //! Source declaration lowering into core source runtime data.
 
 use crate::errors::RuntimePlanLowerError;
-use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict_with_pure, runtime_call_effect};
+use crate::expr::{
+    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_pure,
+    runtime_call_effect,
+};
 use crate::labels::{expr_label, type_label};
 use crate::pattern::lower_runtime_pattern;
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssignment};
-use arcweft_core::plan::RuntimePureHelperId;
 use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
     SourceOp, SourcePlan, SourcePolicy,
@@ -21,12 +23,11 @@ use arcweft_lang_hir::syntax::{
     },
     types::TypeRef,
 };
-use std::collections::BTreeMap;
 
 /// Lowers a checked source declaration into a Sans I/O source plan.
 pub(crate) fn lower_source_plan(
     source: &SourceItem,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> Result<SourcePlan, Vec<RuntimePlanLowerError>> {
     let mut errors = Vec::new();
     let id = source.id().map_or_else(
@@ -82,7 +83,7 @@ pub(crate) fn lower_source_plan(
 
 fn lower_source_handler(
     handler: &SourceHandler,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> SourceHandlerPlan {
     let ops = lower_source_stmt_list(handler.body(), pure_helpers);
     match handler.event() {
@@ -106,7 +107,7 @@ fn lower_source_handler(
 
 fn lower_source_stmt_list(
     statements: &[Stmt],
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> Vec<SourceOp> {
     statements
         .iter()
@@ -114,10 +115,7 @@ fn lower_source_stmt_list(
         .collect()
 }
 
-fn lower_source_stmt(
-    stmt: &Stmt,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
-) -> SourceOp {
+fn lower_source_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_>) -> SourceOp {
     match stmt {
         Stmt::Yield(expr) => SourceOp::Yield(lower_runtime_expr_with_pure(expr, pure_helpers)),
         Stmt::Signal { target, value } => SourceOp::SignalWrite(RuntimeAssignment {
@@ -135,7 +133,7 @@ fn lower_source_stmt(
 
 fn lower_runtime_expr_with_pure(
     expr: &arcweft_lang_hir::syntax::expr::Expr,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> RuntimeExpr {
     lower_runtime_expr_strict_with_pure(expr, pure_helpers)
         .unwrap_or_else(|_| lower_runtime_expr(expr))

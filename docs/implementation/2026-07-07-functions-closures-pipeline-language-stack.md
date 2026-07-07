@@ -57,6 +57,16 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 - Runtime-plan, verify, accelerator, CLI, agent-runner, render-text, and host
   value labels now understand runtime function values instead of relying on
   wildcard handling.
+- Runtime-plan expression lowering now carries a pure-helper lookup with both
+  IDs and helper bodies. Bare top-level pure helper paths in value position
+  materialize as `RuntimeExpr::Function`, and known helper calls with fewer or
+  more than the declared helper arity lower through `RuntimeExpr::Apply` rather
+  than an invalid exact-arity pure call.
+- Exact-arity known pure helper calls continue to lower to
+  `RuntimeExpr::PureCall`, so the existing accelerator/runtime pure call path
+  remains available as an optimization.
+- Intrinsic non-path callees such as `std.f64.sqrt(...)` are kept as runtime
+  calls instead of being mistaken for expression-callee function apply.
 
 ## Current boundaries
 
@@ -65,9 +75,13 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   function-value inference/apply design below.
 - Partial call abstraction such as `add(_, 1)` type-checks only where a matching
   expected function type is supplied. It is not yet a general inference source.
-- Named top-level functions are not yet materialized as function values when a
-  bare function path is used as an expression. Expression-callee application is
-  available once the callee expression evaluates to `RuntimeValue::Function`.
+- Top-level pure helper functions now materialize as function values in runtime
+  expression lowering. Full typed call disambiguation for local variables that
+  hold function values remains open: an unknown path callee such as `f(1i64)`
+  still lowers as an adapter-facing named call unless the callee expression is
+  already non-path or known as a pure helper. The final model should use typed
+  lowering evidence to choose `Apply` for local function-valued callees without
+  breaking external/adapter call targets.
 - AWBC does not yet allocate runtime closure values. `RuntimeExpr::Function`
   currently emits an AWBC lowering diagnostic, and function state is not encoded
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
@@ -94,6 +108,9 @@ cargo test -p arcweft-runtime-plan --lib --all-features
 cargo test -p arcweft-core --all-features runtime_function
 cargo test -p arcweft-runtime-plan --all-features closure_to_function_expr
 cargo test -p arcweft-runtime-plan --all-features expression_callee_call_to_apply
+cargo test -p arcweft-runtime-plan --all-features strict_runtime_lowers
+cargo test -p arcweft-runtime-plan --all-features strict_runtime_value_lowering_can_emit_pure_calls
+cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
 cargo +nightly -Zscript tools/structure-audit.rs --root .
@@ -109,3 +126,8 @@ The runtime function/apply cut has focused passing coverage for captured
 function application, partial application, curried application, closure strict
 lowering, and expression-callee call lowering. Workspace validation for this cut
 is recorded in the commit/final response.
+
+The named pure helper function-value cut has focused passing coverage for bare
+helper path materialization, partial helper call lowering through
+`RuntimeExpr::Apply`, exact helper calls that remain `RuntimeExpr::PureCall`,
+and intrinsic non-path call preservation.

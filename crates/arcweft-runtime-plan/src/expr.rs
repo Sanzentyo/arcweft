@@ -9,7 +9,7 @@ use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
     RuntimeEvent, RuntimeField, RuntimeLog,
 };
-use arcweft_core::plan::RuntimePureHelperId;
+use arcweft_core::plan::{RuntimePureHelper, RuntimePureHelperId};
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr,
     RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
@@ -26,6 +26,43 @@ use arcweft_lang_hir::syntax::{
     },
 };
 use std::collections::BTreeMap;
+
+#[derive(Clone, Copy)]
+pub(crate) struct RuntimePureHelperLookup<'a> {
+    ids: &'a BTreeMap<String, RuntimePureHelperId>,
+    helpers: &'a [RuntimePureHelper],
+}
+
+impl<'a> RuntimePureHelperLookup<'a> {
+    pub(crate) fn new(
+        ids: &'a BTreeMap<String, RuntimePureHelperId>,
+        helpers: &'a [RuntimePureHelper],
+    ) -> Self {
+        Self { ids, helpers }
+    }
+
+    fn id(self, name: &str) -> Option<RuntimePureHelperId> {
+        self.ids.get(name).copied()
+    }
+
+    fn helper(self, name: &str) -> Option<&'a RuntimePureHelper> {
+        let id = self.id(name)?;
+        self.helpers
+            .get(id.0)
+            .filter(|helper| helper.id == id && helper.name == name)
+    }
+
+    fn arity(self, name: &str) -> Option<usize> {
+        self.helper(name).map(|helper| helper.input_names.len())
+    }
+
+    fn function_value(self, name: &str) -> Option<RuntimeExpr> {
+        self.helper(name).map(|helper| RuntimeExpr::Function {
+            params: helper.input_names.clone(),
+            body: Box::new(helper.expr.clone()),
+        })
+    }
+}
 
 /// Lowers an expression into a runtime value expression, preserving a lossy
 /// string label for adapter-facing values that are not executable by the core.
@@ -136,20 +173,24 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
 
 pub(crate) fn lower_runtime_expr_strict_with_pure(
     expr: &Expr,
-    helpers: &BTreeMap<String, RuntimePureHelperId>,
+    helpers: RuntimePureHelperLookup<'_>,
 ) -> Result<RuntimeExpr, String> {
     lower_runtime_expr_strict_with_helpers(expr, Some(helpers))
 }
 
 fn lower_runtime_expr_strict_with_helpers(
     expr: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     match expr {
         Expr::Literal(literal) => Ok(RuntimeExpr::Value(lower_runtime_literal(literal))),
         Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity_ref_label(entity))),
         Expr::Path(path) => Ok(constructor_path(path.as_label()).map_or_else(
-            || RuntimeExpr::Local(path.as_label().to_owned()),
+            || {
+                helpers
+                    .and_then(|helpers| helpers.function_value(path.as_label()))
+                    .unwrap_or_else(|| RuntimeExpr::Local(path.as_label().to_owned()))
+            },
             |(path, name)| RuntimeExpr::Variant {
                 path,
                 name,
@@ -238,7 +279,7 @@ fn lower_runtime_expr_strict_with_helpers(
 fn lower_strict_closure_expr(
     params: &[ClosureParam],
     body: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     let params = params
         .iter()
@@ -260,7 +301,7 @@ fn lower_strict_binary_expr(
     lhs: &Expr,
     op: BinaryOp,
     rhs: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     let Some(op) = lower_runtime_binary_op(op) else {
         return Err(format!(
@@ -279,7 +320,7 @@ fn lower_strict_method_call_dispatch(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     match lower_strict_math_method_call(receiver, method, args, helpers)
         .or_else(|| lower_strict_std_float_method_call(receiver, method, args, helpers))
@@ -301,7 +342,7 @@ fn lower_runtime_pipe_expr(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
 fn lower_runtime_pipe_expr_strict(
     lhs: &Expr,
     rhs: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     if expr_contains_pipe_left(rhs) {
         return lower_runtime_expr_strict_with_helpers(&substitute_pipe_left(rhs, lhs), helpers);
@@ -340,7 +381,7 @@ fn lower_runtime_data_last_pipe(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
 fn lower_runtime_data_last_pipe_strict(
     lhs: &Expr,
     rhs: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     if let Some((method, args)) = data_last_collection_method(rhs) {
         return lower_strict_method_call_expr(lhs, method, args, helpers);
@@ -790,7 +831,7 @@ fn collect_dense<T, E>(
 
 fn lower_runtime_bracket_seq_strict(
     items: &[Expr],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     let lowered = items
         .iter()
@@ -803,7 +844,7 @@ fn lower_runtime_range_expr(
     start: Option<&Expr>,
     end: Option<&Expr>,
     inclusive: bool,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::Range {
         start: start
@@ -832,7 +873,7 @@ fn lower_runtime_range_expr_lossy(
 
 fn lower_runtime_record_expr_strict(
     fields: &[(String, Expr)],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     fields
         .iter()
@@ -895,7 +936,7 @@ fn lower_strict_field_or_constant(
     expr: &Expr,
     target: &Expr,
     field: &str,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(value) = lower_enum_variant_field(target, field) {
         return Ok(value);
@@ -908,7 +949,7 @@ fn lower_strict_field_or_constant(
 fn lower_strict_field_expr(
     target: &Expr,
     field: &str,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     let target_expr = lower_runtime_expr_strict_with_helpers(target, helpers)?;
     Ok(if let Some(ordinal) = record_field_ordinal(target, field) {
@@ -954,7 +995,7 @@ fn lower_runtime_index_expr(target: &Expr, index: &Expr) -> Option<RuntimeExpr> 
 fn lower_strict_index_expr(
     target: &Expr,
     index: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     tuple_index_ordinal(target, index).map_or_else(
         || {
@@ -1107,7 +1148,7 @@ fn lower_strict_path_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Path(receiver) = receiver else {
         return None;
@@ -1134,7 +1175,7 @@ fn lower_strict_math_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Path(receiver) = receiver else {
         return None;
@@ -1168,7 +1209,7 @@ fn lower_strict_std_float_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let receiver = expr_label(receiver);
     let method = runtime_method_name(method);
@@ -1194,7 +1235,7 @@ fn lower_strict_external_namespace_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Path(receiver) = receiver else {
         return None;
@@ -1213,13 +1254,16 @@ fn lower_strict_external_namespace_method_call(
 fn lower_strict_call_expr(
     callee: &Expr,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(lowered) = lower_agent_path_constructor_call(callee, args, helpers) {
         return lowered;
     }
     if let Some(lowered) = lower_choice_action_call(callee, args) {
         return Ok(lowered);
+    }
+    if let Some(lowered) = lower_strict_intrinsic_function_call(callee, args, helpers) {
+        return lowered;
     }
     lower_constructor_call(callee, args, helpers).map_or_else(
         || {
@@ -1237,8 +1281,20 @@ fn lower_strict_call_expr(
             };
             let callee = path.as_label();
             Ok(
-                if let Some(helper) = helpers.and_then(|helpers| helpers.get(callee).copied()) {
-                    RuntimeExpr::PureCall { helper, args }
+                if let Some(helper) = helpers.and_then(|helpers| helpers.id(callee)) {
+                    if helpers
+                        .and_then(|helpers| helpers.arity(callee))
+                        .is_some_and(|arity| arity != args.len())
+                        && let Some(function) =
+                            helpers.and_then(|helpers| helpers.function_value(callee))
+                    {
+                        RuntimeExpr::Apply {
+                            callee: Box::new(function),
+                            args,
+                        }
+                    } else {
+                        RuntimeExpr::PureCall { helper, args }
+                    }
                 } else {
                     RuntimeExpr::Call {
                         callee: RuntimeCallTarget::from_label(callee),
@@ -1251,10 +1307,32 @@ fn lower_strict_call_expr(
     )
 }
 
+fn lower_strict_intrinsic_function_call(
+    callee: &Expr,
+    args: &[CallArg],
+    helpers: Option<RuntimePureHelperLookup<'_>>,
+) -> Option<Result<RuntimeExpr, String>> {
+    let label = expr_label(callee);
+    if helpers.and_then(|helpers| helpers.id(&label)).is_some() {
+        return None;
+    }
+    let target = RuntimeCallTarget::from_label(label);
+    target.as_intrinsic()?;
+    Some(
+        args.iter()
+            .map(|arg| lower_strict_call_arg(arg, helpers))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|args| RuntimeExpr::Call {
+                callee: target,
+                args,
+            }),
+    )
+}
+
 fn lower_agent_path_constructor_call(
     callee: &Expr,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if !matches!(
         expr_label(callee).as_str(),
@@ -1277,7 +1355,7 @@ fn lower_strict_method_call_expr(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(map) = lower_strict_map_method_call(receiver, method, args, helpers) {
         return map;
@@ -1314,7 +1392,7 @@ fn lower_strict_map_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if runtime_method_name(method) != "map" {
         return None;
@@ -1368,7 +1446,7 @@ fn lower_strict_filter_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if runtime_method_name(method) != "filter" {
         return None;
@@ -1427,7 +1505,7 @@ fn lower_runtime_call_arg(arg: &CallArg) -> RuntimeExpr {
 
 fn lower_strict_call_arg(
     arg: &CallArg,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     match arg {
         CallArg::Spread { value } => Ok(RuntimeExpr::SpreadArg(Box::new(
@@ -1469,7 +1547,7 @@ fn lower_dialogue_call_value(
 
 fn lower_strict_block_value(
     value: Option<&Expr>,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     value.map_or_else(
         || Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
@@ -1480,7 +1558,7 @@ fn lower_strict_block_value(
 fn lower_strict_block_expr(
     statements: &[Stmt],
     value: Option<&Expr>,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     let body = lower_strict_block_value(value, helpers)?;
     statements.iter().rev().try_fold(body, |body, statement| {
@@ -1491,7 +1569,7 @@ fn lower_strict_block_expr(
 fn lower_strict_block_statement(
     statement: &Stmt,
     body: RuntimeExpr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     match statement {
         Stmt::Let { pattern, expr, .. } => {
@@ -1521,7 +1599,7 @@ fn lower_strict_block_statement(
 
 fn lower_direct_assignment_target(
     target: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<(RuntimeExpr, String), String> {
     let Expr::Field { target, field } = target else {
         return Err(format!(
@@ -1548,7 +1626,7 @@ fn lower_strict_if_expr(
     condition: &Expr,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::If {
         condition: Box::new(lower_runtime_expr_strict_with_helpers(condition, helpers)?),
@@ -1570,7 +1648,7 @@ fn lower_strict_if_let_expr(
     guard: Option<&Expr>,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::IfLet {
         pattern: lower_runtime_pattern(pattern),
@@ -1594,7 +1672,7 @@ fn lower_strict_if_let_expr(
 fn lower_strict_match_expr(
     scrutinee: &Expr,
     arms: &[MatchExprArm],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::Match {
         scrutinee: Box::new(lower_runtime_expr_strict_with_helpers(scrutinee, helpers)?),
@@ -1617,7 +1695,7 @@ fn lower_strict_match_expr(
 fn lower_constructor_call(
     callee: &Expr,
     args: &[CallArg],
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Option<RuntimeExpr> {
     let Expr::Path(callee) = callee else {
         return None;
@@ -1984,7 +2062,7 @@ fn lower_runtime_array_repeat(value: &Expr, len: &Expr) -> RuntimeExpr {
 fn lower_runtime_array_repeat_strict(
     value: &Expr,
     len: &Expr,
-    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     let Some(len) = array_repeat_len(len) else {
         return Err(format!(

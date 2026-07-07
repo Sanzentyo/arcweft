@@ -1,4 +1,5 @@
 use super::*;
+use arcweft_core::plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType};
 use arcweft_core::value::RuntimeIntrinsic;
 
 #[test]
@@ -16,23 +17,106 @@ fn strict_runtime_value_lowering_preserves_calls() {
 #[test]
 fn strict_runtime_value_lowering_can_emit_pure_calls() {
     let expr = Expr::Call {
-        callee: Box::new(Expr::Path("compute".into())),
-        args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
-            raw: "3i64".to_owned(),
-            value: 3,
-            suffix: Some("i64".to_owned()),
-        }))],
+        callee: Box::new(Expr::Path("add".into())),
+        args: vec![
+            CallArg::Positional(Expr::Literal(Literal::Int {
+                raw: "3i64".to_owned(),
+                value: 3,
+                suffix: Some("i64".to_owned()),
+            })),
+            CallArg::Positional(Expr::Literal(Literal::Int {
+                raw: "4i64".to_owned(),
+                value: 4,
+                suffix: Some("i64".to_owned()),
+            })),
+        ],
     };
-    let helpers = BTreeMap::from([("compute".to_owned(), RuntimePureHelperId(2))]);
+    let helpers = vec![add_i64_helper()];
+    let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);
 
-    let lowered = lower_runtime_expr_strict_with_pure(&expr, &helpers).expect("pure calls lower");
+    let lowered =
+        lower_runtime_expr_strict_with_pure(&expr, RuntimePureHelperLookup::new(&ids, &helpers))
+            .expect("pure calls lower");
 
     assert!(matches!(
         lowered,
         RuntimeExpr::PureCall { helper, args }
-            if helper == RuntimePureHelperId(2)
-                && matches!(args.as_slice(), [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(3))
+            if helper == RuntimePureHelperId(0)
+                && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(lhs), RuntimeExpr::Value(rhs)]
+                        if lhs == &RuntimeValue::i64(3) && rhs == &RuntimeValue::i64(4)
+                )
     ));
+}
+
+#[test]
+fn strict_runtime_lowers_bare_pure_helper_path_to_function_value() {
+    let helpers = vec![add_i64_helper()];
+    let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);
+    let expr = Expr::Path("add".into());
+
+    let lowered =
+        lower_runtime_expr_strict_with_pure(&expr, RuntimePureHelperLookup::new(&ids, &helpers))
+            .expect("function path lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Function { params, body }
+            if params == ["lhs", "rhs"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Binary { lhs, .. }
+                        if matches!(lhs.as_ref(), RuntimeExpr::Local(name) if name == "lhs")
+                )
+    ));
+}
+
+#[test]
+fn strict_runtime_lowers_partial_pure_helper_call_to_apply() {
+    let helpers = vec![add_i64_helper()];
+    let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);
+    let expr = Expr::Call {
+        callee: Box::new(Expr::Path("add".into())),
+        args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
+            raw: "2i64".to_owned(),
+            value: 2,
+            suffix: Some("i64".to_owned()),
+        }))],
+    };
+
+    let lowered =
+        lower_runtime_expr_strict_with_pure(&expr, RuntimePureHelperLookup::new(&ids, &helpers))
+            .expect("partial helper call lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
+            )
+    ));
+}
+
+fn add_i64_helper() -> RuntimePureHelper {
+    RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "add".to_owned(),
+        input_names: vec!["lhs".to_owned(), "rhs".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Inferred,
+    }
 }
 
 #[test]

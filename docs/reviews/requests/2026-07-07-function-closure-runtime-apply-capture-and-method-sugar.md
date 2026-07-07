@@ -12,6 +12,12 @@ and the first executable runtime function/apply substrate:
 deterministic capture snapshots, partial application, and curried runtime
 application when the callee expression evaluates to a function value.
 
+The next runtime-plan cut also materialized top-level pure helper names as
+function values in value position, preserved exact-arity helper calls as
+`RuntimeExpr::PureCall`, and lowered non-exact helper calls through
+`RuntimeExpr::Apply`. This does not yet finish typed call disambiguation for
+local function-valued path callees such as `f(1i64)`.
+
 This request covers the remaining work needed to finish the revised Arcweft
 function/closure/currying/pipeline specification without adding compatibility
 shims or preserving removed syntax.
@@ -20,8 +26,9 @@ shims or preserving removed syntax.
 
 1. Complete first-class function value integration beyond the implemented
    runtime substrate.
-   - Specify and implement how bare named top-level functions materialize as
-     function values when used as expressions.
+   - Extend the implemented pure-helper function value materialization to the
+     full typed function namespace, including local variables whose type is a
+     function value and non-pure callable declarations where applicable.
    - Specify and implement AWBC closure allocation and bytecode apply semantics
      instead of the current `RuntimeExpr::Function` lowering diagnostic.
    - Decide whether the current direct data-last pipe lowering remains only an
@@ -57,7 +64,9 @@ shims or preserving removed syntax.
 
 ## Implementation order
 
-1. Add named top-level function-as-value materialization and tests.
+1. Complete typed function-valued path call disambiguation and tests. The pure
+   helper subset now materializes bare helper paths and non-exact helper calls;
+   local function-valued path callees still need typed lowering evidence.
 2. Add AWBC closure allocation / apply semantics or explicitly split that work
    into an AWBC-focused request with instruction/table design.
 3. Lower expected-type `_` abstractions into the runtime function/apply

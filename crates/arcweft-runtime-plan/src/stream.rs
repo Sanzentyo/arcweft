@@ -1,17 +1,17 @@
 //! Stream-function lowering into core stream runtime data.
 
-use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict_with_pure};
+use crate::expr::{
+    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_pure,
+};
 use crate::pattern::lower_runtime_pattern;
-use arcweft_core::plan::RuntimePureHelperId;
 use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan, StreamRuntimeId};
 use arcweft_core::value::RuntimeExpr;
 use arcweft_lang_hir::syntax::{ast::flow::Stmt, types::TypeRef};
-use std::collections::BTreeMap;
 
 /// Lowers a HIR stream function into a Sans I/O stream plan.
 pub(crate) fn lower_stream_function(
     function: &arcweft_lang_hir::model::HirFunction,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> StreamPlan {
     let (item_ty, error_ty) = function
         .signature()
@@ -28,7 +28,7 @@ pub(crate) fn lower_stream_function(
 
 fn lower_stream_stmt_list(
     statements: &[Stmt],
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> Vec<StreamOp> {
     statements
         .iter()
@@ -36,10 +36,7 @@ fn lower_stream_stmt_list(
         .collect()
 }
 
-fn lower_stream_stmt(
-    stmt: &Stmt,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
-) -> Vec<StreamOp> {
+fn lower_stream_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_>) -> Vec<StreamOp> {
     match stmt {
         Stmt::Let { pattern, expr, .. } => vec![StreamOp::Let {
             pattern: lower_runtime_pattern(pattern),
@@ -89,7 +86,7 @@ fn lower_stream_stmt(
 
 fn lower_runtime_expr_with_pure(
     expr: &arcweft_lang_hir::syntax::expr::Expr,
-    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> RuntimeExpr {
     lower_runtime_expr_strict_with_pure(expr, pure_helpers)
         .unwrap_or_else(|_| lower_runtime_expr(expr))
