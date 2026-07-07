@@ -117,9 +117,16 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
 fn typechecker_lowers_pipe_placeholder_and_data_last_calls() {
     let tree = parse_ok(
         r"
+struct Choice {
+    label: String,
+    enabled: bool,
+}
+
 flow main {
   let clamped = 10i64 |> clamp(0i64, ^, 100i64)
   let next = clamped |> plus_one
+  let labels: Vec<String> = choices |> filter(_.enabled) |> map(_.label)
+  log.info(labels)
   return next
 }
 ",
@@ -144,6 +151,10 @@ flow main {
                 TypeKind::I64,
                 [FunctionParam::required("value", TypeKind::I64)],
             ),
+        )
+        .with_symbol(
+            "choices",
+            TypeKind::Vec(Box::new(TypeKind::Named("Choice".to_owned()))),
         );
 
     typecheck_hir(&hir, &env).expect("pipe expressions typecheck");

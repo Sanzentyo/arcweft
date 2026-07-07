@@ -18,7 +18,7 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 - Pipe RHS with `^` substitutes the pipe LHS into the RHS expression before
   type checking and strict runtime lowering.
 - Pipe RHS without `^` currently lowers to the existing direct data-last call
-  path for strict runtime expressions.
+  path for general strict runtime expressions.
 - Canonical primitive labels are enforced across sema/runtime-facing surfaces:
   `bool` and `char` are accepted; legacy `Bool`/`Char` aliases are rejected.
 - `_` partial placeholder now works when an expected one-parameter function
@@ -37,6 +37,9 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   `RuntimeExpr::Filter`.
 - Core VM pure/runtime expression evaluation executes `RuntimeExpr::Filter`
   over runtime iterators and returns a normalized value sequence.
+- Standard prelude-shaped data-last collection pipeline now recognizes
+  `choices |> filter(_.enabled) |> map(_.label)` and lowers it through the same
+  executable `RuntimeExpr::Filter`/`RuntimeExpr::Map` path.
 
 ## Current boundaries
 
@@ -47,8 +50,8 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   expected function type is supplied. It is not yet a general inference source.
 - Strict runtime does not yet have a first-class expression callee/apply form,
   so true curried runtime application `f(a)(x)` is not represented end to end.
-  The existing pipe no-`^` runtime lowering still uses the direct data-last
-  call shape for the currently supported executable subset.
+  Pipe no-`^` runtime lowering still uses the direct data-last call shape
+  outside the standard executable `filter`/`map` collection pipeline subset.
 - Method-chain fallback sugar that resolves inherent/trait methods first and
   then data-last callable methods is not implemented.
 - Closure capture analysis, suspension-boundary lifetime diagnostics, and

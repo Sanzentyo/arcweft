@@ -288,6 +288,13 @@ fn lower_runtime_pipe_expr_strict(
 }
 
 fn lower_runtime_data_last_pipe(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
+    if let Some((method, args)) = data_last_collection_method(rhs) {
+        return RuntimeExpr::MethodCall {
+            receiver: Box::new(lower_runtime_expr(lhs)),
+            method: method.to_owned(),
+            args: args.iter().map(lower_runtime_call_arg).collect(),
+        };
+    }
     match rhs {
         Expr::Path(path) => RuntimeExpr::Call {
             callee: RuntimeCallTarget::from_label(path.as_label()),
@@ -313,6 +320,9 @@ fn lower_runtime_data_last_pipe_strict(
     rhs: &Expr,
     helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Result<RuntimeExpr, String> {
+    if let Some((method, args)) = data_last_collection_method(rhs) {
+        return lower_strict_method_call_expr(lhs, method, args, helpers);
+    }
     let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
     match rhs {
         Expr::Path(path) => Ok(RuntimeExpr::Call {
@@ -335,6 +345,17 @@ fn lower_runtime_data_last_pipe_strict(
             args: vec![lhs],
         }),
     }
+}
+
+fn data_last_collection_method(rhs: &Expr) -> Option<(&str, &[CallArg])> {
+    let Expr::Call { callee, args } = rhs else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let method = path.as_label();
+    matches!(method, "map" | "filter").then_some((method, args.as_slice()))
 }
 
 fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {

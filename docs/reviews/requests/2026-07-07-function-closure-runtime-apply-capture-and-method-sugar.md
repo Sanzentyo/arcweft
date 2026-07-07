@@ -5,7 +5,8 @@
 The 2026-07-07 implementation cut added function type syntax, typed closure
 function values, expected-type `_` placeholder abstraction, scoped `^` pipe
 substitution, canonical primitive labels, and strict runtime lowering for
-`map(_ body)` and `filter(_ predicate)`.
+`map(_ body)`, `filter(_ predicate)`, and the standard
+`choices |> filter(_.enabled) |> map(_.label)` data-last collection pipeline.
 
 This request covers the remaining work needed to finish the revised Arcweft
 function/closure/currying/pipeline specification without adding compatibility
@@ -77,6 +78,8 @@ shims or preserving removed syntax.
   is found.
 - Do not redesign the implemented executable `filter` path unless a concrete
   bug is found.
+- Do not redesign the implemented standard `filter`/`map` data-last pipeline
+  subset unless a concrete bug is found.
 - Keep lower crates Sans I/O and preserve existing crate boundary direction.
 
 ## Expected output

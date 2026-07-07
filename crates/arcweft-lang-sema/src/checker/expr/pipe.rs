@@ -30,10 +30,28 @@ impl TypeChecker<'_> {
 }
 
 fn data_last_pipe_call(lhs: &Expr, rhs: &Expr) -> Expr {
+    if let Some((method, args)) = data_last_collection_method(rhs) {
+        return Expr::MethodCall {
+            receiver: Box::new(lhs.clone()),
+            method: method.to_owned(),
+            args: args.to_vec(),
+        };
+    }
     Expr::Call {
         callee: Box::new(rhs.clone()),
         args: vec![CallArg::Positional(lhs.clone())],
     }
+}
+
+fn data_last_collection_method(rhs: &Expr) -> Option<(&str, &[CallArg])> {
+    let Expr::Call { callee, args } = rhs else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let method = path.as_label();
+    matches!(method, "map" | "filter").then_some((method, args.as_slice()))
 }
 
 fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {

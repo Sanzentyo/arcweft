@@ -184,16 +184,69 @@ fn strict_runtime_lowers_partial_placeholder_filter_body() {
     let lowered = lower_runtime_expr_strict(&expr).expect("partial filter lowers");
 
     assert!(matches!(
-        lowered,
-        RuntimeExpr::Filter { param, body, .. }
-            if param == "_item"
-                && matches!(
-                    body.as_ref(),
-                    RuntimeExpr::Field { target, field }
-                        if field == "enabled"
+    lowered,
+    RuntimeExpr::Filter { param, body, .. }
+        if param == "_item"
+            && matches!(
+                body.as_ref(),
+                RuntimeExpr::Field { target, field }
+                    if field == "enabled"
+                        && matches!(
+                            target.as_ref(),
+                            RuntimeExpr::Local(name) if name == "_item"
+                        )
+            )
+    ));
+}
+
+#[test]
+fn strict_runtime_lowers_data_last_filter_map_pipeline() {
+    let expr = Expr::Pipe {
+        lhs: Box::new(Expr::Pipe {
+            lhs: Box::new(Expr::Path("choices".into())),
+            rhs: Box::new(Expr::Call {
+                callee: Box::new(Expr::Path("filter".into())),
+                args: vec![CallArg::Positional(Expr::Field {
+                    target: Box::new(Expr::Placeholder(Placeholder::Partial)),
+                    field: "enabled".to_owned(),
+                })],
+            }),
+        }),
+        rhs: Box::new(Expr::Call {
+            callee: Box::new(Expr::Path("map".into())),
+            args: vec![CallArg::Positional(Expr::Field {
+                target: Box::new(Expr::Placeholder(Placeholder::Partial)),
+                field: "label".to_owned(),
+            })],
+        }),
+    };
+
+    let lowered = lower_runtime_expr_strict(&expr).expect("data-last pipeline lowers");
+
+    assert!(matches!(
+            lowered,
+            RuntimeExpr::Map { source, param, body }
+                if param == "_item"
+                    && matches!(source.as_ref(), RuntimeExpr::Filter { source, param, body }
+                        if param == "_item"
+                            && matches!(source.as_ref(), RuntimeExpr::Local(name) if name == "choices")
                             && matches!(
-                                target.as_ref(),
-                                RuntimeExpr::Local(name) if name == "_item"
+                                body.as_ref(),
+                                RuntimeExpr::Field { target, field }
+                                    if field == "enabled"
+                                        && matches!(
+                                            target.as_ref(),
+                                            RuntimeExpr::Local(name) if name == "_item"
+                                        )
+                            )
+                    )
+                    && matches!(
+                        body.as_ref(),
+                        RuntimeExpr::Field { target, field }
+                            if field == "label"
+                                && matches!(
+                                    target.as_ref(),
+                                    RuntimeExpr::Local(name) if name == "_item"
                             )
                 )
     ));
