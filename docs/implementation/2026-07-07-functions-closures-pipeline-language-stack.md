@@ -18,8 +18,8 @@ Source briefs:
 - Closure expressions now type-check as function values instead of returning an
   untyped `None`.
 - Curried top-level function/task/dialogue/stream signatures are accepted by
-  the parser/HIR surface where already modeled; curried `flow` signatures are
-  rejected directly.
+  the parser/HIR/sema surface, and curried `flow` signatures are rejected
+  directly.
 - Pipe placeholder `^` is scoped to the RHS of `|>`.
 - Pipe RHS with `^` substitutes the pipe LHS into the RHS expression before
   type checking and strict runtime lowering.
@@ -126,6 +126,11 @@ Source briefs:
   `tuple_tail(a, b)(c) -> (i64, i64, i64)` is modeled as a first call group
   returning `c -> (i64, i64, i64)`, and `chain(a)(b)(c, d) -> i64` retains the
   two remaining groups after `chain(a)`.
+- Sema regression coverage now explicitly fixes that `task fn`, `dialogue fn`,
+  and `stream fn` declarations preserve multiple curried parameter groups
+  through HIR and type checking. The `task`/`dialogue` cases also exercise
+  staged calls from a flow, while the `stream` case checks the stream body
+  against the final `Stream<T, E>` return contract.
 - Sema now preserves curried trait/impl method call-group boundaries during
   method-call checking. For example, `fn above(self, min: i64)(value: i64)
   -> bool` makes `score.above(80i64)` typecheck as `i64 -> bool`, while
@@ -476,6 +481,7 @@ cargo test -p arcweft-lang-sema --all-features let_rhs_type_judgments_carry_sour
 cargo test -p arcweft-lang-sema --all-features method_chain
 cargo test -p arcweft-lang-sema --all-features data_last_pipe_through_local_function_value_records_call_evidence
 cargo test -p arcweft-lang-sema --all-features curried_function_declaration
+cargo test -p arcweft-lang-sema --all-features curried_task_dialogue_and_stream_functions_preserve_param_groups
 cargo test -p arcweft-lang-sema --all-features closure_return
 cargo test -p arcweft-lang-sema --all-features closure_body_effects_do_not_leak_on_function_value_creation
 cargo test -p arcweft-lang-sema --all-features local_closure_call_composes_body_effects_into_caller
@@ -860,3 +866,21 @@ cut are `runtime-plan/src/flow.rs` 90,518 bytes / 2,492 physical LOC,
 `compiler/src/lower.rs` 12,613 bytes / 317 physical LOC, and
 `compiler/src/tests.rs` 84,104 bytes / 2,871 physical LOC; no new
 structure-audit error remains from this slice.
+
+The function-kind curried ParamGroup evidence cut adds focused sema coverage
+for `task fn`, `dialogue fn`, and `stream fn` declarations with multiple
+curried parameter groups. The fixture verifies HIR keeps two call groups for
+each function kind, `task`/`dialogue` staged calls typecheck from a flow, and
+the curried stream function body still satisfies its final `Stream<T, E>`
+return contract. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features curried_task_dialogue_and_stream_functions_preserve_param_groups`,
+followed by
+`cargo check -p arcweft-lang-sema --all-targets --all-features` and
+`cargo clippy -p arcweft-lang-sema --all-targets --all-features`; clippy still
+reports only the existing `TraitMember` / `ImplMember` large-enum warnings from
+`arcweft-lang-syntax`. Structure audit still reports the unrelated single
+`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error and 148 warnings.
+The changed Rust file measured by the structure-audit CSV for this cut is
+`crates/arcweft-lang-sema/src/tests/function_stack.rs` 94,633 bytes / 2,924
+physical LOC; it remains a test file and no production structure-audit error is
+introduced by this slice.

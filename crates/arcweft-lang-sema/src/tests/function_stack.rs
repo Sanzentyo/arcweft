@@ -459,6 +459,65 @@ flow @flow.curried_flattened curried_flattened {
 }
 
 #[test]
+fn curried_task_dialogue_and_stream_functions_preserve_param_groups() {
+    let tree = parse_ok(
+        r#"
+task fn task_label(prefix: String)(name: String) -> String {
+    return name
+}
+
+dialogue fn dialogue_label(prefix: String)(name: String) -> String {
+    return name
+}
+
+stream fn stream_passthrough(prefix: String)(frames: Stream<i64, String>) -> Stream<i64, String> {
+    for frame in frames {
+        yield frame
+    }
+}
+
+flow @flow.curried_function_kind_calls curried_function_kind_calls {
+    let task_partial = task_label("prefix")
+    let task_value: String = task_partial("name")
+    let dialogue_value: String = dialogue_label("prefix")("name")
+    log.info(task_value)
+    log.info(dialogue_value)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("curried function-kind fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried function-kind fixture is structured");
+    assert_eq!(
+        hir.functions()
+            .iter()
+            .map(|function| function.signature().param_groups().len())
+            .collect::<Vec<_>>(),
+        vec![2, 2, 2],
+        "all non-flow function kinds should preserve curried parameter groups"
+    );
+    assert_eq!(hir.functions()[0].kind(), FunctionKind::Task);
+    assert_eq!(hir.functions()[1].kind(), FunctionKind::Dialogue);
+    assert_eq!(hir.functions()[2].kind(), FunctionKind::Stream);
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "curried task/dialogue/stream functions should typecheck, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Function { params, return_type }
+                    if params == &[TypeKind::String] && return_type.as_ref() == &TypeKind::String
+            )
+        }),
+        "curried task/dialogue first calls should expose the staged function type"
+    );
+}
+
+#[test]
 fn curried_trait_method_preserves_call_group_semantics() {
     let tree = parse_ok(
         r"
