@@ -145,6 +145,80 @@ impl TypeChecker<'_> {
             }
         }
     }
+
+    pub(super) fn check_vec_filter_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        let Some(item) = spread_item_type(receiver_type) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "filter receiver must be an iterable sequence, found {}",
+                type_kind_label(receiver_type)
+            )));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return None;
+        };
+        let [arg] = args else {
+            self.errors.push(TypeCheckError::new(
+                "filter requires exactly one function argument".to_owned(),
+            ));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return None;
+        };
+        if arg.name().is_some() || arg.is_spread() {
+            self.errors.push(TypeCheckError::new(
+                "filter requires one positional function argument".to_owned(),
+            ));
+            self.check_expr(arg.value());
+            return None;
+        }
+        let expected = TypeKind::Function {
+            params: vec![item.clone()],
+            return_type: Box::new(TypeKind::Bool),
+        };
+        let Some(actual) = self.check_expr_with_expected(arg.value(), Some(&expected)) else {
+            self.errors.push(TypeCheckError::new(
+                "filter requires a closure or `_` placeholder function argument".to_owned(),
+            ));
+            return None;
+        };
+        match actual {
+            TypeKind::Function {
+                params,
+                return_type,
+            } if params.as_slice() == [item.clone()] && return_type.as_ref() == &TypeKind::Bool => {
+                Some(TypeKind::Vec(Box::new(item.clone())))
+            }
+            TypeKind::Function {
+                params,
+                return_type,
+            } => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "filter function must be {} -> bool, found ({}) -> {}",
+                    type_kind_label(item),
+                    params
+                        .iter()
+                        .map(type_kind_label)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    type_kind_label(return_type.as_ref())
+                )));
+                None
+            }
+            other => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "filter requires a function argument, found {}",
+                    type_kind_label(&other)
+                )));
+                None
+            }
+        }
+    }
 }
 
 fn is_unknown_type(ty: &TypeKind) -> bool {

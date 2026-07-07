@@ -1788,6 +1788,7 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
         | RuntimeExpr::SpreadArg(_)
         | RuntimeExpr::MethodCall { .. }
         | RuntimeExpr::Map { .. }
+        | RuntimeExpr::Filter { .. }
         | RuntimeExpr::Sum { .. }
         | RuntimeExpr::Unary { .. }
         | RuntimeExpr::Binary { .. }

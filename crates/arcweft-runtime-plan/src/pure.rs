@@ -286,6 +286,7 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
             shape
         }
         RuntimeExpr::Map { source, body, .. }
+        | RuntimeExpr::Filter { source, body, .. }
         | RuntimeExpr::Binary {
             lhs: source,
             rhs: body,

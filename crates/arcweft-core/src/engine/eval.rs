@@ -28,6 +28,7 @@ use crate::value::{
 };
 
 mod calls;
+mod sequence;
 
 impl Engine {
     pub(super) fn evaluate_let_with_backend(
@@ -159,6 +160,11 @@ impl Engine {
                 param,
                 body,
             } => self.evaluate_map_expr(source, param, body, pure_backend),
+            RuntimeExpr::Filter {
+                source,
+                param,
+                body,
+            } => self.evaluate_filter_expr(source, param, body, pure_backend),
             RuntimeExpr::Sum { source } => self.evaluate_sum_expr(source, pure_backend),
             RuntimeExpr::Unary { op, expr } => {
                 let value = self.evaluate_expr_with_backend(expr, pure_backend)?;

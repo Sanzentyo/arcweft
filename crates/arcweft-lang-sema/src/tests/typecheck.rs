@@ -2129,9 +2129,11 @@ flow @flow.partial partial {
     let high: i64 -> bool = _ > 80i64
     let labels: Vec<String> = choices.map(_.label)
     let flags: Vec<bool> = choices.map(_.enabled)
+    let enabled_labels: Vec<String> = choices.filter(_.enabled).map(_.label)
     log.info(high)
     log.info(labels)
     log.info(flags)
+    log.info(enabled_labels)
 }
 ",
     );

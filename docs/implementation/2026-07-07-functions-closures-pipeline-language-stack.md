@@ -32,6 +32,11 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   path.
 - Strict runtime lowering converts `values.map(_ + 1i64)` into the existing
   executable `RuntimeExpr::Map` form.
+- `Vec`/array/slice/sequence `filter` now checks its argument as `item -> bool`.
+- Strict runtime lowering converts `choices.filter(_.enabled)` into executable
+  `RuntimeExpr::Filter`.
+- Core VM pure/runtime expression evaluation executes `RuntimeExpr::Filter`
+  over runtime iterators and returns a normalized value sequence.
 
 ## Current boundaries
 
@@ -44,7 +49,6 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   so true curried runtime application `f(a)(x)` is not represented end to end.
   The existing pipe no-`^` runtime lowering still uses the direct data-last
   call shape for the currently supported executable subset.
-- Executable collection `filter` is not implemented in `RuntimeExpr`/core eval.
 - Method-chain fallback sugar that resolves inherent/trait methods first and
   then data-last callable methods is not implemented.
 - Closure capture analysis, suspension-boundary lifetime diagnostics, and
@@ -59,10 +63,9 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 ## Validation
 
 ```bash
+cargo test -p arcweft-core --lib --all-features
 cargo test -p arcweft-lang-sema --lib --all-features
 cargo test -p arcweft-runtime-plan --lib --all-features
-cargo clippy -p arcweft-lang-sema --all-targets --all-features
-cargo clippy -p arcweft-runtime-plan --all-targets --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
 cargo +nightly -Zscript tools/structure-audit.rs --root .
@@ -71,4 +74,5 @@ cargo +nightly -Zscript tools/structure-audit.rs --root .
 All listed validation passed after updating the lingering
 `spec_should_pass/check/025_view_body_structured.arcw` fixture from `Bool` to
 canonical `bool`. The structure audit reported 0 errors and 147 existing
-warnings.
+warnings for the first cut. After the executable `filter` cut and structural
+split, the structure audit reports 0 errors and 146 warnings.

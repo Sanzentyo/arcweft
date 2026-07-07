@@ -244,9 +244,11 @@ fn contains_host_or_source_call(expr: &RuntimeExpr) -> bool {
         | RuntimeExpr::ProjectTuple { target: value, .. }
         | RuntimeExpr::ProjectRecord { target: value, .. }
         | RuntimeExpr::SpreadArg(value)
-        | RuntimeExpr::Map { source: value, .. }
         | RuntimeExpr::Sum { source: value }
         | RuntimeExpr::Unary { expr: value, .. } => contains_host_or_source_call(value),
+        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
+            contains_host_or_source_call(source) || contains_host_or_source_call(body)
+        }
         RuntimeExpr::Range { start, end, .. } => start
             .as_deref()
             .into_iter()

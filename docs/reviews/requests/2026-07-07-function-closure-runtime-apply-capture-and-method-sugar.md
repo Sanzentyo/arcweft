@@ -5,7 +5,7 @@
 The 2026-07-07 implementation cut added function type syntax, typed closure
 function values, expected-type `_` placeholder abstraction, scoped `^` pipe
 substitution, canonical primitive labels, and strict runtime lowering for
-`map(_ body)`.
+`map(_ body)` and `filter(_ predicate)`.
 
 This request covers the remaining work needed to finish the revised Arcweft
 function/closure/currying/pipeline specification without adding compatibility
@@ -29,26 +29,20 @@ shims or preserving removed syntax.
      function types without an explicit annotation.
    - Specify diagnostics for ambiguous or multi-parameter placeholder regions.
 
-3. Define executable collection `filter`.
-   - Add the runtime expression or method-eval contract for
-     `choices.filter(_.enabled)`.
-   - Specify sequence-kind preservation or normalization to `Vec<T>`.
-   - Include strict runtime and pure-helper behavior if they differ.
-
-4. Define method-chain fallback sugar.
+3. Define method-chain fallback sugar.
    - Resolution order must be: inherent method, trait method, then data-last
      callable fallback.
    - Ambiguity diagnostics must identify the conflicting candidates.
    - The design must preserve current explicit method-call behavior where a real
      method exists.
 
-5. Define closure capture, lifetime, and effect diagnostics.
+4. Define closure capture, lifetime, and effect diagnostics.
    - Specify capture inventory format.
    - Specify diagnostics for captures crossing `await`, `yield`, thread,
      line-task, and defer boundaries.
    - Specify how closure effects compose into existing effect rows.
 
-6. Define LSP/tooling evidence.
+5. Define LSP/tooling evidence.
    - Inlay hints for inferred closure/function types.
    - Lints for numeric fallback inside inferred closure bodies.
    - Structured diagnostics for removed or ambiguous function syntax.
@@ -60,10 +54,9 @@ shims or preserving removed syntax.
    representation while keeping existing `RuntimeExpr::Map` as an optimization
    if the design chooses to.
 3. Add inference for `_` without an expected function type.
-4. Add executable `filter`.
-5. Add method-chain fallback sugar and ambiguity diagnostics.
-6. Add capture/effect/lifetime diagnostics.
-7. Add LSP/inlay/lint evidence.
+4. Add method-chain fallback sugar and ambiguity diagnostics.
+5. Add capture/effect/lifetime diagnostics.
+6. Add LSP/inlay/lint evidence.
 
 ## Tests to specify
 
@@ -71,7 +64,6 @@ shims or preserving removed syntax.
 - `let high = (_ > 80i64)`
 - `let add_one = add(_, 1i64)`
 - `values.map(_ + 1i64).sum()`
-- `choices.filter(_.enabled).map(_.label)`
 - `threshold |> choices.filter(_.score >= ^)`
 - `fn f(a: i64)(b: i64) -> i64 { ... }` called as `f(1i64)(2i64)`
 - ambiguity between an inherent method and a data-last callable fallback
@@ -83,6 +75,8 @@ shims or preserving removed syntax.
 - Do not add compatibility shims for old call or method forms.
 - Do not redesign the implemented expected-type `_` path unless a concrete bug
   is found.
+- Do not redesign the implemented executable `filter` path unless a concrete
+  bug is found.
 - Keep lower crates Sans I/O and preserve existing crate boundary direction.
 
 ## Expected output

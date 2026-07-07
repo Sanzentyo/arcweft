@@ -17,6 +17,7 @@ use crate::value::{
     runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
     runtime_sequence_dense_u128, runtime_sequence_dense_usize,
     runtime_sequence_from_literal_values, runtime_sequence_values,
+    runtime_value_into_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
@@ -275,6 +276,39 @@ fn vm_pure_backend_sums_local_i64_sequence_by_borrow() {
         .expect("pure helper sums local sequence");
 
     assert_eq!(result.value, RuntimeValue::i64(53));
+}
+
+#[test]
+fn vm_pure_backend_filters_sequence_values() {
+    let request = PureFunctionRequest::new(
+        "filter_scores",
+        RuntimeExpr::Filter {
+            source: Box::new(RuntimeExpr::Local("scores".to_owned())),
+            param: "score".to_owned(),
+            body: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("score".to_owned())),
+                op: RuntimeBinaryOp::Gt,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(15))),
+            }),
+        },
+        [RuntimeBinding {
+            name: "scores".to_owned(),
+            value: runtime_sequence_values(vec![
+                RuntimeValue::i64(18),
+                RuntimeValue::i64(15),
+                RuntimeValue::i64(20),
+            ]),
+        }],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("pure helper filters sequence");
+
+    assert_eq!(
+        runtime_value_into_sequence_values(result.value).expect("filter returns a sequence"),
+        [RuntimeValue::i64(18), RuntimeValue::i64(20)]
+    );
 }
 
 #[test]

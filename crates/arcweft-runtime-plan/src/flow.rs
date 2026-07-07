@@ -616,7 +616,7 @@ fn rewrite_known_record_projections_in_expr(expr: &mut RuntimeExpr, env: &[(Stri
         | RuntimeExpr::TraitCall { receiver, args, .. } => {
             rewrite_known_record_projections_in_receiver_args(receiver, args, env);
         }
-        RuntimeExpr::Map { source, body, .. } => {
+        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
             rewrite_known_record_projections_in_expr(source, env);
             rewrite_known_record_projections_in_expr(body, env);
         }
@@ -1017,7 +1017,7 @@ fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
                     .map(count_runtime_expr_pure_calls)
                     .sum::<usize>()
         }
-        RuntimeExpr::Map { source, body, .. } => {
+        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
             count_runtime_expr_pure_calls(source) + count_runtime_expr_pure_calls(body)
         }
         RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
@@ -1220,7 +1220,7 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
                     .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
                     .sum::<usize>()
         }
-        RuntimeExpr::Map { source, body, .. } => {
+        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
             count_runtime_expr_local_uses_by_name(source, name)
                 + count_runtime_expr_local_uses_by_name(body, name)
         }

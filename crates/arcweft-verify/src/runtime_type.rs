@@ -454,6 +454,12 @@ impl<'a> RuntimeTypeValidator<'a> {
                 self.validate_expr(&format!("{path}.body"), body);
                 RuntimeShape::BracketSeq
             }
+            RuntimeExpr::Filter { source, body, .. } => {
+                self.validate_expr(&format!("{path}.source"), source);
+                let shape = self.validate_expr(&format!("{path}.body"), body);
+                self.require_bool(path, shape, "filter predicate");
+                RuntimeShape::BracketSeq
+            }
             RuntimeExpr::Sum { source } => {
                 self.validate_expr(&format!("{path}.source"), source);
                 RuntimeShape::Int

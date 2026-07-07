@@ -304,6 +304,28 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     });
                 dst
             }
+            RuntimeExpr::Filter {
+                source,
+                param,
+                body,
+            } => {
+                let source = self.lower(source);
+                let _ = self.frame.local(
+                    param,
+                    self.inventory.intern_string(param),
+                    self.inventory.dynamic_ty(),
+                );
+                let body = self.lower(body);
+                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let intrinsic = self.intern_intrinsic("seq.filter", 2);
+                self.inventory
+                    .push_instruction(AwbcInstruction::CallIntrinsic {
+                        dst: Some(dst),
+                        intrinsic,
+                        args: vec![source, body],
+                    });
+                dst
+            }
             RuntimeExpr::Sum { source } => {
                 let source = self.lower(source);
                 let dst = self.frame.temp(self.inventory.i64_ty());

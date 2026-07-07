@@ -791,6 +791,11 @@ pub enum RuntimeExpr {
         param: String,
         body: Box<RuntimeExpr>,
     },
+    Filter {
+        source: Box<RuntimeExpr>,
+        param: String,
+        body: Box<RuntimeExpr>,
+    },
     Sum {
         source: Box<RuntimeExpr>,
     },
@@ -867,6 +872,7 @@ impl RuntimeExpr {
             | Self::SpreadArg(_)
             | Self::MethodCall { .. }
             | Self::Map { .. }
+            | Self::Filter { .. }
             | Self::Sum { .. }
             | Self::IfLet { .. }
             | Self::Match { .. } => false,
@@ -901,6 +907,7 @@ impl fmt::Display for RuntimeExpr {
             Self::SpreadArg(expr) => write!(f, "{expr}..."),
             Self::MethodCall { method, .. } => write!(f, ".{method}()"),
             Self::Map { .. } => f.write_str("map"),
+            Self::Filter { .. } => f.write_str("filter"),
             Self::Sum { .. } => f.write_str("sum"),
             Self::Unary { op, .. } => f.write_str(op.as_label()),
             Self::Binary { op, .. } => f.write_str(op.as_label()),

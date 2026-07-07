@@ -3,13 +3,14 @@ use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
-    RuntimeExactInteger, RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic,
-    RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue,
-    evaluate_binary, evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
-    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
-    evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_numeric_op,
-    evaluate_std_float_intrinsic, evaluate_unary, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    RuntimeExactInteger, RuntimeExpr, RuntimeFieldExpr, RuntimeFieldValue, RuntimeISizeValue,
+    RuntimeIntrinsic, RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp,
+    RuntimeValue, evaluate_binary, evaluate_core_iter_collect_intrinsic,
+    evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
+    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
+    evaluate_core_range_intrinsic, evaluate_numeric_op, evaluate_std_float_intrinsic,
+    evaluate_unary, runtime_sequence_values, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 
 mod aot;
@@ -1326,28 +1327,12 @@ impl PureEvaluator {
                 end,
                 inclusive,
             } => self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive),
-            RuntimeExpr::Record(fields) => fields
-                .iter()
-                .map(|field| {
-                    Ok(RuntimeFieldValue {
-                        name: field.name.clone(),
-                        value: self.evaluate_expr(&field.value)?,
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::Record),
+            RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields),
             RuntimeExpr::Variant {
                 path,
                 name,
                 payload,
-            } => Ok(RuntimeValue::Variant {
-                path: path.clone(),
-                name: name.clone(),
-                payload: payload
-                    .as_ref()
-                    .map(|expr| self.evaluate_expr(expr).map(Box::new))
-                    .transpose()?,
-            }),
+            } => self.evaluate_variant_expr(path.as_ref(), name, payload.as_deref()),
             RuntimeExpr::Field { target, field } => self.evaluate_field_expr(target, field),
             RuntimeExpr::ProjectTuple { target, ordinal } => {
                 self.evaluate_project_tuple_expr(target, *ordinal)
@@ -1374,6 +1359,11 @@ impl PureEvaluator {
                 param,
                 body,
             } => self.evaluate_map_expr(source, param, body),
+            RuntimeExpr::Filter {
+                source,
+                param,
+                body,
+            } => self.evaluate_filter_expr(source, param, body),
             RuntimeExpr::Sum { source } => self.evaluate_sum_expr(source),
             RuntimeExpr::Unary { op, expr } => {
                 let value = self.evaluate_expr(expr)?;
@@ -1397,6 +1387,37 @@ impl PureEvaluator {
                 })
             }
         }
+    }
+
+    fn evaluate_record_expr(
+        &mut self,
+        fields: &[RuntimeFieldExpr],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        fields
+            .iter()
+            .map(|field| {
+                Ok(RuntimeFieldValue {
+                    name: field.name.clone(),
+                    value: self.evaluate_expr(&field.value)?,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::Record)
+    }
+
+    fn evaluate_variant_expr(
+        &mut self,
+        path: Option<&String>,
+        name: &str,
+        payload: Option<&RuntimeExpr>,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        Ok(RuntimeValue::Variant {
+            path: path.cloned(),
+            name: name.to_owned(),
+            payload: payload
+                .map(|expr| self.evaluate_expr(expr).map(Box::new))
+                .transpose()?,
+        })
     }
 
     fn evaluate_repeat_seq_expr(
@@ -1540,6 +1561,33 @@ impl PureEvaluator {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(runtime_sequence_values)
+    }
+
+    fn evaluate_filter_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let iterator = match RuntimeIterator::from_value(self.evaluate_expr(source)?) {
+            Ok(iterator) => iterator,
+            Err(value) => {
+                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                    &value,
+                )));
+            }
+        };
+        let mut filtered = Vec::new();
+        for item in iterator.collect::<Vec<_>>() {
+            self.env.push_scope_with_capacity(1);
+            self.env.set(param.to_owned(), item.clone());
+            let keep = self.evaluate_bool(body);
+            self.env.pop_scope();
+            if keep? {
+                filtered.push(item);
+            }
+        }
+        Ok(runtime_sequence_values(filtered))
     }
 
     fn evaluate_sum_expr(

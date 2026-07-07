@@ -1459,6 +1459,9 @@ impl TypeChecker<'_> {
             "map" => BuiltinCollectionMethodCallOutcome::Checked(
                 self.check_vec_map_method_call(receiver_type, args),
             ),
+            "filter" => BuiltinCollectionMethodCallOutcome::Checked(
+                self.check_vec_filter_method_call(receiver_type, args),
+            ),
             "sum" => BuiltinCollectionMethodCallOutcome::Checked(
                 self.check_vec_sum_method_call(receiver_type, args),
             ),

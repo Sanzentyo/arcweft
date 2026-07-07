@@ -1615,12 +1615,12 @@ impl EntryParameterCollector {
                 source,
                 param,
                 body,
-            } => {
-                self.collect_expr(source);
-                self.collect_with_declared(std::slice::from_ref(param), |this| {
-                    this.collect_expr(body);
-                });
             }
+            | RuntimeExpr::Filter {
+                source,
+                param,
+                body,
+            } => self.collect_scoped_expr(source, param, body),
             RuntimeExpr::Binary { lhs, rhs, .. } => {
                 self.collect_expr(lhs);
                 self.collect_expr(rhs);
@@ -1665,6 +1665,13 @@ impl EntryParameterCollector {
         for arg in args {
             self.collect_expr(arg);
         }
+    }
+
+    fn collect_scoped_expr(&mut self, source: &RuntimeExpr, param: &String, body: &RuntimeExpr) {
+        self.collect_expr(source);
+        self.collect_with_declared(std::slice::from_ref(param), |this| {
+            this.collect_expr(body);
+        });
     }
 
     fn collect_optional_expr(&mut self, expr: Option<&RuntimeExpr>) {

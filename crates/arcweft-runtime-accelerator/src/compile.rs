@@ -834,7 +834,7 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
             8 + runtime_expr_work_units(receiver)
                 + args.iter().map(runtime_expr_work_units).sum::<usize>()
         }
-        RuntimeExpr::Map { source, body, .. } => {
+        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
             8 + runtime_expr_work_units(source) + runtime_expr_work_units(body)
         }
         RuntimeExpr::Sum { source } => 4 + runtime_expr_work_units(source),
