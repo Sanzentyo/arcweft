@@ -428,6 +428,57 @@ flow @flow.closure_return closure_return {
 }
 
 #[test]
+fn closure_capture_inventory_records_immutable_local_capture() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_capture_inventory closure_capture_inventory {
+    let limit: i64 = 80i64
+    let is_high = |score: i64| -> bool {
+        score >= limit
+    }
+    let ok: bool = is_high(81i64)
+    log.info(ok)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure capture fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure capture fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    let inventory = report
+        .closure_captures
+        .iter()
+        .find(|inventory| {
+            inventory
+                .captures
+                .iter()
+                .any(|capture| capture.name == "limit")
+        })
+        .expect("closure capture inventory records the outer local");
+    assert!(
+        inventory
+            .captures
+            .iter()
+            .any(|capture| capture.name == "limit" && capture.ty == TypeKind::I64),
+        "expected `limit` to be captured as i64, got {:?}",
+        inventory.captures
+    );
+    assert!(
+        inventory
+            .captures
+            .iter()
+            .all(|capture| capture.name != "score"),
+        "closure parameter must not be reported as a capture: {:?}",
+        inventory.captures
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"
@@ -540,6 +591,32 @@ flow @flow.curried_closure_return curried_closure_return {
             )
         }),
         "expected outer closure to typecheck as i64 -> (i64 -> bool)"
+    );
+    let inventory = report
+        .closure_captures
+        .iter()
+        .find(|inventory| {
+            inventory
+                .captures
+                .iter()
+                .any(|capture| capture.name == "min")
+        })
+        .expect("inner closure should capture the outer closure parameter");
+    assert!(
+        inventory
+            .captures
+            .iter()
+            .any(|capture| capture.name == "min" && capture.ty == TypeKind::I64),
+        "expected `min` to be captured as i64, got {:?}",
+        inventory.captures
+    );
+    assert!(
+        inventory
+            .captures
+            .iter()
+            .all(|capture| capture.name != "value"),
+        "inner closure parameter must not be reported as a capture: {:?}",
+        inventory.captures
     );
 }
 

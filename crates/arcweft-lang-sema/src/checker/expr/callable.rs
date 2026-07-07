@@ -24,13 +24,14 @@ impl TypeChecker<'_> {
         if name == "assume" {
             return Some(TypeKind::Unit);
         }
-        if self.symbol_type(name) == Some(&TypeKind::entity_ref(EntityKind::Character)) {
+        let symbol_ty = self.symbol_type_with_capture(name);
+        if symbol_ty.as_ref() == Some(&TypeKind::entity_ref(EntityKind::Character)) {
             for arg in args {
                 self.check_expr(arg.value());
             }
             return Some(TypeKind::SpeakerPreset(EntityKind::Character));
         }
-        if self.symbol_type(name) == Some(&TypeKind::SpeakerPreset(EntityKind::Character)) {
+        if symbol_ty.as_ref() == Some(&TypeKind::SpeakerPreset(EntityKind::Character)) {
             for arg in args {
                 self.check_expr(arg.value());
             }
@@ -52,7 +53,7 @@ impl TypeChecker<'_> {
                 .collect::<Vec<_>>();
             return Some(TypeKind::Option(Box::new(first_arg_type(&arg_types))));
         }
-        if let Some(callee_ty @ TypeKind::Function { .. }) = self.symbol_type(name).cloned() {
+        if let Some(callee_ty @ TypeKind::Function { .. }) = symbol_ty {
             return Some(self.check_known_function_value_call(
                 expression_id,
                 Some(name),

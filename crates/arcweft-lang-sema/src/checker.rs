@@ -233,6 +233,20 @@ pub enum TypedLoweringEvidenceKind {
     DataLastMethodFallback { method: String, arg_count: usize },
 }
 
+/// One local binding captured by a closure expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClosureCapture {
+    pub name: String,
+    pub ty: TypeKind,
+}
+
+/// Machine-readable capture inventory for one closure expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClosureCaptureInventory {
+    pub expression_id: TypeExpressionId,
+    pub captures: Vec<ClosureCapture>,
+}
+
 /// Machine-readable type-check result used by tooling and profiling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeCheckReport {
@@ -241,6 +255,7 @@ pub struct TypeCheckReport {
     pub stats: TypeCheckStats,
     pub judgments: Vec<TypeJudgment>,
     pub typed_lowering_evidence: Vec<TypedLoweringEvidence>,
+    pub closure_captures: Vec<ClosureCaptureInventory>,
     pub effects: EffectAnalysisReport,
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
     pub trait_catalog: TraitCatalog,
@@ -273,6 +288,7 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
         stats: checker.stats,
         judgments: checker.judgments,
         typed_lowering_evidence: checker.typed_lowering_evidence,
+        closure_captures: checker.closure_captures,
         effects,
         for_iteration_evidence: checker.for_iteration_evidence,
         trait_catalog: checker.trait_catalog,
@@ -357,6 +373,8 @@ struct TypeChecker<'a> {
     stats: TypeCheckStats,
     judgments: Vec<TypeJudgment>,
     typed_lowering_evidence: Vec<TypedLoweringEvidence>,
+    closure_capture_stack: Vec<ClosureCaptureFrame>,
+    closure_captures: Vec<ClosureCaptureInventory>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
 }
@@ -422,6 +440,13 @@ impl ActionParam {
 
 #[derive(Clone, Debug, Default)]
 struct LocalBindingSnapshot(Vec<(String, Option<TypeKind>)>);
+
+#[derive(Clone, Debug)]
+struct ClosureCaptureFrame {
+    expression_id: TypeExpressionId,
+    locals: HashSet<String>,
+    captures: BTreeMap<String, TypeKind>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum YieldContext {
@@ -491,6 +516,8 @@ impl TypeChecker<'_> {
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
             typed_lowering_evidence: Vec::new(),
+            closure_capture_stack: Vec::new(),
+            closure_captures: Vec::new(),
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
         }
@@ -513,6 +540,9 @@ impl TypeChecker<'_> {
 
     fn bind_local(&mut self, name: String, ty: TypeKind) -> Option<TypeKind> {
         let previous = self.locals.insert(name.clone(), ty);
+        if let Some(frame) = self.closure_capture_stack.last_mut() {
+            frame.locals.insert(name.clone());
+        }
         if let Some(scope) = self.local_scope_stack.last_mut() {
             scope.0.push((name, previous.clone()));
         }
@@ -574,6 +604,57 @@ impl TypeChecker<'_> {
 
     fn record_typed_lowering_evidence(&mut self, evidence: TypedLoweringEvidence) {
         self.typed_lowering_evidence.push(evidence);
+    }
+
+    fn push_closure_capture_frame(
+        &mut self,
+        expression_id: TypeExpressionId,
+        locals: impl IntoIterator<Item = String>,
+    ) {
+        self.closure_capture_stack.push(ClosureCaptureFrame {
+            expression_id,
+            locals: locals.into_iter().collect(),
+            captures: BTreeMap::new(),
+        });
+    }
+
+    fn pop_closure_capture_frame(&mut self) {
+        let frame = self
+            .closure_capture_stack
+            .pop()
+            .expect("closure capture frame stack must stay balanced");
+        self.closure_captures.push(ClosureCaptureInventory {
+            expression_id: frame.expression_id,
+            captures: frame
+                .captures
+                .into_iter()
+                .map(|(name, ty)| ClosureCapture { name, ty })
+                .collect(),
+        });
+    }
+
+    fn record_closure_capture(&mut self, name: &str, ty: &TypeKind) {
+        for frame in self.closure_capture_stack.iter_mut().rev() {
+            if frame.locals.contains(name) {
+                break;
+            }
+            frame
+                .captures
+                .entry(name.to_owned())
+                .or_insert_with(|| ty.clone());
+        }
+    }
+
+    fn local_symbol_type_with_capture(&mut self, name: &str) -> Option<TypeKind> {
+        let ty = self.locals.get(name).cloned()?;
+        self.record_closure_capture(name, &ty);
+        Some(ty)
+    }
+
+    fn symbol_type_with_capture(&mut self, name: &str) -> Option<TypeKind> {
+        self.local_symbol_type_with_capture(name)
+            .or_else(|| self.global_symbols.get(name).cloned())
+            .or_else(|| self.env.symbol_type(name).cloned())
     }
 
     fn record_active_borrow_depth(&mut self) {

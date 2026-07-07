@@ -175,7 +175,13 @@ impl TypeChecker<'_> {
                 params,
                 return_type,
                 body,
-            } => Some(self.check_closure_expr(params, return_type.as_ref(), body, expected)),
+            } => Some(self.check_closure_expr(
+                params,
+                return_type.as_ref(),
+                body,
+                expected,
+                expression_id,
+            )),
             Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr, expected)),
             Expr::Block { statements, value } => {
                 self.check_block_expr_with_expected(statements, value.as_deref(), expected)
@@ -404,7 +410,7 @@ impl TypeChecker<'_> {
                 BorrowLocalState::Live(_) => {}
             }
         }
-        if let Some(ty) = self.symbol_type(path).cloned() {
+        if let Some(ty) = self.symbol_type_with_capture(path) {
             return Some(ty);
         }
         if let Some(ty) = self.function_value_type(path) {

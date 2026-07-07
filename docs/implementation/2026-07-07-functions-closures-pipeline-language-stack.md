@@ -158,6 +158,10 @@ Source briefs:
 - Return statements now compare their value type against the active
   function-like return boundary instead of relying only on tail-expression body
   checking. This catches mismatches such as `|| -> bool { return 1i64 }`.
+- Type-check reports now include closure capture inventory keyed by stable
+  expression IDs. Sema records deterministic local captures for closure bodies,
+  including captures of outer closure parameters by nested closures, while
+  excluding locals declared inside the closure itself.
 - Flow statement parsing now keeps multiline return-typed closure literals
   together as a single `let` statement by tracking existing CST punctuation
   depth while consuming statement continuations.
@@ -209,8 +213,9 @@ Source briefs:
   handle/trait method checks, preserving real methods before data-last fallback.
   Ambiguity diagnostics that compare real method and fallback candidates remain
   open.
-- Closure capture analysis, suspension-boundary lifetime diagnostics, and
-  effect-row integration for closure captures remain future work.
+- Closure capture inventory collection exists in sema. Suspension-boundary
+  lifetime diagnostics, effect-row integration for closure captures,
+  runtime-plan capture metadata policy, and LSP/tooling surfaces remain open.
 - LSP inlays and lints for inferred closure/function types and numeric fallback
   are not implemented in this cut.
 
