@@ -151,6 +151,15 @@ impl TypeExpressionId {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct ExprNodeKey(usize);
+
+impl ExprNodeKey {
+    fn from_expr(expr: &Expr) -> Self {
+        Self(std::ptr::from_ref::<Expr>(expr) as usize)
+    }
+}
+
 fn closure_effect_callable_id(expression_id: TypeExpressionId) -> CallableId {
     CallableId::new(format!("closure.expr.{}", expression_id.index()))
 }
@@ -398,6 +407,7 @@ struct TypeChecker<'a> {
     closure_inference_stack: Vec<ClosureInferenceContext>,
     closure_captures: Vec<ClosureCaptureInventory>,
     local_function_effects: HashMap<String, CallableId>,
+    closure_effect_callables_by_expr: HashMap<ExprNodeKey, CallableId>,
     last_checked_closure_effect_callable: Option<CallableId>,
     local_curried_signature_calls: HashMap<String, CurriedSignatureCallValue>,
     last_checked_curried_signature_call: Option<CurriedSignatureCallValue>,
@@ -616,6 +626,7 @@ impl TypeChecker<'_> {
             closure_inference_stack: Vec::new(),
             closure_captures: Vec::new(),
             local_function_effects: HashMap::new(),
+            closure_effect_callables_by_expr: HashMap::new(),
             last_checked_closure_effect_callable: None,
             local_curried_signature_calls: HashMap::new(),
             last_checked_curried_signature_call: None,
@@ -744,6 +755,17 @@ impl TypeChecker<'_> {
 
     fn record_typed_lowering_evidence(&mut self, evidence: TypedLoweringEvidence) {
         self.typed_lowering_evidence.push(evidence);
+    }
+
+    fn record_function_expr_effect_callable(&mut self, expr: &Expr, ty: &TypeKind) {
+        if !matches!(ty, TypeKind::Function { .. }) {
+            return;
+        }
+        let Some(callable) = self.last_checked_closure_effect_callable.clone() else {
+            return;
+        };
+        self.closure_effect_callables_by_expr
+            .insert(ExprNodeKey::from_expr(expr), callable);
     }
 
     fn push_closure_capture_frame(
@@ -1061,6 +1083,13 @@ impl TypeChecker<'_> {
     ) -> Option<CallableId> {
         if !matches!(ty, TypeKind::Function { .. }) {
             return None;
+        }
+        if let Some(callable) = self
+            .closure_effect_callables_by_expr
+            .get(&ExprNodeKey::from_expr(expr))
+            .cloned()
+        {
+            return Some(callable);
         }
         match expr {
             Expr::Closure { .. } => self.last_checked_closure_effect_callable.clone(),

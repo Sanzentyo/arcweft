@@ -1375,6 +1375,40 @@ effects { }
 }
 
 #[test]
+fn destructured_nested_tuple_inline_closure_composes_when_binding_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(((load, suffix), path): ((String -> String, String), String)) -> String {
+    return load(path)
+}
+
+flow @flow.destructured_nested_tuple_inline_closure_effect destructured_nested_tuple_inline_closure_effect
+effects { }
+{
+    let body = use_loader(((|path: String| -> String {
+        adapter.read_text(path = path)
+    }, ".bak"), "story.arcw"))
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("nested destructured higher-order fixture lowers");
+    validate_typecheck_ready(&hir).expect("nested destructured higher-order fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("nested destructured inline callback must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.destructured_nested_tuple_inline_closure_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected nested destructured inline callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn curried_higher_order_function_argument_composes_when_later_group_param_is_called() {
     let tree = parse_ok(
         r#"

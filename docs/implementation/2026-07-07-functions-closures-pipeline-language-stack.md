@@ -316,12 +316,12 @@ Source briefs:
   partial later-group callback application that composes only when the staged
   partial is finally called. Tuple-destructured callback parameters now project
   function-valued local bindings through semantic signature metadata, so a
-  caller-supplied local closure alias inside a tuple argument composes when the
-  destructured binding is directly invoked by the callee and stays effect-free
-  when the binding is only kept. Record/variant destructured callback
-  selectors, inline closure evidence for every nested tuple position, callback
-  invocations hidden inside returned/stored closures, and LSP-facing closure
-  effect evidence remain open. Save/load
+  caller-supplied local closure alias or inline closure expression inside a
+  nested tuple argument composes when the destructured binding is directly
+  invoked by the callee and stays effect-free when the binding is only kept.
+  Record/variant destructured callback selectors, callback invocations hidden
+  inside returned/stored closures, and LSP-facing closure effect evidence
+  remain open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints

@@ -87,6 +87,7 @@ impl TypeChecker<'_> {
             self.check_expr_kind_with_expected(expr, expected, expression_id)
         };
         if let Some(ty) = ty.as_ref() {
+            self.record_function_expr_effect_callable(expr, ty);
             self.record_type_judgment(
                 TypeJudgmentSubject::Expr {
                     id: expression_id,
