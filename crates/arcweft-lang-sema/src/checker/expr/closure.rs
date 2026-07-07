@@ -1,6 +1,6 @@
 use super::support::spread_item_type;
 use super::{CallArg, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
-use crate::checker::helpers::{type_kind_label, type_ref_kind};
+use crate::checker::helpers::{pattern_bindings_with_fallback, type_kind_label, type_ref_kind};
 use arcweft_lang_syntax::expr::ClosureParam;
 use arcweft_lang_syntax::types::TypeRef;
 
@@ -33,12 +33,6 @@ impl TypeChecker<'_> {
         let mut bindings = Vec::new();
         let mut function_params = Vec::new();
         for (index, param) in params.iter().enumerate() {
-            let Some(name) = param.simple_ident() else {
-                self.errors.push(TypeCheckError::new(
-                    "closure parameter pattern must currently bind a simple identifier".to_owned(),
-                ));
-                continue;
-            };
             let expected_param = expected_function.and_then(|(params, _)| params.get(index));
             let ty = param
                 .ty()
@@ -48,13 +42,14 @@ impl TypeChecker<'_> {
             if let Some(expected_param) = expected_param
                 && !self.types_compatible(expected_param, &ty)
             {
+                let label = closure_param_label(param);
                 self.errors.push(TypeCheckError::new(format!(
-                    "closure parameter `{name}` expects {}, but expected function parameter is {}",
+                    "closure parameter `{label}` expects {}, but expected function parameter is {}",
                     type_kind_label(&ty),
                     type_kind_label(expected_param)
                 )));
             }
-            bindings.push((name.to_owned(), ty.clone()));
+            bindings.extend(pattern_bindings_with_fallback(param.pattern(), &ty));
             function_params.push(ty);
         }
         self.push_closure_capture_frame(
@@ -251,4 +246,10 @@ impl TypeChecker<'_> {
 
 fn is_unknown_type(ty: &TypeKind) -> bool {
     matches!(ty, TypeKind::Named(name) if name == "_")
+}
+
+fn closure_param_label(param: &ClosureParam) -> String {
+    param
+        .simple_ident()
+        .map_or_else(|| format!("{:?}", param.pattern()), ToOwned::to_owned)
 }

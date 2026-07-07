@@ -497,6 +497,64 @@ flow @flow.closure_return closure_return {
 }
 
 #[test]
+fn closure_tuple_pattern_parameter_binds_body_locals() {
+    let tree = parse_ok(
+        r"
+fn closure_tuple_pattern() -> i64 {
+    let sum = |(left, right): (i64, i64)| -> i64 {
+        left + right
+    }
+    sum((1i64, 2i64))
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure tuple pattern fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure tuple pattern fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Function { params, return_type }
+                    if params
+                        == &[TypeKind::Tuple(vec![TypeKind::I64, TypeKind::I64])]
+                        && return_type.as_ref() == &TypeKind::I64
+            )
+        }),
+        "expected closure to typecheck as (i64, i64) tuple parameter -> i64"
+    );
+}
+
+#[test]
+fn closure_discard_parameter_does_not_require_binding_name() {
+    let tree = parse_ok(
+        r"
+fn closure_discard_parameter() -> i64 {
+    let always_one = |_: i64| -> i64 {
+        1i64
+    }
+    always_one(2i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure discard fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure discard fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn closure_capture_inventory_records_immutable_local_capture() {
     let tree = parse_ok(
         r"
