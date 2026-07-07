@@ -25,7 +25,10 @@ syntax still need typed lowering evidence.
 
 No-`^` data-last pipe lowering is now helper-aware for named pure helpers:
 non-exact helper arity lowers through function apply, while exact helper arity
-continues to use `RuntimeExpr::PureCall`.
+continues to use `RuntimeExpr::PureCall`. Sema and runtime-plan now agree that
+call RHS forms append the pipe LHS to the RHS call arguments, so
+`2i64 |> add(1i64)` and `2i64 |> add(lhs = 1i64)` typecheck and lower as
+data-last calls rather than as calls on the result of `add(...)`.
 
 Curried top-level function declarations now preserve source call-group
 boundaries in sema and runtime-plan callable application. `f(a, b)(c)` and
@@ -53,7 +56,9 @@ shims or preserving removed syntax.
    - Specify and implement AWBC closure allocation and bytecode apply semantics
      instead of the current `RuntimeExpr::Function` lowering diagnostic.
    - Extend the implemented helper-aware data-last pipe path to typed
-     non-helper callables and method-chain fallback.
+     non-helper callables. Method-chain fallback has typed runtime argument
+     order for positional and named data-last helper calls; spread fallback
+     remains open.
    - Do not redesign the implemented `RuntimeValue::Function` /
      `RuntimeExpr::Function` / `RuntimeExpr::Apply` substrate unless concrete
      evidence shows a flaw.

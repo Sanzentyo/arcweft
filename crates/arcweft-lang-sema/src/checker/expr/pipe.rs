@@ -37,6 +37,16 @@ fn data_last_pipe_call(lhs: &Expr, rhs: &Expr) -> Expr {
             args: args.to_vec(),
         };
     }
+    if let Expr::Call { callee, args } = rhs {
+        return Expr::Call {
+            callee: callee.clone(),
+            args: args
+                .iter()
+                .cloned()
+                .chain(std::iter::once(CallArg::Positional(lhs.clone())))
+                .collect(),
+        };
+    }
     Expr::Call {
         callee: Box::new(rhs.clone()),
         args: vec![CallArg::Positional(lhs.clone())],

@@ -665,6 +665,61 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_data_last_pipe_call_with_typecheck() {
+    let parsed = parse_source_text(
+        r#"
+#[pure]
+fn add(lhs: i64, rhs: i64) -> i64 {
+    return lhs + rhs
+}
+
+flow @flow.main main {
+    let positional = 2i64 |> add(1i64)
+    let named = 2i64 |> add(lhs = 1i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers data-last pipe calls");
+    let [
+        FlowOp::Let {
+            expr: positional, ..
+        },
+        FlowOp::Let { expr: named, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected positional and named pipe lets");
+    };
+    for expr in [positional, named] {
+        assert!(matches!(
+            expr,
+            RuntimeExpr::PureCall { args, .. }
+                if matches!(
+                    args.as_slice(),
+                    [
+                        RuntimeExpr::Value(lhs),
+                        RuntimeExpr::Value(rhs),
+                    ] if lhs == &RuntimeValue::i64(1) && rhs == &RuntimeValue::i64(2)
+                )
+        ));
+    }
+}
+
+#[test]
 fn runtime_plan_preserves_curried_call_group_application_samples() {
     let parsed = parse_source_text(
         r#"

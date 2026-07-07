@@ -128,6 +128,8 @@ struct Choice {
 flow main {
   let clamped = 10i64 |> clamp(0i64, ^, 100i64)
   let next = clamped |> plus_one
+  let summed: i64 = 2i64 |> add(1i64)
+  let named: i64 = 2i64 |> add(lhs = 1i64)
   let labels: Vec<String> = choices |> filter(_.enabled) |> map(_.label)
   log.info(labels)
   return next
@@ -153,6 +155,16 @@ flow main {
             FunctionSignature::new(
                 TypeKind::I64,
                 [FunctionParam::required("value", TypeKind::I64)],
+            ),
+        )
+        .with_function_signature(
+            "add",
+            FunctionSignature::new(
+                TypeKind::I64,
+                [
+                    FunctionParam::required("lhs", TypeKind::I64),
+                    FunctionParam::required("rhs", TypeKind::I64),
+                ],
             ),
         )
         .with_symbol(

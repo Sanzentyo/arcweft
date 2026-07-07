@@ -20,8 +20,10 @@ Source briefs:
 - Pipe placeholder `^` is scoped to the RHS of `|>`.
 - Pipe RHS with `^` substitutes the pipe LHS into the RHS expression before
   type checking and strict runtime lowering.
-- Pipe RHS without `^` currently lowers to the existing direct data-last call
-  path for general strict runtime expressions.
+- Pipe RHS without `^` appends the pipe LHS to RHS call arguments for both sema
+  and strict runtime-plan lowering. For example, `2i64 |> add(1i64)` and
+  `2i64 |> add(lhs = 1i64)` typecheck as data-last calls rather than as calls
+  on the result of `add(...)`.
 - Canonical primitive labels are enforced across sema/runtime-facing surfaces:
   `bool` and `char` are accepted; legacy `Bool`/`Char` aliases are rejected.
   Non-canonical primitive spellings such as `string` now produce diagnostics
@@ -47,7 +49,8 @@ Source briefs:
   executable `RuntimeExpr::Filter`/`RuntimeExpr::Map` path.
 - No-`^` data-last pipe lowering is helper-aware for named pure helpers:
   `2i64 |> add` lowers to function apply when the helper arity is not exact,
-  while `2i64 |> add(1i64)` can remain an exact `RuntimeExpr::PureCall`.
+  while `2i64 |> add(1i64)` and `2i64 |> add(lhs = 1i64)` can remain exact
+  `RuntimeExpr::PureCall` values.
 - Runtime function/apply substrate is now typed in the executable runtime:
   - `RuntimeValue::Function` stores parameters, body, and deterministic capture
     bindings.
@@ -332,7 +335,9 @@ coverage for expression lowering and whole-flow runtime-plan lowering of
 explicit single-parameter function annotations.
 
 The helper-aware data-last pipe cut has focused passing coverage for direct
-fallback calls, partial helper apply, and exact helper pure calls.
+fallback calls, partial helper apply, exact helper pure calls, and sema/runtime
+alignment for call RHS forms such as `2i64 |> add(1i64)` and
+`2i64 |> add(lhs = 1i64)`.
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies
