@@ -1,24 +1,15 @@
 use arcweft_bundle::resource_codec::ui::{
     RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax, ViewElementKind,
-    ViewProgramInstruction, ViewProgramResource, ViewRuntimeControlState,
-    ViewRuntimeControlVisualStyle, ViewRuntimeElementStyle, ViewRuntimeShadow,
-    ViewRuntimeShadowKind, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule,
-    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
+    ViewProgramInstruction, ViewProgramResource, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
+    ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleValue, ViewSurfaceResource,
 };
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::images::BundleImageCatalog;
 use arcweft_player_scene::input::InputController;
-use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::geometry::{
-    PreparedFrame, PreparedUiScene, RenderPreferences, RenderViewport,
-};
+use arcweft_render_wgpu::geometry::{PreparedFrame, RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::renderer::SharedRenderer;
-use arcweft_render_wgpu::ui_effects::UiTextureExtent;
-use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
-    UiCompositingGroup, UiPaintNode, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene,
-    UiSceneContext,
-};
+use arcweft_render_wgpu::view_effects::ViewTextureExtent;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
@@ -75,7 +66,8 @@ struct CaptureOutput {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ExactPlayerCaptureStats {
-    ui_scenes: u32,
+    runtime_surfaces: u32,
+    view_scenes: u32,
     primitives: u32,
     paint_nodes: u32,
 }
@@ -108,7 +100,7 @@ async fn render_capture() -> Result<CaptureOutput, String> {
         .await
         .map_err(|error| format!("request browser WebGPU device: {error}"))?;
 
-    let extent = UiTextureExtent::new(WIDTH, HEIGHT);
+    let extent = ViewTextureExtent::new(WIDTH, HEIGHT);
     let final_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("arcweft-seq06-13e1-web-exact-target"),
         size: wgpu::Extent3d {
@@ -158,11 +150,12 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     let content = content_stats(&rgba);
     if content.non_transparent_pixels == 0 {
         return Err(format!(
-            "browser WebGPU readback produced a fully transparent seq06.13e.1 candidate; adapter={} backend={:?} driver={}; player_ui_scenes={}; primitives={}; paint_nodes={}; max_channel={}",
+            "browser WebGPU readback produced a fully transparent seq06.13e.1 candidate; adapter={} backend={:?} driver={}; runtime_surfaces={}; player_view_scenes={}; primitives={}; paint_nodes={}; max_channel={}",
             adapter_info.name,
             adapter_info.backend,
             adapter_info.driver,
-            stats.ui_scenes,
+            stats.runtime_surfaces,
+            stats.view_scenes,
             stats.primitives,
             stats.paint_nodes,
             content.max_channel,
@@ -177,12 +170,6 @@ async fn render_capture() -> Result<CaptureOutput, String> {
 }
 
 fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), String> {
-    let scene = smoke_scene()?;
-    let stats = ExactPlayerCaptureStats {
-        ui_scenes: 1,
-        primitives: u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX),
-        paint_nodes: u32::try_from(scene.paint_nodes().len()).unwrap_or(u32::MAX),
-    };
     let viewport = RenderViewport {
         logical_width: WIDTH as f32,
         logical_height: HEIGHT as f32,
@@ -190,7 +177,10 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
         physical_height: HEIGHT,
         scale_factor: 1.0,
     };
-    let presentation = BundlePresentationSnapshot::default();
+    let presentation = BundlePresentationSnapshot {
+        surfaces: exact_surfaces()?,
+        ..BundlePresentationSnapshot::default()
+    };
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
     let prepared = PlayerFramePlanner::prepare(
@@ -206,19 +196,37 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
         },
     )
     .map_err(|error| format!("prepare seq06.13e.1 browser player frame: {error}"))?;
-    Ok((
-        prepared.frame.with_ui_scenes([PreparedUiScene::new(scene)]),
-        stats,
-    ))
+    let stats = ExactPlayerCaptureStats {
+        runtime_surfaces: u32::try_from(presentation.surfaces.len()).unwrap_or(u32::MAX),
+        view_scenes: u32::try_from(prepared.frame.view_scenes().len()).unwrap_or(u32::MAX),
+        primitives: u32::try_from(
+            prepared
+                .frame
+                .view_scenes()
+                .iter()
+                .map(|scene| scene.scene.primitives().len())
+                .sum::<usize>(),
+        )
+        .unwrap_or(u32::MAX),
+        paint_nodes: u32::try_from(
+            prepared
+                .frame
+                .view_scenes()
+                .iter()
+                .map(|scene| scene.scene.paint_nodes().len())
+                .sum::<usize>(),
+        )
+        .unwrap_or(u32::MAX),
+    };
+    Ok((prepared.frame, stats))
 }
 
-fn smoke_scene() -> Result<UiScene, String> {
-    let mut scene = UiScene::new(WIDTH as f32, HEIGHT as f32);
+fn exact_surfaces() -> Result<Vec<ViewRuntimeSurface>, String> {
     let style = exact_style_resource();
     let program = exact_view_program();
-    let styled_elements = program.runtime_element_styles_with_style(&style);
-    if !styled_elements.diagnostics.is_empty() {
-        let diagnostics = styled_elements
+    let styled_surfaces = program.runtime_surfaces_with_style(Some(&style));
+    if !styled_surfaces.diagnostics.is_empty() {
+        let diagnostics = styled_surfaces
             .diagnostics
             .diagnostics
             .iter()
@@ -226,24 +234,10 @@ fn smoke_scene() -> Result<UiScene, String> {
             .collect::<Vec<_>>()
             .join("; ");
         return Err(format!(
-            "resolve seq06.13e.1 exact ViewProgram element styles: {diagnostics}"
+            "resolve seq06.13e.1 exact ViewProgram surfaces: {diagnostics}"
         ));
     }
-
-    push_styled_card(
-        &mut scene,
-        &styled_elements.controls,
-        "rounded_inset_shadow_card",
-        HitRect::new(24.0, 24.0, 112.0, 72.0),
-    )?;
-    push_styled_card(
-        &mut scene,
-        &styled_elements.controls,
-        "mixed_outer_inset_shadow_card",
-        HitRect::new(176.0, 40.0, 112.0, 72.0),
-    )?;
-
-    Ok(scene)
+    Ok(styled_surfaces.controls)
 }
 
 fn exact_view_program() -> ViewProgramResource {
@@ -255,6 +249,22 @@ fn exact_view_program() -> ViewProgramResource {
             ViewProgramInstruction::CloseElement,
             panel_part("mixed_outer_inset_shadow_card"),
             ViewProgramInstruction::CloseElement,
+        ],
+        surfaces: vec![
+            ViewSurfaceResource::new(
+                "rounded_inset_shadow_card",
+                Some("view.InsetShadowExactFixture".to_owned()),
+                None,
+                ViewElementKind::Panel,
+                ViewRuntimeSurfaceBounds::from_px(24, 24, 112, 72),
+            ),
+            ViewSurfaceResource::new(
+                "mixed_outer_inset_shadow_card",
+                Some("view.InsetShadowExactFixture".to_owned()),
+                None,
+                ViewElementKind::Panel,
+                ViewRuntimeSurfaceBounds::from_px(176, 40, 112, 72),
+            ),
         ],
         ..ViewProgramResource::default()
     }
@@ -340,110 +350,6 @@ fn decl(property: &str, value: ViewStyleValue) -> ViewStyleDeclaration {
 
 fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewStyleValue {
     ViewStyleValue::Rgba(RgbaColor::rgba(red, green, blue, alpha))
-}
-
-fn push_styled_card(
-    scene: &mut UiScene,
-    styles: &[ViewRuntimeElementStyle],
-    public_id: &str,
-    bounds: HitRect,
-) -> Result<(), String> {
-    let visual = styles
-        .iter()
-        .find(|style| {
-            style.element == ViewElementKind::Panel
-                && style.part.as_deref().is_some_and(|part| part == public_id)
-        })
-        .ok_or_else(|| {
-            format!("seq06.13e.1 exact ViewProgram element style `{public_id}` was not resolved")
-        })?
-        .style
-        .visual_for_state(ViewRuntimeControlState::Normal);
-    let range = push_style_fill(scene, bounds, &visual, public_id)?;
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(bounds, compositing_effects_from_style(&visual))
-            .with_children(vec![direct(range.start, range.end)]),
-    ));
-    Ok(())
-}
-
-fn push_style_fill(
-    scene: &mut UiScene,
-    bounds: HitRect,
-    visual: &ViewRuntimeControlVisualStyle,
-    public_id: &str,
-) -> Result<UiPrimitiveRange, String> {
-    let fill = visual
-        .fill
-        .ok_or_else(|| format!("seq06.13e.1 exact surface style `{public_id}` missing fill"))?;
-    let radius = visual
-        .radius_milli
-        .map(milli_u32_to_f32)
-        .unwrap_or_default();
-    let start = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
-    scene.push_primitive(UiPrimitive::RoundedRect(UiRoundedRect {
-        bounds,
-        radius,
-        color: ui_rgba(fill),
-    }));
-    let end = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
-    Ok(UiPrimitiveRange { start, end })
-}
-
-fn compositing_effects_from_style(visual: &ViewRuntimeControlVisualStyle) -> UiCompositingEffects {
-    UiCompositingEffects {
-        box_shadows: UiBoxShadowList::new(
-            visual
-                .shadows
-                .iter()
-                .copied()
-                .map(ui_box_shadow_from_runtime),
-        ),
-        ..UiCompositingEffects::default()
-    }
-}
-
-fn ui_box_shadow_from_runtime(shadow: ViewRuntimeShadow) -> UiBoxShadow {
-    let offset_x = milli_i32_to_f32(shadow.offset_x_milli);
-    let offset_y = milli_i32_to_f32(shadow.offset_y_milli);
-    let blur = milli_u32_to_f32(shadow.blur_milli);
-    let spread = milli_i32_to_f32(shadow.spread_milli);
-    let radius = milli_u32_to_f32(shadow.radius_milli);
-    let color = ui_rgba(shadow.color);
-    match shadow.kind {
-        ViewRuntimeShadowKind::Outer => {
-            UiBoxShadow::outer(offset_x, offset_y, blur, spread, radius, color)
-        }
-        ViewRuntimeShadowKind::Inset => {
-            UiBoxShadow::inset(offset_x, offset_y, blur, spread, radius, color)
-        }
-    }
-}
-
-fn ui_rgba(color: RgbaColor) -> UiColorRgba8 {
-    UiColorRgba8 {
-        red: color.red,
-        green: color.green,
-        blue: color.blue,
-        alpha: color.alpha,
-    }
-}
-
-fn milli_i32_to_f32(value: i32) -> f32 {
-    value as f32 / 1_000.0
-}
-
-fn milli_u32_to_f32(value: u32) -> f32 {
-    value as f32 / 1_000.0
-}
-
-fn direct(start: u32, end: u32) -> UiPaintNode {
-    UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2D::IDENTITY,
-        opacity: 1.0,
-        clip: None,
-        primitive_range: UiPrimitiveRange { start, end },
-    })
 }
 
 fn create_readback_buffer(
@@ -567,15 +473,16 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
     let route_entries = [
-        "ViewProgramResource::runtime_element_styles_with_style",
+        "ViewProgramResource::runtime_surfaces_with_style",
+        "BundlePresentationSnapshot::surfaces",
         "ViewRuntimeControlVisualStyle fill/radius/shadows",
-        "UiRoundedRect primitive from tree-aware Panel part style",
-        "UiCompositingEffects::box_shadows",
+        "PlayerFramePlanner surface lowering to ViewScene",
+        "ViewRoundedRect primitive from player-owned surface resource",
+        "ViewCompositingEffects::box_shadows",
         "PlayerFramePlanner::prepare",
-        "PreparedFrame::with_ui_scenes",
         "SharedRenderer::render_to_view",
-        "UiBoxShadowPassPlan unified outer/inset pass list",
-        "UiCompositor::render_group",
+        "ViewBoxShadowPassPlan unified outer/inset pass list",
+        "ViewCompositor::render_group",
         "PASS_BOX_SHADOW WGSL kind flag",
         "WebAssembly-exported Arcweft WGPU texture copy/readback",
     ];
@@ -615,8 +522,14 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  \"stats\": {{").unwrap();
     writeln!(
         &mut json,
-        "    \"player_ui_scenes\": {},",
-        capture.stats.ui_scenes
+        "    \"runtime_surfaces\": {},",
+        capture.stats.runtime_surfaces
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"player_view_scenes\": {},",
+        capture.stats.view_scenes
     )
     .unwrap();
     writeln!(

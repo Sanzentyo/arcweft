@@ -2,7 +2,7 @@
 
 Status definitions:
 
-- **Supported now**: accepted by the retained UI CSS path and expected to flow through Takumi layout/cascade into Arcweft-owned direct/composited `UiScene` data.
+- **Supported now**: accepted by the retained UI CSS path and expected to flow through Takumi layout/cascade into Arcweft-owned direct/composited `ViewScene` data.
 - **Product data only**: represented by Arcweft data structures or evidence, but not yet fully rendered through the player path.
 - **Structured diagnostic**: accepted at parse/coverage time, but emits a typed diagnostic rather than a silent approximation.
 - **Intentionally rejected**: excluded from this cut because supporting it would synthesize nodes, require an unsupported runtime query model, or belong to a later sequence.
@@ -27,7 +27,7 @@ Status definitions:
 | Tokens | CSS custom property declarations (`--x`) | Product data only | Recorded in coverage data; not lowered to `StyleTokenBinding` in this cut. |
 | Tokens | `var(--x)` resolution | Supported now for coverage | Declared variable or fallback is accepted; missing variable emits `UnresolvedCssVariable`. |
 | Tokens | Arcweft style tokens + CSS variables | Product data only | Arcweft tokens remain authoritative product data; CSS variables do not override token registry entries yet. |
-| Layout | block / block-like retained UI | Supported now | Takumi layout result is the source; Arcweft lowers layout boxes into `UiScene` evidence. |
+| Layout | block / block-like retained UI | Supported now | Takumi layout result is the source; Arcweft lowers layout boxes into `ViewScene` evidence. |
 | Layout | inline retained UI | Supported now | Inline containers/text participate through Takumi and existing seq06.10/06.10a text substrate. |
 | Layout | flexbox | Supported now | First cut supports flex container/item properties, gap, margin, padding, and size constraints. |
 | Layout | grid | Structured diagnostic | `display:grid` and `grid-*` declarations are not rendered in this cut. |

@@ -1,33 +1,33 @@
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_compositor::{
-    UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
-    UiDirectPrimitiveRenderer, UiNoMaskTextures,
+use arcweft_render_wgpu::view_compositor::{
+    ViewCompositor, ViewCompositorError, ViewCompositorFrame, ViewCompositorTarget,
+    ViewDirectPrimitiveRenderer, ViewNoMaskTextures,
 };
-use arcweft_render_wgpu::ui_effects::UiTextureExtent;
-use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBoxShadow, UiBoxShadowCornerRadius, UiBoxShadowList, UiBoxShadowRadii,
-    UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene,
-    UiSceneContext,
+use arcweft_render_wgpu::view_effects::ViewTextureExtent;
+use arcweft_render_wgpu::view_scene::{
+    ViewAffine2D, ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList, ViewBoxShadowRadii,
+    ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup, ViewPaintNode,
+    ViewPrimitiveRange, ViewScene, ViewSceneContext,
 };
 
 struct NoopDirectRenderer;
 
-impl UiDirectPrimitiveRenderer for NoopDirectRenderer {
+impl ViewDirectPrimitiveRenderer for NoopDirectRenderer {
     fn render_direct_range(
         &mut self,
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
         _encoder: &mut wgpu::CommandEncoder,
-        _scene: &UiScene,
-        _context: &UiSceneContext,
-        _target: UiCompositorTarget<'_>,
-    ) -> Result<(), UiCompositorError> {
+        _scene: &ViewScene,
+        _context: &ViewSceneContext,
+        _target: ViewCompositorTarget<'_>,
+    ) -> Result<(), ViewCompositorError> {
         Ok(())
     }
 }
 
-fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiColorRgba8 {
-    UiColorRgba8 {
+fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewColorRgba8 {
+    ViewColorRgba8 {
         red,
         green,
         blue,
@@ -35,12 +35,12 @@ fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiColorRgba8 {
     }
 }
 
-fn direct(start: u32, end: u32) -> UiPaintNode {
-    UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2D::IDENTITY,
+fn direct(start: u32, end: u32) -> ViewPaintNode {
+    ViewPaintNode::Direct(ViewSceneContext {
+        transform: ViewAffine2D::IDENTITY,
         opacity: 1.0,
         clip: None,
-        primitive_range: UiPrimitiveRange { start, end },
+        primitive_range: ViewPrimitiveRange { start, end },
     })
 }
 
@@ -49,12 +49,12 @@ fn radii(
     top_right: (f32, f32),
     bottom_right: (f32, f32),
     bottom_left: (f32, f32),
-) -> UiBoxShadowRadii {
-    UiBoxShadowRadii::from_corners(
-        UiBoxShadowCornerRadius::new(top_left.0, top_left.1),
-        UiBoxShadowCornerRadius::new(top_right.0, top_right.1),
-        UiBoxShadowCornerRadius::new(bottom_right.0, bottom_right.1),
-        UiBoxShadowCornerRadius::new(bottom_left.0, bottom_left.1),
+) -> ViewBoxShadowRadii {
+    ViewBoxShadowRadii::from_corners(
+        ViewBoxShadowCornerRadius::new(top_left.0, top_left.1),
+        ViewBoxShadowCornerRadius::new(top_right.0, top_right.1),
+        ViewBoxShadowCornerRadius::new(bottom_right.0, bottom_right.1),
+        ViewBoxShadowCornerRadius::new(bottom_left.0, bottom_left.1),
     )
 }
 
@@ -78,14 +78,14 @@ fn gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     .ok()
 }
 
-fn smoke_scene() -> UiScene {
-    let mut scene = UiScene::new(320.0, 180.0);
+fn smoke_scene() -> ViewScene {
+    let mut scene = ViewScene::new(320.0, 180.0);
 
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
             HitRect::new(24.0, 24.0, 112.0, 72.0),
-            UiCompositingEffects {
-                box_shadows: UiBoxShadowList::new([UiBoxShadow::inset_with_radii(
+            ViewCompositingEffects {
+                box_shadows: ViewBoxShadowList::new([ViewBoxShadow::inset_with_radii(
                     0.0,
                     3.0,
                     12.0,
@@ -93,18 +93,18 @@ fn smoke_scene() -> UiScene {
                     radii((18.0, 7.0), (6.0, 16.0), (20.0, 9.0), (8.0, 14.0)),
                     rgba(0, 0, 0, 144),
                 )]),
-                ..UiCompositingEffects::default()
+                ..ViewCompositingEffects::default()
             },
         )
         .with_children(vec![direct(0, 0)]),
     ));
 
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
             HitRect::new(176.0, 40.0, 112.0, 72.0),
-            UiCompositingEffects {
-                box_shadows: UiBoxShadowList::new([
-                    UiBoxShadow::outer_with_radii(
+            ViewCompositingEffects {
+                box_shadows: ViewBoxShadowList::new([
+                    ViewBoxShadow::outer_with_radii(
                         0.0,
                         10.0,
                         18.0,
@@ -112,9 +112,9 @@ fn smoke_scene() -> UiScene {
                         radii((24.0, 10.0), (8.0, 20.0), (16.0, 6.0), (4.0, 14.0)),
                         rgba(0, 0, 0, 96),
                     ),
-                    UiBoxShadow::inset(0.0, -2.0, 10.0, 1.0, 16.0, rgba(255, 255, 255, 88)),
+                    ViewBoxShadow::inset(0.0, -2.0, 10.0, 1.0, 16.0, rgba(255, 255, 255, 88)),
                 ]),
-                ..UiCompositingEffects::default()
+                ..ViewCompositingEffects::default()
             },
         )
         .with_children(vec![direct(0, 0)]),
@@ -132,7 +132,7 @@ fn per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_pat
     };
 
     let format = wgpu::TextureFormat::Rgba8Unorm;
-    let extent = UiTextureExtent::new(320, 180);
+    let extent = ViewTextureExtent::new(320, 180);
     let final_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("arcweft-view-box-shadow-smoke-target"),
         size: wgpu::Extent3d {
@@ -155,9 +155,9 @@ fn per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_pat
     });
     let scene = smoke_scene();
     let mut direct_renderer = NoopDirectRenderer;
-    let mut mask_textures = UiNoMaskTextures;
-    let mut compositor = UiCompositor::new(&device, &queue, format);
-    let mut frame = UiCompositorFrame {
+    let mut mask_textures = ViewNoMaskTextures;
+    let mut compositor = ViewCompositor::new(&device, &queue, format);
+    let mut frame = ViewCompositorFrame {
         device: &device,
         queue: &queue,
         encoder: &mut encoder,

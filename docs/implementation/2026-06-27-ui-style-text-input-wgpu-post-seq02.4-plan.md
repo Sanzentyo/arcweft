@@ -65,7 +65,7 @@ Changed Rust file measurements at the validation point:
 | `crates/arcweft-ui/src/text_source.rs` | `arcweft-ui` | production | 3,101 | 131 | 0 | unified UI text source table |
 | `crates/arcweft-lang-syntax/src/ast/style.rs` | `arcweft-lang-syntax` | production | 1,876 | 89 | 0 | syntax-level style declaration data |
 | `crates/arcweft-lang-syntax/src/ast/view.rs` | `arcweft-lang-syntax` | production | 4,111 | 192 | 0 | syntax-level Component View DSL data |
-| `crates/arcweft-render-wgpu/src/ui_scene.rs` | `arcweft-render-wgpu` | production plus unit tests | 5,708 | 238 | 36 | renderer-facing direct-wgpu UI scene primitives |
+| `crates/arcweft-render-wgpu/src/view_scene.rs` | `arcweft-render-wgpu` | production plus unit tests | 5,708 | 238 | 36 | renderer-facing direct-wgpu UI scene primitives |
 | `crates/arcweft-presentation/src/lib.rs` | `arcweft-presentation` | facade plus existing tests | 11,889 | 475 | 2 | presentation facade exports |
 | `crates/arcweft-ui/src/lib.rs` | `arcweft-ui` | facade plus existing tests | 34,313 | 1,021 | 898 | UI facade exports and existing UI tests |
 | `crates/arcweft-lang-syntax/src/ast.rs` | `arcweft-lang-syntax` | facade | 209 | 14 | 0 | AST module exports |

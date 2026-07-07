@@ -38,9 +38,9 @@
   "route": [
     "Takumi typed CSS parse/cascade for authored CSS fixture",
     "arcweft-takumi-adapter box_shadow_list_from_takumi",
-    "UiCompositingEffects::box_shadows",
-    "UiBoxShadowPassPlan unified outer/inset pass list",
-    "UiCompositor::render_group",
+    "ViewCompositingEffects::box_shadows",
+    "ViewBoxShadowPassPlan unified outer/inset pass list",
+    "ViewCompositor::render_group",
     "PASS_BOX_SHADOW WGSL kind flag"
   ],
   "forbidden_paths": [

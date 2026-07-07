@@ -1,55 +1,55 @@
-use super::compositing::UiPaintNode;
+use super::compositing::ViewPaintNode;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_view::{TextEditorPart, TextFieldVisualBuffer};
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiScene {
+pub struct ViewScene {
     viewport_width: f32,
     viewport_height: f32,
-    contexts: Vec<UiSceneContext>,
-    primitives: Vec<UiPrimitive>,
-    paint_nodes: Vec<UiPaintNode>,
+    contexts: Vec<ViewSceneContext>,
+    primitives: Vec<ViewPrimitive>,
+    paint_nodes: Vec<ViewPaintNode>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiSceneContext {
-    pub transform: UiAffine2D,
+pub struct ViewSceneContext {
+    pub transform: ViewAffine2D,
     pub opacity: f32,
-    pub clip: Option<UiClip>,
-    pub primitive_range: UiPrimitiveRange,
+    pub clip: Option<ViewClip>,
+    pub primitive_range: ViewPrimitiveRange,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct UiPrimitiveRange {
+pub struct ViewPrimitiveRange {
     pub start: u32,
     pub end: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum UiPrimitive {
-    SolidRect(UiSolidRect),
-    RoundedRect(UiRoundedRect),
-    Border(UiBorder),
-    LinearGradient(UiLinearGradient),
-    Image(UiImagePrimitive),
-    GlyphRun(UiGlyphRun),
-    Selection(UiSelectionPrimitive),
-    Caret(UiCaretPrimitive),
-    CompositionUnderline(UiCompositionUnderline),
+pub enum ViewPrimitive {
+    SolidRect(ViewSolidRect),
+    RoundedRect(ViewRoundedRect),
+    Border(ViewBorder),
+    LinearGradient(ViewLinearGradient),
+    Image(ViewImagePrimitive),
+    GlyphRun(ViewGlyphRun),
+    Selection(ViewSelectionPrimitive),
+    Caret(ViewCaretPrimitive),
+    CompositionUnderline(ViewCompositionUnderline),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiTextFieldSceneStyle {
-    pub background: Option<UiColorRgba8>,
-    pub selection: UiColorRgba8,
-    pub caret: UiColorRgba8,
-    pub composition: UiColorRgba8,
+pub struct ViewTextFieldSceneStyle {
+    pub background: Option<ViewColorRgba8>,
+    pub selection: ViewColorRgba8,
+    pub caret: ViewColorRgba8,
+    pub composition: ViewColorRgba8,
     pub composition_thickness: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiAffine2D {
+pub struct ViewAffine2D {
     pub m11: f32,
     pub m12: f32,
     pub m21: f32,
@@ -59,13 +59,13 @@ pub struct UiAffine2D {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum UiClip {
+pub enum ViewClip {
     Rect(HitRect),
     RoundedRect { bounds: HitRect, radius: f32 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UiColorRgba8 {
+pub struct ViewColorRgba8 {
     pub red: u8,
     pub green: u8,
     pub blue: u8,
@@ -73,91 +73,91 @@ pub struct UiColorRgba8 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiSolidRect {
+pub struct ViewSolidRect {
     pub bounds: HitRect,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiRoundedRect {
+pub struct ViewRoundedRect {
     pub bounds: HitRect,
     pub radius: f32,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiBorder {
+pub struct ViewBorder {
     pub bounds: HitRect,
     pub radius: f32,
     pub width: f32,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiLinearGradient {
+pub struct ViewLinearGradient {
     pub bounds: HitRect,
     pub angle_degrees: f32,
-    pub stops: Vec<UiGradientStop>,
+    pub stops: Vec<ViewGradientStop>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiGradientStop {
+pub struct ViewGradientStop {
     pub offset: f32,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiImagePrimitive {
+pub struct ViewImagePrimitive {
     pub resource_index: u32,
     pub bounds: HitRect,
     pub opacity: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiGlyphRun {
+pub struct ViewGlyphRun {
     pub run_index: u32,
     pub bounds: HitRect,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiSelectionPrimitive {
+pub struct ViewSelectionPrimitive {
     pub target: Option<InteractionTarget>,
     pub bounds: HitRect,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiCaretPrimitive {
+pub struct ViewCaretPrimitive {
     pub target: Option<InteractionTarget>,
     pub bounds: HitRect,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiCompositionUnderline {
+pub struct ViewCompositionUnderline {
     pub target: Option<InteractionTarget>,
     pub bounds: HitRect,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
     pub thickness: f32,
-    pub style: UiUnderlineStyle,
+    pub style: ViewUnderlineStyle,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum UiUnderlineStyle {
+pub enum ViewUnderlineStyle {
     #[default]
     Solid,
     Dotted,
     Dashed,
 }
 
-impl Default for UiAffine2D {
+impl Default for ViewAffine2D {
     fn default() -> Self {
         Self::IDENTITY
     }
 }
 
-impl UiAffine2D {
+impl ViewAffine2D {
     pub const IDENTITY: Self = Self {
         m11: 1.0,
         m12: 0.0,
@@ -168,23 +168,23 @@ impl UiAffine2D {
     };
 }
 
-impl Default for UiTextFieldSceneStyle {
+impl Default for ViewTextFieldSceneStyle {
     fn default() -> Self {
         Self {
             background: None,
-            selection: UiColorRgba8 {
+            selection: ViewColorRgba8 {
                 red: 0x33,
                 green: 0x99,
                 blue: 0xff,
                 alpha: 0x66,
             },
-            caret: UiColorRgba8 {
+            caret: ViewColorRgba8 {
                 red: 0xff,
                 green: 0xff,
                 blue: 0xff,
                 alpha: 0xff,
             },
-            composition: UiColorRgba8 {
+            composition: ViewColorRgba8 {
                 red: 0xff,
                 green: 0xff,
                 blue: 0xff,
@@ -195,7 +195,7 @@ impl Default for UiTextFieldSceneStyle {
     }
 }
 
-impl UiScene {
+impl ViewScene {
     pub fn new(viewport_width: f32, viewport_height: f32) -> Self {
         Self {
             viewport_width,
@@ -206,20 +206,21 @@ impl UiScene {
         }
     }
 
-    pub fn push_context(&mut self, context: UiSceneContext) {
-        self.paint_nodes.push(UiPaintNode::Direct(context.clone()));
+    pub fn push_context(&mut self, context: ViewSceneContext) {
+        self.paint_nodes
+            .push(ViewPaintNode::Direct(context.clone()));
         self.contexts.push(context);
     }
 
-    pub fn push_primitive(&mut self, primitive: UiPrimitive) {
+    pub fn push_primitive(&mut self, primitive: ViewPrimitive) {
         self.primitives.push(primitive);
     }
 
-    pub fn push_paint_node(&mut self, node: UiPaintNode) {
+    pub fn push_paint_node(&mut self, node: ViewPaintNode) {
         self.paint_nodes.push(node);
     }
 
-    pub fn replace_paint_nodes(&mut self, paint_nodes: Vec<UiPaintNode>) {
+    pub fn replace_paint_nodes(&mut self, paint_nodes: Vec<ViewPaintNode>) {
         self.paint_nodes = paint_nodes;
     }
 
@@ -231,26 +232,26 @@ impl UiScene {
         self.viewport_height
     }
 
-    pub fn contexts(&self) -> &[UiSceneContext] {
+    pub fn contexts(&self) -> &[ViewSceneContext] {
         &self.contexts
     }
 
-    pub fn primitives(&self) -> &[UiPrimitive] {
+    pub fn primitives(&self) -> &[ViewPrimitive] {
         &self.primitives
     }
 
-    pub fn paint_nodes(&self) -> &[UiPaintNode] {
+    pub fn paint_nodes(&self) -> &[ViewPaintNode] {
         &self.paint_nodes
     }
 
     pub fn push_text_field_parts(
         &mut self,
         buffer: &TextFieldVisualBuffer,
-        style: &UiTextFieldSceneStyle,
-    ) -> UiPrimitiveRange {
+        style: &ViewTextFieldSceneStyle,
+    ) -> ViewPrimitiveRange {
         let start = u32::try_from(self.primitives.len()).unwrap_or(u32::MAX);
         if let Some(color) = style.background {
-            self.push_primitive(UiPrimitive::SolidRect(UiSolidRect {
+            self.push_primitive(ViewPrimitive::SolidRect(ViewSolidRect {
                 bounds: buffer.bounds(),
                 color,
             }));
@@ -258,27 +259,27 @@ impl UiScene {
         for part in buffer.parts() {
             match part.part() {
                 TextEditorPart::Selection => {
-                    self.push_primitive(UiPrimitive::Selection(UiSelectionPrimitive {
+                    self.push_primitive(ViewPrimitive::Selection(ViewSelectionPrimitive {
                         target: buffer.target().cloned(),
                         bounds: part.bounds(),
                         color: style.selection,
                     }));
                 }
                 TextEditorPart::Caret => {
-                    self.push_primitive(UiPrimitive::Caret(UiCaretPrimitive {
+                    self.push_primitive(ViewPrimitive::Caret(ViewCaretPrimitive {
                         target: buffer.target().cloned(),
                         bounds: part.bounds(),
                         color: style.caret,
                     }));
                 }
                 TextEditorPart::Composition | TextEditorPart::CompositionTarget => {
-                    self.push_primitive(UiPrimitive::CompositionUnderline(
-                        UiCompositionUnderline {
+                    self.push_primitive(ViewPrimitive::CompositionUnderline(
+                        ViewCompositionUnderline {
                             target: buffer.target().cloned(),
                             bounds: part.bounds(),
                             color: style.composition,
                             thickness: style.composition_thickness,
-                            style: UiUnderlineStyle::Solid,
+                            style: ViewUnderlineStyle::Solid,
                         },
                     ));
                 }
@@ -291,11 +292,11 @@ impl UiScene {
             }
         }
         let end = u32::try_from(self.primitives.len()).unwrap_or(u32::MAX);
-        let range = UiPrimitiveRange { start, end };
-        self.push_context(UiSceneContext {
-            transform: UiAffine2D::IDENTITY,
+        let range = ViewPrimitiveRange { start, end };
+        self.push_context(ViewSceneContext {
+            transform: ViewAffine2D::IDENTITY,
             opacity: 1.0,
-            clip: Some(UiClip::Rect(buffer.bounds())),
+            clip: Some(ViewClip::Rect(buffer.bounds())),
             primitive_range: range,
         });
         range
@@ -305,30 +306,30 @@ impl UiScene {
 #[cfg(test)]
 mod tests {
     use super::{
-        UiAffine2D, UiColorRgba8, UiPrimitive, UiPrimitiveRange, UiScene, UiSceneContext,
-        UiSolidRect, UiTextFieldSceneStyle,
+        ViewAffine2D, ViewColorRgba8, ViewPrimitive, ViewPrimitiveRange, ViewScene,
+        ViewSceneContext, ViewSolidRect, ViewTextFieldSceneStyle,
     };
-    use crate::ui_scene::UiPaintNode;
+    use crate::view_scene::ViewPaintNode;
     use arcweft_presentation::hit::HitRect;
     use arcweft_view::{TextEditState, TextEditorPart, TextFieldMetrics};
 
     #[test]
-    fn ui_scene_preserves_context_primitive_and_paint_node_order() {
-        let mut scene = UiScene::new(320.0, 180.0);
-        scene.push_primitive(UiPrimitive::SolidRect(UiSolidRect {
+    fn view_scene_preserves_context_primitive_and_paint_node_order() {
+        let mut scene = ViewScene::new(320.0, 180.0);
+        scene.push_primitive(ViewPrimitive::SolidRect(ViewSolidRect {
             bounds: HitRect::new(0.0, 0.0, 10.0, 10.0),
-            color: UiColorRgba8 {
+            color: ViewColorRgba8 {
                 red: 1,
                 green: 2,
                 blue: 3,
                 alpha: 255,
             },
         }));
-        scene.push_context(UiSceneContext {
-            transform: UiAffine2D::IDENTITY,
+        scene.push_context(ViewSceneContext {
+            transform: ViewAffine2D::IDENTITY,
             opacity: 1.0,
             clip: None,
-            primitive_range: UiPrimitiveRange { start: 0, end: 1 },
+            primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
         });
 
         assert!((scene.viewport_width() - 320.0).abs() < f32::EPSILON);
@@ -336,9 +337,9 @@ mod tests {
         assert_eq!(scene.primitives().len(), 1);
         assert_eq!(
             scene.contexts()[0].primitive_range,
-            UiPrimitiveRange { start: 0, end: 1 }
+            ViewPrimitiveRange { start: 0, end: 1 }
         );
-        assert!(matches!(scene.paint_nodes()[0], UiPaintNode::Direct(_)));
+        assert!(matches!(scene.paint_nodes()[0], ViewPaintNode::Direct(_)));
     }
 
     #[test]
@@ -366,22 +367,22 @@ mod tests {
                 .any(|part| part.part() == TextEditorPart::Composition)
         );
 
-        let mut scene = UiScene::new(320.0, 180.0);
-        let range = scene.push_text_field_parts(&buffer, &UiTextFieldSceneStyle::default());
+        let mut scene = ViewScene::new(320.0, 180.0);
+        let range = scene.push_text_field_parts(&buffer, &ViewTextFieldSceneStyle::default());
 
         assert_eq!(range, scene.contexts()[0].primitive_range);
-        assert!(matches!(scene.paint_nodes()[0], UiPaintNode::Direct(_)));
+        assert!(matches!(scene.paint_nodes()[0], ViewPaintNode::Direct(_)));
         assert!(
             scene
                 .primitives()
                 .iter()
-                .any(|primitive| matches!(primitive, UiPrimitive::Caret(_)))
+                .any(|primitive| matches!(primitive, ViewPrimitive::Caret(_)))
         );
         assert!(
             scene
                 .primitives()
                 .iter()
-                .any(|primitive| { matches!(primitive, UiPrimitive::CompositionUnderline(_)) })
+                .any(|primitive| { matches!(primitive, ViewPrimitive::CompositionUnderline(_)) })
         );
     }
 }

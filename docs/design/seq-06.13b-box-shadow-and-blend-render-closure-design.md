@@ -3,8 +3,8 @@
 ## Goal
 
 Close the seq06.13 visual gap for common card/button/popover styling by adding
-deterministic `box-shadow` rendering to the Arcweft-owned `UiScene` /
-`UiCompositor` path, while preserving the existing HSL-family blend support for
+deterministic `box-shadow` rendering to the Arcweft-owned `ViewScene` /
+`ViewCompositor` path, while preserving the existing HSL-family blend support for
 `hue`, `saturation`, `color`, and `luminosity`.
 
 ## Rendering Route
@@ -14,10 +14,10 @@ is not lowered to `filter: drop-shadow(...)`.
 
 The renderer route is:
 
-1. `ui_scene::compositing` owns `UiBoxShadow`, `UiBoxShadowKind`, and
-   `UiBoxShadowList`.
-2. `ui_box_shadow` owns pure pass planning and typed diagnostics.
-3. `UiCompositor` draws box-shadow passes into the group target before child
+1. `view_scene::compositing` owns `ViewBoxShadow`, `ViewBoxShadowKind`, and
+   `ViewBoxShadowList`.
+2. `view_box_shadow` owns pure pass planning and typed diagnostics.
+3. `ViewCompositor` draws box-shadow passes into the group target before child
    paint nodes.
 4. Existing foreground filters, clip-path, mask, backdrop-filter, blend, and
    opacity passes then operate on the group target.
@@ -30,7 +30,7 @@ CSS, canvas, or CPU bitmap fallback.
 | Feature | Decision |
 | --- | --- |
 | Outer shadow | Implemented from border box, spread, radius, offset, and color. |
-| Inset shadow | Deferred with `UiBoxShadowPlanError::InsetUnsupported`. |
+| Inset shadow | Deferred with `ViewBoxShadowPlanError::InsetUnsupported`. |
 | Spread radius | Implemented, including negative spread and collapsed no-op casters. |
 | Multiple shadows | Implemented in CSS paint order: later list entries first, first entry on top. |
 | Rounded corners | Implemented through body and shadow radii uniforms. |

@@ -13,7 +13,7 @@ use arcweft_render_wgpu::geometry::{
     RenderControlVisualStyle, RenderFontFamily, RenderPreferences, RenderScene,
     RenderTextInputControl, RenderViewport, RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
 };
-use arcweft_render_wgpu::ui_scene::UiFilter;
+use arcweft_render_wgpu::view_scene::ViewFilter;
 
 #[test]
 fn action_button_hover_uses_authored_fill_and_text_color() {
@@ -272,7 +272,7 @@ fn backdrop_filter_reaches_runtime_control_backdrop_plan() {
     );
     assert_eq!(
         backdrop.filters.filters(),
-        &[UiFilter::Blur { radius_px: 12.0 }]
+        &[ViewFilter::Blur { radius_px: 12.0 }]
     );
 }
 
@@ -401,7 +401,7 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
 
     assert_eq!(
         filter.filters.filters(),
-        &[UiFilter::Blur { radius_px: 2.5 }]
+        &[ViewFilter::Blur { radius_px: 2.5 }]
     );
     let paint = frame
         .control_paints
@@ -441,11 +441,11 @@ fn runtime_control_color_matrix_filters_reach_ui_filter_plan() {
     assert_eq!(
         backdrop.filters.filters(),
         &[
-            UiFilter::Brightness(1.2),
-            UiFilter::Contrast(0.9),
-            UiFilter::Saturate(1.4),
-            UiFilter::HueRotateDegrees(12.0),
-            UiFilter::Opacity(0.85),
+            ViewFilter::Brightness(1.2),
+            ViewFilter::Contrast(0.9),
+            ViewFilter::Saturate(1.4),
+            ViewFilter::HueRotateDegrees(12.0),
+            ViewFilter::Opacity(0.85),
         ]
     );
 }

@@ -1,6 +1,6 @@
 //! Clip-path geometry planning for the UI compositor.
 
-use crate::ui_scene::{UiClipPath, UiFillRule, UiLength, UiPoint, UiShapeRadius};
+use crate::view_scene::{ViewClipPath, ViewFillRule, ViewLength, ViewPoint, ViewShapeRadius};
 use arcweft_presentation::hit::HitRect;
 use thiserror::Error;
 
@@ -12,68 +12,68 @@ const PATH_EPSILON: f32 = 0.0001;
 
 /// Device-independent clip geometry consumed by the analytic compositor shader.
 #[derive(Clone, Debug, PartialEq)]
-pub enum UiClipGeometryPlan {
+pub enum ViewClipGeometryPlan {
     None,
     Inset {
         rect: HitRect,
         radii_px: [f32; 4],
     },
     Ellipse {
-        center: UiClipVertex,
+        center: ViewClipVertex,
         radius_x_px: f32,
         radius_y_px: f32,
     },
     Polygon {
-        fill_rule: UiFillRule,
-        vertices: Vec<UiClipVertex>,
+        fill_rule: ViewFillRule,
+        vertices: Vec<ViewClipVertex>,
     },
     Path {
-        fill_rule: UiFillRule,
-        commands: Vec<UiClipPathCommandPlan>,
-        edges: Vec<UiClipPathEdge>,
+        fill_rule: ViewFillRule,
+        commands: Vec<ViewClipPathCommandPlan>,
+        edges: Vec<ViewClipPathEdge>,
     },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiClipVertex {
+pub struct ViewClipVertex {
     pub x: f32,
     pub y: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiClipPathEdge {
-    pub from: UiClipVertex,
-    pub to: UiClipVertex,
+pub struct ViewClipPathEdge {
+    pub from: ViewClipVertex,
+    pub to: ViewClipVertex,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum UiClipPathCommandPlan {
-    MoveTo(UiClipVertex),
+pub enum ViewClipPathCommandPlan {
+    MoveTo(ViewClipVertex),
     LineTo {
-        from: UiClipVertex,
-        to: UiClipVertex,
+        from: ViewClipVertex,
+        to: ViewClipVertex,
     },
     QuadraticTo {
-        from: UiClipVertex,
-        control: UiClipVertex,
-        to: UiClipVertex,
+        from: ViewClipVertex,
+        control: ViewClipVertex,
+        to: ViewClipVertex,
         subdivisions: u8,
     },
     CubicTo {
-        from: UiClipVertex,
-        control_0: UiClipVertex,
-        control_1: UiClipVertex,
-        to: UiClipVertex,
+        from: ViewClipVertex,
+        control_0: ViewClipVertex,
+        control_1: ViewClipVertex,
+        to: ViewClipVertex,
         subdivisions: u8,
     },
     ClosePath {
-        from: UiClipVertex,
-        to: UiClipVertex,
+        from: ViewClipVertex,
+        to: ViewClipVertex,
     },
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum UiClipPathPlanError {
+pub enum ViewClipPathPlanError {
     #[error("CSS path() clip-path requires supported SVG path data commands")]
     PathUnsupported,
     #[error("clip-path url resource `{resource}` requires reusable vector clip resources")]
@@ -98,17 +98,17 @@ pub enum UiClipPathPlanError {
     TooManyPolygonVertices { count: usize, maximum: usize },
 }
 
-impl UiClipGeometryPlan {
+impl ViewClipGeometryPlan {
     pub fn from_clip_path(
-        clip_path: Option<&UiClipPath>,
+        clip_path: Option<&ViewClipPath>,
         bounds: HitRect,
-    ) -> Result<Self, UiClipPathPlanError> {
+    ) -> Result<Self, ViewClipPathPlanError> {
         let Some(clip_path) = clip_path else {
             return Ok(Self::None);
         };
 
         match clip_path {
-            UiClipPath::Inset { inset, radius } => {
+            ViewClipPath::Inset { inset, radius } => {
                 let top = resolve_length(&inset[0], bounds.height, "inset-top")?;
                 let right = resolve_length(&inset[1], bounds.width, "inset-right")?;
                 let bottom = resolve_length(&inset[2], bounds.height, "inset-bottom")?;
@@ -143,7 +143,7 @@ impl UiClipGeometryPlan {
                 ];
                 Ok(Self::Inset { rect, radii_px })
             }
-            UiClipPath::Circle { radius, center } => {
+            ViewClipPath::Circle { radius, center } => {
                 let center = resolve_point(center, bounds)?;
                 let radius_px = resolve_shape_radius(radius, bounds, true)?;
                 Ok(Self::Ellipse {
@@ -152,7 +152,7 @@ impl UiClipGeometryPlan {
                     radius_y_px: radius_px,
                 })
             }
-            UiClipPath::Ellipse {
+            ViewClipPath::Ellipse {
                 radius_x,
                 radius_y,
                 center,
@@ -161,9 +161,9 @@ impl UiClipGeometryPlan {
                 radius_x_px: resolve_shape_radius(radius_x, bounds, true)?,
                 radius_y_px: resolve_shape_radius(radius_y, bounds, false)?,
             }),
-            UiClipPath::Polygon { fill_rule, points } => {
+            ViewClipPath::Polygon { fill_rule, points } => {
                 if points.len() > MAX_CLIP_POLYGON_VERTICES {
-                    return Err(UiClipPathPlanError::TooManyPolygonVertices {
+                    return Err(ViewClipPathPlanError::TooManyPolygonVertices {
                         count: points.len(),
                         maximum: MAX_CLIP_POLYGON_VERTICES,
                     });
@@ -176,12 +176,12 @@ impl UiClipGeometryPlan {
                         .collect::<Result<Vec<_>, _>>()?,
                 })
             }
-            UiClipPath::Path { fill_rule, data } => path_plan(*fill_rule, data, bounds),
-            UiClipPath::Url(resource) => Err(UiClipPathPlanError::UrlClipResourceUnsupported {
+            ViewClipPath::Path { fill_rule, data } => path_plan(*fill_rule, data, bounds),
+            ViewClipPath::Url(resource) => Err(ViewClipPathPlanError::UrlClipResourceUnsupported {
                 resource: resource.clone(),
             }),
-            UiClipPath::Unsupported(reason) => {
-                Err(UiClipPathPlanError::Unsupported(reason.clone()))
+            ViewClipPath::Unsupported(reason) => {
+                Err(ViewClipPathPlanError::Unsupported(reason.clone()))
             }
         }
     }
@@ -192,14 +192,14 @@ impl UiClipGeometryPlan {
 }
 
 fn resolve_shape_radius(
-    radius: &UiShapeRadius,
+    radius: &ViewShapeRadius,
     bounds: HitRect,
     horizontal: bool,
-) -> Result<f32, UiClipPathPlanError> {
+) -> Result<f32, ViewClipPathPlanError> {
     Ok(match radius {
-        UiShapeRadius::ClosestSide => bounds.width.min(bounds.height) * 0.5,
-        UiShapeRadius::FarthestSide => bounds.width.max(bounds.height) * 0.5,
-        UiShapeRadius::Length(length) => {
+        ViewShapeRadius::ClosestSide => bounds.width.min(bounds.height) * 0.5,
+        ViewShapeRadius::FarthestSide => bounds.width.max(bounds.height) * 0.5,
+        ViewShapeRadius::Length(length) => {
             let basis = if horizontal {
                 bounds.width
             } else {
@@ -211,41 +211,44 @@ fn resolve_shape_radius(
     .max(0.0))
 }
 
-fn resolve_point(point: &UiPoint, bounds: HitRect) -> Result<UiClipVertex, UiClipPathPlanError> {
-    Ok(UiClipVertex {
+fn resolve_point(
+    point: &ViewPoint,
+    bounds: HitRect,
+) -> Result<ViewClipVertex, ViewClipPathPlanError> {
+    Ok(ViewClipVertex {
         x: bounds.x + resolve_length(&point.x, bounds.width, "point-x")?,
         y: bounds.y + resolve_length(&point.y, bounds.height, "point-y")?,
     })
 }
 
 fn resolve_length(
-    length: &UiLength,
+    length: &ViewLength,
     basis_px: f32,
     role: &'static str,
-) -> Result<f32, UiClipPathPlanError> {
+) -> Result<f32, ViewClipPathPlanError> {
     match length {
-        UiLength::Px(value) => Ok(*value),
-        UiLength::Percent(value) => Ok(*value * basis_px),
-        UiLength::Auto => Err(UiClipPathPlanError::UnresolvableLength(role.into())),
-        UiLength::Unsupported(reason) => Err(UiClipPathPlanError::Unsupported(reason.clone())),
+        ViewLength::Px(value) => Ok(*value),
+        ViewLength::Percent(value) => Ok(*value * basis_px),
+        ViewLength::Auto => Err(ViewClipPathPlanError::UnresolvableLength(role.into())),
+        ViewLength::Unsupported(reason) => Err(ViewClipPathPlanError::Unsupported(reason.clone())),
     }
 }
 
 fn path_plan(
-    fill_rule: UiFillRule,
+    fill_rule: ViewFillRule,
     data: &str,
     bounds: HitRect,
-) -> Result<UiClipGeometryPlan, UiClipPathPlanError> {
+) -> Result<ViewClipGeometryPlan, ViewClipPathPlanError> {
     let tokens = tokenize_path(data)?;
     let mut parser = PathParser::new(tokens, bounds);
     let mut path = ParsedPath::default();
     parser.parse(&mut path)?;
     if path.edges.is_empty() {
-        return Err(UiClipPathPlanError::MalformedPath {
+        return Err(ViewClipPathPlanError::MalformedPath {
             reason: "path has no drawable segments".into(),
         });
     }
-    Ok(UiClipGeometryPlan::Path {
+    Ok(ViewClipGeometryPlan::Path {
         fill_rule,
         commands: path.commands,
         edges: path.edges,
@@ -254,15 +257,18 @@ fn path_plan(
 
 #[derive(Default)]
 struct ParsedPath {
-    commands: Vec<UiClipPathCommandPlan>,
-    edges: Vec<UiClipPathEdge>,
+    commands: Vec<ViewClipPathCommandPlan>,
+    edges: Vec<ViewClipPathEdge>,
 }
 
 impl ParsedPath {
-    fn push_command(&mut self, command: UiClipPathCommandPlan) -> Result<(), UiClipPathPlanError> {
+    fn push_command(
+        &mut self,
+        command: ViewClipPathCommandPlan,
+    ) -> Result<(), ViewClipPathPlanError> {
         let count = self.commands.len() + 1;
         if count > MAX_CLIP_PATH_COMMANDS {
-            return Err(UiClipPathPlanError::TooManyPathCommands {
+            return Err(ViewClipPathPlanError::TooManyPathCommands {
                 count,
                 maximum: MAX_CLIP_PATH_COMMANDS,
             });
@@ -274,24 +280,24 @@ impl ParsedPath {
     fn push_edge(
         &mut self,
         command: char,
-        from: UiClipVertex,
-        to: UiClipVertex,
-    ) -> Result<(), UiClipPathPlanError> {
+        from: ViewClipVertex,
+        to: ViewClipVertex,
+    ) -> Result<(), ViewClipPathPlanError> {
         let index = self.edges.len();
         if !from.x.is_finite() || !from.y.is_finite() || !to.x.is_finite() || !to.y.is_finite() {
-            return Err(UiClipPathPlanError::DegeneratePathSegment { command, index });
+            return Err(ViewClipPathPlanError::DegeneratePathSegment { command, index });
         }
         if distance_squared(from, to) <= PATH_EPSILON * PATH_EPSILON {
-            return Err(UiClipPathPlanError::DegeneratePathSegment { command, index });
+            return Err(ViewClipPathPlanError::DegeneratePathSegment { command, index });
         }
         let count = index + 1;
         if count > MAX_CLIP_PATH_EDGES {
-            return Err(UiClipPathPlanError::TooManyPathEdges {
+            return Err(ViewClipPathPlanError::TooManyPathEdges {
                 count,
                 maximum: MAX_CLIP_PATH_EDGES,
             });
         }
-        self.edges.push(UiClipPathEdge { from, to });
+        self.edges.push(ViewClipPathEdge { from, to });
         Ok(())
     }
 }
@@ -306,8 +312,8 @@ struct PathParser {
     tokens: Vec<PathToken>,
     index: usize,
     bounds: HitRect,
-    current: UiClipVertex,
-    subpath_start: Option<UiClipVertex>,
+    current: ViewClipVertex,
+    subpath_start: Option<ViewClipVertex>,
     last_command: Option<char>,
 }
 
@@ -317,7 +323,7 @@ impl PathParser {
             tokens,
             index: 0,
             bounds,
-            current: UiClipVertex {
+            current: ViewClipVertex {
                 x: bounds.x,
                 y: bounds.y,
             },
@@ -326,7 +332,7 @@ impl PathParser {
         }
     }
 
-    fn parse(&mut self, path: &mut ParsedPath) -> Result<(), UiClipPathPlanError> {
+    fn parse(&mut self, path: &mut ParsedPath) -> Result<(), ViewClipPathPlanError> {
         while self.index < self.tokens.len() {
             let command = match self.peek().copied() {
                 Some(PathToken::Command(command)) => {
@@ -335,7 +341,7 @@ impl PathParser {
                 }
                 Some(PathToken::Number(_)) => {
                     self.last_command
-                        .ok_or_else(|| UiClipPathPlanError::MalformedPath {
+                        .ok_or_else(|| ViewClipPathPlanError::MalformedPath {
                             reason: "path data starts with a number before a command".into(),
                         })?
                 }
@@ -351,7 +357,7 @@ impl PathParser {
         &mut self,
         command: char,
         path: &mut ParsedPath,
-    ) -> Result<(), UiClipPathPlanError> {
+    ) -> Result<(), ViewClipPathPlanError> {
         match command {
             'M' | 'm' => self.move_to(command, path),
             'L' | 'l' => self.line_to(command, path),
@@ -361,38 +367,46 @@ impl PathParser {
             'C' | 'c' => self.cubic_to(command, path),
             'Z' | 'z' => self.close_path(command, path),
             other if other.is_ascii_alphabetic() => {
-                Err(UiClipPathPlanError::UnsupportedPathCommand { command: other })
+                Err(ViewClipPathPlanError::UnsupportedPathCommand { command: other })
             }
-            other => Err(UiClipPathPlanError::MalformedPath {
+            other => Err(ViewClipPathPlanError::MalformedPath {
                 reason: format!("invalid path command `{other}`").into_boxed_str(),
             }),
         }
     }
 
-    fn move_to(&mut self, command: char, path: &mut ParsedPath) -> Result<(), UiClipPathPlanError> {
+    fn move_to(
+        &mut self,
+        command: char,
+        path: &mut ParsedPath,
+    ) -> Result<(), ViewClipPathPlanError> {
         let relative = command.is_ascii_lowercase();
         let first = self.required_point(relative, command)?;
         self.current = first;
         self.subpath_start = Some(first);
-        path.push_command(UiClipPathCommandPlan::MoveTo(first))?;
+        path.push_command(ViewClipPathCommandPlan::MoveTo(first))?;
 
         while self.peek_is_number() {
             let to = self.required_point(relative, command)?;
             let from = self.current;
-            path.push_command(UiClipPathCommandPlan::LineTo { from, to })?;
+            path.push_command(ViewClipPathCommandPlan::LineTo { from, to })?;
             path.push_edge(command, from, to)?;
             self.current = to;
         }
         Ok(())
     }
 
-    fn line_to(&mut self, command: char, path: &mut ParsedPath) -> Result<(), UiClipPathPlanError> {
+    fn line_to(
+        &mut self,
+        command: char,
+        path: &mut ParsedPath,
+    ) -> Result<(), ViewClipPathPlanError> {
         let relative = command.is_ascii_lowercase();
         self.require_number(command)?;
         while self.peek_is_number() {
             let to = self.required_point(relative, command)?;
             let from = self.current;
-            path.push_command(UiClipPathCommandPlan::LineTo { from, to })?;
+            path.push_command(ViewClipPathCommandPlan::LineTo { from, to })?;
             path.push_edge(command, from, to)?;
             self.current = to;
         }
@@ -403,7 +417,7 @@ impl PathParser {
         &mut self,
         command: char,
         path: &mut ParsedPath,
-    ) -> Result<(), UiClipPathPlanError> {
+    ) -> Result<(), ViewClipPathPlanError> {
         let relative = command.is_ascii_lowercase();
         self.require_number(command)?;
         while self.peek_is_number() {
@@ -413,12 +427,12 @@ impl PathParser {
             } else {
                 self.bounds.x + value
             };
-            let to = UiClipVertex {
+            let to = ViewClipVertex {
                 x,
                 y: self.current.y,
             };
             let from = self.current;
-            path.push_command(UiClipPathCommandPlan::LineTo { from, to })?;
+            path.push_command(ViewClipPathCommandPlan::LineTo { from, to })?;
             path.push_edge(command, from, to)?;
             self.current = to;
         }
@@ -429,7 +443,7 @@ impl PathParser {
         &mut self,
         command: char,
         path: &mut ParsedPath,
-    ) -> Result<(), UiClipPathPlanError> {
+    ) -> Result<(), ViewClipPathPlanError> {
         let relative = command.is_ascii_lowercase();
         self.require_number(command)?;
         while self.peek_is_number() {
@@ -439,12 +453,12 @@ impl PathParser {
             } else {
                 self.bounds.y + value
             };
-            let to = UiClipVertex {
+            let to = ViewClipVertex {
                 x: self.current.x,
                 y,
             };
             let from = self.current;
-            path.push_command(UiClipPathCommandPlan::LineTo { from, to })?;
+            path.push_command(ViewClipPathCommandPlan::LineTo { from, to })?;
             path.push_edge(command, from, to)?;
             self.current = to;
         }
@@ -455,14 +469,14 @@ impl PathParser {
         &mut self,
         command: char,
         path: &mut ParsedPath,
-    ) -> Result<(), UiClipPathPlanError> {
+    ) -> Result<(), ViewClipPathPlanError> {
         let relative = command.is_ascii_lowercase();
         self.require_number(command)?;
         while self.peek_is_number() {
             let from = self.current;
             let control = self.required_point(relative, command)?;
             let to = self.required_point(relative, command)?;
-            path.push_command(UiClipPathCommandPlan::QuadraticTo {
+            path.push_command(ViewClipPathCommandPlan::QuadraticTo {
                 from,
                 control,
                 to,
@@ -478,7 +492,7 @@ impl PathParser {
         &mut self,
         command: char,
         path: &mut ParsedPath,
-    ) -> Result<(), UiClipPathPlanError> {
+    ) -> Result<(), ViewClipPathPlanError> {
         let relative = command.is_ascii_lowercase();
         self.require_number(command)?;
         while self.peek_is_number() {
@@ -486,7 +500,7 @@ impl PathParser {
             let control_0 = self.required_point(relative, command)?;
             let control_1 = self.required_point(relative, command)?;
             let to = self.required_point(relative, command)?;
-            path.push_command(UiClipPathCommandPlan::CubicTo {
+            path.push_command(ViewClipPathCommandPlan::CubicTo {
                 from,
                 control_0,
                 control_1,
@@ -503,14 +517,14 @@ impl PathParser {
         &mut self,
         command: char,
         path: &mut ParsedPath,
-    ) -> Result<(), UiClipPathPlanError> {
+    ) -> Result<(), ViewClipPathPlanError> {
         let Some(to) = self.subpath_start else {
-            return Err(UiClipPathPlanError::MalformedPath {
+            return Err(ViewClipPathPlanError::MalformedPath {
                 reason: "close-path command appeared before move-to".into(),
             });
         };
         let from = self.current;
-        path.push_command(UiClipPathCommandPlan::ClosePath { from, to })?;
+        path.push_command(ViewClipPathCommandPlan::ClosePath { from, to })?;
         path.push_edge(command, from, to)?;
         self.current = to;
         Ok(())
@@ -520,47 +534,47 @@ impl PathParser {
         &mut self,
         relative: bool,
         command: char,
-    ) -> Result<UiClipVertex, UiClipPathPlanError> {
+    ) -> Result<ViewClipVertex, ViewClipPathPlanError> {
         let x = self.number(command)?;
         let y = self.number(command)?;
         Ok(if relative {
-            UiClipVertex {
+            ViewClipVertex {
                 x: self.current.x + x,
                 y: self.current.y + y,
             }
         } else {
-            UiClipVertex {
+            ViewClipVertex {
                 x: self.bounds.x + x,
                 y: self.bounds.y + y,
             }
         })
     }
 
-    fn number(&mut self, command: char) -> Result<f32, UiClipPathPlanError> {
+    fn number(&mut self, command: char) -> Result<f32, ViewClipPathPlanError> {
         match self.peek().copied() {
             Some(PathToken::Number(value)) => {
                 self.index += 1;
                 if value.is_finite() {
                     Ok(value)
                 } else {
-                    Err(UiClipPathPlanError::MalformedPath {
+                    Err(ViewClipPathPlanError::MalformedPath {
                         reason: format!("command `{command}` contains non-finite number")
                             .into_boxed_str(),
                     })
                 }
             }
-            _ => Err(UiClipPathPlanError::MalformedPath {
+            _ => Err(ViewClipPathPlanError::MalformedPath {
                 reason: format!("command `{command}` is missing a numeric parameter")
                     .into_boxed_str(),
             }),
         }
     }
 
-    fn require_number(&self, command: char) -> Result<(), UiClipPathPlanError> {
+    fn require_number(&self, command: char) -> Result<(), ViewClipPathPlanError> {
         if self.peek_is_number() {
             Ok(())
         } else {
-            Err(UiClipPathPlanError::MalformedPath {
+            Err(ViewClipPathPlanError::MalformedPath {
                 reason: format!("command `{command}` has no parameters").into_boxed_str(),
             })
         }
@@ -583,7 +597,7 @@ fn implicit_repeat_command(command: char) -> char {
     }
 }
 
-fn tokenize_path(data: &str) -> Result<Vec<PathToken>, UiClipPathPlanError> {
+fn tokenize_path(data: &str) -> Result<Vec<PathToken>, ViewClipPathPlanError> {
     let mut tokens = Vec::new();
     let mut index = 0usize;
     while index < data.len() {
@@ -605,14 +619,14 @@ fn tokenize_path(data: &str) -> Result<Vec<PathToken>, UiClipPathPlanError> {
             index = next;
             continue;
         }
-        return Err(UiClipPathPlanError::MalformedPath {
+        return Err(ViewClipPathPlanError::MalformedPath {
             reason: format!("unexpected character `{ch}` in path data").into_boxed_str(),
         });
     }
     Ok(tokens)
 }
 
-fn parse_number(data: &str, start: usize) -> Result<(f32, usize), UiClipPathPlanError> {
+fn parse_number(data: &str, start: usize) -> Result<(f32, usize), ViewClipPathPlanError> {
     let mut end = start;
     let mut seen_digit = false;
     let mut seen_dot = false;
@@ -649,13 +663,13 @@ fn parse_number(data: &str, start: usize) -> Result<(f32, usize), UiClipPathPlan
 
     let raw = &data[start..end];
     if raw.is_empty() || !seen_digit {
-        return Err(UiClipPathPlanError::MalformedPath {
+        return Err(ViewClipPathPlanError::MalformedPath {
             reason: "invalid path number".into(),
         });
     }
     raw.parse::<f32>()
         .map(|value| (value, end))
-        .map_err(|_| UiClipPathPlanError::MalformedPath {
+        .map_err(|_| ViewClipPathPlanError::MalformedPath {
             reason: format!("invalid path number `{raw}`").into_boxed_str(),
         })
 }
@@ -666,11 +680,11 @@ fn is_number_start(ch: char) -> bool {
 
 fn flatten_quadratic(
     command: char,
-    from: UiClipVertex,
-    control: UiClipVertex,
-    to: UiClipVertex,
+    from: ViewClipVertex,
+    control: ViewClipVertex,
+    to: ViewClipVertex,
     path: &mut ParsedPath,
-) -> Result<(), UiClipPathPlanError> {
+) -> Result<(), ViewClipPathPlanError> {
     let mut previous = from;
     for step in 1..=PATH_CURVE_SUBDIVISIONS {
         let progress = f32::from(step) / f32::from(PATH_CURVE_SUBDIVISIONS);
@@ -683,12 +697,12 @@ fn flatten_quadratic(
 
 fn flatten_cubic(
     command: char,
-    from: UiClipVertex,
-    control_0: UiClipVertex,
-    control_1: UiClipVertex,
-    to: UiClipVertex,
+    from: ViewClipVertex,
+    control_0: ViewClipVertex,
+    control_1: ViewClipVertex,
+    to: ViewClipVertex,
     path: &mut ParsedPath,
-) -> Result<(), UiClipPathPlanError> {
+) -> Result<(), ViewClipPathPlanError> {
     let mut previous = from;
     for step in 1..=PATH_CURVE_SUBDIVISIONS {
         let progress = f32::from(step) / f32::from(PATH_CURVE_SUBDIVISIONS);
@@ -700,13 +714,13 @@ fn flatten_cubic(
 }
 
 fn quadratic_point(
-    from: UiClipVertex,
-    control: UiClipVertex,
-    to: UiClipVertex,
+    from: ViewClipVertex,
+    control: ViewClipVertex,
+    to: ViewClipVertex,
     progress: f32,
-) -> UiClipVertex {
+) -> ViewClipVertex {
     let one_minus = 1.0 - progress;
-    UiClipVertex {
+    ViewClipVertex {
         x: one_minus * one_minus * from.x
             + 2.0 * one_minus * progress * control.x
             + progress * progress * to.x,
@@ -717,18 +731,18 @@ fn quadratic_point(
 }
 
 fn cubic_point(
-    from: UiClipVertex,
-    control_0: UiClipVertex,
-    control_1: UiClipVertex,
-    to: UiClipVertex,
+    from: ViewClipVertex,
+    control_0: ViewClipVertex,
+    control_1: ViewClipVertex,
+    to: ViewClipVertex,
     progress: f32,
-) -> UiClipVertex {
+) -> ViewClipVertex {
     let one_minus = 1.0 - progress;
     let from_weight = one_minus * one_minus * one_minus;
     let control_0_weight = 3.0 * one_minus * one_minus * progress;
     let control_1_weight = 3.0 * one_minus * progress * progress;
     let to_weight = progress * progress * progress;
-    UiClipVertex {
+    ViewClipVertex {
         x: from_weight * from.x
             + control_0_weight * control_0.x
             + control_1_weight * control_1.x
@@ -740,7 +754,7 @@ fn cubic_point(
     }
 }
 
-fn distance_squared(from: UiClipVertex, to: UiClipVertex) -> f32 {
+fn distance_squared(from: ViewClipVertex, to: ViewClipVertex) -> f32 {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
     dx * dx + dy * dy
@@ -749,31 +763,33 @@ fn distance_squared(from: UiClipVertex, to: UiClipVertex) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui_scene::{UiFillRule, UiLength, UiPoint};
+    use crate::view_scene::{ViewFillRule, ViewLength, ViewPoint};
 
     #[test]
     fn polygon_clip_points_resolve_against_bounds() {
-        let clip = UiClipPath::Polygon {
-            fill_rule: UiFillRule::EvenOdd,
+        let clip = ViewClipPath::Polygon {
+            fill_rule: ViewFillRule::EvenOdd,
             points: vec![
-                UiPoint::percent(0.0, 0.0),
-                UiPoint::percent(1.0, 0.0),
-                UiPoint::percent(0.5, 1.0),
+                ViewPoint::percent(0.0, 0.0),
+                ViewPoint::percent(1.0, 0.0),
+                ViewPoint::percent(0.5, 1.0),
             ],
         };
 
-        let plan =
-            UiClipGeometryPlan::from_clip_path(Some(&clip), HitRect::new(10.0, 20.0, 100.0, 50.0))
-                .expect("polygon resolves");
+        let plan = ViewClipGeometryPlan::from_clip_path(
+            Some(&clip),
+            HitRect::new(10.0, 20.0, 100.0, 50.0),
+        )
+        .expect("polygon resolves");
 
         assert_eq!(
             plan,
-            UiClipGeometryPlan::Polygon {
-                fill_rule: UiFillRule::EvenOdd,
+            ViewClipGeometryPlan::Polygon {
+                fill_rule: ViewFillRule::EvenOdd,
                 vertices: vec![
-                    UiClipVertex { x: 10.0, y: 20.0 },
-                    UiClipVertex { x: 110.0, y: 20.0 },
-                    UiClipVertex { x: 60.0, y: 70.0 },
+                    ViewClipVertex { x: 10.0, y: 20.0 },
+                    ViewClipVertex { x: 110.0, y: 20.0 },
+                    ViewClipVertex { x: 60.0, y: 70.0 },
                 ],
             }
         );
@@ -781,15 +797,15 @@ mod tests {
 
     #[test]
     fn path_clip_plans_lines_curves_and_close_path() {
-        let clip = UiClipPath::Path {
-            fill_rule: UiFillRule::NonZero,
+        let clip = ViewClipPath::Path {
+            fill_rule: ViewFillRule::NonZero,
             data: "M0 0 L20 0 Q30 10 20 20 C10 30 0 30 0 20 Z".into(),
         };
 
         let plan =
-            UiClipGeometryPlan::from_clip_path(Some(&clip), HitRect::new(4.0, 8.0, 40.0, 40.0))
+            ViewClipGeometryPlan::from_clip_path(Some(&clip), HitRect::new(4.0, 8.0, 40.0, 40.0))
                 .expect("path resolves");
-        let UiClipGeometryPlan::Path {
+        let ViewClipGeometryPlan::Path {
             fill_rule,
             commands,
             edges,
@@ -798,31 +814,31 @@ mod tests {
             panic!("expected path plan");
         };
 
-        assert_eq!(fill_rule, UiFillRule::NonZero);
+        assert_eq!(fill_rule, ViewFillRule::NonZero);
         assert!(
             commands
                 .iter()
-                .any(|command| matches!(command, UiClipPathCommandPlan::QuadraticTo { .. }))
+                .any(|command| matches!(command, ViewClipPathCommandPlan::QuadraticTo { .. }))
         );
         assert!(
             commands
                 .iter()
-                .any(|command| matches!(command, UiClipPathCommandPlan::CubicTo { .. }))
+                .any(|command| matches!(command, ViewClipPathCommandPlan::CubicTo { .. }))
         );
         assert!(edges.len() > 4);
-        assert_eq!(edges[0].from, UiClipVertex { x: 4.0, y: 8.0 });
+        assert_eq!(edges[0].from, ViewClipVertex { x: 4.0, y: 8.0 });
     }
 
     #[test]
     fn degenerate_path_segments_are_typed_diagnostics() {
-        let clip = UiClipPath::Path {
-            fill_rule: UiFillRule::NonZero,
+        let clip = ViewClipPath::Path {
+            fill_rule: ViewFillRule::NonZero,
             data: "M0 0 L0 0".into(),
         };
 
         assert_eq!(
-            UiClipGeometryPlan::from_clip_path(Some(&clip), HitRect::new(0.0, 0.0, 10.0, 10.0)),
-            Err(UiClipPathPlanError::DegeneratePathSegment {
+            ViewClipGeometryPlan::from_clip_path(Some(&clip), HitRect::new(0.0, 0.0, 10.0, 10.0)),
+            Err(ViewClipPathPlanError::DegeneratePathSegment {
                 command: 'L',
                 index: 0,
             })
@@ -831,28 +847,28 @@ mod tests {
 
     #[test]
     fn inset_clip_resolves_percent_and_px() {
-        let clip = UiClipPath::Inset {
+        let clip = ViewClipPath::Inset {
             inset: [
-                UiLength::Px(2.0),
-                UiLength::Percent(0.1),
-                UiLength::Px(4.0),
-                UiLength::Percent(0.2),
+                ViewLength::Px(2.0),
+                ViewLength::Percent(0.1),
+                ViewLength::Px(4.0),
+                ViewLength::Percent(0.2),
             ],
             radius: [
-                UiLength::Px(1.0),
-                UiLength::Px(2.0),
-                UiLength::Px(3.0),
-                UiLength::Px(4.0),
+                ViewLength::Px(1.0),
+                ViewLength::Px(2.0),
+                ViewLength::Px(3.0),
+                ViewLength::Px(4.0),
             ],
         };
 
         let plan =
-            UiClipGeometryPlan::from_clip_path(Some(&clip), HitRect::new(0.0, 0.0, 100.0, 40.0))
+            ViewClipGeometryPlan::from_clip_path(Some(&clip), HitRect::new(0.0, 0.0, 100.0, 40.0))
                 .expect("inset resolves");
 
         assert_eq!(
             plan,
-            UiClipGeometryPlan::Inset {
+            ViewClipGeometryPlan::Inset {
                 rect: HitRect::new(20.0, 2.0, 70.0, 34.0),
                 radii_px: [1.0, 2.0, 3.0, 4.0],
             }

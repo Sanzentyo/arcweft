@@ -1,8 +1,8 @@
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_box_shadow::UiBoxShadowPassPlan;
-use arcweft_render_wgpu::ui_scene::{
-    UiBoxShadow, UiBoxShadowCornerRadius, UiBoxShadowKind, UiBoxShadowRadii, UiColorRgba8,
-    UiCompositingEffectClass, UiFilter,
+use arcweft_render_wgpu::view_box_shadow::ViewBoxShadowPassPlan;
+use arcweft_render_wgpu::view_scene::{
+    ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowKind, ViewBoxShadowRadii,
+    ViewColorRgba8, ViewCompositingEffectClass, ViewFilter,
 };
 use arcweft_takumi_adapter::{DirectCssFeature, DirectCssSupport, TakumiCompositingStyle};
 use takumi::prelude::Viewport;
@@ -21,8 +21,8 @@ fn current_color() -> TakumiColor {
     TakumiColor([1, 2, 3, 255])
 }
 
-fn ui_color(red: u8, green: u8, blue: u8, alpha: u8) -> UiColorRgba8 {
-    UiColorRgba8 {
+fn ui_color(red: u8, green: u8, blue: u8, alpha: u8) -> ViewColorRgba8 {
+    ViewColorRgba8 {
         red,
         green,
         blue,
@@ -94,7 +94,7 @@ fn compositing_style(style: &ComputedStyle) -> TakumiCompositingStyle {
 }
 
 #[test]
-fn one_outer_shadow_lowers_to_ui_box_shadow_list() {
+fn one_outer_shadow_lowers_to_view_box_shadow_list() {
     let style = computed_style_with_radius_and_shadows(
         6.0,
         [takumi_shadow(
@@ -111,7 +111,7 @@ fn one_outer_shadow_lowers_to_ui_box_shadow_list() {
 
     assert_eq!(
         lowered.effects.box_shadows.shadows(),
-        &[UiBoxShadow::outer(
+        &[ViewBoxShadow::outer(
             4.0,
             8.0,
             12.0,
@@ -124,7 +124,7 @@ fn one_outer_shadow_lowers_to_ui_box_shadow_list() {
         lowered
             .effects
             .requirements()
-            .contains(UiCompositingEffectClass::BoxShadow)
+            .contains(ViewCompositingEffectClass::BoxShadow)
     );
 }
 
@@ -152,11 +152,11 @@ fn four_different_corner_radii_lower_to_typed_shadow_radius_contract() {
 
     assert_eq!(
         shadow.border_radii,
-        UiBoxShadowRadii::from_corners(
-            UiBoxShadowCornerRadius::new(4.0, 5.0),
-            UiBoxShadowCornerRadius::new(8.0, 9.0),
-            UiBoxShadowCornerRadius::new(12.0, 13.0),
-            UiBoxShadowCornerRadius::new(16.0, 17.0),
+        ViewBoxShadowRadii::from_corners(
+            ViewBoxShadowCornerRadius::new(4.0, 5.0),
+            ViewBoxShadowCornerRadius::new(8.0, 9.0),
+            ViewBoxShadowCornerRadius::new(12.0, 13.0),
+            ViewBoxShadowCornerRadius::new(16.0, 17.0),
         )
     );
 }
@@ -183,13 +183,13 @@ fn elliptical_corner_radii_lower_without_scalar_collapse() {
     let lowered = compositing_style(&style);
     let shadow = lowered.effects.box_shadows.shadows()[0];
 
-    assert_eq!(shadow.kind, UiBoxShadowKind::Inset);
+    assert_eq!(shadow.kind, ViewBoxShadowKind::Inset);
     assert_eq!(
         shadow.border_radii.top_left,
-        UiBoxShadowCornerRadius::new(18.0, 6.0)
+        ViewBoxShadowCornerRadius::new(18.0, 6.0)
     );
-    assert_ne!(shadow.border_radii, UiBoxShadowRadii::uniform(6.0));
-    assert_ne!(shadow.border_radii, UiBoxShadowRadii::uniform(18.0));
+    assert_ne!(shadow.border_radii, ViewBoxShadowRadii::uniform(6.0));
+    assert_ne!(shadow.border_radii, ViewBoxShadowRadii::uniform(18.0));
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn multiple_shadows_preserve_css_order_and_plan_back_to_front() {
         vec![1.0, 2.0, 3.0]
     );
 
-    let plan = UiBoxShadowPassPlan::from_shadows(
+    let plan = ViewBoxShadowPassPlan::from_shadows(
         &lowered.effects.box_shadows,
         HitRect::new(0.0, 0.0, 80.0, 40.0),
     )
@@ -250,7 +250,7 @@ fn negative_spread_lowers_and_plans_deterministically() {
 
     assert_eq!(shadow.spread_radius_px.to_bits(), (-3.0_f32).to_bits());
 
-    let plan = UiBoxShadowPassPlan::from_shadows(
+    let plan = ViewBoxShadowPassPlan::from_shadows(
         &lowered.effects.box_shadows,
         HitRect::new(0.0, 0.0, 20.0, 20.0),
     )
@@ -299,16 +299,16 @@ fn inset_shadow_reaches_renderer_plan_as_typed_inset_pass() {
 
     assert_eq!(
         lowered.effects.box_shadows.shadows()[0].kind,
-        UiBoxShadowKind::Inset
+        ViewBoxShadowKind::Inset
     );
 
-    let plan = UiBoxShadowPassPlan::from_shadows(
+    let plan = ViewBoxShadowPassPlan::from_shadows(
         &lowered.effects.box_shadows,
         HitRect::new(0.0, 0.0, 80.0, 40.0),
     )
     .expect("seq06.13e renderer accepts typed inset shadows");
 
-    assert_eq!(plan.passes()[0].shadow.kind, UiBoxShadowKind::Inset);
+    assert_eq!(plan.passes()[0].shadow.kind, ViewBoxShadowKind::Inset);
     assert!(plan.visual_inset_px() > 0.0);
 }
 
@@ -330,7 +330,7 @@ fn filter_drop_shadow_remains_distinct_from_css_box_shadow() {
 
     assert!(lowered.effects.box_shadows.shadows().is_empty());
     let [
-        UiFilter::DropShadow {
+        ViewFilter::DropShadow {
             offset_x_px,
             offset_y_px,
             blur_radius_px,

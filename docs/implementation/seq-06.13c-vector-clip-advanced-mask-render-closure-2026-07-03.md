@@ -4,11 +4,11 @@
 
 This overlay assumes Arcweft main as inspected through the GitHub connector on 2026-07-03. The relevant current code already has:
 
-- retained `UiScene` / `UiPaintNode` / `UiCompositingGroup` data;
-- `UiClipPath` variants for inset/circle/ellipse/polygon/path;
-- `UiClipGeometryPlan` for seq06.13a analytic clips;
-- `UiMaskPassPlan`, `UiMaskTextureView`, and compositor mask passes;
-- a shared `ui_shaders/compositor.wgsl` pass for filter, mask, clip, blend, and box-shadow work.
+- retained `ViewScene` / `ViewPaintNode` / `ViewCompositingGroup` data;
+- `ViewClipPath` variants for inset/circle/ellipse/polygon/path;
+- `ViewClipGeometryPlan` for seq06.13a analytic clips;
+- `ViewMaskPassPlan`, `ViewMaskTextureView`, and compositor mask passes;
+- a shared `view_shaders/compositor.wgsl` pass for filter, mask, clip, blend, and box-shadow work.
 
 The overlay follows the repository rules in `AGENTS.md`: behavior is added to owned Arcweft types, resource acquisition stays in renderer/player adapters, and implementation-state notes live under `docs/implementation/`.
 
@@ -16,13 +16,13 @@ The overlay follows the repository rules in `AGENTS.md`: behavior is added to ow
 
 ### Renderer/compositor
 
-- `crates/arcweft-render-wgpu/src/ui_scene.rs`
-- `crates/arcweft-render-wgpu/src/ui_scene/compositing.rs`
-- `crates/arcweft-render-wgpu/src/ui_clip_path.rs`
-- `crates/arcweft-render-wgpu/src/ui_mask.rs`
-- `crates/arcweft-render-wgpu/src/ui_compositor.rs`
-- `crates/arcweft-render-wgpu/src/ui_compositor_uniform.rs`
-- `crates/arcweft-render-wgpu/src/ui_shaders/compositor.wgsl`
+- `crates/arcweft-render-wgpu/src/view_scene.rs`
+- `crates/arcweft-render-wgpu/src/view_scene/compositing.rs`
+- `crates/arcweft-render-wgpu/src/view_clip_path.rs`
+- `crates/arcweft-render-wgpu/src/view_mask.rs`
+- `crates/arcweft-render-wgpu/src/view_compositor.rs`
+- `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
+- `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
 - `crates/arcweft-render-wgpu/tests/ui_clip_mask_render_closure.rs`
 
 ### Adapter
@@ -41,7 +41,7 @@ The overlay follows the repository rules in `AGENTS.md`: behavior is added to ow
 
 ### `clip-path: path(...)`
 
-`UiClipGeometryPlan::from_clip_path` now accepts `UiClipPath::Path`. It parses path data, emits typed command records, flattens lines/quadratics/cubics into a fixed edge list, and returns `UiClipGeometryPlan::Path`.
+`ViewClipGeometryPlan::from_clip_path` now accepts `ViewClipPath::Path`. It parses path data, emits typed command records, flattens lines/quadratics/cubics into a fixed edge list, and returns `ViewClipGeometryPlan::Path`.
 
 The compositor uniform adds a `clip_edges` array. The WGSL clip pass keeps existing inset/ellipse/polygon paths and adds path coverage with even-odd or non-zero winding over the edge array.
 
@@ -49,13 +49,13 @@ The path parser intentionally supports only `M/L/H/V/Q/C/Z` plus relative varian
 
 ### `clip-path: url(...)`
 
-The retained UI contract gains `UiClipPath::Url(Box<str>)`. The renderer returns `UrlClipResourceUnsupported`. No reusable vector clip resource table is claimed in this package.
+The retained UI contract gains `ViewClipPath::Url(Box<str>)`. The renderer returns `UrlClipResourceUnsupported`. No reusable vector clip resource table is claimed in this package.
 
 ### Gradient masks
 
-The retained UI contract gains `UiMaskImage::Gradient(UiMaskGradient)`.
+The retained UI contract gains `ViewMaskImage::Gradient(ViewMaskGradient)`.
 
-`UiMaskPassPlan` canonicalizes stop coverage and exposes `gradient_plan(tile_size_px)`. The compositor then runs a mask pass with generated gradient coverage instead of an external texture sample.
+`ViewMaskPassPlan` canonicalizes stop coverage and exposes `gradient_plan(tile_size_px)`. The compositor then runs a mask pass with generated gradient coverage instead of an external texture sample.
 
 Supported retained forms:
 
@@ -71,17 +71,17 @@ CSS/Takumi lowering intentionally diagnostic:
 
 - repeating linear gradients;
 - radial/conic gradients until normalized Takumi adapter fixtures are added;
-- color hints/unsupported stops that cannot be converted into deterministic `UiGradientStop` values.
+- color hints/unsupported stops that cannot be converted into deterministic `ViewGradientStop` values.
 
 ### `mask-repeat: space | round`
 
-`UiMaskSamplingPlan` now stores per-axis mode, stride, and tile count. `Space` and `Round` resolve deterministically and no longer return `UnsupportedRepeat`.
+`ViewMaskSamplingPlan` now stores per-axis mode, stride, and tile count. `Space` and `Round` resolve deterministically and no longer return `UnsupportedRepeat`.
 
 Existing `repeat_x` / `repeat_y` fields are retained as compatibility-neutral convenience evidence, but shader behavior uses `repeat_mode_x`, `repeat_mode_y`, `tile_stride_px`, and `tile_count`.
 
 ### `mask: element(...)`
 
-`UiMaskImage::Element(UiElementMaskSource)` is added so adapters can represent the feature without stringly unsupported values. Since no typed compositor capture resource graph was available in the inspected render path, the current cut returns `UiMaskPlanError::ElementMaskCaptureUnavailable { element_id }`.
+`ViewMaskImage::Element(ViewElementMaskSource)` is added so adapters can represent the feature without stringly unsupported values. Since no typed compositor capture resource graph was available in the inspected render path, the current cut returns `ViewMaskPlanError::ElementMaskCaptureUnavailable { element_id }`.
 
 ## Tests added/updated
 
@@ -115,7 +115,7 @@ git diff --check
 Optional visual smoke:
 
 ```bash
-cargo test -p arcweft-render-wgpu --test ui_compositor_gpu_smoke_timestamps --all-features -- --ignored --nocapture
+cargo test -p arcweft-render-wgpu --test view_compositor_gpu_smoke_timestamps --all-features -- --ignored --nocapture
 ```
 
 ## Local package generation note

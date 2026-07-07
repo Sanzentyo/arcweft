@@ -4,7 +4,7 @@
 
 The first production cut makes CSS support explicit, deterministic, and shared
 between native and web. Takumi remains the CSS cascade/layout/stacking source;
-Arcweft records coverage/evidence and renders via renderer-owned `UiScene` data.
+Arcweft records coverage/evidence and renders via renderer-owned `ViewScene` data.
 No browser layout, DOM text, canvas 2D, Takumi CPU raster, or backend-only path is
 introduced.
 

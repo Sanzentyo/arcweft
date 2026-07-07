@@ -4,79 +4,89 @@
 //! host visual harness after applying the overlay to the repository.
 
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{
-    UiClipPath, UiColorRgba8, UiCompositingEffects, UiCompositingGroup,
-    UiElementMaskSource, UiFillRule, UiGradientStop, UiMask, UiMaskGradient,
-    UiMaskImage, UiMaskRepeat, UiMaskSize, UiLength, UiPaintNode, UiPrimitiveRange,
-    UiScene, UiSceneContext,
+use arcweft_render_wgpu::view_scene::{
+    ViewClipPath, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup,
+    ViewElementMaskSource, ViewFillRule, ViewGradientStop, ViewLength, ViewMask, ViewMaskGradient,
+    ViewMaskImage, ViewMaskRepeat, ViewMaskSize, ViewPaintNode, ViewPrimitiveRange, ViewScene,
+    ViewSceneContext,
 };
 
-pub fn seq06_13c_scene() -> UiScene {
-    let mut scene = UiScene::new(320.0, 180.0);
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
+pub fn seq06_13c_scene() -> ViewScene {
+    let mut scene = ViewScene::new(320.0, 180.0);
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
             HitRect::new(24.0, 24.0, 180.0, 96.0),
-            UiCompositingEffects {
-                clip_path: Some(Box::new(UiClipPath::Path {
-                    fill_rule: UiFillRule::EvenOdd,
+            ViewCompositingEffects {
+                clip_path: Some(Box::new(ViewClipPath::Path {
+                    fill_rule: ViewFillRule::EvenOdd,
                     data: "M0 0 L180 0 Q180 96 90 96 L0 96 Z".into(),
                 })),
                 masks: vec![
-                    UiMask {
-                        image: UiMaskImage::Gradient(UiMaskGradient::Linear {
+                    ViewMask {
+                        image: ViewMaskImage::Gradient(ViewMaskGradient::Linear {
                             angle_degrees: 90.0,
                             stops: vec![
-                                UiGradientStop {
+                                ViewGradientStop {
                                     offset: 0.0,
-                                    color: UiColorRgba8 { red: 255, green: 0, blue: 0, alpha: 255 },
+                                    color: ViewColorRgba8 {
+                                        red: 255,
+                                        green: 0,
+                                        blue: 0,
+                                        alpha: 255,
+                                    },
                                 },
-                                UiGradientStop {
+                                ViewGradientStop {
                                     offset: 1.0,
-                                    color: UiColorRgba8 { red: 0, green: 0, blue: 0, alpha: 0 },
+                                    color: ViewColorRgba8 {
+                                        red: 0,
+                                        green: 0,
+                                        blue: 0,
+                                        alpha: 0,
+                                    },
                                 },
                             ],
                         }),
-                        repeat: UiMaskRepeat::NoRepeat,
-                        ..UiMask::default()
+                        repeat: ViewMaskRepeat::NoRepeat,
+                        ..ViewMask::default()
                     },
-                    UiMask {
-                        image: UiMaskImage::Url("arcweft://mask/space-dots".into()),
-                        size: UiMaskSize::Explicit {
-                            width: UiLength::Px(30.0),
-                            height: UiLength::Px(20.0),
+                    ViewMask {
+                        image: ViewMaskImage::Url("arcweft://mask/space-dots".into()),
+                        size: ViewMaskSize::Explicit {
+                            width: ViewLength::Px(30.0),
+                            height: ViewLength::Px(20.0),
                         },
-                        repeat: UiMaskRepeat::Space,
-                        ..UiMask::default()
+                        repeat: ViewMaskRepeat::Space,
+                        ..ViewMask::default()
                     },
                 ],
-                ..UiCompositingEffects::default()
+                ..ViewCompositingEffects::default()
             },
         )
-        .with_children(vec![UiPaintNode::Direct(UiSceneContext {
+        .with_children(vec![ViewPaintNode::Direct(ViewSceneContext {
             transform: Default::default(),
             opacity: 1.0,
             clip: None,
-            primitive_range: UiPrimitiveRange { start: 0, end: 1 },
+            primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
         })]),
     ));
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
             HitRect::new(220.0, 24.0, 72.0, 72.0),
-            UiCompositingEffects {
-                masks: vec![UiMask {
-                    image: UiMaskImage::Element(UiElementMaskSource {
+            ViewCompositingEffects {
+                masks: vec![ViewMask {
+                    image: ViewMaskImage::Element(ViewElementMaskSource {
                         element_id: "speaker-portrait".into(),
                     }),
-                    ..UiMask::default()
+                    ..ViewMask::default()
                 }],
-                ..UiCompositingEffects::default()
+                ..ViewCompositingEffects::default()
             },
         )
-        .with_children(vec![UiPaintNode::Direct(UiSceneContext {
+        .with_children(vec![ViewPaintNode::Direct(ViewSceneContext {
             transform: Default::default(),
             opacity: 1.0,
             clip: None,
-            primitive_range: UiPrimitiveRange { start: 1, end: 2 },
+            primitive_range: ViewPrimitiveRange { start: 1, end: 2 },
         })]),
     ));
     scene

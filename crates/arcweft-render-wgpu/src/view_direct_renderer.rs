@@ -1,21 +1,22 @@
-//! Shared wgpu direct primitive renderer for `UiScene` paint ranges.
+//! Shared wgpu direct primitive renderer for `ViewScene` paint ranges.
 //!
 //! This module is intentionally renderer-owned. It consumes Arcweft-owned
-//! `UiPrimitive` values, prepared image/mask resources, and explicit text
+//! `ViewPrimitive` values, prepared image/mask resources, and explicit text
 //! handoff records. It does not parse CSS, inspect Takumi computed style, or
 //! route UI through platform-specific DOM/canvas fallback paths.
 
-use crate::geometry::{PreparedUiMaskResource, PreparedUiSceneResources, RenderImageFrame};
-use crate::ui_compositor::{
-    UiCompositorError, UiCompositorTarget, UiDirectPrimitiveRenderer, UiMaskTextureProvider,
-    UiMaskTextureView,
+use crate::geometry::{PreparedViewMaskResource, PreparedViewSceneResources, RenderImageFrame};
+use crate::view_compositor::{
+    ViewCompositorError, ViewCompositorTarget, ViewDirectPrimitiveRenderer,
+    ViewMaskTextureProvider, ViewMaskTextureView,
 };
-use crate::ui_effects::UiTextureExtent;
-use crate::ui_mask::UiMaskChannel;
-use crate::ui_scene::{
-    UiAffine2D, UiBorder, UiCaretPrimitive, UiClip, UiColorRgba8, UiCompositionUnderline,
-    UiGlyphRun, UiImagePrimitive, UiLinearGradient, UiMaskImage, UiPrimitive, UiRoundedRect,
-    UiScene, UiSceneContext, UiSelectionPrimitive, UiSolidRect, UiUnderlineStyle,
+use crate::view_effects::ViewTextureExtent;
+use crate::view_mask::ViewMaskChannel;
+use crate::view_scene::{
+    ViewAffine2D, ViewBorder, ViewCaretPrimitive, ViewClip, ViewColorRgba8,
+    ViewCompositionUnderline, ViewGlyphRun, ViewImagePrimitive, ViewLinearGradient, ViewMaskImage,
+    ViewPrimitive, ViewRoundedRect, ViewScene, ViewSceneContext, ViewSelectionPrimitive,
+    ViewSolidRect, ViewUnderlineStyle,
 };
 use arcweft_presentation::hit::HitRect;
 use bytemuck::{Pod, Zeroable};
@@ -26,8 +27,8 @@ const ROUNDED_CORNER_SEGMENTS: usize = 8;
 const EPSILON: f32 = 0.0001;
 
 /// Direct primitive renderer used by `SharedRenderer` when a prepared frame has
-/// attached `UiScene`s.
-pub struct WgpuUiDirectPrimitiveRenderer {
+/// attached `ViewScene`s.
+pub struct WgpuViewDirectPrimitiveRenderer {
     color_pipeline: wgpu::RenderPipeline,
     image_bind_group_layout: wgpu::BindGroupLayout,
     image_pipeline: wgpu::RenderPipeline,
@@ -35,34 +36,34 @@ pub struct WgpuUiDirectPrimitiveRenderer {
 }
 
 /// Renderer-owned direct primitive frame bound to one prepared UI scene resource table.
-pub struct WgpuUiDirectPrimitiveRenderFrame<'a> {
-    renderer: &'a WgpuUiDirectPrimitiveRenderer,
-    resources: &'a PreparedUiSceneResources,
+pub struct WgpuViewDirectPrimitiveRenderFrame<'a> {
+    renderer: &'a WgpuViewDirectPrimitiveRenderer,
+    resources: &'a PreparedViewSceneResources,
 }
 
 /// Renderer-owned mask texture provider for one prepared UI scene.
-pub struct WgpuPreparedUiMaskTextureProvider {
-    masks: Vec<WgpuPreparedUiMaskTexture>,
+pub struct WgpuPreparedViewMaskTextureProvider {
+    masks: Vec<WgpuPreparedViewMaskTexture>,
 }
 
-struct WgpuPreparedUiMaskTexture {
-    image: UiMaskImage,
-    channel: UiMaskChannel,
-    extent: UiTextureExtent,
+struct WgpuPreparedViewMaskTexture {
+    image: ViewMaskImage,
+    channel: ViewMaskChannel,
+    extent: ViewTextureExtent,
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct UiColorVertex {
+struct ViewColorVertex {
     position: [f32; 2],
     color: [f32; 4],
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct UiImageVertex {
+struct ViewImageVertex {
     position: [f32; 2],
     uv: [f32; 2],
     opacity: [f32; 4],
@@ -78,12 +79,12 @@ struct DirectRenderContext<'a, 'target> {
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
     encoder: &'a mut wgpu::CommandEncoder,
-    scene: &'a UiScene,
-    context: &'a UiSceneContext,
-    target: UiCompositorTarget<'target>,
+    scene: &'a ViewScene,
+    context: &'a ViewSceneContext,
+    target: ViewCompositorTarget<'target>,
 }
 
-impl WgpuUiDirectPrimitiveRenderer {
+impl WgpuViewDirectPrimitiveRenderer {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let (image_bind_group_layout, image_pipeline, image_sampler) =
             image_pipeline(device, format);
@@ -97,16 +98,16 @@ impl WgpuUiDirectPrimitiveRenderer {
 
     pub const fn for_resources<'a>(
         &'a self,
-        resources: &'a PreparedUiSceneResources,
-    ) -> WgpuUiDirectPrimitiveRenderFrame<'a> {
-        WgpuUiDirectPrimitiveRenderFrame {
+        resources: &'a PreparedViewSceneResources,
+    ) -> WgpuViewDirectPrimitiveRenderFrame<'a> {
+        WgpuViewDirectPrimitiveRenderFrame {
             renderer: self,
             resources,
         }
     }
 }
 
-impl WgpuUiDirectPrimitiveRenderFrame<'_> {
+impl WgpuViewDirectPrimitiveRenderFrame<'_> {
     fn color_pipeline(&self) -> &wgpu::RenderPipeline {
         &self.renderer.color_pipeline
     }
@@ -141,8 +142,8 @@ impl WgpuUiDirectPrimitiveRenderFrame<'_> {
     fn render_colored_vertices(
         &self,
         frame: &mut DirectRenderContext<'_, '_>,
-        vertices: &[UiColorVertex],
-    ) -> Result<(), UiCompositorError> {
+        vertices: &[ViewColorVertex],
+    ) -> Result<(), ViewCompositorError> {
         if vertices.is_empty() {
             return Ok(());
         }
@@ -181,10 +182,10 @@ impl WgpuUiDirectPrimitiveRenderFrame<'_> {
     fn render_image_primitive(
         &self,
         frame: &mut DirectRenderContext<'_, '_>,
-        image: &UiImagePrimitive,
-    ) -> Result<(), UiCompositorError> {
+        image: &ViewImagePrimitive,
+    ) -> Result<(), ViewCompositorError> {
         let image_frame = self.image_frame(image.resource_index).ok_or(
-            UiCompositorError::MissingImageResource {
+            ViewCompositorError::MissingImageResource {
                 resource_index: image.resource_index,
             },
         )?;
@@ -247,16 +248,16 @@ impl WgpuUiDirectPrimitiveRenderFrame<'_> {
     }
 }
 
-impl UiDirectPrimitiveRenderer for WgpuUiDirectPrimitiveRenderFrame<'_> {
+impl ViewDirectPrimitiveRenderer for WgpuViewDirectPrimitiveRenderFrame<'_> {
     fn render_direct_range(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        scene: &UiScene,
-        context: &UiSceneContext,
-        target: UiCompositorTarget<'_>,
-    ) -> Result<(), UiCompositorError> {
+        scene: &ViewScene,
+        context: &ViewSceneContext,
+        target: ViewCompositorTarget<'_>,
+    ) -> Result<(), ViewCompositorError> {
         let mut frame = DirectRenderContext {
             device,
             queue,
@@ -266,46 +267,44 @@ impl UiDirectPrimitiveRenderer for WgpuUiDirectPrimitiveRenderFrame<'_> {
             target,
         };
         let (start, end) = primitive_range_bounds(context)?;
-        let primitives =
-            scene
-                .primitives()
-                .get(start..end)
-                .ok_or(UiCompositorError::InvalidPrimitiveRange {
-                    start: context.primitive_range.start,
-                    end: context.primitive_range.end,
-                })?;
+        let primitives = scene.primitives().get(start..end).ok_or(
+            ViewCompositorError::InvalidPrimitiveRange {
+                start: context.primitive_range.start,
+                end: context.primitive_range.end,
+            },
+        )?;
         let mut colored = Vec::new();
         for primitive in primitives {
             match primitive {
-                UiPrimitive::SolidRect(rect) => {
+                ViewPrimitive::SolidRect(rect) => {
                     push_solid_rect(scene, context, target, rect, &mut colored);
                 }
-                UiPrimitive::RoundedRect(rect) => {
+                ViewPrimitive::RoundedRect(rect) => {
                     push_rounded_rect(scene, context, target, rect, &mut colored);
                 }
-                UiPrimitive::Border(border) => {
+                ViewPrimitive::Border(border) => {
                     push_border(scene, context, target, border, &mut colored);
                 }
-                UiPrimitive::LinearGradient(gradient) => {
+                ViewPrimitive::LinearGradient(gradient) => {
                     push_linear_gradient(scene, context, target, gradient, &mut colored);
                 }
-                UiPrimitive::Image(image) => {
+                ViewPrimitive::Image(image) => {
                     self.render_colored_vertices(&mut frame, &colored)?;
                     colored.clear();
                     self.render_image_primitive(&mut frame, image)?;
                 }
-                UiPrimitive::GlyphRun(run) => {
+                ViewPrimitive::GlyphRun(run) => {
                     self.render_colored_vertices(&mut frame, &colored)?;
                     colored.clear();
                     ensure_glyph_handoff(self, run)?;
                 }
-                UiPrimitive::Selection(selection) => {
+                ViewPrimitive::Selection(selection) => {
                     push_selection(scene, context, target, selection, &mut colored);
                 }
-                UiPrimitive::Caret(caret) => {
+                ViewPrimitive::Caret(caret) => {
                     push_caret(scene, context, target, caret, &mut colored);
                 }
-                UiPrimitive::CompositionUnderline(underline) => {
+                ViewPrimitive::CompositionUnderline(underline) => {
                     push_composition_underline(scene, context, target, underline, &mut colored);
                 }
             }
@@ -314,11 +313,11 @@ impl UiDirectPrimitiveRenderer for WgpuUiDirectPrimitiveRenderFrame<'_> {
     }
 }
 
-impl WgpuPreparedUiMaskTextureProvider {
+impl WgpuPreparedViewMaskTextureProvider {
     pub fn prepare(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        resources: &PreparedUiSceneResources,
+        resources: &PreparedViewSceneResources,
     ) -> Self {
         Self {
             masks: resources
@@ -330,12 +329,12 @@ impl WgpuPreparedUiMaskTextureProvider {
     }
 }
 
-impl UiMaskTextureProvider for WgpuPreparedUiMaskTextureProvider {
-    fn texture_for<'a>(&'a mut self, image: &UiMaskImage) -> Option<UiMaskTextureView<'a>> {
+impl ViewMaskTextureProvider for WgpuPreparedViewMaskTextureProvider {
+    fn texture_for<'a>(&'a mut self, image: &ViewMaskImage) -> Option<ViewMaskTextureView<'a>> {
         self.masks
             .iter()
             .find(|mask| &mask.image == image)
-            .map(|mask| UiMaskTextureView {
+            .map(|mask| ViewMaskTextureView {
                 view: &mask.view,
                 channel: mask.channel,
                 extent: mask.extent,
@@ -346,41 +345,43 @@ impl UiMaskTextureProvider for WgpuPreparedUiMaskTextureProvider {
 fn upload_mask_resource(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    resource: &PreparedUiMaskResource,
-) -> WgpuPreparedUiMaskTexture {
+    resource: &PreparedViewMaskResource,
+) -> WgpuPreparedViewMaskTexture {
     let texture = upload_rgba_texture(device, queue, &resource.frame, "arcweft-view-mask-resource");
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    WgpuPreparedUiMaskTexture {
+    WgpuPreparedViewMaskTexture {
         image: resource.image.clone(),
         channel: resource.channel,
-        extent: UiTextureExtent::new(resource.frame.width, resource.frame.height),
+        extent: ViewTextureExtent::new(resource.frame.width, resource.frame.height),
         _texture: texture,
         view,
     }
 }
 
 fn ensure_glyph_handoff(
-    renderer: &WgpuUiDirectPrimitiveRenderFrame<'_>,
-    run: &UiGlyphRun,
-) -> Result<(), UiCompositorError> {
+    renderer: &WgpuViewDirectPrimitiveRenderFrame<'_>,
+    run: &ViewGlyphRun,
+) -> Result<(), ViewCompositorError> {
     if renderer.has_glyph_handoff(run.run_index) {
         Ok(())
     } else {
-        Err(UiCompositorError::UnhandledGlyphRun {
+        Err(ViewCompositorError::UnhandledGlyphRun {
             run_index: run.run_index,
         })
     }
 }
 
-fn primitive_range_bounds(context: &UiSceneContext) -> Result<(usize, usize), UiCompositorError> {
+fn primitive_range_bounds(
+    context: &ViewSceneContext,
+) -> Result<(usize, usize), ViewCompositorError> {
     let start = usize::try_from(context.primitive_range.start).map_err(|_| {
-        UiCompositorError::InvalidPrimitiveRange {
+        ViewCompositorError::InvalidPrimitiveRange {
             start: context.primitive_range.start,
             end: context.primitive_range.end,
         }
     })?;
     let end = usize::try_from(context.primitive_range.end).map_err(|_| {
-        UiCompositorError::InvalidPrimitiveRange {
+        ViewCompositorError::InvalidPrimitiveRange {
             start: context.primitive_range.start,
             end: context.primitive_range.end,
         }
@@ -389,11 +390,11 @@ fn primitive_range_bounds(context: &UiSceneContext) -> Result<(usize, usize), Ui
 }
 
 fn push_solid_rect(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    rect: &UiSolidRect,
-    output: &mut Vec<UiColorVertex>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    rect: &ViewSolidRect,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     push_rect_vertices(
         scene,
@@ -406,11 +407,11 @@ fn push_solid_rect(
 }
 
 fn push_rounded_rect(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    rect: &UiRoundedRect,
-    output: &mut Vec<UiColorVertex>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    rect: &ViewRoundedRect,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     let color = color_to_f32(rect.color, context.opacity);
     let points = rounded_rect_points(rect.bounds, rect.radius);
@@ -426,11 +427,11 @@ fn push_rounded_rect(
 }
 
 fn push_border(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    border: &UiBorder,
-    output: &mut Vec<UiColorVertex>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    border: &ViewBorder,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     if border.width <= 0.0 {
         return;
@@ -465,11 +466,11 @@ fn push_border(
 }
 
 fn push_linear_gradient(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    gradient: &UiLinearGradient,
-    output: &mut Vec<UiColorVertex>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    gradient: &ViewLinearGradient,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     let bounds = gradient.bounds;
     let corners = rect_corners(bounds);
@@ -481,11 +482,11 @@ fn push_linear_gradient(
 }
 
 fn push_selection(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    selection: &UiSelectionPrimitive,
-    output: &mut Vec<UiColorVertex>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    selection: &ViewSelectionPrimitive,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     push_rect_vertices(
         scene,
@@ -498,11 +499,11 @@ fn push_selection(
 }
 
 fn push_caret(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    caret: &UiCaretPrimitive,
-    output: &mut Vec<UiColorVertex>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    caret: &ViewCaretPrimitive,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     push_rect_vertices(
         scene,
@@ -515,16 +516,16 @@ fn push_caret(
 }
 
 fn push_composition_underline(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    underline: &UiCompositionUnderline,
-    output: &mut Vec<UiColorVertex>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    underline: &ViewCompositionUnderline,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     let thickness = underline.thickness.max(1.0);
     let y = underline.bounds.y + underline.bounds.height - thickness;
     let mut bounds = HitRect::new(underline.bounds.x, y, underline.bounds.width, thickness);
-    if underline.style == UiUnderlineStyle::Dotted {
+    if underline.style == ViewUnderlineStyle::Dotted {
         let dot = thickness * 2.0;
         let mut x = bounds.x;
         while x < underline.bounds.x + underline.bounds.width {
@@ -542,7 +543,7 @@ fn push_composition_underline(
         }
         return;
     }
-    if underline.style == UiUnderlineStyle::Dashed {
+    if underline.style == ViewUnderlineStyle::Dashed {
         let dash = thickness * 4.0;
         let mut x = bounds.x;
         while x < underline.bounds.x + underline.bounds.width {
@@ -571,39 +572,39 @@ fn push_composition_underline(
 }
 
 fn push_rect_vertices(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
     bounds: HitRect,
     colors: [[f32; 4]; 4],
-    output: &mut Vec<UiColorVertex>,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     push_quad(scene, context, target, rect_corners(bounds), colors, output);
 }
 
 fn push_quad(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
     points: [LogicalPoint; 4],
     colors: [[f32; 4]; 4],
-    output: &mut Vec<UiColorVertex>,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     let vertices = [0, 1, 2, 0, 2, 3];
-    output.extend(vertices.into_iter().map(|index| UiColorVertex {
+    output.extend(vertices.into_iter().map(|index| ViewColorVertex {
         position: logical_to_ndc(scene, context, target, points[index]),
         color: colors[index],
     }));
 }
 
 fn push_polygon_fan(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
     center: LogicalPoint,
     points: &[LogicalPoint],
     color: [f32; 4],
-    output: &mut Vec<UiColorVertex>,
+    output: &mut Vec<ViewColorVertex>,
 ) {
     if points.len() < 3 {
         return;
@@ -611,7 +612,7 @@ fn push_polygon_fan(
     for index in 0..points.len() {
         let next = (index + 1) % points.len();
         for point in [center, points[index], points[next]] {
-            output.push(UiColorVertex {
+            output.push(ViewColorVertex {
                 position: logical_to_ndc(scene, context, target, point),
                 color,
             });
@@ -620,11 +621,11 @@ fn push_polygon_fan(
 }
 
 fn image_vertices(
-    scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-    image: &UiImagePrimitive,
-) -> [UiImageVertex; 6] {
+    scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+    image: &ViewImagePrimitive,
+) -> [ViewImageVertex; 6] {
     let corners = rect_corners(image.bounds);
     let positions = corners.map(|point| logical_to_ndc(scene, context, target, point));
     let opacity = [
@@ -634,32 +635,32 @@ fn image_vertices(
         0.0,
     ];
     [
-        UiImageVertex {
+        ViewImageVertex {
             position: positions[0],
             uv: [0.0, 0.0],
             opacity,
         },
-        UiImageVertex {
+        ViewImageVertex {
             position: positions[1],
             uv: [0.0, 1.0],
             opacity,
         },
-        UiImageVertex {
+        ViewImageVertex {
             position: positions[2],
             uv: [1.0, 1.0],
             opacity,
         },
-        UiImageVertex {
+        ViewImageVertex {
             position: positions[0],
             uv: [0.0, 0.0],
             opacity,
         },
-        UiImageVertex {
+        ViewImageVertex {
             position: positions[2],
             uv: [1.0, 1.0],
             opacity,
         },
-        UiImageVertex {
+        ViewImageVertex {
             position: positions[3],
             uv: [1.0, 0.0],
             opacity,
@@ -668,9 +669,9 @@ fn image_vertices(
 }
 
 fn logical_to_ndc(
-    _scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
+    _scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
     point: LogicalPoint,
 ) -> [f32; 2] {
     let transformed = apply_transform(context.transform, point);
@@ -706,7 +707,7 @@ fn nonnegative_ceil_to_u32(value: f32) -> u32 {
     value.max(0.0).ceil().to_u32().unwrap_or(u32::MAX)
 }
 
-fn apply_transform(transform: UiAffine2D, point: LogicalPoint) -> LogicalPoint {
+fn apply_transform(transform: ViewAffine2D, point: LogicalPoint) -> LogicalPoint {
     LogicalPoint {
         x: transform
             .m11
@@ -719,15 +720,15 @@ fn apply_transform(transform: UiAffine2D, point: LogicalPoint) -> LogicalPoint {
 
 fn apply_context_scissor(
     pass: &mut wgpu::RenderPass<'_>,
-    _scene: &UiScene,
-    context: &UiSceneContext,
-    target: UiCompositorTarget<'_>,
-) -> Result<(), UiCompositorError> {
+    _scene: &ViewScene,
+    context: &ViewSceneContext,
+    target: ViewCompositorTarget<'_>,
+) -> Result<(), ViewCompositorError> {
     let Some(clip) = &context.clip else {
         return Ok(());
     };
     let bounds = match clip {
-        UiClip::Rect(bounds) | UiClip::RoundedRect { bounds, .. } => *bounds,
+        ViewClip::Rect(bounds) | ViewClip::RoundedRect { bounds, .. } => *bounds,
     };
     let scale_x = target_axis_scale(target.extent.width, target.logical_extent[0]);
     let scale_y = target_axis_scale(target.extent.height, target.logical_extent[1]);
@@ -738,7 +739,7 @@ fn apply_context_scissor(
     let width = nonnegative_ceil_to_u32(bounds.width * scale_x).min(max_width);
     let height = nonnegative_ceil_to_u32(bounds.height * scale_y).min(max_height);
     if width == 0 || height == 0 {
-        return Err(UiCompositorError::UnsupportedClip {
+        return Err(ViewCompositorError::UnsupportedClip {
             reason: "clip resolved to an empty target scissor".into(),
         });
     }
@@ -837,7 +838,7 @@ fn gradient_t(bounds: HitRect, angle_degrees: f32, point: LogicalPoint) -> f32 {
     ((projection / (half * 2.0)) + 0.5).clamp(0.0, 1.0)
 }
 
-fn gradient_color_at(gradient: &UiLinearGradient, t: f32, opacity: f32) -> [f32; 4] {
+fn gradient_color_at(gradient: &ViewLinearGradient, t: f32, opacity: f32) -> [f32; 4] {
     let Some(first) = gradient.stops.first() else {
         return [0.0, 0.0, 0.0, 0.0];
     };
@@ -856,7 +857,7 @@ fn gradient_color_at(gradient: &UiLinearGradient, t: f32, opacity: f32) -> [f32;
     color_to_f32(last.color, opacity)
 }
 
-fn mix_color(a: UiColorRgba8, b: UiColorRgba8, t: f32, opacity: f32) -> [f32; 4] {
+fn mix_color(a: ViewColorRgba8, b: ViewColorRgba8, t: f32, opacity: f32) -> [f32; 4] {
     let a = color_to_f32(a, opacity);
     let b = color_to_f32(b, opacity);
     [
@@ -867,7 +868,7 @@ fn mix_color(a: UiColorRgba8, b: UiColorRgba8, t: f32, opacity: f32) -> [f32; 4]
     ]
 }
 
-fn color_to_f32(color: UiColorRgba8, opacity: f32) -> [f32; 4] {
+fn color_to_f32(color: ViewColorRgba8, opacity: f32) -> [f32; 4] {
     [
         f32::from(color.red) / 255.0,
         f32::from(color.green) / 255.0,
@@ -921,7 +922,7 @@ fn color_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::R
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<UiColorVertex>() as u64,
+                array_stride: std::mem::size_of::<ViewColorVertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &[
                     wgpu::VertexAttribute {
@@ -1003,7 +1004,7 @@ fn image_pipeline(
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<UiImageVertex>() as u64,
+                array_stride: std::mem::size_of::<ViewImageVertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &[
                     wgpu::VertexAttribute {

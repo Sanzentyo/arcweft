@@ -29,7 +29,7 @@ slice for the request file dated 2026-06-27.
   replay hashes include deterministic structure and lengths but not text payload
   bytes.
 - Renderer-facing UI data lowers TextField selection/caret/composition geometry
-  into `UiScene` primitives without DOM/textarea or CPU-raster fallback paths.
+  into `ViewScene` primitives without DOM/textarea or CPU-raster fallback paths.
 
 ## Explicit Non-Goals
 
@@ -80,7 +80,7 @@ existing crate boundaries:
   authoring/retained UI data and editor state. They do not perform rendering or
   platform I/O.
 - `arcweft-lang-syntax::ast::{style, view}` owns syntax surfaces only.
-- `arcweft-render-wgpu::ui_scene` owns renderer-facing primitive data and has no
+- `arcweft-render-wgpu::view_scene` owns renderer-facing primitive data and has no
   platform adapter API.
 
 No `unsafe`, DOM/textarea fallback, keydown-character insertion path, or CPU
@@ -88,7 +88,7 @@ raster surface path is introduced.
 
 ## Follow-Up Boundaries
 
-seq06.2 should consume the `UiScene` primitive contract and add Takumi lowering.
+seq06.2 should consume the `ViewScene` primitive contract and add Takumi lowering.
 seq06.3 should translate TSF, Cocoa, UIKit, Android, Wayland, Web EditContext,
 or other platform IME APIs into `TextInput` batches and host commands without
 leaking those APIs into the shared crates.

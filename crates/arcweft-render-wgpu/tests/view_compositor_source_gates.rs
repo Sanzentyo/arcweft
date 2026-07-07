@@ -6,11 +6,11 @@ fn renderer_sources_do_not_introduce_forbidden_full_surface_fallbacks() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_dir = manifest_dir.join("src");
     let compositor_sources = [
-        source_dir.join("ui_blend.rs"),
-        source_dir.join("ui_clip_path.rs"),
-        source_dir.join("ui_compositor.rs"),
-        source_dir.join("ui_effects.rs"),
-        source_dir.join("ui_mask.rs"),
+        source_dir.join("view_blend.rs"),
+        source_dir.join("view_clip_path.rs"),
+        source_dir.join("view_compositor.rs"),
+        source_dir.join("view_effects.rs"),
+        source_dir.join("view_mask.rs"),
     ];
     let forbidden = [
         "takumi_raster",

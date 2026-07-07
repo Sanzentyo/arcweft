@@ -41,7 +41,7 @@ Capture these logical timestamps from the player timeline:
 For each timestamp, record:
 
 - `UiMotionSample` packets for background color, opacity, and scale;
-- `UiCompositorPlan` pass counters;
+- `ViewCompositorPlan` pass counters;
 - clip plan kind and local/visual bounds;
 - mask tile origin, tile size, repeat flags, and channel;
 - output image hash or bounded drift packet.
@@ -66,7 +66,7 @@ alpha_coverage_pixel_count_delta <= 1% of group area
 ## Commands after overlay apply
 
 ```bash
-cargo test -p arcweft-render-wgpu --test ui_compositor_gpu_smoke_timestamps --all-features -- --ignored --nocapture
+cargo test -p arcweft-render-wgpu --test view_compositor_gpu_smoke_timestamps --all-features -- --ignored --nocapture
 ```
 
 The included ignored test is a fixture contract. It should be promoted once the

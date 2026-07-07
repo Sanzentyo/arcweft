@@ -17,6 +17,7 @@ fn runtime_action_button_resolves_label_and_noop_action() {
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
         scroll_regions: Vec::new(),
+        surfaces: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: vec![ViewActionButtonResource {
             public_id: "button.submit_feedback".to_owned(),
@@ -65,6 +66,7 @@ fn runtime_action_button_resolves_action_invoke_action() {
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
         scroll_regions: Vec::new(),
+        surfaces: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: vec![ViewActionButtonResource {
             public_id: "button.continue".to_owned(),

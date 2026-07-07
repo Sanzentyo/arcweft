@@ -26,14 +26,14 @@ cargo +nightly -Zscript tools/capture-seq06-13e1-inset-shadow-native-frame.rs --
 */
 
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_compositor::{
-    UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
-    UiDirectPrimitiveRenderer, UiNoMaskTextures,
+use arcweft_render_wgpu::view_compositor::{
+    ViewCompositor, ViewCompositorError, ViewCompositorFrame, ViewCompositorTarget,
+    ViewDirectPrimitiveRenderer, ViewNoMaskTextures,
 };
-use arcweft_render_wgpu::ui_effects::UiTextureExtent;
-use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
-    UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene, UiSceneContext,
+use arcweft_render_wgpu::view_effects::ViewTextureExtent;
+use arcweft_render_wgpu::view_scene::{
+    ViewAffine2D, ViewBoxShadow, ViewBoxShadowList, ViewColorRgba8, ViewCompositingEffects,
+    ViewCompositingGroup, ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
 };
 use png::{BitDepth, ColorType, Encoder};
 use std::env;
@@ -78,8 +78,7 @@ fn run() -> Result<(), String> {
     fs::create_dir_all(&target_dir)
         .map_err(|error| format!("create {}: {error}", target_dir.display()))?;
 
-    let candidate =
-        target_dir.join("seq06_13e1_inset_box_shadow.candidate.png");
+    let candidate = target_dir.join("seq06_13e1_inset_box_shadow.candidate.png");
     let observe = target_dir.join("seq06_13e1_inset_box_shadow.observe.json");
 
     let capture = render_capture(args.target_format.wgpu())?;
@@ -122,10 +121,8 @@ impl Args {
                 "--root" => root = Some(PathBuf::from(next_arg(&mut values, "--root")?)),
                 "--out-dir" => out_dir = PathBuf::from(next_arg(&mut values, "--out-dir")?),
                 "--target-format" => {
-                    target_format = CaptureTargetFormat::parse(&next_arg(
-                        &mut values,
-                        "--target-format",
-                    )?)?;
+                    target_format =
+                        CaptureTargetFormat::parse(&next_arg(&mut values, "--target-format")?)?;
                 }
                 "--help" | "-h" => help = true,
                 unknown => return Err(format!("unknown argument `{unknown}`")),
@@ -179,23 +176,23 @@ impl CaptureTargetFormat {
 
 struct NoopDirectRenderer;
 
-impl UiDirectPrimitiveRenderer for NoopDirectRenderer {
+impl ViewDirectPrimitiveRenderer for NoopDirectRenderer {
     fn render_direct_range(
         &mut self,
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
         _encoder: &mut wgpu::CommandEncoder,
-        _scene: &UiScene,
-        _context: &UiSceneContext,
-        _target: UiCompositorTarget<'_>,
-    ) -> Result<(), UiCompositorError> {
+        _scene: &ViewScene,
+        _context: &ViewSceneContext,
+        _target: ViewCompositorTarget<'_>,
+    ) -> Result<(), ViewCompositorError> {
         Ok(())
     }
 }
 
 struct CaptureOutput {
     rgba: Vec<u8>,
-    stats: arcweft_render_wgpu::ui_compositor::UiCompositorStats,
+    stats: arcweft_render_wgpu::view_compositor::ViewCompositorStats,
     adapter: wgpu::AdapterInfo,
     content: ContentStats,
 }
@@ -226,7 +223,7 @@ fn render_capture(format: wgpu::TextureFormat) -> Result<CaptureOutput, String> 
     }))
     .map_err(|error| format!("request native wgpu device: {error}"))?;
 
-    let extent = UiTextureExtent::new(WIDTH, HEIGHT);
+    let extent = ViewTextureExtent::new(WIDTH, HEIGHT);
     let final_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("arcweft-seq06-13e1-inset-shadow-capture-target"),
         size: wgpu::Extent3d {
@@ -251,9 +248,9 @@ fn render_capture(format: wgpu::TextureFormat) -> Result<CaptureOutput, String> 
 
     let scene = smoke_scene();
     let mut direct_renderer = NoopDirectRenderer;
-    let mut mask_textures = UiNoMaskTextures;
-    let mut compositor = UiCompositor::new(&device, &queue, format);
-    let mut frame = UiCompositorFrame {
+    let mut mask_textures = ViewNoMaskTextures;
+    let mut compositor = ViewCompositor::new(&device, &queue, format);
+    let mut frame = ViewCompositorFrame {
         device: &device,
         queue: &queue,
         encoder: &mut encoder,
@@ -278,14 +275,14 @@ fn render_capture(format: wgpu::TextureFormat) -> Result<CaptureOutput, String> 
     })
 }
 
-fn smoke_scene() -> UiScene {
-    let mut scene = UiScene::new(WIDTH as f32, HEIGHT as f32);
+fn smoke_scene() -> ViewScene {
+    let mut scene = ViewScene::new(WIDTH as f32, HEIGHT as f32);
 
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
             HitRect::new(24.0, 24.0, 112.0, 72.0),
-            UiCompositingEffects {
-                box_shadows: UiBoxShadowList::new([UiBoxShadow::inset(
+            ViewCompositingEffects {
+                box_shadows: ViewBoxShadowList::new([ViewBoxShadow::inset(
                     0.0,
                     3.0,
                     12.0,
@@ -293,21 +290,21 @@ fn smoke_scene() -> UiScene {
                     14.0,
                     rgba(0, 0, 0, 144),
                 )]),
-                ..UiCompositingEffects::default()
+                ..ViewCompositingEffects::default()
             },
         )
         .with_children(vec![direct(0, 0)]),
     ));
 
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
             HitRect::new(176.0, 40.0, 112.0, 72.0),
-            UiCompositingEffects {
-                box_shadows: UiBoxShadowList::new([
-                    UiBoxShadow::outer(0.0, 10.0, 18.0, 2.0, 16.0, rgba(0, 0, 0, 96)),
-                    UiBoxShadow::inset(0.0, -2.0, 10.0, 1.0, 16.0, rgba(255, 255, 255, 88)),
+            ViewCompositingEffects {
+                box_shadows: ViewBoxShadowList::new([
+                    ViewBoxShadow::outer(0.0, 10.0, 18.0, 2.0, 16.0, rgba(0, 0, 0, 96)),
+                    ViewBoxShadow::inset(0.0, -2.0, 10.0, 1.0, 16.0, rgba(255, 255, 255, 88)),
                 ]),
-                ..UiCompositingEffects::default()
+                ..ViewCompositingEffects::default()
             },
         )
         .with_children(vec![direct(0, 0)]),
@@ -316,8 +313,8 @@ fn smoke_scene() -> UiScene {
     scene
 }
 
-fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiColorRgba8 {
-    UiColorRgba8 {
+fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewColorRgba8 {
+    ViewColorRgba8 {
         red,
         green,
         blue,
@@ -325,12 +322,12 @@ fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiColorRgba8 {
     }
 }
 
-fn direct(start: u32, end: u32) -> UiPaintNode {
-    UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2D::IDENTITY,
+fn direct(start: u32, end: u32) -> ViewPaintNode {
+    ViewPaintNode::Direct(ViewSceneContext {
+        transform: ViewAffine2D::IDENTITY,
         opacity: 1.0,
         clip: None,
-        primitive_range: UiPrimitiveRange { start, end },
+        primitive_range: ViewPrimitiveRange { start, end },
     })
 }
 
@@ -463,7 +460,12 @@ fn write_observe_json(
         "  \"schema\": \"arcweft.seq06.13e1.inset_box_shadow.native_observe.v1\","
     )
     .unwrap();
-    writeln!(&mut json, "  \"generated_unix_seconds\": {},", unix_seconds()).unwrap();
+    writeln!(
+        &mut json,
+        "  \"generated_unix_seconds\": {},",
+        unix_seconds()
+    )
+    .unwrap();
     writeln!(&mut json, "  \"target\": \"native\",").unwrap();
     writeln!(&mut json, "  \"fixture\": \"seq06_13e1_inset_box_shadow\",").unwrap();
     writeln!(
@@ -479,9 +481,9 @@ fn write_observe_json(
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
     for (index, route) in [
-        "UiCompositingEffects::box_shadows",
-        "UiBoxShadowPassPlan unified outer/inset pass list",
-        "UiCompositor::render_group",
+        "ViewCompositingEffects::box_shadows",
+        "ViewBoxShadowPassPlan unified outer/inset pass list",
+        "ViewCompositor::render_group",
         "PASS_BOX_SHADOW WGSL kind flag",
     ]
     .iter()
@@ -525,8 +527,18 @@ fn write_observe_json(
         capture.stats.backdrop_copies
     )
     .unwrap();
-    writeln!(&mut json, "    \"pool_reuses\": {},", capture.stats.pool_reuses).unwrap();
-    writeln!(&mut json, "    \"clip_passes\": {},", capture.stats.clip_passes).unwrap();
+    writeln!(
+        &mut json,
+        "    \"pool_reuses\": {},",
+        capture.stats.pool_reuses
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"clip_passes\": {},",
+        capture.stats.clip_passes
+    )
+    .unwrap();
     writeln!(
         &mut json,
         "    \"box_shadow_passes\": {}",
@@ -541,11 +553,26 @@ fn write_observe_json(
         capture.content.non_transparent_pixels
     )
     .unwrap();
-    writeln!(&mut json, "    \"max_alpha\": {},", capture.content.max_alpha).unwrap();
-    writeln!(&mut json, "    \"max_channel\": {}", capture.content.max_channel).unwrap();
+    writeln!(
+        &mut json,
+        "    \"max_alpha\": {},",
+        capture.content.max_alpha
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"max_channel\": {}",
+        capture.content.max_channel
+    )
+    .unwrap();
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"adapter\": {{").unwrap();
-    writeln!(&mut json, "    \"name\": {},", json_string(&capture.adapter.name)).unwrap();
+    writeln!(
+        &mut json,
+        "    \"name\": {},",
+        json_string(&capture.adapter.name)
+    )
+    .unwrap();
     writeln!(&mut json, "    \"vendor\": {},", capture.adapter.vendor).unwrap();
     writeln!(&mut json, "    \"device\": {},", capture.adapter.device).unwrap();
     writeln!(
@@ -574,7 +601,12 @@ fn write_observe_json(
     .unwrap();
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"environment\": {{").unwrap();
-    writeln!(&mut json, "    \"required\": {},", env_present(REQUIRED_ENV)).unwrap();
+    writeln!(
+        &mut json,
+        "    \"required\": {},",
+        env_present(REQUIRED_ENV)
+    )
+    .unwrap();
     writeln!(&mut json, "    \"pinned\": {},", env_present(PINNED_ENV)).unwrap();
     writeln!(
         &mut json,
@@ -588,8 +620,35 @@ fn write_observe_json(
         json_string(NATIVE_BACKEND)
     )
     .unwrap();
-    writeln!(&mut json, "    \"arcweft_commit\": {},", json_option(command_stdout(Command::new("git").arg("-C").arg(display_path(root)).arg("rev-parse").arg("HEAD")).as_deref())).unwrap();
-    writeln!(&mut json, "    \"arcweft_dirty\": {}", command_stdout(Command::new("git").arg("-C").arg(display_path(root)).arg("status").arg("--short")).map_or(String::from("null"), |status| (!status.is_empty()).to_string())).unwrap();
+    writeln!(
+        &mut json,
+        "    \"arcweft_commit\": {},",
+        json_option(
+            command_stdout(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(display_path(root))
+                    .arg("rev-parse")
+                    .arg("HEAD")
+            )
+            .as_deref()
+        )
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"arcweft_dirty\": {}",
+        command_stdout(
+            Command::new("git")
+                .arg("-C")
+                .arg(display_path(root))
+                .arg("status")
+                .arg("--short")
+        )
+        .map_or(String::from("null"), |status| (!status.is_empty())
+            .to_string())
+    )
+    .unwrap();
     writeln!(&mut json, "  }}").unwrap();
     writeln!(&mut json, "}}").unwrap();
     fs::write(observe, json).map_err(|error| format!("write {}: {error}", observe.display()))

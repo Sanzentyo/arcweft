@@ -9,7 +9,7 @@ use arcweft_bundle::{
         ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
         ViewLayoutBoundsResource, ViewPartStyleRule, ViewProgramResource, ViewRuntimeButtonBounds,
         ViewRuntimeTextBlockBounds, ViewScrollAxis, ViewScrollOverflowPolicy,
-        ViewScrollRegionResource, ViewStyleResource, ViewTextBlockResource,
+        ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
         types::DigestRef,
         ui::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleAssignOp, StyleSourceIdentity,
@@ -70,6 +70,7 @@ struct ViewLoweringState {
     semantic_targets: Vec<ViewSemanticTarget>,
     layout_bounds: Vec<ViewLayoutBoundsResource>,
     scroll_regions: Vec<ViewScrollRegionResource>,
+    surfaces: Vec<ViewSurfaceResource>,
     scroll_stack: Vec<String>,
     text_blocks: Vec<ViewTextBlockResource>,
     action_buttons: Vec<ViewActionButtonResource>,
@@ -222,6 +223,7 @@ pub(in crate::app) fn view_sidecars(
         && state.input_options.is_empty()
         && state.layout_bounds.is_empty()
         && state.scroll_regions.is_empty()
+        && state.surfaces.is_empty()
         && state.text_blocks.is_empty()
         && state.action_buttons.is_empty()
         && state.focus_groups.is_empty()
@@ -245,6 +247,7 @@ pub(in crate::app) fn view_sidecars(
             semantic_targets: state.semantic_targets,
             layout_bounds: state.layout_bounds,
             scroll_regions: state.scroll_regions,
+            surfaces: state.surfaces,
             text_blocks: state.text_blocks,
             action_buttons: state.action_buttons,
             focus_groups: state.focus_groups,
@@ -1243,7 +1246,7 @@ fn lower_text(
     let text_block_id = next_text_block_id(view_id, state);
     let view = Some(view_resource_id(view_id));
     let scroll_region = state.scroll_stack.last().cloned();
-    state.text_blocks.push(ViewTextBlockResource::new(
+    let mut text_block = ViewTextBlockResource::new(
         text_block_id,
         view,
         scroll_region,
@@ -1254,7 +1257,9 @@ fn lower_text(
             frame.width_milli,
             frame.height_milli,
         ),
-    ));
+    );
+    text_block.selection_policy = text_block_selection_policy(text.modifiers());
+    state.text_blocks.push(text_block);
     Ok(frame)
 }
 
@@ -2145,6 +2150,36 @@ fn modifier_layout_length_u32(modifiers: &[ViewModifier], names: &[&str]) -> Opt
         }
         _ => None,
     })
+}
+
+fn text_block_selection_policy(modifiers: &[ViewModifier]) -> UiTextSelectionPolicy {
+    modifiers
+        .iter()
+        .find_map(|modifier| match modifier {
+            ViewModifier::Property { name, value }
+                if matches!(
+                    name.as_str(),
+                    "selection" | "selection_policy" | "selectionPolicy"
+                ) =>
+            {
+                symbol_expr_name(value)
+                    .as_deref()
+                    .map(|value| text_control_selection_policy(Some(value)))
+            }
+            ViewModifier::Property { name, value }
+                if matches!(name.as_str(), "selectable" | "user_select" | "userSelect") =>
+            {
+                match value {
+                    Expr::Literal(Literal::Bool(true)) => Some(UiTextSelectionPolicy::Enabled),
+                    Expr::Literal(Literal::Bool(false)) => Some(UiTextSelectionPolicy::Disabled),
+                    _ => symbol_expr_name(value)
+                        .as_deref()
+                        .map(|value| text_control_selection_policy(Some(value))),
+                }
+            }
+            _ => None,
+        })
+        .unwrap_or(UiTextSelectionPolicy::Disabled)
 }
 
 fn expr_px_milli(expr: &Expr) -> Option<i32> {

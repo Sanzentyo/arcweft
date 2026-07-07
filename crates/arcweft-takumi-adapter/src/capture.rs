@@ -1,7 +1,7 @@
 use crate::metadata::ArcweftNodeMetadata;
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBlendMode, UiClip, UiIsolation, UiPrimitiveRange,
+use arcweft_render_wgpu::view_scene::{
+    ViewAffine2D, ViewBlendMode, ViewClip, ViewIsolation, ViewPrimitiveRange,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -21,7 +21,7 @@ pub struct TakumiEffectOutsets {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TakumiCaptureRecord {
     metadata: ArcweftNodeMetadata,
-    primitive_range: UiPrimitiveRange,
+    primitive_range: ViewPrimitiveRange,
     local_bounds: HitRect,
     layout_bounds: HitRect,
     visual_bounds: HitRect,
@@ -29,8 +29,8 @@ pub struct TakumiCaptureRecord {
     clip_bounds: Option<HitRect>,
     mask_bounds: Vec<HitRect>,
     effect_outsets: TakumiEffectOutsets,
-    transform: UiAffine2D,
-    clip: Option<UiClip>,
+    transform: ViewAffine2D,
+    clip: Option<ViewClip>,
     compositing_group_id: Option<TakumiCompositingGroupId>,
     paint_node_id: Option<TakumiPaintNodeId>,
 }
@@ -38,7 +38,7 @@ pub struct TakumiCaptureRecord {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TakumiCompositingCaptureRecord {
     metadata: ArcweftNodeMetadata,
-    primitive_range: Option<UiPrimitiveRange>,
+    primitive_range: Option<ViewPrimitiveRange>,
     layout_bounds: HitRect,
     visual_bounds: HitRect,
     hit_bounds: HitRect,
@@ -47,8 +47,8 @@ pub struct TakumiCompositingCaptureRecord {
     effect_outsets: TakumiEffectOutsets,
     compositing_group_id: TakumiCompositingGroupId,
     paint_node_id: TakumiPaintNodeId,
-    isolation: UiIsolation,
-    blend_mode: UiBlendMode,
+    isolation: ViewIsolation,
+    blend_mode: ViewBlendMode,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -103,10 +103,10 @@ impl TakumiEffectOutsets {
 impl TakumiCaptureRecord {
     pub fn new(
         metadata: ArcweftNodeMetadata,
-        primitive_range: UiPrimitiveRange,
+        primitive_range: ViewPrimitiveRange,
         local_bounds: HitRect,
-        transform: UiAffine2D,
-        clip: Option<UiClip>,
+        transform: ViewAffine2D,
+        clip: Option<ViewClip>,
     ) -> Self {
         let clip_bounds = clip.as_ref().map(ui_clip_bounds);
         Self {
@@ -179,7 +179,7 @@ impl TakumiCaptureRecord {
         &self.metadata
     }
 
-    pub const fn primitive_range(&self) -> UiPrimitiveRange {
+    pub const fn primitive_range(&self) -> ViewPrimitiveRange {
         self.primitive_range
     }
 
@@ -211,11 +211,11 @@ impl TakumiCaptureRecord {
         self.effect_outsets
     }
 
-    pub const fn transform(&self) -> UiAffine2D {
+    pub const fn transform(&self) -> ViewAffine2D {
         self.transform
     }
 
-    pub fn clip(&self) -> Option<&UiClip> {
+    pub fn clip(&self) -> Option<&ViewClip> {
         self.clip.as_ref()
     }
 
@@ -247,13 +247,13 @@ impl TakumiCompositingCaptureRecord {
             effect_outsets: TakumiEffectOutsets::none(),
             compositing_group_id,
             paint_node_id,
-            isolation: UiIsolation::Auto,
-            blend_mode: UiBlendMode::Normal,
+            isolation: ViewIsolation::Auto,
+            blend_mode: ViewBlendMode::Normal,
         }
     }
 
     #[must_use]
-    pub const fn with_primitive_range(mut self, range: Option<UiPrimitiveRange>) -> Self {
+    pub const fn with_primitive_range(mut self, range: Option<ViewPrimitiveRange>) -> Self {
         self.primitive_range = range;
         self
     }
@@ -284,13 +284,13 @@ impl TakumiCompositingCaptureRecord {
     }
 
     #[must_use]
-    pub const fn with_isolation(mut self, isolation: UiIsolation) -> Self {
+    pub const fn with_isolation(mut self, isolation: ViewIsolation) -> Self {
         self.isolation = isolation;
         self
     }
 
     #[must_use]
-    pub const fn with_blend_mode(mut self, blend_mode: UiBlendMode) -> Self {
+    pub const fn with_blend_mode(mut self, blend_mode: ViewBlendMode) -> Self {
         self.blend_mode = blend_mode;
         self
     }
@@ -299,7 +299,7 @@ impl TakumiCompositingCaptureRecord {
         &self.metadata
     }
 
-    pub const fn primitive_range(&self) -> Option<UiPrimitiveRange> {
+    pub const fn primitive_range(&self) -> Option<ViewPrimitiveRange> {
         self.primitive_range
     }
 
@@ -335,11 +335,11 @@ impl TakumiCompositingCaptureRecord {
         self.paint_node_id
     }
 
-    pub const fn isolation(&self) -> UiIsolation {
+    pub const fn isolation(&self) -> ViewIsolation {
         self.isolation
     }
 
-    pub const fn blend_mode(&self) -> UiBlendMode {
+    pub const fn blend_mode(&self) -> ViewBlendMode {
         self.blend_mode
     }
 }
@@ -370,9 +370,9 @@ impl TakumiCaptureFrame {
     }
 }
 
-pub(crate) fn ui_clip_bounds(clip: &UiClip) -> HitRect {
+pub(crate) fn ui_clip_bounds(clip: &ViewClip) -> HitRect {
     match clip {
-        UiClip::Rect(bounds) | UiClip::RoundedRect { bounds, .. } => *bounds,
+        ViewClip::Rect(bounds) | ViewClip::RoundedRect { bounds, .. } => *bounds,
     }
 }
 
@@ -387,7 +387,7 @@ fn positive_px(value: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_render_wgpu::ui_scene::UiColorRgba8;
+    use arcweft_render_wgpu::view_scene::ViewColorRgba8;
     use arcweft_view::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
 
     fn metadata() -> ArcweftNodeMetadata {
@@ -405,10 +405,10 @@ mod tests {
     fn direct_record_defaults_keep_visual_and_hit_bounds_separate_from_future_effects() {
         let record = TakumiCaptureRecord::new(
             metadata(),
-            UiPrimitiveRange { start: 4, end: 9 },
+            ViewPrimitiveRange { start: 4, end: 9 },
             HitRect::new(10.0, 20.0, 30.0, 40.0),
-            UiAffine2D::IDENTITY,
-            Some(UiClip::Rect(HitRect::new(12.0, 22.0, 20.0, 30.0))),
+            ViewAffine2D::IDENTITY,
+            Some(ViewClip::Rect(HitRect::new(12.0, 22.0, 20.0, 30.0))),
         )
         .with_paint_node_id(TakumiPaintNodeId::new(1))
         .with_compositing_group_id(TakumiCompositingGroupId::new(10));
@@ -439,8 +439,8 @@ mod tests {
         )
         .with_effect_outsets(outsets)
         .with_mask_bounds([HitRect::new(100.0, 50.0, 80.0, 40.0)])
-        .with_blend_mode(UiBlendMode::Multiply)
-        .with_isolation(UiIsolation::Isolate);
+        .with_blend_mode(ViewBlendMode::Multiply)
+        .with_isolation(ViewIsolation::Isolate);
 
         assert_eq!(record.hit_bounds(), HitRect::new(100.0, 50.0, 80.0, 40.0));
         assert_eq!(
@@ -452,8 +452,8 @@ mod tests {
             &[HitRect::new(100.0, 50.0, 80.0, 40.0)]
         );
         assert!((record.effect_outsets().filter_px - 18.0).abs() <= f32::EPSILON);
-        assert_eq!(record.blend_mode(), UiBlendMode::Multiply);
-        assert_eq!(record.isolation(), UiIsolation::Isolate);
+        assert_eq!(record.blend_mode(), ViewBlendMode::Multiply);
+        assert_eq!(record.isolation(), ViewIsolation::Isolate);
     }
 
     #[test]
@@ -461,7 +461,7 @@ mod tests {
         let outsets = TakumiEffectOutsets::new(f32::NAN, f32::INFINITY, -1.0);
         assert_eq!(outsets, TakumiEffectOutsets::none());
 
-        let shadow_color = UiColorRgba8 {
+        let shadow_color = ViewColorRgba8 {
             red: 0,
             green: 0,
             blue: 0,

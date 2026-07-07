@@ -29,7 +29,7 @@ shader effects and does not CPU-rasterize Takumi output.
 Two record categories are emitted:
 
 - object records for direct paint nodes that emit primitives;
-- compositing group records for seq06.9a `UiCompositingGroup` nodes.
+- compositing group records for seq06.9a `ViewCompositingGroup` nodes.
 
 Both record kinds expose:
 

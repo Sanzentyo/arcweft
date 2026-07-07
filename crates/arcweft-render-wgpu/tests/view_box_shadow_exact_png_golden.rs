@@ -61,7 +61,7 @@ fn seq06_13e1_inset_shadow_policy_pins_typed_compositor_route() {
         ))
         .expect("read seq06.13e.1 exact PNG policy");
     for required in [
-        "UiCompositor::render_group",
+        "ViewCompositor::render_group",
         "PASS_BOX_SHADOW",
         "CPU raster fallback",
         "WebAssembly-exported renderer readback",
@@ -85,7 +85,7 @@ fn seq06_13e1_inset_shadow_policy_pins_typed_compositor_route() {
         let text = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {label} {}: {error}", path.display()));
         for required in [
-            "UiCompositor::render_group",
+            "ViewCompositor::render_group",
             "PASS_BOX_SHADOW",
             "rounded_inset_shadow_card",
             "mixed_outer_inset_shadow_card",
@@ -99,25 +99,32 @@ fn seq06_13e1_inset_shadow_policy_pins_typed_compositor_route() {
     }
 
     let smoke = fs::read_to_string(
-        root.join("crates/arcweft-render-wgpu/tests/ui_box_shadow_gpu_smoke.rs"),
+        root.join("crates/arcweft-render-wgpu/tests/view_box_shadow_gpu_smoke.rs"),
     )
     .expect("read seq06.13e GPU smoke source");
-    assert!(smoke.contains("UiBoxShadow::inset"));
+    assert!(smoke.contains("ViewBoxShadow::inset"));
     assert!(smoke.contains("stats.box_shadow_passes, 3"));
 
     let web_export = fs::read_to_string(
         root.join("crates/arcweft-player-web/src/inset_shadow_exact_capture.rs"),
     )
     .expect("read Web exact wasm export source");
+    let surface_lowerer =
+        fs::read_to_string(root.join("crates/arcweft-player-scene/src/frame/surfaces.rs"))
+            .expect("read player surface lowerer source");
     assert!(web_export.contains("capture_seq06_13e1_inset_box_shadow_exact_png"));
     assert!(web_export.contains("ViewStyleResource"));
-    assert!(web_export.contains("runtime_element_styles_with_style"));
+    assert!(web_export.contains("runtime_surfaces_with_style"));
+    assert!(web_export.contains("BundlePresentationSnapshot"));
     assert!(web_export.contains("PlayerFramePlanner::prepare"));
     assert!(web_export.contains("SharedRenderer::render_to_view"));
-    assert!(web_export.contains("UiRoundedRect"));
-    assert!(web_export.contains("UiCompositor::render_group"));
+    assert!(surface_lowerer.contains("ViewRoundedRect"));
+    assert!(surface_lowerer.contains("ViewCompositingEffects"));
+    assert!(surface_lowerer.contains("ViewBoxShadow"));
+    assert!(surface_lowerer.contains("push_view_scene"));
     assert!(web_export.contains("copy_texture_to_buffer"));
     assert!(!web_export.contains("runtime_surface_style"));
+    assert!(!web_export.contains("with_view_scenes"));
     assert!(!web_export.contains("getContext"));
 
     let web_script =
@@ -226,10 +233,11 @@ fn assert_exact_png_packet(target: Target) {
             "PASS_BOX_SHADOW",
             "box_shadow",
             "inset",
-            "ViewProgramResource::runtime_element_styles_with_style",
+            "ViewProgramResource::runtime_surfaces_with_style",
+            "BundlePresentationSnapshot::surfaces",
             "SharedRenderer::render_to_view",
-            "UiRoundedRect",
-            "UiCompositor::render_group",
+            "ViewRoundedRect",
+            "ViewCompositor::render_group",
             "copy_texture_to_buffer",
         ],
     );

@@ -28,7 +28,9 @@ fn main() {
 fn run() -> Result<(), String> {
     let args = Args::parse(env::args().skip(1))?;
     if args.help {
-        println!("usage: cargo +nightly -Zscript tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs --root .");
+        println!(
+            "usage: cargo +nightly -Zscript tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs --root ."
+        );
         return Ok(());
     }
     let root = args
@@ -60,27 +62,32 @@ fn run() -> Result<(), String> {
         &root,
         "crates/arcweft-player-web/src/inset_shadow_exact_capture.rs",
     )?;
-    let web_script = read_required(
-        &root,
-        "web/tests/seq06-13e1-inset-shadow-exact-capture.mjs",
-    )?;
+    let surface_lowerer =
+        read_required(&root, "crates/arcweft-player-scene/src/frame/surfaces.rs")?;
+    let web_script = read_required(&root, "web/tests/seq06-13e1-inset-shadow-exact-capture.mjs")?;
     let collector = read_required(
         &root,
         "tools/collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs",
     )?;
-    let css = read_required(&root, "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css")?;
-    let smoke = read_required(&root, "crates/arcweft-render-wgpu/tests/ui_box_shadow_gpu_smoke.rs")?;
+    let css = read_required(
+        &root,
+        "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css",
+    )?;
+    let smoke = read_required(
+        &root,
+        "crates/arcweft-render-wgpu/tests/view_box_shadow_gpu_smoke.rs",
+    )?;
 
     for required in [
-        "UiCompositor::render_group",
+        "ViewCompositor::render_group",
         "PASS_BOX_SHADOW",
-        "ViewProgramResource::runtime_element_styles_with_style",
+        "ViewProgramResource::runtime_surfaces_with_style",
+        "BundlePresentationSnapshot::surfaces",
         "ViewRuntimeControlVisualStyle fill/radius/shadows",
-        "UiRoundedRect primitive from tree-aware Panel part style",
+        "ViewRoundedRect primitive from player-owned surface resource",
         "PlayerFramePlanner::prepare",
-        "PreparedFrame::with_ui_scenes",
         "SharedRenderer::render_to_view",
-        "UiBoxShadowPassPlan",
+        "ViewBoxShadowPassPlan",
         "box_shadow_list_from_takumi",
         "browser DOM CSS box-shadow screenshots",
         "canvas 2D fallback",
@@ -105,30 +112,87 @@ fn run() -> Result<(), String> {
     require_contains(&note, "no-promotion", "implementation note")?;
     require_contains(
         &note,
-        "ViewProgramResource::runtime_element_styles_with_style",
+        "ViewProgramResource::runtime_surfaces_with_style",
         "implementation note",
     )?;
-    require_contains(&note, "SharedRenderer::render_to_view", "implementation note")?;
-    require_contains(&note, "WebAssembly-exported renderer readback", "implementation note")?;
-    require_contains(&native_capture, "UiCompositor::render_group", "native capture")?;
-    require_contains(&native_capture, "PASS_BOX_SHADOW WGSL kind flag", "native capture")?;
-    require_contains(&native_capture, "seq06_13e1_inset_box_shadow.candidate.png", "native capture")?;
-    require_contains(&native_capture, "seq06_13e1_inset_box_shadow.observe.json", "native capture")?;
-    require_contains(&web_capture, "capture_seq06_13e1_inset_box_shadow_exact_png", "web wasm capture")?;
+    require_contains(
+        &note,
+        "SharedRenderer::render_to_view",
+        "implementation note",
+    )?;
+    require_contains(
+        &note,
+        "WebAssembly-exported renderer readback",
+        "implementation note",
+    )?;
+    require_contains(
+        &native_capture,
+        "ViewCompositor::render_group",
+        "native capture",
+    )?;
+    require_contains(
+        &native_capture,
+        "PASS_BOX_SHADOW WGSL kind flag",
+        "native capture",
+    )?;
+    require_contains(
+        &native_capture,
+        "seq06_13e1_inset_box_shadow.candidate.png",
+        "native capture",
+    )?;
+    require_contains(
+        &native_capture,
+        "seq06_13e1_inset_box_shadow.observe.json",
+        "native capture",
+    )?;
+    require_contains(
+        &web_capture,
+        "capture_seq06_13e1_inset_box_shadow_exact_png",
+        "web wasm capture",
+    )?;
     require_contains(&web_capture, "ViewStyleResource", "web wasm capture")?;
     require_contains(
         &web_capture,
-        "runtime_element_styles_with_style",
+        "runtime_surfaces_with_style",
         "web wasm capture",
     )?;
-    require_contains(&web_capture, "PlayerFramePlanner::prepare", "web wasm capture")?;
-    require_contains(&web_capture, "SharedRenderer::render_to_view", "web wasm capture")?;
-    require_contains(&web_capture, "UiRoundedRect", "web wasm capture")?;
-    require_contains(&web_capture, "UiCompositor::render_group", "web wasm capture")?;
+    require_contains(
+        &web_capture,
+        "BundlePresentationSnapshot",
+        "web wasm capture",
+    )?;
+    require_contains(
+        &web_capture,
+        "PlayerFramePlanner::prepare",
+        "web wasm capture",
+    )?;
+    require_contains(
+        &web_capture,
+        "SharedRenderer::render_to_view",
+        "web wasm capture",
+    )?;
     require_contains(&web_capture, "copy_texture_to_buffer", "web wasm capture")?;
+    require_absent(&web_capture, "with_view_scenes", "web wasm capture")?;
     require_absent(&web_capture, "getContext", "web wasm capture")?;
-    require_contains(&web_script, "capture_seq06_13e1_inset_box_shadow_exact_png", "web capture script")?;
-    for forbidden in [".screenshot(", "getContext(\"2d\")", "toDataURL", "drawImage"] {
+    require_contains(&surface_lowerer, "ViewRoundedRect", "surface lowerer")?;
+    require_contains(
+        &surface_lowerer,
+        "ViewCompositingEffects",
+        "surface lowerer",
+    )?;
+    require_contains(&surface_lowerer, "ViewBoxShadow", "surface lowerer")?;
+    require_contains(&surface_lowerer, "push_view_scene", "surface lowerer")?;
+    require_contains(
+        &web_script,
+        "capture_seq06_13e1_inset_box_shadow_exact_png",
+        "web capture script",
+    )?;
+    for forbidden in [
+        ".screenshot(",
+        "getContext(\"2d\")",
+        "toDataURL",
+        "drawImage",
+    ] {
         require_absent(&web_script, forbidden, "web capture script")?;
     }
     require_contains(&collector, "web-exact-png-capture.log", "collector")?;
@@ -142,7 +206,7 @@ fn run() -> Result<(), String> {
     require_contains(&collector, "max_mae", "collector")?;
     require_contains(&css, "box-shadow: inset", "CSS fixture")?;
     require_contains(&css, "filter: drop-shadow", "CSS fixture")?;
-    require_contains(&smoke, "UiBoxShadow::inset", "GPU smoke")?;
+    require_contains(&smoke, "ViewBoxShadow::inset", "GPU smoke")?;
     require_contains(&smoke, "stats.box_shadow_passes, 3", "GPU smoke")?;
 
     println!("seq06.13e.1 inset shadow exact-golden policy gate passed");
@@ -182,7 +246,9 @@ fn next_arg(
     values: &mut std::iter::Peekable<impl Iterator<Item = String>>,
     name: &str,
 ) -> Result<String, String> {
-    values.next().ok_or_else(|| format!("{name} requires a value"))
+    values
+        .next()
+        .ok_or_else(|| format!("{name} requires a value"))
 }
 
 fn read_required(root: &Path, relative: &str) -> Result<String, String> {

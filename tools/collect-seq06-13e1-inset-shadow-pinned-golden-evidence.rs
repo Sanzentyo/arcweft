@@ -65,7 +65,8 @@ fn run() -> Result<(), String> {
     } else {
         root.join(args.out_dir)
     };
-    fs::create_dir_all(&out_dir).map_err(|error| format!("create {}: {error}", out_dir.display()))?;
+    fs::create_dir_all(&out_dir)
+        .map_err(|error| format!("create {}: {error}", out_dir.display()))?;
 
     let mut classifications = Vec::new();
     for &target in args.mode.targets() {
@@ -75,7 +76,10 @@ fn run() -> Result<(), String> {
     write_review_decision(&out_dir, &classifications, args.run)?;
 
     if !args.run {
-        println!("wrote dry-run seq06.13e.1 evidence preflight to {}", out_dir.display());
+        println!(
+            "wrote dry-run seq06.13e.1 evidence preflight to {}",
+            out_dir.display()
+        );
         return Ok(());
     }
 
@@ -135,7 +139,11 @@ impl Args {
         }
 
         Ok(Self {
-            root: if help { root.unwrap_or_else(|| PathBuf::from(".")) } else { root.ok_or_else(|| String::from("missing --root"))? },
+            root: if help {
+                root.unwrap_or_else(|| PathBuf::from("."))
+            } else {
+                root.ok_or_else(|| String::from("missing --root"))?
+            },
             out_dir,
             mode,
             run,
@@ -148,7 +156,9 @@ fn next_arg(
     values: &mut std::iter::Peekable<impl Iterator<Item = String>>,
     name: &str,
 ) -> Result<String, String> {
-    values.next().ok_or_else(|| format!("{name} requires a value"))
+    values
+        .next()
+        .ok_or_else(|| format!("{name} requires a value"))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -164,7 +174,9 @@ impl Mode {
             "native" => Ok(Self::Native),
             "web" => Ok(Self::Web),
             "both" => Ok(Self::Both),
-            _ => Err(format!("unknown mode `{value}`; expected native, web, or both")),
+            _ => Err(format!(
+                "unknown mode `{value}`; expected native, web, or both"
+            )),
         }
     }
 
@@ -215,7 +227,10 @@ impl Classification {
     fn is_blocking(&self) -> bool {
         matches!(
             self.status,
-            "environment_not_pinned" | "environment_blocker" | "baseline_missing" | "hard_visual_regression"
+            "environment_not_pinned"
+                | "environment_blocker"
+                | "baseline_missing"
+                | "hard_visual_regression"
         )
     }
 }
@@ -232,7 +247,11 @@ fn classify_environment(root: &Path, target: Target) -> Classification {
     if !command_available("imq") {
         return Classification {
             target,
-            status: if env_present(REQUIRED_ENV) { "environment_blocker" } else { "expected_skip" },
+            status: if env_present(REQUIRED_ENV) {
+                "environment_blocker"
+            } else {
+                "expected_skip"
+            },
             code: "missing_imq",
             message: String::from("imq is required for exact PNG metrics"),
         };
@@ -247,15 +266,25 @@ fn classify_native_environment() -> Classification {
     if !cfg!(windows) {
         return Classification {
             target: Target::Native,
-            status: if env_present(REQUIRED_ENV) { "environment_blocker" } else { "expected_skip" },
+            status: if env_present(REQUIRED_ENV) {
+                "environment_blocker"
+            } else {
+                "expected_skip"
+            },
             code: "unsupported_os",
-            message: String::from("native exact inset box-shadow golden requires the pinned Windows native GPU job"),
+            message: String::from(
+                "native exact inset box-shadow golden requires the pinned Windows native GPU job",
+            ),
         };
     }
     if env::var(NATIVE_BACKEND_ENV).ok().as_deref() != Some(NATIVE_BACKEND) {
         return Classification {
             target: Target::Native,
-            status: if env_present(REQUIRED_ENV) { "environment_blocker" } else { "expected_skip" },
+            status: if env_present(REQUIRED_ENV) {
+                "environment_blocker"
+            } else {
+                "expected_skip"
+            },
             code: "unsupported_backend",
             message: format!("{NATIVE_BACKEND_ENV} must be {NATIVE_BACKEND}"),
         };
@@ -263,16 +292,24 @@ fn classify_native_environment() -> Classification {
     if !pinned_font_available() {
         return Classification {
             target: Target::Native,
-            status: if env_present(REQUIRED_ENV) { "environment_blocker" } else { "expected_skip" },
+            status: if env_present(REQUIRED_ENV) {
+                "environment_blocker"
+            } else {
+                "expected_skip"
+            },
             code: "missing_pinned_font_probe",
-            message: String::from("MS Mincho font probe is required to preserve the existing native exact visual policy"),
+            message: String::from(
+                "MS Mincho font probe is required to preserve the existing native exact visual policy",
+            ),
         };
     }
     Classification {
         target: Target::Native,
         status: "preflight_passed",
         code: "ready",
-        message: String::from("native pinned preflight passed; artifact packet still must be validated"),
+        message: String::from(
+            "native pinned preflight passed; artifact packet still must be validated",
+        ),
     }
 }
 
@@ -280,7 +317,11 @@ fn classify_web_environment(root: &Path) -> Classification {
     if !env_present(WEBGPU_ENV) {
         return Classification {
             target: Target::Web,
-            status: if env_present(REQUIRED_ENV) { "environment_blocker" } else { "expected_skip" },
+            status: if env_present(REQUIRED_ENV) {
+                "environment_blocker"
+            } else {
+                "expected_skip"
+            },
             code: "webgpu_pin_missing",
             message: format!("{WEBGPU_ENV}=1 is required for pinned WebGPU exact evidence"),
         };
@@ -289,7 +330,11 @@ fn classify_web_environment(root: &Path) -> Classification {
         if !command_available(command) {
             return Classification {
                 target: Target::Web,
-                status: if env_present(REQUIRED_ENV) { "environment_blocker" } else { "expected_skip" },
+                status: if env_present(REQUIRED_ENV) {
+                    "environment_blocker"
+                } else {
+                    "expected_skip"
+                },
                 code: "missing_web_runtime_tool",
                 message: format!("required Web runtime command `{command}` is unavailable"),
             };
@@ -298,16 +343,24 @@ fn classify_web_environment(root: &Path) -> Classification {
     if npm_playwright_version(root).is_none() {
         return Classification {
             target: Target::Web,
-            status: if env_present(REQUIRED_ENV) { "environment_blocker" } else { "expected_skip" },
+            status: if env_present(REQUIRED_ENV) {
+                "environment_blocker"
+            } else {
+                "expected_skip"
+            },
             code: "missing_browser_runtime",
-            message: String::from("Playwright browser runtime is unavailable; run npm --prefix web install and install the pinned browser channel"),
+            message: String::from(
+                "Playwright browser runtime is unavailable; run npm --prefix web install and install the pinned browser channel",
+            ),
         };
     }
     Classification {
         target: Target::Web,
         status: "preflight_passed",
         code: "ready",
-        message: String::from("web pinned preflight passed; exact WebGPU readback packet still must be validated"),
+        message: String::from(
+            "web pinned preflight passed; exact WebGPU readback packet still must be validated",
+        ),
     }
 }
 
@@ -396,7 +449,8 @@ fn write_review_decision(
     run_requested: bool,
 ) -> Result<(), String> {
     let review_dir = out_dir.join("review");
-    fs::create_dir_all(&review_dir).map_err(|error| format!("create {}: {error}", review_dir.display()))?;
+    fs::create_dir_all(&review_dir)
+        .map_err(|error| format!("create {}: {error}", review_dir.display()))?;
     let status = if classifications.iter().any(Classification::is_blocking) {
         "no_promotion"
     } else if run_requested {
@@ -423,9 +477,14 @@ fn write_review_decision(
     .map_err(|error| format!("write review decision: {error}"))
 }
 
-fn run_smoke_and_capture_commands(root: &Path, out_dir: &Path, target: Target) -> Result<(), String> {
+fn run_smoke_and_capture_commands(
+    root: &Path,
+    out_dir: &Path,
+    target: Target,
+) -> Result<(), String> {
     let log_dir = target.dir(out_dir).join("command-logs");
-    fs::create_dir_all(&log_dir).map_err(|error| format!("create {}: {error}", log_dir.display()))?;
+    fs::create_dir_all(&log_dir)
+        .map_err(|error| format!("create {}: {error}", log_dir.display()))?;
     match target {
         Target::Native => run_native_commands(root, out_dir, &log_dir),
         Target::Web => run_web_commands(root, out_dir, &log_dir),
@@ -453,7 +512,9 @@ fn run_native_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<()
         &capture_output,
     )?;
     if !capture_output.status.success() {
-        return Err(String::from("native exact PNG capture failed; exact PNG packet is not valid"));
+        return Err(String::from(
+            "native exact PNG capture failed; exact PNG packet is not valid",
+        ));
     }
 
     let output = cargo_command()
@@ -463,7 +524,7 @@ fn run_native_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<()
             "-p",
             "arcweft-render-wgpu",
             "--test",
-            "ui_box_shadow_gpu_smoke",
+            "view_box_shadow_gpu_smoke",
             "per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path",
             "--all-features",
             "--",
@@ -473,9 +534,15 @@ fn run_native_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<()
         ])
         .output()
         .map_err(|error| format!("run native compositor smoke: {error}"))?;
-    write_command_log(&log_dir.join("native-compositor-smoke.log"), "cargo test -p arcweft-render-wgpu --test ui_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture", &output)?;
+    write_command_log(
+        &log_dir.join("native-compositor-smoke.log"),
+        "cargo test -p arcweft-render-wgpu --test view_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture",
+        &output,
+    )?;
     if !output.status.success() {
-        return Err(String::from("native compositor smoke failed; exact PNG capture is not valid"));
+        return Err(String::from(
+            "native compositor smoke failed; exact PNG capture is not valid",
+        ));
     }
     Ok(())
 }
@@ -483,23 +550,48 @@ fn run_native_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<()
 fn run_web_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<(), String> {
     let build_output = cargo_command()
         .current_dir(root)
-        .args(["build", "-p", "arcweft-player-web", "--target", "wasm32-unknown-unknown"])
+        .args([
+            "build",
+            "-p",
+            "arcweft-player-web",
+            "--target",
+            "wasm32-unknown-unknown",
+        ])
         .output()
         .map_err(|error| format!("build web wasm player: {error}"))?;
-    write_command_log(&log_dir.join("web-wasm-cargo-build.log"), "cargo build -p arcweft-player-web --target wasm32-unknown-unknown", &build_output)?;
+    write_command_log(
+        &log_dir.join("web-wasm-cargo-build.log"),
+        "cargo build -p arcweft-player-web --target wasm32-unknown-unknown",
+        &build_output,
+    )?;
     if !build_output.status.success() {
-        return Err(String::from("web wasm player build failed; exact PNG packet is not valid"));
+        return Err(String::from(
+            "web wasm player build failed; exact PNG packet is not valid",
+        ));
     }
 
     let bindgen_output = tool_command("wasm-bindgen")
         .current_dir(root)
-        .args(["--target", "web", "--out-dir", "web/pkg", "--out-name", "arcweft_player_web"])
+        .args([
+            "--target",
+            "web",
+            "--out-dir",
+            "web/pkg",
+            "--out-name",
+            "arcweft_player_web",
+        ])
         .arg(root.join("target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm"))
         .output()
         .map_err(|error| format!("run wasm-bindgen for web player: {error}"))?;
-    write_command_log(&log_dir.join("web-wasm-bindgen.log"), "wasm-bindgen --target web --out-dir web/pkg --out-name arcweft_player_web target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm", &bindgen_output)?;
+    write_command_log(
+        &log_dir.join("web-wasm-bindgen.log"),
+        "wasm-bindgen --target web --out-dir web/pkg --out-name arcweft_player_web target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm",
+        &bindgen_output,
+    )?;
     if !bindgen_output.status.success() {
-        return Err(String::from("web wasm-bindgen failed; exact PNG packet is not valid"));
+        return Err(String::from(
+            "web wasm-bindgen failed; exact PNG packet is not valid",
+        ));
     }
 
     let capture_output = tool_command("node")
@@ -512,7 +604,11 @@ fn run_web_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<(), S
         .env(WEBGPU_ENV, "1")
         .output()
         .map_err(|error| format!("run web exact PNG capture: {error}"))?;
-    write_command_log(&log_dir.join("web-exact-png-capture.log"), "node web/tests/seq06-13e1-inset-shadow-exact-capture.mjs --root . --out-dir target/seq06.13e.1-inset-box-shadow-golden", &capture_output)?;
+    write_command_log(
+        &log_dir.join("web-exact-png-capture.log"),
+        "node web/tests/seq06-13e1-inset-shadow-exact-capture.mjs --root . --out-dir target/seq06.13e.1-inset-box-shadow-golden",
+        &capture_output,
+    )?;
     if !capture_output.status.success() {
         return Err(format!(
             "web exact PNG capture failed; classification={}; exact PNG packet is not valid",
@@ -526,7 +622,11 @@ fn run_web_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<(), S
         .env(WEBGPU_ENV, "1")
         .output()
         .map_err(|error| format!("run web smoke: {error}"))?;
-    write_command_log(&log_dir.join("webgpu-smoke.log"), "npm --prefix web test", &smoke_output)?;
+    write_command_log(
+        &log_dir.join("webgpu-smoke.log"),
+        "npm --prefix web test",
+        &smoke_output,
+    )?;
     if !smoke_output.status.success() {
         eprintln!(
             "warning: webgpu smoke failed; keeping exact PNG packet validation because this smoke is supporting evidence only; log={}",
@@ -559,7 +659,11 @@ fn web_capture_failure_code(output: &Output) -> &'static str {
     }
 }
 
-fn validate_existing_artifact_packet(root: &Path, out_dir: &Path, target: Target) -> Result<(), String> {
+fn validate_existing_artifact_packet(
+    root: &Path,
+    out_dir: &Path,
+    target: Target,
+) -> Result<(), String> {
     let dir = target.dir(out_dir);
     let candidate = dir.join("seq06_13e1_inset_box_shadow.candidate.png");
     let observe = dir.join("seq06_13e1_inset_box_shadow.observe.json");
@@ -569,7 +673,13 @@ fn validate_existing_artifact_packet(root: &Path, out_dir: &Path, target: Target
         .join("fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow")
         .join(target.as_str())
         .join("seq06_13e1_inset_box_shadow.png");
-    let paths = PacketPaths { candidate: &candidate, reference: &reference, observe: &observe, metrics: &metrics, environment: &environment };
+    let paths = PacketPaths {
+        candidate: &candidate,
+        reference: &reference,
+        observe: &observe,
+        metrics: &metrics,
+        environment: &environment,
+    };
 
     let mut required = vec![&candidate, &observe, &environment];
     let web_capture_log = dir.join("command-logs/web-exact-png-capture.log");
@@ -594,32 +704,77 @@ fn validate_existing_artifact_packet(root: &Path, out_dir: &Path, target: Target
             out_dir,
             target,
             "hard_visual_regression",
-            &format!("{missing_code}: required packet artifacts are missing: {}", missing.join(", ")),
+            &format!(
+                "{missing_code}: required packet artifacts are missing: {}",
+                missing.join(", ")
+            ),
             &paths,
             None,
             None,
             None,
         )?;
-        return Err(format!("{} pinned packet is incomplete; {missing_code}; missing: {}", target.as_str(), missing.join(", ")));
+        return Err(format!(
+            "{} pinned packet is incomplete; {missing_code}; missing: {}",
+            target.as_str(),
+            missing.join(", ")
+        ));
     }
 
     validate_route_evidence(&observe)?;
     let candidate_dimensions = png_dimensions(&candidate)?;
     if candidate_dimensions.width != 320 || candidate_dimensions.height != 180 {
-        write_packet_review_decision(root, out_dir, target, "hard_visual_regression", "candidate PNG dimensions are not 320x180", &paths, Some(candidate_dimensions), None, None)?;
-        return Err(format!("{} exact PNG candidate dimensions are {}x{}; expected 320x180", target.as_str(), candidate_dimensions.width, candidate_dimensions.height));
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "hard_visual_regression",
+            "candidate PNG dimensions are not 320x180",
+            &paths,
+            Some(candidate_dimensions),
+            None,
+            None,
+        )?;
+        return Err(format!(
+            "{} exact PNG candidate dimensions are {}x{}; expected 320x180",
+            target.as_str(),
+            candidate_dimensions.width,
+            candidate_dimensions.height
+        ));
     }
 
     if !reference.exists() {
         write_baseline_missing_metrics(root, target, &paths, candidate_dimensions)?;
-        write_packet_review_decision(root, out_dir, target, "ready_for_first_promotion_review", "candidate, observation, environment, command logs, and baseline-missing metrics are present; checked-in reference PNG is still absent", &paths, Some(candidate_dimensions), None, None)?;
-        println!("{} exact PNG packet is ready for first-promotion review; reference baseline is absent", target.as_str());
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "ready_for_first_promotion_review",
+            "candidate, observation, environment, command logs, and baseline-missing metrics are present; checked-in reference PNG is still absent",
+            &paths,
+            Some(candidate_dimensions),
+            None,
+            None,
+        )?;
+        println!(
+            "{} exact PNG packet is ready for first-promotion review; reference baseline is absent",
+            target.as_str()
+        );
         return Ok(());
     }
 
     let reference_dimensions = png_dimensions(&reference)?;
     if candidate_dimensions != reference_dimensions {
-        write_packet_review_decision(root, out_dir, target, "hard_visual_regression", "candidate and reference PNG dimensions differ", &paths, Some(candidate_dimensions), Some(reference_dimensions), None)?;
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "hard_visual_regression",
+            "candidate and reference PNG dimensions differ",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            None,
+        )?;
         return Err(format!(
             "{} exact PNG dimensions differ: candidate={}x{}, reference={}x{}",
             target.as_str(),
@@ -640,41 +795,93 @@ fn validate_existing_artifact_packet(root: &Path, out_dir: &Path, target: Target
         .arg("json")
         .output()
         .map_err(|error| format!("run imq for {} packet: {error}", target.as_str()))?;
-    fs::write(&metrics, &imq_output.stdout).map_err(|error| format!("write {}: {error}", metrics.display()))?;
+    fs::write(&metrics, &imq_output.stdout)
+        .map_err(|error| format!("write {}: {error}", metrics.display()))?;
     if !imq_output.status.success() {
-        write_packet_review_decision(root, out_dir, target, "hard_visual_regression", "imq comparison failed", &paths, Some(candidate_dimensions), Some(reference_dimensions), None)?;
-        return Err(format!("{} imq comparison failed; metrics={}, stderr={}", target.as_str(), metrics.display(), String::from_utf8_lossy(&imq_output.stderr)));
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "hard_visual_regression",
+            "imq comparison failed",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            None,
+        )?;
+        return Err(format!(
+            "{} imq comparison failed; metrics={}, stderr={}",
+            target.as_str(),
+            metrics.display(),
+            String::from_utf8_lossy(&imq_output.stderr)
+        ));
     }
 
-    let imq_json: Value = serde_json::from_slice(&imq_output.stdout).map_err(|error| format!("parse {} imq JSON: {error}", metrics.display()))?;
+    let imq_json: Value = serde_json::from_slice(&imq_output.stdout)
+        .map_err(|error| format!("parse {} imq JSON: {error}", metrics.display()))?;
     let mse = metric_score(&imq_json, "mse")?;
     let mae = metric_score(&imq_json, "mae")?;
     let metric_summary = MetricSummary { mse, mae };
     if mse <= MAX_MSE && mae <= MAX_MAE {
-        write_packet_review_decision(root, out_dir, target, "passed_existing_baseline_gate", "candidate matches the existing checked-in baseline within seq06.13e.1 thresholds", &paths, Some(candidate_dimensions), Some(reference_dimensions), Some(metric_summary))?;
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "passed_existing_baseline_gate",
+            "candidate matches the existing checked-in baseline within seq06.13e.1 thresholds",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            Some(metric_summary),
+        )?;
         Ok(())
     } else {
-        write_packet_review_decision(root, out_dir, target, "baseline_drift", "candidate exceeds seq06.13e.1 MSE/MAE thresholds against the existing checked-in baseline", &paths, Some(candidate_dimensions), Some(reference_dimensions), Some(metric_summary))?;
-        Err(format!("{} exact PNG baseline drift: mse={mse}, mae={mae}, max_mse={MAX_MSE}, max_mae={MAX_MAE}", target.as_str()))
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "baseline_drift",
+            "candidate exceeds seq06.13e.1 MSE/MAE thresholds against the existing checked-in baseline",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            Some(metric_summary),
+        )?;
+        Err(format!(
+            "{} exact PNG baseline drift: mse={mse}, mae={mae}, max_mse={MAX_MSE}, max_mae={MAX_MAE}",
+            target.as_str()
+        ))
     }
 }
 
 fn validate_route_evidence(observe: &Path) -> Result<(), String> {
-    let text = fs::read_to_string(observe).map_err(|error| format!("read {}: {error}", observe.display()))?;
+    let text = fs::read_to_string(observe)
+        .map_err(|error| format!("read {}: {error}", observe.display()))?;
     for required in [
-        "UiCompositingEffects::box_shadows",
-        "UiBoxShadowPassPlan",
-        "UiCompositor::render_group",
+        "ViewCompositingEffects::box_shadows",
+        "ViewBoxShadowPassPlan",
+        "ViewCompositor::render_group",
         "PASS_BOX_SHADOW",
         "inset",
     ] {
         if !text.contains(required) {
-            return Err(format!("{} is missing required route evidence `{required}`", observe.display()));
+            return Err(format!(
+                "{} is missing required route evidence `{required}`",
+                observe.display()
+            ));
         }
     }
-    for forbidden in ["browser DOM CSS box-shadow screenshots", "SVG filters", "canvas 2D fallback", "CPU raster fallback"] {
+    for forbidden in [
+        "browser DOM CSS box-shadow screenshots",
+        "SVG filters",
+        "canvas 2D fallback",
+        "CPU raster fallback",
+    ] {
         if text.contains(forbidden) {
-            return Err(format!("{} contains forbidden fallback evidence `{forbidden}`", observe.display()));
+            return Err(format!(
+                "{} contains forbidden fallback evidence `{forbidden}`",
+                observe.display()
+            ));
         }
     }
     Ok(())
@@ -718,8 +925,11 @@ fn write_baseline_missing_metrics(
         "candidate_dimensions": {"width": candidate_dimensions.width, "height": candidate_dimensions.height},
         "artifacts": {"candidate": artifact_review_json(root, paths.candidate), "reference": artifact_review_json(root, paths.reference)},
     });
-    fs::write(paths.metrics, serde_json::to_string_pretty(&report).map_err(|error| error.to_string())? + "\n")
-        .map_err(|error| format!("write {}: {error}", paths.metrics.display()))
+    fs::write(
+        paths.metrics,
+        serde_json::to_string_pretty(&report).map_err(|error| error.to_string())? + "\n",
+    )
+    .map_err(|error| format!("write {}: {error}", paths.metrics.display()))
 }
 
 fn write_packet_review_decision(
@@ -734,7 +944,8 @@ fn write_packet_review_decision(
     metrics: Option<MetricSummary>,
 ) -> Result<(), String> {
     let review_dir = out_dir.join("review");
-    fs::create_dir_all(&review_dir).map_err(|error| format!("create {}: {error}", review_dir.display()))?;
+    fs::create_dir_all(&review_dir)
+        .map_err(|error| format!("create {}: {error}", review_dir.display()))?;
     let decision = json!({
         "schema": "arcweft.seq06.13e1.inset_box_shadow.promotion_decision.v1",
         "target": target.as_str(),
@@ -761,14 +972,19 @@ fn write_packet_review_decision(
         },
     });
     fs::write(
-        review_dir.join(format!("seq06_13e1_{}_promotion_decision.json", target.as_str())),
+        review_dir.join(format!(
+            "seq06_13e1_{}_promotion_decision.json",
+            target.as_str()
+        )),
         serde_json::to_string_pretty(&decision).map_err(|error| error.to_string())? + "\n",
     )
     .map_err(|error| format!("write packet review decision: {error}"))
 }
 
 fn fixture_doc_path(root: &Path, target: Target) -> PathBuf {
-    root.join("docs/fixtures").join(target.as_str()).join("seq06_13e1_inset_box_shadow_exact_golden.json")
+    root.join("docs/fixtures")
+        .join(target.as_str())
+        .join("seq06_13e1_inset_box_shadow_exact_golden.json")
 }
 
 fn artifact_review_json(root: &Path, path: &Path) -> Value {
@@ -783,7 +999,10 @@ fn artifact_review_json(root: &Path, path: &Path) -> Value {
 fn png_dimensions(path: &Path) -> Result<PngDimensions, String> {
     let bytes = fs::read(path).map_err(|error| format!("read PNG {}: {error}", path.display()))?;
     if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
-        return Err(format!("{} is not a PNG with an IHDR chunk", path.display()));
+        return Err(format!(
+            "{} is not a PNG with an IHDR chunk",
+            path.display()
+        ));
     }
     Ok(PngDimensions {
         width: u32::from_be_bytes(bytes[16..20].try_into().expect("PNG width bytes")),
@@ -794,7 +1013,11 @@ fn png_dimensions(path: &Path) -> Result<PngDimensions, String> {
 fn metric_score(report: &Value, metric_name: &str) -> Result<f64, String> {
     report["metrics"]
         .as_array()
-        .and_then(|metrics| metrics.iter().find(|metric| metric["name"].as_str() == Some(metric_name)))
+        .and_then(|metrics| {
+            metrics
+                .iter()
+                .find(|metric| metric["name"].as_str() == Some(metric_name))
+        })
         .and_then(|metric| metric["score"].as_f64())
         .ok_or_else(|| format!("{metric_name} score should be present in imq JSON: {report}"))
 }
@@ -817,13 +1040,22 @@ fn git_hash_object_path(root: &Path, path: &Path) -> Option<String> {
     if !path.exists() {
         return None;
     }
-    command_stdout(Command::new("git").arg("-C").arg(display_path(root)).arg("hash-object").arg(display_path(path)))
+    command_stdout(
+        Command::new("git")
+            .arg("-C")
+            .arg(display_path(root))
+            .arg("hash-object")
+            .arg(display_path(path)),
+    )
 }
 
 fn write_command_log(path: &Path, command: &str, output: &Output) -> Result<(), String> {
     let mut log = String::new();
     log.push_str(&format!("# command: {command}\n"));
-    log.push_str(&format!("# exit: {}\n\n## stdout\n\n", exit_code_text(output)));
+    log.push_str(&format!(
+        "# exit: {}\n\n## stdout\n\n",
+        exit_code_text(output)
+    ));
     log.push_str(&String::from_utf8_lossy(&output.stdout));
     log.push_str("\n## stderr\n\n");
     log.push_str(&String::from_utf8_lossy(&output.stderr));
@@ -895,11 +1127,24 @@ fn command_stdout(command: &mut Command) -> Option<String> {
 }
 
 fn git_head(root: &Path) -> Option<String> {
-    command_stdout(Command::new("git").arg("-C").arg(display_path(root)).arg("rev-parse").arg("HEAD"))
+    command_stdout(
+        Command::new("git")
+            .arg("-C")
+            .arg(display_path(root))
+            .arg("rev-parse")
+            .arg("HEAD"),
+    )
 }
 
 fn git_dirty(root: &Path) -> Option<bool> {
-    command_stdout(Command::new("git").arg("-C").arg(display_path(root)).arg("status").arg("--short")).map(|status| !status.is_empty())
+    command_stdout(
+        Command::new("git")
+            .arg("-C")
+            .arg(display_path(root))
+            .arg("status")
+            .arg("--short"),
+    )
+    .map(|status| !status.is_empty())
 }
 
 fn env_present(name: &str) -> bool {
@@ -919,7 +1164,10 @@ fn pinned_font_available() -> bool {
 }
 
 fn exit_code_text(output: &Output) -> String {
-    output.status.code().map_or_else(|| String::from("terminated-by-signal"), |code| code.to_string())
+    output.status.code().map_or_else(
+        || String::from("terminated-by-signal"),
+        |code| code.to_string(),
+    )
 }
 
 fn unix_seconds() -> u64 {

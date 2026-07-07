@@ -10,7 +10,7 @@ use arcweft_presentation::layer::{
 };
 use arcweft_presentation::router::InputRouter;
 use arcweft_presentation::semantic::{SemanticRole, SemanticTree};
-use arcweft_render_wgpu::ui::UiPaintPlan;
+use arcweft_render_wgpu::view::ViewPaintPlan;
 use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
     LayoutResults, LayoutSize, LayoutTree, Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
@@ -54,7 +54,7 @@ fn run() -> Result<(), String> {
             .display()
             .resolve_interaction_styles(output.semantics(), output.styles(), &interaction)
             .map_err(|error| error.to_string())?;
-        let plan = UiPaintPlan::from_resolved_display(&display);
+        let plan = ViewPaintPlan::from_resolved_display(&display);
         let svg = svg_document(name, plan.rectangles(), output.semantics().as_slice());
         let path = out.join(format!("{name}.svg"));
         fs::write(&path, svg).map_err(|error| error.to_string())?;

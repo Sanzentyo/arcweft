@@ -7,9 +7,9 @@
     "Takumi StyleSheet parse/cascade",
     "ComputedStyle border_*_radius typed SpacePair<Length>",
     "arcweft-takumi-adapter box_shadow_border_radii",
-    "UiBoxShadowRadii typed scene contract",
-    "UiBoxShadowPassPlan body_radii/shadow_radii",
-    "UiCompositorUniform box-shadow radius rows",
+    "ViewBoxShadowRadii typed scene contract",
+    "ViewBoxShadowPassPlan body_radii/shadow_radii",
+    "ViewCompositorUniform box-shadow radius rows",
     "PASS_BOX_SHADOW per-corner elliptical coverage"
   ],
   "expectations": {

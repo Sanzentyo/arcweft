@@ -3,7 +3,7 @@ struct VertexOut {
     @location(0) uv: vec2<f32>,
 };
 
-struct UiCompositorUniform {
+struct ViewCompositorUniform {
     matrix: mat4x4<f32>,
     offset: vec4<f32>,
     params0: vec4<f32>,
@@ -21,7 +21,7 @@ struct UiCompositorUniform {
 @group(0) @binding(1) var backdrop_texture: texture_2d<f32>;
 @group(0) @binding(2) var mask_texture: texture_2d<f32>;
 @group(0) @binding(3) var source_sampler: sampler;
-@group(0) @binding(4) var<uniform> uniform_data: UiCompositorUniform;
+@group(0) @binding(4) var<uniform> uniform_data: ViewCompositorUniform;
 
 const PASS_COMPOSITE: u32 = 0u;
 const PASS_COLOR_MATRIX: u32 = 1u;

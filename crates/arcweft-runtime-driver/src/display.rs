@@ -2,13 +2,13 @@ use crate::presentation_handles::{
     PresentationHandleDiagnostic, PresentationHandleRecord, apply_presentation_handle_operations,
     apply_presentation_image_handles, filter_presentation_action_buttons,
     filter_presentation_focus_groups, filter_presentation_focus_navigation,
-    filter_presentation_scroll_regions, filter_presentation_text_blocks,
-    filter_presentation_text_inputs, hidden_focus_diagnostics,
+    filter_presentation_scroll_regions, filter_presentation_surfaces,
+    filter_presentation_text_blocks, filter_presentation_text_inputs, hidden_focus_diagnostics,
     presentation_handle_operations_from_effects,
 };
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeTextBlock, ViewRuntimeTextControl,
+    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextBlock, ViewRuntimeTextControl,
 };
 use arcweft_bundle::{
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
@@ -67,6 +67,8 @@ pub struct BundlePresentationSnapshot {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scroll_regions: Vec<ViewRuntimeScrollRegion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surfaces: Vec<ViewRuntimeSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_blocks: Vec<ViewRuntimeTextBlock>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub focus_groups: Vec<ViewRuntimeFocusGroup>,
@@ -81,6 +83,7 @@ pub(crate) struct BundlePresentationResources<'a> {
     pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
     pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
+    pub(crate) surfaces: &'a [ViewRuntimeSurface],
     pub(crate) text_blocks: &'a [ViewRuntimeTextBlock],
     pub(crate) focus_groups: &'a [ViewRuntimeFocusGroup],
     pub(crate) focus_navigation: &'a [ViewRuntimeFocusNavigation],
@@ -148,6 +151,8 @@ impl BundlePresentationSnapshot {
             resources.scroll_regions.to_vec(),
             &next_presentation_handles,
         );
+        let next_surfaces =
+            filter_presentation_surfaces(resources.surfaces.to_vec(), &next_presentation_handles);
         let next_text_blocks = filter_presentation_text_blocks(
             resources.text_blocks.to_vec(),
             &next_presentation_handles,
@@ -172,6 +177,7 @@ impl BundlePresentationSnapshot {
             || self.text_inputs != next_text_inputs
             || self.action_buttons != next_action_buttons
             || self.scroll_regions != next_scroll_regions
+            || self.surfaces != next_surfaces
             || self.text_blocks != next_text_blocks
             || self.focus_groups != next_focus_groups
             || self.focus_navigation != next_focus_navigation
@@ -186,6 +192,7 @@ impl BundlePresentationSnapshot {
             self.text_inputs = next_text_inputs;
             self.action_buttons = next_action_buttons;
             self.scroll_regions = next_scroll_regions;
+            self.surfaces = next_surfaces;
             self.text_blocks = next_text_blocks;
             self.focus_groups = next_focus_groups;
             self.focus_navigation = next_focus_navigation;
@@ -228,6 +235,7 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
             .field("action_buttons", &self.action_buttons)
             .field("scroll_regions", &self.scroll_regions)
+            .field("surfaces", &self.surfaces)
             .field("text_blocks", &self.text_blocks)
             .field("focus_groups", &self.focus_groups)
             .field("focus_navigation", &self.focus_navigation)
@@ -763,6 +771,7 @@ mod tests {
             text_inputs: &[],
             action_buttons: &[],
             scroll_regions: &[],
+            surfaces: &[],
             text_blocks: &[],
             focus_groups: &[],
             focus_navigation: &[],
@@ -917,6 +926,7 @@ mod tests {
             text_inputs: &[],
             action_buttons: &[],
             scroll_regions: std::slice::from_ref(&scroll_region),
+            surfaces: &[],
             text_blocks: &[],
             focus_groups: &[],
             focus_navigation: &[],
@@ -958,6 +968,7 @@ mod tests {
             text_inputs: &[],
             action_buttons: &[],
             scroll_regions: &[],
+            surfaces: &[],
             text_blocks: std::slice::from_ref(&text_block),
             focus_groups: &[],
             focus_navigation: &[],
@@ -991,6 +1002,48 @@ mod tests {
     }
 
     #[test]
+    fn view_handle_lifecycle_filters_surfaces() {
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let surface = view_surface();
+        let resources = BundlePresentationResources {
+            image_objects: &[],
+            text_inputs: &[],
+            action_buttons: &[],
+            scroll_regions: &[],
+            surfaces: std::slice::from_ref(&surface),
+            text_blocks: &[],
+            focus_groups: &[],
+            focus_navigation: &[],
+        };
+        let create_visible = view_handle_create("@handle.flow.feedback.panel");
+
+        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot.surfaces, vec![surface.clone()]);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.hide",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.surfaces.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert_eq!(snapshot.surfaces, vec![surface]);
+    }
+
+    #[test]
     fn view_handle_lifecycle_filters_focus_resources() {
         let mut snapshot = BundlePresentationSnapshot::default();
         let focus_group = view_focus_group();
@@ -1000,6 +1053,7 @@ mod tests {
             text_inputs: &[],
             action_buttons: &[],
             scroll_regions: &[],
+            surfaces: &[],
             text_blocks: &[],
             focus_groups: std::slice::from_ref(&focus_group),
             focus_navigation: std::slice::from_ref(&focus_navigation),
@@ -1221,6 +1275,21 @@ mod tests {
             bounds: arcweft_bundle::resource_codec::ViewRuntimeTextBlockBounds::from_px(
                 80, 560, 360, 24,
             ),
+            selection_policy: UiTextSelectionPolicy::Disabled,
+            style: ViewRuntimeControlStyle::default(),
+        }
+    }
+
+    fn view_surface() -> ViewRuntimeSurface {
+        ViewRuntimeSurface {
+            public_id: "surface.ModernFeedbackPanel.card".to_owned(),
+            target: "surface.ModernFeedbackPanel.card".to_owned(),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            containing_scroll_region: None,
+            element: arcweft_bundle::resource_codec::ui::ViewElementKind::Panel,
+            bounds: arcweft_bundle::resource_codec::ViewRuntimeSurfaceBounds::from_px(
+                8, 12, 96, 48,
+            ),
             style: ViewRuntimeControlStyle::default(),
         }
     }
@@ -1263,6 +1332,7 @@ mod tests {
             text_inputs: std::slice::from_ref(text_input),
             action_buttons: std::slice::from_ref(action_button),
             scroll_regions: &[],
+            surfaces: &[],
             text_blocks: &[],
             focus_groups: &[],
             focus_navigation: &[],
@@ -1316,6 +1386,7 @@ mod tests {
             text_inputs: &[],
             action_buttons: &[],
             scroll_regions: &[],
+            surfaces: &[],
             text_blocks: &[],
             focus_groups: &[],
             focus_navigation: &[],

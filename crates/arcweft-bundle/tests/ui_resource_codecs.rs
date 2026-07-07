@@ -460,6 +460,7 @@ fn fixture_program() -> ViewProgramResource {
             )
             .with_overflow(ViewScrollOverflowPolicy::Hidden),
         ],
+        surfaces: Vec::new(),
         text_blocks: vec![ViewTextBlockResource::new(
             "text.block.dialogue.title",
             Some("view.dialogue".to_owned()),

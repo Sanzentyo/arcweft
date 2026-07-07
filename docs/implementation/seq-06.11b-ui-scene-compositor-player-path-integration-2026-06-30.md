@@ -14,14 +14,14 @@ manually against current `main` after seq06.4k.2 and seq06.11a.
 
 Implemented changes:
 
-- Added `PreparedUiScene`, `PreparedUiSceneResources`,
-  `PreparedUiImageResource`, `PreparedUiMaskResource`, and
-  `PreparedUiGlyphRunHandoff` to `arcweft-render-wgpu::geometry`.
-- Added `PreparedFrame::with_ui_scenes`, `push_ui_scene`, and `ui_scenes`.
-- Added `arcweft-render-wgpu::ui_direct_renderer` with a wgpu direct primitive
+- Added `PreparedViewScene`, `PreparedViewSceneResources`,
+  `PreparedViewImageResource`, `PreparedViewMaskResource`, and
+  `PreparedViewGlyphRunHandoff` to `arcweft-render-wgpu::geometry`.
+- Added `PreparedFrame::with_view_scenes`, `push_view_scene`, and `view_scenes`.
+- Added `arcweft-render-wgpu::view_direct_renderer` with a wgpu direct primitive
   renderer and prepared mask texture provider.
 - Connected `SharedRenderer::render_to_view` to render attached UI scenes
-  through the existing `UiCompositor`.
+  through the existing `ViewCompositor`.
 - Added typed compositor errors for invalid primitive ranges, missing image
   resources, unhandled glyph runs, and unsupported UI clips/primitives.
 - Added focused render-wgpu and render-web tests for the frame attachment,
@@ -34,7 +34,7 @@ Executed in `D:/git/arcweft` on 2026-06-30:
 
 ```bash
 cargo fmt --all
-cargo test -p arcweft-render-wgpu --test ui_scene_player_path --all-features
+cargo test -p arcweft-render-wgpu --test view_scene_player_path --all-features
 cargo test -p arcweft-render-web --test no_dom_overlay_contract --all-features
 cargo check -p arcweft-render-wgpu -p arcweft-render-web -p arcweft-player-native -p arcweft-player-web --all-targets --all-features
 cargo clippy -p arcweft-render-wgpu -p arcweft-render-web -p arcweft-player-native -p arcweft-player-web --all-targets --all-features -- -D warnings
@@ -63,11 +63,11 @@ Current changed file sizes after formatting:
 
 ```text
 path                                                        bytes   LOC   role
-crates/arcweft-render-wgpu/src/ui_direct_renderer.rs        35898  1058  production renderer module
+crates/arcweft-render-wgpu/src/view_direct_renderer.rs        35898  1058  production renderer module
 crates/arcweft-render-wgpu/src/geometry.rs                  38381  1118  production frame boundary
 crates/arcweft-render-wgpu/src/renderer.rs                  38482  1082  production shared renderer
-crates/arcweft-render-wgpu/src/ui_compositor.rs             39236  1072  production compositor
-crates/arcweft-render-wgpu/tests/ui_scene_player_path.rs     4352   118  integration test
+crates/arcweft-render-wgpu/src/view_compositor.rs             39236  1072  production compositor
+crates/arcweft-render-wgpu/tests/view_scene_player_path.rs     4352   118  integration test
 crates/arcweft-render-web/tests/no_dom_overlay_contract.rs    706    19  integration test
 ```
 
@@ -79,11 +79,11 @@ the retained UI text and gradient paths settle.
 
 ## Remaining TODOs
 
-- Full dialogue/text migration into `UiScene` remains a separate migration.
+- Full dialogue/text migration into `ViewScene` remains a separate migration.
 - Exact per-pixel CSS gradient parity remains a renderer-quality follow-up.
 - Advanced clip/path/mask closures remain future compositor work.
-- Product UI resource lowering must attach real retained `UiScene` frames via
-  `PreparedFrame::with_ui_scenes`; this cut only provides the shared renderer
+- Product UI resource lowering must attach real retained `ViewScene` frames via
+  `PreparedFrame::with_view_scenes`; this cut only provides the shared renderer
   attachment and execution path.
 
 ## Design Deviations

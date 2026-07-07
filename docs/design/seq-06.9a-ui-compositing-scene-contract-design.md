@@ -18,10 +18,10 @@ implementation and not a CPU-rasterized Takumi surface.
 
 The current Arcweft surface has these relevant properties:
 
-- `arcweft-render-wgpu::ui_scene` owns direct primitives and `UiSceneContext`
+- `arcweft-render-wgpu::view_scene` owns direct primitives and `ViewSceneContext`
   ranges.
 - `arcweft-takumi-adapter::lowering` walks Takumi stacking contexts in paint
-  order and emits `UiSceneContext` entries.
+  order and emits `ViewSceneContext` entries.
 - `arcweft-takumi-adapter::style` previously classified
   `filter`/`backdrop-filter`/`mask`/`clip-path`/`mix-blend-mode` as generic
   unsupported-direct values.
@@ -33,20 +33,20 @@ compositing-specific invalidation classes.
 
 ## Contract Shape
 
-`arcweft-render-wgpu::ui_scene` is split into a direct primitive core and a
+`arcweft-render-wgpu::view_scene` is split into a direct primitive core and a
 compositing responsibility module:
 
-- `ui_scene.rs` remains the public module entry point and re-exports the old
+- `view_scene.rs` remains the public module entry point and re-exports the old
   direct primitive API.
-- `ui_scene/core.rs` contains the existing primitive/context scene.
-- `ui_scene/compositing.rs` contains Arcweft-owned subtree-effect types.
+- `view_scene/core.rs` contains the existing primitive/context scene.
+- `view_scene/compositing.rs` contains Arcweft-owned subtree-effect types.
 
-`UiScene` gains:
+`ViewScene` gains:
 
 ```rust
-pub fn paint_nodes(&self) -> &[UiPaintNode];
-pub fn push_paint_node(&mut self, node: UiPaintNode);
-pub fn replace_paint_nodes(&mut self, paint_nodes: Vec<UiPaintNode>);
+pub fn paint_nodes(&self) -> &[ViewPaintNode];
+pub fn push_paint_node(&mut self, node: ViewPaintNode);
+pub fn replace_paint_nodes(&mut self, paint_nodes: Vec<ViewPaintNode>);
 ```
 
 `push_context` still appends a direct context and now also mirrors it into
@@ -58,27 +58,27 @@ context order.
 
 The overlay adds these owned types:
 
-- `UiPaintNode`
-  - `Direct(UiSceneContext)`
-  - `Group(UiCompositingGroup)`
-- `UiCompositingGroup`
+- `ViewPaintNode`
+  - `Direct(ViewSceneContext)`
+  - `Group(ViewCompositingGroup)`
+- `ViewCompositingGroup`
   - local bounds
   - isolation
-  - `UiCompositingEffects`
+  - `ViewCompositingEffects`
   - ordered child paint nodes
-- `UiCompositingEffects`
+- `ViewCompositingEffects`
   - opacity
   - foreground filter list
   - backdrop filter list
   - masks
   - clip path
   - blend mode
-- `UiFilter` and `UiFilterList`
-- `UiMask`, `UiMaskImage`, `UiMaskSize`, `UiMaskPosition`, `UiMaskRepeat`
-- `UiClipPath`, `UiLength`, `UiShapeRadius`, `UiPoint`, `UiFillRule`
-- `UiBlendMode`
-- `UiIsolation`
-- `UiCompositingRequirements` and `UiCompositingEffectClass`
+- `ViewFilter` and `ViewFilterList`
+- `ViewMask`, `ViewMaskImage`, `ViewMaskSize`, `ViewMaskPosition`, `ViewMaskRepeat`
+- `ViewClipPath`, `ViewLength`, `ViewShapeRadius`, `ViewPoint`, `ViewFillRule`
+- `ViewBlendMode`
+- `ViewIsolation`
+- `ViewCompositingRequirements` and `ViewCompositingEffectClass`
 
 The renderer can therefore decide whether a subtree needs a normal offscreen
 surface, a backdrop read/composition step, mask sampling, clip tessellation, or
@@ -88,15 +88,15 @@ resource revision tracking.
 
 The behavior lives on the owned types:
 
-- `UiFilter::visual_outset_px()`
-- `UiFilter::is_identity()`
-- `UiFilterList::canonicalized()`
-- `UiFilterList::visual_outset_px()`
-- `UiCompositingEffects::requirements()`
-- `UiCompositingEffects::visual_outset_px()`
-- `UiCompositingGroup::visual_bounds()`
-- `UiCompositingGroup::requirements()`
-- `UiMask::requires_resource_revision()`
+- `ViewFilter::visual_outset_px()`
+- `ViewFilter::is_identity()`
+- `ViewFilterList::canonicalized()`
+- `ViewFilterList::visual_outset_px()`
+- `ViewCompositingEffects::requirements()`
+- `ViewCompositingEffects::visual_outset_px()`
+- `ViewCompositingGroup::visual_bounds()`
+- `ViewCompositingGroup::requirements()`
+- `ViewMask::requires_resource_revision()`
 
 This follows the Arcweft rule that missing behavior on owned boundary types
 belongs on the original owned type rather than in helper traits or ad hoc
@@ -140,14 +140,14 @@ The lowerer now performs two passes over the Takumi render tree:
 1. Build the Takumi `RenderNode` tree and collect computed compositing style by
    `TakumiPath`.
 2. Build layout and stacking contexts, then lower paint buckets into direct
-   primitives and ordered `UiPaintNode` groups.
+   primitives and ordered `ViewPaintNode` groups.
 
 This is the key change from seq06.2: compositing style is recovered from the
 Takumi render node path, not inferred from the direct-paint catalog.
 
-Every Takumi stacking context becomes a `UiCompositingGroup`. Direct primitive
-contexts still exist in `UiScene::contexts()` for the existing renderer path.
-`UiScene::paint_nodes()` gives the new subtree graph.
+Every Takumi stacking context becomes a `ViewCompositingGroup`. Direct primitive
+contexts still exist in `ViewScene::contexts()` for the existing renderer path.
+`ViewScene::paint_nodes()` gives the new subtree graph.
 
 ## Resource Revisions
 

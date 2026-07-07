@@ -1,10 +1,10 @@
 //! Deterministic effect-pass planning for the Arcweft UI compositor.
 //!
 //! The types in this module are pure renderer data: they translate the seq06.9a
-//! `UiFilterList` contract into color-matrix, blur, and drop-shadow passes, and
+//! `ViewFilterList` contract into color-matrix, blur, and drop-shadow passes, and
 //! compute the exact offscreen target extents that the wgpu executor must use.
 
-use crate::ui_scene::{UiColorRgba8, UiFilter, UiFilterList};
+use crate::view_scene::{ViewColorRgba8, ViewFilter, ViewFilterList};
 use arcweft_presentation::hit::HitRect;
 use num_traits::ToPrimitive;
 
@@ -15,14 +15,14 @@ const MAX_TEXTURE_DIMENSION: u32 = 16_384;
 
 /// Device-pixel size of a compositor intermediate texture.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct UiTextureExtent {
+pub struct ViewTextureExtent {
     pub width: u32,
     pub height: u32,
 }
 
 /// Device-pixel rectangle used by clipping and target-copy planning.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct UiTextureRect {
+pub struct ViewTextureRect {
     pub x: i32,
     pub y: i32,
     pub width: u32,
@@ -31,56 +31,56 @@ pub struct UiTextureRect {
 
 /// One horizontal or vertical blur pass.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiBlurDirection {
+pub enum ViewBlurDirection {
     Horizontal,
     Vertical,
 }
 
 /// CSS/SVG-compatible 4x4 color matrix plus additive offset.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiColorMatrix {
+pub struct ViewColorMatrix {
     pub matrix: [[f32; 4]; 4],
     pub offset: [f32; 4],
 }
 
 /// A planned separable blur pass.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiBlurPassPlan {
-    pub direction: UiBlurDirection,
+pub struct ViewBlurPassPlan {
+    pub direction: ViewBlurDirection,
     pub radius_px: f32,
-    pub input_extent: UiTextureExtent,
-    pub output_extent: UiTextureExtent,
+    pub input_extent: ViewTextureExtent,
+    pub output_extent: ViewTextureExtent,
 }
 
 /// Planned drop-shadow construction from source alpha.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiDropShadowPassPlan {
+pub struct ViewDropShadowPassPlan {
     pub offset_x_px: f32,
     pub offset_y_px: f32,
     pub blur_radius_px: f32,
-    pub tint: UiColorRgba8,
-    pub source_extent: UiTextureExtent,
-    pub shadow_extent: UiTextureExtent,
+    pub tint: ViewColorRgba8,
+    pub source_extent: ViewTextureExtent,
+    pub shadow_extent: ViewTextureExtent,
 }
 
 /// One compositor effect pass.
 #[derive(Clone, Debug, PartialEq)]
-pub enum UiEffectPass {
-    ColorMatrix(UiColorMatrix),
-    Blur(UiBlurPassPlan),
-    DropShadow(UiDropShadowPassPlan),
+pub enum ViewEffectPass {
+    ColorMatrix(ViewColorMatrix),
+    Blur(ViewBlurPassPlan),
+    DropShadow(ViewDropShadowPassPlan),
     Unsupported { name: Box<str>, reason: Box<str> },
 }
 
-/// Deterministic pass sequence for one `UiFilterList`.
+/// Deterministic pass sequence for one `ViewFilterList`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiFilterPassPlan {
-    input_extent: UiTextureExtent,
-    output_extent: UiTextureExtent,
-    passes: Vec<UiEffectPass>,
+pub struct ViewFilterPassPlan {
+    input_extent: ViewTextureExtent,
+    output_extent: ViewTextureExtent,
+    passes: Vec<ViewEffectPass>,
 }
 
-impl UiTextureExtent {
+impl ViewTextureExtent {
     pub const MAX: Self = Self {
         width: MAX_TEXTURE_DIMENSION,
         height: MAX_TEXTURE_DIMENSION,
@@ -144,7 +144,7 @@ impl UiTextureExtent {
     }
 }
 
-impl UiTextureRect {
+impl ViewTextureRect {
     pub fn from_logical_bounds(bounds: HitRect, device_pixel_ratio: f32, outset_px: f32) -> Self {
         let scale = positive_f32(device_pixel_ratio).max(1.0);
         let outset = positive_f32(outset_px);
@@ -158,12 +158,12 @@ impl UiTextureRect {
         }
     }
 
-    pub const fn extent(self) -> UiTextureExtent {
-        UiTextureExtent::new(self.width, self.height)
+    pub const fn extent(self) -> ViewTextureExtent {
+        ViewTextureExtent::new(self.width, self.height)
     }
 }
 
-impl UiColorMatrix {
+impl ViewColorMatrix {
     pub const IDENTITY: Self = Self {
         matrix: [
             [1.0, 0.0, 0.0, 0.0],
@@ -316,19 +316,19 @@ impl UiColorMatrix {
         Self::diagonal(1.0, 1.0, 1.0, amount)
     }
 
-    pub fn from_filter(filter: &UiFilter) -> Option<Self> {
+    pub fn from_filter(filter: &ViewFilter) -> Option<Self> {
         match filter {
-            UiFilter::Brightness(value) => Some(Self::brightness(*value)),
-            UiFilter::Contrast(value) => Some(Self::contrast(*value)),
-            UiFilter::Grayscale(value) => Some(Self::grayscale(*value)),
-            UiFilter::Saturate(value) => Some(Self::saturate(*value)),
-            UiFilter::HueRotateDegrees(value) => Some(Self::hue_rotate_degrees(*value)),
-            UiFilter::Invert(value) => Some(Self::invert(*value)),
-            UiFilter::Sepia(value) => Some(Self::sepia(*value)),
-            UiFilter::Opacity(value) => Some(Self::opacity(*value)),
-            UiFilter::Blur { .. } | UiFilter::DropShadow { .. } | UiFilter::Unsupported { .. } => {
-                None
-            }
+            ViewFilter::Brightness(value) => Some(Self::brightness(*value)),
+            ViewFilter::Contrast(value) => Some(Self::contrast(*value)),
+            ViewFilter::Grayscale(value) => Some(Self::grayscale(*value)),
+            ViewFilter::Saturate(value) => Some(Self::saturate(*value)),
+            ViewFilter::HueRotateDegrees(value) => Some(Self::hue_rotate_degrees(*value)),
+            ViewFilter::Invert(value) => Some(Self::invert(*value)),
+            ViewFilter::Sepia(value) => Some(Self::sepia(*value)),
+            ViewFilter::Opacity(value) => Some(Self::opacity(*value)),
+            ViewFilter::Blur { .. }
+            | ViewFilter::DropShadow { .. }
+            | ViewFilter::Unsupported { .. } => None,
         }
     }
 
@@ -368,16 +368,16 @@ impl UiColorMatrix {
     }
 }
 
-impl Default for UiColorMatrix {
+impl Default for ViewColorMatrix {
     fn default() -> Self {
         Self::IDENTITY
     }
 }
 
-impl UiFilterPassPlan {
+impl ViewFilterPassPlan {
     pub fn from_filter_list(
-        filters: &UiFilterList,
-        input_extent: UiTextureExtent,
+        filters: &ViewFilterList,
+        input_extent: ViewTextureExtent,
         device_pixel_ratio: f32,
     ) -> Self {
         Self::from_filter_list_with_extent_policy(
@@ -389,8 +389,8 @@ impl UiFilterPassPlan {
     }
 
     pub fn from_filter_list_fixed_extent(
-        filters: &UiFilterList,
-        input_extent: UiTextureExtent,
+        filters: &ViewFilterList,
+        input_extent: ViewTextureExtent,
         device_pixel_ratio: f32,
     ) -> Self {
         Self::from_filter_list_with_extent_policy(
@@ -402,8 +402,8 @@ impl UiFilterPassPlan {
     }
 
     fn from_filter_list_with_extent_policy(
-        filters: &UiFilterList,
-        input_extent: UiTextureExtent,
+        filters: &ViewFilterList,
+        input_extent: ViewTextureExtent,
         device_pixel_ratio: f32,
         extent_policy: FilterExtentPolicy,
     ) -> Self {
@@ -412,30 +412,30 @@ impl UiFilterPassPlan {
         let scale = positive_f32(device_pixel_ratio).max(1.0);
 
         for filter in filters.filters() {
-            if let Some(matrix) = UiColorMatrix::from_filter(filter) {
-                passes.push(UiEffectPass::ColorMatrix(matrix));
+            if let Some(matrix) = ViewColorMatrix::from_filter(filter) {
+                passes.push(ViewEffectPass::ColorMatrix(matrix));
                 continue;
             }
 
             match filter {
-                UiFilter::Blur { radius_px } => {
+                ViewFilter::Blur { radius_px } => {
                     let radius_px = positive_f32(*radius_px) * scale;
                     let output_extent = extent_policy.output_extent(current_extent, radius_px);
-                    passes.push(UiEffectPass::Blur(UiBlurPassPlan {
-                        direction: UiBlurDirection::Horizontal,
+                    passes.push(ViewEffectPass::Blur(ViewBlurPassPlan {
+                        direction: ViewBlurDirection::Horizontal,
                         radius_px,
                         input_extent: current_extent,
                         output_extent,
                     }));
-                    passes.push(UiEffectPass::Blur(UiBlurPassPlan {
-                        direction: UiBlurDirection::Vertical,
+                    passes.push(ViewEffectPass::Blur(ViewBlurPassPlan {
+                        direction: ViewBlurDirection::Vertical,
                         radius_px,
                         input_extent: output_extent,
                         output_extent,
                     }));
                     current_extent = output_extent;
                 }
-                UiFilter::DropShadow {
+                ViewFilter::DropShadow {
                     offset_x_px,
                     offset_y_px,
                     blur_radius_px,
@@ -443,7 +443,7 @@ impl UiFilterPassPlan {
                 } => {
                     let shadow_outset = filter.visual_outset_px() * scale;
                     let shadow_extent = current_extent.expanded(ceil_positive(shadow_outset));
-                    passes.push(UiEffectPass::DropShadow(UiDropShadowPassPlan {
+                    passes.push(ViewEffectPass::DropShadow(ViewDropShadowPassPlan {
                         offset_x_px: *offset_x_px * scale,
                         offset_y_px: *offset_y_px * scale,
                         blur_radius_px: positive_f32(*blur_radius_px) * scale,
@@ -453,18 +453,20 @@ impl UiFilterPassPlan {
                     }));
                     current_extent = shadow_extent;
                 }
-                UiFilter::Unsupported { name, reason } => passes.push(UiEffectPass::Unsupported {
-                    name: name.clone(),
-                    reason: reason.clone(),
-                }),
-                UiFilter::Brightness(_)
-                | UiFilter::Contrast(_)
-                | UiFilter::Grayscale(_)
-                | UiFilter::Saturate(_)
-                | UiFilter::HueRotateDegrees(_)
-                | UiFilter::Invert(_)
-                | UiFilter::Sepia(_)
-                | UiFilter::Opacity(_) => {}
+                ViewFilter::Unsupported { name, reason } => {
+                    passes.push(ViewEffectPass::Unsupported {
+                        name: name.clone(),
+                        reason: reason.clone(),
+                    });
+                }
+                ViewFilter::Brightness(_)
+                | ViewFilter::Contrast(_)
+                | ViewFilter::Grayscale(_)
+                | ViewFilter::Saturate(_)
+                | ViewFilter::HueRotateDegrees(_)
+                | ViewFilter::Invert(_)
+                | ViewFilter::Sepia(_)
+                | ViewFilter::Opacity(_) => {}
             }
         }
 
@@ -475,7 +477,7 @@ impl UiFilterPassPlan {
         }
     }
 
-    pub fn empty(extent: UiTextureExtent) -> Self {
+    pub fn empty(extent: ViewTextureExtent) -> Self {
         Self {
             input_extent: extent,
             output_extent: extent,
@@ -483,15 +485,15 @@ impl UiFilterPassPlan {
         }
     }
 
-    pub fn passes(&self) -> &[UiEffectPass] {
+    pub fn passes(&self) -> &[ViewEffectPass] {
         &self.passes
     }
 
-    pub const fn input_extent(&self) -> UiTextureExtent {
+    pub const fn input_extent(&self) -> ViewTextureExtent {
         self.input_extent
     }
 
-    pub const fn output_extent(&self) -> UiTextureExtent {
+    pub const fn output_extent(&self) -> ViewTextureExtent {
         self.output_extent
     }
 
@@ -507,7 +509,7 @@ enum FilterExtentPolicy {
 }
 
 impl FilterExtentPolicy {
-    fn output_extent(self, input: UiTextureExtent, blur_radius_px: f32) -> UiTextureExtent {
+    fn output_extent(self, input: ViewTextureExtent, blur_radius_px: f32) -> ViewTextureExtent {
         match self {
             Self::ExpandForVisualOutset => input.expanded(ceil_positive(blur_radius_px * 3.0)),
             Self::KeepInputExtent => input,
@@ -557,8 +559,8 @@ fn positive_f32(value: f32) -> f32 {
 mod tests {
     use super::*;
 
-    fn rgba(alpha: u8) -> UiColorRgba8 {
-        UiColorRgba8 {
+    fn rgba(alpha: u8) -> ViewColorRgba8 {
+        ViewColorRgba8 {
             red: 12,
             green: 34,
             blue: 56,
@@ -568,28 +570,29 @@ mod tests {
 
     #[test]
     fn color_matrix_contrast_and_invert_are_deterministic() {
-        let contrast = UiColorMatrix::contrast(1.5);
+        let contrast = ViewColorMatrix::contrast(1.5);
         assert!((contrast.matrix[0][0] - 1.5).abs() <= f32::EPSILON);
         assert!((contrast.offset[0] + 0.25).abs() <= f32::EPSILON);
 
-        let invert = UiColorMatrix::invert(1.0);
+        let invert = ViewColorMatrix::invert(1.0);
         assert!((invert.matrix[0][0] + 1.0).abs() <= f32::EPSILON);
         assert!((invert.offset[0] - 1.0).abs() <= f32::EPSILON);
     }
 
     #[test]
     fn filter_plan_expands_for_blur_and_drop_shadow() {
-        let filters = UiFilterList::new([
-            UiFilter::Brightness(1.2),
-            UiFilter::Blur { radius_px: 4.0 },
-            UiFilter::DropShadow {
+        let filters = ViewFilterList::new([
+            ViewFilter::Brightness(1.2),
+            ViewFilter::Blur { radius_px: 4.0 },
+            ViewFilter::DropShadow {
                 offset_x_px: 8.0,
                 offset_y_px: 2.0,
                 blur_radius_px: 6.0,
                 color: rgba(200),
             },
         ]);
-        let plan = UiFilterPassPlan::from_filter_list(&filters, UiTextureExtent::new(32, 16), 1.0);
+        let plan =
+            ViewFilterPassPlan::from_filter_list(&filters, ViewTextureExtent::new(32, 16), 1.0);
 
         assert_eq!(plan.passes().len(), 4);
         assert!(plan.output_extent().width > 32);
@@ -598,9 +601,9 @@ mod tests {
 
     #[test]
     fn fixed_extent_filter_plan_keeps_backdrop_target_size() {
-        let filters = UiFilterList::new([UiFilter::Blur { radius_px: 4.0 }]);
-        let extent = UiTextureExtent::new(32, 16);
-        let plan = UiFilterPassPlan::from_filter_list_fixed_extent(&filters, extent, 1.0);
+        let filters = ViewFilterList::new([ViewFilter::Blur { radius_px: 4.0 }]);
+        let extent = ViewTextureExtent::new(32, 16);
+        let plan = ViewFilterPassPlan::from_filter_list_fixed_extent(&filters, extent, 1.0);
 
         assert_eq!(plan.passes().len(), 2);
         assert_eq!(plan.input_extent(), extent);
@@ -609,7 +612,7 @@ mod tests {
 
     #[test]
     fn texture_extent_buckets_without_exceeding_cap() {
-        let extent = UiTextureExtent::new(257, 511).bucketed(UiTextureExtent::new(512, 512));
-        assert_eq!(extent, UiTextureExtent::new(512, 512));
+        let extent = ViewTextureExtent::new(257, 511).bucketed(ViewTextureExtent::new(512, 512));
+        assert_eq!(extent, ViewTextureExtent::new(512, 512));
     }
 }

@@ -1,5 +1,5 @@
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{UiColorRgba8, UiGlyphRun, UiPrimitive, UiScene};
+use arcweft_render_wgpu::view_scene::{ViewColorRgba8, ViewGlyphRun, ViewPrimitive, ViewScene};
 use arcweft_view::{NodeId, TextFieldId};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,7 +21,7 @@ pub enum ArcweftInlineParticipantKind {
 pub struct ArcweftGlyphRun {
     run_index: u32,
     bounds: HitRect,
-    color: UiColorRgba8,
+    color: ViewColorRgba8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,7 +60,7 @@ impl InlineMeasuredSize {
 }
 
 impl ArcweftGlyphRun {
-    pub fn new(run_index: u32, bounds: HitRect, color: UiColorRgba8) -> Self {
+    pub fn new(run_index: u32, bounds: HitRect, color: ViewColorRgba8) -> Self {
         Self {
             run_index,
             bounds,
@@ -76,12 +76,12 @@ impl ArcweftGlyphRun {
         self.bounds
     }
 
-    pub fn color(&self) -> UiColorRgba8 {
+    pub fn color(&self) -> ViewColorRgba8 {
         self.color
     }
 
-    pub fn into_primitive(self) -> UiPrimitive {
-        UiPrimitive::GlyphRun(UiGlyphRun {
+    pub fn into_primitive(self) -> ViewPrimitive {
+        ViewPrimitive::GlyphRun(ViewGlyphRun {
             run_index: self.run_index,
             bounds: self.bounds,
             color: self.color,
@@ -145,7 +145,7 @@ impl ArcweftTextLayoutBridge {
             .map(ArcweftInlineParticipant::object_replacement_text)
     }
 
-    pub fn emit_glyph_runs_for(&self, node: NodeId, scene: &mut UiScene) -> bool {
+    pub fn emit_glyph_runs_for(&self, node: NodeId, scene: &mut ViewScene) -> bool {
         let Some(participant) = self.get(node) else {
             return false;
         };
@@ -160,8 +160,8 @@ impl ArcweftTextLayoutBridge {
 mod tests {
     use super::*;
 
-    fn white() -> UiColorRgba8 {
-        UiColorRgba8 {
+    fn white() -> ViewColorRgba8 {
+        ViewColorRgba8 {
             red: 255,
             green: 255,
             blue: 255,
@@ -183,7 +183,7 @@ mod tests {
             )],
         ));
 
-        let mut scene = UiScene::new(320.0, 180.0);
+        let mut scene = ViewScene::new(320.0, 180.0);
         assert!(bridge.emit_glyph_runs_for(NodeId(1), &mut scene));
         assert_eq!(scene.primitives().len(), 1);
         assert_eq!(bridge.placeholder_text(NodeId(1)), Some("\u{fffc}"));

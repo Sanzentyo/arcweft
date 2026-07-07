@@ -22,16 +22,17 @@ The native PNG baseline from seq06.13e.1 is left unchanged.
   seq06.13e.1 compositor scene: `rounded_inset_shadow_card` and
   `mixed_outer_inset_shadow_card`. The fixture now declares those cards as
   Panel parts in a typed `ViewProgramResource`, resolves their computed style
-  through `ViewProgramResource::runtime_element_styles_with_style`, then lowers
-  `background-color`, `border-radius`, and `box-shadow` into the retained
-  `UiScene`.
+  through `ViewProgramResource::runtime_surfaces_with_style`, attaches the
+  runtime surfaces to `BundlePresentationSnapshot::surfaces`, and lets the
+  normal player frame planner lower `background-color`, `border-radius`, and
+  `box-shadow` into the retained `ViewScene`.
 - Readback path: WebAssembly-exported renderer readback. The wasm export
   `capture_seq06_13e1_inset_box_shadow_exact_png` prepares a normal
-  `PreparedFrame` with `PlayerFramePlanner::prepare`, attaches the exact
-  `UiScene` with `PreparedFrame::with_ui_scenes`, renders the Arcweft-owned
-  `rgba8unorm` WebGPU texture through `SharedRenderer::render_to_view`, then
-  reads it with `copy_texture_to_buffer`. Node only encodes the returned raw RGBA
-  bytes as PNG and writes packet JSON.
+  `PreparedFrame` with `PlayerFramePlanner::prepare` from a
+  `BundlePresentationSnapshot` carrying the exact fixture surfaces, renders the
+  Arcweft-owned `rgba8unorm` WebGPU texture through
+  `SharedRenderer::render_to_view`, then reads it with `copy_texture_to_buffer`.
+  Node only encodes the returned raw RGBA bytes as PNG and writes packet JSON.
 - Forbidden paths: no browser DOM/CSS box-shadow screenshots, no SVG filters, no
   Canvas 2D fallback, no CPU raster fallback, no bitmap mask replacement.
 - Web reference rule: Web has a separate Web-specific reference PNG. It must not
@@ -43,8 +44,10 @@ The native PNG baseline from seq06.13e.1 is left unchanged.
   - wasm-only exact capture export for the 320x180 compositor fixture.
   - returns raw RGBA bytes, observe JSON, and WebGPU adapter info.
   - resolves the exact fixture's Panel part styles through
-    `ViewProgramResource::runtime_element_styles_with_style` before building
-    `UiRoundedRect` primitives and compositor box-shadow effects.
+    `ViewProgramResource::runtime_surfaces_with_style`, attaches the resulting
+    runtime surfaces to `BundlePresentationSnapshot::surfaces`, and relies on
+    player-scene lowering to build `ViewRoundedRect` primitives and compositor
+    box-shadow effects.
 - `crates/arcweft-player-web/src/lib.rs`
   - exposes the wasm exact capture export behind the existing wasm cfg boundary.
 - `crates/arcweft-player-web/Cargo.toml`
@@ -63,7 +66,7 @@ The native PNG baseline from seq06.13e.1 is left unchanged.
   - adds Web classifications for missing WebGPU pin, missing runtime tool,
     missing browser runtime, missing candidate PNG, transparent candidate,
     dimension mismatch, and imq failure.
-- `crates/arcweft-render-wgpu/tests/ui_box_shadow_exact_png_golden.rs`
+- `crates/arcweft-render-wgpu/tests/view_box_shadow_exact_png_golden.rs`
   - extends exact packet tests to require command logs and review decision.
   - accepts a complete no-promotion Web packet when the Web reference is absent
     but `baseline_missing` metrics and `ready_for_first_promotion_review` review
@@ -161,7 +164,7 @@ Validated in the 2026-07-04 apply checkout:
 - `wasm-bindgen --target web --out-dir web/pkg --out-name arcweft_player_web target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm`
 - `node --check web/tests/seq06-13e1-inset-shadow-exact-capture.mjs`
 - `cargo +nightly -Zscript tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs --root .`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden --all-features -- --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden --all-features -- --nocapture`
 - `cargo +nightly --config "build.target-dir='target/cargo-script-seq06-13e1-check-3'" -Zscript tools/collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir target/seq06.13e.1-web-exact-readback-dry-run-4 --mode web`
 - `cargo clippy --workspace --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
@@ -199,17 +202,18 @@ nightly toolchain that lacks the `wasm32-unknown-unknown` target.
 
 After review feedback on 2026-07-04, the Web exact fixture was changed so
 corner radius, card fill, and box shadows no longer originate as hard-coded
-`UiCompositingEffects` in the wasm export. The export now owns a typed
+`ViewCompositingEffects` in the wasm export. The export now owns a typed
 `ViewStyleResource` with CSS source identity for
 `docs/fixtures/css/seq06.13e-inset-box-shadow-card.css`, declares each card as a
 Panel part in a fixture `ViewProgramResource`, resolves the cards via
-`ViewProgramResource::runtime_element_styles_with_style`, then lowers the
-resolved visual style to:
+`ViewProgramResource::runtime_surfaces_with_style`, stores the resulting runtime
+surfaces in `BundlePresentationSnapshot::surfaces`, then the shared
+player-scene frame path lowers the resolved visual style to:
 
-- `UiRoundedRect` direct primitives for the style fill and border radius;
-- `UiCompositingEffects::box_shadows` for the style shadow list;
+- `ViewRoundedRect` direct primitives for the style fill and border radius;
+- `ViewCompositingEffects::box_shadows` for the style shadow list;
 - observe JSON route evidence for the tree-aware style resolver, player renderer
-  path, and rounded-rect child.
+  surface resource path, and rounded-rect child.
 
 This also addresses the previous transparent-candidate failure mode where the
 Web exact scene had shadow groups with no rendered child content because the

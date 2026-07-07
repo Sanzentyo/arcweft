@@ -5,7 +5,7 @@
 Close the gap between the existing Arcweft-owned clip/mask contracts and actual
 final-pixel constraints in the normal shared wgpu compositor path.
 
-This design builds on the existing `UiClipPath`, `UiMask`, `UiMaskChainPlan`,
+This design builds on the existing `ViewClipPath`, `ViewMask`, `ViewMaskChainPlan`,
 clip/mask metadata, and seq06.9 compositor contract. It does not use browser CSS
 clipping, DOM masks, SVG filters, canvas fallback, or CPU-rasterized Takumi
 output.
@@ -22,11 +22,11 @@ Implemented in this cut:
 
 Diagnostics in this cut:
 
-- `path(...)` returns `UiClipPathPlanError::PathUnsupported`;
+- `path(...)` returns `ViewClipPathPlanError::PathUnsupported`;
 - polygons above the fixed shader uniform budget return
-  `UiClipPathPlanError::TooManyPolygonVertices`;
-- `url(...)` and invalid values are represented as `UiClipPath::Unsupported` and
-  return `UiClipPathPlanError::Unsupported`.
+  `ViewClipPathPlanError::TooManyPolygonVertices`;
+- `url(...)` and invalid values are represented as `ViewClipPath::Unsupported` and
+  return `ViewClipPathPlanError::Unsupported`.
 
 ## Clip implementation strategy
 
@@ -34,7 +34,7 @@ The renderer uses a deterministic analytic shader pass:
 
 1. Render children into the group offscreen target as seq06.9b already does.
 2. Apply foreground filters.
-3. Apply one clip pass when `UiClipGeometryPlan::requires_geometry_pass()` is
+3. Apply one clip pass when `ViewClipGeometryPlan::requires_geometry_pass()` is
    true.
 4. Apply mask passes.
 5. Apply backdrop/filter/blend composition to the parent target.
@@ -54,7 +54,7 @@ textures.
 
 ### Resource provider contract
 
-`UiMaskTextureProvider::texture_for` returns a `UiMaskTextureView` containing:
+`ViewMaskTextureProvider::texture_for` returns a `ViewMaskTextureView` containing:
 
 - texture view;
 - mask channel (`Alpha` or `Luminance`);
@@ -66,7 +66,7 @@ open files, fetch URLs, or perform network I/O.
 
 ### Sampling plan
 
-Each `UiMaskPassPlan` can resolve a `UiMaskSamplingPlan` from:
+Each `ViewMaskPassPlan` can resolve a `ViewMaskSamplingPlan` from:
 
 - source/group extent;
 - external mask texture extent;
@@ -84,7 +84,7 @@ Supported size behavior:
 
 Supported position behavior:
 
-- `UiMaskPosition.anchor` resolves against the available free space after tile
+- `ViewMaskPosition.anchor` resolves against the available free space after tile
   sizing, so `50% 50%` centers the tile.
 
 Supported repeat behavior:
@@ -123,7 +123,7 @@ The plan-level evidence expected for tests and capture packets:
 
 Pixel-level smoke/golden expectations:
 
-- run native and web through the same `UiCompositor::render_scene` path;
+- run native and web through the same `ViewCompositor::render_scene` path;
 - capture the same motion timestamps used by `UiMotionSample` fixtures;
 - compare exact hash only on pinned adapters;
 - otherwise compare bounded drift with a documented per-channel tolerance.

@@ -6,7 +6,7 @@
 - Uniform circular `border-radius` after Takumi computation.
 - Uniform visible solid border across physical sides.
 - `background-image: linear-gradient(...)` when non-repeating and color stops can
-  be represented as normalized `UiGradientStop` values.
+  be represented as normalized `ViewGradientStop` values.
 - `background-image: url(...)` when a resource index is already available in the
   adapter/player-provided resource table.
 - `opacity` as a paint-only field on `DirectBoxPaint`.

@@ -4,7 +4,7 @@ use crate::capture::{
 };
 use crate::metadata::ArcweftNodeMetadata;
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{UiBlendMode, UiIsolation, UiPrimitiveRange};
+use arcweft_render_wgpu::view_scene::{ViewBlendMode, ViewIsolation, ViewPrimitiveRange};
 use std::fmt::{self, Write as _};
 
 pub const COMPOSITING_EVIDENCE_SCHEMA_VERSION: &str = "arcweft.compositing-capture.v1";
@@ -254,7 +254,7 @@ fn push_primitive_range(
     out: &mut String,
     depth: usize,
     name: &str,
-    range: Option<UiPrimitiveRange>,
+    range: Option<ViewPrimitiveRange>,
     comma: bool,
 ) {
     indent(out, depth);
@@ -390,11 +390,11 @@ fn push_json_string(out: &mut String, value: &str) -> fmt::Result {
     Ok(())
 }
 
-fn format_isolation(isolation: UiIsolation) -> String {
+fn format_isolation(isolation: ViewIsolation) -> String {
     format!("{isolation:?}")
 }
 
-fn format_blend_mode(blend_mode: UiBlendMode) -> String {
+fn format_blend_mode(blend_mode: ViewBlendMode) -> String {
     format!("{blend_mode:?}")
 }
 
@@ -441,7 +441,7 @@ mod tests {
                 HitRect::new(10.0, 20.0, 100.0, 50.0),
             )
             .with_effect_outsets(TakumiEffectOutsets::new(12.0, 0.0, 0.0))
-            .with_blend_mode(UiBlendMode::Multiply),
+            .with_blend_mode(ViewBlendMode::Multiply),
         );
 
         let json = capture_frame_to_json(&frame);

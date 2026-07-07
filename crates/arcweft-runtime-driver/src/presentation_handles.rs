@@ -1,7 +1,7 @@
 use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeTextBlock, ViewRuntimeTextControl,
+    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextBlock, ViewRuntimeTextControl,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use serde::{Deserialize, Serialize};
@@ -638,6 +638,22 @@ pub(crate) fn filter_presentation_text_blocks(
         .filter(|block| {
             let mut aliases = vec![block.public_id.as_str(), block.target.as_str()];
             if let Some(view) = block.view.as_deref() {
+                aliases.push(view);
+            }
+            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+        })
+        .collect()
+}
+
+pub(crate) fn filter_presentation_surfaces(
+    surfaces: Vec<ViewRuntimeSurface>,
+    handles: &[PresentationHandleRecord],
+) -> Vec<ViewRuntimeSurface> {
+    surfaces
+        .into_iter()
+        .filter(|surface| {
+            let mut aliases = vec![surface.public_id.as_str(), surface.target.as_str()];
+            if let Some(view) = surface.view.as_deref() {
                 aliases.push(view);
             }
             resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)

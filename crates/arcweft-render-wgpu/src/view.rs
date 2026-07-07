@@ -7,11 +7,11 @@ use num_traits::ToPrimitive;
 
 /// Paint rectangles generated from one resolved retained UI display list.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiPaintPlan {
+pub struct ViewPaintPlan {
     rectangles: Vec<PaintRect>,
 }
 
-impl UiPaintPlan {
+impl ViewPaintPlan {
     pub fn from_resolved_display(display: &ResolvedDisplayList) -> Self {
         let rectangles = display
             .as_slice()

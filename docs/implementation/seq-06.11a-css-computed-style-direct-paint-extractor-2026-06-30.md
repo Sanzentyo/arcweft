@@ -13,7 +13,7 @@ Takumi computed style
   -> ComputedDirectPaintExtractor
   -> DirectPaintCatalog
   -> TakumiSceneLowerer
-  -> arcweft-render-wgpu::ui_scene::UiScene primitives
+  -> arcweft-render-wgpu::view_scene::ViewScene primitives
 ```
 
 ## Production changes

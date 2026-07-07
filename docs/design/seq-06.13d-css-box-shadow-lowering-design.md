@@ -3,16 +3,16 @@
 ## Goal
 
 Lower authored CSS `box-shadow` from Takumi's typed computed style into the
-Arcweft retained `UiScene` compositor graph. This closes the gap left after
-seq06.13b: the renderer can draw `UiBoxShadow` passes, but the Takumi adapter was
-still emitting `UiBoxShadowList::default()` for every computed style.
+Arcweft retained `ViewScene` compositor graph. This closes the gap left after
+seq06.13b: the renderer can draw `ViewBoxShadow` passes, but the Takumi adapter was
+still emitting `ViewBoxShadowList::default()` for every computed style.
 
 This design does not redesign seq06.13b's renderer substrate. The current
 substrate already owns:
 
-- `UiBoxShadow`, `UiBoxShadowKind`, and `UiBoxShadowList` in
-  `arcweft-render-wgpu::ui_scene`;
-- `UiBoxShadowPassPlan` and `UiBoxShadowPlanError` in `ui_box_shadow`;
+- `ViewBoxShadow`, `ViewBoxShadowKind`, and `ViewBoxShadowList` in
+  `arcweft-render-wgpu::view_scene`;
+- `ViewBoxShadowPassPlan` and `ViewBoxShadowPlanError` in `view_box_shadow`;
 - compositor pass order where shadows are drawn into the group target before
   children and before filter/clip/mask/blend;
 - WGSL `PASS_BOX_SHADOW`.
@@ -55,7 +55,7 @@ box_shadows: box_shadow_list_from_takumi(
 ),
 ```
 
-Each Takumi `BoxShadow` lowers to one Arcweft `UiBoxShadow` with:
+Each Takumi `BoxShadow` lowers to one Arcweft `ViewBoxShadow` with:
 
 - `offset_x_px`: resolved CSS/device pixels, preserving sign;
 - `offset_y_px`: resolved CSS/device pixels, preserving sign;
@@ -63,16 +63,16 @@ Each Takumi `BoxShadow` lowers to one Arcweft `UiBoxShadow` with:
 - `spread_radius_px`: resolved pixels, preserving negative spread;
 - `border_radius_px`: deterministic scalar radius derived from the computed
   border radii;
-- `color`: `ColorInput::resolve(current_color)` converted to `UiColorRgba8`;
+- `color`: `ColorInput::resolve(current_color)` converted to `ViewColorRgba8`;
 - `kind`: `Outer` unless Takumi's typed value has `inset: true`.
 
-The lowered list is built through `UiBoxShadowList::new`, so transparent and
+The lowered list is built through `ViewBoxShadowList::new`, so transparent and
 identity shadows are canonicalized by the owning Arcweft type instead of by local
 adapter branches.
 
 ## Border radius scalar decision
 
-`UiBoxShadow` currently carries a single scalar `border_radius_px`, while CSS and
+`ViewBoxShadow` currently carries a single scalar `border_radius_px`, while CSS and
 Takumi expose four possibly elliptical corners. Seq06.13d keeps the existing
 renderer contract and chooses a deterministic scalar rather than redesigning
 seq06.13b.
@@ -92,9 +92,9 @@ Unsupported forms must not be silently dropped:
 | --- | --- |
 | Malformed shadow list | Takumi CSS parse error before adapter lowering. |
 | Unsupported color function / unresolved color | Takumi parse or cascade diagnostic before adapter lowering. |
-| Transparent shadow | Lowered, then canonicalized to identity by `UiBoxShadowList::new`. |
-| `inset` shadow | Lowered to `UiBoxShadowKind::Inset`; seq06.13b planner emits `UiBoxShadowPlanError::InsetUnsupported`. |
-| Non-finite numeric field | Lowered as typed data; seq06.13b planner emits `UiBoxShadowPlanError::NonFinite`. |
+| Transparent shadow | Lowered, then canonicalized to identity by `ViewBoxShadowList::new`. |
+| `inset` shadow | Lowered to `ViewBoxShadowKind::Inset`; seq06.13b planner emits `ViewBoxShadowPlanError::InsetUnsupported`. |
+| Non-finite numeric field | Lowered as typed data; seq06.13b planner emits `ViewBoxShadowPlanError::NonFinite`. |
 | Mixed / elliptical border radii | Deterministic scalar selection as described above. |
 
 This package does not add source-string gates such as `value.contains("inset")`.
@@ -104,7 +104,7 @@ errors.
 ## Drop-shadow separation
 
 `filter: drop-shadow(...)` remains a subtree-alpha filter and lowers to
-`UiFilter::DropShadow`. It must not populate `UiCompositingEffects::box_shadows`.
+`ViewFilter::DropShadow`. It must not populate `ViewCompositingEffects::box_shadows`.
 The focused test suite includes this separation explicitly.
 
 ## Pass order

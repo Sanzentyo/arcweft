@@ -16,51 +16,51 @@ geometry.
 
 ## Public renderer data model
 
-`arcweft-render-wgpu::ui_scene` owns the public radius contract:
+`arcweft-render-wgpu::view_scene` owns the public radius contract:
 
 ```rust
-pub struct UiBoxShadowCornerRadius {
+pub struct ViewBoxShadowCornerRadius {
     pub x_px: f32,
     pub y_px: f32,
 }
 
-pub struct UiBoxShadowRadii {
-    pub top_left: UiBoxShadowCornerRadius,
-    pub top_right: UiBoxShadowCornerRadius,
-    pub bottom_right: UiBoxShadowCornerRadius,
-    pub bottom_left: UiBoxShadowCornerRadius,
+pub struct ViewBoxShadowRadii {
+    pub top_left: ViewBoxShadowCornerRadius,
+    pub top_right: ViewBoxShadowCornerRadius,
+    pub bottom_right: ViewBoxShadowCornerRadius,
+    pub bottom_left: ViewBoxShadowCornerRadius,
 }
 
-pub struct UiBoxShadow {
+pub struct ViewBoxShadow {
     pub offset_x_px: f32,
     pub offset_y_px: f32,
     pub blur_radius_px: f32,
     pub spread_radius_px: f32,
-    pub border_radii: UiBoxShadowRadii,
-    pub color: UiColorRgba8,
-    pub kind: UiBoxShadowKind,
+    pub border_radii: ViewBoxShadowRadii,
+    pub color: ViewColorRgba8,
+    pub kind: ViewBoxShadowKind,
 }
 ```
 
 The existing scalar constructors remain as convenience constructors only:
 
 ```rust
-UiBoxShadow::outer(..., border_radius_px, color)
-UiBoxShadow::inset(..., border_radius_px, color)
+ViewBoxShadow::outer(..., border_radius_px, color)
+ViewBoxShadow::inset(..., border_radius_px, color)
 ```
 
-They map to `UiBoxShadowRadii::uniform(border_radius_px)`. New explicit
+They map to `ViewBoxShadowRadii::uniform(border_radius_px)`. New explicit
 constructors are added for authored typed radii:
 
 ```rust
-UiBoxShadow::outer_with_radii(..., border_radii, color)
-UiBoxShadow::inset_with_radii(..., border_radii, color)
+ViewBoxShadow::outer_with_radii(..., border_radii, color)
+ViewBoxShadow::inset_with_radii(..., border_radii, color)
 ```
 
 Outer and inset shadows share the same radius contract. The shadow kind affects
 paint order, spread direction, and shader coverage, not the radius data model.
 No broad root-level compatibility re-export is added; the new types are exported
-through the existing `ui_scene` responsibility module boundary.
+through the existing `view_scene` responsibility module boundary.
 
 ## Takumi lowering
 
@@ -72,7 +72,7 @@ Takumi already exposes computed corner radii as `SpacePair<Length>` fields on
 - `border_bottom_right_radius`
 - `border_bottom_left_radius`
 
-The adapter lowers those four typed fields directly into `UiBoxShadowRadii` via
+The adapter lowers those four typed fields directly into `ViewBoxShadowRadii` via
 `length_value_px`, preserving `x/y` elliptical values and CSS corner order. It no
 longer computes `max(min(rx, ry))` as a scalar for shadows. No production CSS
 string scanning is introduced; parse and cascade remain Takumi-owned.
@@ -84,7 +84,7 @@ The contract uses two stages:
 1. **Typed preservation at the scene boundary.** Non-finite and negative values
    are preserved so non-empty shadows can report structured planner diagnostics.
    Transparent shadows and true zero-effect shadows still canonicalize to no-op
-   entries through `UiBoxShadowList::new`.
+   entries through `ViewBoxShadowList::new`.
 2. **Planning-time geometric normalization after validation.** Once a shadow is
    valid, each pass computes body and caster/shadow radii for its target rect.
 
@@ -95,8 +95,8 @@ Rules:
 | Zero radius | Supported; produces square corners. |
 | Mixed corners | Preserved per corner. |
 | Elliptical corners | Preserved as independent `x_px` / `y_px`. |
-| Negative direct radius | `UiBoxShadowPlanError::DegenerateRadius`; CSS should not produce this, but direct renderer callers are not silently clamped. |
-| Non-finite radius | `UiBoxShadowPlanError::NonFiniteRadius`. |
+| Negative direct radius | `ViewBoxShadowPlanError::DegenerateRadius`; CSS should not produce this, but direct renderer callers are not silently clamped. |
+| Non-finite radius | `ViewBoxShadowPlanError::NonFiniteRadius`. |
 | Oversized radii | CSS border-radius overlap normalization: one shared scale factor is computed from top/bottom horizontal sums and left/right vertical sums and applied to all corner axes. |
 | Spread for outer shadows | Adds `spread_radius_px` to each corner axis, floors at zero, then normalizes against the spread caster rect. |
 | Spread for inset shadows | Subtracts `spread_radius_px` from each corner axis, floors at zero, then normalizes against the inset caster/clear rect. Negative inset spread therefore expands the caster and increases radii deterministically. |
@@ -104,22 +104,22 @@ Rules:
 
 ## Planner contract
 
-`UiBoxShadowPass` stores both normalized radius sets:
+`ViewBoxShadowPass` stores both normalized radius sets:
 
 ```rust
-pub struct UiBoxShadowPass {
+pub struct ViewBoxShadowPass {
     pub shadow_index: usize,
-    pub shadow: UiBoxShadow,
+    pub shadow: ViewBoxShadow,
     pub body_rect: HitRect,
     pub shadow_rect: HitRect,
-    pub body_radii: UiBoxShadowRadii,
-    pub shadow_radii: UiBoxShadowRadii,
+    pub body_radii: ViewBoxShadowRadii,
+    pub shadow_radii: ViewBoxShadowRadii,
 }
 ```
 
 Existing scalar-radius tests remain valid through the scalar constructors and by
-asserting `UiBoxShadowRadii::uniform(...)` in plan output. The public scalar
-fields are not kept as compatibility shims on `UiBoxShadowPass`; code that needs
+asserting `ViewBoxShadowRadii::uniform(...)` in plan output. The public scalar
+fields are not kept as compatibility shims on `ViewBoxShadowPass`; code that needs
 radii reads the typed contract.
 
 ## Uniform and WGSL contract

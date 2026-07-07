@@ -7,16 +7,16 @@
     "Takumi StyleSheet parse/cascade",
     "ComputedStyle::box_shadow typed value",
     "arcweft-takumi-adapter box_shadow_list_from_takumi",
-    "UiCompositingEffects::box_shadows",
-    "UiCompositor::render_group",
+    "ViewCompositingEffects::box_shadows",
+    "ViewCompositor::render_group",
     "PASS_BOX_SHADOW before child paint"
   ],
   "expectations": {
     "outer_shadow_count": 2,
-    "paint_order": "CSS list order retained in UiBoxShadowList; UiBoxShadowPassPlan paints indices [1, 0] back-to-front",
+    "paint_order": "CSS list order retained in ViewBoxShadowList; ViewBoxShadowPassPlan paints indices [1, 0] back-to-front",
     "negative_spread": "second shadow keeps spread_radius_px = -2.0",
-    "drop_shadow_probe": "filter: drop-shadow(...) populates UiFilter::DropShadow and not UiBoxShadowList",
-    "inset_probe": "UiBoxShadowKind::Inset lowers then UiBoxShadowPlanError::InsetUnsupported is emitted"
+    "drop_shadow_probe": "filter: drop-shadow(...) populates ViewFilter::DropShadow and not ViewBoxShadowList",
+    "inset_probe": "ViewBoxShadowKind::Inset lowers then ViewBoxShadowPlanError::InsetUnsupported is emitted"
   },
   "forbidden_paths": [
     "DOM clipping",

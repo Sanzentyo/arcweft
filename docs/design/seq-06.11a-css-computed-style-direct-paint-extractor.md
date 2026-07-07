@@ -10,7 +10,7 @@ CSS source
   -> arcweft-takumi-adapter computed direct paint extractor
   -> DirectPaintCatalog
   -> TakumiSceneLowerer
-  -> arcweft-render-wgpu::ui_scene::UiScene direct primitives / UiPaintNode graph
+  -> arcweft-render-wgpu::view_scene::ViewScene direct primitives / ViewPaintNode graph
 ```
 
 The extractor belongs in `arcweft-takumi-adapter` because it consumes Takumi
@@ -42,7 +42,7 @@ It does not own:
 ### Existing lowerer contract
 
 `TakumiSceneLowerer` remains the only path that turns `DirectPaintCatalog` into
-`UiScene` primitives. Seq06.11a extends `DirectBoxPaint` from a single optional
+`ViewScene` primitives. Seq06.11a extends `DirectBoxPaint` from a single optional
 background to ordered `backgrounds: Vec<DirectBackground>` so CSS layered
 backgrounds can remain deterministic and renderer-independent.
 
@@ -117,7 +117,7 @@ adapter/player requirements and never trigger file or network I/O inside
 ### Linear gradients
 
 - `background-image: linear-gradient(...)` is supported when every paint stop can
-  be converted to a normalized `UiGradientStop`.
+  be converted to a normalized `ViewGradientStop`.
 - CSS keyword directions are converted to their equivalent angle through Takumi.
 - Stops with explicit percentage positions are supported.
 - Missing stop positions are distributed deterministically across the extracted
@@ -136,7 +136,7 @@ adapter/player requirements and never trigger file or network I/O inside
 
 - Opacity is copied into `DirectBoxPaint::opacity`.
 - Transforms remain owned by the existing Takumi render node and are attached to
-  `UiSceneContext` by `TakumiSceneLowerer`. The extractor does not duplicate
+  `ViewSceneContext` by `TakumiSceneLowerer`. The extractor does not duplicate
   transform logic.
 
 ## Layer order
@@ -168,12 +168,12 @@ Seq06.11b consumes the final data as normal frame data:
 
 ```rust
 TakumiComputedPaintFrame {
-    scene: UiScene,
+    scene: ViewScene,
     capture: TakumiCaptureFrame,
     direct_paint: ComputedDirectPaintFrame,
 }
 ```
 
-The only visual output contract is `UiScene` / `UiPaintNode` / `UiPrimitive`.
+The only visual output contract is `ViewScene` / `ViewPaintNode` / `ViewPrimitive`.
 The `direct_paint` field is evidence/diagnostics/resource metadata for the
 player and Agent capture layers; it is not a renderer path.

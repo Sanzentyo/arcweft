@@ -1,9 +1,9 @@
 //! Mask composition planning for the UI compositor.
 
-use crate::ui_effects::UiTextureExtent;
-use crate::ui_scene::{
-    UiElementMaskSource, UiGradientStop, UiLength, UiMask, UiMaskGradient, UiMaskImage,
-    UiMaskPosition, UiMaskRepeat, UiMaskSize, UiPoint,
+use crate::view_effects::ViewTextureExtent;
+use crate::view_scene::{
+    ViewElementMaskSource, ViewGradientStop, ViewLength, ViewMask, ViewMaskGradient, ViewMaskImage,
+    ViewMaskPosition, ViewMaskRepeat, ViewMaskSize, ViewPoint,
 };
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -12,7 +12,7 @@ pub const MAX_MASK_GRADIENT_STOPS: usize = 8;
 
 /// How a mask source contributes coverage.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum UiMaskChannel {
+pub enum ViewMaskChannel {
     #[default]
     Alpha,
     Luminance,
@@ -20,7 +20,7 @@ pub enum UiMaskChannel {
 
 /// Per-axis mask tile distribution mode after CSS repeat normalization.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum UiMaskAxisRepeat {
+pub enum ViewMaskAxisRepeat {
     NoRepeat,
     #[default]
     Repeat,
@@ -30,34 +30,34 @@ pub enum UiMaskAxisRepeat {
 
 /// Renderer-facing source requirement for one mask image.
 #[derive(Clone, Debug, PartialEq)]
-pub enum UiMaskImagePlan {
+pub enum ViewMaskImagePlan {
     None,
     Texture { resource: Box<str> },
-    Gradient(UiMaskGradient),
-    Element(UiElementMaskSource),
+    Gradient(ViewMaskGradient),
+    Element(ViewElementMaskSource),
     Unsupported(Box<str>),
 }
 
 /// One mask pass after CSS mask fields are normalized by lowering.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiMaskPassPlan {
+pub struct ViewMaskPassPlan {
     pub mask_index: usize,
-    pub image: UiMaskImagePlan,
-    pub size: UiMaskSize,
-    pub position: UiMaskPosition,
-    pub repeat: UiMaskRepeat,
-    pub channel: UiMaskChannel,
+    pub image: ViewMaskImagePlan,
+    pub size: ViewMaskSize,
+    pub position: ViewMaskPosition,
+    pub repeat: ViewMaskRepeat,
+    pub channel: ViewMaskChannel,
 }
 
 /// Pixel-space sampling contract for one mask pass.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiMaskSamplingPlan {
+pub struct ViewMaskSamplingPlan {
     pub tile_size_px: [f32; 2],
     pub tile_origin_px: [f32; 2],
     pub tile_stride_px: [f32; 2],
     pub tile_count: [u32; 2],
-    pub repeat_mode_x: UiMaskAxisRepeat,
-    pub repeat_mode_y: UiMaskAxisRepeat,
+    pub repeat_mode_x: ViewMaskAxisRepeat,
+    pub repeat_mode_y: ViewMaskAxisRepeat,
     /// Convenience compatibility field for callers that only need old repeat/no-repeat behavior.
     pub repeat_x: bool,
     /// Convenience compatibility field for callers that only need old repeat/no-repeat behavior.
@@ -66,13 +66,13 @@ pub struct UiMaskSamplingPlan {
 
 /// Packed gradient coverage plan consumed by the compositor uniform contract.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiMaskGradientPlan {
-    pub kind: UiMaskGradientKind,
-    pub stops: Vec<UiMaskGradientStopPlan>,
+pub struct ViewMaskGradientPlan {
+    pub kind: ViewMaskGradientKind,
+    pub stops: Vec<ViewMaskGradientStopPlan>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum UiMaskGradientKind {
+pub enum ViewMaskGradientKind {
     Linear {
         angle_degrees: f32,
     },
@@ -87,14 +87,14 @@ pub enum UiMaskGradientKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiMaskGradientStopPlan {
+pub struct ViewMaskGradientStopPlan {
     pub offset: f32,
     pub alpha_coverage: f32,
     pub luminance_coverage: f32,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
-pub enum UiMaskPlanError {
+pub enum ViewMaskPlanError {
     #[error("unsupported mask image: {0}")]
     UnsupportedImage(Box<str>),
     #[error("unsupported mask-size: {0}")]
@@ -115,24 +115,24 @@ pub enum UiMaskPlanError {
 
 /// Ordered chain of mask passes.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiMaskChainPlan {
-    passes: Vec<UiMaskPassPlan>,
+pub struct ViewMaskChainPlan {
+    passes: Vec<ViewMaskPassPlan>,
 }
 
-impl UiMaskChainPlan {
-    pub fn from_masks(masks: &[UiMask], default_channel: UiMaskChannel) -> Self {
+impl ViewMaskChainPlan {
+    pub fn from_masks(masks: &[ViewMask], default_channel: ViewMaskChannel) -> Self {
         Self {
             passes: masks
                 .iter()
                 .enumerate()
                 .map(|(mask_index, mask)| {
-                    UiMaskPassPlan::from_mask(mask_index, mask, default_channel)
+                    ViewMaskPassPlan::from_mask(mask_index, mask, default_channel)
                 })
                 .collect(),
         }
     }
 
-    pub fn passes(&self) -> &[UiMaskPassPlan] {
+    pub fn passes(&self) -> &[ViewMaskPassPlan] {
         &self.passes
     }
 
@@ -143,7 +143,7 @@ impl UiMaskChainPlan {
     pub fn requires_external_texture(&self) -> bool {
         self.passes
             .iter()
-            .any(UiMaskPassPlan::requires_external_texture)
+            .any(ViewMaskPassPlan::requires_external_texture)
     }
 
     pub fn unsupported_count(&self) -> usize {
@@ -154,11 +154,11 @@ impl UiMaskChainPlan {
     }
 }
 
-impl UiMaskPassPlan {
-    pub fn from_mask(mask_index: usize, mask: &UiMask, channel: UiMaskChannel) -> Self {
+impl ViewMaskPassPlan {
+    pub fn from_mask(mask_index: usize, mask: &ViewMask, channel: ViewMaskChannel) -> Self {
         Self {
             mask_index,
-            image: UiMaskImagePlan::from_image(&mask.image),
+            image: ViewMaskImagePlan::from_image(&mask.image),
             size: mask.size.clone(),
             position: mask.position.clone(),
             repeat: mask.repeat.clone(),
@@ -167,14 +167,14 @@ impl UiMaskPassPlan {
     }
 
     pub fn requires_external_texture(&self) -> bool {
-        matches!(self.image, UiMaskImagePlan::Texture { .. })
+        matches!(self.image, ViewMaskImagePlan::Texture { .. })
     }
 
     pub fn sampling_plan(
         &self,
-        source_extent: UiTextureExtent,
-        mask_extent: UiTextureExtent,
-    ) -> Result<UiMaskSamplingPlan, UiMaskPlanError> {
+        source_extent: ViewTextureExtent,
+        mask_extent: ViewTextureExtent,
+    ) -> Result<ViewMaskSamplingPlan, ViewMaskPlanError> {
         self.validate_image_for_sampling()?;
         let source_width = dimension_to_f32(source_extent.width);
         let source_height = dimension_to_f32(source_extent.height);
@@ -201,91 +201,91 @@ impl UiMaskPassPlan {
     pub fn gradient_plan(
         &self,
         tile_size_px: [f32; 2],
-    ) -> Result<Option<UiMaskGradientPlan>, UiMaskPlanError> {
+    ) -> Result<Option<ViewMaskGradientPlan>, ViewMaskPlanError> {
         match &self.image {
-            UiMaskImagePlan::Gradient(gradient) => {
-                UiMaskGradientPlan::from_gradient(gradient, tile_size_px).map(Some)
+            ViewMaskImagePlan::Gradient(gradient) => {
+                ViewMaskGradientPlan::from_gradient(gradient, tile_size_px).map(Some)
             }
-            UiMaskImagePlan::Element(source) => {
-                Err(UiMaskPlanError::ElementMaskCaptureUnavailable {
+            ViewMaskImagePlan::Element(source) => {
+                Err(ViewMaskPlanError::ElementMaskCaptureUnavailable {
                     element_id: source.element_id.clone(),
                 })
             }
-            UiMaskImagePlan::Unsupported(reason) => {
-                Err(UiMaskPlanError::UnsupportedImage(reason.clone()))
+            ViewMaskImagePlan::Unsupported(reason) => {
+                Err(ViewMaskPlanError::UnsupportedImage(reason.clone()))
             }
-            UiMaskImagePlan::None | UiMaskImagePlan::Texture { .. } => Ok(None),
+            ViewMaskImagePlan::None | ViewMaskImagePlan::Texture { .. } => Ok(None),
         }
     }
 
     pub fn is_unsupported(&self) -> bool {
-        matches!(self.image, UiMaskImagePlan::Unsupported(_))
-            || matches!(self.image, UiMaskImagePlan::Element(_))
-            || matches!(self.size, UiMaskSize::Unsupported(_))
-            || matches!(self.repeat, UiMaskRepeat::Unsupported(_))
+        matches!(self.image, ViewMaskImagePlan::Unsupported(_))
+            || matches!(self.image, ViewMaskImagePlan::Element(_))
+            || matches!(self.size, ViewMaskSize::Unsupported(_))
+            || matches!(self.repeat, ViewMaskRepeat::Unsupported(_))
     }
 
-    fn validate_image_for_sampling(&self) -> Result<(), UiMaskPlanError> {
+    fn validate_image_for_sampling(&self) -> Result<(), ViewMaskPlanError> {
         match &self.image {
-            UiMaskImagePlan::Unsupported(reason) => {
-                Err(UiMaskPlanError::UnsupportedImage(reason.clone()))
+            ViewMaskImagePlan::Unsupported(reason) => {
+                Err(ViewMaskPlanError::UnsupportedImage(reason.clone()))
             }
-            UiMaskImagePlan::Element(source) => {
-                Err(UiMaskPlanError::ElementMaskCaptureUnavailable {
+            ViewMaskImagePlan::Element(source) => {
+                Err(ViewMaskPlanError::ElementMaskCaptureUnavailable {
                     element_id: source.element_id.clone(),
                 })
             }
-            UiMaskImagePlan::Gradient(UiMaskGradient::Unsupported(reason)) => {
-                Err(UiMaskPlanError::UnsupportedGradient {
+            ViewMaskImagePlan::Gradient(ViewMaskGradient::Unsupported(reason)) => {
+                Err(ViewMaskPlanError::UnsupportedGradient {
                     reason: reason.clone(),
                 })
             }
-            UiMaskImagePlan::None
-            | UiMaskImagePlan::Texture { .. }
-            | UiMaskImagePlan::Gradient(_) => Ok(()),
+            ViewMaskImagePlan::None
+            | ViewMaskImagePlan::Texture { .. }
+            | ViewMaskImagePlan::Gradient(_) => Ok(()),
         }
     }
 }
 
-impl UiMaskImagePlan {
-    pub fn from_image(image: &UiMaskImage) -> Self {
+impl ViewMaskImagePlan {
+    pub fn from_image(image: &ViewMaskImage) -> Self {
         match image {
-            UiMaskImage::None => Self::None,
-            UiMaskImage::Url(resource) => Self::Texture {
+            ViewMaskImage::None => Self::None,
+            ViewMaskImage::Url(resource) => Self::Texture {
                 resource: resource.clone(),
             },
-            UiMaskImage::Gradient(UiMaskGradient::Unsupported(reason)) => {
+            ViewMaskImage::Gradient(ViewMaskGradient::Unsupported(reason)) => {
                 Self::Unsupported(reason.clone())
             }
-            UiMaskImage::Gradient(gradient) => Self::Gradient(gradient.clone()),
-            UiMaskImage::Element(source) => Self::Element(source.clone()),
-            UiMaskImage::Unsupported(reason) => Self::Unsupported(reason.clone()),
+            ViewMaskImage::Gradient(gradient) => Self::Gradient(gradient.clone()),
+            ViewMaskImage::Element(source) => Self::Element(source.clone()),
+            ViewMaskImage::Unsupported(reason) => Self::Unsupported(reason.clone()),
         }
     }
 }
 
-impl UiMaskGradientPlan {
+impl ViewMaskGradientPlan {
     pub fn from_gradient(
-        gradient: &UiMaskGradient,
+        gradient: &ViewMaskGradient,
         tile_size_px: [f32; 2],
-    ) -> Result<Self, UiMaskPlanError> {
+    ) -> Result<Self, ViewMaskPlanError> {
         match gradient {
-            UiMaskGradient::Linear {
+            ViewMaskGradient::Linear {
                 angle_degrees,
                 stops,
             } => Ok(Self {
-                kind: UiMaskGradientKind::Linear {
+                kind: ViewMaskGradientKind::Linear {
                     angle_degrees: *angle_degrees,
                 },
                 stops: canonical_gradient_stops(stops)?,
             }),
-            UiMaskGradient::Radial {
+            ViewMaskGradient::Radial {
                 center,
                 radius_x,
                 radius_y,
                 stops,
             } => Ok(Self {
-                kind: UiMaskGradientKind::Radial {
+                kind: ViewMaskGradientKind::Radial {
                     center_px: resolve_point_px(center, tile_size_px)?,
                     radius_px: [
                         resolve_length_px(radius_x, tile_size_px[0], "radial-radius-x")?,
@@ -294,18 +294,18 @@ impl UiMaskGradientPlan {
                 },
                 stops: canonical_gradient_stops(stops)?,
             }),
-            UiMaskGradient::Conic {
+            ViewMaskGradient::Conic {
                 center,
                 from_degrees,
                 stops,
             } => Ok(Self {
-                kind: UiMaskGradientKind::Conic {
+                kind: ViewMaskGradientKind::Conic {
                     center_px: resolve_point_px(center, tile_size_px)?,
                     from_degrees: *from_degrees,
                 },
                 stops: canonical_gradient_stops(stops)?,
             }),
-            UiMaskGradient::Unsupported(reason) => Err(UiMaskPlanError::UnsupportedGradient {
+            ViewMaskGradient::Unsupported(reason) => Err(ViewMaskPlanError::UnsupportedGradient {
                 reason: reason.clone(),
             }),
         }
@@ -316,8 +316,8 @@ fn resolve_sampling_plan(
     source_size_px: [f32; 2],
     tile_size_px: [f32; 2],
     tile_origin_px: [f32; 2],
-    repeat_modes: [UiMaskAxisRepeat; 2],
-) -> UiMaskSamplingPlan {
+    repeat_modes: [ViewMaskAxisRepeat; 2],
+) -> ViewMaskSamplingPlan {
     let x = resolve_axis(
         source_size_px[0],
         tile_size_px[0],
@@ -330,15 +330,15 @@ fn resolve_sampling_plan(
         tile_origin_px[1],
         repeat_modes[1],
     );
-    UiMaskSamplingPlan {
+    ViewMaskSamplingPlan {
         tile_size_px: [x.tile_size_px, y.tile_size_px],
         tile_origin_px: [x.origin_px, y.origin_px],
         tile_stride_px: [x.stride_px, y.stride_px],
         tile_count: [x.tile_count, y.tile_count],
         repeat_mode_x: repeat_modes[0],
         repeat_mode_y: repeat_modes[1],
-        repeat_x: repeat_modes[0] != UiMaskAxisRepeat::NoRepeat,
-        repeat_y: repeat_modes[1] != UiMaskAxisRepeat::NoRepeat,
+        repeat_x: repeat_modes[0] != ViewMaskAxisRepeat::NoRepeat,
+        repeat_y: repeat_modes[1] != ViewMaskAxisRepeat::NoRepeat,
     }
 }
 
@@ -353,24 +353,24 @@ fn resolve_axis(
     source_size_px: f32,
     tile_size_px: f32,
     origin_px: f32,
-    repeat: UiMaskAxisRepeat,
+    repeat: ViewMaskAxisRepeat,
 ) -> AxisSampling {
     let source_size_px = source_size_px.max(1.0);
     let tile_size_px = tile_size_px.max(1.0);
     match repeat {
-        UiMaskAxisRepeat::NoRepeat => AxisSampling {
+        ViewMaskAxisRepeat::NoRepeat => AxisSampling {
             tile_size_px,
             origin_px,
             stride_px: tile_size_px,
             tile_count: 1,
         },
-        UiMaskAxisRepeat::Repeat => AxisSampling {
+        ViewMaskAxisRepeat::Repeat => AxisSampling {
             tile_size_px,
             origin_px,
             stride_px: tile_size_px,
             tile_count: 0,
         },
-        UiMaskAxisRepeat::Space => {
+        ViewMaskAxisRepeat::Space => {
             let count = repeat_tile_count((source_size_px / tile_size_px).floor());
             if count <= 1 {
                 AxisSampling {
@@ -389,7 +389,7 @@ fn resolve_axis(
                 }
             }
         }
-        UiMaskAxisRepeat::Round => {
+        ViewMaskAxisRepeat::Round => {
             let count = repeat_tile_count((source_size_px / tile_size_px).round());
             let resized = source_size_px / count.to_f32().unwrap_or(1.0).max(1.0);
             AxisSampling {
@@ -407,86 +407,90 @@ fn repeat_tile_count(value: f32) -> u32 {
 }
 
 fn resolve_size(
-    size: &UiMaskSize,
+    size: &ViewMaskSize,
     source_width: f32,
     source_height: f32,
     mask_width: f32,
     mask_height: f32,
-) -> Result<[f32; 2], UiMaskPlanError> {
+) -> Result<[f32; 2], ViewMaskPlanError> {
     match size {
-        UiMaskSize::Unspecified | UiMaskSize::Auto => Ok([mask_width, mask_height]),
-        UiMaskSize::Cover => {
+        ViewMaskSize::Unspecified | ViewMaskSize::Auto => Ok([mask_width, mask_height]),
+        ViewMaskSize::Cover => {
             let scale = (source_width / mask_width)
                 .max(source_height / mask_height)
                 .max(0.0);
             Ok([mask_width * scale, mask_height * scale])
         }
-        UiMaskSize::Contain => {
+        ViewMaskSize::Contain => {
             let scale = (source_width / mask_width)
                 .min(source_height / mask_height)
                 .max(0.0);
             Ok([mask_width * scale, mask_height * scale])
         }
-        UiMaskSize::Explicit { width, height } => {
+        ViewMaskSize::Explicit { width, height } => {
             let width = width
                 .resolve_px(source_width)
-                .ok_or_else(|| UiMaskPlanError::UnsupportedSize("width".into()))?;
+                .ok_or_else(|| ViewMaskPlanError::UnsupportedSize("width".into()))?;
             let height = height
                 .resolve_px(source_height)
-                .ok_or_else(|| UiMaskPlanError::UnsupportedSize("height".into()))?;
+                .ok_or_else(|| ViewMaskPlanError::UnsupportedSize("height".into()))?;
             Ok([width.max(1.0), height.max(1.0)])
         }
-        UiMaskSize::Unsupported(reason) => Err(UiMaskPlanError::UnsupportedSize(reason.clone())),
+        ViewMaskSize::Unsupported(reason) => {
+            Err(ViewMaskPlanError::UnsupportedSize(reason.clone()))
+        }
     }
 }
 
 fn resolve_position(
-    position: &UiMaskPosition,
+    position: &ViewMaskPosition,
     source_width: f32,
     source_height: f32,
     tile_size_px: [f32; 2],
-) -> Result<[f32; 2], UiMaskPlanError> {
+) -> Result<[f32; 2], ViewMaskPlanError> {
     let available_width = (source_width - tile_size_px[0]).max(0.0);
     let available_height = (source_height - tile_size_px[1]).max(0.0);
     let x = position
         .anchor
         .x
         .resolve_px(available_width)
-        .ok_or_else(|| UiMaskPlanError::UnsupportedPosition("x".into()))?;
+        .ok_or_else(|| ViewMaskPlanError::UnsupportedPosition("x".into()))?;
     let y = position
         .anchor
         .y
         .resolve_px(available_height)
-        .ok_or_else(|| UiMaskPlanError::UnsupportedPosition("y".into()))?;
+        .ok_or_else(|| ViewMaskPlanError::UnsupportedPosition("y".into()))?;
     Ok([x, y])
 }
 
 fn repeat_modes(
-    repeat: &UiMaskRepeat,
-) -> Result<(UiMaskAxisRepeat, UiMaskAxisRepeat), UiMaskPlanError> {
+    repeat: &ViewMaskRepeat,
+) -> Result<(ViewMaskAxisRepeat, ViewMaskAxisRepeat), ViewMaskPlanError> {
     match repeat {
-        UiMaskRepeat::Unspecified | UiMaskRepeat::Repeat => {
-            Ok((UiMaskAxisRepeat::Repeat, UiMaskAxisRepeat::Repeat))
+        ViewMaskRepeat::Unspecified | ViewMaskRepeat::Repeat => {
+            Ok((ViewMaskAxisRepeat::Repeat, ViewMaskAxisRepeat::Repeat))
         }
-        UiMaskRepeat::NoRepeat => Ok((UiMaskAxisRepeat::NoRepeat, UiMaskAxisRepeat::NoRepeat)),
-        UiMaskRepeat::RepeatX => Ok((UiMaskAxisRepeat::Repeat, UiMaskAxisRepeat::NoRepeat)),
-        UiMaskRepeat::RepeatY => Ok((UiMaskAxisRepeat::NoRepeat, UiMaskAxisRepeat::Repeat)),
-        UiMaskRepeat::Space => Ok((UiMaskAxisRepeat::Space, UiMaskAxisRepeat::Space)),
-        UiMaskRepeat::Round => Ok((UiMaskAxisRepeat::Round, UiMaskAxisRepeat::Round)),
-        UiMaskRepeat::Unsupported(reason) => {
-            Err(UiMaskPlanError::UnsupportedRepeat(reason.clone()))
+        ViewMaskRepeat::NoRepeat => {
+            Ok((ViewMaskAxisRepeat::NoRepeat, ViewMaskAxisRepeat::NoRepeat))
+        }
+        ViewMaskRepeat::RepeatX => Ok((ViewMaskAxisRepeat::Repeat, ViewMaskAxisRepeat::NoRepeat)),
+        ViewMaskRepeat::RepeatY => Ok((ViewMaskAxisRepeat::NoRepeat, ViewMaskAxisRepeat::Repeat)),
+        ViewMaskRepeat::Space => Ok((ViewMaskAxisRepeat::Space, ViewMaskAxisRepeat::Space)),
+        ViewMaskRepeat::Round => Ok((ViewMaskAxisRepeat::Round, ViewMaskAxisRepeat::Round)),
+        ViewMaskRepeat::Unsupported(reason) => {
+            Err(ViewMaskPlanError::UnsupportedRepeat(reason.clone()))
         }
     }
 }
 
 fn canonical_gradient_stops(
-    stops: &[UiGradientStop],
-) -> Result<Vec<UiMaskGradientStopPlan>, UiMaskPlanError> {
+    stops: &[ViewGradientStop],
+) -> Result<Vec<ViewMaskGradientStopPlan>, ViewMaskPlanError> {
     if stops.len() < 2 {
-        return Err(UiMaskPlanError::InvalidGradientStopCount { count: stops.len() });
+        return Err(ViewMaskPlanError::InvalidGradientStopCount { count: stops.len() });
     }
     if stops.len() > MAX_MASK_GRADIENT_STOPS {
-        return Err(UiMaskPlanError::TooManyGradientStops {
+        return Err(ViewMaskPlanError::TooManyGradientStops {
             count: stops.len(),
             maximum: MAX_MASK_GRADIENT_STOPS,
         });
@@ -500,7 +504,7 @@ fn canonical_gradient_stops(
         let luminance = (f32::from(stop.color.red) / 255.0) * 0.2126
             + (f32::from(stop.color.green) / 255.0) * 0.7152
             + (f32::from(stop.color.blue) / 255.0) * 0.0722;
-        result.push(UiMaskGradientStopPlan {
+        result.push(ViewMaskGradientStopPlan {
             offset,
             alpha_coverage: alpha,
             luminance_coverage: luminance * alpha,
@@ -509,7 +513,10 @@ fn canonical_gradient_stops(
     Ok(result)
 }
 
-fn resolve_point_px(point: &UiPoint, tile_size_px: [f32; 2]) -> Result<[f32; 2], UiMaskPlanError> {
+fn resolve_point_px(
+    point: &ViewPoint,
+    tile_size_px: [f32; 2],
+) -> Result<[f32; 2], ViewMaskPlanError> {
     Ok([
         resolve_length_px(&point.x, tile_size_px[0], "gradient-center-x")?,
         resolve_length_px(&point.y, tile_size_px[1], "gradient-center-y")?,
@@ -517,14 +524,14 @@ fn resolve_point_px(point: &UiPoint, tile_size_px: [f32; 2]) -> Result<[f32; 2],
 }
 
 fn resolve_length_px(
-    length: &UiLength,
+    length: &ViewLength,
     basis_px: f32,
     role: &'static str,
-) -> Result<f32, UiMaskPlanError> {
+) -> Result<f32, ViewMaskPlanError> {
     length
         .resolve_px(basis_px)
         .map(|value| value.max(0.0))
-        .ok_or_else(|| UiMaskPlanError::UnsupportedGradient {
+        .ok_or_else(|| ViewMaskPlanError::UnsupportedGradient {
             reason: role.into(),
         })
 }
@@ -536,56 +543,62 @@ fn dimension_to_f32(value: u32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui_scene::{UiColorRgba8, UiMaskGradient};
+    use crate::view_scene::{ViewColorRgba8, ViewMaskGradient};
 
     #[test]
     fn url_masks_require_external_textures() {
-        let masks = [UiMask {
-            image: UiMaskImage::Url("arcweft://mask/card".into()),
-            ..UiMask::default()
+        let masks = [ViewMask {
+            image: ViewMaskImage::Url("arcweft://mask/card".into()),
+            ..ViewMask::default()
         }];
-        let plan = UiMaskChainPlan::from_masks(&masks, UiMaskChannel::Alpha);
+        let plan = ViewMaskChainPlan::from_masks(&masks, ViewMaskChannel::Alpha);
         assert!(plan.requires_external_texture());
         assert_eq!(plan.unsupported_count(), 0);
     }
 
     #[test]
     fn space_and_round_repeat_resolve_deterministically() {
-        let space = UiMaskPassPlan::from_mask(
+        let space = ViewMaskPassPlan::from_mask(
             0,
-            &UiMask {
-                image: UiMaskImage::Url("arcweft://mask/space".into()),
-                size: UiMaskSize::Explicit {
-                    width: UiLength::Px(30.0),
-                    height: UiLength::Px(20.0),
+            &ViewMask {
+                image: ViewMaskImage::Url("arcweft://mask/space".into()),
+                size: ViewMaskSize::Explicit {
+                    width: ViewLength::Px(30.0),
+                    height: ViewLength::Px(20.0),
                 },
-                repeat: UiMaskRepeat::Space,
-                ..UiMask::default()
+                repeat: ViewMaskRepeat::Space,
+                ..ViewMask::default()
             },
-            UiMaskChannel::Alpha,
+            ViewMaskChannel::Alpha,
         );
         let sampling = space
-            .sampling_plan(UiTextureExtent::new(100, 60), UiTextureExtent::new(10, 10))
+            .sampling_plan(
+                ViewTextureExtent::new(100, 60),
+                ViewTextureExtent::new(10, 10),
+            )
             .expect("space repeat resolves");
-        assert_eq!(sampling.repeat_mode_x, UiMaskAxisRepeat::Space);
+        assert_eq!(sampling.repeat_mode_x, ViewMaskAxisRepeat::Space);
         assert_eq!(sampling.tile_count[0], 3);
         assert!((sampling.tile_stride_px[0] - 35.0).abs() <= 0.001);
 
-        let round = UiMaskPassPlan::from_mask(
+        let round = ViewMaskPassPlan::from_mask(
             0,
-            &UiMask {
-                image: UiMaskImage::Url("arcweft://mask/round".into()),
-                size: UiMaskSize::Explicit {
-                    width: UiLength::Px(30.0),
-                    height: UiLength::Px(20.0),
+            &ViewMask {
+                image: ViewMaskImage::Url("arcweft://mask/round".into()),
+                size: ViewMaskSize::Explicit {
+                    width: ViewLength::Px(30.0),
+                    height: ViewLength::Px(20.0),
                 },
-                repeat: UiMaskRepeat::Round,
-                ..UiMask::default()
+                repeat: ViewMaskRepeat::Round,
+                ..ViewMask::default()
             },
-            UiMaskChannel::Alpha,
+            ViewMaskChannel::Alpha,
         );
         let sampling = round
-            .sampling_plan(UiTextureExtent::new(100, 60), UiTextureExtent::new(10, 10))
+            .sampling_plan(
+                ViewTextureExtent::new(100, 60),
+                ViewTextureExtent::new(10, 10),
+            )
             .expect("round repeat resolves");
         assert_eq!(sampling.tile_count[0], 3);
         assert!((sampling.tile_size_px[0] - 33.333).abs() <= 0.01);
@@ -593,22 +606,22 @@ mod tests {
 
     #[test]
     fn gradient_alpha_and_luminance_stops_differ() {
-        let plan = UiMaskGradientPlan::from_gradient(
-            &UiMaskGradient::Linear {
+        let plan = ViewMaskGradientPlan::from_gradient(
+            &ViewMaskGradient::Linear {
                 angle_degrees: 90.0,
                 stops: vec![
-                    UiGradientStop {
+                    ViewGradientStop {
                         offset: 0.0,
-                        color: UiColorRgba8 {
+                        color: ViewColorRgba8 {
                             red: 255,
                             green: 0,
                             blue: 0,
                             alpha: 255,
                         },
                     },
-                    UiGradientStop {
+                    ViewGradientStop {
                         offset: 1.0,
-                        color: UiColorRgba8 {
+                        color: ViewColorRgba8 {
                             red: 0,
                             green: 0,
                             blue: 0,
@@ -626,19 +639,22 @@ mod tests {
 
     #[test]
     fn element_mask_is_a_typed_capture_diagnostic() {
-        let pass = UiMaskPassPlan::from_mask(
+        let pass = ViewMaskPassPlan::from_mask(
             0,
-            &UiMask {
-                image: UiMaskImage::Element(UiElementMaskSource {
+            &ViewMask {
+                image: ViewMaskImage::Element(ViewElementMaskSource {
                     element_id: "dialogue-mask".into(),
                 }),
-                ..UiMask::default()
+                ..ViewMask::default()
             },
-            UiMaskChannel::Alpha,
+            ViewMaskChannel::Alpha,
         );
         assert_eq!(
-            pass.sampling_plan(UiTextureExtent::new(64, 64), UiTextureExtent::new(64, 64)),
-            Err(UiMaskPlanError::ElementMaskCaptureUnavailable {
+            pass.sampling_plan(
+                ViewTextureExtent::new(64, 64),
+                ViewTextureExtent::new(64, 64)
+            ),
+            Err(ViewMaskPlanError::ElementMaskCaptureUnavailable {
                 element_id: "dialogue-mask".into(),
             })
         );

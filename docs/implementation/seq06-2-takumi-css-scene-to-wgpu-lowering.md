@@ -44,10 +44,10 @@ requiring Takumi internals to grow Arcweft-specific fields.
 
 Arcweft text and TextField participants are represented to Takumi by an object
 replacement placeholder (`U+FFFC`) and an `ArcweftInlineParticipant` entry that
-stores measured width, height, baseline, and final `UiGlyphRun` data. The final
+stores measured width, height, baseline, and final `ViewGlyphRun` data. The final
 wgpu scene emits glyph runs from `ArcweftTextLayoutBridge`; Takumi is not asked
 to perform final glyph layout or draw text into an RGBA surface. TextField caret,
-selection, and composition overlays stay in the seq06.1 `UiScene` primitive path.
+selection, and composition overlays stay in the seq06.1 `ViewScene` primitive path.
 
 ## Stacking lowering
 
@@ -60,8 +60,8 @@ walks Takumi's paint buckets in order:
 4. positive z-index bucket;
 5. nested stacking contexts recursively at their ordered point.
 
-Every paint node that emits primitives becomes one `UiSceneContext` with the
-Takumi affine transform, opacity, clip, and the exact `UiPrimitiveRange` that was
+Every paint node that emits primitives becomes one `ViewSceneContext` with the
+Takumi affine transform, opacity, clip, and the exact `ViewPrimitiveRange` that was
 emitted. This supports per-node transforms even when multiple nodes live inside
 one CSS stacking context, while preserving the ordered context list expected by
 the direct wgpu renderer.
@@ -77,7 +77,7 @@ primitives that already exist in the seq06 contract:
 - linear gradients;
 - rectangular and rounded clips;
 - opacity and affine transform;
-- text layout placeholders that route Arcweft glyph runs to `UiGlyphRun`.
+- text layout placeholders that route Arcweft glyph runs to `ViewGlyphRun`.
 
 Box shadows are classified as paint-only, but the renderer support decision is
 kept explicit: they must be emitted only when the wgpu renderer grows a matching
@@ -109,7 +109,7 @@ must not call Takumi's raster renderer or upload full UI surfaces every frame.
 ## Capture and Agent metadata
 
 `TakumiCaptureRecord` stores the same local bounds, affine transform, clip, and
-`UiPrimitiveRange` emitted to `UiScene`. It also stores typed
+`ViewPrimitiveRange` emitted to `ViewScene`. It also stores typed
 `ArcweftNodeMetadata`, so Agent observation can use the exact rendered coordinate
 space while still resolving component/part/semantic/handler identity through
 Arcweft's normal systems.

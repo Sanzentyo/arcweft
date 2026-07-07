@@ -1,5 +1,5 @@
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{UiBlendMode, UiIsolation};
+use arcweft_render_wgpu::view_scene::{ViewBlendMode, ViewIsolation};
 use arcweft_takumi_adapter::{
     ArcweftNodeMetadata, TakumiCaptureFrame, TakumiCompositingCaptureRecord,
     TakumiCompositingGroupId, TakumiEffectOutsets, TakumiPaintNodeId,
@@ -50,8 +50,8 @@ fn fixture_generation_keeps_stable_ids_and_effect_metadata() {
         .with_effect_outsets(TakumiEffectOutsets::new(18.0, 9.0, 0.0))
         .with_clip_bounds(Some(HitRect::new(76.0, 60.0, 232.0, 120.0)))
         .with_mask_bounds([HitRect::new(64.0, 48.0, 256.0, 144.0)])
-        .with_isolation(UiIsolation::Isolate)
-        .with_blend_mode(UiBlendMode::Multiply),
+        .with_isolation(ViewIsolation::Isolate)
+        .with_blend_mode(ViewBlendMode::Multiply),
     );
 
     let evidence = frame.evidence_json();

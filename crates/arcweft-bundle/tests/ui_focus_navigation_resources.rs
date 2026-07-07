@@ -16,6 +16,7 @@ fn program() -> ViewProgramResource {
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
         scroll_regions: Vec::new(),
+        surfaces: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: Vec::new(),
         focus_groups: vec![ViewFocusGroupResource {

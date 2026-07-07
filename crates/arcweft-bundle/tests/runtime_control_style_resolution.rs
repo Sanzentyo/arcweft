@@ -8,10 +8,11 @@ use arcweft_bundle::resource_codec::ui::{
     ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlCornerFrameStyle,
     ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlRadii,
     ViewRuntimeControlState, ViewRuntimeControlStyle, ViewRuntimeControlStyleDiagnosticReason,
-    ViewRuntimeControlStyleResolution, ViewRuntimeTextBlockBounds, ViewRuntimeTextControl,
-    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
-    ViewRuntimeTextSelection, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleResource,
-    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
+    ViewRuntimeControlStyleResolution, ViewRuntimeSurfaceBounds, ViewRuntimeTextBlockBounds,
+    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
+    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection, ViewStyleApplyRef,
+    ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewSurfaceResource,
     ViewTextBlockResource,
 };
 
@@ -489,6 +490,63 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
     assert_eq!(visual.shadows[0].radius_milli, 16_000);
     assert!(resolved.diagnostics.is_empty());
     assert_eq!(panel.element, ViewElementKind::Panel);
+}
+
+#[test]
+fn surface_resource_receives_panel_part_runtime_style() {
+    let style = ViewStyleResource {
+        rules: vec![ViewStyleRule {
+            selector: ViewStyleSelector {
+                parts: vec![
+                    ViewStyleSelectorPart::Element(ViewElementKind::Panel),
+                    ViewStyleSelectorPart::Part("card.feedback".to_owned()),
+                ],
+            },
+            declarations: vec![
+                decl("background-color", rgba(36, 42, 54, 255)),
+                decl("border-radius", ViewStyleValue::Text("16px".to_owned())),
+                decl(
+                    "box-shadow",
+                    ViewStyleValue::Text("inset 0px 3px 14px 2px rgba(0,0,0,0.38)".to_owned()),
+                ),
+            ],
+            source: None,
+        }],
+        ..ViewStyleResource::default()
+    };
+    let program = ViewProgramResource {
+        instructions: vec![
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::Panel,
+                style: None,
+                part: Some("card.feedback".to_owned()),
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+        ],
+        surfaces: vec![ViewSurfaceResource::new(
+            "card.feedback",
+            Some("view.Feedback".to_owned()),
+            None,
+            ViewElementKind::Panel,
+            ViewRuntimeSurfaceBounds::from_px(24, 32, 112, 72),
+        )],
+        ..ViewProgramResource::default()
+    };
+
+    let resolved = program.runtime_surfaces_with_style(Some(&style));
+    assert!(resolved.diagnostics.is_empty());
+    let surface = resolved.controls.first().expect("surface");
+    let visual = surface
+        .style
+        .visual_for_state(ViewRuntimeControlState::Normal);
+
+    assert_eq!(surface.public_id, "card.feedback");
+    assert_eq!(visual.fill, Some(RgbaColor::rgb(36, 42, 54)));
+    assert_eq!(visual.radius_milli, Some(16_000));
+    assert_eq!(visual.shadows.len(), 1);
+    assert_eq!(visual.shadows[0].radius_milli, 16_000);
 }
 
 #[test]

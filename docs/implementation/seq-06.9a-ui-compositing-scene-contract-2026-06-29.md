@@ -10,8 +10,8 @@ overlay/
   crates/
     arcweft-render-wgpu/
       src/
-        ui_scene.rs
-        ui_scene/
+        view_scene.rs
+        view_scene/
           core.rs
           compositing.rs
     arcweft-takumi-adapter/
@@ -26,26 +26,26 @@ overlay/
 
 ## What Changed
 
-### `arcweft-render-wgpu::ui_scene`
+### `arcweft-render-wgpu::view_scene`
 
-The existing direct primitive scene was moved to `ui_scene/core.rs`.
-`ui_scene.rs` now re-exports the existing direct types and introduces the
-`ui_scene/compositing.rs` responsibility module.
+The existing direct primitive scene was moved to `view_scene/core.rs`.
+`view_scene.rs` now re-exports the existing direct types and introduces the
+`view_scene/compositing.rs` responsibility module.
 
 The direct scene still exposes:
 
-- `UiScene::contexts()`
-- `UiScene::primitives()`
-- existing `UiPrimitive` variants
-- `UiSceneContext`
-- `UiPrimitiveRange`
+- `ViewScene::contexts()`
+- `ViewScene::primitives()`
+- existing `ViewPrimitive` variants
+- `ViewSceneContext`
+- `ViewPrimitiveRange`
 
 The new graph surface is:
 
-- `UiScene::paint_nodes()`
-- `UiPaintNode::Direct`
-- `UiPaintNode::Group`
-- `UiCompositingGroup`
+- `ViewScene::paint_nodes()`
+- `ViewPaintNode::Direct`
+- `ViewPaintNode::Group`
+- `ViewCompositingGroup`
 
 ### `arcweft-takumi-adapter::style`
 
@@ -68,8 +68,8 @@ The lowerer now builds a `TakumiCompositingStyleCatalog` from the Takumi
 the cascade/layout/stacking source and recovers computed style by `TakumiPath`.
 
 The stacking-context walk still emits the old direct primitive contexts. It now
-also returns ordered `UiPaintNode` children and wraps each Takumi stacking
-context in `UiCompositingGroup`.
+also returns ordered `ViewPaintNode` children and wraps each Takumi stacking
+context in `ViewCompositingGroup`.
 
 ### `arcweft-takumi-adapter::cache`
 
@@ -98,9 +98,9 @@ roots for known CPU full-surface raster fallback markers.
 From the repository root after seq06.2 and the current seq06.4-06.8 cuts:
 
 ```bash
-cp -R overlay/crates/arcweft-render-wgpu/src/ui_scene.rs crates/arcweft-render-wgpu/src/ui_scene.rs
-mkdir -p crates/arcweft-render-wgpu/src/ui_scene
-cp -R overlay/crates/arcweft-render-wgpu/src/ui_scene/. crates/arcweft-render-wgpu/src/ui_scene/
+cp -R overlay/crates/arcweft-render-wgpu/src/view_scene.rs crates/arcweft-render-wgpu/src/view_scene.rs
+mkdir -p crates/arcweft-render-wgpu/src/view_scene
+cp -R overlay/crates/arcweft-render-wgpu/src/view_scene/. crates/arcweft-render-wgpu/src/view_scene/
 
 cp overlay/crates/arcweft-takumi-adapter/src/cache.rs crates/arcweft-takumi-adapter/src/cache.rs
 cp overlay/crates/arcweft-takumi-adapter/src/lib.rs crates/arcweft-takumi-adapter/src/lib.rs
@@ -121,7 +121,7 @@ Run these from the repository root after applying the overlay:
 ```bash
 cargo fmt --all -- --check
 cargo check -p arcweft-render-wgpu -p arcweft-takumi-adapter --all-targets --all-features
-cargo test -p arcweft-render-wgpu ui_scene::compositing --all-features -- --nocapture
+cargo test -p arcweft-render-wgpu view_scene::compositing --all-features -- --nocapture
 cargo test -p arcweft-takumi-adapter style::tests::compositing_properties_are_not_generic_unsupported_direct --all-features -- --nocapture
 cargo test -p arcweft-takumi-adapter style::tests::mask_image_url_requires_resource_revision --all-features -- --nocapture
 cargo test -p arcweft-takumi-adapter cache::tests::mask_image_url_resource_revision_changes_scene_cache_key --all-features -- --nocapture
@@ -141,8 +141,8 @@ current pinned Takumi API and workspace lint set:
   private tuple field used by the package draft.
 - the exhaustive `BackgroundImage` match no longer carries an unreachable
   fallback arm;
-- `UiCompositingEffects::clip_path` stores the large optional geometry behind
-  `Option<Box<UiClipPath>>` so `UiPaintNode` stays compact without boxing the
+- `ViewCompositingEffects::clip_path` stores the large optional geometry behind
+  `Option<Box<ViewClipPath>>` so `ViewPaintNode` stays compact without boxing the
   entire compositing group;
 - Takumi lowering read-only dependencies are grouped in `TakumiLoweringRefs`
   instead of passing eight separate arguments through the recursion;
@@ -157,7 +157,7 @@ Executed from the local repository after applying the overlay:
 ```bash
 cargo fmt --all -- --check
 cargo check -p arcweft-render-wgpu -p arcweft-takumi-adapter --all-targets --all-features
-cargo test -p arcweft-render-wgpu ui_scene::compositing --all-features -- --nocapture
+cargo test -p arcweft-render-wgpu view_scene::compositing --all-features -- --nocapture
 cargo test -p arcweft-takumi-adapter --all-features -- --nocapture
 cargo clippy -p arcweft-render-wgpu -p arcweft-takumi-adapter --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root .

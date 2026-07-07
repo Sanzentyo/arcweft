@@ -4,20 +4,24 @@ use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigatio
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
+use arcweft_bundle::resource_codec::ui::UiTextSelectionPolicy;
+use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
 use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedFrame, RenderChoiceItem, RenderControlVisualState, RenderDialogue,
     RenderFontFamily, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
-    RenderScrollRegion, RenderTextBlock, RenderTextSlant, RenderTextWeight, RenderViewport,
-    SharedFramePlanContext, SharedFramePlanStats,
+    RenderScrollRegion, RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant,
+    RenderTextWeight, RenderViewport, SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
 mod focus_navigation;
+mod surfaces;
 
 /// Player-owned frame inputs shared by native, web, and Agent observation.
 #[derive(Clone, Copy, Debug)]
@@ -257,17 +261,19 @@ fn milli_u32_to_f32(value: u32) -> f32 {
 }
 
 fn render_text_blocks(
+    input: &InputController,
     scene: &RenderScene,
     blocks: &[arcweft_bundle::resource_codec::ViewRuntimeTextBlock],
 ) -> Vec<RenderTextBlock> {
     let text_scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
     blocks
         .iter()
-        .filter_map(|block| render_text_block(scene, block, text_scale))
+        .filter_map(|block| render_text_block(input, scene, block, text_scale))
         .collect()
 }
 
 fn render_text_block(
+    input: &InputController,
     scene: &RenderScene,
     block: &arcweft_bundle::resource_codec::ViewRuntimeTextBlock,
     text_scale: f32,
@@ -279,14 +285,22 @@ fn render_text_block(
         milli_u32_to_f32(block.bounds.height_milli),
     );
     let (bounds, clip_bounds) =
-        scroll_adjusted_text_bounds(scene, block.containing_scroll_region.as_deref(), bounds)?;
+        scroll_adjusted_bounds(scene, block.containing_scroll_region.as_deref(), bounds)?;
     let visual =
         lower_control_style(&block.style).visual_for_state(RenderControlVisualState::Normal);
     let font_size = visual.font_size_px.unwrap_or(20.0) * text_scale;
     let line_height = visual
         .line_height_px
         .map_or(font_size * 1.2, |line_height| line_height * text_scale);
+    let target = PublicId::try_new(&block.target)
+        .ok()
+        .map(InteractionTarget::new);
+    let selection_policy = render_text_selection_policy(block.selection_policy);
+    let selection = target
+        .as_ref()
+        .and_then(|target| input.text_block_selection_for(target, &block.text));
     Some(RenderTextBlock {
+        target,
         text: block.text.clone(),
         bounds,
         clip_bounds,
@@ -300,7 +314,17 @@ fn render_text_block(
         weight: render_text_weight(visual.font_weight),
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or([245, 245, 240, 255]),
+        selection_policy,
+        selection,
+        selection_rgba: visual.selection.unwrap_or([0.48, 0.92, 0.86, 0.34]),
     })
+}
+
+fn render_text_selection_policy(policy: UiTextSelectionPolicy) -> RenderTextSelectionPolicy {
+    match policy {
+        UiTextSelectionPolicy::Enabled => RenderTextSelectionPolicy::Enabled,
+        UiTextSelectionPolicy::Disabled => RenderTextSelectionPolicy::Disabled,
+    }
 }
 
 fn render_text_weight(weight: Option<u16>) -> RenderTextWeight {
@@ -311,7 +335,7 @@ fn render_text_weight(weight: Option<u16>) -> RenderTextWeight {
     }
 }
 
-fn scroll_adjusted_text_bounds(
+fn scroll_adjusted_bounds(
     scene: &RenderScene,
     containing_scroll_region: Option<&str>,
     bounds: HitRect,
@@ -370,14 +394,14 @@ impl PlayerFramePlannerState {
         let content_rect = fit.content_rect(request.viewport)?;
         let mut scene = PlayerFramePlanner::render_scene(input, design_request)?;
         let mut frame = map_prepared_frame(
-            self.prepare_frame_with_runtime_text(&scene, design_request.presentation)?,
+            self.prepare_frame_with_runtime_text(&scene, design_request.presentation, input)?,
             request,
             content_rect,
         );
         if input.ensure_choice_focus(&frame) {
             scene = PlayerFramePlanner::render_scene(input, design_request)?;
             frame = map_prepared_frame(
-                self.prepare_frame_with_runtime_text(&scene, design_request.presentation)?,
+                self.prepare_frame_with_runtime_text(&scene, design_request.presentation, input)?,
                 request,
                 content_rect,
             );
@@ -385,7 +409,7 @@ impl PlayerFramePlannerState {
         if input.apply_pending_text_pointer_selection(&frame)? {
             let scene = PlayerFramePlanner::render_scene(input, design_request)?;
             let frame = map_prepared_frame(
-                self.prepare_frame_with_runtime_text(&scene, design_request.presentation)?,
+                self.prepare_frame_with_runtime_text(&scene, design_request.presentation, input)?,
                 request,
                 content_rect,
             );
@@ -398,11 +422,14 @@ impl PlayerFramePlannerState {
         &mut self,
         scene: &RenderScene,
         presentation: &BundlePresentationSnapshot,
+        input: &InputController,
     ) -> Result<PreparedFrame, PlayerFrameError> {
         let mut frame = self.shared.prepare(scene)?;
         frame
             .text
-            .extend(render_text_blocks(scene, &presentation.text_blocks));
+            .extend(render_text_blocks(input, scene, &presentation.text_blocks));
+        self.shared.prepare_selectable_text_blocks(&mut frame);
+        surfaces::push_runtime_surfaces(&mut frame, scene, &presentation.surfaces);
         Ok(frame)
     }
 }

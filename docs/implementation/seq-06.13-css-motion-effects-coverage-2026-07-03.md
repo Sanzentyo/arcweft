@@ -5,10 +5,10 @@
 This overlay assumes the current Arcweft main-line shape inspected through the
 GitHub connector on 2026-07-03:
 
-- seq06.9a introduced `UiPaintNode`, `UiCompositingGroup`, `UiCompositingEffects`,
-  `UiClipPath`, `UiMask`, and `UiBlendMode` in `arcweft-render-wgpu::ui_scene`;
-- seq06.9b introduced `UiCompositorPlan`, `UiFilterPassPlan`, `UiMaskChainPlan`,
-  `UiClipGeometryPlan`, `UiBlendPassPlan`, and the compositor WGSL shader;
+- seq06.9a introduced `ViewPaintNode`, `ViewCompositingGroup`, `ViewCompositingEffects`,
+  `ViewClipPath`, `ViewMask`, and `ViewBlendMode` in `arcweft-render-wgpu::view_scene`;
+- seq06.9b introduced `ViewCompositorPlan`, `ViewFilterPassPlan`, `ViewMaskChainPlan`,
+  `ViewClipGeometryPlan`, `ViewBlendPassPlan`, and the compositor WGSL shader;
 - current compositor execution already applies filters and mask passes but does
   not yet apply clip geometry as a final pixel constraint and does not resolve
   mask size/position/repeat in shader sampling;
@@ -22,21 +22,21 @@ GitHub connector on 2026-07-03:
 - `crates/arcweft-ui/src/motion.rs`
 - `crates/arcweft-ui/tests/motion_transitions.rs`
 - `crates/arcweft-render-wgpu/tests/ui_clip_mask_render_closure.rs`
-- `crates/arcweft-render-wgpu/tests/ui_blend_hsl_modes.rs`
-- `crates/arcweft-render-wgpu/tests/ui_compositor_gpu_smoke_timestamps.rs`
+- `crates/arcweft-render-wgpu/tests/view_blend_hsl_modes.rs`
+- `crates/arcweft-render-wgpu/tests/view_compositor_gpu_smoke_timestamps.rs`
 
 ### Patched source files
 
 - `crates/arcweft-ui/src/lib.rs`
 - `crates/arcweft-ui/src/style.rs`
-- `crates/arcweft-render-wgpu/src/ui_clip_path.rs`
-- `crates/arcweft-render-wgpu/src/ui_mask.rs`
-- `crates/arcweft-render-wgpu/src/ui_compositor.rs`
-- `crates/arcweft-render-wgpu/src/ui_compositor_uniform.rs`
-- `crates/arcweft-render-wgpu/src/ui_direct_renderer.rs`
-- `crates/arcweft-render-wgpu/src/ui_blend.rs`
-- `crates/arcweft-render-wgpu/src/ui_shaders/compositor.wgsl`
-- `crates/arcweft-render-wgpu/tests/ui_compositor_plan.rs`
+- `crates/arcweft-render-wgpu/src/view_clip_path.rs`
+- `crates/arcweft-render-wgpu/src/view_mask.rs`
+- `crates/arcweft-render-wgpu/src/view_compositor.rs`
+- `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
+- `crates/arcweft-render-wgpu/src/view_direct_renderer.rs`
+- `crates/arcweft-render-wgpu/src/view_blend.rs`
+- `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
+- `crates/arcweft-render-wgpu/tests/view_compositor_plan.rs`
 
 ## Architecture alignment
 
@@ -47,9 +47,9 @@ The overlay follows Arcweft's owned-boundary rule:
 - `UiPropertyKind` owns the transitionable-property decision and value
   interpolation dispatch.
 - `Milli` and `Rgba8` own scalar/color interpolation.
-- `UiMaskPassPlan` owns mask sampling-plan resolution.
-- `UiClipGeometryPlan` owns the polygon shader-budget diagnostic.
-- `UiBlendShaderMode` owns the newly supported HSL blend mappings.
+- `ViewMaskPassPlan` owns mask sampling-plan resolution.
+- `ViewClipGeometryPlan` owns the polygon shader-budget diagnostic.
+- `ViewBlendShaderMode` owns the newly supported HSL blend mappings.
 
 No extension trait, compatibility layer, or scattered local helper is introduced
 for these boundary behaviors.
@@ -102,7 +102,7 @@ so the first shader cut has a fixed uniform shape that works on native and web.
 
 ### Mask
 
-`UiMaskTextureView` now carries `UiTextureExtent`. This lets `UiMaskPassPlan`
+`ViewMaskTextureView` now carries `ViewTextureExtent`. This lets `ViewMaskPassPlan`
 resolve `mask-size` and `mask-position` before a mask pass is run.
 
 WGSL mask sampling converts source UV to source pixels, subtracts the tile
@@ -131,16 +131,16 @@ interpolation, so the package test expectations were adjusted by one unit at
 the exact half boundaries.
 
 During application, the compositor shader uniform packing was split into
-`crates/arcweft-render-wgpu/src/ui_compositor_uniform.rs` so
-`ui_compositor.rs` stays below the repository's 1,200 physical LOC ownership
+`crates/arcweft-render-wgpu/src/view_compositor_uniform.rs` so
+`view_compositor.rs` stays below the repository's 1,200 physical LOC ownership
 review threshold.
 
 ```bash
 cargo fmt --all -- --check
 cargo test -p arcweft-ui --test motion_transitions --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test ui_clip_mask_render_closure --all-features -- --nocapture
-cargo test -p arcweft-render-wgpu --test ui_blend_hsl_modes --all-features -- --nocapture
-cargo test -p arcweft-render-wgpu --test ui_compositor_plan --all-features -- --nocapture
+cargo test -p arcweft-render-wgpu --test view_blend_hsl_modes --all-features -- --nocapture
+cargo test -p arcweft-render-wgpu --test view_compositor_plan --all-features -- --nocapture
 cargo check -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features
 cargo clippy -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root .
@@ -153,8 +153,8 @@ Validated during application:
 cargo fmt --all
 cargo test -p arcweft-ui --test motion_transitions --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test ui_clip_mask_render_closure --all-features -- --nocapture
-cargo test -p arcweft-render-wgpu --test ui_blend_hsl_modes --all-features -- --nocapture
-cargo test -p arcweft-render-wgpu --test ui_compositor_plan --all-features -- --nocapture
+cargo test -p arcweft-render-wgpu --test view_blend_hsl_modes --all-features -- --nocapture
+cargo test -p arcweft-render-wgpu --test view_compositor_plan --all-features -- --nocapture
 cargo check -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features
 cargo clippy -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write target/seq06_13_structure_audit_final
@@ -173,12 +173,12 @@ violations: 3 error(s), 126 warning(s)
 
 The three audit errors are existing workspace size violations outside this
 seq06.13 cut. The seq06.13 compositor split removed the new
-`ui_compositor.rs` warning that appeared during initial application.
+`view_compositor.rs` warning that appeared during initial application.
 
 Optional pinned-adapter smoke:
 
 ```bash
-cargo test -p arcweft-render-wgpu --test ui_compositor_gpu_smoke_timestamps --all-features -- --ignored --nocapture
+cargo test -p arcweft-render-wgpu --test view_compositor_gpu_smoke_timestamps --all-features -- --ignored --nocapture
 ```
 
 ## Known limitations and follow-ups

@@ -1,18 +1,20 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::font_family::render_font_family;
 use crate::geometry::{
-    PaintRect, PreparedControlPaint, PreparedControlShadow, PreparedFrame, PreparedUiScene,
+    PaintRect, PreparedControlPaint, PreparedControlShadow, PreparedFrame, PreparedViewScene,
     RenderFontFamily, RenderGlyphMotion, RenderGlyphTransformSpan, RenderImage,
     RenderStyledParagraph, RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle,
     RenderTextWeight, RuntimeControlBackdropSamplePolicy,
 };
-use crate::ui_compositor::{
-    UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
-    UiInlineBackdropFilterFrame, UiInlineBoxShadowFrame, UiInlineForegroundFilterFrame,
+use crate::view_compositor::{
+    ViewCompositor, ViewCompositorError, ViewCompositorFrame, ViewCompositorTarget,
+    ViewInlineBackdropFilterFrame, ViewInlineBoxShadowFrame, ViewInlineForegroundFilterFrame,
 };
-use crate::ui_direct_renderer::{WgpuPreparedUiMaskTextureProvider, WgpuUiDirectPrimitiveRenderer};
-use crate::ui_effects::UiTextureExtent;
-use crate::ui_scene::UiBoxShadowKind;
+use crate::view_direct_renderer::{
+    WgpuPreparedViewMaskTextureProvider, WgpuViewDirectPrimitiveRenderer,
+};
+use crate::view_effects::ViewTextureExtent;
+use crate::view_scene::ViewBoxShadowKind;
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_text::RichTextRange;
 use bytemuck::{Pod, Zeroable};
@@ -42,8 +44,8 @@ pub struct SharedRenderer {
     atlas: TextAtlas,
     text_renderer: TextRenderer,
     aux_text_renderers: Vec<TextRenderer>,
-    ui_compositor: UiCompositor,
-    ui_direct_renderer: WgpuUiDirectPrimitiveRenderer,
+    view_compositor: ViewCompositor,
+    view_direct_renderer: WgpuViewDirectPrimitiveRenderer,
     registered_font_bytes: usize,
 }
 
@@ -57,7 +59,7 @@ pub enum SharedRendererError {
     #[error("glyphon text rendering failed: {0}")]
     TextRender(String),
     #[error("ui compositor failed: {0}")]
-    UiCompositor(#[from] UiCompositorError),
+    ViewCompositor(#[from] ViewCompositorError),
 }
 
 #[repr(C)]
@@ -108,8 +110,8 @@ impl SharedRenderer {
             TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
         let (image_bind_group_layout, image_pipeline, image_sampler) =
             image_quad_pipeline(device, format);
-        let ui_compositor = UiCompositor::new(device, queue, format);
-        let ui_direct_renderer = WgpuUiDirectPrimitiveRenderer::new(device, format);
+        let view_compositor = ViewCompositor::new(device, queue, format);
+        let view_direct_renderer = WgpuViewDirectPrimitiveRenderer::new(device, format);
         Self {
             format,
             rectangle_pipeline: rectangle_pipeline(device, format),
@@ -123,8 +125,8 @@ impl SharedRenderer {
             atlas,
             text_renderer,
             aux_text_renderers: Vec::new(),
-            ui_compositor,
-            ui_direct_renderer,
+            view_compositor,
+            view_direct_renderer,
             registered_font_bytes: 0,
         }
     }
@@ -169,7 +171,7 @@ impl SharedRenderer {
         target: &wgpu::TextureView,
         frame: &PreparedFrame,
     ) -> Result<(), SharedRendererError> {
-        let target_extent = UiTextureExtent::new(
+        let target_extent = ViewTextureExtent::new(
             frame.viewport.physical_width.max(1),
             frame.viewport.physical_height.max(1),
         );
@@ -204,8 +206,8 @@ impl SharedRenderer {
             label: Some("arcweft-shared-render-frame"),
         });
         self.render_background_and_images(device, queue, &mut encoder, &scene_view, frame);
-        for ui_scene in frame.ui_scenes() {
-            self.render_ui_scene(device, queue, &mut encoder, &scene_view, frame, ui_scene)?;
+        for view_scene in frame.view_scenes() {
+            self.render_view_scene(device, queue, &mut encoder, &scene_view, frame, view_scene)?;
         }
         self.render_ordered_frame_content(
             device,
@@ -216,34 +218,34 @@ impl SharedRenderer {
             target_extent,
             frame,
         )?;
-        self.ui_compositor
+        self.view_compositor
             .composite_texture_to_view(device, &mut encoder, &scene_view, target);
         queue.submit([encoder.finish()]);
         self.atlas.trim();
         Ok(())
     }
 
-    fn render_ui_scene(
+    fn render_view_scene(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         final_target: &wgpu::TextureView,
         frame: &PreparedFrame,
-        prepared_ui: &PreparedUiScene,
+        prepared_ui: &PreparedViewScene,
     ) -> Result<(), SharedRendererError> {
         let mut mask_textures =
-            WgpuPreparedUiMaskTextureProvider::prepare(device, queue, &prepared_ui.resources);
+            WgpuPreparedViewMaskTextureProvider::prepare(device, queue, &prepared_ui.resources);
         let mut direct_renderer = self
-            .ui_direct_renderer
+            .view_direct_renderer
             .for_resources(&prepared_ui.resources);
-        let result = self.ui_compositor.render_scene(&mut UiCompositorFrame {
+        let result = self.view_compositor.render_scene(&mut ViewCompositorFrame {
             device,
             queue,
             encoder,
             final_target,
             scene: &prepared_ui.scene,
-            target_extent: UiTextureExtent::new(
+            target_extent: ViewTextureExtent::new(
                 frame.viewport.physical_width,
                 frame.viewport.physical_height,
             ),
@@ -316,7 +318,7 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target_texture: &wgpu::Texture,
         target_view: &wgpu::TextureView,
-        target_extent: UiTextureExtent,
+        target_extent: ViewTextureExtent,
         frame: &PreparedFrame,
     ) -> Result<(), SharedRendererError> {
         self.aux_text_renderers.clear();
@@ -391,7 +393,7 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target_texture: &wgpu::Texture,
         target_view: &wgpu::TextureView,
-        target_extent: UiTextureExtent,
+        target_extent: ViewTextureExtent,
         frame: &PreparedFrame,
         runtime_backdrop_source: Option<&RuntimeControlBackdropSource>,
         paint: &PreparedControlPaint,
@@ -419,7 +421,7 @@ impl SharedRenderer {
             shadow_target,
             frame,
             paint,
-            UiBoxShadowKind::Outer,
+            ViewBoxShadowKind::Outer,
         );
         self.render_control_backdrops(
             device,
@@ -446,7 +448,7 @@ impl SharedRenderer {
                 shadow_target,
                 frame,
                 paint,
-                UiBoxShadowKind::Inset,
+                ViewBoxShadowKind::Inset,
             );
         } else {
             self.render_filtered_control(
@@ -465,7 +467,7 @@ impl SharedRenderer {
                 shadow_target,
                 frame,
                 paint,
-                UiBoxShadowKind::Inset,
+                ViewBoxShadowKind::Inset,
             );
         }
         *next_rectangle = (*next_rectangle).max(paint.rectangle_range.end);
@@ -479,7 +481,7 @@ impl SharedRenderer {
         target: RuntimeControlShadowTarget<'_>,
         frame: &PreparedFrame,
         paint: &PreparedControlPaint,
-        kind: UiBoxShadowKind,
+        kind: ViewBoxShadowKind,
     ) {
         for shadow in slice_range(&frame.control_shadows, paint.shadow_range.clone()) {
             self.render_control_shadow(device, encoder, target, shadow, kind);
@@ -492,23 +494,23 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target: RuntimeControlShadowTarget<'_>,
         shadow: &PreparedControlShadow,
-        kind: UiBoxShadowKind,
+        kind: ViewBoxShadowKind,
     ) {
-        let target = UiCompositorTarget {
+        let target = ViewCompositorTarget {
             texture: target.texture,
             view: target.view,
             extent: target.extent,
             origin_logical: [0.0, 0.0],
             logical_extent: target.logical_extent,
         };
-        let mut request = UiInlineBoxShadowFrame {
+        let mut request = ViewInlineBoxShadowFrame {
             device,
             encoder,
             target,
             plan: &shadow.plan,
             kind,
         };
-        let _ = self.ui_compositor.render_inline_box_shadow(&mut request);
+        let _ = self.view_compositor.render_inline_box_shadow(&mut request);
     }
 
     #[expect(
@@ -521,7 +523,7 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target_texture: &wgpu::Texture,
         target_view: &wgpu::TextureView,
-        target_extent: UiTextureExtent,
+        target_extent: ViewTextureExtent,
         frame: &PreparedFrame,
         controls: &[&PreparedControlPaint],
         next_rectangle: &mut usize,
@@ -558,7 +560,7 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target_texture: &wgpu::Texture,
         target_view: &wgpu::TextureView,
-        target_extent: UiTextureExtent,
+        target_extent: ViewTextureExtent,
         frame: &PreparedFrame,
         runtime_backdrop_source: Option<&RuntimeControlBackdropSource>,
         paint: &PreparedControlPaint,
@@ -566,7 +568,7 @@ impl SharedRenderer {
         let backdrops = slice_range(&frame.control_backdrops, paint.backdrop_range.clone());
         let logical_extent = frame_logical_extent(frame);
         for backdrop in backdrops {
-            let target = UiCompositorTarget {
+            let target = ViewCompositorTarget {
                 texture: target_texture,
                 view: target_view,
                 extent: target_extent,
@@ -581,7 +583,7 @@ impl SharedRenderer {
                     target
                 }
             };
-            let mut request = UiInlineBackdropFilterFrame {
+            let mut request = ViewInlineBackdropFilterFrame {
                 device,
                 encoder: &mut *encoder,
                 source,
@@ -591,7 +593,7 @@ impl SharedRenderer {
                 device_pixel_ratio: frame.viewport.physical_scale_factor_f32(),
                 logical_extent,
             };
-            self.ui_compositor
+            self.view_compositor
                 .render_inline_backdrop_filter(&mut request)?;
         }
         Ok(())
@@ -608,7 +610,7 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target_texture: &wgpu::Texture,
         target_view: &wgpu::TextureView,
-        target_extent: UiTextureExtent,
+        target_extent: ViewTextureExtent,
         frame: &PreparedFrame,
         paint: &PreparedControlPaint,
     ) -> Result<(), SharedRendererError> {
@@ -663,14 +665,14 @@ impl SharedRenderer {
             },
         )?;
         let logical_extent = frame_logical_extent(frame);
-        let source = UiCompositorTarget {
+        let source = ViewCompositorTarget {
             texture: &control_texture,
             view: &control_view,
             extent: target_extent,
             origin_logical: [0.0, 0.0],
             logical_extent,
         };
-        let output = UiCompositorTarget {
+        let output = ViewCompositorTarget {
             texture: target_texture,
             view: target_view,
             extent: target_extent,
@@ -678,7 +680,7 @@ impl SharedRenderer {
             logical_extent,
         };
         for filter in slice_range(&frame.control_filters, paint.filter_range.clone()) {
-            let mut request = UiInlineForegroundFilterFrame {
+            let mut request = ViewInlineForegroundFilterFrame {
                 device,
                 encoder: &mut *encoder,
                 source,
@@ -688,7 +690,7 @@ impl SharedRenderer {
                 device_pixel_ratio: frame.viewport.physical_scale_factor_f32(),
                 logical_extent,
             };
-            self.ui_compositor
+            self.view_compositor
                 .render_inline_foreground_filter(&mut request)?;
         }
         Ok(())
@@ -910,20 +912,20 @@ fn frame_logical_extent(frame: &PreparedFrame) -> [f32; 2] {
 struct RuntimeControlShadowTarget<'a> {
     texture: &'a wgpu::Texture,
     view: &'a wgpu::TextureView,
-    extent: UiTextureExtent,
+    extent: ViewTextureExtent,
     logical_extent: [f32; 2],
 }
 
 struct RuntimeControlBackdropSource {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    extent: UiTextureExtent,
+    extent: ViewTextureExtent,
     logical_extent: [f32; 2],
 }
 
 impl RuntimeControlBackdropSource {
-    fn as_target(&self) -> UiCompositorTarget<'_> {
-        UiCompositorTarget {
+    fn as_target(&self) -> ViewCompositorTarget<'_> {
+        ViewCompositorTarget {
             texture: &self.texture,
             view: &self.view,
             extent: self.extent,
@@ -951,7 +953,7 @@ fn runtime_control_backdrop_source_texture(
     encoder: &mut wgpu::CommandEncoder,
     format: wgpu::TextureFormat,
     source_texture: &wgpu::Texture,
-    extent: UiTextureExtent,
+    extent: ViewTextureExtent,
     logical_extent: [f32; 2],
 ) -> RuntimeControlBackdropSource {
     let texture = runtime_control_texture(
@@ -990,7 +992,7 @@ fn runtime_control_backdrop_source_texture(
 fn runtime_control_filter_texture(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
-    extent: UiTextureExtent,
+    extent: ViewTextureExtent,
     label: &'static str,
 ) -> wgpu::Texture {
     runtime_control_texture(
@@ -1007,7 +1009,7 @@ fn runtime_control_filter_texture(
 fn runtime_control_texture(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
-    extent: UiTextureExtent,
+    extent: ViewTextureExtent,
     usage: wgpu::TextureUsages,
     label: &'static str,
 ) -> wgpu::Texture {
@@ -1027,7 +1029,7 @@ fn runtime_control_texture(
     })
 }
 
-fn texture_extent_3d(extent: UiTextureExtent) -> wgpu::Extent3d {
+fn texture_extent_3d(extent: ViewTextureExtent) -> wgpu::Extent3d {
     wgpu::Extent3d {
         width: extent.width,
         height: extent.height,

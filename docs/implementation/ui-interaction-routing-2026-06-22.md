@@ -20,7 +20,7 @@ Implemented boundaries:
   committed UI frame layers, dispatches routed UI input, and resolves interaction
   styles before renderer lowering.
 - `arcweft-render-wgpu` lowers resolved retained UI display rectangles to
-  `UiPaintPlan` data without matching hover/focus/pressed in the backend.
+  `ViewPaintPlan` data without matching hover/focus/pressed in the backend.
 - `arcweft-player-web` derives choice visual state from the shared
   `InteractionState`.
 - `examples/ui-interaction-routing/` contains four runtime-supported dialogue

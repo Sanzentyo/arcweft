@@ -31,7 +31,7 @@ The retained UI substrate already has typed hover/focus/pressed style resolution
 - `arcweft-ui::UiStyleTable`
 - `arcweft-ui::UiInteractionSelector`
 - `arcweft-ui::DisplayList::resolve_interaction_styles`
-- `arcweft-render-wgpu::ui::UiPaintPlan`
+- `arcweft-render-wgpu::ui::ViewPaintPlan`
 - `arcweft-render-wgpu/examples/ui_interaction_showcase.rs`
 
 The product bundle substrate also stores the intended style contract:
@@ -88,7 +88,7 @@ Seq06.11 is the required implementation path before the sample can become a
 fully player-owned retained UI sample. Seq06.11a and seq06.11b are split out
 from a follow-up review against an older `main` snapshot that called out two
 practical missing connections: CSS computed style to direct paint extraction,
-and `UiScene` / `UiCompositor` integration into the normal player path.
+and `ViewScene` / `ViewCompositor` integration into the normal player path.
 
 Seq06.12, seq06.13, seq06.13a, and seq06.13b can be designed in parallel, but
 production integration should not bypass the seq06.11b frame connection.

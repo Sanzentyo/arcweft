@@ -1,6 +1,6 @@
 use crate::convert::saturating_usize_as_f32;
-use crate::ui_mask::UiMaskChannel;
-use crate::ui_scene::{UiMaskImage, UiScene};
+use crate::view_mask::ViewMaskChannel;
+use crate::view_scene::{ViewMaskImage, ViewScene};
 use arcweft_id::PublicId;
 use arcweft_layout::ContentRect;
 use arcweft_presentation::hit::{HitRect, HitTree};
@@ -12,7 +12,8 @@ use arcweft_presentation::layer::{
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_presentation::text_input::{
-    TextGeometryTransform, TextInputClientSnapshot, TextInputGeometrySnapshot,
+    TextByteOffset, TextCharacterBounds, TextGeometryTransform, TextInputClientSnapshot,
+    TextInputGeometrySnapshot, TextRange,
 };
 use arcweft_render_text::{
     LineDisplayFrame, RichTextColor, RichTextEffectDescriptor, RichTextEffectPhase,
@@ -209,37 +210,37 @@ pub struct RenderScene {
 
 /// One retained UI scene attached to the normal renderer frame.
 #[derive(Clone, Debug, PartialEq)]
-pub struct PreparedUiScene {
-    pub scene: UiScene,
-    pub resources: PreparedUiSceneResources,
+pub struct PreparedViewScene {
+    pub scene: ViewScene,
+    pub resources: PreparedViewSceneResources,
 }
 
-/// Backend-neutral resource payloads required by one prepared `UiScene`.
+/// Backend-neutral resource payloads required by one prepared `ViewScene`.
 ///
 /// The player/runtime adapter resolves URLs, bundle assets, and text handoffs
 /// before the frame reaches `arcweft-render-wgpu`; this type contains no I/O.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct PreparedUiSceneResources {
-    images: Vec<PreparedUiImageResource>,
-    masks: Vec<PreparedUiMaskResource>,
-    glyph_handoffs: Vec<PreparedUiGlyphRunHandoff>,
+pub struct PreparedViewSceneResources {
+    images: Vec<PreparedViewImageResource>,
+    masks: Vec<PreparedViewMaskResource>,
+    glyph_handoffs: Vec<PreparedViewGlyphRunHandoff>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PreparedUiImageResource {
+pub struct PreparedViewImageResource {
     pub resource_index: u32,
     pub frame: RenderImageFrame,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PreparedUiMaskResource {
-    pub image: UiMaskImage,
+pub struct PreparedViewMaskResource {
+    pub image: ViewMaskImage,
     pub frame: RenderImageFrame,
-    pub channel: UiMaskChannel,
+    pub channel: ViewMaskChannel,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PreparedUiGlyphRunHandoff {
+pub struct PreparedViewGlyphRunHandoff {
     pub run_index: u32,
     pub prepared_text_index: u32,
 }
@@ -484,6 +485,7 @@ fn corner_scale_limit(current: f32, basis_px: f32, sum_px: f32) -> f32 {
 /// One text block prepared for glyphon.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderTextBlock {
+    pub target: Option<InteractionTarget>,
     pub text: String,
     pub bounds: HitRect,
     pub clip_bounds: Option<HitRect>,
@@ -495,6 +497,33 @@ pub struct RenderTextBlock {
     pub weight: RenderTextWeight,
     pub slant: RenderTextSlant,
     pub rgba: [u8; 4],
+    pub selection_policy: RenderTextSelectionPolicy,
+    pub selection: Option<TextRange<TextByteOffset>>,
+    pub selection_rgba: [f32; 4],
+}
+
+/// Static text selection policy for player-rendered text blocks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderTextSelectionPolicy {
+    #[default]
+    Disabled,
+    Enabled,
+}
+
+impl RenderTextSelectionPolicy {
+    pub const fn enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
+/// Prepared hit-test geometry for a selectable static text block.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedSelectableTextBlock {
+    pub target: InteractionTarget,
+    pub text: String,
+    pub bounds: HitRect,
+    pub clip_bounds: Option<HitRect>,
+    pub character_bounds: Vec<TextCharacterBounds>,
 }
 
 /// One dialogue body laid out as a single rich-text paragraph.
@@ -631,6 +660,7 @@ pub struct PreparedFrame {
     pub rectangles: Vec<PaintRect>,
     pub images: Vec<RenderImage>,
     pub text: Vec<RenderTextBlock>,
+    pub selectable_text_blocks: Vec<PreparedSelectableTextBlock>,
     pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
     pub action_buttons: Vec<PreparedActionButton>,
@@ -640,7 +670,7 @@ pub struct PreparedFrame {
     pub control_paints: Vec<PreparedControlPaint>,
     pub scroll_regions: Vec<RenderScrollRegion>,
     pub focus_graph: PreparedFocusGraph,
-    ui_scenes: Vec<PreparedUiScene>,
+    view_scenes: Vec<PreparedViewScene>,
     dialogue_present: bool,
     interaction: InteractionVisualState,
     focused_text_input: Option<PreparedTextInputTarget>,
@@ -794,18 +824,18 @@ pub enum FramePlanError {
 
 impl PreparedFrame {
     #[must_use]
-    pub fn with_ui_scenes(mut self, ui_scenes: impl Into<Vec<PreparedUiScene>>) -> Self {
-        self.ui_scenes = ui_scenes.into();
+    pub fn with_view_scenes(mut self, view_scenes: impl Into<Vec<PreparedViewScene>>) -> Self {
+        self.view_scenes = view_scenes.into();
         self
     }
 
-    pub fn push_ui_scene(&mut self, scene: PreparedUiScene) {
-        self.ui_scenes.push(scene);
+    pub fn push_view_scene(&mut self, scene: PreparedViewScene) {
+        self.view_scenes.push(scene);
     }
 
     #[must_use]
-    pub fn ui_scenes(&self) -> &[PreparedUiScene] {
-        &self.ui_scenes
+    pub fn view_scenes(&self) -> &[PreparedViewScene] {
+        &self.view_scenes
     }
 
     /// Returns the renderer-backed focused text target for platform IME sync.
@@ -815,6 +845,28 @@ impl PreparedFrame {
     #[must_use]
     pub fn focused_text_input_target(&self) -> Option<PreparedTextInputTarget> {
         self.focused_text_input.clone()
+    }
+
+    #[must_use]
+    pub fn selectable_text_block_at(
+        &self,
+        point: arcweft_presentation::input::ViewportPoint,
+    ) -> Option<&PreparedSelectableTextBlock> {
+        self.selectable_text_blocks.iter().rev().find(|block| {
+            let visible = block.clip_bounds.unwrap_or(block.bounds);
+            visible.contains(f64::from(point.x), f64::from(point.y))
+        })
+    }
+
+    #[must_use]
+    pub fn selectable_text_block_for_target(
+        &self,
+        target: &InteractionTarget,
+    ) -> Option<&PreparedSelectableTextBlock> {
+        self.selectable_text_blocks
+            .iter()
+            .rev()
+            .find(|block| &block.target == target)
     }
 
     #[must_use]
@@ -864,6 +916,11 @@ impl PreparedFrame {
             .text
             .drain(..)
             .map(|block| map_text_block(block, mapping))
+            .collect();
+        self.selectable_text_blocks = self
+            .selectable_text_blocks
+            .drain(..)
+            .map(|block| map_selectable_text_block(block, mapping))
             .collect();
         self.styled_paragraphs = self
             .styled_paragraphs
@@ -1005,6 +1062,20 @@ fn map_text_block(
     block
 }
 
+fn map_selectable_text_block(
+    mut block: PreparedSelectableTextBlock,
+    mapping: PreparedFrameViewportMapping,
+) -> PreparedSelectableTextBlock {
+    block.bounds = mapping.rect(block.bounds);
+    block.clip_bounds = block.clip_bounds.map(|bounds| mapping.rect(bounds));
+    block.character_bounds = block
+        .character_bounds
+        .into_iter()
+        .map(|bounds| TextCharacterBounds::new(bounds.range, mapping.rect(bounds.bounds)))
+        .collect();
+    block
+}
+
 fn map_styled_paragraph(
     mut paragraph: RenderStyledParagraph,
     mapping: PreparedFrameViewportMapping,
@@ -1046,43 +1117,43 @@ fn map_text_style(mut style: RenderTextStyle, text_scale: f32) -> RenderTextStyl
     style
 }
 
-impl PreparedUiScene {
-    pub fn new(scene: UiScene) -> Self {
+impl PreparedViewScene {
+    pub fn new(scene: ViewScene) -> Self {
         Self {
             scene,
-            resources: PreparedUiSceneResources::default(),
+            resources: PreparedViewSceneResources::default(),
         }
     }
 
     #[must_use]
-    pub fn with_resources(mut self, resources: PreparedUiSceneResources) -> Self {
+    pub fn with_resources(mut self, resources: PreparedViewSceneResources) -> Self {
         self.resources = resources;
         self
     }
 }
 
-impl PreparedUiSceneResources {
-    pub fn push_image(&mut self, image: PreparedUiImageResource) {
+impl PreparedViewSceneResources {
+    pub fn push_image(&mut self, image: PreparedViewImageResource) {
         self.images.push(image);
     }
 
-    pub fn push_mask(&mut self, mask: PreparedUiMaskResource) {
+    pub fn push_mask(&mut self, mask: PreparedViewMaskResource) {
         self.masks.push(mask);
     }
 
-    pub fn push_glyph_handoff(&mut self, handoff: PreparedUiGlyphRunHandoff) {
+    pub fn push_glyph_handoff(&mut self, handoff: PreparedViewGlyphRunHandoff) {
         self.glyph_handoffs.push(handoff);
     }
 
-    pub fn images(&self) -> &[PreparedUiImageResource] {
+    pub fn images(&self) -> &[PreparedViewImageResource] {
         &self.images
     }
 
-    pub fn masks(&self) -> &[PreparedUiMaskResource] {
+    pub fn masks(&self) -> &[PreparedViewMaskResource] {
         &self.masks
     }
 
-    pub fn glyph_handoffs(&self) -> &[PreparedUiGlyphRunHandoff] {
+    pub fn glyph_handoffs(&self) -> &[PreparedViewGlyphRunHandoff] {
         &self.glyph_handoffs
     }
 }
@@ -1187,6 +1258,7 @@ impl SharedFramePlanContext {
             rectangles,
             images: build_retained_images(scene),
             text,
+            selectable_text_blocks: Vec::new(),
             styled_paragraphs,
             choices,
             action_buttons: runtime_controls.action_buttons,
@@ -1199,11 +1271,25 @@ impl SharedFramePlanContext {
                 scene.focus_groups.clone(),
                 scene.focus_navigation.clone(),
             ),
-            ui_scenes: Vec::new(),
+            view_scenes: Vec::new(),
             dialogue_present: scene.dialogue.is_some(),
             interaction: scene.interaction.clone(),
             focused_text_input: runtime_controls.focused_text_input,
         })
+    }
+
+    pub fn prepare_selectable_text_blocks(&mut self, frame: &mut PreparedFrame) {
+        let mut selectable_text_blocks = Vec::new();
+        for block in &frame.text {
+            if let Some((prepared, selection_rects)) = text_controls::build_selectable_text_block(
+                block,
+                &mut self.text_control_font_context,
+            ) {
+                frame.rectangles.extend(selection_rects);
+                selectable_text_blocks.push(prepared);
+            }
+        }
+        frame.selectable_text_blocks = selectable_text_blocks;
     }
 }
 
@@ -1489,6 +1575,7 @@ fn push_dialogue_panel(
         slant: base_style.slant,
     };
     text.push(RenderTextBlock {
+        target: None,
         text: dialogue.speaker.clone(),
         bounds: HitRect::new(
             panel.x + inset,
@@ -1509,6 +1596,9 @@ fn push_dialogue_panel(
         } else {
             speaker_style.color
         },
+        selection_policy: RenderTextSelectionPolicy::Disabled,
+        selection: None,
+        selection_rgba: palette.choice_active,
     });
     push_dialogue_styled_paragraph(
         styled_paragraphs,
@@ -2018,6 +2108,7 @@ fn build_choices(
                 push_focus_ring(rectangles, bounds, palette.focus_ring);
             }
             text.push(RenderTextBlock {
+                target: None,
                 text: choice.label.clone(),
                 bounds: HitRect::new(
                     bounds.x + 24.0,
@@ -2034,6 +2125,9 @@ fn build_choices(
                 weight: RenderTextWeight::Bold,
                 slant: RenderTextSlant::Upright,
                 rgba: palette.choice_text,
+                selection_policy: RenderTextSelectionPolicy::Disabled,
+                selection: None,
+                selection_rgba: palette.choice_active,
             });
             semantics.push(
                 SemanticNode::new(layer.clone(), target.clone(), SemanticRole::Button, bounds)

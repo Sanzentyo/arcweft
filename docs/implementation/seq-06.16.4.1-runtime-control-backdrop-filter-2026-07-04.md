@@ -45,11 +45,11 @@ tests, sample update gate, and native/web exact visual evidence requirements.
   and text as one overlay batch.
 - Executes `PreparedControlBackdrop` inline in `SharedRenderer`: each backdrop
   copies the current Arcweft-owned intermediate target, runs a fixed-extent
-  `UiFilterPassPlan` blur, and composites the blurred result back through a
+  `ViewFilterPassPlan` blur, and composites the blurred result back through a
   logical-rect clip before painting that control's fill/text.
 - Executes `PreparedControlFilter` inline in `SharedRenderer`: filtered runtime
   controls are replayed into a transparent Arcweft-owned intermediate texture,
-  passed through the same fixed-extent `UiFilterPassPlan`, and composited back
+  passed through the same fixed-extent `ViewFilterPassPlan`, and composited back
   through the control bounds. This filters the completed control content without
   blurring the already-painted backdrop.
 - Keeps native and web surface textures at their existing render-attachment

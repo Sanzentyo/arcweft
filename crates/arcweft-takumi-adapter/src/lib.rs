@@ -2,7 +2,7 @@
 //!
 //! This crate deliberately uses Takumi as a CSS cascade, layout, and stacking
 //! scene source, not as a CPU bitmap renderer. The primary output is
-//! [`arcweft_render_wgpu::ui_scene::UiScene`] with direct wgpu primitives,
+//! [`arcweft_render_wgpu::view_scene::ViewScene`] with direct wgpu primitives,
 //! compositing groups, and capture metadata that keeps Arcweft view, part,
 //! handler, semantic, and Agent identity attached to the rendered coordinate
 //! space.

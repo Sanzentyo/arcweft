@@ -2,7 +2,7 @@
 
 ## Goal
 
-Render `UiBoxShadowKind::Inset` values in the Arcweft-owned direct wgpu UI
+Render `ViewBoxShadowKind::Inset` values in the Arcweft-owned direct wgpu UI
 compositor path. The input is already typed by Takumi and the Takumi adapter;
 this package does not add CSS parsing, source-string scanning, DOM rendering,
 canvas/SVG filters, CPU rasterization, or bitmap snapshot fallbacks.
@@ -43,12 +43,12 @@ Inset shadows are first analytically clipped to the group's rounded box body in
 the `PASS_BOX_SHADOW` shader. Any `clip-path` then clips the already-composited
 child+inset group target. Masks run after clip-path and apply to both children
 and inset shadows. Group opacity and blend are applied once when compositing the
-finished group target into its parent. `UiIsolation::Isolate` keeps its existing
+finished group target into its parent. `ViewIsolation::Isolate` keeps its existing
 meaning because box shadows already require a group offscreen surface.
 
 ## Plan API decision
 
-`UiBoxShadowPassPlan` grows a unified ordered pass list instead of introducing a
+`ViewBoxShadowPassPlan` grows a unified ordered pass list instead of introducing a
 separate `UiInsetBoxShadowPassPlan`.
 
 Rationale:
@@ -58,7 +58,7 @@ Rationale:
 - CSS list order is a property of the whole list, not of separate outer/inset
   inputs.
 - A unified plan keeps deterministic diagnostics and metadata in one place while
-  the compositor filters the plan by `UiBoxShadowKind` at the two paint stages.
+  the compositor filters the plan by `ViewBoxShadowKind` at the two paint stages.
 
 The plan adds `visual_inset_px()` metadata next to the existing
 `visual_outset_px()`. Outset remains external visual expansion and affects group
@@ -80,10 +80,10 @@ For a group `bounds` and an inset shadow:
 - `shadow_radius_px` is `(border_radius_px - spread_radius_px).max(0)` clamped
   to `shadow_rect`.
 - Zero-offset, zero-blur, zero-spread inset shadows are canonical identity paint
-  and are removed by `UiBoxShadowList::new`.
+  and are removed by `ViewBoxShadowList::new`.
 - Transparent inset shadows are canonical identity paint.
 - Non-empty inset shadows on zero-area receiver bounds produce a typed
-  `UiBoxShadowPlanError::DegenerateGeometry` diagnostic rather than being
+  `ViewBoxShadowPlanError::DegenerateGeometry` diagnostic rather than being
   silently dropped.
 
 Outer shadow geometry is unchanged.
@@ -113,7 +113,7 @@ rect caster coverage for both kinds:
 
 ## Diagnostics
 
-`UiBoxShadowPlanError::InsetUnsupported` is removed because inset rendering is
+`ViewBoxShadowPlanError::InsetUnsupported` is removed because inset rendering is
 implemented in this package. `NonFinite` remains typed. A new
 `DegenerateGeometry` error covers non-empty inset shadows that cannot draw
 because the receiver bounds have no drawable area.

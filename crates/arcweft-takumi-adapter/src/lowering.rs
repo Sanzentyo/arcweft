@@ -8,12 +8,13 @@ use crate::{
     text::ArcweftTextLayoutBridge,
 };
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBlendMode, UiBorder, UiBoxShadow, UiBoxShadowCornerRadius, UiBoxShadowList,
-    UiBoxShadowRadii, UiClip, UiClipPath, UiColorRgba8, UiCompositingEffects, UiCompositingGroup,
-    UiFillRule, UiFilter, UiFilterList, UiGradientStop, UiImagePrimitive, UiIsolation, UiLength,
-    UiLinearGradient, UiMask, UiMaskGradient, UiMaskImage, UiPaintNode, UiPoint, UiPrimitive,
-    UiPrimitiveRange, UiRoundedRect, UiScene, UiSceneContext, UiShapeRadius, UiSolidRect,
+use arcweft_render_wgpu::view_scene::{
+    ViewAffine2D, ViewBlendMode, ViewBorder, ViewBoxShadow, ViewBoxShadowCornerRadius,
+    ViewBoxShadowList, ViewBoxShadowRadii, ViewClip, ViewClipPath, ViewColorRgba8,
+    ViewCompositingEffects, ViewCompositingGroup, ViewFillRule, ViewFilter, ViewFilterList,
+    ViewGradientStop, ViewImagePrimitive, ViewIsolation, ViewLength, ViewLinearGradient, ViewMask,
+    ViewMaskGradient, ViewMaskImage, ViewPaintNode, ViewPoint, ViewPrimitive, ViewPrimitiveRange,
+    ViewRoundedRect, ViewScene, ViewSceneContext, ViewShapeRadius, ViewSolidRect,
 };
 use num_traits::ToPrimitive;
 use std::{collections::HashMap, rc::Rc, sync::Arc};
@@ -46,8 +47,8 @@ pub struct TakumiCompositingStyleCatalog {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TakumiCompositingStyle {
-    pub isolation: UiIsolation,
-    pub effects: UiCompositingEffects,
+    pub isolation: ViewIsolation,
+    pub effects: ViewCompositingEffects,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,12 +62,12 @@ pub struct DirectBoxPaint {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DirectBackground {
     Solid {
-        color: UiColorRgba8,
+        color: ViewColorRgba8,
         radius: f32,
     },
     LinearGradient {
         angle_degrees: f32,
-        stops: Vec<UiGradientStop>,
+        stops: Vec<ViewGradientStop>,
     },
     Image {
         resource_index: u32,
@@ -78,7 +79,7 @@ pub enum DirectBackground {
 pub struct DirectBorder {
     pub width: f32,
     pub radius: f32,
-    pub color: UiColorRgba8,
+    pub color: ViewColorRgba8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -101,7 +102,7 @@ pub struct TakumiSceneInput<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TakumiSceneOutput {
-    pub scene: UiScene,
+    pub scene: ViewScene,
     pub capture: TakumiCaptureFrame,
 }
 
@@ -109,12 +110,12 @@ pub struct TakumiSceneOutput {
 pub struct TakumiSceneLowerer;
 
 #[derive(Default)]
-struct UiSceneBuild {
+struct ViewSceneBuild {
     viewport_width: f32,
     viewport_height: f32,
-    primitives: Vec<UiPrimitive>,
-    contexts: Vec<UiSceneContext>,
-    paint_nodes: Vec<UiPaintNode>,
+    primitives: Vec<ViewPrimitive>,
+    contexts: Vec<ViewSceneContext>,
+    paint_nodes: Vec<ViewPaintNode>,
     capture: TakumiCaptureFrame,
     next_paint_node_id: u32,
     next_compositing_group_id: u32,
@@ -182,7 +183,7 @@ impl TakumiCompositingStyle {
     }
 
     pub fn is_identity(&self) -> bool {
-        self.isolation == UiIsolation::Auto && self.effects.is_identity()
+        self.isolation == ViewIsolation::Auto && self.effects.is_identity()
     }
 }
 
@@ -274,7 +275,7 @@ impl TakumiSceneLowerer {
         )
         .map_err(|error| TakumiAdapterError::scene_extraction(error.to_string()))?;
 
-        let mut build = UiSceneBuild::new(
+        let mut build = ViewSceneBuild::new(
             viewport_dimension_to_f32(input.viewport.size.width.unwrap_or_default()),
             viewport_dimension_to_f32(input.viewport.size.height.unwrap_or_default()),
         );
@@ -298,7 +299,7 @@ fn viewport_dimension_to_f32(value: u32) -> f32 {
     value.to_f32().unwrap_or(f32::MAX)
 }
 
-impl UiSceneBuild {
+impl ViewSceneBuild {
     fn new(viewport_width: f32, viewport_height: f32) -> Self {
         Self {
             viewport_width,
@@ -316,15 +317,15 @@ impl UiSceneBuild {
         u32::try_from(self.primitives.len()).map_err(|_| TakumiAdapterError::CapacityExceeded)
     }
 
-    fn push_primitive(&mut self, primitive: UiPrimitive) {
+    fn push_primitive(&mut self, primitive: ViewPrimitive) {
         self.primitives.push(primitive);
     }
 
-    fn push_context(&mut self, context: UiSceneContext) {
+    fn push_context(&mut self, context: ViewSceneContext) {
         self.contexts.push(context);
     }
 
-    fn push_paint_node(&mut self, node: UiPaintNode) {
+    fn push_paint_node(&mut self, node: ViewPaintNode) {
         self.paint_nodes.push(node);
     }
 
@@ -339,7 +340,7 @@ impl UiSceneBuild {
     }
 
     fn finish(self) -> TakumiSceneOutput {
-        let mut scene = UiScene::new(self.viewport_width, self.viewport_height);
+        let mut scene = ViewScene::new(self.viewport_width, self.viewport_height);
         for primitive in self.primitives {
             scene.push_primitive(primitive);
         }
@@ -357,8 +358,8 @@ impl UiSceneBuild {
 fn lower_context(
     context_id: usize,
     refs: &TakumiLoweringRefs<'_>,
-    build: &mut UiSceneBuild,
-) -> Result<Option<UiPaintNode>, TakumiAdapterError> {
+    build: &mut ViewSceneBuild,
+) -> Result<Option<ViewPaintNode>, TakumiAdapterError> {
     let Some(context) = refs.contexts.get(context_id) else {
         return Ok(None);
     };
@@ -402,7 +403,7 @@ fn lower_context(
         .and_then(|path| refs.compositing_styles.get(path))
         .cloned()
         .unwrap_or_default();
-    let group = UiCompositingGroup {
+    let group = ViewCompositingGroup {
         bounds: bounds.unwrap_or_else(|| HitRect::new(0.0, 0.0, 0.0, 0.0)),
         isolation: compositing.isolation,
         effects: compositing.effects,
@@ -432,15 +433,15 @@ fn lower_context(
         );
     }
 
-    Ok(Some(UiPaintNode::Group(group)))
+    Ok(Some(ViewPaintNode::Group(group)))
 }
 
 fn lower_node(
     node: &NodePaint,
     refs: &TakumiLoweringRefs<'_>,
-    build: &mut UiSceneBuild,
+    build: &mut ViewSceneBuild,
     group_id: TakumiCompositingGroupId,
-) -> Result<Option<UiPaintNode>, TakumiAdapterError> {
+) -> Result<Option<ViewPaintNode>, TakumiAdapterError> {
     let bounds = bounds_for_node(node, refs.layout_results)?;
     let path = TakumiPath::from(node.path.clone());
     let transform = affine_to_ui(node.transform.to_cols_array());
@@ -453,7 +454,7 @@ fn lower_node(
             lower_background(background, bounds, build);
         }
         if let Some(border) = paint.border {
-            build.push_primitive(UiPrimitive::Border(UiBorder {
+            build.push_primitive(ViewPrimitive::Border(ViewBorder {
                 bounds,
                 radius: border.radius,
                 width: border.width,
@@ -477,8 +478,8 @@ fn lower_node(
 
     let clip = paint.and_then(|paint| paint.clip.map(|clip| clip.to_ui_clip(bounds)));
     let opacity = paint.map_or(1.0, |paint| paint.opacity);
-    let primitive_range = UiPrimitiveRange { start, end };
-    let scene_context = UiSceneContext {
+    let primitive_range = ViewPrimitiveRange { start, end };
+    let scene_context = ViewSceneContext {
         transform,
         opacity,
         clip: clip.clone(),
@@ -502,7 +503,7 @@ fn lower_node(
             .with_clip_bounds(clip.as_ref().map(crate::capture::ui_clip_bounds)),
         );
     }
-    Ok(Some(UiPaintNode::Direct(scene_context)))
+    Ok(Some(ViewPaintNode::Direct(scene_context)))
 }
 
 fn bounds_for_node(
@@ -520,17 +521,17 @@ fn bounds_for_node(
     ))
 }
 
-fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut UiSceneBuild) {
+fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut ViewSceneBuild) {
     match background {
         DirectBackground::Solid { color, radius } if *radius > 0.0 => {
-            build.push_primitive(UiPrimitive::RoundedRect(UiRoundedRect {
+            build.push_primitive(ViewPrimitive::RoundedRect(ViewRoundedRect {
                 bounds,
                 radius: *radius,
                 color: *color,
             }));
         }
         DirectBackground::Solid { color, .. } => {
-            build.push_primitive(UiPrimitive::SolidRect(UiSolidRect {
+            build.push_primitive(ViewPrimitive::SolidRect(ViewSolidRect {
                 bounds,
                 color: *color,
             }));
@@ -539,7 +540,7 @@ fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut 
             angle_degrees,
             stops,
         } => {
-            build.push_primitive(UiPrimitive::LinearGradient(UiLinearGradient {
+            build.push_primitive(ViewPrimitive::LinearGradient(ViewLinearGradient {
                 bounds,
                 angle_degrees: *angle_degrees,
                 stops: stops.clone(),
@@ -549,7 +550,7 @@ fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut 
             resource_index,
             opacity,
         } => {
-            build.push_primitive(UiPrimitive::Image(UiImagePrimitive {
+            build.push_primitive(ViewPrimitive::Image(ViewImagePrimitive {
                 resource_index: *resource_index,
                 bounds,
                 opacity: *opacity,
@@ -559,22 +560,22 @@ fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut 
 }
 
 impl DirectClip {
-    fn to_ui_clip(self, bounds: HitRect) -> UiClip {
+    fn to_ui_clip(self, bounds: HitRect) -> ViewClip {
         match self {
-            Self::Rect => UiClip::Rect(bounds),
-            Self::RoundedRect { radius } => UiClip::RoundedRect { bounds, radius },
+            Self::Rect => ViewClip::Rect(bounds),
+            Self::RoundedRect { radius } => ViewClip::RoundedRect { bounds, radius },
         }
     }
 }
 
-fn primitive_range_for_group(group: &UiCompositingGroup) -> Option<UiPrimitiveRange> {
+fn primitive_range_for_group(group: &ViewCompositingGroup) -> Option<ViewPrimitiveRange> {
     group
         .children
         .iter()
         .filter_map(primitive_range_for_paint_node)
         .fold(None, |acc, range| {
             Some(match acc {
-                Some(existing) => UiPrimitiveRange {
+                Some(existing) => ViewPrimitiveRange {
                     start: existing.start.min(range.start),
                     end: existing.end.max(range.end),
                 },
@@ -583,29 +584,29 @@ fn primitive_range_for_group(group: &UiCompositingGroup) -> Option<UiPrimitiveRa
         })
 }
 
-fn primitive_range_for_paint_node(node: &UiPaintNode) -> Option<UiPrimitiveRange> {
+fn primitive_range_for_paint_node(node: &ViewPaintNode) -> Option<ViewPrimitiveRange> {
     match node {
-        UiPaintNode::Direct(context) => Some(context.primitive_range),
-        UiPaintNode::Group(group) => primitive_range_for_group(group),
+        ViewPaintNode::Direct(context) => Some(context.primitive_range),
+        ViewPaintNode::Group(group) => primitive_range_for_group(group),
     }
 }
 
-fn effect_outsets_for_effects(effects: &UiCompositingEffects) -> TakumiEffectOutsets {
+fn effect_outsets_for_effects(effects: &ViewCompositingEffects) -> TakumiEffectOutsets {
     TakumiEffectOutsets::new(
         effects.filters.visual_outset_px(),
         effects.backdrop_filters.visual_outset_px(),
         effects
             .masks
             .iter()
-            .map(UiMask::visual_outset_px)
+            .map(ViewMask::visual_outset_px)
             .fold(0.0, f32::max),
     )
 }
 
-fn clip_bounds_for_group(group: &UiCompositingGroup) -> Option<HitRect> {
+fn clip_bounds_for_group(group: &ViewCompositingGroup) -> Option<HitRect> {
     let clip_path = group.effects.clip_path.as_deref()?;
     match clip_path {
-        UiClipPath::Inset { inset, .. } => {
+        ViewClipPath::Inset { inset, .. } => {
             let top = inset[0].resolve_px(group.bounds.height)?;
             let right = inset[1].resolve_px(group.bounds.width)?;
             let bottom = inset[2].resolve_px(group.bounds.height)?;
@@ -617,16 +618,16 @@ fn clip_bounds_for_group(group: &UiCompositingGroup) -> Option<HitRect> {
                 (group.bounds.height - top - bottom).max(0.0),
             ))
         }
-        UiClipPath::Circle { .. }
-        | UiClipPath::Ellipse { .. }
-        | UiClipPath::Polygon { .. }
-        | UiClipPath::Path { .. }
-        | UiClipPath::Url(_)
-        | UiClipPath::Unsupported(_) => Some(group.bounds),
+        ViewClipPath::Circle { .. }
+        | ViewClipPath::Ellipse { .. }
+        | ViewClipPath::Polygon { .. }
+        | ViewClipPath::Path { .. }
+        | ViewClipPath::Url(_)
+        | ViewClipPath::Unsupported(_) => Some(group.bounds),
     }
 }
 
-fn mask_bounds_for_group(group: &UiCompositingGroup) -> Vec<HitRect> {
+fn mask_bounds_for_group(group: &ViewCompositingGroup) -> Vec<HitRect> {
     group.effects.masks.iter().map(|_| group.bounds).collect()
 }
 
@@ -654,8 +655,8 @@ fn compositing_effects_from_takumi(
     style: &ComputedStyle,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiCompositingEffects {
-    UiCompositingEffects {
+) -> ViewCompositingEffects {
+    ViewCompositingEffects {
         opacity: style.opacity.0.clamp(0.0, 1.0),
         filters: filter_list_from_takumi(&style.filter, sizing, current_color),
         backdrop_filters: filter_list_from_takumi(&style.backdrop_filter, sizing, current_color),
@@ -670,7 +671,7 @@ fn compositing_effects_from_takumi(
             .clip_path
             .as_ref()
             .map(|clip_path| Box::new(clip_path_from_takumi(clip_path, sizing))),
-        blend_mode: ui_blend_mode_from_takumi(style.mix_blend_mode),
+        blend_mode: view_blend_mode_from_takumi(style.mix_blend_mode),
     }
 }
 
@@ -678,8 +679,8 @@ fn filter_list_from_takumi(
     filters: &[TakumiFilter],
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiFilterList {
-    UiFilterList::new(
+) -> ViewFilterList {
+    ViewFilterList::new(
         filters
             .iter()
             .map(|filter| ui_filter_from_takumi(filter, sizing, current_color)),
@@ -690,20 +691,20 @@ fn ui_filter_from_takumi(
     filter: &TakumiFilter,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiFilter {
+) -> ViewFilter {
     match filter {
-        TakumiFilter::Brightness(value) => UiFilter::Brightness(value.0),
-        TakumiFilter::Contrast(value) => UiFilter::Contrast(value.0),
-        TakumiFilter::Grayscale(value) => UiFilter::Grayscale(value.0),
-        TakumiFilter::Saturate(value) => UiFilter::Saturate(value.0),
-        TakumiFilter::HueRotate(angle) => UiFilter::HueRotateDegrees(**angle),
-        TakumiFilter::Invert(value) => UiFilter::Invert(value.0),
-        TakumiFilter::Sepia(value) => UiFilter::Sepia(value.0),
-        TakumiFilter::Opacity(value) => UiFilter::Opacity(value.0),
-        TakumiFilter::Blur(radius) => UiFilter::Blur {
+        TakumiFilter::Brightness(value) => ViewFilter::Brightness(value.0),
+        TakumiFilter::Contrast(value) => ViewFilter::Contrast(value.0),
+        TakumiFilter::Grayscale(value) => ViewFilter::Grayscale(value.0),
+        TakumiFilter::Saturate(value) => ViewFilter::Saturate(value.0),
+        TakumiFilter::HueRotate(angle) => ViewFilter::HueRotateDegrees(**angle),
+        TakumiFilter::Invert(value) => ViewFilter::Invert(value.0),
+        TakumiFilter::Sepia(value) => ViewFilter::Sepia(value.0),
+        TakumiFilter::Opacity(value) => ViewFilter::Opacity(value.0),
+        TakumiFilter::Blur(radius) => ViewFilter::Blur {
             radius_px: length_px(*radius, sizing),
         },
-        TakumiFilter::DropShadow(shadow) => UiFilter::DropShadow {
+        TakumiFilter::DropShadow(shadow) => ViewFilter::DropShadow {
             offset_x_px: length_px(shadow.offset_x, sizing),
             offset_y_px: length_px(shadow.offset_y, sizing),
             blur_radius_px: length_px(shadow.blur_radius, sizing),
@@ -717,12 +718,12 @@ fn box_shadow_list_from_takumi(
     style: &ComputedStyle,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiBoxShadowList {
+) -> ViewBoxShadowList {
     let Some(shadows) = shadows else {
-        return UiBoxShadowList::default();
+        return ViewBoxShadowList::default();
     };
     let border_radii = box_shadow_border_radii(style, sizing);
-    UiBoxShadowList::new(
+    ViewBoxShadowList::new(
         shadows
             .iter()
             .map(|shadow| box_shadow_from_takumi(shadow, border_radii, sizing, current_color)),
@@ -731,17 +732,17 @@ fn box_shadow_list_from_takumi(
 
 fn box_shadow_from_takumi(
     shadow: &TakumiBoxShadow,
-    border_radii: UiBoxShadowRadii,
+    border_radii: ViewBoxShadowRadii,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiBoxShadow {
+) -> ViewBoxShadow {
     let horizontal_shift_px = length_value_px(shadow.offset_x, sizing);
     let vertical_shift_px = length_value_px(shadow.offset_y, sizing);
     let blur_radius_px = length_value_px(shadow.blur_radius, sizing).max(0.0);
     let spread_radius_px = length_value_px(shadow.spread_radius, sizing);
     let color = ui_color_from_takumi(shadow.color.resolve(current_color));
     if shadow.inset {
-        UiBoxShadow::inset_with_radii(
+        ViewBoxShadow::inset_with_radii(
             horizontal_shift_px,
             vertical_shift_px,
             blur_radius_px,
@@ -750,7 +751,7 @@ fn box_shadow_from_takumi(
             color,
         )
     } else {
-        UiBoxShadow::outer_with_radii(
+        ViewBoxShadow::outer_with_radii(
             horizontal_shift_px,
             vertical_shift_px,
             blur_radius_px,
@@ -761,8 +762,8 @@ fn box_shadow_from_takumi(
     }
 }
 
-fn box_shadow_border_radii(style: &ComputedStyle, sizing: &SizingContext) -> UiBoxShadowRadii {
-    UiBoxShadowRadii::from_corners(
+fn box_shadow_border_radii(style: &ComputedStyle, sizing: &SizingContext) -> ViewBoxShadowRadii {
+    ViewBoxShadowRadii::from_corners(
         box_shadow_corner_radius_from_takumi(style.border_top_left_radius, sizing),
         box_shadow_corner_radius_from_takumi(style.border_top_right_radius, sizing),
         box_shadow_corner_radius_from_takumi(style.border_bottom_right_radius, sizing),
@@ -773,8 +774,8 @@ fn box_shadow_border_radii(style: &ComputedStyle, sizing: &SizingContext) -> UiB
 fn box_shadow_corner_radius_from_takumi(
     radius: SpacePair<Length>,
     sizing: &SizingContext,
-) -> UiBoxShadowCornerRadius {
-    UiBoxShadowCornerRadius::new(
+) -> ViewBoxShadowCornerRadius {
+    ViewBoxShadowCornerRadius::new(
         length_value_px(radius.x, sizing).max(0.0),
         length_value_px(radius.y, sizing).max(0.0),
     )
@@ -784,7 +785,7 @@ fn masks_from_takumi(
     style: &ComputedStyle,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> Vec<UiMask> {
+) -> Vec<ViewMask> {
     style
         .mask_image
         .as_ref()
@@ -793,9 +794,9 @@ fn masks_from_takumi(
                 .iter()
                 .filter_map(|image| {
                     let image = mask_image_from_takumi(image, sizing, current_color);
-                    (!matches!(image, UiMaskImage::None)).then_some(UiMask {
+                    (!matches!(image, ViewMaskImage::None)).then_some(ViewMask {
                         image,
-                        ..UiMask::default()
+                        ..ViewMask::default()
                     })
                 })
                 .collect()
@@ -807,15 +808,15 @@ fn mask_image_from_takumi(
     image: &BackgroundImage,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiMaskImage {
+) -> ViewMaskImage {
     match image {
-        BackgroundImage::None => UiMaskImage::None,
-        BackgroundImage::Url(url) => UiMaskImage::Url(url.to_string().into_boxed_str()),
+        BackgroundImage::None => ViewMaskImage::None,
+        BackgroundImage::Url(url) => ViewMaskImage::Url(url.to_string().into_boxed_str()),
         BackgroundImage::Linear(gradient) => {
             linear_mask_gradient_from_takumi(gradient, sizing, current_color)
         }
-        BackgroundImage::Radial(_) => UiMaskImage::Unsupported("radial-gradient mask".into()),
-        BackgroundImage::Conic(_) => UiMaskImage::Unsupported("conic-gradient mask".into()),
+        BackgroundImage::Radial(_) => ViewMaskImage::Unsupported("radial-gradient mask".into()),
+        BackgroundImage::Conic(_) => ViewMaskImage::Unsupported("conic-gradient mask".into()),
     }
 }
 
@@ -823,14 +824,14 @@ fn linear_mask_gradient_from_takumi(
     gradient: &LinearGradient,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiMaskImage {
+) -> ViewMaskImage {
     if gradient.repeating {
-        return UiMaskImage::Unsupported("repeating-linear-gradient mask".into());
+        return ViewMaskImage::Unsupported("repeating-linear-gradient mask".into());
     }
     let Some(stops) = gradient_stops_from_takumi(&gradient.stops, sizing, current_color) else {
-        return UiMaskImage::Unsupported("linear-gradient mask stops".into());
+        return ViewMaskImage::Unsupported("linear-gradient mask stops".into());
     };
-    UiMaskImage::Gradient(UiMaskGradient::Linear {
+    ViewMaskImage::Gradient(ViewMaskGradient::Linear {
         angle_degrees: gradient_angle_degrees(gradient.direction),
         stops,
     })
@@ -840,7 +841,7 @@ fn gradient_stops_from_takumi(
     stops: &[GradientStop],
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> Option<Vec<UiGradientStop>> {
+) -> Option<Vec<ViewGradientStop>> {
     let color_stop_count = stops
         .iter()
         .filter(|stop| matches!(stop, GradientStop::ColorHint { .. }))
@@ -858,7 +859,7 @@ fn gradient_stops_from_takumi(
                     Some(hint) => stop_position_to_offset(hint.0, sizing)?,
                     None => fallback_offset,
                 };
-                result.push(UiGradientStop {
+                result.push(ViewGradientStop {
                     offset: offset.clamp(0.0, 1.0),
                     color: ui_color_from_takumi(color.resolve(current_color)),
                 });
@@ -897,24 +898,24 @@ fn gradient_angle_degrees(
     }
 }
 
-fn clip_path_from_takumi(shape: &BasicShape, sizing: &SizingContext) -> UiClipPath {
+fn clip_path_from_takumi(shape: &BasicShape, sizing: &SizingContext) -> ViewClipPath {
     match shape {
-        BasicShape::Inset(shape) => UiClipPath::Inset {
+        BasicShape::Inset(shape) => ViewClipPath::Inset {
             inset: lengths_from_sides(&shape.inset.0, sizing),
             radius: shape
                 .border_radius
                 .as_ref()
                 .map_or_else(zero_lengths, |radius| lengths_from_sides(&radius.0, sizing)),
         },
-        BasicShape::Ellipse(shape) => UiClipPath::Ellipse {
+        BasicShape::Ellipse(shape) => ViewClipPath::Ellipse {
             radius_x: shape_radius_from_takumi(shape.radius_x, sizing),
             radius_y: shape_radius_from_takumi(shape.radius_y, sizing),
             center: point_from_space_pair(shape.position.0, sizing),
         },
-        BasicShape::Polygon(shape) => UiClipPath::Polygon {
+        BasicShape::Polygon(shape) => ViewClipPath::Polygon {
             fill_rule: shape
                 .fill_rule
-                .map_or(UiFillRule::NonZero, ui_fill_rule_from_takumi),
+                .map_or(ViewFillRule::NonZero, ui_fill_rule_from_takumi),
             points: shape
                 .coordinates
                 .iter()
@@ -922,49 +923,49 @@ fn clip_path_from_takumi(shape: &BasicShape, sizing: &SizingContext) -> UiClipPa
                 .map(|point| point_from_space_pair(point, sizing))
                 .collect(),
         },
-        BasicShape::Path(shape) => UiClipPath::Path {
+        BasicShape::Path(shape) => ViewClipPath::Path {
             fill_rule: shape
                 .fill_rule
-                .map_or(UiFillRule::NonZero, ui_fill_rule_from_takumi),
+                .map_or(ViewFillRule::NonZero, ui_fill_rule_from_takumi),
             data: shape.path.clone(),
         },
     }
 }
 
-fn shape_radius_from_takumi(radius: TakumiShapeRadius, sizing: &SizingContext) -> UiShapeRadius {
+fn shape_radius_from_takumi(radius: TakumiShapeRadius, sizing: &SizingContext) -> ViewShapeRadius {
     match radius {
-        TakumiShapeRadius::ClosestSide => UiShapeRadius::ClosestSide,
-        TakumiShapeRadius::FarthestSide => UiShapeRadius::FarthestSide,
+        TakumiShapeRadius::ClosestSide => ViewShapeRadius::ClosestSide,
+        TakumiShapeRadius::FarthestSide => ViewShapeRadius::FarthestSide,
         TakumiShapeRadius::Length(length) => {
-            UiShapeRadius::Length(ui_length_from_takumi(length, sizing))
+            ViewShapeRadius::Length(ui_length_from_takumi(length, sizing))
         }
     }
 }
 
-fn point_from_space_pair<T>(point: T, sizing: &SizingContext) -> UiPoint
+fn point_from_space_pair<T>(point: T, sizing: &SizingContext) -> ViewPoint
 where
     T: Into<taffy::Point<Length>>,
 {
     let point = point.into();
-    UiPoint {
+    ViewPoint {
         x: ui_length_from_takumi(point.x, sizing),
         y: ui_length_from_takumi(point.y, sizing),
     }
 }
 
-fn lengths_from_sides(sides: &[Length; 4], sizing: &SizingContext) -> [UiLength; 4] {
+fn lengths_from_sides(sides: &[Length; 4], sizing: &SizingContext) -> [ViewLength; 4] {
     std::array::from_fn(|index| ui_length_from_takumi(sides[index], sizing))
 }
 
-fn zero_lengths() -> [UiLength; 4] {
-    std::array::from_fn(|_| UiLength::Px(0.0))
+fn zero_lengths() -> [ViewLength; 4] {
+    std::array::from_fn(|_| ViewLength::Px(0.0))
 }
 
-fn ui_length_from_takumi(length: Length, sizing: &SizingContext) -> UiLength {
+fn ui_length_from_takumi(length: Length, sizing: &SizingContext) -> ViewLength {
     match length {
-        Length::Auto => UiLength::Auto,
-        Length::Percentage(value) => UiLength::Percent(value / 100.0),
-        other => UiLength::Px(other.to_px(sizing, 0.0)),
+        Length::Auto => ViewLength::Auto,
+        Length::Percentage(value) => ViewLength::Percent(value / 100.0),
+        other => ViewLength::Px(other.to_px(sizing, 0.0)),
     }
 }
 
@@ -976,9 +977,9 @@ fn length_px(length: Length, sizing: &SizingContext) -> f32 {
     length.to_px(sizing, 0.0).max(0.0)
 }
 
-fn ui_color_from_takumi(color: TakumiColor) -> UiColorRgba8 {
+fn ui_color_from_takumi(color: TakumiColor) -> ViewColorRgba8 {
     let [red, green, blue, alpha] = color.0;
-    UiColorRgba8 {
+    ViewColorRgba8 {
         red,
         green,
         blue,
@@ -986,46 +987,46 @@ fn ui_color_from_takumi(color: TakumiColor) -> UiColorRgba8 {
     }
 }
 
-fn ui_fill_rule_from_takumi(rule: TakumiFillRule) -> UiFillRule {
+fn ui_fill_rule_from_takumi(rule: TakumiFillRule) -> ViewFillRule {
     match rule {
-        TakumiFillRule::EvenOdd => UiFillRule::EvenOdd,
-        TakumiFillRule::NonZero => UiFillRule::NonZero,
+        TakumiFillRule::EvenOdd => ViewFillRule::EvenOdd,
+        TakumiFillRule::NonZero => ViewFillRule::NonZero,
     }
 }
 
-fn ui_isolation_from_takumi(isolation: TakumiIsolation) -> UiIsolation {
+fn ui_isolation_from_takumi(isolation: TakumiIsolation) -> ViewIsolation {
     if matches!(isolation, TakumiIsolation::Isolate) {
-        UiIsolation::Isolate
+        ViewIsolation::Isolate
     } else {
-        UiIsolation::Auto
+        ViewIsolation::Auto
     }
 }
 
-fn ui_blend_mode_from_takumi(mode: TakumiBlendMode) -> UiBlendMode {
+fn view_blend_mode_from_takumi(mode: TakumiBlendMode) -> ViewBlendMode {
     match mode {
-        TakumiBlendMode::Normal => UiBlendMode::Normal,
-        TakumiBlendMode::Multiply => UiBlendMode::Multiply,
-        TakumiBlendMode::Screen => UiBlendMode::Screen,
-        TakumiBlendMode::Overlay => UiBlendMode::Overlay,
-        TakumiBlendMode::Darken => UiBlendMode::Darken,
-        TakumiBlendMode::Lighten => UiBlendMode::Lighten,
-        TakumiBlendMode::ColorDodge => UiBlendMode::ColorDodge,
-        TakumiBlendMode::ColorBurn => UiBlendMode::ColorBurn,
-        TakumiBlendMode::HardLight => UiBlendMode::HardLight,
-        TakumiBlendMode::SoftLight => UiBlendMode::SoftLight,
-        TakumiBlendMode::Difference => UiBlendMode::Difference,
-        TakumiBlendMode::Exclusion => UiBlendMode::Exclusion,
-        TakumiBlendMode::Hue => UiBlendMode::Hue,
-        TakumiBlendMode::Saturation => UiBlendMode::Saturation,
-        TakumiBlendMode::Color => UiBlendMode::Color,
-        TakumiBlendMode::Luminosity => UiBlendMode::Luminosity,
-        TakumiBlendMode::PlusLighter => UiBlendMode::PlusLighter,
-        TakumiBlendMode::PlusDarker => UiBlendMode::PlusDarker,
+        TakumiBlendMode::Normal => ViewBlendMode::Normal,
+        TakumiBlendMode::Multiply => ViewBlendMode::Multiply,
+        TakumiBlendMode::Screen => ViewBlendMode::Screen,
+        TakumiBlendMode::Overlay => ViewBlendMode::Overlay,
+        TakumiBlendMode::Darken => ViewBlendMode::Darken,
+        TakumiBlendMode::Lighten => ViewBlendMode::Lighten,
+        TakumiBlendMode::ColorDodge => ViewBlendMode::ColorDodge,
+        TakumiBlendMode::ColorBurn => ViewBlendMode::ColorBurn,
+        TakumiBlendMode::HardLight => ViewBlendMode::HardLight,
+        TakumiBlendMode::SoftLight => ViewBlendMode::SoftLight,
+        TakumiBlendMode::Difference => ViewBlendMode::Difference,
+        TakumiBlendMode::Exclusion => ViewBlendMode::Exclusion,
+        TakumiBlendMode::Hue => ViewBlendMode::Hue,
+        TakumiBlendMode::Saturation => ViewBlendMode::Saturation,
+        TakumiBlendMode::Color => ViewBlendMode::Color,
+        TakumiBlendMode::Luminosity => ViewBlendMode::Luminosity,
+        TakumiBlendMode::PlusLighter => ViewBlendMode::PlusLighter,
+        TakumiBlendMode::PlusDarker => ViewBlendMode::PlusDarker,
     }
 }
 
-fn affine_to_ui(values: [f32; 6]) -> UiAffine2D {
-    UiAffine2D {
+fn affine_to_ui(values: [f32; 6]) -> ViewAffine2D {
+    ViewAffine2D {
         m11: values[0],
         m12: values[1],
         m21: values[2],
@@ -1039,8 +1040,8 @@ fn affine_to_ui(values: [f32; 6]) -> UiAffine2D {
 mod tests {
     use super::*;
 
-    fn color(alpha: u8) -> UiColorRgba8 {
-        UiColorRgba8 {
+    fn color(alpha: u8) -> ViewColorRgba8 {
+        ViewColorRgba8 {
             red: 10,
             green: 20,
             blue: 30,
@@ -1071,86 +1072,89 @@ mod tests {
         catalog.insert(
             path.clone(),
             TakumiCompositingStyle {
-                isolation: UiIsolation::Isolate,
-                effects: UiCompositingEffects {
-                    blend_mode: UiBlendMode::Multiply,
-                    ..UiCompositingEffects::default()
+                isolation: ViewIsolation::Isolate,
+                effects: ViewCompositingEffects {
+                    blend_mode: ViewBlendMode::Multiply,
+                    ..ViewCompositingEffects::default()
                 },
             },
         );
 
         let style = catalog.get(&path).expect("style for inserted path");
-        assert_eq!(style.isolation, UiIsolation::Isolate);
-        assert_eq!(style.effects.blend_mode, UiBlendMode::Multiply);
+        assert_eq!(style.isolation, ViewIsolation::Isolate);
+        assert_eq!(style.effects.blend_mode, ViewBlendMode::Multiply);
         assert!(catalog.get(&TakumiPath::root()).is_none());
     }
 
     #[test]
     fn lowering_build_preserves_child_order_inside_compositing_group() {
-        let mut build = UiSceneBuild::new(320.0, 180.0);
-        let first = UiSceneContext {
-            transform: UiAffine2D::IDENTITY,
+        let mut build = ViewSceneBuild::new(320.0, 180.0);
+        let first = ViewSceneContext {
+            transform: ViewAffine2D::IDENTITY,
             opacity: 1.0,
             clip: None,
-            primitive_range: UiPrimitiveRange { start: 0, end: 1 },
+            primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
         };
-        let second = UiSceneContext {
-            transform: UiAffine2D::IDENTITY,
+        let second = ViewSceneContext {
+            transform: ViewAffine2D::IDENTITY,
             opacity: 1.0,
             clip: None,
-            primitive_range: UiPrimitiveRange { start: 1, end: 2 },
+            primitive_range: ViewPrimitiveRange { start: 1, end: 2 },
         };
 
         build.push_context(first.clone());
         build.push_context(second.clone());
-        build.push_paint_node(UiPaintNode::Group(
-            UiCompositingGroup::new(
+        build.push_paint_node(ViewPaintNode::Group(
+            ViewCompositingGroup::new(
                 HitRect::new(0.0, 0.0, 10.0, 10.0),
-                UiCompositingEffects::default(),
+                ViewCompositingEffects::default(),
             )
             .with_children(vec![
-                UiPaintNode::Direct(first),
-                UiPaintNode::Direct(second),
+                ViewPaintNode::Direct(first),
+                ViewPaintNode::Direct(second),
             ]),
         ));
 
         let output = build.finish();
-        let UiPaintNode::Group(group) = &output.scene.paint_nodes()[0] else {
+        let ViewPaintNode::Group(group) = &output.scene.paint_nodes()[0] else {
             panic!("root paint node should be a compositing group");
         };
-        let UiPaintNode::Direct(first) = &group.children[0] else {
+        let ViewPaintNode::Direct(first) = &group.children[0] else {
             panic!("first child should be direct");
         };
-        let UiPaintNode::Direct(second) = &group.children[1] else {
+        let ViewPaintNode::Direct(second) = &group.children[1] else {
             panic!("second child should be direct");
         };
 
-        assert_eq!(first.primitive_range, UiPrimitiveRange { start: 0, end: 1 });
+        assert_eq!(
+            first.primitive_range,
+            ViewPrimitiveRange { start: 0, end: 1 }
+        );
         assert_eq!(
             second.primitive_range,
-            UiPrimitiveRange { start: 1, end: 2 }
+            ViewPrimitiveRange { start: 1, end: 2 }
         );
     }
 
     #[test]
     fn capture_records_include_compositing_group_and_paint_node_bounds() {
-        let effects = UiCompositingEffects {
-            filters: UiFilterList::new([UiFilter::Blur { radius_px: 4.0 }]),
-            blend_mode: UiBlendMode::Multiply,
-            ..UiCompositingEffects::default()
+        let effects = ViewCompositingEffects {
+            filters: ViewFilterList::new([ViewFilter::Blur { radius_px: 4.0 }]),
+            blend_mode: ViewBlendMode::Multiply,
+            ..ViewCompositingEffects::default()
         };
-        let group = UiCompositingGroup::new(HitRect::new(10.0, 20.0, 80.0, 40.0), effects)
-            .with_children(vec![UiPaintNode::Direct(UiSceneContext {
-                transform: UiAffine2D::IDENTITY,
+        let group = ViewCompositingGroup::new(HitRect::new(10.0, 20.0, 80.0, 40.0), effects)
+            .with_children(vec![ViewPaintNode::Direct(ViewSceneContext {
+                transform: ViewAffine2D::IDENTITY,
                 opacity: 1.0,
                 clip: None,
-                primitive_range: UiPrimitiveRange { start: 2, end: 6 },
+                primitive_range: ViewPrimitiveRange { start: 2, end: 6 },
             })]);
 
         let outsets = effect_outsets_for_effects(&group.effects);
         assert_eq!(
             primitive_range_for_group(&group),
-            Some(UiPrimitiveRange { start: 2, end: 6 })
+            Some(ViewPrimitiveRange { start: 2, end: 6 })
         );
         assert!((outsets.filter_px - 12.0).abs() <= f32::EPSILON);
         assert_eq!(clip_bounds_for_group(&group), None);

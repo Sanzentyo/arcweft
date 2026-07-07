@@ -9,7 +9,7 @@ Current repo inspection showed the missing link is exactly at the product UI/run
 - `RuntimeTextControlLowerer` and `RuntimeActionButtonLowerer` currently pass values, labels, bounds, and actions into renderer controls, but no authored style.
 - `RenderTextInputControl` and `RenderActionButton` currently paint with shared palette colors only.
 - The player frame path is already shared by native/web/Agent through `BundlePresentationSnapshot` and `PlayerFramePlanner`.
-- Existing seq06.13e substrate exposes `UiBoxShadow`, `UiBoxShadowList`, and `UiBoxShadowPassPlan`, so this implementation plans shadows through that path rather than duplicating shadow rendering.
+- Existing seq06.13e substrate exposes `ViewBoxShadow`, `ViewBoxShadowList`, and `ViewBoxShadowPassPlan`, so this implementation plans shadows through that path rather than duplicating shadow rendering.
 
 ## Implemented edits in the patch
 
@@ -43,7 +43,7 @@ Current repo inspection showed the missing link is exactly at the product UI/run
 - Adds renderer-owned `RenderControlStyle` payload.
 - Text controls and action buttons resolve state against `InteractionVisualState`.
 - Fill opacity, text color, border color, focus-ring color, and button hover/pressed/disabled states affect prepared-frame paint/text data.
-- Runtime-control shadows are converted to `UiBoxShadowList` and planned with `UiBoxShadowPassPlan`; plans are exposed as `PreparedFrame.control_shadows` for renderer/smoke validation.
+- Runtime-control shadows are converted to `ViewBoxShadowList` and planned with `ViewBoxShadowPassPlan`; plans are exposed as `PreparedFrame.control_shadows` for renderer/smoke validation.
 
 ## Tests added
 
@@ -58,7 +58,7 @@ Current repo inspection showed the missing link is exactly at the product UI/run
 - `crates/arcweft-render-wgpu/tests/geometry_runtime_control_styles.rs`
   - hover fill/text color affect prepared frame;
   - focused text control uses authored focus ring;
-  - box-shadow reaches `UiBoxShadowPassPlan`.
+  - box-shadow reaches `ViewBoxShadowPassPlan`.
 
 ## Visual smoke artifacts
 

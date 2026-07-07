@@ -61,11 +61,11 @@ pub use ui::{
     ViewRuntimeControlVisualStyle, ViewRuntimeElementStyle, ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation, ViewRuntimeFocusNavigationEdge, ViewRuntimeScrollRegion,
     ViewRuntimeScrollRegionBounds, ViewRuntimeShadow, ViewRuntimeShadowKind,
-    ViewRuntimeStyledControls, ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds,
-    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandler,
-    ViewRuntimeTextControlHandlerRuntime, ViewRuntimeTextControlHandlers,
-    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection, ViewScrollAxis,
-    ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewStyleResource, ViewTextBlockResource,
-    migrated_ui_section_compatibility,
+    ViewRuntimeStyledControls, ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewRuntimeTextBlock,
+    ViewRuntimeTextBlockBounds, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
+    ViewRuntimeTextControlHandler, ViewRuntimeTextControlHandlerRuntime,
+    ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+    ViewScrollAxis, ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewStyleResource,
+    ViewSurfaceResource, ViewTextBlockResource, migrated_ui_section_compatibility,
 };
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};

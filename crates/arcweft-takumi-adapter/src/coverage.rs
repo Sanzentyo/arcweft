@@ -2,7 +2,7 @@
 //!
 //! This module is intentionally a coverage/evidence layer around Takumi lowering:
 //! Takumi remains the CSS cascade/layout/stacking source, and Arcweft still lowers
-//! the resulting scene into renderer-owned `UiScene` data. The types here define
+//! the resulting scene into renderer-owned `ViewScene` data. The types here define
 //! which CSS forms are considered production-supported, represented for product
 //! data only, accepted with diagnostics, or intentionally rejected for the first
 //! seq06.12 cut.
@@ -256,7 +256,7 @@ pub const CSS_COVERAGE_MATRIX: &[CssCoverageMatrixRow] = &[
     CssCoverageMatrixRow::new(
         CssCoverageFeature::BlockLayout,
         CssCoverageStatus::SupportedNow,
-        "Takumi block layout feeds the direct `UiScene` bounds.",
+        "Takumi block layout feeds the direct `ViewScene` bounds.",
     ),
     CssCoverageMatrixRow::new(
         CssCoverageFeature::InlineLayout,
@@ -351,7 +351,7 @@ pub const CSS_COVERAGE_MATRIX: &[CssCoverageMatrixRow] = &[
     CssCoverageMatrixRow::new(
         CssCoverageFeature::BoxShadow,
         CssCoverageStatus::SupportedNow,
-        "Outer CSS box-shadow lowers from Takumi computed BoxShadows into UiBoxShadowList; inset remains a typed renderer diagnostic.",
+        "Outer CSS box-shadow lowers from Takumi computed BoxShadows into ViewBoxShadowList; inset remains a typed renderer diagnostic.",
     ),
 ];
 

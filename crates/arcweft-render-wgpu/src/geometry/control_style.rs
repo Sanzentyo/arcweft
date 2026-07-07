@@ -1,8 +1,8 @@
 use super::{PaintRect, PaintRectRadii, RenderFontFamily};
-use crate::ui_box_shadow::UiBoxShadowPassPlan;
-use crate::ui_scene::{
-    UiBoxShadow, UiBoxShadowCornerRadius, UiBoxShadowList, UiBoxShadowRadii, UiColorRgba8,
-    UiFilter, UiFilterList,
+use crate::view_box_shadow::ViewBoxShadowPassPlan;
+use crate::view_scene::{
+    ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList, ViewBoxShadowRadii,
+    ViewColorRgba8, ViewFilter, ViewFilterList,
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -108,14 +108,14 @@ pub enum RenderControlVisualState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedControlShadow {
     pub target: InteractionTarget,
-    pub plan: UiBoxShadowPassPlan,
+    pub plan: ViewBoxShadowPassPlan,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedControlBackdrop {
     pub target: InteractionTarget,
     pub bounds: HitRect,
-    pub filters: UiFilterList,
+    pub filters: ViewFilterList,
     pub sample_policy: RuntimeControlBackdropSamplePolicy,
 }
 
@@ -123,7 +123,7 @@ pub struct PreparedControlBackdrop {
 pub struct PreparedControlFilter {
     pub target: InteractionTarget,
     pub bounds: HitRect,
-    pub filters: UiFilterList,
+    pub filters: ViewFilterList,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -254,15 +254,15 @@ impl RenderControlVisualStyle {
 }
 
 impl RenderControlShadow {
-    fn ui_box_shadow(self, border_radii: UiBoxShadowRadii) -> UiBoxShadow {
-        let color = UiColorRgba8 {
+    fn view_box_shadow(self, border_radii: ViewBoxShadowRadii) -> ViewBoxShadow {
+        let color = ViewColorRgba8 {
             red: self.color[0],
             green: self.color[1],
             blue: self.color[2],
             alpha: self.color[3],
         };
         match self.kind {
-            RenderControlShadowKind::Outer => UiBoxShadow::outer_with_radii(
+            RenderControlShadowKind::Outer => ViewBoxShadow::outer_with_radii(
                 self.offset_x_px,
                 self.offset_y_px,
                 self.blur_radius_px,
@@ -270,7 +270,7 @@ impl RenderControlShadow {
                 border_radii,
                 color,
             ),
-            RenderControlShadowKind::Inset => UiBoxShadow::inset_with_radii(
+            RenderControlShadowKind::Inset => ViewBoxShadow::inset_with_radii(
                 self.offset_x_px,
                 self.offset_y_px,
                 self.blur_radius_px,
@@ -283,8 +283,8 @@ impl RenderControlShadow {
 }
 
 impl RenderControlFilterList {
-    fn ui_filter_list(&self) -> UiFilterList {
-        UiFilterList::from_filters(
+    fn ui_filter_list(&self) -> ViewFilterList {
+        ViewFilterList::from_filters(
             self.filters
                 .iter()
                 .copied()
@@ -295,17 +295,17 @@ impl RenderControlFilterList {
 }
 
 impl RenderControlFilter {
-    const fn ui_filter(self) -> UiFilter {
+    const fn ui_filter(self) -> ViewFilter {
         match self {
-            Self::Brightness { factor } => UiFilter::Brightness(factor),
-            Self::Contrast { factor } => UiFilter::Contrast(factor),
-            Self::Grayscale { amount } => UiFilter::Grayscale(amount),
-            Self::Saturate { factor } => UiFilter::Saturate(factor),
-            Self::HueRotateDegrees { degrees } => UiFilter::HueRotateDegrees(degrees),
-            Self::Invert { amount } => UiFilter::Invert(amount),
-            Self::Sepia { amount } => UiFilter::Sepia(amount),
-            Self::Opacity { amount } => UiFilter::Opacity(amount),
-            Self::Blur { radius_px } => UiFilter::Blur { radius_px },
+            Self::Brightness { factor } => ViewFilter::Brightness(factor),
+            Self::Contrast { factor } => ViewFilter::Contrast(factor),
+            Self::Grayscale { amount } => ViewFilter::Grayscale(amount),
+            Self::Saturate { factor } => ViewFilter::Saturate(factor),
+            Self::HueRotateDegrees { degrees } => ViewFilter::HueRotateDegrees(degrees),
+            Self::Invert { amount } => ViewFilter::Invert(amount),
+            Self::Sepia { amount } => ViewFilter::Sepia(amount),
+            Self::Opacity { amount } => ViewFilter::Opacity(amount),
+            Self::Blur { radius_px } => ViewFilter::Blur { radius_px },
         }
     }
 }
@@ -451,18 +451,18 @@ pub(super) fn push_control_shadow_plan(
 ) {
     let control_radii = visual.radii();
     let has_control_radii = visual.radius_px.is_some() || visual.radii_px.is_some();
-    let shadows = UiBoxShadowList::new(visual.shadows.iter().copied().map(|shadow| {
+    let shadows = ViewBoxShadowList::new(visual.shadows.iter().copied().map(|shadow| {
         let border_radii = if has_control_radii {
             paint_radii_to_box_shadow(control_radii)
         } else {
-            UiBoxShadowRadii::uniform(shadow.border_radius_px)
+            ViewBoxShadowRadii::uniform(shadow.border_radius_px)
         };
-        shadow.ui_box_shadow(border_radii)
+        shadow.view_box_shadow(border_radii)
     }));
     if shadows.is_empty() {
         return;
     }
-    if let Ok(plan) = UiBoxShadowPassPlan::from_shadows(&shadows, bounds)
+    if let Ok(plan) = ViewBoxShadowPassPlan::from_shadows(&shadows, bounds)
         && !plan.is_empty()
     {
         output.push(PreparedControlShadow {
@@ -472,8 +472,8 @@ pub(super) fn push_control_shadow_plan(
     }
 }
 
-fn paint_radii_to_box_shadow(radii: PaintRectRadii) -> UiBoxShadowRadii {
-    UiBoxShadowRadii::from_corners(
+fn paint_radii_to_box_shadow(radii: PaintRectRadii) -> ViewBoxShadowRadii {
+    ViewBoxShadowRadii::from_corners(
         paint_corner_radius_to_box_shadow(radii.top_left),
         paint_corner_radius_to_box_shadow(radii.top_right),
         paint_corner_radius_to_box_shadow(radii.bottom_right),
@@ -483,8 +483,8 @@ fn paint_radii_to_box_shadow(radii: PaintRectRadii) -> UiBoxShadowRadii {
 
 fn paint_corner_radius_to_box_shadow(
     radius: super::PaintRectCornerRadius,
-) -> UiBoxShadowCornerRadius {
-    UiBoxShadowCornerRadius::new(radius.x_px, radius.y_px)
+) -> ViewBoxShadowCornerRadius {
+    ViewBoxShadowCornerRadius::new(radius.x_px, radius.y_px)
 }
 
 pub(super) fn state_from_interaction(

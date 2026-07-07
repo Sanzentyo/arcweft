@@ -1,19 +1,19 @@
 //! wgpu compositor substrate for seq06.9a UI paint nodes.
 //!
-//! `UiCompositorPlan` is the deterministic, testable pass graph. `UiCompositor`
+//! `ViewCompositorPlan` is the deterministic, testable pass graph. `ViewCompositor`
 //! owns the wgpu pipelines, offscreen texture pool, and callback boundaries that
 //! let the existing renderer draw direct primitive ranges inside a group target.
 
 use crate::renderer::SharedRenderer;
-use crate::ui_blend::{UiBlendPassPlan, UiBlendShaderMode};
-use crate::ui_box_shadow::{UiBoxShadowPassPlan, UiBoxShadowPlanError};
-use crate::ui_clip_path::{UiClipGeometryPlan, UiClipPathPlanError};
-use crate::ui_compositor_uniform::UiCompositorUniform;
-use crate::ui_effects::{UiEffectPass, UiFilterPassPlan, UiTextureExtent};
-use crate::ui_mask::{UiMaskChainPlan, UiMaskChannel, UiMaskImagePlan, UiMaskPlanError};
-use crate::ui_scene::{
-    UiBlendMode, UiBoxShadowKind, UiCompositingGroup, UiFilterList, UiMaskImage, UiPaintNode,
-    UiPrimitiveRange, UiScene, UiSceneContext,
+use crate::view_blend::{ViewBlendPassPlan, ViewBlendShaderMode};
+use crate::view_box_shadow::{ViewBoxShadowPassPlan, ViewBoxShadowPlanError};
+use crate::view_clip_path::{ViewClipGeometryPlan, ViewClipPathPlanError};
+use crate::view_compositor_uniform::ViewCompositorUniform;
+use crate::view_effects::{ViewEffectPass, ViewFilterPassPlan, ViewTextureExtent};
+use crate::view_mask::{ViewMaskChainPlan, ViewMaskChannel, ViewMaskImagePlan, ViewMaskPlanError};
+use crate::view_scene::{
+    ViewBlendMode, ViewBoxShadowKind, ViewCompositingGroup, ViewFilterList, ViewMaskImage,
+    ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
 };
 use arcweft_presentation::hit::HitRect;
 use num_traits::ToPrimitive;
@@ -22,9 +22,9 @@ use wgpu::util::DeviceExt;
 
 /// Pure compositor pass graph for one scene.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiCompositorPlan {
-    root_extent: UiTextureExtent,
-    nodes: Vec<UiCompositorNodePlan>,
+pub struct ViewCompositorPlan {
+    root_extent: ViewTextureExtent,
+    nodes: Vec<ViewCompositorNodePlan>,
     offscreen_target_count: usize,
     shader_pass_count: usize,
     backdrop_copy_count: usize,
@@ -32,32 +32,32 @@ pub struct UiCompositorPlan {
 
 /// Pure per-node plan used by tests and GPU execution.
 #[derive(Clone, Debug, PartialEq)]
-pub enum UiCompositorNodePlan {
+pub enum ViewCompositorNodePlan {
     Direct {
-        primitive_range: UiPrimitiveRange,
+        primitive_range: ViewPrimitiveRange,
     },
     Group {
-        visual_extent: UiTextureExtent,
-        effects: Box<UiGroupEffectPlan>,
-        children: Vec<UiCompositorNodePlan>,
+        visual_extent: ViewTextureExtent,
+        effects: Box<ViewGroupEffectPlan>,
+        children: Vec<ViewCompositorNodePlan>,
     },
 }
 
 /// Effect plans attached to one compositing group.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiGroupEffectPlan {
-    pub box_shadows: Result<UiBoxShadowPassPlan, UiBoxShadowPlanError>,
-    pub filters: UiFilterPassPlan,
-    pub backdrop_filters: UiFilterPassPlan,
-    pub masks: UiMaskChainPlan,
-    pub clip_path: Result<UiClipGeometryPlan, UiClipPathPlanError>,
-    pub blend: Option<UiBlendPassPlan>,
+pub struct ViewGroupEffectPlan {
+    pub box_shadows: Result<ViewBoxShadowPassPlan, ViewBoxShadowPlanError>,
+    pub filters: ViewFilterPassPlan,
+    pub backdrop_filters: ViewFilterPassPlan,
+    pub masks: ViewMaskChainPlan,
+    pub clip_path: Result<ViewClipGeometryPlan, ViewClipPathPlanError>,
+    pub blend: Option<ViewBlendPassPlan>,
     pub requires_offscreen: bool,
 }
 
 /// Frame counters exported by the executor.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct UiCompositorStats {
+pub struct ViewCompositorStats {
     pub direct_ranges: u32,
     pub offscreen_targets: u32,
     pub shader_passes: u32,
@@ -69,10 +69,10 @@ pub struct UiCompositorStats {
 
 /// The target given to direct primitive renderers.
 #[derive(Clone, Copy)]
-pub struct UiCompositorTarget<'a> {
+pub struct ViewCompositorTarget<'a> {
     pub texture: &'a wgpu::Texture,
     pub view: &'a wgpu::TextureView,
-    pub extent: UiTextureExtent,
+    pub extent: ViewTextureExtent,
     pub origin_logical: [f32; 2],
     /// Logical coordinate span represented by the target texture.
     ///
@@ -84,104 +84,104 @@ pub struct UiCompositorTarget<'a> {
 }
 
 /// All host-owned state needed to render one compositor frame.
-pub struct UiCompositorFrame<'a> {
+pub struct ViewCompositorFrame<'a> {
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub final_target: &'a wgpu::TextureView,
-    pub scene: &'a UiScene,
-    pub target_extent: UiTextureExtent,
-    pub direct_renderer: &'a mut dyn UiDirectPrimitiveRenderer,
-    pub mask_textures: &'a mut dyn UiMaskTextureProvider,
+    pub scene: &'a ViewScene,
+    pub target_extent: ViewTextureExtent,
+    pub direct_renderer: &'a mut dyn ViewDirectPrimitiveRenderer,
+    pub mask_textures: &'a mut dyn ViewMaskTextureProvider,
 }
 
 /// Inline backdrop filter request for prepared runtime controls.
-pub(crate) struct UiInlineBackdropFilterFrame<'a> {
+pub(crate) struct ViewInlineBackdropFilterFrame<'a> {
     pub device: &'a wgpu::Device,
     pub encoder: &'a mut wgpu::CommandEncoder,
-    pub source: UiCompositorTarget<'a>,
-    pub target: UiCompositorTarget<'a>,
+    pub source: ViewCompositorTarget<'a>,
+    pub target: ViewCompositorTarget<'a>,
     pub bounds: HitRect,
-    pub filters: &'a UiFilterList,
+    pub filters: &'a ViewFilterList,
     pub device_pixel_ratio: f32,
     pub logical_extent: [f32; 2],
 }
 
 /// Inline foreground filter request for prepared runtime controls.
-pub(crate) struct UiInlineForegroundFilterFrame<'a> {
+pub(crate) struct ViewInlineForegroundFilterFrame<'a> {
     pub device: &'a wgpu::Device,
     pub encoder: &'a mut wgpu::CommandEncoder,
-    pub source: UiCompositorTarget<'a>,
-    pub output: UiCompositorTarget<'a>,
+    pub source: ViewCompositorTarget<'a>,
+    pub output: ViewCompositorTarget<'a>,
     pub bounds: HitRect,
-    pub filters: &'a UiFilterList,
+    pub filters: &'a ViewFilterList,
     pub device_pixel_ratio: f32,
     pub logical_extent: [f32; 2],
 }
 
 /// Inline box-shadow request for prepared runtime controls.
-pub(crate) struct UiInlineBoxShadowFrame<'a> {
+pub(crate) struct ViewInlineBoxShadowFrame<'a> {
     pub device: &'a wgpu::Device,
     pub encoder: &'a mut wgpu::CommandEncoder,
-    pub target: UiCompositorTarget<'a>,
-    pub plan: &'a UiBoxShadowPassPlan,
-    pub kind: UiBoxShadowKind,
+    pub target: ViewCompositorTarget<'a>,
+    pub plan: &'a ViewBoxShadowPassPlan,
+    pub kind: ViewBoxShadowKind,
 }
 
 /// Draws a seq06.9a direct primitive range into the current target.
-pub trait UiDirectPrimitiveRenderer {
+pub trait ViewDirectPrimitiveRenderer {
     fn render_direct_range(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        scene: &UiScene,
-        context: &UiSceneContext,
-        target: UiCompositorTarget<'_>,
-    ) -> Result<(), UiCompositorError>;
+        scene: &ViewScene,
+        context: &ViewSceneContext,
+        target: ViewCompositorTarget<'_>,
+    ) -> Result<(), ViewCompositorError>;
 }
 
 /// Supplies mask textures owned by the host or renderer resource table.
-pub trait UiMaskTextureProvider {
-    fn texture_for<'a>(&'a mut self, image: &UiMaskImage) -> Option<UiMaskTextureView<'a>>;
+pub trait ViewMaskTextureProvider {
+    fn texture_for<'a>(&'a mut self, image: &ViewMaskImage) -> Option<ViewMaskTextureView<'a>>;
 }
 
-pub struct UiMaskTextureView<'a> {
+pub struct ViewMaskTextureView<'a> {
     pub view: &'a wgpu::TextureView,
-    pub channel: UiMaskChannel,
-    pub extent: UiTextureExtent,
+    pub channel: ViewMaskChannel,
+    pub extent: ViewTextureExtent,
 }
 
 /// No-op provider for scenes that do not reference external masks.
 #[derive(Default)]
-pub struct UiNoMaskTextures;
+pub struct ViewNoMaskTextures;
 
 /// wgpu compositor executor.
-pub struct UiCompositor {
+pub struct ViewCompositor {
     format: wgpu::TextureFormat,
-    max_extent: UiTextureExtent,
-    pool: UiRenderTargetPool,
-    pipelines: UiCompositorPipelines,
-    defaults: UiDefaultTextures,
+    max_extent: ViewTextureExtent,
+    pool: ViewRenderTargetPool,
+    pipelines: ViewCompositorPipelines,
+    defaults: ViewDefaultTextures,
 }
 
 #[derive(Debug, Error)]
-pub enum UiCompositorError {
+pub enum ViewCompositorError {
     #[error("compositor texture extent {requested:?} exceeds configured maximum {maximum:?}")]
     ExtentTooLarge {
-        requested: UiTextureExtent,
-        maximum: UiTextureExtent,
+        requested: ViewTextureExtent,
+        maximum: ViewTextureExtent,
     },
     #[error("mask texture is required for {0:?} but no provider returned one")]
-    MissingMaskTexture(UiMaskImage),
+    MissingMaskTexture(ViewMaskImage),
     #[error("blend mode {0:?} has no seq06.9b shader pass")]
-    UnsupportedBlendMode(UiBlendMode),
+    UnsupportedBlendMode(ViewBlendMode),
     #[error("clip-path plan failed: {0}")]
-    ClipPath(#[from] UiClipPathPlanError),
+    ClipPath(#[from] ViewClipPathPlanError),
     #[error("mask plan failed: {0}")]
-    MaskPlan(#[from] UiMaskPlanError),
+    MaskPlan(#[from] ViewMaskPlanError),
     #[error("box-shadow plan failed: {0}")]
-    BoxShadowPlan(#[from] UiBoxShadowPlanError),
+    BoxShadowPlan(#[from] ViewBoxShadowPlanError),
     #[error("unsupported filter `{name}`: {reason}")]
     UnsupportedFilter { name: Box<str>, reason: Box<str> },
     #[error("ui scene primitive range {start}..{end} is not present")]
@@ -200,48 +200,48 @@ pub enum UiCompositorError {
 }
 
 #[derive(Default)]
-struct UiRenderTargetPool {
-    available: Vec<UiOffscreenTarget>,
+struct ViewRenderTargetPool {
+    available: Vec<ViewOffscreenTarget>,
     reused_this_frame: u32,
 }
 
-struct UiOffscreenTarget {
+struct ViewOffscreenTarget {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    extent: UiTextureExtent,
+    extent: ViewTextureExtent,
     format: wgpu::TextureFormat,
 }
 
-struct UiCompositorPipelines {
+struct ViewCompositorPipelines {
     bind_group_layout: wgpu::BindGroupLayout,
     replace_pipeline: wgpu::RenderPipeline,
     over_pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
 }
 
-struct UiDefaultTextures {
-    white: UiStaticTexture,
-    transparent: UiStaticTexture,
+struct ViewDefaultTextures {
+    white: ViewStaticTexture,
+    transparent: ViewStaticTexture,
 }
 
-struct UiStaticTexture {
+struct ViewStaticTexture {
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
 }
 
-struct UiCompositorRenderState<'a> {
+struct ViewCompositorRenderState<'a> {
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
     encoder: &'a mut wgpu::CommandEncoder,
-    scene: &'a UiScene,
-    direct_renderer: &'a mut dyn UiDirectPrimitiveRenderer,
-    mask_textures: &'a mut dyn UiMaskTextureProvider,
-    stats: UiCompositorStats,
+    scene: &'a ViewScene,
+    direct_renderer: &'a mut dyn ViewDirectPrimitiveRenderer,
+    mask_textures: &'a mut dyn ViewMaskTextureProvider,
+    stats: ViewCompositorStats,
 }
 
-impl UiCompositorPlan {
-    pub fn from_scene(scene: &UiScene, device_pixel_ratio: f32) -> Self {
-        let root_extent = UiTextureExtent::from_viewport(
+impl ViewCompositorPlan {
+    pub fn from_scene(scene: &ViewScene, device_pixel_ratio: f32) -> Self {
+        let root_extent = ViewTextureExtent::from_viewport(
             scene.viewport_width(),
             scene.viewport_height(),
             device_pixel_ratio,
@@ -262,11 +262,11 @@ impl UiCompositorPlan {
         plan
     }
 
-    pub const fn root_extent(&self) -> UiTextureExtent {
+    pub const fn root_extent(&self) -> ViewTextureExtent {
         self.root_extent
     }
 
-    pub fn nodes(&self) -> &[UiCompositorNodePlan] {
+    pub fn nodes(&self) -> &[ViewCompositorNodePlan] {
         &self.nodes
     }
 
@@ -297,19 +297,23 @@ impl UiCompositorPlan {
 
 impl SharedRenderer {
     /// Creates a compositor that uses the renderer's target format.
-    pub fn create_ui_compositor(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> UiCompositor {
-        UiCompositor::new(device, queue, self.format())
+    pub fn create_view_compositor(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> ViewCompositor {
+        ViewCompositor::new(device, queue, self.format())
     }
 }
 
-impl UiCompositor {
+impl ViewCompositor {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         Self {
             format,
-            max_extent: UiTextureExtent::MAX,
-            pool: UiRenderTargetPool::default(),
-            pipelines: UiCompositorPipelines::new(device, format),
-            defaults: UiDefaultTextures::new(device, queue),
+            max_extent: ViewTextureExtent::MAX,
+            pool: ViewRenderTargetPool::default(),
+            pipelines: ViewCompositorPipelines::new(device, format),
+            defaults: ViewDefaultTextures::new(device, queue),
         }
     }
 
@@ -317,32 +321,32 @@ impl UiCompositor {
         self.format
     }
 
-    pub const fn max_extent(&self) -> UiTextureExtent {
+    pub const fn max_extent(&self) -> ViewTextureExtent {
         self.max_extent
     }
 
-    pub fn set_max_extent(&mut self, max_extent: UiTextureExtent) {
-        self.max_extent = max_extent.clamped(UiTextureExtent::MAX);
+    pub fn set_max_extent(&mut self, max_extent: ViewTextureExtent) {
+        self.max_extent = max_extent.clamped(ViewTextureExtent::MAX);
     }
 
     pub fn render_scene(
         &mut self,
-        frame: &mut UiCompositorFrame<'_>,
-    ) -> Result<UiCompositorStats, UiCompositorError> {
+        frame: &mut ViewCompositorFrame<'_>,
+    ) -> Result<ViewCompositorStats, ViewCompositorError> {
         self.pool.reused_this_frame = 0;
         let final_target = frame.final_target;
         let root_extent = frame.target_extent.clamped(self.max_extent);
         let root = self
             .pool
             .acquire(frame.device, self.format, root_extent, "arcweft-view-root");
-        let mut state = UiCompositorRenderState {
+        let mut state = ViewCompositorRenderState {
             device: frame.device,
             queue: frame.queue,
             encoder: &mut *frame.encoder,
             scene: frame.scene,
             direct_renderer: &mut *frame.direct_renderer,
             mask_textures: &mut *frame.mask_textures,
-            stats: UiCompositorStats::default(),
+            stats: ViewCompositorStats::default(),
         };
         state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
         clear_target(state.encoder, &root.view);
@@ -363,7 +367,7 @@ impl UiCompositor {
                 backdrop: None,
                 mask: None,
                 output: final_target,
-                uniform: UiCompositorUniform::composite(1.0, UiBlendShaderMode::Normal),
+                uniform: ViewCompositorUniform::composite(1.0, ViewBlendShaderMode::Normal),
                 load: wgpu::LoadOp::Load,
                 blend_over_existing: true,
             },
@@ -377,13 +381,13 @@ impl UiCompositor {
 
     pub(crate) fn render_inline_backdrop_filter(
         &mut self,
-        frame: &mut UiInlineBackdropFilterFrame<'_>,
-    ) -> Result<UiCompositorStats, UiCompositorError> {
+        frame: &mut ViewInlineBackdropFilterFrame<'_>,
+    ) -> Result<ViewCompositorStats, ViewCompositorError> {
         if frame.filters.is_empty() || frame.bounds.width <= 0.0 || frame.bounds.height <= 0.0 {
-            return Ok(UiCompositorStats::default());
+            return Ok(ViewCompositorStats::default());
         }
         let pool_reuses_at_start = self.pool.reused_this_frame;
-        let mut stats = UiCompositorStats::default();
+        let mut stats = ViewCompositorStats::default();
         let mut backdrop = self.pool.acquire(
             frame.device,
             self.format,
@@ -412,7 +416,7 @@ impl UiCompositor {
             frame.encoder,
             &mut stats,
             backdrop,
-            &UiFilterPassPlan::from_filter_list_fixed_extent(
+            &ViewFilterPassPlan::from_filter_list_fixed_extent(
                 frame.filters,
                 frame.target.extent,
                 frame.device_pixel_ratio,
@@ -426,9 +430,9 @@ impl UiCompositor {
                 backdrop: None,
                 mask: None,
                 output: frame.target.view,
-                uniform: UiCompositorUniform::clipped_composite(
+                uniform: ViewCompositorUniform::clipped_composite(
                     1.0,
-                    UiBlendShaderMode::Normal,
+                    ViewBlendShaderMode::Normal,
                     [
                         frame.bounds.x,
                         frame.bounds.y,
@@ -452,13 +456,13 @@ impl UiCompositor {
 
     pub(crate) fn render_inline_foreground_filter(
         &mut self,
-        frame: &mut UiInlineForegroundFilterFrame<'_>,
-    ) -> Result<UiCompositorStats, UiCompositorError> {
+        frame: &mut ViewInlineForegroundFilterFrame<'_>,
+    ) -> Result<ViewCompositorStats, ViewCompositorError> {
         if frame.filters.is_empty() || frame.bounds.width <= 0.0 || frame.bounds.height <= 0.0 {
-            return Ok(UiCompositorStats::default());
+            return Ok(ViewCompositorStats::default());
         }
         let pool_reuses_at_start = self.pool.reused_this_frame;
-        let mut stats = UiCompositorStats::default();
+        let mut stats = ViewCompositorStats::default();
         let mut foreground = self.pool.acquire(
             frame.device,
             self.format,
@@ -486,7 +490,7 @@ impl UiCompositor {
             frame.encoder,
             &mut stats,
             foreground,
-            &UiFilterPassPlan::from_filter_list_fixed_extent(
+            &ViewFilterPassPlan::from_filter_list_fixed_extent(
                 frame.filters,
                 frame.source.extent,
                 frame.device_pixel_ratio,
@@ -500,9 +504,9 @@ impl UiCompositor {
                 backdrop: None,
                 mask: None,
                 output: frame.output.view,
-                uniform: UiCompositorUniform::clipped_composite(
+                uniform: ViewCompositorUniform::clipped_composite(
                     1.0,
-                    UiBlendShaderMode::Normal,
+                    ViewBlendShaderMode::Normal,
                     [
                         frame.bounds.x,
                         frame.bounds.y,
@@ -526,12 +530,12 @@ impl UiCompositor {
 
     pub(crate) fn render_inline_box_shadow(
         &mut self,
-        frame: &mut UiInlineBoxShadowFrame<'_>,
-    ) -> UiCompositorStats {
+        frame: &mut ViewInlineBoxShadowFrame<'_>,
+    ) -> ViewCompositorStats {
         if frame.plan.is_empty() {
-            return UiCompositorStats::default();
+            return ViewCompositorStats::default();
         }
-        let mut stats = UiCompositorStats::default();
+        let mut stats = ViewCompositorStats::default();
         for pass in frame.plan.passes_for_kind(frame.kind) {
             self.run_shader_pass(
                 frame.device,
@@ -541,7 +545,7 @@ impl UiCompositor {
                     backdrop: None,
                     mask: None,
                     output: frame.target.view,
-                    uniform: UiCompositorUniform::box_shadow(
+                    uniform: ViewCompositorUniform::box_shadow(
                         pass,
                         frame.target.origin_logical,
                         frame.target.logical_extent,
@@ -571,7 +575,7 @@ impl UiCompositor {
                 backdrop: None,
                 mask: None,
                 output,
-                uniform: UiCompositorUniform::composite(1.0, UiBlendShaderMode::Normal),
+                uniform: ViewCompositorUniform::composite(1.0, ViewBlendShaderMode::Normal),
                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                 blend_over_existing: false,
             },
@@ -580,12 +584,12 @@ impl UiCompositor {
 
     fn render_node(
         &mut self,
-        state: &mut UiCompositorRenderState<'_>,
-        node: &UiPaintNode,
-        target: UiCompositorTarget<'_>,
-    ) -> Result<(), UiCompositorError> {
+        state: &mut ViewCompositorRenderState<'_>,
+        node: &ViewPaintNode,
+        target: ViewCompositorTarget<'_>,
+    ) -> Result<(), ViewCompositorError> {
         match node {
-            UiPaintNode::Direct(context) => {
+            ViewPaintNode::Direct(context) => {
                 state.stats.direct_ranges = state.stats.direct_ranges.saturating_add(1);
                 state.direct_renderer.render_direct_range(
                     state.device,
@@ -596,7 +600,7 @@ impl UiCompositor {
                     target,
                 )
             }
-            UiPaintNode::Group(group) => self.render_group(state, group, target),
+            ViewPaintNode::Group(group) => self.render_group(state, group, target),
         }
     }
 
@@ -606,13 +610,13 @@ impl UiCompositor {
     )]
     fn render_group(
         &mut self,
-        state: &mut UiCompositorRenderState<'_>,
-        group: &UiCompositingGroup,
-        parent_target: UiCompositorTarget<'_>,
-    ) -> Result<(), UiCompositorError> {
+        state: &mut ViewCompositorRenderState<'_>,
+        group: &ViewCompositingGroup,
+        parent_target: ViewCompositorTarget<'_>,
+    ) -> Result<(), ViewCompositorError> {
         let visual_bounds = group.visual_bounds();
-        let group_extent =
-            UiTextureExtent::from_logical_bounds(visual_bounds, 1.0, 0.0).bucketed(self.max_extent);
+        let group_extent = ViewTextureExtent::from_logical_bounds(visual_bounds, 1.0, 0.0)
+            .bucketed(self.max_extent);
         let mut group_target = self.pool.acquire(
             state.device,
             self.format,
@@ -623,13 +627,13 @@ impl UiCompositor {
         clear_target(state.encoder, &group_target.view);
 
         let box_shadow_plan =
-            UiBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds)?;
+            ViewBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds)?;
         self.render_box_shadows(
             state,
             &group_target,
             group,
             &box_shadow_plan,
-            UiBoxShadowKind::Outer,
+            ViewBoxShadowKind::Outer,
         );
 
         for child in &group.children {
@@ -648,13 +652,13 @@ impl UiCompositor {
             &group_target,
             group,
             &box_shadow_plan,
-            UiBoxShadowKind::Inset,
+            ViewBoxShadowKind::Inset,
         );
 
         group_target = self.apply_filter_plan(
             state,
             group_target,
-            &UiFilterPassPlan::from_filter_list(&group.effects.filters, group_extent, 1.0),
+            &ViewFilterPassPlan::from_filter_list(&group.effects.filters, group_extent, 1.0),
         )?;
         group_target = self.apply_clip_plan(state, group_target, group)?;
         group_target = self.apply_mask_plan(state, group_target, group)?;
@@ -687,7 +691,7 @@ impl UiCompositor {
             backdrop = self.apply_filter_plan(
                 state,
                 backdrop,
-                &UiFilterPassPlan::from_filter_list(
+                &ViewFilterPassPlan::from_filter_list(
                     &group.effects.backdrop_filters,
                     parent_target.extent,
                     1.0,
@@ -696,8 +700,8 @@ impl UiCompositor {
             backdrop_target = Some(backdrop);
         }
 
-        let blend = UiBlendPassPlan::from_mode(group.effects.blend_mode).ok_or(
-            UiCompositorError::UnsupportedBlendMode(group.effects.blend_mode),
+        let blend = ViewBlendPassPlan::from_mode(group.effects.blend_mode).ok_or(
+            ViewCompositorError::UnsupportedBlendMode(group.effects.blend_mode),
         )?;
         self.run_shader_pass(
             state.device,
@@ -707,7 +711,7 @@ impl UiCompositor {
                 backdrop: backdrop_target.as_ref().map(|target| &target.view),
                 mask: None,
                 output: parent_target.view,
-                uniform: UiCompositorUniform::composite(group.effects.opacity, blend.shader_mode),
+                uniform: ViewCompositorUniform::composite(group.effects.opacity, blend.shader_mode),
                 load: wgpu::LoadOp::Load,
                 blend_over_existing: !blend.samples_backdrop,
             },
@@ -723,11 +727,11 @@ impl UiCompositor {
 
     fn render_box_shadows(
         &mut self,
-        state: &mut UiCompositorRenderState<'_>,
-        target: &UiOffscreenTarget,
-        group: &UiCompositingGroup,
-        plan: &UiBoxShadowPassPlan,
-        kind: UiBoxShadowKind,
+        state: &mut ViewCompositorRenderState<'_>,
+        target: &ViewOffscreenTarget,
+        group: &ViewCompositingGroup,
+        plan: &ViewBoxShadowPassPlan,
+        kind: ViewBoxShadowKind,
     ) {
         let visual_bounds = group.visual_bounds();
         let target = target.as_target(
@@ -743,7 +747,7 @@ impl UiCompositor {
                     backdrop: None,
                     mask: None,
                     output: target.view,
-                    uniform: UiCompositorUniform::box_shadow(
+                    uniform: ViewCompositorUniform::box_shadow(
                         pass,
                         target.origin_logical,
                         target.logical_extent,
@@ -759,10 +763,10 @@ impl UiCompositor {
 
     fn apply_filter_plan(
         &mut self,
-        state: &mut UiCompositorRenderState<'_>,
-        source: UiOffscreenTarget,
-        plan: &UiFilterPassPlan,
-    ) -> Result<UiOffscreenTarget, UiCompositorError> {
+        state: &mut ViewCompositorRenderState<'_>,
+        source: ViewOffscreenTarget,
+        plan: &ViewFilterPassPlan,
+    ) -> Result<ViewOffscreenTarget, ViewCompositorError> {
         self.apply_filter_plan_to_target(
             state.device,
             state.encoder,
@@ -776,17 +780,17 @@ impl UiCompositor {
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        stats: &mut UiCompositorStats,
-        mut source: UiOffscreenTarget,
-        plan: &UiFilterPassPlan,
-    ) -> Result<UiOffscreenTarget, UiCompositorError> {
+        stats: &mut ViewCompositorStats,
+        mut source: ViewOffscreenTarget,
+        plan: &ViewFilterPassPlan,
+    ) -> Result<ViewOffscreenTarget, ViewCompositorError> {
         for pass in plan.passes() {
             let output_extent = match pass {
-                UiEffectPass::ColorMatrix(_) => source.extent,
-                UiEffectPass::Blur(plan) => plan.output_extent,
-                UiEffectPass::DropShadow(plan) => plan.shadow_extent,
-                UiEffectPass::Unsupported { name, reason } => {
-                    return Err(UiCompositorError::UnsupportedFilter {
+                ViewEffectPass::ColorMatrix(_) => source.extent,
+                ViewEffectPass::Blur(plan) => plan.output_extent,
+                ViewEffectPass::DropShadow(plan) => plan.shadow_extent,
+                ViewEffectPass::Unsupported { name, reason } => {
+                    return Err(ViewCompositorError::UnsupportedFilter {
                         name: name.clone(),
                         reason: reason.clone(),
                     });
@@ -800,18 +804,18 @@ impl UiCompositor {
             );
             stats.offscreen_targets = stats.offscreen_targets.saturating_add(1);
             let uniform = match pass {
-                UiEffectPass::ColorMatrix(matrix) => UiCompositorUniform::color_matrix(*matrix),
-                UiEffectPass::Blur(plan) => {
-                    UiCompositorUniform::blur(plan.direction, plan.radius_px, source.extent)
+                ViewEffectPass::ColorMatrix(matrix) => ViewCompositorUniform::color_matrix(*matrix),
+                ViewEffectPass::Blur(plan) => {
+                    ViewCompositorUniform::blur(plan.direction, plan.radius_px, source.extent)
                 }
-                UiEffectPass::DropShadow(plan) => UiCompositorUniform::drop_shadow(
+                ViewEffectPass::DropShadow(plan) => ViewCompositorUniform::drop_shadow(
                     plan.offset_x_px,
                     plan.offset_y_px,
                     plan.blur_radius_px,
                     plan.tint,
                     source.extent,
                 ),
-                UiEffectPass::Unsupported { .. } => unreachable!(),
+                ViewEffectPass::Unsupported { .. } => unreachable!(),
             };
             self.run_shader_pass(
                 device,
@@ -835,12 +839,12 @@ impl UiCompositor {
 
     fn apply_clip_plan(
         &mut self,
-        state: &mut UiCompositorRenderState<'_>,
-        source: UiOffscreenTarget,
-        group: &UiCompositingGroup,
-    ) -> Result<UiOffscreenTarget, UiCompositorError> {
+        state: &mut ViewCompositorRenderState<'_>,
+        source: ViewOffscreenTarget,
+        group: &ViewCompositingGroup,
+    ) -> Result<ViewOffscreenTarget, ViewCompositorError> {
         let plan =
-            UiClipGeometryPlan::from_clip_path(group.effects.clip_path.as_deref(), group.bounds)?;
+            ViewClipGeometryPlan::from_clip_path(group.effects.clip_path.as_deref(), group.bounds)?;
         if !plan.requires_geometry_pass() {
             return Ok(source);
         }
@@ -859,7 +863,7 @@ impl UiCompositor {
                 backdrop: None,
                 mask: None,
                 output: &output.view,
-                uniform: UiCompositorUniform::clip(
+                uniform: ViewCompositorUniform::clip(
                     &plan,
                     logical_extent_from_texture(source.extent),
                     [visual_bounds.x, visual_bounds.y],
@@ -877,11 +881,11 @@ impl UiCompositor {
 
     fn apply_mask_plan(
         &mut self,
-        state: &mut UiCompositorRenderState<'_>,
-        mut source: UiOffscreenTarget,
-        group: &UiCompositingGroup,
-    ) -> Result<UiOffscreenTarget, UiCompositorError> {
-        let mask_plan = UiMaskChainPlan::from_masks(&group.effects.masks, UiMaskChannel::Alpha);
+        state: &mut ViewCompositorRenderState<'_>,
+        mut source: ViewOffscreenTarget,
+        group: &ViewCompositingGroup,
+    ) -> Result<ViewOffscreenTarget, ViewCompositorError> {
+        let mask_plan = ViewMaskChainPlan::from_masks(&group.effects.masks, ViewMaskChannel::Alpha);
         for pass in mask_plan.passes() {
             let output = self.pool.acquire(
                 state.device,
@@ -890,31 +894,36 @@ impl UiCompositor {
                 "arcweft-view-mask-pass",
             );
             let (mask_view, mask_channel, mask_extent) = match &pass.image {
-                UiMaskImagePlan::None => (
+                ViewMaskImagePlan::None => (
                     Some(&self.defaults.white.view),
                     pass.channel,
-                    UiTextureExtent::new(1, 1),
+                    ViewTextureExtent::new(1, 1),
                 ),
-                UiMaskImagePlan::Texture { .. } => {
+                ViewMaskImagePlan::Texture { .. } => {
                     let image = &group.effects.masks[pass.mask_index].image;
                     let mask = state
                         .mask_textures
                         .texture_for(image)
-                        .ok_or_else(|| UiCompositorError::MissingMaskTexture(image.clone()))?;
+                        .ok_or_else(|| ViewCompositorError::MissingMaskTexture(image.clone()))?;
                     (Some(mask.view), mask.channel, mask.extent)
                 }
-                UiMaskImagePlan::Gradient(_) => (None, pass.channel, source.extent),
-                UiMaskImagePlan::Element(_) | UiMaskImagePlan::Unsupported(_) => {
-                    pass.sampling_plan(source.extent, UiTextureExtent::new(1, 1))?;
+                ViewMaskImagePlan::Gradient(_) => (None, pass.channel, source.extent),
+                ViewMaskImagePlan::Element(_) | ViewMaskImagePlan::Unsupported(_) => {
+                    pass.sampling_plan(source.extent, ViewTextureExtent::new(1, 1))?;
                     unreachable!("unsupported mask image must return before sampling")
                 }
             };
             let sampling = pass.sampling_plan(source.extent, mask_extent)?;
             let gradient = pass.gradient_plan(sampling.tile_size_px)?;
             let uniform = if let Some(gradient) = gradient.as_ref() {
-                UiCompositorUniform::gradient_mask(mask_channel, sampling, gradient, source.extent)
+                ViewCompositorUniform::gradient_mask(
+                    mask_channel,
+                    sampling,
+                    gradient,
+                    source.extent,
+                )
             } else {
-                UiCompositorUniform::mask(mask_channel, sampling, source.extent)
+                ViewCompositorUniform::mask(mask_channel, sampling, source.extent)
             };
             self.run_shader_pass(
                 state.device,
@@ -1005,8 +1014,8 @@ impl UiCompositor {
     }
 }
 
-impl UiMaskTextureProvider for UiNoMaskTextures {
-    fn texture_for<'a>(&'a mut self, _image: &UiMaskImage) -> Option<UiMaskTextureView<'a>> {
+impl ViewMaskTextureProvider for ViewNoMaskTextures {
+    fn texture_for<'a>(&'a mut self, _image: &ViewMaskImage) -> Option<ViewMaskTextureView<'a>> {
         None
     }
 }
@@ -1016,19 +1025,19 @@ struct ShaderPassInputs<'a> {
     backdrop: Option<&'a wgpu::TextureView>,
     mask: Option<&'a wgpu::TextureView>,
     output: &'a wgpu::TextureView,
-    uniform: UiCompositorUniform,
+    uniform: ViewCompositorUniform,
     load: wgpu::LoadOp<wgpu::Color>,
     blend_over_existing: bool,
 }
 
-impl UiRenderTargetPool {
+impl ViewRenderTargetPool {
     fn acquire(
         &mut self,
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        extent: UiTextureExtent,
+        extent: ViewTextureExtent,
         label: &'static str,
-    ) -> UiOffscreenTarget {
+    ) -> ViewOffscreenTarget {
         if let Some(index) = self
             .available
             .iter()
@@ -1037,19 +1046,19 @@ impl UiRenderTargetPool {
             self.reused_this_frame = self.reused_this_frame.saturating_add(1);
             return self.available.swap_remove(index);
         }
-        UiOffscreenTarget::new(device, format, extent, label)
+        ViewOffscreenTarget::new(device, format, extent, label)
     }
 
-    fn release(&mut self, target: UiOffscreenTarget) {
+    fn release(&mut self, target: ViewOffscreenTarget) {
         self.available.push(target);
     }
 }
 
-impl UiOffscreenTarget {
+impl ViewOffscreenTarget {
     fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        extent: UiTextureExtent,
+        extent: ViewTextureExtent,
         label: &'static str,
     ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1078,8 +1087,8 @@ impl UiOffscreenTarget {
         &self,
         origin_logical: [f32; 2],
         logical_extent: [f32; 2],
-    ) -> UiCompositorTarget<'_> {
-        UiCompositorTarget {
+    ) -> ViewCompositorTarget<'_> {
+        ViewCompositorTarget {
             texture: &self.texture,
             view: &self.view,
             extent: self.extent,
@@ -1089,11 +1098,11 @@ impl UiOffscreenTarget {
     }
 }
 
-impl UiCompositorPipelines {
+impl ViewCompositorPipelines {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("arcweft-view-compositor-shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("ui_shaders/compositor.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("view_shaders/compositor.wgsl").into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("arcweft-view-compositor-bind-group-layout"),
@@ -1150,16 +1159,16 @@ impl UiCompositorPipelines {
     }
 }
 
-impl UiDefaultTextures {
+impl ViewDefaultTextures {
     fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         Self {
-            white: UiStaticTexture::new(
+            white: ViewStaticTexture::new(
                 device,
                 queue,
                 [255, 255, 255, 255],
                 "arcweft-view-white-mask",
             ),
-            transparent: UiStaticTexture::new(
+            transparent: ViewStaticTexture::new(
                 device,
                 queue,
                 [0, 0, 0, 0],
@@ -1169,7 +1178,7 @@ impl UiDefaultTextures {
     }
 }
 
-impl UiStaticTexture {
+impl ViewStaticTexture {
     fn new(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4], label: &'static str) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
@@ -1212,38 +1221,38 @@ impl UiStaticTexture {
     }
 }
 
-fn plan_node(node: &UiPaintNode, device_pixel_ratio: f32) -> UiCompositorNodePlan {
+fn plan_node(node: &ViewPaintNode, device_pixel_ratio: f32) -> ViewCompositorNodePlan {
     match node {
-        UiPaintNode::Direct(context) => UiCompositorNodePlan::Direct {
+        ViewPaintNode::Direct(context) => ViewCompositorNodePlan::Direct {
             primitive_range: context.primitive_range,
         },
-        UiPaintNode::Group(group) => {
-            let visual_extent = UiTextureExtent::from_logical_bounds(
+        ViewPaintNode::Group(group) => {
+            let visual_extent = ViewTextureExtent::from_logical_bounds(
                 group.visual_bounds(),
                 device_pixel_ratio,
                 0.0,
             );
-            let filters = UiFilterPassPlan::from_filter_list(
+            let filters = ViewFilterPassPlan::from_filter_list(
                 &group.effects.filters,
                 visual_extent,
                 device_pixel_ratio,
             );
-            let backdrop_filters = UiFilterPassPlan::from_filter_list(
+            let backdrop_filters = ViewFilterPassPlan::from_filter_list(
                 &group.effects.backdrop_filters,
                 visual_extent,
                 device_pixel_ratio,
             );
-            let masks = UiMaskChainPlan::from_masks(&group.effects.masks, UiMaskChannel::Alpha);
+            let masks = ViewMaskChainPlan::from_masks(&group.effects.masks, ViewMaskChannel::Alpha);
             let box_shadows =
-                UiBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds);
-            let clip_path = UiClipGeometryPlan::from_clip_path(
+                ViewBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds);
+            let clip_path = ViewClipGeometryPlan::from_clip_path(
                 group.effects.clip_path.as_deref(),
                 group.bounds,
             );
-            let blend = UiBlendPassPlan::from_mode(group.effects.blend_mode);
-            UiCompositorNodePlan::Group {
+            let blend = ViewBlendPassPlan::from_mode(group.effects.blend_mode);
+            ViewCompositorNodePlan::Group {
                 visual_extent,
-                effects: Box::new(UiGroupEffectPlan {
+                effects: Box::new(ViewGroupEffectPlan {
                     box_shadows,
                     filters,
                     backdrop_filters,
@@ -1269,10 +1278,10 @@ struct PlanCounters {
     backdrop_copies: usize,
 }
 
-fn count_node(node: &UiCompositorNodePlan) -> PlanCounters {
+fn count_node(node: &ViewCompositorNodePlan) -> PlanCounters {
     match node {
-        UiCompositorNodePlan::Direct { .. } => PlanCounters::default(),
-        UiCompositorNodePlan::Group {
+        ViewCompositorNodePlan::Direct { .. } => PlanCounters::default(),
+        ViewCompositorNodePlan::Group {
             effects, children, ..
         } => {
             let mut counters = PlanCounters {
@@ -1288,7 +1297,7 @@ fn count_node(node: &UiCompositorNodePlan) -> PlanCounters {
                         effects
                             .clip_path
                             .as_ref()
-                            .is_ok_and(UiClipGeometryPlan::requires_geometry_pass),
+                            .is_ok_and(ViewClipGeometryPlan::requires_geometry_pass),
                     )
                     + usize::from(effects.blend.is_some()),
                 backdrop_copies: usize::from(!effects.backdrop_filters.is_empty()),
@@ -1376,7 +1385,7 @@ fn clear_target(encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) 
     });
 }
 
-fn extent3d(extent: UiTextureExtent) -> wgpu::Extent3d {
+fn extent3d(extent: ViewTextureExtent) -> wgpu::Extent3d {
     wgpu::Extent3d {
         width: extent.width,
         height: extent.height,
@@ -1384,7 +1393,7 @@ fn extent3d(extent: UiTextureExtent) -> wgpu::Extent3d {
     }
 }
 
-fn logical_extent_from_texture(extent: UiTextureExtent) -> [f32; 2] {
+fn logical_extent_from_texture(extent: ViewTextureExtent) -> [f32; 2] {
     [
         extent.width.max(1).to_f32().unwrap_or(f32::MAX),
         extent.height.max(1).to_f32().unwrap_or(f32::MAX),

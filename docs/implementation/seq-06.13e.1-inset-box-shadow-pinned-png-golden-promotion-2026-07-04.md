@@ -13,7 +13,7 @@ required candidate PNG and observe JSON.
 Seq06.13e already implemented typed inset planning, compositor ordering, WGSL
 kind-flag rendering, Takumi adapter coverage, and an ignored GPU smoke test for a
 rounded inset card plus mixed outer+inset card. This package does not redesign
-`UiBoxShadow`, `UiBoxShadowPassPlan`, Takumi lowering, or `PASS_BOX_SHADOW`.
+`ViewBoxShadow`, `ViewBoxShadowPassPlan`, Takumi lowering, or `PASS_BOX_SHADOW`.
 
 ## Added review contract
 
@@ -30,7 +30,7 @@ rounded inset card plus mixed outer+inset card. This package does not redesign
   compositor fixture into the packet candidate PNG and observe JSON paths.
 - `tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs` validates the
   policy/source documentation contract outside the pinned environment.
-- `crates/arcweft-render-wgpu/tests/ui_box_shadow_exact_png_golden.rs` adds
+- `crates/arcweft-render-wgpu/tests/view_box_shadow_exact_png_golden.rs` adds
   ignored Tier 2 packet-completeness tests for native/Web exact PNG evidence and
   a non-ignored route-policy test.
 
@@ -85,10 +85,10 @@ Validated in the 2026-07-04 apply checkout:
 
 - `cargo fmt --all -- --check`
 - `cargo +nightly -Zscript tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs --root .`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden --all-features -- --nocapture`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden seq06_13e1_inset_shadow_native_exact_png_packet_is_complete --all-features -- --ignored --exact --nocapture`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden seq06_13e1_inset_shadow_web_exact_png_packet_is_complete --all-features -- --ignored --exact --nocapture`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden --all-features -- --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_native_exact_png_packet_is_complete --all-features -- --ignored --exact --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_web_exact_png_packet_is_complete --all-features -- --ignored --exact --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture`
 - `cargo +nightly -Zscript tools/collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir target/seq06.13e.1-inset-box-shadow-golden-dry-run --mode both`
 - `just seq06-13e1-inset-shadow-policy`
 - `cargo clippy --workspace --all-targets --all-features`
@@ -164,10 +164,10 @@ Additional local validation after adding the native capture harness:
 - `just seq06-13e1-inset-shadow-native-capture target\seq06.13e.1-inset-box-shadow-just-native-capture-local`
 - `ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED=1 ARW_SEQ06_13E1_INSET_SHADOW_NATIVE_BACKEND=wgpu_offscreen_compositor just seq06-13e1-inset-shadow-pinned-native-golden target\seq06.13e.1-inset-box-shadow-final-native-local`
 - `ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED=1 ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED=1 ARW_SEQ06_13E1_INSET_SHADOW_NATIVE_BACKEND=wgpu_offscreen_compositor cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir target\seq06.13e.1-inset-box-shadow-golden --mode native --run`
-- `ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED=1 ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED=1 cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden seq06_13e1_inset_shadow_native_exact_png_packet_is_complete --all-features -- --ignored --exact --nocapture`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture`
+- `ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED=1 ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED=1 cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_native_exact_png_packet_is_complete --all-features -- --ignored --exact --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture`
 - `cargo +nightly -Zscript tools\source-gates\seq06_13e1_inset_shadow_exact_golden_policy.rs --root .`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden seq06_13e1_inset_shadow_policy_pins_typed_compositor_route --all-features -- --exact`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_policy_pins_typed_compositor_route --all-features -- --exact`
 - `imq image fixtures\visual-smoke-goldens\seq06.13e.1-inset-box-shadow\native\seq06_13e1_inset_box_shadow.png target\seq06.13e.1-inset-box-shadow-golden\native\seq06_13e1_inset_box_shadow.candidate.png --metrics psnr,ssim,mse,mae,maxae --format json`
 - `cargo clippy --workspace --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit-seq06-13e1-native-capture`

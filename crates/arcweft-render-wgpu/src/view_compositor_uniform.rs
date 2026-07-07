@@ -1,14 +1,16 @@
 //! Packed uniform contract for the shared UI compositor WGSL shader.
 
-use crate::ui_blend::UiBlendShaderMode;
-use crate::ui_box_shadow::UiBoxShadowPass;
-use crate::ui_clip_path::{MAX_CLIP_PATH_EDGES, UiClipGeometryPlan, UiClipPathEdge, UiClipVertex};
-use crate::ui_effects::{UiBlurDirection, UiColorMatrix, UiTextureExtent};
-use crate::ui_mask::{
-    MAX_MASK_GRADIENT_STOPS, UiMaskAxisRepeat, UiMaskChannel, UiMaskGradientKind,
-    UiMaskGradientPlan, UiMaskSamplingPlan,
+use crate::view_blend::ViewBlendShaderMode;
+use crate::view_box_shadow::ViewBoxShadowPass;
+use crate::view_clip_path::{
+    MAX_CLIP_PATH_EDGES, ViewClipGeometryPlan, ViewClipPathEdge, ViewClipVertex,
 };
-use crate::ui_scene::{UiBoxShadowKind, UiBoxShadowRadii, UiColorRgba8, UiFillRule};
+use crate::view_effects::{ViewBlurDirection, ViewColorMatrix, ViewTextureExtent};
+use crate::view_mask::{
+    MAX_MASK_GRADIENT_STOPS, ViewMaskAxisRepeat, ViewMaskChannel, ViewMaskGradientKind,
+    ViewMaskGradientPlan, ViewMaskSamplingPlan,
+};
+use crate::view_scene::{ViewBoxShadowKind, ViewBoxShadowRadii, ViewColorRgba8, ViewFillRule};
 use bytemuck::{Pod, Zeroable};
 use num_traits::ToPrimitive;
 
@@ -25,7 +27,7 @@ const PASS_CLIPPED_COMPOSITE: u32 = 9;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-pub(crate) struct UiCompositorUniform {
+pub(crate) struct ViewCompositorUniform {
     matrix: [[f32; 4]; 4],
     offset: [f32; 4],
     params0: [f32; 4],
@@ -37,22 +39,22 @@ pub(crate) struct UiCompositorUniform {
     _padding: [u32; 3],
 }
 
-impl UiCompositorUniform {
-    pub(crate) fn composite(opacity: f32, blend: UiBlendShaderMode) -> Self {
+impl ViewCompositorUniform {
+    pub(crate) fn composite(opacity: f32, blend: ViewBlendShaderMode) -> Self {
         Self {
             params0: [opacity.clamp(0.0, 1.0), shader_mode_to_f32(blend), 0.0, 0.0],
-            pass_kind: if blend == UiBlendShaderMode::Normal {
+            pass_kind: if blend == ViewBlendShaderMode::Normal {
                 PASS_COMPOSITE
             } else {
                 PASS_BLEND
             },
-            ..Self::from_matrix(UiColorMatrix::identity())
+            ..Self::from_matrix(ViewColorMatrix::identity())
         }
     }
 
     pub(crate) fn clipped_composite(
         opacity: f32,
-        blend: UiBlendShaderMode,
+        blend: ViewBlendShaderMode,
         rect_logical: [f32; 4],
         target_logical_extent: [f32; 2],
     ) -> Self {
@@ -65,16 +67,16 @@ impl UiCompositorUniform {
                 0.0,
                 0.0,
             ],
-            pass_kind: if blend == UiBlendShaderMode::Normal {
+            pass_kind: if blend == ViewBlendShaderMode::Normal {
                 PASS_CLIPPED_COMPOSITE
             } else {
                 PASS_BLEND
             },
-            ..Self::from_matrix(UiColorMatrix::identity())
+            ..Self::from_matrix(ViewColorMatrix::identity())
         }
     }
 
-    pub(crate) fn color_matrix(matrix: UiColorMatrix) -> Self {
+    pub(crate) fn color_matrix(matrix: ViewColorMatrix) -> Self {
         Self {
             pass_kind: PASS_COLOR_MATRIX,
             ..Self::from_matrix(matrix)
@@ -82,18 +84,18 @@ impl UiCompositorUniform {
     }
 
     pub(crate) fn blur(
-        direction: UiBlurDirection,
+        direction: ViewBlurDirection,
         radius_px: f32,
-        extent: UiTextureExtent,
+        extent: ViewTextureExtent,
     ) -> Self {
         let (step_x, step_y) = match direction {
-            UiBlurDirection::Horizontal => (1.0 / dimension_to_f32(extent.width), 0.0),
-            UiBlurDirection::Vertical => (0.0, 1.0 / dimension_to_f32(extent.height)),
+            ViewBlurDirection::Horizontal => (1.0 / dimension_to_f32(extent.width), 0.0),
+            ViewBlurDirection::Vertical => (0.0, 1.0 / dimension_to_f32(extent.height)),
         };
         Self {
             params0: [step_x, step_y, radius_px.max(0.0), 0.0],
             pass_kind: PASS_BLUR,
-            ..Self::from_matrix(UiColorMatrix::identity())
+            ..Self::from_matrix(ViewColorMatrix::identity())
         }
     }
 
@@ -101,8 +103,8 @@ impl UiCompositorUniform {
         horizontal_offset_px: f32,
         vertical_offset_px: f32,
         blur_radius_px: f32,
-        tint: UiColorRgba8,
-        extent: UiTextureExtent,
+        tint: ViewColorRgba8,
+        extent: ViewTextureExtent,
     ) -> Self {
         Self {
             params0: [
@@ -113,14 +115,14 @@ impl UiCompositorUniform {
             ],
             params1: rgba_to_unit(tint),
             pass_kind: PASS_DROP_SHADOW,
-            ..Self::from_matrix(UiColorMatrix::identity())
+            ..Self::from_matrix(ViewColorMatrix::identity())
         }
     }
 
     pub(crate) fn mask(
-        channel: UiMaskChannel,
-        sampling: UiMaskSamplingPlan,
-        source_extent: UiTextureExtent,
+        channel: ViewMaskChannel,
+        sampling: ViewMaskSamplingPlan,
+        source_extent: ViewTextureExtent,
     ) -> Self {
         Self {
             params0: [
@@ -148,15 +150,15 @@ impl UiCompositorUniform {
                 0.0,
             ],
             pass_kind: PASS_MASK,
-            ..Self::from_matrix(UiColorMatrix::identity())
+            ..Self::from_matrix(ViewColorMatrix::identity())
         }
     }
 
     pub(crate) fn gradient_mask(
-        channel: UiMaskChannel,
-        sampling: UiMaskSamplingPlan,
-        gradient: &UiMaskGradientPlan,
-        source_extent: UiTextureExtent,
+        channel: ViewMaskChannel,
+        sampling: ViewMaskSamplingPlan,
+        gradient: &ViewMaskGradientPlan,
+        source_extent: ViewTextureExtent,
     ) -> Self {
         let mut uniform = Self::mask(channel, sampling, source_extent);
         uniform.pass_kind = PASS_MASK_GRADIENT;
@@ -175,7 +177,7 @@ impl UiCompositorUniform {
     }
 
     pub(crate) fn clip(
-        plan: &UiClipGeometryPlan,
+        plan: &ViewClipGeometryPlan,
         logical_extent: [f32; 2],
         origin_logical: [f32; 2],
     ) -> Self {
@@ -188,16 +190,16 @@ impl UiCompositorUniform {
                 0.0,
             ],
             pass_kind: PASS_CLIP,
-            ..Self::from_matrix(UiColorMatrix::identity())
+            ..Self::from_matrix(ViewColorMatrix::identity())
         };
         match plan {
-            UiClipGeometryPlan::None => {}
-            UiClipGeometryPlan::Inset { rect, radii_px } => {
+            ViewClipGeometryPlan::None => {}
+            ViewClipGeometryPlan::Inset { rect, radii_px } => {
                 uniform.params0 = [1.0, 0.0, 0.0, 0.0];
                 uniform.matrix[0] = [rect.x, rect.y, rect.width, rect.height];
                 uniform.matrix[1] = *radii_px;
             }
-            UiClipGeometryPlan::Ellipse {
+            ViewClipGeometryPlan::Ellipse {
                 center,
                 radius_x_px,
                 radius_y_px,
@@ -205,7 +207,7 @@ impl UiCompositorUniform {
                 uniform.params0 = [2.0, 0.0, 0.0, 0.0];
                 uniform.matrix[0] = [center.x, center.y, *radius_x_px, *radius_y_px];
             }
-            UiClipGeometryPlan::Polygon {
+            ViewClipGeometryPlan::Polygon {
                 fill_rule,
                 vertices,
             } => {
@@ -219,7 +221,7 @@ impl UiCompositorUniform {
                     uniform.clip_vertices[index] = clip_vertex_uniform(vertex);
                 }
             }
-            UiClipGeometryPlan::Path {
+            ViewClipGeometryPlan::Path {
                 fill_rule, edges, ..
             } => {
                 uniform.params0 = [
@@ -237,13 +239,13 @@ impl UiCompositorUniform {
     }
 
     pub(crate) fn box_shadow(
-        pass: &UiBoxShadowPass,
+        pass: &ViewBoxShadowPass,
         origin_logical: [f32; 2],
         logical_extent: [f32; 2],
     ) -> Self {
         let shadow_kind = match pass.shadow.kind {
-            UiBoxShadowKind::Outer => 0.0,
-            UiBoxShadowKind::Inset => 1.0,
+            ViewBoxShadowKind::Outer => 0.0,
+            ViewBoxShadowKind::Inset => 1.0,
         };
         let mut uniform = Self {
             offset: rgba_to_unit(pass.shadow.color),
@@ -256,7 +258,7 @@ impl UiCompositorUniform {
                 0.0,
             ],
             pass_kind: PASS_BOX_SHADOW,
-            ..Self::from_matrix(UiColorMatrix::identity())
+            ..Self::from_matrix(ViewColorMatrix::identity())
         };
         uniform.matrix[0] = [
             pass.body_rect.x,
@@ -276,7 +278,7 @@ impl UiCompositorUniform {
         uniform.clip_vertices[1] = radii_tail_uniform(pass.shadow_radii);
         uniform
     }
-    fn from_matrix(matrix: UiColorMatrix) -> Self {
+    fn from_matrix(matrix: ViewColorMatrix) -> Self {
         Self {
             matrix: matrix.matrix,
             offset: matrix.offset,
@@ -295,58 +297,58 @@ fn dimension_to_f32(value: u32) -> f32 {
     value.max(1).to_f32().unwrap_or(f32::MAX)
 }
 
-fn shader_mode_to_f32(mode: UiBlendShaderMode) -> f32 {
+fn shader_mode_to_f32(mode: ViewBlendShaderMode) -> f32 {
     mode.as_shader_u32().to_f32().unwrap_or(0.0)
 }
 
-fn fill_rule_to_f32(fill_rule: UiFillRule) -> f32 {
+fn fill_rule_to_f32(fill_rule: ViewFillRule) -> f32 {
     match fill_rule {
-        UiFillRule::NonZero => 0.0,
-        UiFillRule::EvenOdd => 1.0,
+        ViewFillRule::NonZero => 0.0,
+        ViewFillRule::EvenOdd => 1.0,
     }
 }
 
-fn mask_channel_to_f32(channel: UiMaskChannel) -> f32 {
+fn mask_channel_to_f32(channel: ViewMaskChannel) -> f32 {
     match channel {
-        UiMaskChannel::Alpha => 0.0,
-        UiMaskChannel::Luminance => 1.0,
+        ViewMaskChannel::Alpha => 0.0,
+        ViewMaskChannel::Luminance => 1.0,
     }
 }
 
-fn repeat_mode_to_f32(mode: UiMaskAxisRepeat) -> f32 {
+fn repeat_mode_to_f32(mode: ViewMaskAxisRepeat) -> f32 {
     match mode {
-        UiMaskAxisRepeat::NoRepeat => 0.0,
-        UiMaskAxisRepeat::Repeat => 1.0,
-        UiMaskAxisRepeat::Space => 2.0,
-        UiMaskAxisRepeat::Round => 3.0,
+        ViewMaskAxisRepeat::NoRepeat => 0.0,
+        ViewMaskAxisRepeat::Repeat => 1.0,
+        ViewMaskAxisRepeat::Space => 2.0,
+        ViewMaskAxisRepeat::Round => 3.0,
     }
 }
 
-fn gradient_kind_to_f32(kind: UiMaskGradientKind) -> f32 {
+fn gradient_kind_to_f32(kind: ViewMaskGradientKind) -> f32 {
     match kind {
-        UiMaskGradientKind::Linear { .. } => 1.0,
-        UiMaskGradientKind::Radial { .. } => 2.0,
-        UiMaskGradientKind::Conic { .. } => 3.0,
+        ViewMaskGradientKind::Linear { .. } => 1.0,
+        ViewMaskGradientKind::Radial { .. } => 2.0,
+        ViewMaskGradientKind::Conic { .. } => 3.0,
     }
 }
 
-fn gradient_header_0(kind: UiMaskGradientKind) -> [f32; 4] {
+fn gradient_header_0(kind: ViewMaskGradientKind) -> [f32; 4] {
     match kind {
-        UiMaskGradientKind::Linear { angle_degrees } => [angle_degrees, 0.0, 0.0, 0.0],
-        UiMaskGradientKind::Radial { center_px, .. } => [0.0, center_px[0], center_px[1], 0.0],
-        UiMaskGradientKind::Conic {
+        ViewMaskGradientKind::Linear { angle_degrees } => [angle_degrees, 0.0, 0.0, 0.0],
+        ViewMaskGradientKind::Radial { center_px, .. } => [0.0, center_px[0], center_px[1], 0.0],
+        ViewMaskGradientKind::Conic {
             center_px,
             from_degrees,
         } => [0.0, center_px[0], center_px[1], from_degrees],
     }
 }
 
-fn gradient_header_1(kind: UiMaskGradientKind, stop_count: usize) -> [f32; 4] {
+fn gradient_header_1(kind: ViewMaskGradientKind, stop_count: usize) -> [f32; 4] {
     match kind {
-        UiMaskGradientKind::Linear { .. } | UiMaskGradientKind::Conic { .. } => {
+        ViewMaskGradientKind::Linear { .. } | ViewMaskGradientKind::Conic { .. } => {
             [0.0, 0.0, stop_count.to_f32().unwrap_or(0.0), 0.0]
         }
-        UiMaskGradientKind::Radial { radius_px, .. } => [
+        ViewMaskGradientKind::Radial { radius_px, .. } => [
             radius_px[0],
             radius_px[1],
             stop_count.to_f32().unwrap_or(0.0),
@@ -355,15 +357,15 @@ fn gradient_header_1(kind: UiMaskGradientKind, stop_count: usize) -> [f32; 4] {
     }
 }
 
-fn clip_vertex_uniform(vertex: UiClipVertex) -> [f32; 4] {
+fn clip_vertex_uniform(vertex: ViewClipVertex) -> [f32; 4] {
     [vertex.x, vertex.y, 0.0, 0.0]
 }
 
-fn clip_edge_uniform(edge: UiClipPathEdge) -> [f32; 4] {
+fn clip_edge_uniform(edge: ViewClipPathEdge) -> [f32; 4] {
     [edge.from.x, edge.from.y, edge.to.x, edge.to.y]
 }
 
-fn radii_head_uniform(radii: UiBoxShadowRadii) -> [f32; 4] {
+fn radii_head_uniform(radii: ViewBoxShadowRadii) -> [f32; 4] {
     [
         radii.top_left.x_px,
         radii.top_left.y_px,
@@ -372,7 +374,7 @@ fn radii_head_uniform(radii: UiBoxShadowRadii) -> [f32; 4] {
     ]
 }
 
-fn radii_tail_uniform(radii: UiBoxShadowRadii) -> [f32; 4] {
+fn radii_tail_uniform(radii: ViewBoxShadowRadii) -> [f32; 4] {
     [
         radii.bottom_right.x_px,
         radii.bottom_right.y_px,
@@ -381,7 +383,7 @@ fn radii_tail_uniform(radii: UiBoxShadowRadii) -> [f32; 4] {
     ]
 }
 
-fn rgba_to_unit(color: UiColorRgba8) -> [f32; 4] {
+fn rgba_to_unit(color: ViewColorRgba8) -> [f32; 4] {
     [
         f32::from(color.red) / 255.0,
         f32::from(color.green) / 255.0,
@@ -392,20 +394,20 @@ fn rgba_to_unit(color: UiColorRgba8) -> [f32; 4] {
 
 #[cfg(test)]
 mod tests {
-    use super::UiCompositorUniform;
-    use crate::ui_box_shadow::UiBoxShadowPassPlan;
-    use crate::ui_clip_path::UiClipGeometryPlan;
-    use crate::ui_scene::{UiBoxShadow, UiBoxShadowList, UiColorRgba8};
+    use super::ViewCompositorUniform;
+    use crate::view_box_shadow::ViewBoxShadowPassPlan;
+    use crate::view_clip_path::ViewClipGeometryPlan;
+    use crate::view_scene::{ViewBoxShadow, ViewBoxShadowList, ViewColorRgba8};
     use arcweft_presentation::hit::HitRect;
 
     #[test]
     fn clip_uniform_uses_explicit_logical_extent() {
-        let plan = UiClipGeometryPlan::Inset {
+        let plan = ViewClipGeometryPlan::Inset {
             rect: HitRect::new(80.0, 240.0, 672.0, 220.0),
             radii_px: [24.0, 24.0, 24.0, 24.0],
         };
 
-        let uniform = UiCompositorUniform::clip(&plan, [1280.0, 720.0], [80.0, 240.0]);
+        let uniform = ViewCompositorUniform::clip(&plan, [1280.0, 720.0], [80.0, 240.0]);
 
         assert_uniform_value(uniform.params1[0], 80.0);
         assert_uniform_value(uniform.params1[1], 240.0);
@@ -416,13 +418,13 @@ mod tests {
 
     #[test]
     fn box_shadow_uniform_uses_explicit_logical_extent() {
-        let shadows = UiBoxShadowList::new([UiBoxShadow::outer(
+        let shadows = ViewBoxShadowList::new([ViewBoxShadow::outer(
             0.0,
             18.0,
             42.0,
             0.0,
             9.0,
-            UiColorRgba8 {
+            ViewColorRgba8 {
                 red: 0,
                 green: 0,
                 blue: 0,
@@ -430,11 +432,11 @@ mod tests {
             },
         )]);
         let plan =
-            UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(80.0, 240.0, 672.0, 220.0))
+            ViewBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(80.0, 240.0, 672.0, 220.0))
                 .expect("shadow plans");
 
         let uniform =
-            UiCompositorUniform::box_shadow(&plan.passes()[0], [0.0, 0.0], [1280.0, 720.0]);
+            ViewCompositorUniform::box_shadow(&plan.passes()[0], [0.0, 0.0], [1280.0, 720.0]);
 
         assert_uniform_value(uniform.params2[0], 1280.0);
         assert_uniform_value(uniform.params2[1], 720.0);

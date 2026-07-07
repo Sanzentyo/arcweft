@@ -4,7 +4,7 @@ use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::interaction::{FocusState, InteractionState};
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::SemanticRole;
-use arcweft_render_wgpu::ui::UiPaintPlan;
+use arcweft_render_wgpu::view::ViewPaintPlan;
 use arcweft_view::{
     FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
     Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId, StyleId, UiInteractionSelector,
@@ -84,7 +84,7 @@ fn resolved_focus_style_lowers_to_background_and_outline_rectangles() {
     let resolved = display
         .resolve_interaction_styles(&semantics, &styles, &interaction)
         .unwrap();
-    let plan = UiPaintPlan::from_resolved_display(&resolved);
+    let plan = ViewPaintPlan::from_resolved_display(&resolved);
 
     assert_eq!(plan.rectangles().len(), 5);
     assert_eq!(

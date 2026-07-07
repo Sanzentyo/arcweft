@@ -33,6 +33,7 @@ pub struct UiResourceBudget {
     pub semantic_targets: usize,
     pub layout_bounds: usize,
     pub scroll_regions: usize,
+    pub surfaces: usize,
     pub text_blocks: usize,
     pub action_buttons: usize,
     pub focus_groups: usize,
@@ -83,6 +84,7 @@ impl Default for UiResourceBudget {
             semantic_targets: 262_144,
             layout_bounds: 262_144,
             scroll_regions: 65_536,
+            surfaces: 262_144,
             text_blocks: 262_144,
             action_buttons: 65_536,
             focus_groups: 65_536,
@@ -183,6 +185,8 @@ impl ViewProgramResource {
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.scroll_regions
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.surfaces
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.text_blocks
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.focus_groups
@@ -197,6 +201,7 @@ impl ViewProgramResource {
         self.validate_unique_ids()?;
         self.validate_layout_bounds()?;
         self.validate_scroll_regions()?;
+        self.validate_surfaces()?;
         self.validate_text_blocks()?;
         self.validate_focus_targets()
     }
@@ -239,6 +244,7 @@ impl ViewProgramResource {
             budget.scroll_regions,
             "ui_scroll_regions",
         )?;
+        check_budget(self.surfaces.len(), budget.surfaces, "ui_surfaces")?;
         check_budget(self.text_blocks.len(), budget.text_blocks, "ui_text_blocks")?;
         check_budget(
             self.focus_groups.len(),
@@ -309,6 +315,12 @@ impl ViewProgramResource {
             "ui_scroll_regions",
         )?;
         reject_duplicates(
+            self.surfaces
+                .iter()
+                .map(|surface| surface.public_id.clone()),
+            "ui_surfaces",
+        )?;
+        reject_duplicates(
             self.text_blocks.iter().map(|block| block.public_id.clone()),
             "ui_text_blocks",
         )?;
@@ -359,6 +371,18 @@ impl ViewProgramResource {
             Ok(())
         } else {
             Err(SectionCodecError::NonCanonicalTable("ui_text_blocks"))
+        }
+    }
+
+    fn validate_surfaces(&self) -> Result<(), SectionCodecError> {
+        if self
+            .surfaces
+            .iter()
+            .all(super::model::ViewSurfaceResource::is_valid)
+        {
+            Ok(())
+        } else {
+            Err(SectionCodecError::NonCanonicalTable("ui_surfaces"))
         }
     }
 
@@ -418,80 +442,34 @@ impl ViewProgramResource {
                         .iter()
                         .flat_map(|part| [part.part_id.clone(), part.public_name.clone()]),
                 )
-                .chain(self.semantic_targets.iter().flat_map(|target| {
-                    [
-                        Some(target.public_id.clone()),
-                        Some(target.target.clone()),
-                        target.view.clone(),
-                        target.label_text_source.clone(),
-                    ]
-                    .into_iter()
-                    .flatten()
-                }))
+                .chain(
+                    self.semantic_targets
+                        .iter()
+                        .flat_map(semantic_target_public_ids),
+                )
                 .chain(
                     self.layout_bounds
                         .iter()
                         .map(|bounds| bounds.public_id.clone()),
                 )
-                .chain(self.action_buttons.iter().flat_map(|button| {
-                    let action_ids = match &button.action {
-                        super::model::ViewActionButtonActionResource::Noop => Vec::new(),
-                        super::model::ViewActionButtonActionResource::ActionInvoke {
-                            action,
-                            payload,
-                        } => std::iter::once(action.clone())
-                            .chain(action_payload_refs(payload.as_ref()))
-                            .collect(),
-                    };
-                    [
-                        Some(button.public_id.clone()),
-                        button.view.clone(),
-                        button.containing_scroll_region.clone(),
-                        Some(button.label_text_source.clone()),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .chain(action_ids)
-                }))
-                .chain(self.scroll_regions.iter().flat_map(|region| {
-                    [Some(region.public_id.clone()), region.view.clone()]
-                        .into_iter()
-                        .flatten()
-                }))
-                .chain(self.text_blocks.iter().flat_map(|block| {
-                    [
-                        Some(block.public_id.clone()),
-                        block.view.clone(),
-                        block.containing_scroll_region.clone(),
-                        Some(block.text_source.clone()),
-                    ]
-                    .into_iter()
-                    .flatten()
-                }))
-                .chain(self.focus_groups.iter().flat_map(|group| {
-                    [
-                        Some(group.public_id.clone()),
-                        group.view.clone(),
-                        group.parent.clone(),
-                        group.initial.explicit_target().map(ToOwned::to_owned),
-                    ]
-                    .into_iter()
-                    .flatten()
-                }))
-                .chain(self.focus_navigation.iter().flat_map(|target| {
-                    [
-                        Some(target.public_id.clone()),
-                        target.view.clone(),
-                        target.group.clone(),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .chain(
-                        target.edges.iter().filter_map(|edge| {
-                            edge.target.explicit_target().map(ToOwned::to_owned)
-                        }),
-                    )
-                })),
+                .chain(
+                    self.action_buttons
+                        .iter()
+                        .flat_map(action_button_public_ids),
+                )
+                .chain(
+                    self.scroll_regions
+                        .iter()
+                        .flat_map(scroll_region_public_ids),
+                )
+                .chain(self.surfaces.iter().flat_map(surface_public_ids))
+                .chain(self.text_blocks.iter().flat_map(text_block_public_ids))
+                .chain(self.focus_groups.iter().flat_map(focus_group_public_ids))
+                .chain(
+                    self.focus_navigation
+                        .iter()
+                        .flat_map(focus_navigation_public_ids),
+                ),
         )
     }
 
@@ -500,10 +478,104 @@ impl ViewProgramResource {
             .saturating_add(saturating_u32(self.layout_bounds.len()))
             .saturating_add(saturating_u32(self.action_buttons.len()))
             .saturating_add(saturating_u32(self.scroll_regions.len()))
+            .saturating_add(saturating_u32(self.surfaces.len()))
             .saturating_add(saturating_u32(self.text_blocks.len()))
             .saturating_add(saturating_u32(self.focus_groups.len()))
             .saturating_add(saturating_u32(self.focus_navigation.len()))
     }
+}
+
+fn semantic_target_public_ids(target: &super::model::ViewSemanticTarget) -> Vec<String> {
+    [
+        Some(target.public_id.clone()),
+        Some(target.target.clone()),
+        target.view.clone(),
+        target.label_text_source.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn action_button_public_ids(button: &super::model::ViewActionButtonResource) -> Vec<String> {
+    let action_ids = match &button.action {
+        super::model::ViewActionButtonActionResource::Noop => Vec::new(),
+        super::model::ViewActionButtonActionResource::ActionInvoke { action, payload } => {
+            std::iter::once(action.clone())
+                .chain(action_payload_refs(payload.as_ref()))
+                .collect()
+        }
+    };
+    [
+        Some(button.public_id.clone()),
+        button.view.clone(),
+        button.containing_scroll_region.clone(),
+        Some(button.label_text_source.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .chain(action_ids)
+    .collect()
+}
+
+fn scroll_region_public_ids(region: &super::model::ViewScrollRegionResource) -> Vec<String> {
+    [Some(region.public_id.clone()), region.view.clone()]
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+fn surface_public_ids(surface: &super::model::ViewSurfaceResource) -> Vec<String> {
+    [
+        Some(surface.public_id.clone()),
+        surface.view.clone(),
+        surface.containing_scroll_region.clone(),
+        surface.style.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn text_block_public_ids(block: &super::model::ViewTextBlockResource) -> Vec<String> {
+    [
+        Some(block.public_id.clone()),
+        block.view.clone(),
+        block.containing_scroll_region.clone(),
+        Some(block.text_source.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn focus_group_public_ids(group: &super::model::ViewFocusGroupResource) -> Vec<String> {
+    [
+        Some(group.public_id.clone()),
+        group.view.clone(),
+        group.parent.clone(),
+        group.initial.explicit_target().map(ToOwned::to_owned),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn focus_navigation_public_ids(target: &super::model::ViewFocusNavigationResource) -> Vec<String> {
+    [
+        Some(target.public_id.clone()),
+        target.view.clone(),
+        target.group.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .chain(
+        target
+            .edges
+            .iter()
+            .filter_map(|edge| edge.target.explicit_target().map(ToOwned::to_owned)),
+    )
+    .collect()
 }
 
 impl ViewStyleResource {

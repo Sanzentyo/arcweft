@@ -1,6 +1,6 @@
 /* seq06.13e authored CSS fixture.
    Expected path: Takumi parse/cascade -> ComputedStyle::box_shadow ->
-   UiCompositingEffects::box_shadows -> UiCompositor PASS_BOX_SHADOW kind flag.
+   ViewCompositingEffects::box_shadows -> ViewCompositor PASS_BOX_SHADOW kind flag.
    This fixture must not be rendered through browser CSS, DOM snapshots, canvas,
    SVG filters, or CPU raster fallback. */
 

@@ -8,17 +8,17 @@
     "Takumi StyleSheet parse/cascade",
     "ComputedStyle::box_shadow typed value",
     "arcweft-takumi-adapter box_shadow_list_from_takumi",
-    "UiCompositingEffects::box_shadows",
-    "UiCompositor::render_group",
+    "ViewCompositingEffects::box_shadows",
+    "ViewCompositor::render_group",
     "PASS_BOX_SHADOW kind=outer before child paint",
     "PASS_BOX_SHADOW kind=inset after child paint and before filter/clip/mask"
   ],
   "expectations": {
     "rounded_inset_shadow_count": 1,
     "mixed_outer_inset_shadow_count": 2,
-    "paint_order": "outer stage filters UiBoxShadowKind::Outer from reversed CSS order; inset stage filters UiBoxShadowKind::Inset from the same unified plan",
+    "paint_order": "outer stage filters ViewBoxShadowKind::Outer from reversed CSS order; inset stage filters ViewBoxShadowKind::Inset from the same unified plan",
     "negative_spread": "covered by focused plan tests; fixture keeps positive spread for visible smoke",
-    "drop_shadow_probe": "filter: drop-shadow(...) populates UiFilter::DropShadow and not UiBoxShadowList",
+    "drop_shadow_probe": "filter: drop-shadow(...) populates ViewFilter::DropShadow and not ViewBoxShadowList",
     "visual_golden_promotion": "manual in pinned native/web environment"
   },
   "forbidden_paths": [

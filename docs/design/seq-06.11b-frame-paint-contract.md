@@ -14,7 +14,7 @@ UiProgramResource / UiStyleResource resolved by seq06.11
     -> ComputedDirectPaintExtractor::extract
     -> DirectPaintCatalog
     -> TakumiSceneLowerer::lower
-    -> UiScene + TakumiCaptureFrame
+    -> ViewScene + TakumiCaptureFrame
 ```
 
 Seq06.11a owns only the computed-style-to-paint extraction and the explicit
@@ -26,7 +26,7 @@ The intended normal-frame payload is:
 
 ```rust
 pub struct TakumiComputedPaintFrame {
-    pub scene: UiScene,
+    pub scene: ViewScene,
     pub capture: TakumiCaptureFrame,
     pub direct_paint: ComputedDirectPaintFrame,
 }
@@ -36,9 +36,9 @@ pub struct TakumiComputedPaintFrame {
 
 The only visual rendering input. It contains:
 
-- `UiScene::primitives()` with Arcweft-owned direct primitives;
-- `UiScene::contexts()` with transform, opacity, clip, and primitive ranges;
-- `UiScene::paint_nodes()` with direct nodes and compositing groups.
+- `ViewScene::primitives()` with Arcweft-owned direct primitives;
+- `ViewScene::contexts()` with transform, opacity, clip, and primitive ranges;
+- `ViewScene::paint_nodes()` with direct nodes and compositing groups.
 
 Seq06.11b should attach this to `PreparedFrame` or the equivalent normal player
 frame type. It should not inspect CSS or Takumi computed style at render time.
@@ -106,9 +106,9 @@ Takumi raster output, or screenshots.
 
 Seq06.11b should:
 
-1. attach `UiScene` to normal prepared-frame data;
-2. render the attached `UiScene` through the shared `UiDirectPrimitiveRenderer`
-   and `UiCompositor` path;
+1. attach `ViewScene` to normal prepared-frame data;
+2. render the attached `ViewScene` through the shared `ViewDirectPrimitiveRenderer`
+   and `ViewCompositor` path;
 3. source images/masks through native/web resource providers by stable resource
    index;
 4. surface `direct_paint.diagnostics` through the existing player/runtime
@@ -120,5 +120,5 @@ Seq06.11b should not:
 - parse CSS again;
 - inspect Takumi computed style at render time;
 - build a private UI renderer;
-- temporarily convert the catalog to rectangles outside `UiScene`;
+- temporarily convert the catalog to rectangles outside `ViewScene`;
 - route any Arcweft UI visual through DOM, CSS, canvas 2D, or CPU-raster output.

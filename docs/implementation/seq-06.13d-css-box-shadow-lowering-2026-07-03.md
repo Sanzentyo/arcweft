@@ -4,18 +4,18 @@
 
 The current Arcweft line already has the seq06.13b renderer substrate:
 
-- `UiBoxShadow`, `UiBoxShadowKind`, and `UiBoxShadowList` are owned by
-  `arcweft-render-wgpu::ui_scene::compositing`.
-- `UiBoxShadowPassPlan` plans shadows back-to-front, supports negative spread,
-  canonicalizes transparent/identity shadows through `UiBoxShadowList`, and emits
-  `UiBoxShadowPlanError::InsetUnsupported` for inset shadows.
-- `UiCompositor::render_group` draws box-shadow passes before rendering group
+- `ViewBoxShadow`, `ViewBoxShadowKind`, and `ViewBoxShadowList` are owned by
+  `arcweft-render-wgpu::view_scene::compositing`.
+- `ViewBoxShadowPassPlan` plans shadows back-to-front, supports negative spread,
+  canonicalizes transparent/identity shadows through `ViewBoxShadowList`, and emits
+  `ViewBoxShadowPlanError::InsetUnsupported` for inset shadows.
+- `ViewCompositor::render_group` draws box-shadow passes before rendering group
   children and before filter/clip/mask/blend passes.
 
 The current gap is in `arcweft-takumi-adapter::lowering`:
 
 ```rust
-box_shadows: UiBoxShadowList::default(),
+box_shadows: ViewBoxShadowList::default(),
 ```
 
 Takumi's pinned source already exposes `ComputedStyle::box_shadow:
@@ -56,17 +56,17 @@ fn box_shadow_list_from_takumi(
     style: &ComputedStyle,
     sizing: &SizingContext,
     current_color: TakumiColor,
-) -> UiBoxShadowList
+) -> ViewBoxShadowList
 ```
 
-The conversion preserves CSS list order in `UiBoxShadowList`. The existing
+The conversion preserves CSS list order in `ViewBoxShadowList`. The existing
 renderer planner reverses the list for back-to-front paint order.
 
 ### Radius scalar
 
 The adapter derives one radius by taking `max(min(rx, ry))` over the four corners.
 This keeps mixed and elliptical CSS radii deterministic without changing
-`UiBoxShadow`'s public shape.
+`ViewBoxShadow`'s public shape.
 
 ### Coverage
 
@@ -82,23 +82,23 @@ Seq06.13d intentionally routes unsupported typed values to existing structured
 systems:
 
 - malformed or unsupported syntax remains Takumi CSS parse/cascade diagnostics;
-- inset remains `UiBoxShadowPlanError::InsetUnsupported`;
-- non-finite fields remain `UiBoxShadowPlanError::NonFinite`;
+- inset remains `ViewBoxShadowPlanError::InsetUnsupported`;
+- non-finite fields remain `ViewBoxShadowPlanError::NonFinite`;
 - transparent shadows are not diagnostics because they are identity paint.
 
 ## Tests implemented in package
 
 `crates/arcweft-takumi-adapter/tests/css_box_shadow_lowering.rs` covers:
 
-1. one outer shadow lowers to `UiBoxShadowList` with offset, blur, spread, color,
+1. one outer shadow lowers to `ViewBoxShadowList` with offset, blur, spread, color,
    and radius;
 2. multiple shadows preserve CSS list order and compositor plan paints
    back-to-front;
 3. negative spread lowers and plans deterministically;
 4. transparent shadows canonicalize to an empty list;
 5. inset shadows lower to typed data and then produce
-   `UiBoxShadowPlanError::InsetUnsupported`;
-6. `filter: drop-shadow(...)` remains `UiFilter::DropShadow` and leaves
+   `ViewBoxShadowPlanError::InsetUnsupported`;
+6. `filter: drop-shadow(...)` remains `ViewFilter::DropShadow` and leaves
    `box_shadows` empty;
 7. direct CSS ready features now include `BoxShadow`.
 
@@ -107,7 +107,7 @@ systems:
 ```bash
 cargo fmt --all
 cargo test -p arcweft-takumi-adapter --test css_box_shadow_lowering --all-features -- --nocapture
-cargo test -p arcweft-render-wgpu --all-targets --all-features ui_box_shadow -- --nocapture
+cargo test -p arcweft-render-wgpu --all-targets --all-features view_box_shadow -- --nocapture
 cargo check -p arcweft-takumi-adapter -p arcweft-render-wgpu --all-targets --all-features
 cargo clippy -p arcweft-takumi-adapter -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root .
@@ -122,7 +122,7 @@ workspace hotspot total as `4 error(s), 125 warning(s)`.
 
 - The package patch file itself was malformed and could not be applied directly,
   so the changes were applied against the current source by ownership area.
-- The source already used `UiAffine2D` after the UI affine rename; imports were
+- The source already used `ViewAffine2D` after the UI affine rename; imports were
   kept on that current type name rather than reintroducing `UiAffine2`.
 - The focused test now uses Takumi's typed builders for non-exhaustive
   `BoxShadow` and `TextShadow` values.
@@ -135,7 +135,7 @@ workspace hotspot total as `4 error(s), 125 warning(s)`.
 - Inset box-shadow remains a structured diagnostic until an inset renderer pass
   is explicitly designed and implemented.
 - Per-corner box-shadow radii remain deterministic scalar lowering until
-  `UiBoxShadow` grows a per-corner radius contract.
+  `ViewBoxShadow` grows a per-corner radius contract.
 
 ## Design deviations
 

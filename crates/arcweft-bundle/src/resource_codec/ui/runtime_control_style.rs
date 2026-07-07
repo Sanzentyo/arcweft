@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use super::model::{
     RgbaColor, StyleAssignOp, SystemColor, UiInputKind, UiInputResource, UiTextResource,
     ViewElementKind, ViewElementState, ViewInteractionState, ViewProgramInstruction,
-    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeTextBlock, ViewRuntimeTextControl,
-    ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleResource, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleValue,
+    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeSurface, ViewRuntimeTextBlock,
+    ViewRuntimeTextControl, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleResource,
+    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -722,6 +722,31 @@ impl ViewProgramResource {
             diagnostics,
         }
     }
+
+    pub fn runtime_surfaces_with_style(
+        &self,
+        style: Option<&ViewStyleResource>,
+    ) -> ViewRuntimeStyledControls<ViewRuntimeSurface> {
+        let mut controls = self.runtime_surfaces();
+        let mut diagnostics = ViewRuntimeControlStyleDiagnostics::default();
+        if let Some(style) = style {
+            let styled_elements = self.runtime_element_styles_with_style(style);
+            diagnostics.extend(styled_elements.diagnostics);
+            for surface in &mut controls {
+                if let Some(element) = styled_elements
+                    .controls
+                    .iter()
+                    .find(|element| element_matches_surface(element, surface))
+                {
+                    surface.style = element.style.clone();
+                }
+            }
+        }
+        ViewRuntimeStyledControls {
+            controls,
+            diagnostics,
+        }
+    }
 }
 
 fn finalize_text_leaf(
@@ -1004,6 +1029,19 @@ fn part_matches_runtime_node(candidate: &str, node: &RuntimeStyleNode) -> bool {
             .explicit_styles
             .iter()
             .any(|style| id_or_tail_matches(candidate, style))
+}
+
+fn element_matches_surface(
+    element: &ViewRuntimeElementStyle,
+    surface: &ViewRuntimeSurface,
+) -> bool {
+    element.element == surface.element
+        && (id_or_tail_matches(&element.target, &surface.public_id)
+            || id_or_tail_matches(&element.target, &surface.target)
+            || element
+                .part
+                .as_deref()
+                .is_some_and(|part| id_or_tail_matches(part, &surface.public_id)))
 }
 
 fn apply_style_ref_to_node(

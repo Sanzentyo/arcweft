@@ -1,6 +1,8 @@
+use arcweft_bundle::resource_codec::ui::{RgbaColor, UiTextSelectionPolicy, ViewElementKind};
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeControlStyle, ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds,
-    ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds,
+    ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion,
+    ViewRuntimeScrollRegionBounds, ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
+    ViewRuntimeSurfaceBounds, ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds,
 };
 use arcweft_bundle::resource_codec::{ViewScrollAxis, ViewScrollOverflowPolicy};
 use arcweft_player_scene::{
@@ -8,12 +10,78 @@ use arcweft_player_scene::{
     images::BundleImageCatalog,
     input::{
         InputController, InputControllerSnapshot, InputControllerSnapshotError,
-        InputScrollOffsetSnapshot,
+        InputPointerModifiers, InputScrollOffsetSnapshot,
     },
 };
 use arcweft_presentation::input::{PointerId, ViewportPoint};
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
+use arcweft_render_wgpu::view_scene::{ViewPaintNode, ViewPrimitive};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+
+#[test]
+fn player_frame_lowers_runtime_surfaces_to_view_scene() {
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.surfaces.push(ViewRuntimeSurface {
+        public_id: "surface.feedback.card".to_owned(),
+        target: "surface.feedback.card".to_owned(),
+        view: Some("view.FeedbackPanel".to_owned()),
+        containing_scroll_region: None,
+        element: ViewElementKind::Panel,
+        bounds: ViewRuntimeSurfaceBounds::from_px(24, 32, 112, 72),
+        style: ViewRuntimeControlStyle {
+            normal: ViewRuntimeControlVisualStyle {
+                fill: Some(RgbaColor::rgb(36, 42, 54)),
+                radius_milli: Some(14_000),
+                shadows: vec![ViewRuntimeShadow {
+                    offset_x_milli: 0,
+                    offset_y_milli: 3_000,
+                    blur_milli: 12_000,
+                    spread_milli: 2_000,
+                    radius_milli: 14_000,
+                    color: RgbaColor::rgba(0, 0, 0, 143),
+                    kind: ViewRuntimeShadowKind::Inset,
+                }],
+                ..ViewRuntimeControlVisualStyle::default()
+            },
+            ..ViewRuntimeControlStyle::default()
+        },
+    });
+    let images = BundleImageCatalog::empty();
+    let mut input = InputController::default();
+
+    let prepared = PlayerFramePlanner::prepare(
+        &mut input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            images: &images,
+            viewport: RenderViewport {
+                logical_width: 320.0,
+                logical_height: 180.0,
+                physical_width: 320,
+                physical_height: 180,
+                scale_factor: 1.0,
+            },
+            fit: PlayerFrameFit::raw(),
+            image_time_millis: 0,
+            visual_time_millis: 0,
+            preferences: RenderPreferences::default(),
+        },
+    )
+    .expect("frame prepares");
+
+    let view_scene = prepared.frame.view_scenes().first().expect("surface scene");
+    assert_eq!(view_scene.scene.primitives().len(), 1);
+    assert_eq!(view_scene.scene.paint_nodes().len(), 1);
+    assert!(matches!(
+        view_scene.scene.primitives()[0],
+        ViewPrimitive::RoundedRect(_)
+    ));
+    let ViewPaintNode::Group(group) = &view_scene.scene.paint_nodes()[0] else {
+        panic!("surface with shadow lowers to a compositing group");
+    };
+    assert_eq!(group.effects.box_shadows.shadows().len(), 1);
+    assert_eq!(group.children.len(), 1);
+}
 
 #[test]
 fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
@@ -99,6 +167,79 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
         .first()
         .expect("scroll region");
     assert!((region.offset_y - 90.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.text_blocks.push(ViewRuntimeTextBlock {
+        public_id: "text.block.copyable".to_owned(),
+        target: "text.block.copyable".to_owned(),
+        view: Some("view.CopyPanel".to_owned()),
+        containing_scroll_region: None,
+        text: "Alpha Beta".to_owned(),
+        bounds: ViewRuntimeTextBlockBounds::from_px(40, 48, 260, 40),
+        selection_policy: UiTextSelectionPolicy::Enabled,
+        style: ViewRuntimeControlStyle::default(),
+    });
+    let images = BundleImageCatalog::empty();
+    let mut input = InputController::default();
+    let request = PlayerFrameRequest {
+        presentation: &presentation,
+        images: &images,
+        viewport: RenderViewport {
+            logical_width: 320.0,
+            logical_height: 180.0,
+            physical_width: 320,
+            physical_height: 180,
+            scale_factor: 1.0,
+        },
+        fit: PlayerFrameFit::raw(),
+        image_time_millis: 0,
+        visual_time_millis: 0,
+        preferences: RenderPreferences::default(),
+    };
+
+    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame prepares");
+    let block = prepared
+        .frame
+        .selectable_text_blocks
+        .first()
+        .expect("selectable text block");
+    let first = block
+        .character_bounds
+        .first()
+        .expect("text block has glyph bounds")
+        .bounds;
+    let last = block
+        .character_bounds
+        .iter()
+        .rev()
+        .find(|bounds| bounds.bounds.width > 0.0)
+        .expect("text block has visible glyph bounds")
+        .bounds;
+    let start = ViewportPoint::new(first.x + 1.0, first.y + first.height * 0.5);
+    let end = ViewportPoint::new(last.x + last.width + 1.0, last.y + last.height * 0.5);
+
+    input.pointer_down(
+        &prepared.frame,
+        PointerId(4),
+        start,
+        InputPointerModifiers::NONE,
+    );
+    input.pointer_move(&prepared.frame, PointerId(4), end);
+    input.pointer_up(
+        &prepared.frame,
+        PointerId(4),
+        end,
+        InputPointerModifiers::NONE,
+    );
+
+    let selected = PlayerFramePlanner::prepare(&mut input, request).expect("selected frame");
+    assert!(
+        selected.frame.rectangles.len() > prepared.frame.rectangles.len(),
+        "selection should add highlight rectangles"
+    );
 }
 
 #[test]
@@ -230,6 +371,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         containing_scroll_region: Some("scroll.notes".to_owned()),
         text: "Arcweft Concierge".to_owned(),
         bounds: ViewRuntimeTextBlockBounds::from_px(56, 112, 220, 24),
+        selection_policy: UiTextSelectionPolicy::Disabled,
         style: ViewRuntimeControlStyle::default(),
     });
     let images = BundleImageCatalog::empty();

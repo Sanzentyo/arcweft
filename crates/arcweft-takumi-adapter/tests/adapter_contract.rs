@@ -1,5 +1,5 @@
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{UiAffine2D, UiPrimitiveRange};
+use arcweft_render_wgpu::view_scene::{ViewAffine2D, ViewPrimitiveRange};
 use arcweft_takumi_adapter::{
     ArcweftNodeMetadata, CssInvalidationClass, CssPropertyClass, TakumiCaptureFrame,
     TakumiCaptureRecord, TakumiDiagnosticCode, TakumiPath,
@@ -16,13 +16,13 @@ fn capture_record_keeps_same_range_and_bounds_as_rendered_primitive() {
         [HandlerId(4)],
         None,
     );
-    let primitive_range = UiPrimitiveRange { start: 5, end: 6 };
+    let primitive_range = ViewPrimitiveRange { start: 5, end: 6 };
     let bounds = HitRect::new(1.0, 2.0, 3.0, 4.0);
     let record = TakumiCaptureRecord::new(
         metadata,
         primitive_range,
         bounds,
-        UiAffine2D::IDENTITY,
+        ViewAffine2D::IDENTITY,
         None,
     );
     let mut frame = TakumiCaptureFrame::default();

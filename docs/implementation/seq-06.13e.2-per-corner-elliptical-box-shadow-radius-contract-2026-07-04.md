@@ -8,10 +8,10 @@ This package was authored against the GitHub-connector-inspected `Sanzentyo/arcw
 
 The inspected repository already contained seq06.13d/seq06.13e substrate:
 
-- `UiBoxShadow`, `UiBoxShadowKind`, and `UiBoxShadowList` in
-  `crates/arcweft-render-wgpu/src/ui_scene/compositing.rs`;
-- `UiBoxShadowPassPlan` in `crates/arcweft-render-wgpu/src/ui_box_shadow.rs`;
-- `UiCompositorUniform::box_shadow` and WGSL `PASS_BOX_SHADOW`;
+- `ViewBoxShadow`, `ViewBoxShadowKind`, and `ViewBoxShadowList` in
+  `crates/arcweft-render-wgpu/src/view_scene/compositing.rs`;
+- `ViewBoxShadowPassPlan` in `crates/arcweft-render-wgpu/src/view_box_shadow.rs`;
+- `ViewCompositorUniform::box_shadow` and WGSL `PASS_BOX_SHADOW`;
 - Takumi adapter lowering from `ComputedStyle::box_shadow`;
 - scalar-radius outer/inset planner and smoke tests.
 
@@ -24,11 +24,11 @@ notes live under `docs/implementation/`.
 
 ### Renderer/resource boundary
 
-- `crates/arcweft-render-wgpu/src/ui_scene.rs`
-- `crates/arcweft-render-wgpu/src/ui_scene/compositing.rs`
-- `crates/arcweft-render-wgpu/src/ui_box_shadow.rs`
-- `crates/arcweft-render-wgpu/src/ui_compositor_uniform.rs`
-- `crates/arcweft-render-wgpu/src/ui_shaders/compositor.wgsl`
+- `crates/arcweft-render-wgpu/src/view_scene.rs`
+- `crates/arcweft-render-wgpu/src/view_scene/compositing.rs`
+- `crates/arcweft-render-wgpu/src/view_box_shadow.rs`
+- `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
+- `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
 
 ### Takumi adapter
 
@@ -36,8 +36,8 @@ notes live under `docs/implementation/`.
 
 ### Focused tests
 
-- `crates/arcweft-render-wgpu/tests/ui_box_shadow_plan.rs`
-- `crates/arcweft-render-wgpu/tests/ui_box_shadow_gpu_smoke.rs`
+- `crates/arcweft-render-wgpu/tests/view_box_shadow_plan.rs`
+- `crates/arcweft-render-wgpu/tests/view_box_shadow_gpu_smoke.rs`
 - `crates/arcweft-takumi-adapter/tests/css_box_shadow_lowering.rs`
 
 ### Docs and fixtures
@@ -54,8 +54,8 @@ notes live under `docs/implementation/`.
 
 ### Radius data model
 
-`UiBoxShadow` now carries `border_radii: UiBoxShadowRadii`, where each corner is
-an independent `UiBoxShadowCornerRadius { x_px, y_px }`. Existing scalar
+`ViewBoxShadow` now carries `border_radii: ViewBoxShadowRadii`, where each corner is
+an independent `ViewBoxShadowCornerRadius { x_px, y_px }`. Existing scalar
 constructors remain as explicit convenience constructors and map to uniform
 circular radii. New `outer_with_radii` and `inset_with_radii` constructors accept
 the typed per-corner contract.
@@ -68,7 +68,7 @@ planning and shader coverage, not in separate radius types.
 `box_shadow_border_radii` lowers the four computed Takumi radius fields directly:
 
 ```rust
-UiBoxShadowRadii::from_corners(
+ViewBoxShadowRadii::from_corners(
     box_shadow_corner_radius_from_takumi(style.border_top_left_radius, sizing),
     box_shadow_corner_radius_from_takumi(style.border_top_right_radius, sizing),
     box_shadow_corner_radius_from_takumi(style.border_bottom_right_radius, sizing),
@@ -81,7 +81,7 @@ No CSS source string parsing is added.
 
 ### Planner changes
 
-`UiBoxShadowPass` now records:
+`ViewBoxShadowPass` now records:
 
 - `body_radii`: validated and CSS-overlap-normalized radii for the body rect;
 - `shadow_radii`: spread-adjusted and normalized radii for the caster rect.
@@ -95,8 +95,8 @@ shrinks the caster and negative inset spread expands it.
 The planner keeps existing scalar non-finite diagnostics for offset/blur/spread
 fields and adds:
 
-- `UiBoxShadowPlanError::NonFiniteRadius` for non-finite corner axes;
-- `UiBoxShadowPlanError::DegenerateRadius` for negative direct renderer radius
+- `ViewBoxShadowPlanError::NonFiniteRadius` for non-finite corner axes;
+- `ViewBoxShadowPlanError::DegenerateRadius` for negative direct renderer radius
   inputs.
 
 Non-empty invalid shadows are therefore not silently dropped. Transparent shadows
@@ -131,9 +131,9 @@ Run from repository root after applying the source edits:
 
 ```bash
 cargo fmt --all -- --check
-cargo test -p arcweft-render-wgpu --test ui_box_shadow_plan --all-features -- --nocapture
+cargo test -p arcweft-render-wgpu --test view_box_shadow_plan --all-features -- --nocapture
 cargo test -p arcweft-takumi-adapter --test css_box_shadow_lowering --all-features -- --nocapture
-cargo test -p arcweft-render-wgpu --test ui_box_shadow_gpu_smoke --all-features -- --ignored --nocapture
+cargo test -p arcweft-render-wgpu --test view_box_shadow_gpu_smoke --all-features -- --ignored --nocapture
 cargo check -p arcweft-render-wgpu -p arcweft-takumi-adapter --all-targets --all-features
 cargo clippy -p arcweft-render-wgpu -p arcweft-takumi-adapter --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write target/seq06_13e2_structure_audit
@@ -145,13 +145,13 @@ git diff --check
 Performed in the Arcweft checkout on 2026-07-04 after applying the package:
 
 - `cargo fmt --all -- --check` passed.
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_plan --all-features -- --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_plan --all-features -- --nocapture`
   passed: 9 tests.
 - `cargo test -p arcweft-takumi-adapter --test css_box_shadow_lowering --all-features -- --nocapture`
   passed: 9 tests.
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_gpu_smoke --all-features -- --ignored --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_gpu_smoke --all-features -- --ignored --nocapture`
   passed: 1 ignored GPU smoke test.
-- `cargo test -p arcweft-render-wgpu --lib --all-features ui_box_shadow -- --nocapture`
+- `cargo test -p arcweft-render-wgpu --lib --all-features view_box_shadow -- --nocapture`
   passed: 14 focused unit tests.
 - `cargo check -p arcweft-render-wgpu -p arcweft-takumi-adapter --all-targets --all-features`
   passed.
@@ -201,12 +201,12 @@ Audit checkout: Jujutsu change `olslpzlz`, parent `mtrzvkou`
 
 | Path | Owning crate | Kind | Bytes | Physical LOC | Embedded test LOC | Major responsibilities |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| `crates/arcweft-render-wgpu/src/ui_box_shadow.rs` | `arcweft-render-wgpu` | production planner with embedded unit tests | 18,392 | 565 | 312 | box-shadow pass ordering, geometry/radius validation, visual outset/inset planning |
-| `crates/arcweft-render-wgpu/src/ui_compositor_uniform.rs` | `arcweft-render-wgpu` | production uniform packing | 11,869 | 366 | 0 | compositor uniform construction and box-shadow radii packing |
-| `crates/arcweft-render-wgpu/src/ui_scene.rs` | `arcweft-render-wgpu` | production facade | 1,671 | 31 | 0 | intentional presentation type re-exports |
-| `crates/arcweft-render-wgpu/src/ui_scene/compositing.rs` | `arcweft-render-wgpu` | production compositing model with embedded unit tests | 28,031 | 1,059 | 60 | compositing effect data model, typed box-shadow radii, canonicalization helpers |
-| `crates/arcweft-render-wgpu/tests/ui_box_shadow_gpu_smoke.rs` | `arcweft-render-wgpu` | integration test | 6,087 | 178 | 0 | ignored GPU compositor smoke for direct box-shadow rendering |
-| `crates/arcweft-render-wgpu/tests/ui_box_shadow_plan.rs` | `arcweft-render-wgpu` | integration test | 8,543 | 278 | 0 | pass planner contract tests for direct CSS box-shadow rendering |
+| `crates/arcweft-render-wgpu/src/view_box_shadow.rs` | `arcweft-render-wgpu` | production planner with embedded unit tests | 18,392 | 565 | 312 | box-shadow pass ordering, geometry/radius validation, visual outset/inset planning |
+| `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs` | `arcweft-render-wgpu` | production uniform packing | 11,869 | 366 | 0 | compositor uniform construction and box-shadow radii packing |
+| `crates/arcweft-render-wgpu/src/view_scene.rs` | `arcweft-render-wgpu` | production facade | 1,671 | 31 | 0 | intentional presentation type re-exports |
+| `crates/arcweft-render-wgpu/src/view_scene/compositing.rs` | `arcweft-render-wgpu` | production compositing model with embedded unit tests | 28,031 | 1,059 | 60 | compositing effect data model, typed box-shadow radii, canonicalization helpers |
+| `crates/arcweft-render-wgpu/tests/view_box_shadow_gpu_smoke.rs` | `arcweft-render-wgpu` | integration test | 6,087 | 178 | 0 | ignored GPU compositor smoke for direct box-shadow rendering |
+| `crates/arcweft-render-wgpu/tests/view_box_shadow_plan.rs` | `arcweft-render-wgpu` | integration test | 8,543 | 278 | 0 | pass planner contract tests for direct CSS box-shadow rendering |
 | `crates/arcweft-takumi-adapter/src/lowering.rs` | `arcweft-takumi-adapter` | production adapter with embedded unit tests | 38,016 | 1,159 | 122 | Takumi computed-style lowering into Arcweft presentation/compositing types |
 | `crates/arcweft-takumi-adapter/tests/css_box_shadow_lowering.rs` | `arcweft-takumi-adapter` | integration test | 9,870 | 362 | 0 | CSS box-shadow lowering contract tests |
 

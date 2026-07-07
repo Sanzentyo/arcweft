@@ -137,20 +137,20 @@ Visual smoke fixtures use fixed timestamps such as `0 ms`, `125 ms`, `250 ms`,
 | Mask gradients | Explicit unsupported diagnostic for this cut. They need a gradient-mask resource/shader contract. |
 | `mask: element(...)` | Explicit unsupported diagnostic for this cut. |
 | `mask-size`, `mask-position`, `mask-repeat` | Implemented for `auto`, `cover`, `contain`, explicit lengths/percentages, `repeat`, `no-repeat`, `repeat-x`, and `repeat-y`. `space` and `round` remain diagnostics. |
-| Alpha vs luminance mask mode | Implemented through `UiMaskChannel`; luminance uses Rec.709 luma multiplied by mask alpha. |
+| Alpha vs luminance mask mode | Implemented through `ViewMaskChannel`; luminance uses Rec.709 luma multiplied by mask alpha. |
 | HSL-family blend modes | Implemented for `hue`, `saturation`, `color`, and `luminosity` using a documented non-premultiplied sRGB HSL rule before source-over composition. |
 
 ## Diagnostics policy
 
 Unsupported effects must remain typed and visible:
 
-- `UiClipPathPlanError::PathUnsupported` for CSS `path()`;
-- `UiClipPathPlanError::Unsupported` for URL or otherwise unsupported clip-path
+- `ViewClipPathPlanError::PathUnsupported` for CSS `path()`;
+- `ViewClipPathPlanError::Unsupported` for URL or otherwise unsupported clip-path
   lowerings;
-- `UiMaskPlanError` for unsupported mask images, sizes, positions, and repeats;
-- `UiEffectPass::Unsupported` and `UiCompositorError::UnsupportedFilter` for
+- `ViewMaskPlanError` for unsupported mask images, sizes, positions, and repeats;
+- `ViewEffectPass::Unsupported` and `ViewCompositorError::UnsupportedFilter` for
   unsupported filters such as `url(...)`;
-- follow-up `UiBoxShadowPlanError` is recommended for seq06.13b.
+- follow-up `ViewBoxShadowPlanError` is recommended for seq06.13b.
 
 A value that affects final pixels must either produce a pass/resource plan or a
 structured diagnostic. It must not disappear while leaving the UI rendered as if

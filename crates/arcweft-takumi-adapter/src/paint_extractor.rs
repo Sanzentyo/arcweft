@@ -2,7 +2,7 @@
 //!
 //! This module is intentionally an adapter-layer contract. It consumes Takumi
 //! computed style and emits Arcweft-owned `DirectPaintCatalog` data that the
-//! existing `TakumiSceneLowerer` can lower into `UiScene` primitives. It does
+//! existing `TakumiSceneLowerer` can lower into `ViewScene` primitives. It does
 //! not render, rasterize, read files, fetch URLs, or allocate GPU resources.
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     lowering::{DirectBackground, DirectBorder, DirectBoxPaint, DirectClip, DirectPaintCatalog},
     metadata::{ArcweftNodeMetadata, TakumiMetadataMap, TakumiPath},
 };
-use arcweft_render_wgpu::ui_scene::{UiColorRgba8, UiGradientStop, UiPrimitiveRange};
+use arcweft_render_wgpu::view_scene::{ViewColorRgba8, ViewGradientStop, ViewPrimitiveRange};
 use num_traits::ToPrimitive;
 use std::{collections::BTreeMap, sync::Arc};
 use takumi::unstable::base::layout::{
@@ -71,7 +71,7 @@ pub struct DirectPaintEvidenceRecord {
     path: TakumiPath,
     metadata: Option<ArcweftNodeMetadata>,
     layers: Vec<DirectPaintLayerEvidence>,
-    primitive_range: Option<UiPrimitiveRange>,
+    primitive_range: Option<ViewPrimitiveRange>,
 }
 
 /// Evidence for one extracted paint layer.
@@ -260,7 +260,7 @@ impl DirectPaintEvidenceFrame {
     pub fn attach_primitive_range(
         &mut self,
         path: &TakumiPath,
-        primitive_range: UiPrimitiveRange,
+        primitive_range: ViewPrimitiveRange,
     ) -> bool {
         if let Some(record) = self.records.iter_mut().find(|record| record.path() == path) {
             record.primitive_range = Some(primitive_range);
@@ -292,7 +292,7 @@ impl DirectPaintEvidenceRecord {
         &self.layers
     }
 
-    pub fn primitive_range(&self) -> Option<UiPrimitiveRange> {
+    pub fn primitive_range(&self) -> Option<ViewPrimitiveRange> {
         self.primitive_range
     }
 
@@ -419,7 +419,7 @@ fn gradient_stops(
     current_color: TakumiColor,
     path: &TakumiPath,
     frame: &mut ComputedDirectPaintFrame,
-) -> Option<Vec<UiGradientStop>> {
+) -> Option<Vec<ViewGradientStop>> {
     let color_stop_count = stops
         .iter()
         .filter(|stop| matches!(stop, GradientStop::ColorHint { .. }))
@@ -452,7 +452,7 @@ fn gradient_stops(
                     }
                     None => fallback_offset,
                 };
-                result.push(UiGradientStop {
+                result.push(ViewGradientStop {
                     offset: offset.clamp(0.0, 1.0),
                     color: ui_color(color.resolve(current_color)),
                 });
@@ -634,9 +634,9 @@ fn line_width_px(width: LineWidth, sizing: &SizingContext) -> f32 {
     Length::from(width).to_px(sizing, 0.0).max(0.0)
 }
 
-fn ui_color(color: TakumiColor) -> UiColorRgba8 {
+fn ui_color(color: TakumiColor) -> ViewColorRgba8 {
     let [red, green, blue, alpha] = color.0;
-    UiColorRgba8 {
+    ViewColorRgba8 {
         red,
         green,
         blue,

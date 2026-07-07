@@ -86,7 +86,7 @@ The renderer uses normal prepared-frame primitives for visible supported propert
 - text color: `RenderTextBlock.rgba`;
 - border: four deterministic `PaintRect` strips;
 - focus ring: configurable four-strip ring around the bounds;
-- box-shadow: converted into `UiBoxShadowList` and planned by `UiBoxShadowPassPlan` from the existing seq06.13e substrate.
+- box-shadow: converted into `ViewBoxShadowList` and planned by `ViewBoxShadowPassPlan` from the existing seq06.13e substrate.
 
 Radius is carried and used as the shadow border-radius input. Rounded fill clipping of player-owned controls remains a non-goal of this focused bridge because current `PreparedFrame.rectangles` do not carry rounded-rect primitives. The broader retained UI path can render rounded fills later without changing the runtime style payload.
 

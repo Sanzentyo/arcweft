@@ -2,7 +2,7 @@
 
 ## Goal
 
-Close the remaining seq06.13a clip/mask gaps while preserving the retained `UiScene` / `UiCompositor` path and keeping native and web on Arcweft-owned wgpu rendering.
+Close the remaining seq06.13a clip/mask gaps while preserving the retained `ViewScene` / `ViewCompositor` path and keeping native and web on Arcweft-owned wgpu rendering.
 
 This design does not use browser DOM clipping, SVG filters, canvas fallback, CSS-rendered hidden elements, screenshot-derived masks, or CPU-rasterized Takumi output. Resource acquisition remains in player/renderer adapters; planning data remains deterministic and Sans I/O.
 
@@ -10,11 +10,11 @@ This design does not use browser DOM clipping, SVG filters, canvas fallback, CSS
 
 The existing seq06.13a boundaries remain the right ownership split:
 
-- `UiClipPath` and `UiMaskImage` carry renderer-facing retained UI data.
-- `UiClipGeometryPlan` owns clip-path normalization, path parsing, flattening, and typed diagnostics.
-- `UiMaskPassPlan` owns mask image classification, sizing, positioning, repeat distribution, and gradient stop canonicalization.
-- `UiCompositorUniform` owns GPU packing for the shared compositor WGSL contract.
-- `UiMaskTextureProvider` remains the only path for external texture/capture resources.
+- `ViewClipPath` and `ViewMaskImage` carry renderer-facing retained UI data.
+- `ViewClipGeometryPlan` owns clip-path normalization, path parsing, flattening, and typed diagnostics.
+- `ViewMaskPassPlan` owns mask image classification, sizing, positioning, repeat distribution, and gradient stop canonicalization.
+- `ViewCompositorUniform` owns GPU packing for the shared compositor WGSL contract.
+- `ViewMaskTextureProvider` remains the only path for external texture/capture resources.
 
 No browser fallback or compatibility layer is introduced. Unsupported features continue to fail through structured diagnostics.
 
@@ -22,7 +22,7 @@ No browser fallback or compatibility layer is introduced. Unsupported features c
 
 Seq06.13c uses a renderer-owned analytic edge coverage substrate:
 
-1. The renderer parses SVG path data from `UiClipPath::Path` into typed commands.
+1. The renderer parses SVG path data from `ViewClipPath::Path` into typed commands.
 2. Lines are kept as line commands.
 3. Quadratic and cubic Bézier curves are flattened deterministically into line edges using a fixed subdivision budget.
 4. The compositor clip shader evaluates the flattened edge list with either even-odd crossing or non-zero winding.
@@ -39,11 +39,11 @@ A generated coverage or signed-distance texture would be another resource path w
 
 ## Typed path representation
 
-`UiClipGeometryPlan::Path` contains:
+`ViewClipGeometryPlan::Path` contains:
 
-- `fill_rule: UiFillRule` (`NonZero` or `EvenOdd`);
-- `commands: Vec<UiClipPathCommandPlan>` preserving typed move, line, quadratic, cubic, and close-path commands;
-- `edges: Vec<UiClipPathEdge>` consumed by the shader.
+- `fill_rule: ViewFillRule` (`NonZero` or `EvenOdd`);
+- `commands: Vec<ViewClipPathCommandPlan>` preserving typed move, line, quadratic, cubic, and close-path commands;
+- `edges: Vec<ViewClipPathEdge>` consumed by the shader.
 
 Supported commands:
 
@@ -55,7 +55,7 @@ Supported commands:
 - `C` / `c` cubic Bézier;
 - `Z` / `z` close-path.
 
-Unsupported commands, including arcs and smooth-curve shorthand in this cut, produce `UiClipPathPlanError::UnsupportedPathCommand { command }`.
+Unsupported commands, including arcs and smooth-curve shorthand in this cut, produce `ViewClipPathPlanError::UnsupportedPathCommand { command }`.
 
 ### Fill rules and winding
 
@@ -76,7 +76,7 @@ Curves remain typed in `commands` and are flattened into `edges` with `PATH_CURV
 
 ### Degenerate segments
 
-A drawable segment whose endpoints are non-finite or whose distance is below `PATH_EPSILON` returns `UiClipPathPlanError::DegeneratePathSegment { command, index }`. This applies to lines, curve subdivisions, and close-path edges. Move-to commands may repeat coordinates because they do not create coverage.
+A drawable segment whose endpoints are non-finite or whose distance is below `PATH_EPSILON` returns `ViewClipPathPlanError::DegeneratePathSegment { command, index }`. This applies to lines, curve subdivisions, and close-path edges. Move-to commands may repeat coordinates because they do not create coverage.
 
 ### Budgets
 
@@ -88,7 +88,7 @@ Oversized plans return `TooManyPathCommands` or `TooManyPathEdges` with count an
 
 ## `clip-path: url(...)`
 
-`clip-path: url(...)` remains unsupported in this cut. The design adds a typed retained-UI variant, `UiClipPath::Url(Box<str>)`, so renderer/player adapters can preserve the resource reference. Planning returns `UiClipPathPlanError::UrlClipResourceUnsupported { resource }`.
+`clip-path: url(...)` remains unsupported in this cut. The design adds a typed retained-UI variant, `ViewClipPath::Url(Box<str>)`, so renderer/player adapters can preserve the resource reference. Planning returns `ViewClipPathPlanError::UrlClipResourceUnsupported { resource }`.
 
 Reusable SVG/vector clip resources need a resource table, lifecycle, cycle prevention, and CSS reference-box rules. That is intentionally left as a later resource-clip package.
 
@@ -98,7 +98,7 @@ Gradient masks are rendered by the compositor shader as generated coverage. They
 
 ### Supported retained-UI gradient forms
 
-`UiMaskImage::Gradient(UiMaskGradient)` supports:
+`ViewMaskImage::Gradient(ViewMaskGradient)` supports:
 
 - `Linear { angle_degrees, stops }`;
 - `Radial { center, radius_x, radius_y, stops }`;
@@ -108,7 +108,7 @@ The Takumi/CSS adapter in this package lowers non-repeating `linear-gradient(...
 
 ### Color stop interpolation
 
-Gradient stops are canonicalized by `UiMaskPassPlan`:
+Gradient stops are canonicalized by `ViewMaskPassPlan`:
 
 - at least two color stops are required;
 - at most `MAX_MASK_GRADIENT_STOPS = 8` are accepted;
@@ -120,7 +120,7 @@ The compositor does not need full RGBA interpolation for mask application. It pr
 - alpha coverage: `a`;
 - luminance coverage: `dot(rgb, [0.2126, 0.7152, 0.0722]) * a`.
 
-The shader selects the scalar based on `UiMaskChannel` and interpolates coverage.
+The shader selects the scalar based on `ViewMaskChannel` and interpolates coverage.
 
 ### Alpha and luminance behavior
 
@@ -128,7 +128,7 @@ The shader selects the scalar based on `UiMaskChannel` and interpolates coverage
 
 ### Repeat and sizing interaction
 
-Gradient masks use the same `UiMaskSamplingPlan` as texture masks.
+Gradient masks use the same `ViewMaskSamplingPlan` as texture masks.
 
 - `mask-size: auto` / unspecified for gradients uses the source/group extent as the intrinsic mask extent.
 - Explicit sizes create gradient tiles of the resolved size.
@@ -146,17 +146,17 @@ Per-axis modes:
 - `Space`: compute `count = floor(source_size / tile_size)`. If `count <= 1`, center one tile. Otherwise place first and last tile flush with the source edges and distribute remaining free space evenly with `stride = (source_size - tile_size) / (count - 1)`.
 - `Round`: compute `count = max(1, round(source_size / tile_size))`, resize the tile to `source_size / count`, set origin to `0`, and stride by the resized tile size.
 
-This exact distribution is encoded in `UiMaskSamplingPlan` as tile origin, tile size, tile stride, tile count, and axis mode. The shader uses those fields for both texture and gradient masks.
+This exact distribution is encoded in `ViewMaskSamplingPlan` as tile origin, tile size, tile stride, tile count, and axis mode. The shader uses those fields for both texture and gradient masks.
 
 ## `mask: element(...)`
 
-Element masks are represented explicitly as `UiMaskImage::Element(UiElementMaskSource)`. Seq06.13c does not claim element capture rendering because the inspected repository does not expose a typed element-capture resource graph equivalent to seq06.5/06.6 in the render-wgpu path.
+Element masks are represented explicitly as `ViewMaskImage::Element(ViewElementMaskSource)`. Seq06.13c does not claim element capture rendering because the inspected repository does not expose a typed element-capture resource graph equivalent to seq06.5/06.6 in the render-wgpu path.
 
-Planning therefore emits `UiMaskPlanError::ElementMaskCaptureUnavailable { element_id }`.
+Planning therefore emits `ViewMaskPlanError::ElementMaskCaptureUnavailable { element_id }`.
 
 Lifecycle and recursion requirements for the future implementation:
 
-- element capture resources must be prepared by player/renderer adapters before `UiCompositor::render_scene`;
+- element capture resources must be prepared by player/renderer adapters before `ViewCompositor::render_scene`;
 - a capture must include a stable element id and capture generation;
 - capture lookup must reject the current element and all ancestor/descendant cycles before compositor work begins;
 - missing captures must fail as structured diagnostics, never by falling back to DOM or screenshots;
@@ -166,16 +166,16 @@ Lifecycle and recursion requirements for the future implementation:
 
 New or refined typed failures:
 
-- `UiClipPathPlanError::UnsupportedPathCommand { command }`;
-- `UiClipPathPlanError::MalformedPath { reason }`;
-- `UiClipPathPlanError::DegeneratePathSegment { command, index }`;
-- `UiClipPathPlanError::TooManyPathCommands { count, maximum }`;
-- `UiClipPathPlanError::TooManyPathEdges { count, maximum }`;
-- `UiClipPathPlanError::UrlClipResourceUnsupported { resource }`;
-- `UiMaskPlanError::UnsupportedGradient { reason }`;
-- `UiMaskPlanError::TooManyGradientStops { count, maximum }`;
-- `UiMaskPlanError::InvalidGradientStopCount { count }`;
-- `UiMaskPlanError::ElementMaskCaptureUnavailable { element_id }`.
+- `ViewClipPathPlanError::UnsupportedPathCommand { command }`;
+- `ViewClipPathPlanError::MalformedPath { reason }`;
+- `ViewClipPathPlanError::DegeneratePathSegment { command, index }`;
+- `ViewClipPathPlanError::TooManyPathCommands { count, maximum }`;
+- `ViewClipPathPlanError::TooManyPathEdges { count, maximum }`;
+- `ViewClipPathPlanError::UrlClipResourceUnsupported { resource }`;
+- `ViewMaskPlanError::UnsupportedGradient { reason }`;
+- `ViewMaskPlanError::TooManyGradientStops { count, maximum }`;
+- `ViewMaskPlanError::InvalidGradientStopCount { count }`;
+- `ViewMaskPlanError::ElementMaskCaptureUnavailable { element_id }`.
 
 Existing unsupported image/size/position/repeat diagnostics remain in place.
 
@@ -183,7 +183,7 @@ Existing unsupported image/size/position/repeat diagnostics remain in place.
 
 Focused non-GPU tests assert deterministic plan output. Optional ignored smoke captures should compare native and web images using:
 
-- same retained `UiScene` fixture;
+- same retained `ViewScene` fixture;
 - same source/mask resources;
 - same timestamp metadata;
 - per-channel absolute drift threshold of 2 for pinned adapters;

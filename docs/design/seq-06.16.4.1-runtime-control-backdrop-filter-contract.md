@@ -3,7 +3,7 @@
 ## Decision
 
 Runtime controls keep the player-owned overlay renderer. They do not lower into
-retained `UiScene` nodes in this slice.
+retained `ViewScene` nodes in this slice.
 
 The runtime-control path owns text editing, selection, caret, platform IME
 geometry, shortcut policy, tab policy, focus state, action-button hit-testing,
@@ -120,9 +120,9 @@ For each runtime-control item sorted by existing depth/source order:
 9. semantic and hit-test output, unchanged
 ```
 
-`PreparedControlBackdrop` records target, bounds, typed `UiFilterList`, and a
+`PreparedControlBackdrop` records target, bounds, typed `ViewFilterList`, and a
 sampling policy. `PreparedControlFilter` records target, bounds, and typed
-`UiFilterList` for foreground control filtering.
+`ViewFilterList` for foreground control filtering.
 
 The exact GPU backend must execute these records inline with runtime-control
 painting. Merely drawing the whole list before or after all rectangles would
