@@ -302,7 +302,7 @@ flow @flow.partial_pure partial_pure {
 }
 
 #[test]
-fn non_pure_function_prefix_call_still_requires_full_signature() {
+fn non_annotated_function_prefix_call_typechecks_as_partial_application() {
     let tree = parse_ok(
         r"
 fn add(lhs: i64, rhs: i64) -> i64 {
@@ -311,6 +311,7 @@ fn add(lhs: i64, rhs: i64) -> i64 {
 
 flow @flow.partial_non_pure partial_non_pure {
     let add_two = add(2i64)
+    let seven: i64 = add_two(5i64)
 }
 ",
     );
@@ -319,11 +320,18 @@ flow @flow.partial_non_pure partial_non_pure {
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
-        report.diagnostics.iter().any(|diagnostic| diagnostic
-            .message()
-            .contains("function `add` missing required argument `rhs`")),
-        "non-pure partial calls should remain rejected until runtime lowering is designed: {:?}",
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
         report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| matches!(
+            &judgment.ty,
+            TypeKind::Function { params, return_type }
+                if params == &[TypeKind::I64] && return_type.as_ref() == &TypeKind::I64
+        )),
+        "add(2i64) should typecheck as a function awaiting the missing rhs argument: {:?}",
+        report.judgments
     );
 }
 

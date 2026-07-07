@@ -104,13 +104,13 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn check_partial_pure_signature_call(
+    pub(super) fn check_partial_signature_call(
         &mut self,
         name: &str,
         signature: &FunctionSignature,
         args: &[CallArg],
     ) -> Option<TypeKind> {
-        if !self.is_global_pure_function(name) || !signature.checks_args() || args.is_empty() {
+        if !signature.checks_args() || args.is_empty() {
             return None;
         }
         let params = signature.params();

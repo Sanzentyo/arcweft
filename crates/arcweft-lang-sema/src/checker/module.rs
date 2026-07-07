@@ -439,10 +439,6 @@ impl TypeChecker<'_> {
             );
             self.global_function_signatures
                 .insert(function.name().to_owned(), signature_type);
-            if function.has_attribute("pure") {
-                self.global_pure_functions
-                    .insert(function.name().to_owned());
-            }
         }
     }
 

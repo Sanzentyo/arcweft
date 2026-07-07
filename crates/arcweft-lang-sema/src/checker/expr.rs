@@ -875,8 +875,7 @@ impl TypeChecker<'_> {
             self.check_virtual_path_call(&name, args);
             self.check_function_effects(&name);
             if let Some(signature) = signature.filter(FunctionSignature::checks_args) {
-                if let Some(partial_ty) =
-                    self.check_partial_pure_signature_call(&name, &signature, args)
+                if let Some(partial_ty) = self.check_partial_signature_call(&name, &signature, args)
                 {
                     return Some(partial_ty);
                 }

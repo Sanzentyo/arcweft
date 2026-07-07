@@ -822,6 +822,65 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck() {
+    let parsed = parse_source_text(
+        r#"
+fn add(lhs: i64, rhs: i64) -> i64 {
+    return lhs + rhs
+}
+
+flow @flow.main main {
+    let add_two = add(2i64)
+    let seven: i64 = add_two(5i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers non-annotated function prefix partial");
+    let [
+        FlowOp::Let { expr: add_two, .. },
+        FlowOp::Let { expr: seven, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected partial and second apply lets");
+    };
+    assert!(matches!(
+        add_two,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
+            )
+    ));
+    assert!(matches!(
+        seven,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "add_two")
+                && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(5)
+                )
+    ));
+}
+
+#[test]
 fn runtime_plan_lowers_local_function_data_last_pipe_to_apply() {
     let parsed = parse_source_text(
         r#"

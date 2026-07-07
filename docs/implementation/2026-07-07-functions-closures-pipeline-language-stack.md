@@ -73,14 +73,15 @@ Source briefs:
   value labels now understand runtime function values instead of relying on
   wildcard handling.
 - Runtime-plan expression lowering now carries a pure-helper lookup with both
-  IDs and helper bodies. Bare top-level pure helper paths in value position
-  materialize as `RuntimeExpr::Function`, and known helper calls with fewer or
-  more than the declared helper arity lower through `RuntimeExpr::Apply` rather
-  than an invalid exact-arity pure call.
-- Sema now accepts prefix partial calls to top-level `#[pure]` functions, such
-  as `add(2i64)` and `2i64 |> add`, returning the remaining function type. The
-  same syntax remains rejected for non-pure top-level functions until their
-  runtime/AWBC function-value allocation is designed.
+  IDs and helper bodies. Bare top-level helper paths in value position
+  materialize as `RuntimeExpr::Function` when the function lowers through the
+  annotated or inferred helper path, and known helper calls with fewer or more
+  than the declared helper arity lower through `RuntimeExpr::Apply` rather than
+  an invalid exact-arity pure call.
+- Sema now accepts prefix partial calls to checked top-level function
+  signatures, such as `add(2i64)` and `2i64 |> add`, returning the remaining
+  function type. This includes non-annotated top-level `fn` declarations whose
+  bodies are lowerable through the existing inferred helper path.
 - Exact-arity known pure helper calls continue to lower to
   `RuntimeExpr::PureCall`, so the existing accelerator/runtime pure call path
   remains available as an optimization.
@@ -315,12 +316,13 @@ Source briefs:
 - `_` expected-type runtime lowering consumes explicit syntax-level function
   annotations and sema expected-function evidence threaded through compiler
   options.
-- Top-level pure helper functions now materialize as function values in runtime
-  expression lowering, and flow lowering tracks local aliases/partial applies
-  that are known function values. Sema function-valued path call evidence is
-  now threaded into flow, stream, source, and Agent bundle runtime-plan
-  lowering. Prefix partial calls to top-level `#[pure]` functions are accepted
-  in sema and remain scoped to the pure helper runtime path.
+- Top-level functions that lower through the annotated or inferred helper path
+  now materialize as function values in runtime expression lowering, and flow
+  lowering tracks local aliases/partial applies that are known function values.
+  Sema function-valued path call evidence is now threaded into flow, stream,
+  source, and Agent bundle runtime-plan lowering. Prefix partial calls to
+  checked top-level function signatures are accepted in sema; runtime execution
+  currently follows the helper-backed path.
 - AWBC now has first-class closure allocation/apply instructions for
   expression-local function values that complete without suspension.
   `RuntimeExpr::Function` reserves a synthetic AWBC function and emits
@@ -346,7 +348,7 @@ Source briefs:
   candidates hidden by that real method now produce
   `sema.typecheck.shadowed_data_last_method_fallback` warnings. Executable
   spread fallback lowering, curried call-group runtime fallback metadata, and
-  non-pure top-level callable runtime allocation remain open.
+  effectful or suspending top-level callable runtime allocation remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
   callable application and sema trait/impl method calls. AWBC closure/apply now
   covers non-suspending expression closures; suspension-aware dynamic function
@@ -743,3 +745,29 @@ blocked by unrelated dirty `arcweft-bundle` view-renaming work:
 `ViewSemanticTargetResource` is referenced after the model was renamed to
 `ViewSemanticTarget`. Structure audit still reports the unrelated existing
 `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error.
+
+The non-annotated top-level prefix partial cut removes the sema-only
+`#[pure]` gate from signature partial calls. Sema now types `add(2i64)` from a
+plain top-level `fn add(lhs: i64, rhs: i64) -> i64` as `i64 -> i64`, and
+compiler/runtime-plan lowering uses the existing inferred helper path to emit
+`RuntimeExpr::Apply` over a materialized runtime function. Focused validation
+passed with
+`cargo test -p arcweft-lang-sema --all-features non_annotated_function_prefix_call_typechecks_as_partial_application`
+and
+`cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck`.
+The same slice also passed
+`cargo check -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`
+and
+`cargo clippy -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`;
+clippy still reports the existing `TraitMember` / `ImplMember`
+large-enum warnings from `arcweft-lang-syntax`. Structure audit was run with
+`cargo +nightly -Zscript tools/structure-audit.rs --root .`; in the current
+dirty worktree it still reports the unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error and 148 warnings.
+The changed Rust files measured for this cut are
+`checker.rs` 77,240 bytes / 2,111 LOC, `checker/expr.rs` 93,338 bytes / 2,319
+LOC, `checker/expr/signature_call.rs` 12,253 bytes / 325 LOC,
+`checker/module.rs` 69,574 bytes / 1,753 LOC,
+`tests/function_stack.rs` 91,843 bytes / 2,653 LOC, and
+`arcweft-compiler/src/tests.rs` 81,282 bytes / 2,577 LOC; none crossed a new
+error threshold in this slice.
