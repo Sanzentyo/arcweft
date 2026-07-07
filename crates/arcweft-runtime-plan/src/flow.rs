@@ -1212,7 +1212,7 @@ fn implicit_entry_flow(
 /// Lowers HIR flow bodies into executable Sans I/O flow operations.
 pub(crate) fn lower_runtime_flows(
     module: &HirModule,
-    pure_helpers: RuntimePureHelperLookup<'_>,
+    pure_helpers: RuntimePureHelperLookup<'_, 'static>,
     options: &RuntimePlanLowerOptions,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
@@ -1227,6 +1227,7 @@ pub(crate) fn lower_runtime_flows(
         display_defaults,
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
+        function_local_scopes: Vec::new(),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: options.for_iteration_evidence(),
@@ -1257,7 +1258,7 @@ pub(crate) fn lower_runtime_flows(
 fn lower_agent_controller_flow(
     module: &HirModule,
     agent: &HirAgent,
-    pure_helpers: RuntimePureHelperLookup<'_>,
+    pure_helpers: RuntimePureHelperLookup<'_, 'static>,
 ) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(module, None)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
@@ -1268,6 +1269,7 @@ fn lower_agent_controller_flow(
         display_defaults,
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
+        function_local_scopes: Vec::new(),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: &[],
@@ -1299,8 +1301,9 @@ struct FlowRuntimeLowerer<'a> {
     display_defaults: DialogueDisplayDefaults,
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
     presentation_handle_scopes: Vec<BTreeMap<String, PresentationHandleBinding>>,
+    function_local_scopes: Vec<BTreeMap<String, usize>>,
     errors: Vec<RuntimePlanLowerError>,
-    pure_helpers: RuntimePureHelperLookup<'a>,
+    pure_helpers: RuntimePureHelperLookup<'a, 'static>,
     for_iteration_evidence: &'a [RuntimeIteratorEvidence],
     for_iteration_cursor: usize,
 }
@@ -1311,9 +1314,32 @@ struct PresentationHandleBinding {
     kind: &'static str,
 }
 
+fn runtime_expr_function_arity(
+    expr: &RuntimeExpr,
+    function_locals: &BTreeMap<String, usize>,
+) -> Option<usize> {
+    match expr {
+        RuntimeExpr::Function { params, .. } => Some(params.len()),
+        RuntimeExpr::Local(name) => function_locals.get(name).copied(),
+        RuntimeExpr::Apply { callee, args } => {
+            let arity = runtime_expr_function_arity(callee, function_locals)?;
+            arity
+                .checked_sub(args.len())
+                .filter(|remaining| *remaining > 0)
+        }
+        _ => None,
+    }
+}
+
 impl FlowRuntimeLowerer<'_> {
+    fn lower_runtime_expr_result(&self, expr: &Expr) -> Result<RuntimeExpr, String> {
+        let function_locals = self.active_function_locals();
+        let context = self.pure_helpers.with_function_locals(&function_locals);
+        lower_runtime_expr_strict_with_pure(expr, context)
+    }
+
     fn lower_runtime_expr(&mut self, expr: &Expr) -> RuntimeExpr {
-        match lower_runtime_expr_strict_with_pure(expr, self.pure_helpers) {
+        match self.lower_runtime_expr_result(expr) {
             Ok(expr) => expr,
             Err(message) => {
                 self.errors.push(RuntimePlanLowerError::new(message));
@@ -1327,7 +1353,9 @@ impl FlowRuntimeLowerer<'_> {
         expected_ty: Option<&TypeRef>,
         expr: &Expr,
     ) -> RuntimeExpr {
-        match lower_runtime_expr_strict_with_expected_type(expr, expected_ty, self.pure_helpers) {
+        let function_locals = self.active_function_locals();
+        let context = self.pure_helpers.with_function_locals(&function_locals);
+        match lower_runtime_expr_strict_with_expected_type(expr, expected_ty, context) {
             Ok(expr) => expr,
             Err(message) => {
                 self.errors.push(RuntimePlanLowerError::new(message));
@@ -1338,6 +1366,32 @@ impl FlowRuntimeLowerer<'_> {
 
     fn lower_optional_runtime_expr(&mut self, expr: Option<&Expr>) -> Option<RuntimeExpr> {
         expr.map(|expr| self.lower_runtime_expr(expr))
+    }
+
+    fn active_function_locals(&self) -> BTreeMap<String, usize> {
+        self.function_local_scopes
+            .iter()
+            .flat_map(|scope| scope.iter().map(|(name, arity)| (name.clone(), *arity)))
+            .collect()
+    }
+
+    fn record_function_local_binding(&mut self, pattern: &Pattern, arity: Option<usize>) {
+        let Some(name) = pattern.simple_binding_name() else {
+            return;
+        };
+        let Some(scope) = self.function_local_scopes.last_mut() else {
+            return;
+        };
+        if let Some(arity) = arity {
+            scope.insert(name.to_owned(), arity);
+        } else {
+            scope.remove(name);
+        }
+    }
+
+    fn runtime_expr_function_arity(&self, expr: &RuntimeExpr) -> Option<usize> {
+        let function_locals = self.active_function_locals();
+        runtime_expr_function_arity(expr, &function_locals)
     }
 
     fn next_for_iteration_evidence(&mut self) -> Option<RuntimeIteratorEvidence> {
@@ -1366,7 +1420,9 @@ impl FlowRuntimeLowerer<'_> {
     ) -> Vec<FlowOp> {
         self.speaker_preset_scopes.push(BTreeMap::new());
         self.presentation_handle_scopes.push(BTreeMap::new());
+        self.function_local_scopes.push(BTreeMap::new());
         let ops = self.lower_flow_items_in_scope(flow_id, items, flow_index);
+        self.function_local_scopes.pop();
         self.presentation_handle_scopes.pop();
         self.speaker_preset_scopes.pop();
         ops
@@ -1765,7 +1821,7 @@ impl FlowRuntimeLowerer<'_> {
             }],
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr))],
             Stmt::Return(expr) => vec![FlowOp::ReturnExpr(
-                lower_runtime_expr_strict_with_pure(expr, self.pure_helpers)
+                self.lower_runtime_expr_result(expr)
                     .unwrap_or_else(|_| lower_runtime_expr(expr)),
             )],
             Stmt::Assign { target, expr } => {
@@ -1997,7 +2053,7 @@ impl FlowRuntimeLowerer<'_> {
             )));
             return None;
         };
-        let receiver = match lower_runtime_expr_strict_with_pure(target, self.pure_helpers) {
+        let receiver = match self.lower_runtime_expr_result(target) {
             Ok(RuntimeExpr::Local(name)) => RuntimeExpr::Local(name),
             Ok(other) => {
                 self.errors.push(RuntimePlanLowerError::new(format!(
@@ -2010,7 +2066,7 @@ impl FlowRuntimeLowerer<'_> {
                 return None;
             }
         };
-        let expr = match lower_runtime_expr_strict_with_pure(expr, self.pure_helpers) {
+        let expr = match self.lower_runtime_expr_result(expr) {
             Ok(expr) => expr,
             Err(reason) => {
                 self.errors.push(RuntimePlanLowerError::new(reason));
@@ -2071,15 +2127,21 @@ impl FlowRuntimeLowerer<'_> {
         expr: &Expr,
     ) -> Vec<FlowOp> {
         if let Some(ops) = self.lower_dialogue_result_let(flow_id, flow_index, pattern, expr) {
+            self.record_function_local_binding(pattern, None);
             ops
         } else if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
+            self.record_function_local_binding(pattern, None);
             vec![op]
         } else if let Some(ops) = self.lower_presentation_handle_let(flow_id, pattern, expr) {
+            self.record_function_local_binding(pattern, None);
             ops
         } else {
+            let expr = self.lower_runtime_expr_with_expected_type(ty, expr);
+            let arity = self.runtime_expr_function_arity(&expr);
+            self.record_function_local_binding(pattern, arity);
             vec![FlowOp::Let {
                 pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr_with_expected_type(ty, expr),
+                expr,
             }]
         }
     }
@@ -2146,10 +2208,12 @@ impl FlowRuntimeLowerer<'_> {
         statements: &[Stmt],
     ) -> Vec<FlowOp> {
         self.presentation_handle_scopes.push(BTreeMap::new());
+        self.function_local_scopes.push(BTreeMap::new());
         let ops = statements
             .iter()
             .flat_map(|statement| self.lower_flow_stmt(flow_id, flow_index, statement))
             .collect();
+        self.function_local_scopes.pop();
         self.presentation_handle_scopes.pop();
         ops
     }
@@ -2217,6 +2281,7 @@ impl FlowRuntimeLowerer<'_> {
         items: &[FlowItem],
     ) -> Vec<FlowOp> {
         self.presentation_handle_scopes.push(BTreeMap::new());
+        self.function_local_scopes.push(BTreeMap::new());
         let ops = items
             .iter()
             .flat_map(|item| match item {
@@ -2229,6 +2294,7 @@ impl FlowRuntimeLowerer<'_> {
                 }
             })
             .collect();
+        self.function_local_scopes.pop();
         self.presentation_handle_scopes.pop();
         ops
     }

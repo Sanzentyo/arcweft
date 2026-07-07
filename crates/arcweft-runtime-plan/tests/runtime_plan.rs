@@ -1344,6 +1344,54 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_local_function_value_calls_to_apply() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn add(lhs: i64, rhs: i64) -> i64 {
+    lhs + rhs
+}
+
+flow @flow.main main {
+    let f = add
+    let add_two = f(2i64)
+    let seven = add_two(5i64)
+    return seven
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("local function fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("local function runtime plan lowers");
+
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
+        panic!("expected function alias let");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
+    ));
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[1] else {
+        panic!("expected partial apply let");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
+                && args.len() == 1
+    ));
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[2] else {
+        panic!("expected second apply let");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "add_two")
+                && args.len() == 1
+    ));
+}
+
+#[test]
 fn runtime_plan_lowers_data_format_path_to_enum_variant() {
     let tree = parse_ok(
         r#"

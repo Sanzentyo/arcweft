@@ -74,6 +74,10 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   single-parameter function type annotation into `RuntimeExpr::Function`, for
   example `let high: i64 -> bool = _ > 80i64`. This works for flow lets,
   stream lets, and strict runtime block lets.
+- Flow runtime-plan lowering now tracks lexical local bindings that are known
+  function values. Calls through those locals, such as
+  `let f = add; let add_two = f(2i64); let seven = add_two(5i64)`, lower to
+  `RuntimeExpr::Apply` instead of adapter-facing named calls.
 
 ## Current boundaries
 
@@ -87,12 +91,10 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   such as function arguments or contextual returns, still need expression-level
   typed lowering evidence before they can escape into runtime function values.
 - Top-level pure helper functions now materialize as function values in runtime
-  expression lowering. Full typed call disambiguation for local variables that
-  hold function values remains open: an unknown path callee such as `f(1i64)`
-  still lowers as an adapter-facing named call unless the callee expression is
-  already non-path or known as a pure helper. The final model should use typed
-  lowering evidence to choose `Apply` for local function-valued callees without
-  breaking external/adapter call targets.
+  expression lowering, and flow lowering tracks local aliases/partial applies
+  that are known function values. Full typed call disambiguation remains open
+  for function-valued paths known only through sema evidence, such as function
+  arguments, opaque returns, or contextual expected types.
 - AWBC does not yet allocate runtime closure values. `RuntimeExpr::Function`
   currently emits an AWBC lowering diagnostic, and function state is not encoded
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
@@ -128,6 +130,7 @@ cargo test -p arcweft-runtime-plan --all-features strict_runtime_lowers
 cargo test -p arcweft-runtime-plan --all-features strict_runtime_value_lowering_can_emit_pure_calls
 cargo test -p arcweft-runtime-plan --all-features expected_partial_placeholder
 cargo test -p arcweft-runtime-plan --all-features data_last_pipe
+cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_local_function_value_calls_to_apply
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
@@ -156,3 +159,7 @@ explicit single-parameter function annotations.
 
 The helper-aware data-last pipe cut has focused passing coverage for direct
 fallback calls, partial helper apply, and exact helper pure calls.
+
+The local function-valued call cut has focused passing coverage for a flow that
+aliases a pure helper, partially applies that local function value, and applies
+the resulting local function value again.
