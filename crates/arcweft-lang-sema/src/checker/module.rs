@@ -351,14 +351,12 @@ impl TypeChecker<'_> {
             };
             for function in item.functions() {
                 self.check_signature_type_refs(function.signature());
-                let return_type = function
-                    .signature()
-                    .return_type()
-                    .map_or(TypeKind::Unit, type_ref_kind);
+                let signature_type = function_signature_type(function.signature());
                 let name = format!("{}.{}", item.id(), function.signature().name());
-                self.global_functions.insert(name.clone(), return_type);
+                self.global_functions
+                    .insert(name.clone(), signature_type.return_type().clone());
                 self.global_function_signatures
-                    .insert(name.clone(), function_signature_type(function.signature()));
+                    .insert(name.clone(), signature_type);
                 self.global_function_effects.insert(
                     name,
                     function
@@ -375,16 +373,13 @@ impl TypeChecker<'_> {
     fn bind_top_level_functions(&mut self, module: &HirModule) {
         for function in module.functions() {
             self.check_signature_type_refs(function.signature());
-            let return_type = function
-                .signature()
-                .return_type()
-                .map_or(TypeKind::Unit, type_ref_kind);
-            self.global_functions
-                .insert(function.name().to_owned(), return_type);
-            self.global_function_signatures.insert(
+            let signature_type = function_signature_type(function.signature());
+            self.global_functions.insert(
                 function.name().to_owned(),
-                function_signature_type(function.signature()),
+                signature_type.return_type().clone(),
             );
+            self.global_function_signatures
+                .insert(function.name().to_owned(), signature_type);
         }
     }
 

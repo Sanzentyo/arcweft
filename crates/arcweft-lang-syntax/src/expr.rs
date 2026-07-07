@@ -6,7 +6,7 @@ use crate::ast::ids::{
 use crate::ast::line_plan::LinePlan;
 use crate::ast::pattern::Pattern;
 use crate::cst::{
-    find_last_top_level_punctuation, find_top_level_punctuation, split_leading_entity_ref_parts,
+    find_last_top_level_punctuation, split_leading_entity_ref_parts,
     split_leading_relative_entity_ref, split_top_level_punctuation,
     split_top_level_punctuation_once,
 };
@@ -18,6 +18,11 @@ use std::{
     ops::{Add, Deref},
 };
 use thiserror::Error;
+
+mod char_literal;
+mod closure_source;
+
+use closure_source::ClosureBodySource;
 
 /// Identifier segment used by expression paths and shorthand selectors.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -289,6 +294,7 @@ pub enum Expr {
     },
     Closure {
         params: Vec<ClosureParam>,
+        return_type: Option<TypeRef>,
         body: Box<Expr>,
     },
     Unary {
@@ -736,12 +742,24 @@ pub fn parse_expr_with_stats(source: &str) -> Result<ParsedExpr, ExprParseError>
     if trimmed.is_empty() {
         return Err(ExprParseError::new("expected expression"));
     }
-    if let Some((params, body)) = split_closure(trimmed) {
-        let params = parse_closure_params(params)?;
-        let parsed_body = parse_expr_with_stats(body)?;
+    if let Some(closure) = closure_source::split(trimmed)? {
+        let params = parse_closure_params(closure.params)?;
+        let return_type = closure
+            .return_type
+            .map(parse_type_ref)
+            .transpose()
+            .map_err(|error| ExprParseError::new(&error.to_string()))?;
+        let parsed_body = match closure.body {
+            ClosureBodySource::Expr(body) => parse_expr_with_stats(body)?,
+            ClosureBodySource::Block(body) => ParsedExpr {
+                expr: crate::parser::parse_callback_block_expr_body(body),
+                stats: ExprParseStats::default(),
+            },
+        };
         return Ok(ParsedExpr {
             expr: Expr::Closure {
                 params,
+                return_type,
                 body: Box::new(parsed_body.expr),
             },
             stats: parsed_body.stats,
@@ -795,8 +813,65 @@ enum Token {
     Semicolon,
     Question,
     Bang,
-    Op(&'static str),
+    Op(ExprOp),
     Eof,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExprOp {
+    NotEq,
+    Arrow,
+    NegOrSub,
+    Spread,
+    RangeInclusive,
+    Range,
+    FatArrow,
+    Assign,
+    Eq,
+    Gte,
+    Lte,
+    Pipe,
+    Or,
+    ClosurePipe,
+    And,
+    Merge,
+    Add,
+    Mul,
+    Div,
+    Rem,
+    Gt,
+    Lt,
+    In,
+}
+
+impl ExprOp {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotEq => "!=",
+            Self::Arrow => "->",
+            Self::NegOrSub => "-",
+            Self::Spread => "...",
+            Self::RangeInclusive => "..=",
+            Self::Range => "..",
+            Self::FatArrow => "=>",
+            Self::Assign => "=",
+            Self::Eq => "==",
+            Self::Gte => ">=",
+            Self::Lte => "<=",
+            Self::Pipe => "|>",
+            Self::Or => "||",
+            Self::ClosurePipe => "|",
+            Self::And => "&&",
+            Self::Merge => "&",
+            Self::Add => "+",
+            Self::Mul => "*",
+            Self::Div => "/",
+            Self::Rem => "%",
+            Self::Gt => ">",
+            Self::Lt => "<",
+            Self::In => "in",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -847,30 +922,31 @@ impl<'a> Lexer<'a> {
                 ':' => self.single(Token::Colon),
                 ';' => self.single(Token::Semicolon),
                 '?' => self.single(Token::Question),
-                '!' if self.starts_with("!=") => self.fixed_op("!=", 2),
+                '!' if self.starts_with("!=") => self.fixed_op(ExprOp::NotEq, 2),
                 '!' => self.single(Token::Bang),
-                '-' => self.fixed_op("-", 1),
-                '.' if self.starts_with("...") => self.fixed_op("...", 3),
-                '.' if self.starts_with("..=") => self.fixed_op("..=", 3),
-                '.' if self.starts_with("..") => self.fixed_op("..", 2),
+                '-' if self.starts_with("->") => self.fixed_op(ExprOp::Arrow, 2),
+                '-' => self.fixed_op(ExprOp::NegOrSub, 1),
+                '.' if self.starts_with("...") => self.fixed_op(ExprOp::Spread, 3),
+                '.' if self.starts_with("..=") => self.fixed_op(ExprOp::RangeInclusive, 3),
+                '.' if self.starts_with("..") => self.fixed_op(ExprOp::Range, 2),
                 '.' if self.dot_starts_relative_path() => self.lex_relative_path(),
                 '.' => self.single(Token::Dot),
-                '=' if self.starts_with("=>") => self.fixed_op("=>", 2),
-                '=' if self.starts_with("==") => self.fixed_op("==", 2),
-                '=' => self.fixed_op("=", 1),
-                '>' if self.starts_with(">=") => self.fixed_op(">=", 2),
-                '<' if self.starts_with("<=") => self.fixed_op("<=", 2),
-                '|' if self.starts_with("|>") => self.fixed_op("|>", 2),
-                '|' if self.starts_with("||") => self.fixed_op("||", 2),
-                '|' => self.fixed_op("|", 1),
-                '&' if self.starts_with("&&") => self.fixed_op("&&", 2),
-                '&' => self.fixed_op("&", 1),
-                '+' => self.fixed_op("+", 1),
-                '*' => self.fixed_op("*", 1),
-                '/' => self.fixed_op("/", 1),
-                '%' => self.fixed_op("%", 1),
-                '>' => self.fixed_op(">", 1),
-                '<' => self.fixed_op("<", 1),
+                '=' if self.starts_with("=>") => self.fixed_op(ExprOp::FatArrow, 2),
+                '=' if self.starts_with("==") => self.fixed_op(ExprOp::Eq, 2),
+                '=' => self.fixed_op(ExprOp::Assign, 1),
+                '>' if self.starts_with(">=") => self.fixed_op(ExprOp::Gte, 2),
+                '<' if self.starts_with("<=") => self.fixed_op(ExprOp::Lte, 2),
+                '|' if self.starts_with("|>") => self.fixed_op(ExprOp::Pipe, 2),
+                '|' if self.starts_with("||") => self.fixed_op(ExprOp::Or, 2),
+                '|' => self.fixed_op(ExprOp::ClosurePipe, 1),
+                '&' if self.starts_with("&&") => self.fixed_op(ExprOp::And, 2),
+                '&' => self.fixed_op(ExprOp::Merge, 1),
+                '+' => self.fixed_op(ExprOp::Add, 1),
+                '*' => self.fixed_op(ExprOp::Mul, 1),
+                '/' => self.fixed_op(ExprOp::Div, 1),
+                '%' => self.fixed_op(ExprOp::Rem, 1),
+                '>' => self.fixed_op(ExprOp::Gt, 1),
+                '<' => self.fixed_op(ExprOp::Lt, 1),
                 _ if is_ident_start(ch) => self.lex_ident(),
                 _ => {
                     self.bump_char();
@@ -896,7 +972,7 @@ impl<'a> Lexer<'a> {
         token
     }
 
-    fn fixed_op(&mut self, op: &'static str, len: usize) -> Token {
+    fn fixed_op(&mut self, op: ExprOp, len: usize) -> Token {
         self.cursor += len;
         Token::Op(op)
     }
@@ -914,11 +990,11 @@ impl<'a> Lexer<'a> {
                     && self
                         .source
                         .get(self.cursor + 'c'.len_utf8()..)
-                        .is_none_or(char_literal_suffix_boundary)
+                        .is_none_or(char_literal::suffix_boundary)
                 {
                     self.bump_char();
                     let raw = self.source[literal_start..self.cursor].to_owned();
-                    return match decode_char_literal(&value) {
+                    return match char_literal::decode(&value) {
                         Ok(value) => Token::Literal(Literal::Char { raw, value }),
                         Err(message) => Token::Invalid(message),
                     };
@@ -1151,7 +1227,7 @@ impl<'a> Lexer<'a> {
         match value {
             "true" => Token::Literal(Literal::Bool(true)),
             "false" => Token::Literal(Literal::Bool(false)),
-            "in" => Token::Op("in"),
+            "in" => Token::Op(ExprOp::In),
             _ => Token::Ident(value.to_owned()),
         }
     }
@@ -1211,6 +1287,12 @@ struct ExprParser {
     tokens: Vec<LexedToken>,
     cursor: usize,
     stats: ExprParseStats,
+}
+
+#[derive(Default)]
+struct ClosureReturnParse {
+    return_type: Option<TypeRef>,
+    block_body: Option<String>,
 }
 
 impl ExprParser {
@@ -1291,8 +1373,8 @@ impl ExprParser {
                         }
                     }
                 }
-                Token::Op(".." | "..=") if min_bp <= 5 => {
-                    let inclusive = matches!(self.bump(), Token::Op("..="));
+                Token::Op(ExprOp::Range | ExprOp::RangeInclusive) if min_bp <= 5 => {
+                    let inclusive = matches!(self.bump(), Token::Op(ExprOp::RangeInclusive));
                     let end = if matches!(
                         self.peek(),
                         Token::Eof | Token::Comma | Token::RParen | Token::RBracket | Token::RBrace
@@ -1317,7 +1399,7 @@ impl ExprParser {
                     }
                     self.bump();
                     let rhs = self.parse_expr_bp(right_bp)?;
-                    if op == "|>" {
+                    if op == ExprOp::Pipe {
                         Expr::Pipe {
                             lhs: Box::new(lhs),
                             rhs: Box::new(rhs),
@@ -1365,12 +1447,12 @@ impl ExprParser {
                 op: UnaryOp::Not,
                 expr: Box::new(self.parse_expr_bp(90)?),
             }),
-            Token::Op("-") => Ok(Expr::Unary {
+            Token::Op(ExprOp::NegOrSub) => Ok(Expr::Unary {
                 op: UnaryOp::Neg,
                 expr: Box::new(self.parse_expr_bp(90)?),
             }),
-            Token::Op(".." | "..=") => {
-                let inclusive = matches!(self.previous(), Some(Token::Op("..=")));
+            Token::Op(ExprOp::Range | ExprOp::RangeInclusive) => {
+                let inclusive = matches!(self.previous(), Some(Token::Op(ExprOp::RangeInclusive)));
                 let end = if matches!(
                     self.peek(),
                     Token::Eof | Token::Comma | Token::RParen | Token::RBracket | Token::RBrace
@@ -1643,18 +1725,21 @@ impl ExprParser {
                 value: Box::new(self.parse_expr_bp(0)?),
             });
         }
-        if self.peek() == &Token::Op("||") {
+        if self.peek() == &Token::Op(ExprOp::Or) {
             self.bump();
+            let closure_return = self.parse_closure_return_type()?;
+            let body = self.parse_closure_body(closure_return.block_body)?;
             return Ok(CallArg::Positional(Expr::Closure {
                 params: Vec::new(),
-                body: Box::new(self.parse_expr_bp(0)?),
+                return_type: closure_return.return_type,
+                body: Box::new(body),
             }));
         }
-        if self.peek() == &Token::Op("|") {
+        if self.peek() == &Token::Op(ExprOp::ClosurePipe) {
             return self.parse_closure_arg().map(CallArg::Positional);
         }
         let expr = self.parse_expr_bp(0)?;
-        if self.peek() == &Token::Op("...") {
+        if self.peek() == &Token::Op(ExprOp::Spread) {
             self.bump();
             return Ok(CallArg::Spread {
                 value: Box::new(expr),
@@ -1677,7 +1762,7 @@ impl ExprParser {
             parts.push(part.clone());
             cursor += 2;
         }
-        if self.token_at(cursor) != &Token::Op("=") {
+        if self.token_at(cursor) != &Token::Op(ExprOp::Assign) {
             return None;
         }
         self.cursor = cursor + 1;
@@ -1685,13 +1770,16 @@ impl ExprParser {
     }
 
     fn parse_closure_arg(&mut self) -> Result<Expr, ExprParseError> {
-        self.expect(&Token::Op("|"))?;
+        self.expect(&Token::Op(ExprOp::ClosurePipe))?;
         let param_tokens = self.take_closure_param_tokens()?;
         let params_source = token_span_source(&param_tokens, &self.source).unwrap_or_default();
         let params = parse_closure_params(params_source)?;
+        let closure_return = self.parse_closure_return_type()?;
+        let body = self.parse_closure_body(closure_return.block_body)?;
         Ok(Expr::Closure {
             params,
-            body: Box::new(self.parse_expr_bp(0)?),
+            return_type: closure_return.return_type,
+            body: Box::new(body),
         })
     }
 
@@ -1708,8 +1796,38 @@ impl ExprParser {
         }
         Ok(Expr::Closure {
             params,
+            return_type: None,
             body: Box::new(crate::parser::parse_callback_block_expr_body(body_source)),
         })
+    }
+
+    fn parse_closure_return_type(&mut self) -> Result<ClosureReturnParse, ExprParseError> {
+        if self.peek() != &Token::Op(ExprOp::Arrow) {
+            return Ok(ClosureReturnParse::default());
+        }
+        self.bump();
+        let type_tokens = self.take_closure_return_type_tokens()?;
+        let type_source = token_span_source(&type_tokens, &self.source).unwrap_or_default();
+        let return_type =
+            parse_type_ref(type_source).map_err(|error| ExprParseError::new(&error.to_string()))?;
+        if self.peek() != &Token::LBrace {
+            return Err(ExprParseError::new(
+                "closure return type annotation requires a block body",
+            ));
+        }
+        let body_tokens = self.take_braced_tokens()?;
+        let body_source = token_span_source(&body_tokens, &self.source).unwrap_or_default();
+        Ok(ClosureReturnParse {
+            return_type: Some(return_type),
+            block_body: Some(body_source.trim().to_owned()),
+        })
+    }
+
+    fn parse_closure_body(&mut self, block_body: Option<String>) -> Result<Expr, ExprParseError> {
+        block_body.map_or_else(
+            || self.parse_expr_bp(0),
+            |body| Ok(crate::parser::parse_callback_block_expr_body(&body)),
+        )
     }
 
     fn take_closure_param_tokens(&mut self) -> Result<Vec<LexedToken>, ExprParseError> {
@@ -1720,7 +1838,9 @@ impl ExprParser {
         loop {
             let lexed = self.bump_lexed();
             match &lexed.token {
-                Token::Op("|") if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                Token::Op(ExprOp::ClosurePipe)
+                    if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 =>
+                {
                     return Ok(tokens);
                 }
                 Token::LParen => paren_depth = paren_depth.saturating_add(1),
@@ -1733,6 +1853,45 @@ impl ExprParser {
                 _ => {}
             }
             tokens.push(lexed);
+        }
+    }
+
+    fn take_closure_return_type_tokens(&mut self) -> Result<Vec<LexedToken>, ExprParseError> {
+        let mut paren_depth = 0_u32;
+        let mut bracket_depth = 0_u32;
+        let mut tokens = Vec::new();
+        loop {
+            match self.peek() {
+                Token::LBrace if paren_depth == 0 && bracket_depth == 0 => {
+                    if tokens.is_empty() {
+                        return Err(ExprParseError::new(
+                            "expected closure return type after `->`",
+                        ));
+                    }
+                    return Ok(tokens);
+                }
+                Token::Eof => {
+                    return Err(ExprParseError::new(
+                        "closure return type annotation requires a block body",
+                    ));
+                }
+                Token::RParen if paren_depth == 0 => {
+                    return Err(ExprParseError::new(
+                        "closure return type annotation requires a block body",
+                    ));
+                }
+                Token::RBracket if bracket_depth == 0 => {
+                    return Err(ExprParseError::new(
+                        "closure return type annotation requires a block body",
+                    ));
+                }
+                Token::LParen => paren_depth = paren_depth.saturating_add(1),
+                Token::RParen => paren_depth = paren_depth.saturating_sub(1),
+                Token::LBracket => bracket_depth = bracket_depth.saturating_add(1),
+                Token::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                _ => {}
+            }
+            tokens.push(self.bump_lexed());
         }
     }
 
@@ -1775,7 +1934,7 @@ impl ExprParser {
         }
         loop {
             let name = self.take_ident("expected record field name")?;
-            let value = if matches!(self.peek(), Token::Colon | Token::Op("=")) {
+            let value = if matches!(self.peek(), Token::Colon | Token::Op(ExprOp::Assign)) {
                 self.bump();
                 self.parse_expr_bp(0)?
             } else {
@@ -1807,15 +1966,15 @@ impl ExprParser {
     }
 
     fn skip_method_turbofish_before_call(&mut self) -> bool {
-        if self.peek() != &Token::Op("<") {
+        if self.peek() != &Token::Op(ExprOp::Lt) {
             return false;
         }
         let start = self.cursor;
         let mut depth = 0_i32;
         loop {
             match self.bump() {
-                Token::Op("<") => depth += 1,
-                Token::Op(">") => {
+                Token::Op(ExprOp::Lt) => depth += 1,
+                Token::Op(ExprOp::Gt) => {
                     depth -= 1;
                     if depth == 0 {
                         if self.peek() == &Token::LParen {
@@ -1890,25 +2049,25 @@ impl ExprParser {
     }
 }
 
-fn infix_binding_power(op: &str) -> Option<(u8, u8, BinaryOp)> {
+fn infix_binding_power(op: ExprOp) -> Option<(u8, u8, BinaryOp)> {
     Some(match op {
-        "=>" => (10, 10, BinaryOp::Implies),
-        "|>" => (15, 16, BinaryOp::Implies),
-        "||" => (20, 21, BinaryOp::Or),
-        "&&" => (30, 31, BinaryOp::And),
-        "in" => (40, 5, BinaryOp::In),
-        "==" => (45, 46, BinaryOp::Eq),
-        "!=" => (45, 46, BinaryOp::NotEq),
-        ">=" => (45, 46, BinaryOp::Gte),
-        "<=" => (45, 46, BinaryOp::Lte),
-        ">" => (45, 46, BinaryOp::Gt),
-        "<" => (45, 46, BinaryOp::Lt),
-        "&" => (48, 49, BinaryOp::Merge),
-        "+" => (50, 51, BinaryOp::Add),
-        "-" => (50, 51, BinaryOp::Sub),
-        "*" => (60, 61, BinaryOp::Mul),
-        "/" => (60, 61, BinaryOp::Div),
-        "%" => (60, 61, BinaryOp::Rem),
+        ExprOp::FatArrow => (10, 10, BinaryOp::Implies),
+        ExprOp::Pipe => (15, 16, BinaryOp::Implies),
+        ExprOp::Or => (20, 21, BinaryOp::Or),
+        ExprOp::And => (30, 31, BinaryOp::And),
+        ExprOp::In => (40, 5, BinaryOp::In),
+        ExprOp::Eq => (45, 46, BinaryOp::Eq),
+        ExprOp::NotEq => (45, 46, BinaryOp::NotEq),
+        ExprOp::Gte => (45, 46, BinaryOp::Gte),
+        ExprOp::Lte => (45, 46, BinaryOp::Lte),
+        ExprOp::Gt => (45, 46, BinaryOp::Gt),
+        ExprOp::Lt => (45, 46, BinaryOp::Lt),
+        ExprOp::Merge => (48, 49, BinaryOp::Merge),
+        ExprOp::Add => (50, 51, BinaryOp::Add),
+        ExprOp::NegOrSub => (50, 51, BinaryOp::Sub),
+        ExprOp::Mul => (60, 61, BinaryOp::Mul),
+        ExprOp::Div => (60, 61, BinaryOp::Div),
+        ExprOp::Rem => (60, 61, BinaryOp::Rem),
         _ => return None,
     })
 }
@@ -1959,7 +2118,9 @@ fn top_level_callback_arrow(tokens: &[LexedToken]) -> Option<usize> {
             Token::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
             Token::LBrace => brace_depth = brace_depth.saturating_add(1),
             Token::RBrace => brace_depth = brace_depth.saturating_sub(1),
-            Token::Op("=>") if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+            Token::Op(ExprOp::FatArrow)
+                if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 =>
+            {
                 return Some(index);
             }
             _ => {}
@@ -2049,7 +2210,7 @@ fn token_source(token: &Token) -> String {
         Token::Semicolon => ";".to_owned(),
         Token::Question => "?".to_owned(),
         Token::Bang => "!".to_owned(),
-        Token::Op(op) => (*op).to_owned(),
+        Token::Op(op) => op.as_str().to_owned(),
         Token::Eof => String::new(),
     }
 }
@@ -2225,13 +2386,6 @@ fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {
     )))
 }
 
-fn split_closure(source: &str) -> Option<(&str, &str)> {
-    let rest = source.strip_prefix('|')?;
-    let close = find_top_level_punctuation(rest, '|')?;
-    let body = rest[close + 1..].trim();
-    (!body.is_empty()).then_some((rest[..close].trim(), body))
-}
-
 fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
     let close = source.strip_suffix(']')?;
     let open = find_last_top_level_open_bracket(close)?;
@@ -2252,56 +2406,6 @@ fn is_numeric_unit_amount(source: &str) -> bool {
     }
     let cleaned = source.replace('_', "");
     cleaned.chars().any(|ch| ch.is_ascii_digit()) && cleaned.parse::<f64>().is_ok()
-}
-
-fn char_literal_suffix_boundary(tail: &str) -> bool {
-    tail.chars()
-        .next()
-        .is_none_or(|ch| ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | ',' | ';'))
-}
-
-fn decode_char_literal(source: &str) -> Result<char, String> {
-    let mut chars = source.chars();
-    let value = match chars.next() {
-        Some('\\') => decode_char_escape(&mut chars)?,
-        Some(value) => value,
-        None => return Err("char literal must contain exactly one Unicode scalar value".to_owned()),
-    };
-    if chars.next().is_some() {
-        return Err("char literal must contain exactly one Unicode scalar value".to_owned());
-    }
-    Ok(value)
-}
-
-fn decode_char_escape(chars: &mut core::str::Chars<'_>) -> Result<char, String> {
-    match chars.next() {
-        Some('n') => Ok('\n'),
-        Some('r') => Ok('\r'),
-        Some('t') => Ok('\t'),
-        Some('0') => Ok('\0'),
-        Some('\\') => Ok('\\'),
-        Some('"') => Ok('"'),
-        Some('u') => decode_unicode_escape(chars),
-        Some(other) => Err(format!("unsupported char escape `\\{other}`")),
-        None => Err("unterminated char escape".to_owned()),
-    }
-}
-
-fn decode_unicode_escape(chars: &mut core::str::Chars<'_>) -> Result<char, String> {
-    if chars.next() != Some('{') {
-        return Err("unicode char escape must use `\\u{...}`".to_owned());
-    }
-    let mut digits = String::new();
-    for ch in chars.by_ref() {
-        if ch == '}' {
-            let value = u32::from_str_radix(&digits, 16)
-                .map_err(|_| "invalid unicode char escape".to_owned())?;
-            return char::from_u32(value)
-                .ok_or_else(|| "unicode char escape is not a valid scalar value".to_owned());
-        }
-        digits.push(ch);
-    }
-    Err("unterminated unicode char escape".to_owned())
 }
 
 impl ExprParseError {

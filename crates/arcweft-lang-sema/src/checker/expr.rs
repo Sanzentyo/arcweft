@@ -7,13 +7,14 @@ use super::helpers::{
     well_known_capacity_method_type, well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
-    BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParam,
-    FunctionSignature, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker,
-    TypeExpressionId, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, TypedLoweringEvidence,
+    BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionSignature,
+    LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeExpressionId,
+    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, TypedLoweringEvidence,
     TypedLoweringEvidenceKind, YieldContext, entity_syntax_kind,
 };
 use crate::diagnostics::TraitDiagnostic;
 use crate::traits::TraitMethodResolution;
+use arcweft_lang_syntax::ast::flow::ThreadBlock;
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
     BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder, UnaryOp,
@@ -27,9 +28,10 @@ mod method_fallback;
 mod partial;
 mod pipe;
 mod range;
+mod signature_call;
 mod support;
 
-use builtin::{BuiltinCallSpec, CapabilityFunctionSpec};
+use builtin::BuiltinCallSpec;
 use partial::expr_contains_partial_placeholder;
 use support::{
     BuiltinCollectionMethodCallOutcome, ChoicePatternCoverage, TraitMethodCallOutcome,
@@ -39,7 +41,7 @@ use support::{
     agent_result, choice_pattern_coverage, collection_index_key_type, expr_kind_name,
     has_multiple_numeric_choice_alternatives, inline_failure_builtin_variant_type,
     is_character_speaker_type, is_unit_number_type, join_branch_types, looks_like_os_absolute_path,
-    rhs_expected_type_for_binary, signature_param_label, spread_item_type, std_float_constant_type,
+    rhs_expected_type_for_binary, spread_item_type, std_float_constant_type,
     trait_method_call_signature, unique_numeric_choice_alternative,
 };
 
@@ -161,27 +163,19 @@ impl TypeChecker<'_> {
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs),
             Expr::Try { expr } => self.check_try_expr(expr),
-            Expr::Await { expr, applies_try } => {
-                self.record_static_effect("control.suspend", "await");
-                if self.in_seq_context() {
-                    self.errors.push(TypeCheckError::new(
-                        "`seq` blocks are pure and cannot await".to_owned(),
-                    ));
-                }
-                self.check_await_expr(expr, *applies_try)
-            }
-            Expr::Thread { block } => {
-                self.record_static_effect("control.spawn", "thread");
-                self.check_thread_body(block.body());
-                Some(TypeKind::ThreadHandle(Box::new(TypeKind::Unit)))
-            }
+            Expr::Await { expr, applies_try } => self.check_await_expr_node(expr, *applies_try),
+            Expr::Thread { block } => Some(self.check_thread_expr(block)),
             Expr::Range { start, end, .. } => {
                 Some(self.check_range_expr(start.as_deref(), end.as_deref(), expected))
             }
             Expr::Record { path, fields } => Some(self.check_record_expr(path, fields)),
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
-            Expr::Closure { params, body } => Some(self.check_closure_expr(params, body, expected)),
+            Expr::Closure {
+                params,
+                return_type,
+                body,
+            } => Some(self.check_closure_expr(params, return_type.as_ref(), body, expected)),
             Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr, expected)),
             Expr::Block { statements, value } => {
                 self.check_block_expr_with_expected(statements, value.as_deref(), expected)
@@ -232,6 +226,22 @@ impl TypeChecker<'_> {
         self.yield_stack
             .last()
             .is_some_and(|context| matches!(context, YieldContext::Seq { .. }))
+    }
+
+    fn check_await_expr_node(&mut self, expr: &Expr, applies_try: bool) -> Option<TypeKind> {
+        self.record_static_effect("control.suspend", "await");
+        if self.in_seq_context() {
+            self.errors.push(TypeCheckError::new(
+                "`seq` blocks are pure and cannot await".to_owned(),
+            ));
+        }
+        self.check_await_expr(expr, applies_try)
+    }
+
+    fn check_thread_expr(&mut self, block: &ThreadBlock) -> TypeKind {
+        self.record_static_effect("control.spawn", "thread");
+        self.check_thread_body(block.body());
+        TypeKind::ThreadHandle(Box::new(TypeKind::Unit))
     }
 
     fn check_entity_ref_expr(&mut self, entity: &EntityRefSyntax) -> Option<TypeKind> {
@@ -1040,187 +1050,6 @@ impl TypeChecker<'_> {
                     self.check_expr(value);
                 }
             }
-        }
-    }
-
-    fn check_untyped_function_args(&mut self, name: &str, args: &[CallArg]) {
-        let checked_args = if let Some(spec) = CapabilityFunctionSpec::resolve(name) {
-            args.iter()
-                .skip(spec.unchecked_prefix_args())
-                .collect::<Vec<_>>()
-        } else {
-            args.iter().collect::<Vec<_>>()
-        };
-        for arg in checked_args {
-            self.check_expr(arg.value());
-        }
-    }
-
-    fn check_signature_call_args(
-        &mut self,
-        name: &str,
-        signature: &FunctionSignature,
-        args: &[CallArg],
-    ) {
-        let fixed = signature
-            .params
-            .iter()
-            .filter(|param| !param.is_rest())
-            .collect::<Vec<_>>();
-        let rest = signature.params.iter().find(|param| param.is_rest());
-        let mut provided_fixed = vec![false; fixed.len()];
-        let mut positional_index = 0;
-
-        for arg in args {
-            match arg {
-                CallArg::Named {
-                    name: arg_name,
-                    value,
-                } => {
-                    self.check_named_signature_arg(
-                        name,
-                        arg_name,
-                        value,
-                        &fixed,
-                        rest,
-                        &mut provided_fixed,
-                    );
-                }
-                CallArg::Spread { value } => {
-                    self.check_signature_spread_arg(name, value, rest, &fixed, &provided_fixed);
-                }
-                CallArg::Positional(positional) => {
-                    while positional_index < fixed.len() && provided_fixed[positional_index] {
-                        positional_index += 1;
-                    }
-                    if let Some(param) = fixed.get(positional_index) {
-                        provided_fixed[positional_index] = true;
-                        let label = signature_param_label(param, positional_index);
-                        positional_index += 1;
-                        self.expect_signature_arg_type(name, &label, positional, &param.ty);
-                    } else if let Some(param) = rest {
-                        let label = param.name.as_deref().unwrap_or("#rest");
-                        self.expect_signature_arg_type(name, label, positional, &param.ty);
-                    } else {
-                        self.errors.push(TypeCheckError::new(format!(
-                            "function `{name}` received too many positional arguments"
-                        )));
-                        self.check_expr(positional);
-                    }
-                }
-            }
-        }
-
-        for (index, param) in fixed.iter().enumerate() {
-            if !provided_fixed[index] && !param.has_default {
-                let label = param
-                    .name
-                    .as_deref()
-                    .map_or_else(|| format!("#{index}"), ToOwned::to_owned);
-                self.errors.push(TypeCheckError::new(format!(
-                    "function `{name}` missing required argument `{label}`"
-                )));
-            }
-        }
-    }
-
-    fn check_signature_spread_arg(
-        &mut self,
-        function_name: &str,
-        value: &Expr,
-        rest: Option<&FunctionParam>,
-        fixed: &[&FunctionParam],
-        provided_fixed: &[bool],
-    ) {
-        let Some(rest) = rest else {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` does not accept spread arguments"
-            )));
-            self.check_expr(value);
-            return;
-        };
-        if fixed
-            .iter()
-            .zip(provided_fixed.iter().copied())
-            .any(|(param, provided)| !provided && !param.has_default)
-        {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` spread argument must appear after required fixed arguments"
-            )));
-            self.check_expr(value);
-            return;
-        }
-        let actual = self.check_expr(value);
-        let Some(actual) = actual.as_ref() else {
-            return;
-        };
-        let Some(item) = spread_item_type(actual) else {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` spread argument must have sequence type for rest parameter `{}`",
-                rest.name.as_deref().unwrap_or("#rest")
-            )));
-            return;
-        };
-        if !self.types_compatible(&rest.ty, item) {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` spread items must have type {:?}, found {:?}",
-                rest.ty, item
-            )));
-        }
-    }
-
-    fn check_named_signature_arg(
-        &mut self,
-        function_name: &str,
-        arg_name: &str,
-        value: &Expr,
-        fixed: &[&FunctionParam],
-        rest: Option<&FunctionParam>,
-        provided_fixed: &mut [bool],
-    ) {
-        if rest.and_then(|param| param.name.as_deref()) == Some(arg_name) {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` rest parameter `{arg_name}` is positional-only"
-            )));
-            self.check_expr(value);
-            return;
-        }
-        let Some(index) = fixed
-            .iter()
-            .position(|param| param.name.as_deref() == Some(arg_name))
-        else {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` has no parameter named `{arg_name}`"
-            )));
-            self.check_expr(value);
-            return;
-        };
-        if provided_fixed[index] {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` argument `{arg_name}` was provided more than once"
-            )));
-        }
-        provided_fixed[index] = true;
-        self.expect_signature_arg_type(function_name, arg_name, value, &fixed[index].ty);
-    }
-
-    fn expect_signature_arg_type(
-        &mut self,
-        function_name: &str,
-        arg_label: &str,
-        arg: &Expr,
-        expected: &TypeKind,
-    ) {
-        let actual = self.check_expr_with_expected(arg, Some(expected));
-        if let Some(actual) = actual.as_ref()
-            && !self.types_compatible(expected, actual)
-        {
-            self.errors.push(TypeCheckError::argument_type_mismatch(
-                function_name,
-                arg_label,
-                expected.clone(),
-                actual.clone(),
-            ));
         }
     }
 

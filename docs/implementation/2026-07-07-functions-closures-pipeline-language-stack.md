@@ -1,6 +1,9 @@
 # Functions, closures, currying, and pipeline language stack — 2026-07-07
 
-Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f3559f\pasted-text.txt`.
+Source briefs:
+
+- `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f3559f\pasted-text.txt`
+- `C:\Users\sanze\.codex\attachments\232a9edf-275f-4c4a-86b9-c447fe38e452\pasted-text.txt`
 
 ## Implemented in the current sequence
 
@@ -87,6 +90,11 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   treating those path callees as unknown named functions.
 - Function value calls in sema now support partial application by returning a
   remaining `TypeKind::Function` when fewer positional arguments are supplied.
+- Sema now preserves curried declaration call-group boundaries for top-level
+  and extern capability function signatures. For example,
+  `tuple_tail(a, b)(c) -> (i64, i64, i64)` is modeled as a first call group
+  returning `c -> (i64, i64, i64)`, and `chain(a)(b)(c, d) -> i64` retains the
+  two remaining groups after `chain(a)`.
 - Compiler lowering now converts sema typed-lowering evidence into
   runtime-plan-local evidence and threads it through `RuntimePlanLowerOptions`.
 - Runtime-plan lowering shares one typed expression cursor across flow, stream,
@@ -96,6 +104,9 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   path calls such as `f(1i64)` lower to `RuntimeExpr::Apply` when sema proved
   `f` is a function value. Without that evidence, the same unknown path call
   remains an adapter-facing `RuntimeExpr::Call`.
+- Runtime-plan lowering preserves curried pure-helper application as staged
+  `RuntimeExpr::Apply`, including `tuple_tail(1i64, 2i64)(3i64)` as `[2, 1]`
+  argument groups and `chain(1i64)(2i64)(3i64, 4i64)` as `[1, 1, 2]`.
 - Strict runtime expression lowering consumes expected-function evidence so
   placeholder abstractions in function-argument positions, such as
   `accept(_ > 80i64)` where `accept` expects `i64 -> bool`, lower the argument
@@ -114,6 +125,28 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   `score.above(80i64)` can lower as `above(80i64, score)`. Sema records
   lowering evidence for this decision so real inherent/env/trait methods still
   win when they exist.
+- Expression lexing now represents operators with a dedicated `ExprOp` enum
+  instead of string tokens such as `Op("->")`, so parser branches for `->`,
+  `=>`, `|>`, range operators, comparison operators, and closure pipes are
+  checked by Rust exhaustiveness/type checking rather than string literals.
+- Closure return type annotation is accepted as `|params| -> Type { ... }`
+  and `|| -> Type { ... }`. Return-typed closures require block bodies.
+  Parser tests cover top-level, zero-arg, call-argument, and missing-block
+  cases.
+- Sema checks declared closure return types against both expected function
+  types and the block body result. Curried closures such as
+  `|min: i64| |value: i64| -> bool { value >= min }` typecheck as
+  `i64 -> (i64 -> bool)`.
+- Flow statement parsing now keeps multiline return-typed closure literals
+  together as a single `let` statement by tracking existing CST punctuation
+  depth while consuming statement continuations.
+- `expr.rs` was split further by moving closure source splitting and character
+  literal decoding into `expr/closure_source.rs` and `expr/char_literal.rs`,
+  keeping the expression parser below the structure-audit error threshold.
+- UI interaction view-surface examples were updated from removed
+  `ForEach(...) |item| { ... }` / unsupported `Grid(...)` authoring to the
+  current `for item in items key = item.id { ... }` View DSL and supported
+  container elements.
 
 ## Current boundaries
 
@@ -140,6 +173,13 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   syntax fallback now has typed lowering evidence for positional data-last
   helper signatures, but named/spread fallback arguments, curried call-group
   metadata, and non-helper callable runtime lowering remain open.
+- Curried declaration call-group metadata is now preserved for sema/runtime-plan
+  callable application. Bare top-level function names in sema value position,
+  trait method curried group metadata, and AWBC closure/apply allocation remain
+  open.
+- Closure return type annotation is implemented, but `return expr` inside a
+  closure is not yet re-bound to the nearest closure/function-like boundary in
+  this cut. The currently validated path is final block expression typing.
 - Method-chain fallback sugar resolves after existing env/builtin/integer/
   handle/trait method checks, preserving real methods before data-last fallback.
   Ambiguity diagnostics that compare real method and fallback candidates remain
@@ -151,11 +191,11 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 
 ## Follow-up request
 
-- `docs/reviews/requests/2026-07-07-function-closure-runtime-apply-capture-and-method-sugar.md`
-- `docs/reviews/requests/2026-07-07-function-stack-typed-expression-lowering-evidence.md`
-- `docs/reviews/requests/2026-07-07-function-stack-awbc-closure-apply.md`
-- `docs/reviews/requests/2026-07-07-function-stack-placeholder-inference-and-method-fallback.md`
-- `docs/reviews/requests/2026-07-07-function-stack-capture-effect-lsp.md`
+- `docs/reviews/requests/2026-07-07-seq-07-function-closure-runtime-apply-capture-and-method-sugar.md`
+- `docs/reviews/requests/2026-07-07-seq-07.1-function-stack-typed-expression-lowering-evidence.md`
+- `docs/reviews/requests/2026-07-07-seq-07.2-function-stack-placeholder-inference-and-method-fallback.md`
+- `docs/reviews/requests/2026-07-07-seq-07.4-function-stack-capture-effect-lsp.md`
+- `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
 
 ## Validation
 
@@ -178,13 +218,17 @@ cargo test -p arcweft-lang-sema --all-features infers_partial_placeholder_functi
 cargo test -p arcweft-lang-sema --all-features infers_parenthesized_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_partial_call_abstraction_without_expected_type
 cargo test -p arcweft-lang-sema --all-features method_chain
+cargo test -p arcweft-lang-sema --all-features curried_function_declaration
+cargo test -p arcweft-lang-sema --all-features closure_return
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_expected_function_evidence_for_placeholder_args
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_inferred_partial_placeholder_functions
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_typed_data_last_method_fallback
+cargo test -p arcweft-compiler --all-features runtime_plan_preserves_curried_call_group_application_samples
 cargo test -p arcweft-compiler --all-features
+cargo test -p arcweft-lang-syntax --all-features closure
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
@@ -237,3 +281,16 @@ typed positional data-last method fallback, and real method priority. Compiler
 coverage confirms the inferred placeholder forms lower to `RuntimeExpr::Function`
 and typed data-last method fallback lowers to a pure helper call with the
 receiver appended as the last argument.
+
+The closure return type cut has passing parser coverage for `|params| -> Type
+{ ... }`, `|| -> Type { ... }`, call-argument closures, and the required block
+body diagnostic. Sema coverage confirms declared closure return types typecheck
+against body values, mismatch diagnostics are produced, curried closure return
+types preserve remaining function values, and multiline return-typed closure
+lets are consumed as one statement.
+
+The final validation cut reports structure audit 0 errors / 146 warnings after
+the expression parser module split. `cargo clippy --workspace --all-targets
+--all-features` still reports the existing `TraitMember` and `ImplMember`
+`large_enum_variant` warnings in `arcweft-lang-syntax/src/ast/items.rs`; no
+new clippy warning remains from the function/closure changes.

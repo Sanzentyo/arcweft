@@ -5,11 +5,12 @@ use super::headers::{
 };
 use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
-    CstLineEvents, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit, FlowItem, Parser,
-    RawSyntax, ScopeBlock, Stmt, SyntaxParseStats, TextRange, UnsafeAuditInsertion,
-    flat_block_head, indentation, is_await_with_head, is_expression_statement_call, is_typed_stmt,
-    is_with_brace_head, parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence,
-    parse_line_options, parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
+    CstLineEvents, CstPunctuationDeltas, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit,
+    FlowItem, Parser, RawSyntax, ScopeBlock, Stmt, SyntaxParseStats, TextRange,
+    UnsafeAuditInsertion, flat_block_head, indentation, is_await_with_head,
+    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
+    parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
+    parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
     parse_stmt_with_stats_and_base, parse_thread_block, parse_unsafe_lifetime_block,
     parse_with_brace_label, split_call_head,
 };
@@ -262,19 +263,26 @@ impl<'a> Parser<'a> {
 
     fn consume_stmt_text_with_continuations(&mut self, indent: usize) -> Cow<'a, str> {
         let mut stmt = self.current().text;
+        let mut depth = self.current().punctuation_deltas();
         self.index += 1;
         while self.index < self.events.len() {
             let next = self.current();
             let next_trimmed = next.text.trim_start();
-            if indentation(&next.text) <= indent || !next_trimmed.starts_with('.') {
+            let is_balanced = punctuation_depth_is_balanced(depth);
+            let is_dot_continuation =
+                indentation(&next.text) > indent && next_trimmed.starts_with('.');
+            if is_balanced && !is_dot_continuation {
                 break;
             }
             // Dot-leading lines are expression continuations, not new flow
-            // items. Preserve a newline so parser diagnostics can still point
-            // back to the authored shape when the expression is malformed.
+            // items. Unbalanced punctuation also keeps multiline expression
+            // statements such as return-typed closure literals together.
+            // Preserve a newline so parser diagnostics can still point back
+            // to the authored shape when the expression is malformed.
             let text = stmt.to_mut();
             text.push('\n');
             text.push_str(&next.text);
+            add_punctuation_depth(&mut depth, next.punctuation_deltas());
             self.index += 1;
         }
         stmt
@@ -679,6 +687,16 @@ impl<'a> Parser<'a> {
             CstStructuredFlowBlockKind::Scope => self.parse_scope_block().map(FlowItem::Scope),
         }
     }
+}
+
+fn add_punctuation_depth(depth: &mut CstPunctuationDeltas, delta: CstPunctuationDeltas) {
+    depth.brace += delta.brace;
+    depth.paren += delta.paren;
+    depth.bracket += delta.bracket;
+}
+
+fn punctuation_depth_is_balanced(depth: CstPunctuationDeltas) -> bool {
+    depth.brace <= 0 && depth.paren <= 0 && depth.bracket <= 0
 }
 
 fn split_leading_command(source: &str) -> Option<(&str, &str)> {

@@ -163,6 +163,7 @@ fn add_i64_helper() -> RuntimePureHelper {
 fn strict_runtime_lowers_closure_to_function_expr() {
     let expr = Expr::Closure {
         params: vec![ClosureParam::new(Pattern::Ident("score".to_owned()), None)],
+        return_type: None,
         body: Box::new(Expr::Binary {
             lhs: Box::new(Expr::Path("score".into())),
             op: BinaryOp::Gt,

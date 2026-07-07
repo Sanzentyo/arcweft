@@ -671,12 +671,11 @@ fn project_callable_signature(
 }
 
 fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSignature {
-    let return_type = signature
-        .return_type()
-        .map_or_else(|| TypeKind::Named("_".to_owned()), project_type_ref_kind);
+    let return_type = curried_project_signature_return_type(signature);
     let params = signature
         .param_groups()
-        .iter()
+        .first()
+        .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         .map(|param| {
             let name = callable_param_name(param.pattern()).unwrap_or("_");
@@ -690,6 +689,26 @@ fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSign
             }
         });
     FunctionSignature::new(return_type, params)
+        .with_remaining_call_groups(signature.param_groups().len().saturating_sub(1))
+}
+
+fn curried_project_signature_return_type(signature: &SyntaxFnSignature) -> TypeKind {
+    let return_type = signature
+        .return_type()
+        .map_or_else(|| TypeKind::Named("_".to_owned()), project_type_ref_kind);
+    signature
+        .param_groups()
+        .iter()
+        .skip(1)
+        .rev()
+        .fold(return_type, |return_type, group| TypeKind::Function {
+            params: group
+                .params()
+                .iter()
+                .map(|param| project_type_ref_kind(param.ty()))
+                .collect(),
+            return_type: Box::new(return_type),
+        })
 }
 
 fn callable_param_name(pattern: &Pattern) -> Option<&str> {

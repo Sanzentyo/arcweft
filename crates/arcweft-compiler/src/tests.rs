@@ -48,6 +48,19 @@ fn public_id(value: &str) -> PublicId {
     PublicId::try_new(value).expect("valid public id")
 }
 
+fn runtime_apply_arg_counts(expr: &RuntimeExpr) -> Vec<usize> {
+    let mut counts = Vec::new();
+    collect_runtime_apply_arg_counts(expr, &mut counts);
+    counts
+}
+
+fn collect_runtime_apply_arg_counts(expr: &RuntimeExpr, counts: &mut Vec<usize>) {
+    if let RuntimeExpr::Apply { callee, args } = expr {
+        collect_runtime_apply_arg_counts(callee, counts);
+        counts.push(args.len());
+    }
+}
+
 fn project_with_entity(id: &str, kind: EntityKind) -> ProjectSemanticIndex {
     project_with_typed_entity(id, kind, None)
 }
@@ -597,6 +610,54 @@ flow @flow.main main {
                 ] if value == &RuntimeValue::i64(80) && name == "score"
             )
     ));
+}
+
+#[test]
+fn runtime_plan_preserves_curried_call_group_application_samples() {
+    let parsed = parse_source_text(
+        r#"
+#[pure]
+fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
+    return (a, b, c)
+}
+
+#[pure]
+fn chain(a: i64)(b: i64)(c: i64, d: i64) -> i64 {
+    return a + b + c + d
+}
+
+flow @flow.main main {
+    let tupled = tuple_tail(1i64, 2i64)(3i64)
+    let sum = chain(1i64)(2i64)(3i64, 4i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers curried call-group samples");
+    let [
+        FlowOp::Let { expr: tupled, .. },
+        FlowOp::Let { expr: sum, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected tupled and sum lets");
+    };
+
+    assert_eq!(runtime_apply_arg_counts(tupled), [2, 1]);
+    assert_eq!(runtime_apply_arg_counts(sum), [1, 1, 2]);
 }
 
 #[test]

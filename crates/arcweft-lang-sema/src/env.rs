@@ -17,6 +17,7 @@ pub struct FunctionSignature {
     pub(crate) return_type: TypeKind,
     pub(crate) params: Vec<FunctionParam>,
     pub(crate) checks_args: bool,
+    pub(crate) remaining_call_groups: usize,
 }
 
 /// One function or method parameter in a semantic environment signature.
@@ -95,6 +96,7 @@ impl FunctionSignature {
             return_type: normalize_type_kind(return_type),
             params: params.into_iter().map(normalize_function_param).collect(),
             checks_args: true,
+            remaining_call_groups: 0,
         }
     }
 
@@ -105,7 +107,16 @@ impl FunctionSignature {
             return_type: normalize_type_kind(return_type),
             params: Vec::new(),
             checks_args: false,
+            remaining_call_groups: 0,
         }
+    }
+
+    /// Marks how many declaration call groups remain after this signature's
+    /// first group is supplied.
+    #[must_use]
+    pub fn with_remaining_call_groups(mut self, count: usize) -> Self {
+        self.remaining_call_groups = count;
+        self
     }
 
     /// Return type produced by the callable.
@@ -121,6 +132,12 @@ impl FunctionSignature {
     /// Whether this signature has enough parameter information for arg checks.
     pub const fn checks_args(&self) -> bool {
         self.checks_args
+    }
+
+    /// Number of source declaration call groups still represented by the
+    /// return function type.
+    pub const fn remaining_call_groups(&self) -> usize {
+        self.remaining_call_groups
     }
 }
 

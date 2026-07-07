@@ -111,6 +111,251 @@ flow @flow.partial_call partial_call {
 }
 
 #[test]
+fn curried_function_declaration_preserves_call_group_semantics() {
+    let tree = parse_ok(
+        r"
+fn add(a: i64)(b: i64) -> i64 {
+    return a + b
+}
+
+flow @flow.curried curried {
+    let add_one: i64 -> i64 = add(1i64)
+    let three: i64 = add(1i64)(2i64)
+    log.info(three)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried function fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried function fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.subject,
+                TypeJudgmentSubject::Expr { kind: "call", .. }
+                    if matches!(
+                        &judgment.ty,
+                        TypeKind::Function { params, return_type }
+                            if params == &[TypeKind::I64]
+                                && return_type.as_ref() == &TypeKind::I64
+                    )
+            )
+        }),
+        "add(1i64) should typecheck as the remaining call group function"
+    );
+}
+
+#[test]
+fn curried_function_declaration_handles_multi_param_groups_and_tuple_return_samples() {
+    let tree = parse_ok(
+        r"
+fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
+    return (a, b, c)
+}
+
+fn chain(a: i64)(b: i64)(c: i64, d: i64) -> i64 {
+    return a + b + c + d
+}
+
+flow @flow.curried_samples curried_samples {
+    let tupled: (i64, i64, i64) = tuple_tail(1i64, 2i64)(3i64)
+    let sum: i64 = chain(1i64)(2i64)(3i64, 4i64)
+    log.info(sum)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried sample fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried sample fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Function { params, return_type }
+                    if params == &[TypeKind::I64]
+                        && matches!(
+                            return_type.as_ref(),
+                            TypeKind::Tuple(items)
+                                if items == &[TypeKind::I64, TypeKind::I64, TypeKind::I64]
+                        )
+            )
+        }),
+        "tuple_tail(1i64, 2i64) should typecheck as c -> (i64, i64, i64)"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Function { params, return_type }
+                    if params == &[TypeKind::I64]
+                        && matches!(
+                            return_type.as_ref(),
+                            TypeKind::Function {
+                                params: final_params,
+                                return_type: final_return_type,
+                            }
+                                if final_params == &[TypeKind::I64, TypeKind::I64]
+                                    && final_return_type.as_ref() == &TypeKind::I64
+                        )
+            )
+        }),
+        "chain(1i64) should retain the remaining two call groups"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Tuple(items)
+                    if items == &[TypeKind::I64, TypeKind::I64, TypeKind::I64]
+            )
+        }),
+        "tuple_tail(1i64, 2i64)(3i64) should typecheck as the tuple return"
+    );
+}
+
+#[test]
+fn curried_function_declaration_rejects_flattened_call_group() {
+    let tree = parse_ok(
+        r"
+fn add(a: i64)(b: i64) -> i64 {
+    return a + b
+}
+
+flow @flow.curried_flattened curried_flattened {
+    let wrong = add(1i64, 2i64)
+    log.info(wrong)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried flattened fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried flattened fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message().contains("curried parameter groups")),
+        "expected flattened call-group diagnostic, got {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn closure_return_type_annotation_checks_body() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_return closure_return {
+    let is_high = |score: i64| -> bool {
+        score >= 80i64
+    }
+    let ok: bool = is_high(81i64)
+    log.info(ok)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure return fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure return fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Function { params, return_type }
+                    if params == &[TypeKind::I64] && return_type.as_ref() == &TypeKind::Bool
+            )
+        }),
+        "expected closure to typecheck as i64 -> bool"
+    );
+}
+
+#[test]
+fn closure_return_type_annotation_rejects_body_mismatch() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_return_mismatch closure_return_mismatch {
+    let bad = |score: i64| -> bool {
+        score + 1i64
+    }
+    log.info(bad(1i64))
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure mismatch fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure mismatch fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| diagnostic
+            .message()
+            .contains("closure body must return bool, found i64")),
+        "expected closure return mismatch diagnostic, got {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn curried_closure_return_type_annotation_preserves_remaining_function() {
+    let tree = parse_ok(
+        r"
+flow @flow.curried_closure_return curried_closure_return {
+    let at_least = |min: i64| |value: i64| -> bool {
+        value >= min
+    }
+    let adult = at_least(18i64)
+    let ok: bool = adult(21i64)
+    log.info(ok)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried closure return fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried closure return fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Function { params, return_type }
+                    if params == &[TypeKind::I64]
+                        && matches!(
+                            return_type.as_ref(),
+                            TypeKind::Function {
+                                params: inner_params,
+                                return_type: inner_return_type,
+                            } if inner_params == &[TypeKind::I64]
+                                && inner_return_type.as_ref() == &TypeKind::Bool
+                        )
+            )
+        }),
+        "expected outer closure to typecheck as i64 -> (i64 -> bool)"
+    );
+}
+
+#[test]
 fn infers_partial_placeholder_function_without_expected_type() {
     let tree = parse_ok(
         r"

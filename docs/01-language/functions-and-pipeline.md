@@ -81,6 +81,40 @@ let add_with_bonus = |score: i64| score + bonus
 let next = add_with_bonus(3i64)
 ```
 
+Closure は返り値型を明示できる。返り値型を明示する場合、body は block
+必須である。
+
+```arcw
+let is_high =
+    |score: i64| -> bool {
+        score >= 80i64
+    }
+
+let now_text =
+    || -> String {
+        clock.now().to_string()
+    }
+```
+
+返り値型なしの軽い closure はそのまま使える。
+
+```arcw
+choices.filter(|choice| choice.enabled)
+```
+
+Curried closure では call group を flatten しない。`|a, b| -> C { ... }`
+と `|a| |b| -> C { ... }` は別の関数型である。
+
+```arcw
+let ge =
+    |min: i64| |value: i64| -> bool {
+        value >= min
+    }
+```
+
+`_` と `^` に直接 return type annotation は付けない。型を明示したい場合は
+binding 側の `let f: A -> B = ...` か、明示 closure を使う。
+
 ```arcw
 fn add(a: i64)(b: i64) -> i64 { a + b }
 
@@ -102,6 +136,22 @@ fn add(a: i64)(b: i64) -> i64 { a + b }
 let add_two = add(2i64)
 let seven = add_two(5i64)
 let also_seven = add(2i64)(5i64)
+```
+
+Call group は flatten しない。`f(a, b)(c)` と `f(a)(b, c)` は別の
+関数型として扱う。
+
+```arcw
+fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
+    (a, b, c)
+}
+
+fn chain(a: i64)(b: i64)(c: i64, d: i64) -> i64 {
+    a + b + c + d
+}
+
+let tupled = tuple_tail(1i64, 2i64)(3i64)
+let sum = chain(1i64)(2i64)(3i64, 4i64)
 ```
 
 ## 部分適用

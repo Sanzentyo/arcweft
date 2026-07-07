@@ -724,16 +724,35 @@ fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
 }
 
 fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
-    let return_type = signature
-        .return_type()
-        .map_or(TypeKind::Unit, type_ref_kind);
+    let return_type = curried_signature_return_type(signature);
     let params = signature
         .param_groups()
-        .iter()
+        .first()
+        .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         .map(function_param_type)
         .collect::<Vec<_>>();
     FunctionSignature::new(return_type, params)
+        .with_remaining_call_groups(signature.param_groups().len().saturating_sub(1))
+}
+
+fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
+    let return_type = signature
+        .return_type()
+        .map_or(TypeKind::Unit, type_ref_kind);
+    signature
+        .param_groups()
+        .iter()
+        .skip(1)
+        .rev()
+        .fold(return_type, |return_type, group| TypeKind::Function {
+            params: group
+                .params()
+                .iter()
+                .map(|param| type_ref_kind(param.ty()))
+                .collect(),
+            return_type: Box::new(return_type),
+        })
 }
 
 fn function_param_type(param: &FnParam) -> FunctionParam {

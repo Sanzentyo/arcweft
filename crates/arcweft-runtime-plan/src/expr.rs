@@ -383,7 +383,7 @@ fn lower_runtime_expr_strict_with_helpers(
         | Expr::NamedBlock {
             statements, value, ..
         } => lower_strict_block_expr(statements, value.as_deref(), helpers),
-        Expr::Closure { params, body } => lower_strict_closure_expr(params, body, helpers),
+        Expr::Closure { params, body, .. } => lower_strict_closure_expr(params, body, helpers),
         Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers, expression_id),
         Expr::MethodCall {
             receiver,
@@ -684,8 +684,13 @@ fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
             expr: Box::new(substitute_pipe_left(expr, lhs)),
             applies_try: *applies_try,
         },
-        Expr::Closure { params, body } => Expr::Closure {
+        Expr::Closure {
+            params,
+            return_type,
+            body,
+        } => Expr::Closure {
             params: params.clone(),
+            return_type: return_type.clone(),
             body: Box::new(substitute_pipe_left(body, lhs)),
         },
         _ => expr.clone(),
@@ -1631,7 +1636,7 @@ fn lower_strict_map_method_call(
             }),
         );
     }
-    let Expr::Closure { params, body } = arg.value() else {
+    let Expr::Closure { params, body, .. } = arg.value() else {
         return None;
     };
     let [param] = params.as_slice() else {
@@ -1685,7 +1690,7 @@ fn lower_strict_filter_method_call(
             }),
         );
     }
-    let Expr::Closure { params, body } = arg.value() else {
+    let Expr::Closure { params, body, .. } = arg.value() else {
         return None;
     };
     let [param] = params.as_slice() else {

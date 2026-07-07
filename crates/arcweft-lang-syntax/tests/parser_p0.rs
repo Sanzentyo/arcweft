@@ -365,7 +365,7 @@ fn postfix_callback_block_lowers_to_method_call_closure_arg() {
 
     assert_eq!(method, "on_click");
     assert!(matches!(receiver.as_ref(), Expr::Call { .. }));
-    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
         panic!("expected single closure arg: {args:?}");
     };
     assert!(params.is_empty());
@@ -388,7 +388,7 @@ fn postfix_callback_block_supports_parameterized_closure() {
     };
 
     assert_eq!(method, "map");
-    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
         panic!("expected single closure arg: {args:?}");
     };
     assert_eq!(
@@ -412,7 +412,7 @@ fn postfix_callback_block_supports_parameterized_closure() {
 fn closures_keep_pattern_and_type_ascription_parameters() {
     let expr = parse_expr("|(item, index): Pair| item.label(index)")
         .expect("typed pattern closure parses");
-    let Expr::Closure { params, body } = expr else {
+    let Expr::Closure { params, body, .. } = expr else {
         panic!("expected closure");
     };
 
@@ -432,13 +432,105 @@ fn closures_keep_pattern_and_type_ascription_parameters() {
 }
 
 #[test]
+fn closures_keep_explicit_return_type_and_block_body() {
+    let expr = parse_expr(
+        r"
+|score: i32| -> bool {
+    score >= 80
+}
+",
+    )
+    .expect("return-typed closure parses");
+    let Expr::Closure {
+        params,
+        return_type,
+        body,
+    } = expr
+    else {
+        panic!("expected closure");
+    };
+
+    assert_eq!(params[0].simple_ident(), Some("score"));
+    assert!(matches!(
+        return_type,
+        Some(TypeRef::Path(path)) if path == "bool"
+    ));
+    assert!(matches!(body.as_ref(), Expr::Block { .. }));
+}
+
+#[test]
+fn zero_arg_closure_keeps_explicit_return_type() {
+    let expr = parse_expr(
+        r#"
+|| -> String {
+    "now"
+}
+"#,
+    )
+    .expect("zero-arg return-typed closure parses");
+    let Expr::Closure {
+        params,
+        return_type,
+        body,
+    } = expr
+    else {
+        panic!("expected closure");
+    };
+
+    assert!(params.is_empty());
+    assert!(matches!(
+        return_type,
+        Some(TypeRef::Path(path)) if path == "String"
+    ));
+    assert!(matches!(body.as_ref(), Expr::Block { .. }));
+}
+
+#[test]
+fn call_arg_closure_keeps_explicit_return_type() {
+    let expr = parse_expr("items.filter(|choice: Choice| -> bool { choice.enabled })")
+        .expect("return-typed closure arg parses");
+    let Expr::MethodCall { args, .. } = expr else {
+        panic!("expected method call");
+    };
+    let [
+        CallArg::Positional(Expr::Closure {
+            params,
+            return_type,
+            body,
+        }),
+    ] = args.as_slice()
+    else {
+        panic!("expected closure arg: {args:?}");
+    };
+
+    assert_eq!(params[0].simple_ident(), Some("choice"));
+    assert!(matches!(
+        return_type,
+        Some(TypeRef::Path(path)) if path == "bool"
+    ));
+    assert!(matches!(body.as_ref(), Expr::Block { .. }));
+}
+
+#[test]
+fn closure_return_type_requires_block_body() {
+    let error = parse_expr("|score: i32| -> bool score >= 80")
+        .expect_err("return-typed closure without block is rejected");
+    assert!(
+        error
+            .to_string()
+            .contains("closure return type annotation requires a block body"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn callback_block_closure_keeps_typed_parameters() {
     let expr =
         parse_expr("items.map { item: Label => item.text }").expect("typed callback block parses");
     let Expr::MethodCall { args, .. } = expr else {
         panic!("expected method call");
     };
-    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
         panic!("expected closure arg: {args:?}");
     };
 
@@ -464,7 +556,7 @@ fn postfix_callback_block_preserves_multi_statement_body() {
     };
 
     assert_eq!(method, "on_click");
-    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
         panic!("expected single closure arg: {args:?}");
     };
     assert!(params.is_empty());

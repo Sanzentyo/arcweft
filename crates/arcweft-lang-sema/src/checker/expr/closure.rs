@@ -2,11 +2,13 @@ use super::support::spread_item_type;
 use super::{CallArg, Expr, TypeCheckError, TypeChecker, TypeKind};
 use crate::checker::helpers::{type_kind_label, type_ref_kind};
 use arcweft_lang_syntax::expr::ClosureParam;
+use arcweft_lang_syntax::types::TypeRef;
 
 impl TypeChecker<'_> {
     pub(super) fn check_closure_expr(
         &mut self,
         params: &[ClosureParam],
+        declared_return_type: Option<&TypeRef>,
         body: &Expr,
         expected: Option<&TypeKind>,
     ) -> TypeKind {
@@ -55,7 +57,21 @@ impl TypeChecker<'_> {
             function_params.push(ty);
         }
         let local_snapshot = self.insert_scoped_locals(bindings);
-        let expected_return = expected_function.map(|(_, return_type)| return_type);
+        let declared_return_type = declared_return_type.map(type_ref_kind);
+        if let (Some(expected_return), Some(declared_return_type)) = (
+            expected_function.map(|(_, return_type)| return_type),
+            declared_return_type.as_ref(),
+        ) && !self.types_compatible(expected_return, declared_return_type)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "closure return type declares {}, but expected function return is {}",
+                type_kind_label(declared_return_type),
+                type_kind_label(expected_return)
+            )));
+        }
+        let expected_return = declared_return_type
+            .as_ref()
+            .or_else(|| expected_function.map(|(_, return_type)| return_type));
         let body_type = self.check_expr_with_expected(body, expected_return);
         self.restore_scoped_locals(local_snapshot);
         if let (Some(expected_return), Some(body_type)) = (expected_return, body_type.as_ref())

@@ -140,8 +140,13 @@ fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
             expr: Box::new(substitute_pipe_left(expr, lhs)),
             applies_try: *applies_try,
         },
-        Expr::Closure { params, body } => Expr::Closure {
+        Expr::Closure {
+            params,
+            return_type,
+            body,
+        } => Expr::Closure {
             params: params.clone(),
+            return_type: return_type.clone(),
             body: Box::new(substitute_pipe_left(body, lhs)),
         },
         _ => expr.clone(),
