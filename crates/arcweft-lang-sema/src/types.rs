@@ -187,6 +187,160 @@ impl EntityType {
 impl TypeKind {
     pub const ACTION_EVENT_TYPE_NAME: &'static str = "ActionEvent";
 
+    /// Returns the canonical Arcweft surface spelling for this semantic type.
+    ///
+    /// This is intended for diagnostics and tooling displays, not for stable
+    /// serialization. Function labels use the documented right-associative
+    /// `A -> B` spelling and tuple call groups for multi-parameter functions.
+    #[must_use]
+    pub fn source_label(&self) -> String {
+        if let Some(label) = self.atomic_source_label() {
+            return label.to_owned();
+        }
+
+        match self {
+            Self::Ref(entity) => entity.source_label(),
+            Self::Probe(inner) => format!("Probe<{}>", inner.source_label()),
+            Self::Range(inner) => format!("Range<{}>", inner.source_label()),
+            Self::IteratorState { family, item } => {
+                format!("{family:?}IteratorState<{}>", item.source_label())
+            }
+            Self::Vec(inner) => format!("Vec<{}>", inner.source_label()),
+            Self::Array { item, len } => format!("Array<{}, {len}>", item.source_label()),
+            Self::Slice(inner) => format!("[{}]", inner.source_label()),
+            Self::Seq(inner) => format!("Seq<{}>", inner.source_label()),
+            Self::Map { kind, key, value } => {
+                format!("{kind:?}<{}, {}>", key.source_label(), value.source_label())
+            }
+            Self::BorrowRef { lifetime, inner } => lifetime.as_ref().map_or_else(
+                || format!("&{}", inner.source_label()),
+                |lifetime| format!("&{} {}", lifetime.as_str(), inner.source_label()),
+            ),
+            Self::Need { ready, error } => {
+                format!("Need<{}, {}>", ready.source_label(), error.source_label())
+            }
+            Self::Stream { item, error } => {
+                format!("Stream<{}, {}>", item.source_label(), error.source_label())
+            }
+            Self::Source { item, error } => {
+                format!("Source<{}, {}>", item.source_label(), error.source_label())
+            }
+            Self::Result { ok, error } => {
+                format!("Result<{}, {}>", ok.source_label(), error.source_label())
+            }
+            Self::Option(inner) => format!("Option<{}>", inner.source_label()),
+            Self::Handle {
+                name,
+                lifetime,
+                state,
+                must_drop,
+            } => format!(
+                "Handle<{name}, {}, {state:?}, {must_drop}>",
+                lifetime.as_str()
+            ),
+            Self::ThreadHandle(inner) => format!("ThreadHandle<{}>", inner.source_label()),
+            Self::Shared(inner) => format!("Shared<{}>", inner.source_label()),
+            Self::Function {
+                params,
+                return_type,
+            } => Self::function_source_label(params, return_type),
+            Self::GenericParam(name) | Self::Named(name) => name.clone(),
+            Self::Projection {
+                subject,
+                trait_name,
+                assoc,
+            } => trait_name.as_ref().map_or_else(
+                || format!("{}::{assoc}", subject.source_label()),
+                |trait_name| format!("<{} as {trait_name}>::{assoc}", subject.source_label()),
+            ),
+            Self::Speaker(kind) => format!("Speaker<{kind:?}>"),
+            Self::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
+            Self::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
+            Self::Tuple(items) => format!(
+                "({})",
+                items
+                    .iter()
+                    .map(Self::source_label)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Self::Choice(alternatives) => alternatives
+                .iter()
+                .map(Self::source_label)
+                .collect::<Vec<_>>()
+                .join(" | "),
+            _ => unreachable!("atomic type labels are handled before structured labels"),
+        }
+    }
+
+    fn atomic_source_label(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::Bool => "bool",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::ISize => "isize",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+            Self::USize => "usize",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::String => "String",
+            Self::Char => "char",
+            Self::Bytes => "Bytes",
+            Self::TextCluster => "TextCluster",
+            Self::Duration => "Duration",
+            Self::DisplayText => "DisplayText",
+            Self::DebugStatePath => "DebugStatePath",
+            Self::ObservationFieldPath => "ObservationFieldPath",
+            Self::Predicate => "Predicate",
+            Self::Observation => "Observation",
+            Self::ObservedObject => "ObservedObject",
+            Self::AgentBBox => "AgentBBox",
+            Self::ActionName => "ActionName",
+            Self::ActionTarget => "ActionTarget",
+            Self::ActionResult => "ActionResult",
+            Self::AgentValue => "AgentValue",
+            Self::DataFormat => "DataFormat",
+            Self::DataShape => "DataShape",
+            Self::AgentEntityMetadata => "AgentEntityMetadata",
+            Self::AgentSourceAnchor => "AgentSourceAnchor",
+            Self::AgentProjectGraphNeighborhood => "AgentProjectGraphNeighborhood",
+            Self::AgentProjectGraphSymbol => "AgentProjectGraphSymbol",
+            Self::AgentProjectGraphEdge => "AgentProjectGraphEdge",
+            Self::CaptureTarget => "CaptureTarget",
+            Self::CaptureRef => "CaptureRef",
+            Self::AgentResource => "AgentResource",
+            Self::AgentResourceBody => "AgentResourceBody",
+            Self::RagContextPack => "RagContextPack",
+            Self::FocusPatch => "FocusPatch",
+            Self::Unit => "()",
+            Self::Never => "Never",
+            _ => return None,
+        })
+    }
+
+    fn function_source_label(params: &[Self], return_type: &Self) -> String {
+        let params = if params.len() == 1 {
+            params[0].source_label()
+        } else {
+            format!(
+                "({})",
+                params
+                    .iter()
+                    .map(Self::source_label)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        format!("{params} -> {}", return_type.source_label())
+    }
+
     #[must_use]
     pub fn entity_ref(kind: EntityKind) -> Self {
         Self::Ref(EntityType::new(kind, None))
@@ -371,6 +525,15 @@ impl TypeKind {
             "()" | "Unit" => Self::Unit,
             _ => return None,
         })
+    }
+}
+
+impl EntityType {
+    fn source_label(&self) -> String {
+        self.value().map_or_else(
+            || format!("Ref<{:?}>", self.kind()),
+            |value| format!("Ref<{:?}, {}>", self.kind(), value.source_label()),
+        )
     }
 }
 

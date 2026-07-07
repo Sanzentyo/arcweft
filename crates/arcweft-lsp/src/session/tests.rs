@@ -1444,6 +1444,39 @@ fn inlay_hint_request_uses_document_line_index() {
 }
 
 #[test]
+fn inlay_hint_request_reports_inferred_function_types() {
+    let uri = "file:///function-inlays.arcw".parse::<Uri>().expect("uri");
+    let source = r"
+flow @flow.function_inlays function_inlays {
+    let predicate = _ > 80i64
+    let zero = || 1
+    let explicit: i64 -> bool = _ > 80i64
+}
+";
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    open_text(&mut session, uri.clone(), source);
+
+    let labels = inlay_hint_labels(&mut session, uri);
+
+    assert!(
+        labels.iter().any(|label| label == ": i64 -> bool"),
+        "expected inferred partial-placeholder function type inlay, got {labels:?}"
+    );
+    assert!(
+        labels.iter().any(|label| label == ": () -> i32"),
+        "expected inferred closure function type inlay, got {labels:?}"
+    );
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|label| label.as_str() == ": i64 -> bool")
+            .count(),
+        1,
+        "explicit let type ascription should not produce a duplicate inlay: {labels:?}"
+    );
+}
+
+#[test]
 fn definition_request_returns_effective_style_contributor_ranges() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"

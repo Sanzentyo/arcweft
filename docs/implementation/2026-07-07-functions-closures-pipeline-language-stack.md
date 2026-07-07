@@ -179,6 +179,12 @@ Source briefs:
   primitive type inside a closure body whose return type is inferred. Explicit
   closure return annotations and concrete expected function return types
   suppress the warning because they provide the numeric contract.
+- LSP inlay hints now include inferred function-valued `let` bindings when the
+  source binding has no explicit type ascription and sema proves the binding is
+  a `TypeKind::Function`. This covers inferred closures such as `let f = || 1`
+  and inferred partial-placeholder functions such as `let p = _ > 80i64`,
+  using the same canonical `TypeKind::source_label()` surface spelling as sema
+  diagnostics.
 - Flow statement parsing now keeps multiline return-typed closure literals
   together as a single `let` statement by tracking existing CST punctuation
   depth while consuming statement continuations.
@@ -222,9 +228,11 @@ Source briefs:
   allocation remains open.
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Effect-row composition for closure
-  captures, LSP inlays, and save/load policy evidence remain open. Numeric
-  fallback lints inside inferred closure bodies are implemented for scalar
-  integer/float fallback and numeric sequence fallback.
+  captures and save/load policy evidence remain open. Numeric fallback lints
+  inside inferred closure bodies are implemented for scalar integer/float
+  fallback and numeric sequence fallback. LSP inlays are implemented for
+  inferred function-valued `let` bindings; broader expression inlays still need
+  a source-span contract for sema expression evidence.
 - Closure `return expr` now binds to the nearest closure/function-like sema
   boundary for type checking. Strict runtime block lowering already preserves
   simple early-return shape by discarding later block statements after a
@@ -237,10 +245,10 @@ Source briefs:
   open.
 - Closure capture inventory collection and borrowed-capture suspension-boundary
   lifetime diagnostics exist in sema. Effect-row integration for closure
-  captures, runtime-plan capture metadata policy, and LSP/tooling surfaces
-  remain open.
-- LSP inlays for inferred closure/function types are not implemented in this
-  cut.
+  captures and runtime-plan capture metadata policy remain open.
+- LSP inlays currently cover inferred function-valued `let` bindings. Full
+  arbitrary expression inlays remain open until sema expression evidence has
+  source spans rather than traversal-only expression IDs.
 
 ## Follow-up request
 
@@ -274,6 +282,8 @@ cargo test -p arcweft-lang-sema --all-features method_chain
 cargo test -p arcweft-lang-sema --all-features curried_function_declaration
 cargo test -p arcweft-lang-sema --all-features closure_return
 cargo test -p arcweft-lang-sema --all-features
+cargo test -p arcweft-lsp --all-features inlay_hint_request
+cargo test -p arcweft-lsp --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_expected_function_evidence_for_placeholder_args
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs

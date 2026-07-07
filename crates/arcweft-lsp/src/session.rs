@@ -310,7 +310,9 @@ impl ArcweftLspSession {
                 let (id, params) = extract::<InlayHintParams>(request, InlayHintRequest::METHOD)?;
                 let result = self
                     .document_for_params(&params.text_document.uri)
-                    .map(features::inlay::hints);
+                    .map(|document| {
+                        features::inlay::hints(self.profile_for_uri(document.uri()), document)
+                    });
                 Ok(Response::new_ok(id, result))
             }
             method if method == ArcweftCustomRequest::ReplCommand.as_str() => {
