@@ -6,7 +6,8 @@ use crate::labels::{
 };
 use crate::pattern::lower_runtime_pattern;
 use crate::typed_evidence::{
-    RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceLookup,
+    RuntimeDataLastMethodFallbackArg, RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence,
+    RuntimeTypedLoweringEvidenceLookup,
 };
 use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
@@ -151,15 +152,15 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
             .is_some_and(|evidence| evidence.has_expected_function_value(expression_id))
     }
 
-    fn has_data_last_method_fallback_evidence(
+    fn data_last_method_fallback_arg_order(
         self,
         expression_id: Option<RuntimeTypedExpressionId>,
         method: &str,
         arg_count: usize,
-    ) -> bool {
-        expression_id.is_some_and(|expression_id| {
-            self.typed_lowering_evidence.is_some_and(|evidence| {
-                evidence.has_data_last_method_fallback(expression_id, method, arg_count)
+    ) -> Option<&'helpers [RuntimeDataLastMethodFallbackArg]> {
+        expression_id.and_then(|expression_id| {
+            self.typed_lowering_evidence.and_then(|evidence| {
+                evidence.data_last_method_fallback_arg_order(expression_id, method, arg_count)
             })
         })
     }
@@ -472,14 +473,14 @@ fn lower_strict_method_call_dispatch(
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
     expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
-    if helpers.is_some_and(|helpers| {
-        helpers.has_data_last_method_fallback_evidence(
+    if let Some(arg_order) = helpers.and_then(|helpers| {
+        helpers.data_last_method_fallback_arg_order(
             expression_id,
             runtime_method_name(method),
             args.len(),
         )
     }) {
-        return lower_strict_data_last_method_fallback(receiver, method, args, helpers);
+        return lower_strict_data_last_method_fallback(receiver, method, args, helpers, arg_order);
     }
     match lower_strict_math_method_call(receiver, method, args, helpers)
         .or_else(|| lower_strict_std_float_method_call(receiver, method, args, helpers))
@@ -496,12 +497,32 @@ fn lower_strict_data_last_method_fallback(
     method: &str,
     args: &[CallArg],
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    arg_order: &[RuntimeDataLastMethodFallbackArg],
 ) -> Result<RuntimeExpr, String> {
-    let mut lowered_args = args
+    let lowered_args = arg_order
         .iter()
-        .map(|arg| lower_strict_call_arg(arg, helpers))
+        .map(|arg| match arg {
+            RuntimeDataLastMethodFallbackArg::CallArg { index } => {
+                let arg = args.get(*index).ok_or_else(|| {
+                    format!(
+                        "data-last method fallback `{}` referenced missing argument #{}",
+                        runtime_method_name(method),
+                        index
+                    )
+                })?;
+                if arg.is_spread() {
+                    return Err(format!(
+                        "data-last method fallback `{}` does not accept spread arguments",
+                        runtime_method_name(method)
+                    ));
+                }
+                lower_runtime_expr_strict_with_helpers(arg.value(), helpers)
+            }
+            RuntimeDataLastMethodFallbackArg::Receiver => {
+                lower_runtime_expr_strict_with_helpers(receiver, helpers)
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    lowered_args.push(lower_runtime_expr_strict_with_helpers(receiver, helpers)?);
     Ok(lower_strict_named_call(
         runtime_method_name(method),
         lowered_args,

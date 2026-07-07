@@ -612,6 +612,7 @@ fn above(min: i64, value: i64) -> bool {
 flow @flow.main main {
     let score = 90i64
     let ok = score.above(80i64)
+    let named = score.above(min = 80i64)
     return "done"
 }
 "#,
@@ -630,13 +631,28 @@ flow @flow.main main {
         &RuntimePlanLowerOptions::default(),
     )
     .expect("runtime plan lowers data-last method fallback");
-    let [FlowOp::Let { .. }, FlowOp::Let { expr: ok, .. }, ..] =
-        report.plan.flows[0].ops.as_slice()
+    let [
+        FlowOp::Let { .. },
+        FlowOp::Let { expr: ok, .. },
+        FlowOp::Let { expr: named, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
     else {
-        panic!("expected score and ok lets");
+        panic!("expected score, ok, and named lets");
     };
     assert!(matches!(
         ok,
+        RuntimeExpr::PureCall { args, .. }
+            if matches!(
+                args.as_slice(),
+                [
+                    RuntimeExpr::Value(value),
+                    RuntimeExpr::Local(name),
+                ] if value == &RuntimeValue::i64(80) && name == "score"
+            )
+    ));
+    assert!(matches!(
+        named,
         RuntimeExpr::PureCall { args, .. }
             if matches!(
                 args.as_slice(),

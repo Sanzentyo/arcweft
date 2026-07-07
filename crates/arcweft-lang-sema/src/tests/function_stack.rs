@@ -1078,7 +1078,11 @@ flow @flow.method_fallback method_fallback {
         report.typed_lowering_evidence.iter().any(|evidence| {
             matches!(
                 &evidence.kind,
-                TypedLoweringEvidenceKind::DataLastMethodFallback { method, arg_count }
+                TypedLoweringEvidenceKind::DataLastMethodFallback {
+                    method,
+                    arg_count,
+                    ..
+                }
                     if method == "above" && *arg_count == 1
             )
         }),
@@ -1087,12 +1091,12 @@ flow @flow.method_fallback method_fallback {
 }
 
 #[test]
-fn method_chain_reports_named_data_last_fallback_as_unsupported() {
+fn method_chain_accepts_named_data_last_fallback_and_records_arg_order() {
     let tree = parse_ok(
         r"
 flow @flow.method_fallback_named method_fallback_named {
-    let wrong = score.above(min = 80i64)
-    log.info(wrong)
+    let ok: bool = score.above(min = 80i64)
+    log.info(ok)
 }
 ",
     );
@@ -1113,23 +1117,27 @@ flow @flow.method_fallback_named method_fallback_named {
 
     let report = analyze_types(&hir, &env);
     assert!(
-        report.diagnostics.iter().any(|diagnostic| {
-            matches!(
-                diagnostic.kind(),
-                TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason }
-                    if method == "above" && reason.contains("named arguments")
-            )
-        }),
-        "expected named fallback diagnostic, got {:?}",
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
         report.diagnostics
     );
     assert!(
-        report
-            .diagnostics
-            .iter()
-            .all(|diagnostic| !diagnostic.message().contains("unknown method `above`")),
-        "fallback candidate should not degrade to unknown method: {:?}",
-        report.diagnostics
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback {
+                    method,
+                    arg_count: 1,
+                    arg_order,
+                } if method == "above"
+                    && arg_order == &[
+                        DataLastMethodFallbackArg::CallArg { index: 0 },
+                        DataLastMethodFallbackArg::Receiver,
+                    ]
+            )
+        }),
+        "expected named fallback order evidence, got {:?}",
+        report.typed_lowering_evidence
     );
 }
 

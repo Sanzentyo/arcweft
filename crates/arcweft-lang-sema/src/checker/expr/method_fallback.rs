@@ -2,7 +2,9 @@ use super::{
     CallArg, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
+use crate::checker::DataLastMethodFallbackArg;
 use crate::diagnostics::TypeCheckWarning;
+use crate::env::FunctionParam;
 
 impl TypeChecker<'_> {
     pub(super) fn check_data_last_method_fallback(
@@ -47,7 +49,8 @@ impl TypeChecker<'_> {
         if params.len() != args.len() + 1 {
             return None;
         }
-        let receiver_param = &params[args.len()];
+        let (call_params, receiver_params) = params.split_at(args.len());
+        let receiver_param = &receiver_params[0];
         if !self.types_compatible(receiver_param.ty(), receiver_type) {
             self.errors.push(TypeCheckError::argument_type_mismatch(
                 method_name,
@@ -57,25 +60,14 @@ impl TypeChecker<'_> {
             ));
             return Some(TypeKind::Named("_".to_owned()));
         }
-        for (index, (arg, param)) in args.iter().zip(params.iter()).enumerate() {
-            let CallArg::Positional(value) = arg else {
-                unreachable!("data-last fallback accepts only positional args");
-            };
-            self.expect_signature_arg_type(
-                method_name,
-                param
-                    .name()
-                    .unwrap_or(if index == 0 { "#0" } else { "#arg" }),
-                value,
-                param.ty(),
-            );
-        }
+        let arg_order = self.check_data_last_fallback_args(method_name, args, call_params);
         self.check_function_effects(method_name);
         self.record_typed_lowering_evidence(TypedLoweringEvidence {
             expression_id,
             kind: TypedLoweringEvidenceKind::DataLastMethodFallback {
                 method: method_name.to_owned(),
                 arg_count: args.len(),
+                arg_order,
             },
         });
         Some(signature.return_type().clone())
@@ -163,6 +155,85 @@ impl TypeChecker<'_> {
             && signature.params().len() == args.len() + 1
             && self.is_data_last_fallback_candidate(receiver_type, signature)
     }
+
+    fn check_data_last_fallback_args(
+        &mut self,
+        method_name: &str,
+        args: &[CallArg],
+        call_params: &[FunctionParam],
+    ) -> Vec<DataLastMethodFallbackArg> {
+        let mut provided = vec![None; call_params.len()];
+        let mut positional_index = 0usize;
+
+        for (arg_index, arg) in args.iter().enumerate() {
+            match arg {
+                CallArg::Positional(value) => {
+                    while positional_index < provided.len() && provided[positional_index].is_some()
+                    {
+                        positional_index += 1;
+                    }
+                    let Some(param) = call_params.get(positional_index) else {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "function `{method_name}` received too many positional arguments"
+                        )));
+                        self.check_expr(value);
+                        continue;
+                    };
+                    provided[positional_index] = Some(arg_index);
+                    let label = param
+                        .name()
+                        .map_or_else(|| format!("#{positional_index}"), ToOwned::to_owned);
+                    positional_index += 1;
+                    self.expect_signature_arg_type(method_name, &label, value, param.ty());
+                }
+                CallArg::Named { name, value } => {
+                    let Some(index) = call_params
+                        .iter()
+                        .position(|param| !param.is_rest() && param.name() == Some(name.as_str()))
+                    else {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "function `{method_name}` has no parameter named `{name}`"
+                        )));
+                        self.check_expr(value);
+                        continue;
+                    };
+                    if provided[index].is_some() {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "function `{method_name}` argument `{name}` was provided more than once"
+                        )));
+                    }
+                    provided[index] = Some(arg_index);
+                    self.expect_signature_arg_type(
+                        method_name,
+                        name,
+                        value,
+                        call_params[index].ty(),
+                    );
+                }
+                CallArg::Spread { value } => {
+                    self.check_expr(value);
+                }
+            }
+        }
+
+        for (index, param) in call_params.iter().enumerate() {
+            if provided[index].is_none() && !param.has_default() {
+                let label = param
+                    .name()
+                    .map_or_else(|| format!("#{index}"), ToOwned::to_owned);
+                self.errors.push(TypeCheckError::new(format!(
+                    "function `{method_name}` missing required argument `{label}`"
+                )));
+            }
+        }
+
+        provided
+            .into_iter()
+            .flatten()
+            .map(|index| DataLastMethodFallbackArg::CallArg { index })
+            .chain(std::iter::once(DataLastMethodFallbackArg::Receiver))
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -182,15 +253,11 @@ impl DataLastMethodFallbackCandidate {
 }
 
 fn unsupported_fallback_arg_reason(args: &[CallArg]) -> Option<&'static str> {
-    let has_named = args.iter().any(|arg| arg.name().is_some());
     let has_spread = args.iter().any(CallArg::is_spread);
-    match (has_named, has_spread) {
-        (true, true) => {
-            Some("named and spread arguments are not supported; use positional arguments")
-        }
-        (true, false) => Some("named arguments are not supported; use positional arguments"),
-        (false, true) => Some("spread arguments are not supported; use positional arguments"),
-        (false, false) => None,
+    if has_spread {
+        Some("spread arguments are not supported; use positional arguments")
+    } else {
+        None
     }
 }
 

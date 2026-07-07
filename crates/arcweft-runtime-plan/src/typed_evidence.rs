@@ -34,7 +34,20 @@ pub enum RuntimeTypedLoweringEvidenceKind {
     /// An expression was checked in a function-typed expected context.
     ExpectedFunctionValue { arity: usize },
     /// A method-call expression resolved as data-last callable fallback.
-    DataLastMethodFallback { method: String, arg_count: usize },
+    DataLastMethodFallback {
+        method: String,
+        arg_count: usize,
+        arg_order: Vec<RuntimeDataLastMethodFallbackArg>,
+    },
+}
+
+/// Runtime argument order proven for a data-last method fallback call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeDataLastMethodFallbackArg {
+    /// Source method-call argument at the given index.
+    CallArg { index: usize },
+    /// The method-call receiver appended as the data-last callable argument.
+    Receiver,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -79,21 +92,26 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         })
     }
 
-    pub(crate) fn has_data_last_method_fallback(
+    pub(crate) fn data_last_method_fallback_arg_order(
         self,
         expression_id: RuntimeTypedExpressionId,
         method: &str,
         arg_count: usize,
-    ) -> bool {
-        self.evidence.iter().any(|evidence| {
-            evidence.expression_id == expression_id
-                && matches!(
-                    &evidence.kind,
-                    RuntimeTypedLoweringEvidenceKind::DataLastMethodFallback {
-                        method: expected_method,
-                        arg_count: expected_arg_count,
-                    } if expected_method == method && expected_arg_count == &arg_count
-                )
+    ) -> Option<&'a [RuntimeDataLastMethodFallbackArg]> {
+        self.evidence.iter().find_map(|evidence| {
+            if evidence.expression_id != expression_id {
+                return None;
+            }
+            let RuntimeTypedLoweringEvidenceKind::DataLastMethodFallback {
+                method: expected_method,
+                arg_count: expected_arg_count,
+                arg_order,
+            } = &evidence.kind
+            else {
+                return None;
+            };
+            (expected_method == method && expected_arg_count == &arg_count)
+                .then_some(arg_order.as_slice())
         })
     }
 }

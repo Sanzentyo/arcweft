@@ -230,7 +230,20 @@ pub enum TypedLoweringEvidenceKind {
         arity: usize,
     },
     /// A method-call expression resolved through data-last callable fallback.
-    DataLastMethodFallback { method: String, arg_count: usize },
+    DataLastMethodFallback {
+        method: String,
+        arg_count: usize,
+        arg_order: Vec<DataLastMethodFallbackArg>,
+    },
+}
+
+/// One runtime argument selected for a data-last method fallback call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataLastMethodFallbackArg {
+    /// Source method-call argument at the given index.
+    CallArg { index: usize },
+    /// The method-call receiver appended as the callable's data-last argument.
+    Receiver,
 }
 
 /// One local binding captured by a closure expression.

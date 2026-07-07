@@ -16,7 +16,8 @@ use arcweft_runtime_plan::pure::{
     lower_pure_helper_candidate, lower_pure_helper_candidates,
 };
 use arcweft_runtime_plan::typed_evidence::{
-    RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceKind,
+    RuntimeDataLastMethodFallbackArg, RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence,
+    RuntimeTypedLoweringEvidenceKind,
 };
 
 use crate::trait_methods::{
@@ -111,12 +112,25 @@ fn runtime_typed_lowering_evidence(
             TypedLoweringEvidenceKind::ExpectedFunctionValue { arity, .. } => {
                 RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: *arity }
             }
-            TypedLoweringEvidenceKind::DataLastMethodFallback { method, arg_count } => {
-                RuntimeTypedLoweringEvidenceKind::DataLastMethodFallback {
-                    method: method.clone(),
-                    arg_count: *arg_count,
-                }
-            }
+            TypedLoweringEvidenceKind::DataLastMethodFallback {
+                method,
+                arg_count,
+                arg_order,
+            } => RuntimeTypedLoweringEvidenceKind::DataLastMethodFallback {
+                method: method.clone(),
+                arg_count: *arg_count,
+                arg_order: arg_order
+                    .iter()
+                    .map(|arg| match arg {
+                        arcweft_lang_sema::check::DataLastMethodFallbackArg::CallArg { index } => {
+                            RuntimeDataLastMethodFallbackArg::CallArg { index: *index }
+                        }
+                        arcweft_lang_sema::check::DataLastMethodFallbackArg::Receiver => {
+                            RuntimeDataLastMethodFallbackArg::Receiver
+                        }
+                    })
+                    .collect(),
+            },
         },
     }
 }

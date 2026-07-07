@@ -135,10 +135,11 @@ Source briefs:
   `score.above(80i64)` can lower as `above(80i64, score)`. Sema records
   lowering evidence for this decision so real inherent/env/trait methods still
   win when they exist.
-- Data-last method fallback candidates that use named or spread arguments now
-  produce a structured unsupported-fallback diagnostic instead of degrading to
-  a generic `unknown method` error. Executable fallback lowering remains
-  positional-only.
+- Data-last method fallback now records an explicit typed runtime argument
+  order. Named fallback calls such as `score.above(min = 80i64)` typecheck and
+  lower as `above(80i64, score)` without relying on source argument order.
+  Spread fallback candidates still produce a structured unsupported-fallback
+  diagnostic instead of degrading to a generic `unknown method` error.
 - Expression lexing now represents operators as `Token::Op(ExprOp::...)`
   rather than raw operator string payloads. Parser branches for `->`, `=>`,
   `|>`, range operators, comparison operators, and closure pipes are checked by
@@ -222,17 +223,17 @@ Source briefs:
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
   `function.apply` intrinsic for bytecode inventory purposes.
 - Pipe no-`^` runtime lowering is helper-aware for named pure helpers. Method
-  syntax fallback now has typed lowering evidence for positional data-last
-  helper signatures. Named/spread fallback candidates are diagnosed as
-  unsupported rather than silently becoming unknown methods. Multiple viable
+  syntax fallback now has typed lowering evidence for data-last helper
+  signatures, including named method arguments. Spread fallback candidates are
+  diagnosed as unsupported rather than silently becoming unknown methods. Multiple viable
   data-last fallback candidates from the module and external type-check
   environment now report `sema.typecheck.ambiguous_data_last_method_fallback`
   with all candidate labels instead of selecting one by merge order. Real
   env/inherent/trait methods still win, and viable data-last fallback
   candidates hidden by that real method now produce
   `sema.typecheck.shadowed_data_last_method_fallback` warnings. Executable
-  named/spread fallback lowering, curried call-group runtime fallback metadata,
-  and non-helper callable runtime lowering remain open.
+  spread fallback lowering, curried call-group runtime fallback metadata, and
+  non-helper callable runtime lowering remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
   callable application and sema trait/impl method calls. AWBC closure/apply
   allocation remains open.
@@ -353,17 +354,18 @@ The inferred partial-placeholder and method-fallback cuts have passing sema
 coverage for unannotated binary placeholder inference, parenthesized binary
 placeholder inference, partial-call abstraction from known function signatures,
 repeated positional partial-call placeholders, named partial-call placeholders,
-typed positional data-last method fallback, and real method priority. Compiler
+typed data-last method fallback, and real method priority. Compiler
 coverage confirms the inferred placeholder forms lower to `RuntimeExpr::Function`,
 repeated and named partial-call placeholders reuse one generated runtime local
 at each placeholder site, named pure-helper arguments are reordered by helper
 input name, and typed data-last method fallback lowers to a pure helper call
-with the receiver appended as the last argument.
+using sema-proven argument order with the receiver appended as the last argument.
 
-The data-last fallback diagnostic cut has passing sema coverage for named and
-spread method-call syntax that matches a data-last fallback candidate, ensuring
-it reports `UnsupportedDataLastMethodFallback` instead of a generic unknown
-method. It also covers module/environment data-last fallback ambiguity with
+The data-last fallback diagnostic/order cut has passing sema coverage for named
+method-call syntax that matches a data-last fallback candidate, ensuring it
+records deterministic argument order evidence instead of falling back to source
+order. Spread syntax still reports `UnsupportedDataLastMethodFallback` instead
+of a generic unknown method. It also covers module/environment data-last fallback ambiguity with
 `method_chain_reports_ambiguous_data_last_fallback_candidates`, which verifies
 both candidate labels are reported and no arbitrary fallback lowering evidence
 is recorded. The shadowed-fallback warning cut covers real env-method and trait
