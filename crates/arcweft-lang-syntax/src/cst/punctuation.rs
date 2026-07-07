@@ -14,6 +14,15 @@ pub(crate) enum ArcweftPunctuation {
 }
 
 impl ArcweftPunctuation {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::ThinArrow => "->",
+            Self::LeftArrow => "<-",
+            Self::FatArrow => "=>",
+            Self::Pipe => "|>",
+        }
+    }
+
     const fn sequence(self) -> &'static [&'static str] {
         match self {
             Self::ThinArrow => &["-", ">"],
@@ -566,6 +575,14 @@ pub(crate) fn strip_prefix_arcweft_punctuation(
     } else {
         None
     }
+}
+
+/// Strips a trailing contiguous Arcweft punctuation spelling from source.
+pub(crate) fn strip_suffix_arcweft_punctuation(
+    source: &str,
+    punctuation: ArcweftPunctuation,
+) -> Option<&str> {
+    source.strip_suffix(punctuation.as_str())
 }
 
 /// Returns whether the source contains the punctuation sequence outside token text.

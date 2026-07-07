@@ -1,5 +1,5 @@
 use crate::ast::{flow::Stmt, items::Item};
-use crate::expr::{Expr, parse_expr};
+use crate::expr::{Expr, ExprOp, parse_expr};
 use crate::parser::recovery::ParseError;
 use crate::source::ParsedSource;
 
@@ -225,13 +225,9 @@ fn ends_at_expression_boundary(trimmed_start: &str) -> bool {
         || trimmed_start.ends_with("(try")
         || trimmed_start.ends_with("[try")
         || trimmed_start.ends_with(", try")
-        || trimmed_start.ends_with("==")
-        || trimmed_start.ends_with("!=")
-        || trimmed_start.ends_with(">=")
-        || trimmed_start.ends_with("<=")
-        || trimmed_start.ends_with("&&")
-        || trimmed_start.ends_with("||")
-        || trimmed_start.ends_with("=>")
+        || MULTI_CHAR_CONTINUATION_OPS
+            .iter()
+            .any(|op| trimmed_start.ends_with(op.as_str()))
         || trimmed_start.ends_with('+')
         || trimmed_start.ends_with('-')
         || trimmed_start.ends_with('*')
@@ -241,6 +237,16 @@ fn ends_at_expression_boundary(trimmed_start: &str) -> bool {
         || trimmed_start.ends_with('>')
         || trimmed_start.ends_with('!')
 }
+
+const MULTI_CHAR_CONTINUATION_OPS: &[ExprOp] = &[
+    ExprOp::Eq,
+    ExprOp::NotEq,
+    ExprOp::Gte,
+    ExprOp::Lte,
+    ExprOp::And,
+    ExprOp::Or,
+    ExprOp::FatArrow,
+];
 
 #[cfg(test)]
 mod tests {

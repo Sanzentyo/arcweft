@@ -818,7 +818,7 @@ enum Token {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ExprOp {
+pub(crate) enum ExprOp {
     NotEq,
     Arrow,
     NegOrSub,
@@ -845,7 +845,7 @@ enum ExprOp {
 }
 
 impl ExprOp {
-    const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::NotEq => "!=",
             Self::Arrow => "->",
@@ -922,31 +922,33 @@ impl<'a> Lexer<'a> {
                 ':' => self.single(Token::Colon),
                 ';' => self.single(Token::Semicolon),
                 '?' => self.single(Token::Question),
-                '!' if self.starts_with("!=") => self.fixed_op(ExprOp::NotEq, 2),
+                '!' if self.starts_with_op(ExprOp::NotEq) => self.fixed_op(ExprOp::NotEq),
                 '!' => self.single(Token::Bang),
-                '-' if self.starts_with("->") => self.fixed_op(ExprOp::Arrow, 2),
-                '-' => self.fixed_op(ExprOp::NegOrSub, 1),
-                '.' if self.starts_with("...") => self.fixed_op(ExprOp::Spread, 3),
-                '.' if self.starts_with("..=") => self.fixed_op(ExprOp::RangeInclusive, 3),
-                '.' if self.starts_with("..") => self.fixed_op(ExprOp::Range, 2),
+                '-' if self.starts_with_op(ExprOp::Arrow) => self.fixed_op(ExprOp::Arrow),
+                '-' => self.fixed_op(ExprOp::NegOrSub),
+                '.' if self.starts_with_op(ExprOp::Spread) => self.fixed_op(ExprOp::Spread),
+                '.' if self.starts_with_op(ExprOp::RangeInclusive) => {
+                    self.fixed_op(ExprOp::RangeInclusive)
+                }
+                '.' if self.starts_with_op(ExprOp::Range) => self.fixed_op(ExprOp::Range),
                 '.' if self.dot_starts_relative_path() => self.lex_relative_path(),
                 '.' => self.single(Token::Dot),
-                '=' if self.starts_with("=>") => self.fixed_op(ExprOp::FatArrow, 2),
-                '=' if self.starts_with("==") => self.fixed_op(ExprOp::Eq, 2),
-                '=' => self.fixed_op(ExprOp::Assign, 1),
-                '>' if self.starts_with(">=") => self.fixed_op(ExprOp::Gte, 2),
-                '<' if self.starts_with("<=") => self.fixed_op(ExprOp::Lte, 2),
-                '|' if self.starts_with("|>") => self.fixed_op(ExprOp::Pipe, 2),
-                '|' if self.starts_with("||") => self.fixed_op(ExprOp::Or, 2),
-                '|' => self.fixed_op(ExprOp::ClosurePipe, 1),
-                '&' if self.starts_with("&&") => self.fixed_op(ExprOp::And, 2),
-                '&' => self.fixed_op(ExprOp::Merge, 1),
-                '+' => self.fixed_op(ExprOp::Add, 1),
-                '*' => self.fixed_op(ExprOp::Mul, 1),
-                '/' => self.fixed_op(ExprOp::Div, 1),
-                '%' => self.fixed_op(ExprOp::Rem, 1),
-                '>' => self.fixed_op(ExprOp::Gt, 1),
-                '<' => self.fixed_op(ExprOp::Lt, 1),
+                '=' if self.starts_with_op(ExprOp::FatArrow) => self.fixed_op(ExprOp::FatArrow),
+                '=' if self.starts_with_op(ExprOp::Eq) => self.fixed_op(ExprOp::Eq),
+                '=' => self.fixed_op(ExprOp::Assign),
+                '>' if self.starts_with_op(ExprOp::Gte) => self.fixed_op(ExprOp::Gte),
+                '<' if self.starts_with_op(ExprOp::Lte) => self.fixed_op(ExprOp::Lte),
+                '|' if self.starts_with_op(ExprOp::Pipe) => self.fixed_op(ExprOp::Pipe),
+                '|' if self.starts_with_op(ExprOp::Or) => self.fixed_op(ExprOp::Or),
+                '|' => self.fixed_op(ExprOp::ClosurePipe),
+                '&' if self.starts_with_op(ExprOp::And) => self.fixed_op(ExprOp::And),
+                '&' => self.fixed_op(ExprOp::Merge),
+                '+' => self.fixed_op(ExprOp::Add),
+                '*' => self.fixed_op(ExprOp::Mul),
+                '/' => self.fixed_op(ExprOp::Div),
+                '%' => self.fixed_op(ExprOp::Rem),
+                '>' => self.fixed_op(ExprOp::Gt),
+                '<' => self.fixed_op(ExprOp::Lt),
                 _ if is_ident_start(ch) => self.lex_ident(),
                 _ => {
                     self.bump_char();
@@ -972,8 +974,8 @@ impl<'a> Lexer<'a> {
         token
     }
 
-    fn fixed_op(&mut self, op: ExprOp, len: usize) -> Token {
-        self.cursor += len;
+    fn fixed_op(&mut self, op: ExprOp) -> Token {
+        self.cursor += op.as_str().len();
         Token::Op(op)
     }
 
@@ -1140,7 +1142,7 @@ impl<'a> Lexer<'a> {
             return;
         }
         self.consume_decimal_digits_or_underscores();
-        if self.peek_char() == Some('.') && !self.starts_with("..") {
+        if self.peek_char() == Some('.') && !self.starts_with_op(ExprOp::Range) {
             self.bump_char();
             self.consume_decimal_digits_or_underscores();
         }
@@ -1244,6 +1246,10 @@ impl<'a> Lexer<'a> {
 
     fn starts_with(&self, value: &str) -> bool {
         self.source[self.cursor..].starts_with(value)
+    }
+
+    fn starts_with_op(&self, op: ExprOp) -> bool {
+        self.starts_with(op.as_str())
     }
 
     fn dot_starts_relative_path(&self) -> bool {
@@ -2278,7 +2284,7 @@ fn numeric_body_len(source: &str) -> usize {
     }
     let bytes = source.as_bytes();
     let mut index = decimal_digits_len(source);
-    if bytes.get(index) == Some(&b'.') && !source[index..].starts_with("..") {
+    if bytes.get(index) == Some(&b'.') && !source[index..].starts_with(ExprOp::Range.as_str()) {
         index += 1;
         index += decimal_digits_len(&source[index..]);
     }

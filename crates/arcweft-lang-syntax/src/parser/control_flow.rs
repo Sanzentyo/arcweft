@@ -9,6 +9,7 @@ use super::{
 };
 use crate::cst::{
     ArcweftPunctuation, CstPunctuationScan, split_top_level_arcweft_punctuation_once,
+    strip_suffix_arcweft_punctuation,
 };
 use std::ops::Range;
 
@@ -621,10 +622,7 @@ impl Parser<'_> {
                 index += 1;
                 continue;
             }
-            let Some(head) = trimmed
-                .strip_suffix("=> {")
-                .or_else(|| trimmed.strip_suffix("=>"))
-            else {
+            let Some(head) = strip_select_branch_suffix(trimmed) else {
                 index += 1;
                 continue;
             };
@@ -659,6 +657,11 @@ impl Parser<'_> {
         }
         branches
     }
+}
+
+fn strip_select_branch_suffix(trimmed: &str) -> Option<&str> {
+    let head = trimmed.strip_suffix('{').map_or(trimmed, str::trim_end);
+    strip_suffix_arcweft_punctuation(head, ArcweftPunctuation::FatArrow).map(str::trim_end)
 }
 
 fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<MatchArm> {
@@ -727,10 +730,7 @@ fn parse_select_branches(
             index += 1;
             continue;
         }
-        let Some(head) = trimmed
-            .strip_suffix("=> {")
-            .or_else(|| trimmed.strip_suffix("=>"))
-        else {
+        let Some(head) = strip_select_branch_suffix(trimmed) else {
             index += 1;
             continue;
         };

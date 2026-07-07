@@ -414,7 +414,7 @@ pub(crate) use punctuation::{
     find_top_level_matching_punctuation, find_top_level_punctuation, split_first_string_literal,
     split_last_top_level_punctuation_sequence_once, split_top_level_arcweft_punctuation_once,
     split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
-    strip_prefix_arcweft_punctuation,
+    strip_prefix_arcweft_punctuation, strip_suffix_arcweft_punctuation,
 };
 pub(crate) use text::{
     nonempty_trimmed_source_lines, source_line_count, source_line_iter, split_leading_ident,
