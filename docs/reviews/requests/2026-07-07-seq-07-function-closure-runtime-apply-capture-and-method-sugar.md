@@ -32,6 +32,9 @@ call RHS forms append the pipe LHS to the RHS call arguments, so
 data-last calls rather than as calls on the result of `add(...)`. Bare
 `2i64 |> add` now typechecks as a top-level `#[pure]` function prefix partial
 application and lowers through the same pure helper apply path.
+Local function-valued aliases are also covered: `let f = add` followed by
+`2i64 |> f` or `2i64 |> f(1i64)` records function-value call evidence and
+lowers the pipe RHS to `RuntimeExpr::Apply` against `Local("f")`.
 
 Curried top-level function declarations now preserve source call-group
 boundaries in sema and runtime-plan callable application. `f(a, b)(c)` and
@@ -59,17 +62,19 @@ shims or preserving removed syntax.
    - Specify and implement AWBC closure allocation and bytecode apply semantics
      instead of the current `RuntimeExpr::Function` lowering diagnostic.
    - Extend the implemented helper-aware data-last pipe path to typed
-     non-helper callables. Method-chain fallback has typed runtime argument
-     order for positional and named data-last helper calls; spread fallback
-     remains open.
+     non-helper callables. Local function-valued aliases are now covered for
+     bare and call pipe RHS forms. Method-chain fallback has typed runtime
+     argument order for positional and named data-last helper calls; spread
+     fallback and non-pure top-level callable allocation remain open.
    - Do not redesign the implemented `RuntimeValue::Function` /
      `RuntimeExpr::Function` / `RuntimeExpr::Apply` substrate unless concrete
      evidence shows a flaw.
    - Top-level curried declaration calls are implemented for staged call
      syntax. Bare top-level function names in sema value position and prefix
      partial calls to top-level `#[pure]` functions are implemented for the
-     pure helper runtime path. Non-pure callable function-value allocation,
-     trait method curried group metadata, and AWBC closure/apply allocation
+     pure helper runtime path. Local function-valued aliases are executable
+     apply targets, including through no-`^` data-last pipe lowering. Non-pure
+     callable function-value allocation and AWBC closure/apply allocation
      remain open.
 
 2. Define inference boundaries for `_`.
@@ -124,6 +129,9 @@ shims or preserving removed syntax.
 - `let add_one = add(_, 1i64)`
 - `values.map(_ + 1i64).sum()`
 - `threshold |> choices.filter(_.score >= ^)`
+- `let f = add; 2i64 |> f; 2i64 |> f(1i64)` for a local function-valued alias.
+  Covered by `data_last_pipe_through_local_function_value_records_call_evidence`
+  and `runtime_plan_lowers_local_function_data_last_pipe_to_apply`.
 - `fn f(a: i64)(b: i64) -> i64 { ... }` called as `f(1i64)(2i64)`.
   Basic staged call behavior is covered by
   `curried_function_declaration_preserves_call_group_semantics`.

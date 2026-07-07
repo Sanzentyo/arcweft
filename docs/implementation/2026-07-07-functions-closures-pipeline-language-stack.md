@@ -156,6 +156,12 @@ Source briefs:
   lower as `above(80i64, score)` without relying on source argument order.
   Spread fallback candidates still produce a structured unsupported-fallback
   diagnostic instead of degrading to a generic `unknown method` error.
+- Data-last pipe lowering now covers local function-valued aliases in addition
+  to direct pure-helper names. For example,
+  `let f = add; let partial = 2i64 |> f; let exact = 2i64 |> f(1i64)`
+  typechecks through function-value evidence and lowers both pipe forms to
+  `RuntimeExpr::Apply` against `Local("f")`, preserving data-last argument
+  order without reclassifying the local as a helper.
 - Expression lexing now represents operators as `Token::Op(ExprOp::...)`
   rather than raw operator string payloads. Parser branches for `->`, `=>`,
   `|>`, range operators, comparison operators, and closure pipes are checked by
@@ -242,8 +248,10 @@ Source briefs:
   `function.apply` intrinsic for bytecode inventory purposes.
 - Pipe no-`^` runtime lowering is helper-aware for named pure helpers. Method
   syntax fallback now has typed lowering evidence for data-last helper
-  signatures, including named method arguments. Spread fallback candidates are
-  diagnosed as unsupported rather than silently becoming unknown methods. Multiple viable
+  signatures, including named method arguments. No-`^` pipe lowering also
+  preserves local function-valued aliases as `RuntimeExpr::Apply` targets for
+  both bare and call RHS forms. Spread fallback candidates are diagnosed as
+  unsupported rather than silently becoming unknown methods. Multiple viable
   data-last fallback candidates from the module and external type-check
   environment now report `sema.typecheck.ambiguous_data_last_method_fallback`
   with all candidate labels instead of selecting one by merge order. Real
@@ -251,7 +259,7 @@ Source briefs:
   candidates hidden by that real method now produce
   `sema.typecheck.shadowed_data_last_method_fallback` warnings. Executable
   spread fallback lowering, curried call-group runtime fallback metadata, and
-  non-helper callable runtime lowering remain open.
+  non-pure top-level callable runtime allocation remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
   callable application and sema trait/impl method calls. AWBC closure/apply
   allocation remains open.
@@ -310,6 +318,7 @@ cargo test -p arcweft-lang-sema --all-features infers_partial_placeholder_functi
 cargo test -p arcweft-lang-sema --all-features infers_parenthesized_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_partial_call_abstraction_without_expected_type
 cargo test -p arcweft-lang-sema --all-features method_chain
+cargo test -p arcweft-lang-sema --all-features data_last_pipe_through_local_function_value_records_call_evidence
 cargo test -p arcweft-lang-sema --all-features curried_function_declaration
 cargo test -p arcweft-lang-sema --all-features closure_return
 cargo test -p arcweft-lang-sema --all-features
@@ -320,6 +329,7 @@ cargo test -p arcweft-compiler --all-features runtime_plan_uses_expected_functio
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_inferred_partial_placeholder_functions
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_typed_data_last_method_fallback
+cargo test -p arcweft-compiler --all-features runtime_plan_lowers_local_function_data_last_pipe_to_apply
 cargo test -p arcweft-compiler --all-features runtime_plan_preserves_curried_call_group_application_samples
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-lang-syntax --all-features closure
@@ -353,6 +363,12 @@ The helper-aware data-last pipe cut has focused passing coverage for direct
 fallback calls, pure prefix partial helper apply, exact helper pure calls, and
 sema/runtime alignment for call RHS forms including bare, positional, and named
 helper calls.
+
+The local function-valued data-last pipe cut has passing sema coverage for
+function-value call evidence on both bare and call RHS pipe forms through a
+local function alias, and compiler/runtime-plan coverage that those forms lower
+to `RuntimeExpr::Apply` with `Local("f")` as the callee rather than a helper or
+adapter call.
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies
@@ -416,8 +432,8 @@ The canonical primitive spelling cut has passing coverage for rejecting
 canonical replacement diagnostics. The native text input sample now uses
 `String` return annotations.
 
-The final validation cut reports structure audit 0 errors / 146 warnings after
-the expression parser module split. `cargo clippy --workspace --all-targets
+The latest local function-valued data-last pipe validation reports structure
+audit 0 errors / 147 warnings. `cargo clippy --workspace --all-targets
 --all-features` still reports the existing `TraitMember` and `ImplMember`
 `large_enum_variant` warnings in `arcweft-lang-syntax/src/ast/items.rs`; no
 new clippy warning remains from the function/closure changes.

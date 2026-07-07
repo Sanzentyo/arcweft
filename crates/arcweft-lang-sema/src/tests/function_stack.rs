@@ -162,6 +162,62 @@ flow @flow.local_function_alias local_function_alias {
 }
 
 #[test]
+fn data_last_pipe_through_local_function_value_records_call_evidence() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn add(lhs: i64, rhs: i64) -> i64 {
+    return lhs + rhs
+}
+
+flow @flow.local_pipe local_pipe {
+    let f = add
+    let partial: i64 -> i64 = 2i64 |> f
+    let exact: i64 = 2i64 |> f(1i64)
+    log.info(exact)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("local pipe fixture lowers");
+    validate_typecheck_ready(&hir).expect("local pipe fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: Some(callee),
+                    result_ty,
+                    arg_count: 1,
+                    ..
+                } if callee == "f" && result_ty.function_arity() == Some(1)
+            )
+        }),
+        "expected bare pipe RHS through local function to record partial function-value evidence"
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: Some(callee),
+                    result_ty: TypeKind::I64,
+                    arg_count: 2,
+                    ..
+                } if callee == "f"
+            )
+        }),
+        "expected call pipe RHS through local function to record exact function-value evidence"
+    );
+}
+
+#[test]
 fn curried_function_declaration_preserves_call_group_semantics() {
     let tree = parse_ok(
         r"
