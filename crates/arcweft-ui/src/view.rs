@@ -14,7 +14,7 @@ pub struct ViewSchemaId(pub u32);
 
 /// Stable identifier for an Arcweft-authored UI program.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UiProgramId(pub u32);
+pub struct ViewProgramId(pub u32);
 
 /// Stable identifier for a host-registered Rust view implementation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -26,7 +26,7 @@ pub enum ViewImplementation {
     /// View implementation is registered by the host Rust embedding.
     Rust(RustViewId),
     /// View implementation is an Arcweft UI program from the bundle.
-    Arcweft(UiProgramId),
+    Arcweft(ViewProgramId),
 }
 
 /// Bundle/load-time view metadata shared by Rust and Arcweft views.

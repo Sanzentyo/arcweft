@@ -6,7 +6,7 @@ use crate::{
 };
 use arcweft_id::PublicId;
 use arcweft_ui::{
-    ContainerKind, FragmentKind, ImageId, NodeId, UiPartId, UiProgram, ViewFragment, ViewId,
+    ContainerKind, FragmentKind, ImageId, NodeId, ViewFragment, ViewId, ViewPartId, ViewProgram,
 };
 use takumi::prelude::{Node, StyleSheet};
 
@@ -17,8 +17,8 @@ pub struct TakumiAdapterInput<'a> {
     pub stylesheets: TakumiCssBundle,
     pub text: &'a ArcweftTextLayoutBridge,
     pub view: Option<ViewId>,
-    pub program: Option<&'a UiProgram>,
-    pub node_parts: &'a [(NodeId, UiPartId)],
+    pub program: Option<&'a ViewProgram>,
+    pub node_parts: &'a [(NodeId, ViewPartId)],
     pub agent: Option<&'a PublicId>,
 }
 
@@ -181,14 +181,14 @@ mod tests {
             text: &ArcweftTextLayoutBridge::default(),
             view: Some(ViewId(7)),
             program: None,
-            node_parts: &[(text, UiPartId(8))],
+            node_parts: &[(text, ViewPartId(8))],
             agent: None,
         })
         .expect("adapter output");
 
         let metadata = output.metadata.get_by_node(text).expect("text metadata");
         assert_eq!(metadata.view(), Some(ViewId(7)));
-        assert_eq!(metadata.part(), Some(UiPartId(8)));
+        assert_eq!(metadata.part(), Some(ViewPartId(8)));
         assert_eq!(metadata.semantic(), Some(SemanticSpecId(4)));
         assert_eq!(metadata.handlers(), &[HandlerId(3)]);
     }

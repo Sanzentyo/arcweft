@@ -46,10 +46,10 @@ pub use motion::{
 };
 pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput};
 pub use program::{
-    UiBranch, UiCustomSpec, UiElementSpec, UiEventBindingSpec, UiExpressionId, UiHandlerProgram,
-    UiImageSpec, UiInstruction, UiInstructionRange, UiPartExport, UiPartId, UiProgram,
-    UiProgramBuilder, UiRepeat, UiSemanticSpec, UiStableKey, UiStyleApply, UiStylePatchId,
-    UiTextSpec, UiViewCall, ViewElementKind,
+    ViewBranch, ViewCall, ViewCustomSpec, ViewElementKind, ViewElementSpec, ViewEventBindingSpec,
+    ViewExpressionId, ViewHandlerProgram, ViewImageSpec, ViewInstruction, ViewInstructionRange,
+    ViewPartExport, ViewPartId, ViewProgram, ViewProgramBuilder, ViewRepeat, ViewSemanticSpec,
+    ViewStableKey, ViewStyleApply, ViewStylePatchId, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
@@ -66,7 +66,8 @@ pub use text_field::{
 };
 pub use text_source::{UiRichTextHandle, UiTextByteRange, UiTextSource, UiTextSourceTable};
 pub use view::{
-    RustViewId, UiProgramId, ViewDescriptor, ViewId, ViewImplementation, ViewRegistry, ViewSchemaId,
+    RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewProgramId, ViewRegistry,
+    ViewSchemaId,
 };
 
 /// Stable key for one retained UI fragment node.
@@ -706,7 +707,7 @@ mod tests {
             Some(public_id.clone()),
             ViewSchemaId(7),
             0x1234,
-            ViewImplementation::Arcweft(UiProgramId(3)),
+            ViewImplementation::Arcweft(ViewProgramId(3)),
         );
 
         let id = registry.register(descriptor).unwrap();

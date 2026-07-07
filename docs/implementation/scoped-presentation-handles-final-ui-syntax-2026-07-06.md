@@ -275,6 +275,42 @@ Current validation for this slice:
 
 The structure audit reported 0 errors and 147 warnings after this slice.
 
+## 2026-07-07 Retained View Program Substrate Rename
+
+The next View resource taxonomy slice renamed the retained `arcweft-ui`
+program substrate that directly represents Arcweft View DSL lowering output.
+These names are not persisted compatibility surfaces, so the old `Ui*` Rust
+symbols were removed rather than aliased:
+
+- `UiProgram`, `UiProgramBuilder`, `UiProgramId`, and `UiInstruction` became
+  `ViewProgram`, `ViewProgramBuilder`, `ViewProgramId`, and
+  `ViewInstruction`;
+- program payload records such as `UiElementSpec`, `UiTextSpec`,
+  `UiImageSpec`, `UiCustomSpec`, `UiViewCall`, `UiBranch`, `UiRepeat`, and
+  `UiInstructionRange` became the corresponding `View*` records;
+- `UiPartId`, `UiPartExport`, `UiStableKey`, `UiExpressionId`,
+  `UiStyleApply`, `UiStylePatchId`, `UiEventBindingSpec`,
+  `UiSemanticSpec`, and `UiHandlerProgram` became `View*` records;
+- Takumi adapter metadata now records `ViewProgramId` and `ViewPartId`.
+
+This slice intentionally leaves broader product-level UI concepts such as
+`UiError`, `UiStyle`, `UiTextSource`, `UiImageSource`, retained semantic
+fragments, and shared runtime-control style types for later taxonomy decisions.
+Those names are not a single authored View program boundary in the current
+crate split.
+
+Current validation for this slice:
+
+- `cargo fmt --all`
+- `cargo test -p arcweft-ui --all-features`
+- `cargo test -p arcweft-takumi-adapter --all-features`
+- `cargo check -p arcweft-ui -p arcweft-takumi-adapter --all-targets --all-features`
+- `cargo clippy -p arcweft-ui -p arcweft-takumi-adapter --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .`
+- `rg -n "\\bUi(Program|ProgramBuilder|Instruction|InstructionRange|ElementSpec|TextSpec|ImageSpec|CustomSpec|ViewCall|Branch|Repeat|StyleApply|StylePatchId|EventBindingSpec|SemanticSpec|HandlerProgram|PartId|PartExport|StableKey|ExpressionId)\\b|\\bUiProgramId\\b" crates\\arcweft-ui crates\\arcweft-takumi-adapter -g "*.rs"`
+
+The structure audit reported 0 errors and 147 warnings after this slice.
+
 ## 2026-07-07 Final View Vocabulary Diagnostics
 
 The parser accepts only the final built-in View container vocabulary:

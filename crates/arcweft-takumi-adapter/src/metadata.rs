@@ -1,7 +1,7 @@
 use arcweft_id::PublicId;
 use arcweft_ui::{
     EventBinding, FragmentKind, FragmentNode, HandlerId, NodeId, NodeKey, SemanticSpecId, StyleId,
-    UiPartId, UiProgramId, ViewId,
+    ViewId, ViewPartId, ViewProgramId,
 };
 use std::collections::BTreeMap;
 
@@ -27,8 +27,8 @@ pub struct ArcweftNodeMetadata {
     kind: FragmentKind,
     style: StyleId,
     view: Option<ViewId>,
-    program: Option<UiProgramId>,
-    part: Option<UiPartId>,
+    program: Option<ViewProgramId>,
+    part: Option<ViewPartId>,
     semantic: Option<SemanticSpecId>,
     handlers: Vec<HandlerId>,
     agent: Option<PublicId>,
@@ -153,11 +153,11 @@ impl ArcweftNodeMetadata {
         self.view
     }
 
-    pub fn program(&self) -> Option<UiProgramId> {
+    pub fn program(&self) -> Option<ViewProgramId> {
         self.program
     }
 
-    pub fn part(&self) -> Option<UiPartId> {
+    pub fn part(&self) -> Option<ViewPartId> {
         self.part
     }
 
@@ -180,13 +180,13 @@ impl ArcweftNodeMetadata {
     }
 
     #[must_use]
-    pub fn with_program(mut self, program: UiProgramId) -> Self {
+    pub fn with_program(mut self, program: ViewProgramId) -> Self {
         self.program = Some(program);
         self
     }
 
     #[must_use]
-    pub fn with_part(mut self, part: UiPartId) -> Self {
+    pub fn with_part(mut self, part: ViewPartId) -> Self {
         self.part = Some(part);
         self
     }
@@ -304,8 +304,8 @@ mod tests {
             Some(SemanticSpecId(13)),
         )
         .with_view(ViewId(17))
-        .with_program(UiProgramId(19))
-        .with_part(UiPartId(23))
+        .with_program(ViewProgramId(19))
+        .with_part(ViewPartId(23))
         .with_agent(PublicId::try_new("agent.dialogue").expect("valid agent id"));
 
         let path = TakumiPath::root().child(4).child(1);

@@ -1,66 +1,66 @@
-//! Bundle-owned UI program data produced by Arcweft View DSL lowering.
+//! Bundle-owned View program data produced by Arcweft View DSL lowering.
 //!
 //! This is the retained, Sans I/O execution substrate for Arcweft-authored
 //! Views. It intentionally does not evaluate expressions or allocate GPU
-//! resources. View evaluators consume `UiProgram`, props, local state, and
-//! environment snapshots, then emit `ViewFragment`, `UiFrameResources`, handlers,
-//! semantics, and style overlays.
+//! resources. View evaluators consume `ViewProgram`, props, local state, and
+//! environment snapshots, then emit `ViewFragment`, `UiFrameResources`,
+//! handlers, semantics, and style overlays.
 
 use crate::{
-    CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, StyleId, TextSourceId,
-    UiProgramId, ViewId,
+    CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, StyleId, TextSourceId, ViewId,
+    ViewProgramId,
 };
 use arcweft_id::PublicId;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiProgram {
-    id: UiProgramId,
+pub struct ViewProgram {
+    id: ViewProgramId,
     view: ViewId,
-    instructions: Vec<UiInstruction>,
-    exported_parts: Vec<UiPartExport>,
-    handler_programs: Vec<UiHandlerProgram>,
+    instructions: Vec<ViewInstruction>,
+    exported_parts: Vec<ViewPartExport>,
+    handler_programs: Vec<ViewHandlerProgram>,
     state_schema_hash: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiProgramBuilder {
-    id: UiProgramId,
+pub struct ViewProgramBuilder {
+    id: ViewProgramId,
     view: ViewId,
-    instructions: Vec<UiInstruction>,
-    exported_parts: Vec<UiPartExport>,
-    handler_programs: Vec<UiHandlerProgram>,
+    instructions: Vec<ViewInstruction>,
+    exported_parts: Vec<ViewPartExport>,
+    handler_programs: Vec<ViewHandlerProgram>,
     state_schema_hash: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UiInstruction {
-    OpenElement(UiElementSpec),
+pub enum ViewInstruction {
+    OpenElement(ViewElementSpec),
     CloseElement,
-    EmitText(UiTextSpec),
-    EmitImage(UiImageSpec),
-    EmitCustom(UiCustomSpec),
-    CallView(UiViewCall),
-    Branch(UiBranch),
-    RepeatKeyed(UiRepeat),
-    ApplyStyle(UiStyleApply),
-    BindEvent(UiEventBindingSpec),
-    AttachSemantic(UiSemanticSpec),
+    EmitText(ViewTextSpec),
+    EmitImage(ViewImageSpec),
+    EmitCustom(ViewCustomSpec),
+    CallView(ViewCall),
+    Branch(ViewBranch),
+    RepeatKeyed(ViewRepeat),
+    ApplyStyle(ViewStyleApply),
+    BindEvent(ViewEventBindingSpec),
+    AttachSemantic(ViewSemanticSpec),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiElementSpec {
+pub struct ViewElementSpec {
     pub kind: ViewElementKind,
     pub style: Option<StyleId>,
-    pub part: Option<UiPartId>,
-    pub key: Option<UiStableKey>,
+    pub part: Option<ViewPartId>,
+    pub key: Option<ViewStableKey>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UiPartId(pub u32);
+pub struct ViewPartId(pub u32);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiPartExport {
-    pub id: UiPartId,
+pub struct ViewPartExport {
+    pub id: ViewPartId,
     pub public_name: String,
 }
 
@@ -79,92 +79,92 @@ pub enum ViewElementKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UiStableKey(pub u64);
+pub struct ViewStableKey(pub u64);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiTextSpec {
+pub struct ViewTextSpec {
     pub source: TextSourceId,
     pub style: Option<StyleId>,
-    pub part: Option<UiPartId>,
+    pub part: Option<ViewPartId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiImageSpec {
+pub struct ViewImageSpec {
     pub image: ImageId,
     pub style: Option<StyleId>,
-    pub part: Option<UiPartId>,
+    pub part: Option<ViewPartId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiCustomSpec {
+pub struct ViewCustomSpec {
     pub element: CustomElementId,
     pub style: Option<StyleId>,
-    pub part: Option<UiPartId>,
+    pub part: Option<ViewPartId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiViewCall {
+pub struct ViewCall {
     pub view: ViewId,
-    pub props: UiExpressionId,
+    pub props: ViewExpressionId,
     pub style: Option<StyleId>,
-    pub part: Option<UiPartId>,
-    pub key: Option<UiStableKey>,
+    pub part: Option<ViewPartId>,
+    pub key: Option<ViewStableKey>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UiExpressionId(pub u32);
+pub struct ViewExpressionId(pub u32);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiBranch {
-    pub condition: UiExpressionId,
-    pub then_range: UiInstructionRange,
-    pub else_range: Option<UiInstructionRange>,
+pub struct ViewBranch {
+    pub condition: ViewExpressionId,
+    pub then_range: ViewInstructionRange,
+    pub else_range: Option<ViewInstructionRange>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiRepeat {
-    pub source: UiExpressionId,
-    pub key: UiExpressionId,
-    pub body: UiInstructionRange,
+pub struct ViewRepeat {
+    pub source: ViewExpressionId,
+    pub key: ViewExpressionId,
+    pub body: ViewInstructionRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UiInstructionRange {
+pub struct ViewInstructionRange {
     pub start: u32,
     pub end: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UiStyleApply {
+pub enum ViewStyleApply {
     Named(StyleId),
-    InlineArcweft(UiStylePatchId),
-    InlineCss(UiStylePatchId),
+    InlineArcweft(ViewStylePatchId),
+    InlineCss(ViewStylePatchId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UiStylePatchId(pub u32);
+pub struct ViewStylePatchId(pub u32);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiEventBindingSpec {
+pub struct ViewEventBindingSpec {
     pub event: EventKind,
     pub handler: HandlerId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiSemanticSpec {
+pub struct ViewSemanticSpec {
     pub semantic: SemanticSpecId,
     pub target: PublicId,
     pub label: Option<TextSourceId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiHandlerProgram {
+pub struct ViewHandlerProgram {
     pub handler: HandlerId,
     pub target_action: Option<PublicId>,
-    pub body: UiExpressionId,
+    pub body: ViewExpressionId,
 }
 
-impl UiInstructionRange {
+impl ViewInstructionRange {
     pub const fn new(start: u32, end: u32) -> Self {
         Self { start, end }
     }
@@ -174,8 +174,8 @@ impl UiInstructionRange {
     }
 }
 
-impl UiPartExport {
-    pub fn new(id: UiPartId, public_name: impl Into<String>) -> Self {
+impl ViewPartExport {
+    pub fn new(id: ViewPartId, public_name: impl Into<String>) -> Self {
         Self {
             id,
             public_name: public_name.into(),
@@ -183,8 +183,8 @@ impl UiPartExport {
     }
 }
 
-impl UiProgramBuilder {
-    pub fn new(id: UiProgramId, view: ViewId, state_schema_hash: u64) -> Self {
+impl ViewProgramBuilder {
+    pub fn new(id: ViewProgramId, view: ViewId, state_schema_hash: u64) -> Self {
         Self {
             id,
             view,
@@ -195,22 +195,22 @@ impl UiProgramBuilder {
         }
     }
 
-    pub fn push(&mut self, instruction: UiInstruction) -> u32 {
+    pub fn push(&mut self, instruction: ViewInstruction) -> u32 {
         let index = u32::try_from(self.instructions.len()).unwrap_or(u32::MAX);
         self.instructions.push(instruction);
         index
     }
 
-    pub fn export_part(&mut self, export: UiPartExport) {
+    pub fn export_part(&mut self, export: ViewPartExport) {
         self.exported_parts.push(export);
     }
 
-    pub fn push_handler_program(&mut self, handler: UiHandlerProgram) {
+    pub fn push_handler_program(&mut self, handler: ViewHandlerProgram) {
         self.handler_programs.push(handler);
     }
 
-    pub fn finish(self) -> UiProgram {
-        UiProgram::new(
+    pub fn finish(self) -> ViewProgram {
+        ViewProgram::new(
             self.id,
             self.view,
             self.state_schema_hash,
@@ -221,12 +221,12 @@ impl UiProgramBuilder {
     }
 }
 
-impl UiProgram {
+impl ViewProgram {
     pub fn new(
-        id: UiProgramId,
+        id: ViewProgramId,
         view: ViewId,
         state_schema_hash: u64,
-        instructions: Vec<UiInstruction>,
+        instructions: Vec<ViewInstruction>,
     ) -> Self {
         Self {
             id,
@@ -239,18 +239,18 @@ impl UiProgram {
     }
 
     #[must_use]
-    pub fn with_exported_parts(mut self, exported_parts: Vec<UiPartExport>) -> Self {
+    pub fn with_exported_parts(mut self, exported_parts: Vec<ViewPartExport>) -> Self {
         self.exported_parts = exported_parts;
         self
     }
 
     #[must_use]
-    pub fn with_handler_programs(mut self, handler_programs: Vec<UiHandlerProgram>) -> Self {
+    pub fn with_handler_programs(mut self, handler_programs: Vec<ViewHandlerProgram>) -> Self {
         self.handler_programs = handler_programs;
         self
     }
 
-    pub const fn id(&self) -> UiProgramId {
+    pub const fn id(&self) -> ViewProgramId {
         self.id
     }
 
@@ -262,15 +262,15 @@ impl UiProgram {
         self.state_schema_hash
     }
 
-    pub fn instructions(&self) -> &[UiInstruction] {
+    pub fn instructions(&self) -> &[ViewInstruction] {
         &self.instructions
     }
 
-    pub fn exported_parts(&self) -> &[UiPartExport] {
+    pub fn exported_parts(&self) -> &[ViewPartExport] {
         &self.exported_parts
     }
 
-    pub fn handler_programs(&self) -> &[UiHandlerProgram] {
+    pub fn handler_programs(&self) -> &[ViewHandlerProgram] {
         &self.handler_programs
     }
 }
@@ -278,21 +278,22 @@ impl UiProgram {
 #[cfg(test)]
 mod tests {
     use super::{
-        UiElementSpec, UiInstruction, UiPartExport, UiPartId, UiProgramBuilder, ViewElementKind,
+        ViewElementKind, ViewElementSpec, ViewInstruction, ViewPartExport, ViewPartId,
+        ViewProgramBuilder,
     };
-    use crate::{UiProgramId, ViewId};
+    use crate::{ViewId, ViewProgramId};
 
     #[test]
-    fn ui_program_builder_preserves_instruction_order_before_fragment_lowering() {
-        let mut builder = UiProgramBuilder::new(UiProgramId(1), ViewId(2), 0xCAFE);
-        builder.push(UiInstruction::OpenElement(UiElementSpec {
+    fn view_program_builder_preserves_instruction_order_before_fragment_lowering() {
+        let mut builder = ViewProgramBuilder::new(ViewProgramId(1), ViewId(2), 0xCAFE);
+        builder.push(ViewInstruction::OpenElement(ViewElementSpec {
             kind: ViewElementKind::TextField,
             style: None,
-            part: Some(UiPartId(1)),
+            part: Some(ViewPartId(1)),
             key: None,
         }));
-        builder.push(UiInstruction::CloseElement);
-        builder.export_part(UiPartExport::new(UiPartId(1), "field"));
+        builder.push(ViewInstruction::CloseElement);
+        builder.export_part(ViewPartExport::new(ViewPartId(1), "field"));
 
         let program = builder.finish();
 
