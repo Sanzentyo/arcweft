@@ -2,6 +2,7 @@ use super::{BinaryOp, CallArg, Expr, Literal, Placeholder, TypeCheckError, TypeC
 use crate::checker::helpers::{
     numeric_literal_suffix_type, optional_type_kind_label, type_kind_label,
 };
+use crate::env::FunctionSignature;
 
 impl TypeChecker<'_> {
     pub(super) fn check_inferred_partial_placeholder_abstraction_expr(
@@ -133,11 +134,7 @@ impl TypeChecker<'_> {
         if !signature.checks_args() {
             return None;
         }
-        partial_call_function_type_from_positional_args(
-            args,
-            signature.params().iter().map(crate::env::FunctionParam::ty),
-            signature.return_type(),
-        )
+        partial_call_function_type_from_signature_args(args, signature)
     }
 
     fn partial_inference_static_expr_type(&self, expr: &Expr) -> Option<TypeKind> {
@@ -182,6 +179,64 @@ fn partial_call_function_type_from_positional_args<'a>(
         params: vec![param],
         return_type: Box::new(return_type.clone()),
     })
+}
+
+fn partial_call_function_type_from_signature_args(
+    args: &[CallArg],
+    signature: &FunctionSignature,
+) -> Option<TypeKind> {
+    let params = signature.params();
+    let mut inferred_param = None;
+    let mut provided = vec![false; params.len()];
+    let mut positional_index = 0usize;
+
+    for arg in args {
+        if matches!(arg, CallArg::Spread { .. }) {
+            return None;
+        }
+        match arg {
+            CallArg::Positional(value) => {
+                while positional_index < params.len() && provided[positional_index] {
+                    positional_index += 1;
+                }
+                let param = params.get(positional_index)?;
+                provided[positional_index] = true;
+                positional_index += 1;
+                if expr_contains_partial_placeholder(value) {
+                    infer_partial_param_type(&mut inferred_param, param.ty())?;
+                }
+            }
+            CallArg::Named { name, value } => {
+                let index = params
+                    .iter()
+                    .position(|param| !param.is_rest() && param.name() == Some(name.as_str()))?;
+                if provided[index] {
+                    return None;
+                }
+                provided[index] = true;
+                if expr_contains_partial_placeholder(value) {
+                    infer_partial_param_type(&mut inferred_param, params[index].ty())?;
+                }
+            }
+            CallArg::Spread { .. } => unreachable!("spread returned before arg dispatch"),
+        }
+    }
+
+    inferred_param.map(|param| TypeKind::Function {
+        params: vec![param],
+        return_type: Box::new(signature.return_type().clone()),
+    })
+}
+
+fn infer_partial_param_type(inferred_param: &mut Option<TypeKind>, param: &TypeKind) -> Option<()> {
+    match inferred_param {
+        Some(existing) if existing != param => None,
+        Some(_) => Some(()),
+        None => {
+            *inferred_param = Some(param.clone());
+            Some(())
+        }
+    }
 }
 
 fn literal_type_for_partial_inference(literal: &Literal) -> Option<TypeKind> {

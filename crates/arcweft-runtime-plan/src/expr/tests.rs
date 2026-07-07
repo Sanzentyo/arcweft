@@ -51,6 +51,48 @@ fn strict_runtime_value_lowering_can_emit_pure_calls() {
 }
 
 #[test]
+fn strict_runtime_reorders_named_pure_helper_args_by_input_name() {
+    let expr = Expr::Call {
+        callee: Box::new(Expr::Path("add".into())),
+        args: vec![
+            CallArg::Named {
+                name: "rhs".to_owned(),
+                value: Box::new(Expr::Literal(Literal::Int {
+                    raw: "4i64".to_owned(),
+                    value: 4,
+                    suffix: Some("i64".to_owned()),
+                })),
+            },
+            CallArg::Named {
+                name: "lhs".to_owned(),
+                value: Box::new(Expr::Literal(Literal::Int {
+                    raw: "3i64".to_owned(),
+                    value: 3,
+                    suffix: Some("i64".to_owned()),
+                })),
+            },
+        ],
+    };
+    let helpers = vec![add_i64_helper()];
+    let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);
+
+    let lowered =
+        lower_runtime_expr_strict_with_pure(&expr, RuntimePureHelperLookup::new(&ids, &helpers))
+            .expect("named pure calls lower");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::PureCall { helper, args }
+            if helper == RuntimePureHelperId(0)
+                && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(lhs), RuntimeExpr::Value(rhs)]
+                        if lhs == &RuntimeValue::i64(3) && rhs == &RuntimeValue::i64(4)
+                )
+    ));
+}
+
+#[test]
 fn strict_runtime_lowers_bare_pure_helper_path_to_function_value() {
     let helpers = vec![add_i64_helper()];
     let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);

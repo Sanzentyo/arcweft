@@ -1450,13 +1450,16 @@ fn lower_strict_call_expr(
     }
     lower_constructor_call(callee, args, helpers).map_or_else(
         || {
-            let args = args
-                .iter()
-                .map(|arg| lower_strict_call_arg(arg, helpers))
-                .collect::<Result<Vec<_>, _>>()?;
             let path_callee = match callee {
                 Expr::Path(path) => Some(path.as_label()),
                 _ => None,
+            };
+            let args = match path_callee {
+                Some(callee) => lower_strict_named_callee_args(callee, args, helpers)?,
+                None => args
+                    .iter()
+                    .map(|arg| lower_strict_call_arg(arg, helpers))
+                    .collect::<Result<Vec<_>, _>>()?,
             };
             if helpers.is_some_and(|helpers| {
                 helpers.has_function_value_call_evidence(expression_id, path_callee, args.len())
@@ -1484,6 +1487,79 @@ fn lower_strict_call_expr(
         },
         Ok,
     )
+}
+
+fn lower_strict_named_callee_args(
+    callee: &str,
+    args: &[CallArg],
+    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+) -> Result<Vec<RuntimeExpr>, String> {
+    if args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
+        && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
+    {
+        return lower_strict_pure_helper_named_args(callee, args, helper, helpers);
+    }
+    args.iter()
+        .map(|arg| lower_strict_call_arg(arg, helpers))
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn lower_strict_pure_helper_named_args(
+    callee: &str,
+    args: &[CallArg],
+    helper: &RuntimePureHelper,
+    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+) -> Result<Vec<RuntimeExpr>, String> {
+    let mut lowered = std::iter::repeat_with(|| None)
+        .take(helper.input_names.len())
+        .collect::<Vec<_>>();
+    let mut positional_index = 0usize;
+
+    for arg in args {
+        match arg {
+            CallArg::Positional(value) => {
+                while positional_index < lowered.len() && lowered[positional_index].is_some() {
+                    positional_index += 1;
+                }
+                let Some(slot) = lowered.get_mut(positional_index) else {
+                    return Err(format!(
+                        "pure helper `{callee}` received too many positional arguments"
+                    ));
+                };
+                *slot = Some(lower_runtime_expr_strict_with_helpers(value, helpers)?);
+                positional_index += 1;
+            }
+            CallArg::Named { name, value } => {
+                let Some(index) = helper.input_names.iter().position(|input| input == name) else {
+                    return Err(format!(
+                        "pure helper `{callee}` has no input named `{name}`"
+                    ));
+                };
+                if lowered[index].is_some() {
+                    return Err(format!(
+                        "pure helper `{callee}` input `{name}` was provided more than once"
+                    ));
+                }
+                lowered[index] = Some(lower_runtime_expr_strict_with_helpers(value, helpers)?);
+            }
+            CallArg::Spread { .. } => {
+                return Err(format!(
+                    "pure helper `{callee}` does not accept spread arguments in named calls"
+                ));
+            }
+        }
+    }
+
+    lowered
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value.ok_or_else(|| {
+                let name = &helper.input_names[index];
+                format!("pure helper `{callee}` missing required input `{name}`")
+            })
+        })
+        .collect()
 }
 
 fn lower_strict_named_call(
