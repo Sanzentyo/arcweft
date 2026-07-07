@@ -442,6 +442,47 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_reports_missing_typed_lowering_evidence() {
+    let parsed = parse_source_text(
+        r#"
+flow @flow.main main {
+    let ok: bool = f(1i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(
+        &hir,
+        &TypeCheckEnv::standard().with_symbol(
+            "f",
+            TypeKind::Function {
+                params: vec![TypeKind::I64],
+                return_type: Box::new(TypeKind::Bool),
+            },
+        ),
+    );
+    assert!(
+        !typecheck.typed_lowering_evidence.is_empty(),
+        "fixture must produce typed function-call evidence"
+    );
+
+    let errors = lower_source_runtime_plan_with_stats_and_options(
+        &hir,
+        &RuntimePlanLowerOptions::default()
+            .with_required_typed_lowering_evidence_len(typecheck.typed_lowering_evidence.len()),
+    )
+    .expect_err("checked runtime lowering must reject missing typed evidence");
+
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("checked runtime lowering expected")
+            && error.message().contains("typed lowering evidence")
+    }));
+}
+
+#[test]
 fn runtime_plan_uses_expected_function_evidence_for_placeholder_args() {
     let parsed = parse_source_text(
         r#"

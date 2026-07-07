@@ -129,6 +129,11 @@ Source briefs:
   path calls such as `f(1i64)` lower to `RuntimeExpr::Apply` when sema proved
   `f` is a function value. Without that evidence, the same unknown path call
   remains an adapter-facing `RuntimeExpr::Call`.
+- Checked compiler runtime-plan lowering now requires the exact typed-lowering
+  evidence count exported by sema. If that evidence is omitted from
+  `RuntimePlanLowerOptions`, lowering fails with a structured
+  `runtime.plan.lower` diagnostic instead of silently producing a plan with
+  adapter-style call semantics.
 - Runtime-plan lowering preserves curried pure-helper application as staged
   `RuntimeExpr::Apply`, including `tuple_tail(1i64, 2i64)(3i64)` as `[2, 1]`
   argument groups and `chain(1i64)(2i64)(3i64, 4i64)` as `[1, 1, 2]`.
@@ -438,6 +443,7 @@ cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-lsp --all-features inlay_hint_request
 cargo test -p arcweft-lsp --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_reports_missing_typed_lowering_evidence
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_expected_function_evidence_for_placeholder_args
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_inferred_partial_placeholder_functions

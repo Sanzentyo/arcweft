@@ -90,11 +90,13 @@ pub fn runtime_plan_options_with_typecheck_evidence(
         .iter()
         .map(runtime_typed_lowering_evidence)
         .collect::<Vec<_>>();
+    let required_typed_lowering_evidence_len = typed_lowering_evidence.len();
     Ok(options
         .clone()
         .with_for_iteration_evidence(evidence)
         .with_trait_methods(trait_methods.methods)
-        .with_typed_lowering_evidence(typed_lowering_evidence))
+        .with_typed_lowering_evidence(typed_lowering_evidence)
+        .with_required_typed_lowering_evidence_len(required_typed_lowering_evidence_len))
 }
 
 fn runtime_typed_lowering_evidence(

@@ -80,6 +80,7 @@ pub struct RuntimePlanLowerOptions {
     for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
     trait_methods: Vec<RuntimeTraitMethod>,
     typed_lowering_evidence: Vec<RuntimeTypedLoweringEvidence>,
+    required_typed_lowering_evidence_len: Option<usize>,
 }
 
 impl RuntimePlanLowerOptions {
@@ -91,6 +92,7 @@ impl RuntimePlanLowerOptions {
             for_iteration_evidence: Vec::new(),
             trait_methods: Vec::new(),
             typed_lowering_evidence: Vec::new(),
+            required_typed_lowering_evidence_len: None,
         }
     }
 
@@ -129,6 +131,14 @@ impl RuntimePlanLowerOptions {
         self
     }
 
+    /// Requires checked-build lowering to receive the exact typed evidence
+    /// count exported by semantic analysis.
+    #[must_use]
+    pub fn with_required_typed_lowering_evidence_len(mut self, len: usize) -> Self {
+        self.required_typed_lowering_evidence_len = Some(len);
+        self
+    }
+
     /// Selected dialogue defaults profile ID, if supplied by a launch profile.
     #[must_use]
     pub fn dialogue_defaults(&self) -> Option<&str> {
@@ -145,6 +155,19 @@ impl RuntimePlanLowerOptions {
 
     pub fn typed_lowering_evidence(&self) -> &[RuntimeTypedLoweringEvidence] {
         &self.typed_lowering_evidence
+    }
+
+    fn validate_typed_lowering_evidence(&self) -> Result<(), RuntimePlanLowerError> {
+        let Some(required_len) = self.required_typed_lowering_evidence_len else {
+            return Ok(());
+        };
+        let actual_len = self.typed_lowering_evidence.len();
+        if actual_len == required_len {
+            return Ok(());
+        }
+        Err(RuntimePlanLowerError::new(format!(
+            "checked runtime lowering expected {required_len} typed lowering evidence record(s), found {actual_len}; pass the TypeCheckReport-derived evidence into RuntimePlanLowerOptions"
+        )))
     }
 }
 
@@ -198,6 +221,9 @@ pub fn lower_runtime_plan_with_stats_and_options(
     module: &HirModule,
     options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
+    options
+        .validate_typed_lowering_evidence()
+        .map_err(|error| vec![error])?;
     let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
         errors
             .into_iter()
@@ -287,6 +313,9 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
     agent: &HirAgent,
     options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
+    options
+        .validate_typed_lowering_evidence()
+        .map_err(|error| vec![error])?;
     let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
         errors
             .into_iter()
