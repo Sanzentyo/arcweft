@@ -114,6 +114,61 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
 }
 
 #[test]
+fn typechecker_lowers_pipe_placeholder_and_data_last_calls() {
+    let tree = parse_ok(
+        r"
+flow main {
+  let clamped = 10i64 |> clamp(0i64, ^, 100i64)
+  let next = clamped |> plus_one
+  return next
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("pipe fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("pipe expressions are typecheck-ready");
+    let env = TypeCheckEnv::new()
+        .with_function_signature(
+            "clamp",
+            FunctionSignature::new(
+                TypeKind::I64,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                    FunctionParam::required("max", TypeKind::I64),
+                ],
+            ),
+        )
+        .with_function_signature(
+            "plus_one",
+            FunctionSignature::new(
+                TypeKind::I64,
+                [FunctionParam::required("value", TypeKind::I64)],
+            ),
+        );
+
+    typecheck_hir(&hir, &env).expect("pipe expressions typecheck");
+}
+
+#[test]
+fn typechecker_rejects_pipe_left_placeholder_outside_pipe_rhs() {
+    let tree = parse_ok(
+        r"
+flow main {
+  let value = ^
+  return value
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("placeholder fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("placeholder expression is structured");
+
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("pipe-left placeholder outside pipe rhs is rejected");
+
+    assert!(errors.iter().any(|error| error.to_string().contains("`^`")));
+}
+
+#[test]
 fn parses_char_literal_suffixes() {
     let ascii = parse_expr(r#""a"c"#).expect("ascii char literal parses");
     assert!(matches!(

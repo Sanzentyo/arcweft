@@ -15,12 +15,14 @@ use crate::diagnostics::TraitDiagnostic;
 use crate::traits::TraitMethodResolution;
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
-    BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, UnaryOp,
+    BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder, UnaryOp,
 };
 
 mod agent;
 mod builtin;
+mod callable;
 mod closure;
+mod pipe;
 mod range;
 mod support;
 
@@ -87,7 +89,7 @@ impl TypeChecker<'_> {
             Expr::ShortVariant(name) => {
                 Some(self.check_short_variant_expr(name.as_str(), expected))
             }
-            Expr::Placeholder(_) => None,
+            Expr::Placeholder(placeholder) => self.check_placeholder_expr(*placeholder),
             Expr::Tuple(items) => Some(self.check_tuple_expr_with_expected(items, expected)),
             Expr::BracketSeq(items) => Some(self.check_bracket_seq_with_expected(items, expected)),
             Expr::NumericBracketSeq(seq) => {
@@ -378,14 +380,6 @@ impl TypeChecker<'_> {
                 None
             })
         })
-    }
-
-    fn check_pipe_expr(&mut self, lhs: &Expr, rhs: &Expr) -> Option<TypeKind> {
-        if self.check_lifetime_pipe(lhs, rhs).is_some() {
-            return Some(TypeKind::Unit);
-        }
-        self.check_expr(lhs);
-        self.check_expr(rhs)
     }
 
     fn check_record_expr(&mut self, path: &str, fields: &[(String, Expr)]) -> TypeKind {
@@ -848,6 +842,10 @@ impl TypeChecker<'_> {
                 }
                 Some(TypeKind::SpeakerPreset(entity))
             }
+            Some(TypeKind::Function {
+                params,
+                return_type,
+            }) => Some(self.check_function_value_call(args, &params, &return_type)),
             other => {
                 for arg in args {
                     self.check_expr(arg.value());

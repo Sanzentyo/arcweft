@@ -20,7 +20,7 @@ use arcweft_core::value::{
 };
 use arcweft_lang_hir::syntax::{
     ast::{flow::Stmt, line_plan::LinePlanItem, pattern::Pattern},
-    expr::{BinaryOp, CallArg, Expr, FloatSuffix, Literal, MatchExprArm, UnaryOp},
+    expr::{BinaryOp, CallArg, Expr, FloatSuffix, Literal, MatchExprArm, Placeholder, UnaryOp},
 };
 use std::collections::BTreeMap;
 
@@ -120,9 +120,8 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         Expr::Index { target, index } => {
             lower_runtime_index_expr(target, index).unwrap_or_else(|| lower_runtime_expr(target))
         }
-        Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Pipe { lhs: expr, .. } => {
-            lower_runtime_expr(expr)
-        }
+        Expr::Try { expr } | Expr::Await { expr, .. } => lower_runtime_expr(expr),
+        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr(lhs, rhs),
         _ => RuntimeExpr::Value(RuntimeValue::String(expr_label(expr))),
     }
 }
@@ -234,9 +233,10 @@ fn lower_runtime_expr_strict_with_helpers(
         } => lower_strict_method_call_dispatch(receiver, method, args, helpers),
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
-        Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Pipe { lhs: expr, .. } => {
+        Expr::Try { expr } | Expr::Await { expr, .. } => {
             lower_runtime_expr_strict_with_helpers(expr, helpers)
         }
+        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers),
         Expr::Thread { .. }
         | Expr::Closure { .. }
         | Expr::LifetimePath { .. }
@@ -258,6 +258,227 @@ fn lower_strict_method_call_dispatch(
     {
         Some(lowered) => lowered,
         None => lower_strict_method_call_expr(receiver, method, args, helpers),
+    }
+}
+
+fn lower_runtime_pipe_expr(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
+    if expr_contains_pipe_left(rhs) {
+        return lower_runtime_expr(&substitute_pipe_left(rhs, lhs));
+    }
+    lower_runtime_data_last_pipe(lhs, rhs)
+}
+
+fn lower_runtime_pipe_expr_strict(
+    lhs: &Expr,
+    rhs: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    if expr_contains_pipe_left(rhs) {
+        return lower_runtime_expr_strict_with_helpers(&substitute_pipe_left(rhs, lhs), helpers);
+    }
+    lower_runtime_data_last_pipe_strict(lhs, rhs, helpers)
+}
+
+fn lower_runtime_data_last_pipe(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
+    match rhs {
+        Expr::Path(path) => RuntimeExpr::Call {
+            callee: RuntimeCallTarget::from_label(path.as_label()),
+            args: vec![lower_runtime_expr(lhs)],
+        },
+        Expr::Call { callee, args } => RuntimeExpr::Call {
+            callee: RuntimeCallTarget::from_label(expr_label(callee)),
+            args: args
+                .iter()
+                .map(lower_runtime_call_arg)
+                .chain(std::iter::once(lower_runtime_expr(lhs)))
+                .collect(),
+        },
+        _ => RuntimeExpr::Call {
+            callee: RuntimeCallTarget::from_label(expr_label(rhs)),
+            args: vec![lower_runtime_expr(lhs)],
+        },
+    }
+}
+
+fn lower_runtime_data_last_pipe_strict(
+    lhs: &Expr,
+    rhs: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
+    match rhs {
+        Expr::Path(path) => Ok(RuntimeExpr::Call {
+            callee: RuntimeCallTarget::from_label(path.as_label()),
+            args: vec![lhs],
+        }),
+        Expr::Call { callee, args } => {
+            let mut args = args
+                .iter()
+                .map(|arg| lower_strict_call_arg(arg, helpers))
+                .collect::<Result<Vec<_>, _>>()?;
+            args.push(lhs);
+            Ok(RuntimeExpr::Call {
+                callee: RuntimeCallTarget::from_label(expr_label(callee)),
+                args,
+            })
+        }
+        _ => Ok(RuntimeExpr::Call {
+            callee: RuntimeCallTarget::from_label(expr_label(rhs)),
+            args: vec![lhs],
+        }),
+    }
+}
+
+fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
+    match expr {
+        Expr::Placeholder(Placeholder::PipeLeft) => lhs.clone(),
+        Expr::Tuple(items) => Expr::Tuple(
+            items
+                .iter()
+                .map(|item| substitute_pipe_left(item, lhs))
+                .collect(),
+        ),
+        Expr::BracketSeq(items) => Expr::BracketSeq(
+            items
+                .iter()
+                .map(|item| substitute_pipe_left(item, lhs))
+                .collect(),
+        ),
+        Expr::ArrayRepeat { value, len } => Expr::ArrayRepeat {
+            value: Box::new(substitute_pipe_left(value, lhs)),
+            len: Box::new(substitute_pipe_left(len, lhs)),
+        },
+        Expr::Call { callee, args } => Expr::Call {
+            callee: Box::new(substitute_pipe_left(callee, lhs)),
+            args: args
+                .iter()
+                .map(|arg| substitute_pipe_left_arg(arg, lhs))
+                .collect(),
+        },
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => Expr::MethodCall {
+            receiver: Box::new(substitute_pipe_left(receiver, lhs)),
+            method: method.clone(),
+            args: args
+                .iter()
+                .map(|arg| substitute_pipe_left_arg(arg, lhs))
+                .collect(),
+        },
+        Expr::Field { target, field } => Expr::Field {
+            target: Box::new(substitute_pipe_left(target, lhs)),
+            field: field.clone(),
+        },
+        Expr::Index { target, index } => Expr::Index {
+            target: Box::new(substitute_pipe_left(target, lhs)),
+            index: Box::new(substitute_pipe_left(index, lhs)),
+        },
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: *op,
+            expr: Box::new(substitute_pipe_left(expr, lhs)),
+        },
+        Expr::Binary { lhs: left, op, rhs } => Expr::Binary {
+            lhs: Box::new(substitute_pipe_left(left, lhs)),
+            op: *op,
+            rhs: Box::new(substitute_pipe_left(rhs, lhs)),
+        },
+        Expr::Record { path, fields } => Expr::Record {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| (name.clone(), substitute_pipe_left(value, lhs)))
+                .collect(),
+        },
+        Expr::RecordLiteral(fields) => Expr::RecordLiteral(
+            fields
+                .iter()
+                .map(|(name, value)| (name.clone(), substitute_pipe_left(value, lhs)))
+                .collect(),
+        ),
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => Expr::If {
+            condition: Box::new(substitute_pipe_left(condition, lhs)),
+            then_branch: Box::new(substitute_pipe_left(then_branch, lhs)),
+            else_branch: else_branch
+                .as_deref()
+                .map(|else_branch| Box::new(substitute_pipe_left(else_branch, lhs))),
+        },
+        Expr::Try { expr } => Expr::Try {
+            expr: Box::new(substitute_pipe_left(expr, lhs)),
+        },
+        Expr::Await { expr, applies_try } => Expr::Await {
+            expr: Box::new(substitute_pipe_left(expr, lhs)),
+            applies_try: *applies_try,
+        },
+        Expr::Closure { params, body } => Expr::Closure {
+            params: params.clone(),
+            body: Box::new(substitute_pipe_left(body, lhs)),
+        },
+        _ => expr.clone(),
+    }
+}
+
+fn substitute_pipe_left_arg(arg: &CallArg, lhs: &Expr) -> CallArg {
+    match arg {
+        CallArg::Positional(value) => CallArg::Positional(substitute_pipe_left(value, lhs)),
+        CallArg::Named { name, value } => CallArg::Named {
+            name: name.clone(),
+            value: Box::new(substitute_pipe_left(value, lhs)),
+        },
+        CallArg::Spread { value } => CallArg::Spread {
+            value: Box::new(substitute_pipe_left(value, lhs)),
+        },
+    }
+}
+
+fn expr_contains_pipe_left(expr: &Expr) -> bool {
+    match expr {
+        Expr::Placeholder(Placeholder::PipeLeft) => true,
+        Expr::Tuple(items) | Expr::BracketSeq(items) => items.iter().any(expr_contains_pipe_left),
+        Expr::ArrayRepeat { value, len }
+        | Expr::Binary {
+            lhs: value,
+            rhs: len,
+            ..
+        } => expr_contains_pipe_left(value) || expr_contains_pipe_left(len),
+        Expr::Call { callee, args } => {
+            expr_contains_pipe_left(callee) || args.iter().any(call_arg_contains_pipe_left)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_contains_pipe_left(receiver) || args.iter().any(call_arg_contains_pipe_left)
+        }
+        Expr::Field { target, .. } | Expr::Try { expr: target } => expr_contains_pipe_left(target),
+        Expr::Index { target, index } => {
+            expr_contains_pipe_left(target) || expr_contains_pipe_left(index)
+        }
+        Expr::Unary { expr, .. } | Expr::Await { expr, .. } | Expr::Closure { body: expr, .. } => {
+            expr_contains_pipe_left(expr)
+        }
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
+            .iter()
+            .any(|(_, value)| expr_contains_pipe_left(value)),
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            expr_contains_pipe_left(condition)
+                || expr_contains_pipe_left(then_branch)
+                || else_branch.as_deref().is_some_and(expr_contains_pipe_left)
+        }
+        _ => false,
+    }
+}
+
+fn call_arg_contains_pipe_left(arg: &CallArg) -> bool {
+    match arg {
+        CallArg::Positional(value) => expr_contains_pipe_left(value),
+        CallArg::Named { value, .. } | CallArg::Spread { value } => expr_contains_pipe_left(value),
     }
 }
 
@@ -1568,6 +1789,69 @@ mod tests {
             lowered,
             RuntimeExpr::Call { callee, args }
                 if callee.as_label() == "infer.matmul_bias_add_f32" && args.len() == 3
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_substitutes_pipe_left_placeholder() {
+        let expr = Expr::Pipe {
+            lhs: Box::new(Expr::Path("value".into())),
+            rhs: Box::new(Expr::Call {
+                callee: Box::new(Expr::Path("clamp".into())),
+                args: vec![
+                    CallArg::Positional(Expr::Literal(Literal::Int {
+                        raw: "0i64".to_owned(),
+                        value: 0,
+                        suffix: Some("i64".to_owned()),
+                    })),
+                    CallArg::Positional(Expr::Placeholder(Placeholder::PipeLeft)),
+                    CallArg::Positional(Expr::Literal(Literal::Int {
+                        raw: "100i64".to_owned(),
+                        value: 100,
+                        suffix: Some("i64".to_owned()),
+                    })),
+                ],
+            }),
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("pipe placeholder lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Call { callee, args }
+                if callee.as_label() == "clamp"
+                    && matches!(args.as_slice(), [
+                        RuntimeExpr::Value(_),
+                        RuntimeExpr::Local(name),
+                        RuntimeExpr::Value(_),
+                    ] if name == "value")
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_lowers_data_last_pipe_to_direct_call() {
+        let expr = Expr::Pipe {
+            lhs: Box::new(Expr::Path("value".into())),
+            rhs: Box::new(Expr::Call {
+                callee: Box::new(Expr::Path("normalize".into())),
+                args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
+                    raw: "2i64".to_owned(),
+                    value: 2,
+                    suffix: Some("i64".to_owned()),
+                }))],
+            }),
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("data-last pipe lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Call { callee, args }
+                if callee.as_label() == "normalize"
+                    && matches!(args.as_slice(), [
+                        RuntimeExpr::Value(_),
+                        RuntimeExpr::Local(name),
+                    ] if name == "value")
         ));
     }
 
