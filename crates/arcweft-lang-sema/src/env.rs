@@ -28,6 +28,23 @@ pub struct FunctionParam {
     pub(crate) ty: TypeKind,
     pub(crate) kind: FnParamKind,
     pub(crate) has_default: bool,
+    pub(crate) higher_order_bindings: Vec<FunctionParamHigherOrderBinding>,
+}
+
+/// Function-valued binding exposed by one source parameter pattern.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionParamHigherOrderBinding {
+    pub(crate) name: String,
+    pub(crate) ty: TypeKind,
+    pub(crate) selector: FunctionParamSelector,
+}
+
+/// Location of a binding inside the source argument value supplied for a
+/// function parameter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FunctionParamSelector {
+    Root,
+    TupleIndex(Vec<usize>),
 }
 
 /// Method signature tracked by the lightweight semantic environment.
@@ -175,31 +192,42 @@ impl FunctionSignature {
 impl FunctionParam {
     /// Creates a required positional/named parameter.
     pub fn required(name: impl Into<String>, ty: TypeKind) -> Self {
-        Self {
-            name: Some(name.into()),
-            ty: normalize_type_kind(ty),
-            kind: FnParamKind::Fixed,
-            has_default: false,
-        }
+        Self::new(Some(name.into()), ty, FnParamKind::Fixed, false, Vec::new())
     }
 
     /// Creates a fixed positional/named parameter with a source-level default.
     pub fn defaulted(name: impl Into<String>, ty: TypeKind) -> Self {
-        Self {
-            name: Some(name.into()),
-            ty: normalize_type_kind(ty),
-            kind: FnParamKind::Fixed,
-            has_default: true,
-        }
+        Self::new(Some(name.into()), ty, FnParamKind::Fixed, true, Vec::new())
     }
 
     /// Creates a rest parameter.
     pub fn rest(name: impl Into<String>, ty: TypeKind) -> Self {
+        Self::new(Some(name.into()), ty, FnParamKind::Rest, false, Vec::new())
+    }
+
+    pub(crate) fn new(
+        name: Option<String>,
+        ty: TypeKind,
+        kind: FnParamKind,
+        has_default: bool,
+        higher_order_bindings: impl IntoIterator<Item = FunctionParamHigherOrderBinding>,
+    ) -> Self {
+        let ty = normalize_type_kind(ty);
+        let higher_order_bindings = higher_order_bindings
+            .into_iter()
+            .map(normalize_function_param_higher_order_binding)
+            .collect::<Vec<_>>();
+        let higher_order_bindings = if higher_order_bindings.is_empty() {
+            root_higher_order_bindings(name.as_ref(), &ty)
+        } else {
+            higher_order_bindings
+        };
         Self {
-            name: Some(name.into()),
-            ty: normalize_type_kind(ty),
-            kind: FnParamKind::Rest,
-            has_default: false,
+            name,
+            ty,
+            kind,
+            has_default,
+            higher_order_bindings,
         }
     }
 
@@ -223,8 +251,42 @@ impl FunctionParam {
         self.has_default
     }
 
+    /// Function-valued local bindings projected from this source parameter.
+    pub fn higher_order_bindings(&self) -> &[FunctionParamHigherOrderBinding] {
+        &self.higher_order_bindings
+    }
+
     pub(crate) const fn is_rest(&self) -> bool {
         matches!(self.kind, FnParamKind::Rest)
+    }
+}
+
+impl FunctionParamHigherOrderBinding {
+    pub(crate) fn new(
+        name: impl Into<String>,
+        ty: TypeKind,
+        selector: FunctionParamSelector,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            selector,
+        }
+    }
+
+    /// Source binding name visible inside the callee body.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Function type of the binding.
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    /// Argument selector that yields this binding's source value.
+    pub const fn selector(&self) -> &FunctionParamSelector {
+        &self.selector
     }
 }
 
@@ -818,7 +880,36 @@ fn normalize_function_signature(mut signature: FunctionSignature) -> FunctionSig
 
 fn normalize_function_param(mut param: FunctionParam) -> FunctionParam {
     param.ty = normalize_type_kind(param.ty);
+    param.higher_order_bindings = param
+        .higher_order_bindings
+        .into_iter()
+        .map(normalize_function_param_higher_order_binding)
+        .collect();
+    if param.higher_order_bindings.is_empty() {
+        param.higher_order_bindings = root_higher_order_bindings(param.name.as_ref(), &param.ty);
+    }
     param
+}
+
+fn normalize_function_param_higher_order_binding(
+    mut binding: FunctionParamHigherOrderBinding,
+) -> FunctionParamHigherOrderBinding {
+    binding.ty = normalize_type_kind(binding.ty);
+    binding
+}
+
+fn root_higher_order_bindings(
+    name: Option<&String>,
+    ty: &TypeKind,
+) -> Vec<FunctionParamHigherOrderBinding> {
+    match (name, ty) {
+        (Some(name), TypeKind::Function { .. }) => vec![FunctionParamHigherOrderBinding::new(
+            name.clone(),
+            ty.clone(),
+            FunctionParamSelector::Root,
+        )],
+        _ => Vec::new(),
+    }
 }
 
 fn normalize_agent_action(mut action: AgentActionEnvSignature) -> AgentActionEnvSignature {

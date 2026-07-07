@@ -10,8 +10,8 @@ use crate::effect_collector::EffectCollector;
 use crate::effect_model::{CallableId, CallableKind, EffectContract, EffectSite, Visibility};
 use crate::effects::{EffectId, EffectSet};
 use crate::env::{
-    AgentActionEnvParam, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
-    TypeCheckEnv,
+    AgentActionEnvParam, DebugPathKind, EffectCapability, FunctionParam,
+    FunctionParamHigherOrderBinding, FunctionParamSelector, FunctionSignature, TypeCheckEnv,
 };
 use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{
@@ -927,51 +927,49 @@ impl TypeChecker<'_> {
         value: &Expr,
         actual: Option<&TypeKind>,
     ) {
-        let Some(arg) = self.higher_order_signature_arg_effect_call(param, value, actual) else {
-            return;
-        };
+        let args = self.higher_order_signature_arg_effect_calls(param, value, actual);
         let Some(caller) = self.effect_collector.current_callable() else {
             return;
         };
         self.pending_higher_order_effect_calls
-            .push(PendingHigherOrderEffectCall {
-                caller,
+            .extend(args.into_iter().map(|arg| PendingHigherOrderEffectCall {
+                caller: caller.clone(),
                 callee_function: function_name.to_owned(),
                 param_name: arg.param_name,
                 effect_callable: arg.effect_callable,
-            });
+            }));
     }
 
-    fn higher_order_signature_arg_effect_call(
+    fn higher_order_signature_arg_effect_calls(
         &mut self,
         param: &FunctionParam,
         value: &Expr,
         actual: Option<&TypeKind>,
-    ) -> Option<PendingCurriedHigherOrderArg> {
-        let Some(param_name) = param.name() else {
-            self.last_checked_closure_effect_callable = None;
-            return None;
-        };
+    ) -> Vec<PendingCurriedHigherOrderArg> {
         let Some(actual) = actual else {
             self.last_checked_closure_effect_callable = None;
-            return None;
+            return Vec::new();
         };
-        if !matches!(param.ty(), TypeKind::Function { .. })
-            || !matches!(actual, TypeKind::Function { .. })
-        {
-            self.last_checked_closure_effect_callable = None;
-            return None;
-        }
-        let Some(effect_callable) = self.closure_effect_callable_for_function_expr(value, actual)
-        else {
-            self.last_checked_closure_effect_callable = None;
-            return None;
-        };
+        let args = param
+            .higher_order_bindings()
+            .iter()
+            .filter_map(|binding| {
+                let (value, actual) =
+                    selected_higher_order_argument(binding.selector(), value, actual)?;
+                if !matches!(binding.ty(), TypeKind::Function { .. })
+                    || !matches!(actual, TypeKind::Function { .. })
+                {
+                    return None;
+                }
+                self.closure_effect_callable_for_function_expr(value, actual)
+                    .map(|effect_callable| PendingCurriedHigherOrderArg {
+                        param_name: binding.name().to_owned(),
+                        effect_callable,
+                    })
+            })
+            .collect();
         self.last_checked_closure_effect_callable = None;
-        Some(PendingCurriedHigherOrderArg {
-            param_name: param_name.to_owned(),
-            effect_callable,
-        })
+        args
     }
 
     fn record_curried_signature_result(
@@ -1315,11 +1313,141 @@ fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
 }
 
 fn function_param_type(param: &FnParam) -> FunctionParam {
-    FunctionParam {
-        name: pattern_param_name(param.pattern()),
-        ty: type_ref_kind(param.ty()),
-        kind: param.kind(),
-        has_default: param.default().is_some(),
+    let ty = type_ref_kind(param.ty());
+    FunctionParam::new(
+        pattern_param_name(param.pattern()),
+        ty.clone(),
+        param.kind(),
+        param.default().is_some(),
+        function_param_higher_order_bindings(param.pattern(), &ty),
+    )
+}
+
+fn function_param_higher_order_bindings(
+    pattern: &Pattern,
+    ty: &TypeKind,
+) -> Vec<FunctionParamHigherOrderBinding> {
+    let mut bindings = Vec::new();
+    collect_function_param_higher_order_bindings(
+        pattern,
+        ty,
+        FunctionParamSelector::Root,
+        &mut bindings,
+    );
+    bindings
+}
+
+fn collect_function_param_higher_order_bindings(
+    pattern: &Pattern,
+    ty: &TypeKind,
+    selector: FunctionParamSelector,
+    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
+) {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. }
+            if is_local_ident(name) && matches!(ty, TypeKind::Function { .. }) =>
+        {
+            bindings.push(FunctionParamHigherOrderBinding::new(
+                name.clone(),
+                ty.clone(),
+                selector,
+            ));
+        }
+        Pattern::Tuple(items) => {
+            let TypeKind::Tuple(item_types) = ty else {
+                return;
+            };
+            for (index, (item, item_ty)) in items.iter().zip(item_types).enumerate() {
+                collect_function_param_higher_order_bindings(
+                    item,
+                    item_ty,
+                    selector_with_tuple_index(&selector, index),
+                    bindings,
+                );
+            }
+        }
+        Pattern::Whole { name, pattern } => {
+            if is_local_ident(name) && matches!(ty, TypeKind::Function { .. }) {
+                bindings.push(FunctionParamHigherOrderBinding::new(
+                    name.clone(),
+                    ty.clone(),
+                    selector.clone(),
+                ));
+            }
+            collect_function_param_higher_order_bindings(pattern, ty, selector, bindings);
+        }
+        Pattern::Record { fields, .. }
+        | Pattern::Variant {
+            payload: Some(VariantPatternPayload::Record { fields, rest: _ }),
+            ..
+        } => {
+            for field in fields {
+                collect_function_param_higher_order_bindings(
+                    field.pattern(),
+                    &TypeKind::Unit,
+                    selector.clone(),
+                    bindings,
+                );
+            }
+        }
+        Pattern::BracketSeq { items, .. }
+        | Pattern::Variant {
+            payload: Some(VariantPatternPayload::Tuple(items)),
+            ..
+        } => {
+            for item in items {
+                collect_function_param_higher_order_bindings(
+                    item,
+                    &TypeKind::Unit,
+                    selector.clone(),
+                    bindings,
+                );
+            }
+        }
+        Pattern::Ident(_)
+        | Pattern::MutIdent(_)
+        | Pattern::Typed { .. }
+        | Pattern::Literal(_)
+        | Pattern::Entity(_)
+        | Pattern::Discard
+        | Pattern::Raw(_)
+        | Pattern::Variant { payload: None, .. } => {}
+    }
+}
+
+fn selector_with_tuple_index(
+    selector: &FunctionParamSelector,
+    index: usize,
+) -> FunctionParamSelector {
+    match selector {
+        FunctionParamSelector::Root => FunctionParamSelector::TupleIndex(vec![index]),
+        FunctionParamSelector::TupleIndex(path) => {
+            let mut path = path.clone();
+            path.push(index);
+            FunctionParamSelector::TupleIndex(path)
+        }
+    }
+}
+
+fn selected_higher_order_argument<'a>(
+    selector: &FunctionParamSelector,
+    value: &'a Expr,
+    actual: &'a TypeKind,
+) -> Option<(&'a Expr, &'a TypeKind)> {
+    match selector {
+        FunctionParamSelector::Root => Some((value, actual)),
+        FunctionParamSelector::TupleIndex(path) => {
+            let mut value = value;
+            let mut actual = actual;
+            for index in path {
+                let (Expr::Tuple(values), TypeKind::Tuple(types)) = (value, actual) else {
+                    return None;
+                };
+                value = values.get(*index)?;
+                actual = types.get(*index)?;
+            }
+            Some((value, actual))
+        }
     }
 }
 

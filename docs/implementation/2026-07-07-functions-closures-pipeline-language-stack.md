@@ -314,7 +314,12 @@ Source briefs:
   parameters that the callee body directly invokes, including exact later
   curried call groups, local aliases to those staged function values, and
   partial later-group callback application that composes only when the staged
-  partial is finally called. Destructured callback parameters, callback
+  partial is finally called. Tuple-destructured callback parameters now project
+  function-valued local bindings through semantic signature metadata, so a
+  caller-supplied local closure alias inside a tuple argument composes when the
+  destructured binding is directly invoked by the callee and stays effect-free
+  when the binding is only kept. Record/variant destructured callback
+  selectors, inline closure evidence for every nested tuple position, callback
   invocations hidden inside returned/stored closures, and LSP-facing closure
   effect evidence remain open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are

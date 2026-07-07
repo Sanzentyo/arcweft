@@ -1301,6 +1301,80 @@ effects { }
 }
 
 #[test]
+fn destructured_higher_order_tuple_argument_composes_when_binding_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader((path, load): (String, String -> String)) -> String {
+    return load(path)
+}
+
+flow @flow.destructured_higher_order_tuple_effect destructured_higher_order_tuple_effect
+effects { }
+{
+    let load = |path: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let body = use_loader(("story.arcw", load))
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("destructured higher-order fixture lowers");
+    validate_typecheck_ready(&hir).expect("destructured higher-order fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("destructured callback invocation must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.destructured_higher_order_tuple_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected destructured higher-order callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn destructured_higher_order_tuple_argument_does_not_compose_when_binding_is_kept() {
+    let tree = parse_ok(
+        r#"
+fn keep_loader((_path, load): (String, String -> String)) -> Unit {
+    let _ = load
+}
+
+flow @flow.destructured_higher_order_tuple_kept destructured_higher_order_tuple_kept
+effects { }
+{
+    let load = |path: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let kept = keep_loader(("story.arcw", load))
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("destructured kept fixture lowers");
+    validate_typecheck_ready(&hir).expect("destructured kept fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "kept destructured callback should not compose effects: {:?}",
+        report.diagnostics
+    );
+    let summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.destructured_higher_order_tuple_kept",
+        ))
+        .expect("flow summary");
+    assert!(
+        summary.inferred().is_empty(),
+        "flow should not infer kept destructured callback effects: {summary:?}"
+    );
+}
+
+#[test]
 fn curried_higher_order_function_argument_composes_when_later_group_param_is_called() {
     let tree = parse_ok(
         r#"

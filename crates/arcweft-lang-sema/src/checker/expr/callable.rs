@@ -230,11 +230,11 @@ impl TypeChecker<'_> {
                 && let Some(group_params) = curried_group_params
                 && let Some(param) = group_params.get(curried_group_arg_offset + index)
             {
-                if let Some(arg) =
-                    self.higher_order_signature_arg_effect_call(param, value, actual.as_ref())
-                {
-                    supplied_higher_order_args.push(arg);
-                }
+                supplied_higher_order_args.extend(self.higher_order_signature_arg_effect_calls(
+                    param,
+                    value,
+                    actual.as_ref(),
+                ));
             } else {
                 self.last_checked_closure_effect_callable = None;
             }

@@ -187,13 +187,11 @@ impl TypeChecker<'_> {
                     .param_groups()
                     .iter()
                     .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-                    .filter_map(|param| {
-                        matches!(
-                            function_param_local_type_with_generics(param, &generic_names),
-                            TypeKind::Function { .. }
-                        )
-                        .then(|| ident_pattern_name(param.pattern()).map(ToOwned::to_owned))
-                        .flatten()
+                    .flat_map(|param| {
+                        let ty = function_param_local_type_with_generics(param, &generic_names);
+                        super::function_param_higher_order_bindings(param.pattern(), &ty)
+                            .into_iter()
+                            .map(|binding| binding.name().to_owned())
                     })
                     .collect::<BTreeSet<_>>(),
             };
