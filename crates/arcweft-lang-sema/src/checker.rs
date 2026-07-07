@@ -39,7 +39,7 @@ use arcweft_lang_syntax::{
     expr::{CallArg, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal},
     types::{FnParam, FnSignature, TypeRef},
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub mod borrow_state;
 pub mod choice;
@@ -446,6 +446,7 @@ struct ClosureCaptureFrame {
     expression_id: TypeExpressionId,
     locals: HashSet<String>,
     captures: BTreeMap<String, TypeKind>,
+    suspension_boundaries: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -615,6 +616,7 @@ impl TypeChecker<'_> {
             expression_id,
             locals: locals.into_iter().collect(),
             captures: BTreeMap::new(),
+            suspension_boundaries: BTreeSet::new(),
         });
     }
 
@@ -623,14 +625,55 @@ impl TypeChecker<'_> {
             .closure_capture_stack
             .pop()
             .expect("closure capture frame stack must stay balanced");
+        let ClosureCaptureFrame {
+            expression_id,
+            captures,
+            suspension_boundaries,
+            ..
+        } = frame;
+        let captures = captures
+            .into_iter()
+            .map(|(name, ty)| ClosureCapture { name, ty })
+            .collect::<Vec<_>>();
+        self.reject_borrowed_closure_captures(&captures, &suspension_boundaries);
         self.closure_captures.push(ClosureCaptureInventory {
-            expression_id: frame.expression_id,
-            captures: frame
-                .captures
-                .into_iter()
-                .map(|(name, ty)| ClosureCapture { name, ty })
-                .collect(),
+            expression_id,
+            captures,
         });
+    }
+
+    fn record_closure_suspension_boundary(&mut self, boundary: &str) {
+        if let Some(frame) = self.closure_capture_stack.last_mut() {
+            frame.suspension_boundaries.insert(boundary.to_owned());
+        }
+    }
+
+    fn reject_borrowed_closure_captures(
+        &mut self,
+        captures: &[ClosureCapture],
+        boundaries: &BTreeSet<String>,
+    ) {
+        if boundaries.is_empty() {
+            return;
+        }
+        for capture in captures {
+            if !type_contains_borrow_ref(&capture.ty) {
+                continue;
+            }
+            let mut lifetimes = Vec::new();
+            collect_type_kind_lifetimes(&capture.ty, &mut lifetimes);
+            lifetimes.sort();
+            lifetimes.dedup();
+            for boundary in boundaries {
+                self.errors
+                    .push(TypeCheckError::borrowed_closure_capture_crosses_boundary(
+                        capture.name.clone(),
+                        capture.ty.clone(),
+                        lifetimes.clone(),
+                        boundary.clone(),
+                    ));
+            }
+        }
     }
 
     fn record_closure_capture(&mut self, name: &str, ty: &TypeKind) {

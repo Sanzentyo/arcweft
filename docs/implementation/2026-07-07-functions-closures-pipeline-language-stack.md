@@ -167,6 +167,12 @@ Source briefs:
   expression IDs. Sema records deterministic local captures for closure bodies,
   including captures of outer closure parameters by nested closures, while
   excluding locals declared inside the closure itself.
+- Sema now records suspension boundaries seen inside each closure capture
+  frame and rejects borrowed closure captures that cross those boundaries. The
+  diagnostic is structured as
+  `sema.typecheck.borrowed_closure_capture_crosses_boundary` and carries the
+  capture name, borrowed type, lifetime labels, and owning boundary; tests cover
+  `await`, `thread`, and `defer`, while non-borrow captures may cross `await`.
 - Flow statement parsing now keeps multiline return-typed closure literals
   together as a single `let` statement by tracking existing CST punctuation
   depth while consuming statement continuations.
@@ -208,6 +214,10 @@ Source briefs:
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
   callable application and sema trait/impl method calls. AWBC closure/apply
   allocation remains open.
+- Closure capture lifetime diagnostics now cover borrowed local captures that
+  cross checked suspension boundaries. Effect-row composition for closure
+  captures, LSP inlays, numeric fallback lints inside inferred closure bodies,
+  and save/load policy evidence remain open.
 - Closure `return expr` now binds to the nearest closure/function-like sema
   boundary for type checking. Strict runtime block lowering already preserves
   simple early-return shape by discarding later block statements after a

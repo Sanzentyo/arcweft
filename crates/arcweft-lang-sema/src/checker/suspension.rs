@@ -195,6 +195,7 @@ impl TypeChecker<'_> {
 
     pub(super) fn reject_active_borrows(&mut self, boundary: &str) {
         self.stats.borrow_boundary_checks += 1;
+        self.record_closure_suspension_boundary(boundary);
         if self.active_borrow_total > 0 {
             let labels = self.active_borrow_labels();
             self.errors.push(TypeCheckError::new(format!(

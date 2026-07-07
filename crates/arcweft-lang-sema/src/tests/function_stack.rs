@@ -479,6 +479,110 @@ flow @flow.closure_capture_inventory closure_capture_inventory {
 }
 
 #[test]
+fn closure_borrow_capture_rejects_await_boundary_crossing() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_borrow_capture closure_borrow_capture {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    let bad = || -> Unit {
+        let loaded = await load_avatar()
+        log.info(pixels)
+    }
+    log.info(bad)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure borrowed capture fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure borrowed capture fixture is structured");
+
+    let report = analyze_types(&hir, &borrow_capture_env());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary {
+                    capture,
+                    lifetimes,
+                    boundary,
+                    ..
+                } if capture == "pixels"
+                    && lifetimes.len() == 1
+                    && lifetimes[0] == "asset"
+                    && boundary == "await suspension boundary"
+            ) && diagnostic.stable_code()
+                == "sema.typecheck.borrowed_closure_capture_crosses_boundary"
+        }),
+        "expected borrowed closure capture await diagnostic, got {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn closure_non_borrow_capture_may_cross_await_boundary() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_value_capture closure_value_capture {
+    let limit: i64 = 80i64
+    let ok = || -> Unit {
+        let loaded = await load_avatar()
+        log.info(limit)
+    }
+    log.info(ok)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure value capture fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure value capture fixture is structured");
+    let env = TypeCheckEnv::new().with_function("load_avatar", load_avatar_need_ty());
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.message().contains("closure capture `limit`")),
+        "non-borrowed closure capture must not be rejected: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn closure_borrow_capture_reports_thread_and_defer_boundaries() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_borrow_capture_boundaries closure_borrow_capture_boundaries {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    let bad = || -> Unit {
+        thread worker { log.info(pixels) }
+        defer { log.info(pixels) }
+    }
+    log.info(bad)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure borrowed boundary fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure borrowed boundary fixture is structured");
+
+    let report = analyze_types(&hir, &borrow_capture_env());
+    for boundary in ["thread boundary", "defer cleanup boundary"] {
+        assert!(
+            report.diagnostics.iter().any(|diagnostic| {
+                matches!(
+                    diagnostic.kind(),
+                    TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary {
+                        capture,
+                        boundary: actual_boundary,
+                        ..
+                    } if capture == "pixels" && actual_boundary == boundary
+                )
+            }),
+            "expected borrowed closure capture diagnostic for {boundary}, got {:?}",
+            report.diagnostics
+        );
+    }
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"
@@ -501,6 +605,33 @@ flow @flow.closure_return_mismatch closure_return_mismatch {
         "expected closure return mismatch diagnostic, got {:?}",
         report.diagnostics
     );
+}
+
+fn borrow_capture_env() -> TypeCheckEnv {
+    TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            pixel_borrow_ty(),
+        )
+        .with_function("load_avatar", load_avatar_need_ty())
+}
+
+fn pixel_borrow_ty() -> TypeKind {
+    TypeKind::BorrowRef {
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+            "Rgba8".to_owned(),
+        )))),
+    }
+}
+
+fn load_avatar_need_ty() -> TypeKind {
+    TypeKind::Need {
+        ready: Box::new(TypeKind::Unit),
+        error: Box::new(TypeKind::Named("AssetError".to_owned())),
+    }
 }
 
 #[test]

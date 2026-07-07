@@ -28,6 +28,14 @@ pub enum TypeCheckErrorKind {
     /// but used argument syntax that is not representable by the fallback
     /// lowering contract.
     UnsupportedDataLastMethodFallback { method: String, reason: String },
+    /// A closure captured a borrowed value and its body contains a suspension
+    /// boundary that may outlive the borrowed lifetime.
+    BorrowedClosureCaptureCrossesBoundary {
+        capture: String,
+        ty: TypeKind,
+        lifetimes: Vec<String>,
+        boundary: String,
+    },
     /// An `extern rust mod` declaration references a package without loaded ABI metadata.
     MissingRustPackageMetadata { package: String },
     /// An `extern rust mod` member is not present in loaded ABI metadata.
@@ -252,6 +260,32 @@ impl TypeCheckError {
         Self {
             message: format!("data-last method fallback for `{method}` is not available: {reason}"),
             kind: TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason },
+        }
+    }
+
+    pub(crate) fn borrowed_closure_capture_crosses_boundary(
+        capture: impl Into<String>,
+        ty: TypeKind,
+        lifetimes: Vec<String>,
+        boundary: impl Into<String>,
+    ) -> Self {
+        let capture = capture.into();
+        let boundary = boundary.into();
+        let lifetime_context = if lifetimes.is_empty() {
+            String::new()
+        } else {
+            format!(" with lifetimes {lifetimes:?}")
+        };
+        Self {
+            message: format!(
+                "closure capture `{capture}` of borrowed type {ty:?}{lifetime_context} cannot cross {boundary}"
+            ),
+            kind: TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary {
+                capture,
+                ty,
+                lifetimes,
+                boundary,
+            },
         }
     }
 
@@ -722,6 +756,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. } => {
             "sema.typecheck.unsupported_data_last_method_fallback".to_owned()
+        }
+        TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. } => {
+            "sema.typecheck.borrowed_closure_capture_crosses_boundary".to_owned()
         }
         TypeCheckErrorKind::MissingRustPackageMetadata { .. } => {
             "sema.extern_rust.missing_metadata".to_owned()
