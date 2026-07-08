@@ -549,6 +549,43 @@ flow @flow.partial_non_pure partial_non_pure {
 }
 
 #[test]
+fn bare_signature_prefix_call_statement_reports_missing_argument() {
+    let tree = parse_ok(
+        r"
+fn add(lhs: i64, rhs: i64) -> i64 {
+    return lhs + rhs
+}
+
+flow @flow.bad_partial_statement bad_partial_statement {
+    add(2i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("bare partial statement fixture lowers");
+    validate_typecheck_ready(&hir).expect("bare partial statement fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| diagnostic
+            .message()
+            .contains("missing required argument `rhs`")),
+        "bare statement partial call should report the missing fixed argument: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report
+            .typed_lowering_evidence
+            .iter()
+            .any(|evidence| matches!(
+                evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { .. }
+            )),
+        "bare statement partial call should not lower as a function value: {:?}",
+        report.typed_lowering_evidence
+    );
+}
+
+#[test]
 fn curried_function_declaration_handles_multi_param_groups_and_tuple_return_samples() {
     let tree = parse_ok(
         r"

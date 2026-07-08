@@ -412,6 +412,7 @@ struct TypeChecker<'a> {
     effect_collector: EffectCollector,
     expected_returns: Vec<Option<TypeKind>>,
     partial_placeholder_stack: Vec<TypeKind>,
+    allow_inferred_signature_partial_calls: bool,
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
     judgments: Vec<TypeJudgment>,
@@ -664,6 +665,7 @@ impl TypeChecker<'_> {
             effect_collector: EffectCollector::new(available_effect_set(env)),
             expected_returns: Vec::new(),
             partial_placeholder_stack: Vec::new(),
+            allow_inferred_signature_partial_calls: true,
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
@@ -757,6 +759,18 @@ impl TypeChecker<'_> {
                 self.local_curried_signature_calls.remove(&entry.name);
             }
         }
+    }
+
+    fn with_inferred_signature_partial_calls<R>(
+        &mut self,
+        allowed: bool,
+        check: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let previous = self.allow_inferred_signature_partial_calls;
+        self.allow_inferred_signature_partial_calls = allowed;
+        let result = check(self);
+        self.allow_inferred_signature_partial_calls = previous;
+        result
     }
 
     fn with_local_mutation_scope<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {

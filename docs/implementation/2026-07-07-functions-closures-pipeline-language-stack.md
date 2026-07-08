@@ -31,9 +31,11 @@ Source briefs:
   `2i64 |> add(lhs = 1i64)` typecheck as data-last calls rather than as calls
   on the result of `add(...)`.
 - Canonical primitive labels are enforced across sema/runtime-facing surfaces:
-  `bool` and `char` are accepted; legacy `Bool`/`Char` aliases are rejected.
-  Non-canonical primitive spellings such as `string` now produce diagnostics
-  pointing to `String` instead of silently becoming user-defined nominal types.
+  `bool`, `char`, `Unit`, and explicit-width numeric primitives use the same
+  source labels in diagnostics and LSP-facing type displays; legacy
+  `Bool`/`Char` aliases are rejected. Non-canonical primitive spellings such as
+  `string` now produce diagnostics pointing to `String` instead of silently
+  becoming user-defined nominal types.
 - `_` partial placeholder now works when an expected one-parameter function
   type is available:
   - `let high: i64 -> bool = _ > 80i64`
@@ -85,6 +87,11 @@ Source briefs:
   signatures, such as `add(2i64)` and `2i64 |> add`, returning the remaining
   function type. This includes non-annotated top-level `fn` declarations whose
   bodies are lowerable through the existing inferred helper path.
+- Missing-input signature partial calls are limited to value-producing
+  contexts. Bindings such as `let add_two = add(2i64)` and data-last pipe
+  values still infer the remaining function type, while a bare statement such
+  as `add(2i64)` reports the missing fixed argument instead of lowering to an
+  unused function value.
 - Direct top-level signature partial calls now record typed lowering evidence.
   Checked runtime-plan lowering consumes that evidence so helper-backed
   partials lower to runtime functions, while non-helper signatures such as

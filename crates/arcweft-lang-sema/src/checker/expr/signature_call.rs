@@ -114,9 +114,15 @@ impl TypeChecker<'_> {
         name: &str,
         signature: &FunctionSignature,
         args: &[CallArg],
+        expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         if !signature.checks_args() || args.is_empty() {
             return None;
+        }
+        match expected {
+            Some(TypeKind::Function { .. }) => {}
+            None if self.allow_inferred_signature_partial_calls => {}
+            Some(_) | None => return None,
         }
         let params = signature.params();
         if params

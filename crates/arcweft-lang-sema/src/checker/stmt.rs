@@ -24,7 +24,9 @@ impl TypeChecker<'_> {
                 this.check_stmt(stmt);
             }
             this.stats.statements += 1;
-            this.check_expr_with_expected(expr, expected)
+            this.with_inferred_signature_partial_calls(true, |this| {
+                this.check_expr_with_expected(expr, expected)
+            })
         });
         if let Some(ty) = ty.as_ref() {
             self.record_type_judgment(
@@ -67,7 +69,9 @@ impl TypeChecker<'_> {
             }
             Stmt::Return(expr) | Stmt::Close(expr) => self.check_return_stmt(expr),
             Stmt::Expr(expr) | Stmt::Select(expr) => {
-                self.check_expr(expr);
+                self.with_inferred_signature_partial_calls(false, |this| {
+                    this.check_expr(expr);
+                });
                 self.release_direct_drop_expr(expr);
             }
             Stmt::Out { label, expr } => {
@@ -293,13 +297,14 @@ impl TypeChecker<'_> {
         self.last_checked_closure_effect_callable = None;
         self.last_checked_curried_signature_call = None;
         let annotated_ty = annotation.map(type_ref_kind);
-        let ty = match expr_range {
-            Some(range) => {
-                self.check_expr_with_expected_at_range(expr, annotated_ty.as_ref(), range)
-            }
-            None => self.check_expr_with_expected(expr, annotated_ty.as_ref()),
-        }
-        .or_else(|| annotated_ty.clone());
+        let ty = self
+            .with_inferred_signature_partial_calls(true, |this| match expr_range {
+                Some(range) => {
+                    this.check_expr_with_expected_at_range(expr, annotated_ty.as_ref(), range)
+                }
+                None => this.check_expr_with_expected(expr, annotated_ty.as_ref()),
+            })
+            .or_else(|| annotated_ty.clone());
         if let (Some(annotation), Some(actual)) = (annotation, ty.as_ref()) {
             let expected = annotated_ty
                 .clone()

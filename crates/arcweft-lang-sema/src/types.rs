@@ -319,7 +319,7 @@ impl TypeKind {
             Self::AgentResourceBody => "AgentResourceBody",
             Self::RagContextPack => "RagContextPack",
             Self::FocusPatch => "FocusPatch",
-            Self::Unit => "()",
+            Self::Unit => "Unit",
             Self::Never => "Never",
             _ => return None,
         })
@@ -522,7 +522,7 @@ impl TypeKind {
             "Duration" => Self::Duration,
             "DebugStatePath" => Self::DebugStatePath,
             "ObservationFieldPath" => Self::ObservationFieldPath,
-            "()" | "Unit" => Self::Unit,
+            "Unit" => Self::Unit,
             _ => return None,
         })
     }

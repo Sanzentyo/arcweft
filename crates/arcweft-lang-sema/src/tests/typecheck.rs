@@ -1025,6 +1025,17 @@ fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::primitive_name("i64"), Some(TypeKind::I64));
     assert_eq!(TypeKind::primitive_name("usize"), Some(TypeKind::USize));
     assert_eq!(TypeKind::primitive_name("f32"), Some(TypeKind::F32));
+    assert_eq!(TypeKind::primitive_name("Unit"), Some(TypeKind::Unit));
+    assert_eq!(TypeKind::Unit.source_label(), "Unit");
+    assert_eq!(
+        TypeKind::Function {
+            params: Vec::new(),
+            return_type: Box::new(TypeKind::Unit),
+        }
+        .source_label(),
+        "() -> Unit"
+    );
+    assert_eq!(TypeKind::primitive_name("()"), None);
     assert_eq!(TypeKind::primitive_name("Bool"), None);
     assert_eq!(TypeKind::primitive_name("Char"), None);
     assert_ne!(
