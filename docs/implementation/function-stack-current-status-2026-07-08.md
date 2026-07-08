@@ -17,16 +17,19 @@ Related slices are:
 ## Current Repository State
 
 - At the start of this refresh, `main` and `origin/main` were aligned at
-  `d614c8f4 Track authored lifetime statement sources`.
+  `a1f14c75 Close expression source range coverage gaps`.
 - The last completed implementation slices were the source-range follow-up for
   thread expression body statement ranges, the authored-payload conversion for
   `Stmt::Signal` / `Stmt::LifetimeSet`, and the expression source-range
   coverage matrix with typed statement branch source fixes.
-- The only dirty files outside that slice were unrelated Web IME/player files
-  under `web/`.
+- The current dirty files are unrelated View rendering, font, sample, and Web
+  IME/player files. They include display-output encoding changes, emoji font
+  registration, EditContext printable-key handling, and modern-feedback sample
+  and sidecar-test changes around removing the dead name submit route.
 
-Those `web/` changes are not part of this status note and should be handled as
-their own slice if they are still desired.
+Those View/Web changes are not part of this function-stack status note and
+should be handled as their own rendering/IME/sample slice if they are still
+desired.
 
 ## Implemented Goal Surface
 
@@ -197,3 +200,7 @@ next implementation-ready slice is small typed runtime-ID cleanup at
 AWBC/report boundaries, but the larger remaining goal items should stay in
 request/design space until spread partials or resumable AWBC apply receive a
 more concrete contract.
+
+Do not fold the current dirty View/Web rendering and IME-player files into this
+goal. They belong to the View/rendering/text-input track and need their own
+validation evidence before commit.

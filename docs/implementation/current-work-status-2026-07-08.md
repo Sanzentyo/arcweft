@@ -7,15 +7,32 @@ or design work.
 
 ## Repository Baseline
 
-- Current checked-in head before this slice: `d614c8f4`.
+- Current checked-in head before this documentation refresh:
+  `a1f14c75 Close expression source range coverage gaps`.
 - `main` and `origin/main` are aligned at that head.
-- The only dirty files at this audit point are unrelated Web IME/player files:
+- The dirty files at this audit point are unrelated View rendering, font,
+  sample, and Web IME/player files:
+  - `crates/arcweft-cli/tests/native_text_input_native_interactive_smoke.rs`
+  - `crates/arcweft-cli/tests/native_text_input_sample_sidecars.rs`
+  - `crates/arcweft-player-scene/src/fonts.rs`
+  - `crates/arcweft-render-wgpu/src/view_compositor.rs`
+  - `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
+  - `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
+  - `samples/modern-feedback-view/README.md`
+  - `samples/modern-feedback-view/src/main.arcw`
+  - `web/assets/README.md`
+  - `web/assets/noto-emoji-regular.ttf`
   - `web/ime-player-rendered.awfb`
   - `web/player-editcontext.js`
+  - `web/player.js`
   - `web/tests/ime-sample-smoke.mjs`
   - `web/tests/player-editcontext-glue-unit.mjs`
-- Those Web files are not part of this documentation cleanup and should be
-  committed, reverted, or continued only as a separate IME/Web player slice.
+- These files are not part of this documentation cleanup. They look like a
+  mixed View-rendering/Web-player slice: display-output encoding, emoji font
+  registration, EditContext printable-key handling, and modern-feedback sample
+  and sidecar-test changes around removing the dead name submit route. They
+  should be validated and committed, reverted, or continued only as their own
+  UI/Web slice.
 
 ## Active Goal
 
@@ -112,8 +129,8 @@ These are real open topics, but they are separate from the active
 function-stack goal:
 
 - Native/Web View rendering parity, CSS radius/shadow/filter behavior, modern
-  feedback View visuals, text-control editing/IME behavior, and the dirty Web
-  IME files.
+  feedback View visuals, text-control editing/IME behavior, and the dirty
+  View/Web files listed above.
 - Pinned exact visual PNG baseline promotion and Web exact readback. These
   should not be mixed into function-stack commits.
 - View scroll/save/load/scoped-handle follow-ups from seq-06.16.6.x.
@@ -122,8 +139,10 @@ function-stack goal:
 
 ## Recommended Next Order
 
-1. Commit and push the source-range closure slice.
-2. Decide whether to take the next implementation-ready runtime-ID cleanup or
+1. Keep this documentation refresh as a docs-only cut.
+2. Decide whether to validate and commit the dirty View/Web slice separately or
+   leave it for the rendering/IME track.
+3. Decide whether to take the next implementation-ready runtime-ID cleanup or
    pause for a design package on spread partials / AWBC resumable apply.
 
 ## Current Structural Risk
