@@ -48,8 +48,8 @@ includes:
 - first source-local non-helper `fn` runtime-function materialization for the
   accepted simple-expression subset, including curried groups, returned simple
   closures, direct calls to function-typed parameters, local callback
-  aliases/partials, and destructuring closure literals in local function-valued
-  bindings;
+  aliases/partials, destructuring closure literals in local function-valued
+  bindings, and pure value-position `if` / `if let` / `match` expressions;
 - exact calls to already-lowered pure helpers from inside that accepted
   source-local function subset, with named helper arguments lowered in helper
   input order;
@@ -71,7 +71,7 @@ These keep the active goal open:
 | Spread partial application and spread data-last fallback | Fixed partial/fallback paths are implemented; spread expansion semantics are not yet designed. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md` |
 | AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding dynamic apply still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects runtime functions. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
-| Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers. Task/dialogue/stream functions, trait/impl methods, adapter thunks, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
+| Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers and pure value control expressions. Task/dialogue/stream functions, trait/impl methods, adapter thunks, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
 | Final closure effect-row model | Current composition is useful and broadly covered, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows it is needed.

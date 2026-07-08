@@ -2222,13 +2222,12 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         let expr_type = self.check_expr(expr);
-        if let Some(guard) = guard {
-            self.expect_expr_type(guard, &TypeKind::Bool, "if-let expression guard");
-        }
-
         let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
+        if let Some(guard) = guard {
+            self.expect_expr_type(guard, &TypeKind::Bool, "if-let expression guard");
+        }
         let then_type = self.check_expr_with_expected(then_branch, expected);
         let then_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         self.restore_borrow_state(base_borrow_checkpoint);

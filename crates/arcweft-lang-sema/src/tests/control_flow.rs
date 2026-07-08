@@ -727,6 +727,30 @@ flow @flow.branching branching {
 }
 
 #[test]
+fn value_if_let_guard_can_use_pattern_binding() {
+    let tree = parse_ok(
+        r"
+flow @flow.branching branching {
+    let chosen = if let .Some(value) = maybe when value > fallback {
+        value
+    } else {
+        fallback
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("value if-let guard binding fixture lowers");
+    validate_typecheck_ready(&hir).expect("value if-let guard binding is typecheck-ready");
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("maybe", TypeKind::Option(Box::new(TypeKind::I64)))
+            .with_symbol("fallback", TypeKind::I64),
+    )
+    .expect("value if-let guard sees pattern binding");
+}
+
+#[test]
 fn typecheck_rejects_value_if_let_non_bool_guard() {
     let tree = parse_ok(
         r"

@@ -275,6 +275,19 @@ fn parse_let_stmt(
     if let Some((pattern, expr)) = split_top_level_binding(rest) {
         let (pattern, ty) = parse_binding_pattern(pattern);
         let expr = expr.trim();
+        let expr_start = trimmed
+            .len()
+            .checked_sub(expr.len())
+            .and_then(|start| base.map(|base| base + start));
+        if let Some(value_expr) = parse_final_block_expr(expr) {
+            return Stmt::Let {
+                pattern,
+                ty,
+                expr: value_expr,
+                expr_source: Some(expr.to_owned()),
+                expr_range: expr_start.map(|start| TextRange::new(start, start + expr.len())),
+            };
+        }
         if let Some(stmt) = parse_inline_let_else_stmt(
             trimmed,
             pattern.clone(),
@@ -298,10 +311,6 @@ fn parse_let_stmt(
                 ),
             };
         }
-        let expr_start = trimmed
-            .len()
-            .checked_sub(expr.len())
-            .and_then(|start| base.map(|base| base + start));
         Stmt::Let {
             pattern,
             ty,

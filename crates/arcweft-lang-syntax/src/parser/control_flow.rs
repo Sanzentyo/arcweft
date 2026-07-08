@@ -933,6 +933,11 @@ fn authored_block_value(item: &LogicalBlockItem<'_>, expr: crate::expr::Expr) ->
 }
 
 pub(super) fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> {
+    if source.trim_start().starts_with("if let ")
+        && let Some(expr) = parse_if_let_expr_source(source)
+    {
+        return Some(expr);
+    }
     if source.trim_start().starts_with("if ")
         && let Some(expr) = parse_if_expr_source(source)
     {
@@ -961,6 +966,20 @@ pub(super) fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> 
         });
     }
     None
+}
+
+fn parse_if_let_expr_source(source: &str) -> Option<crate::expr::Expr> {
+    let (head, body, trailing) = split_braced_source_with_trailing(source)?;
+    let if_let_head = head.strip_prefix("if let")?.trim();
+    let (binding_pattern, value_and_guard) = split_top_level_binding(if_let_head)?;
+    let (value, guard) = split_if_let_guard(value_and_guard);
+    Some(crate::expr::Expr::IfLet {
+        pattern: Box::new(parse_pattern(binding_pattern.trim())),
+        expr: Box::new(parse_expr_lossy(value.trim())),
+        guard: guard.map(|guard| Box::new(parse_expr_lossy(guard.trim()))),
+        then_branch: Box::new(parse_block_expr(body)),
+        else_branch: Some(Box::new(parse_else_expr_tail(trailing)?)),
+    })
 }
 
 fn parse_if_expr_source(source: &str) -> Option<crate::expr::Expr> {

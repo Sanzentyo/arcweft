@@ -1650,3 +1650,14 @@ Structure audit was rerun with
 the dirty worktree reports 2450 scanned files, 1172 Rust files, 577326 Rust
 physical LOC, and the existing unrelated
 `crates/arcweft-cli/src/app/bundle_view.rs` error with 150 warnings.
+
+The source-local function control-expression follow-up fixes a parser/sema
+gap in the accepted 07.7 runtime-function subset. Function-body `let` RHS
+values now parse authored `if` / `if let` / `match` expressions before the
+let-else fallback, and `parse_final_block_expr` recognizes `if let` value
+expressions directly. Sema now checks value `if let` guards after inserting
+the matched pattern locals, matching statement control-flow guard scoping.
+Focused compiler regressions prove that source-local functions containing
+`RuntimeExpr::If`, guarded `RuntimeExpr::IfLet`, and guarded
+`RuntimeExpr::Match` bodies materialize as runtime function values instead of
+falling back to adapter calls.

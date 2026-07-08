@@ -1516,6 +1516,194 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_materializes_source_function_control_expression_body() {
+    let parsed = parse_source_text(
+        r"
+fn choose_score(value: i64, ready: bool) -> i64 {
+    let boosted = if ready { value + 10i64 } else { value }
+    return match ready {
+        true when boosted > 10i64 => boosted
+        false => value
+        _ => 0i64
+    }
+}
+
+flow @flow.main main {
+    let value: i64 = choose_score(3i64, true)
+    return value
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function containing control expressions");
+
+    let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected value let");
+    };
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["value", "ready"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Let { name, expr, body }
+                                    if name == "boosted"
+                                        && matches!(expr.as_ref(), RuntimeExpr::If { .. })
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Match { scrutinee, arms }
+                                                if matches!(
+                                                    scrutinee.as_ref(),
+                                                    RuntimeExpr::Local(name) if name == "ready"
+                                                ) && matches!(
+                                                    arms.as_slice(),
+                                                    [
+                                                        arcweft_core::value::RuntimeExprMatchArm {
+                                                            pattern: RuntimePattern::Literal(RuntimeValue::Bool(true)),
+                                                            guard: Some(_),
+                                                            value: RuntimeExpr::Local(first),
+                                                        },
+                                                        arcweft_core::value::RuntimeExprMatchArm {
+                                                            pattern: RuntimePattern::Literal(RuntimeValue::Bool(false)),
+                                                            guard: None,
+                                                            value: RuntimeExpr::Local(second),
+                                                        },
+                                                        arcweft_core::value::RuntimeExprMatchArm {
+                                                            pattern: RuntimePattern::Discard,
+                                                            guard: None,
+                                                            value: RuntimeExpr::Value(fallback),
+                                                        },
+                                                    ] if first == "boosted"
+                                                        && second == "value"
+                                                        && fallback == &RuntimeValue::i64(0)
+                                                )
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value), RuntimeExpr::Value(ready)]
+                        if value == &RuntimeValue::i64(3) && ready == &RuntimeValue::Bool(true)
+                )
+        ),
+        "expected value to apply source function containing if/match control expressions, got {value:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_materializes_source_function_if_let_expression_body() {
+    let parsed = parse_source_text(
+        r"
+fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
+    let selected = if let .Some(value) = maybe when value > fallback {
+        value
+    } else {
+        fallback
+    }
+    return selected
+}
+
+flow @flow.main main {
+    let value: i64 = choose_optional(Some(7i64), 1i64)
+    return value
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function containing if-let expression");
+
+    let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected value let");
+    };
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["maybe", "fallback"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Let { name, expr, body }
+                                    if name == "selected"
+                                        && matches!(
+                                            expr.as_ref(),
+                                            RuntimeExpr::IfLet {
+                                                pattern: RuntimePattern::Variant {
+                                                    path: None,
+                                                    name,
+                                                    payload: Some(payload),
+                                                },
+                                                expr,
+                                                guard: Some(_),
+                                                then_expr,
+                                                else_expr,
+                                                } if name == "Some"
+                                                && matches!(
+                                                    payload.as_ref(),
+                                                    RuntimePattern::Tuple(items)
+                                                        if matches!(
+                                                            items.as_slice(),
+                                                            [RuntimePattern::Ident(value)] if value == "value"
+                                                        )
+                                                )
+                                                && matches!(
+                                                    expr.as_ref(),
+                                                    RuntimeExpr::Local(name) if name == "maybe"
+                                                )
+                                                && matches!(
+                                                    then_expr.as_ref(),
+                                                    RuntimeExpr::Local(name) if name == "value"
+                                                )
+                                                && matches!(
+                                                    else_expr.as_ref(),
+                                                    RuntimeExpr::Local(name) if name == "fallback"
+                                                )
+                                        )
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Local(name) if name == "selected"
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Variant { name, .. }, RuntimeExpr::Value(fallback)]
+                        if name == "Some" && fallback == &RuntimeValue::i64(1)
+                )
+        ),
+        "expected value to apply source function containing if-let expression, got {value:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_materializes_source_function_callback_param_call() {
     let parsed = parse_source_text(
         r#"

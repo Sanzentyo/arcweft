@@ -25,6 +25,12 @@ lowering path. The sixth follow-up threads the existing pure-helper lookup
 through this accepted source-function candidate pass, so exact calls to
 already-lowered pure helpers are accepted inside those bodies and lower as
 `RuntimeExpr::PureCall`.
+The seventh follow-up closes the parser/sema/runtime-plan evidence gap for
+value-producing control expressions in this family. Function-body `let` values
+now parse authored `if` / `if let` / `match` expressions before the let-else
+fallback, value `if let` guards can see the pattern bindings they guard, and
+compiler regressions prove accepted source functions materialize
+`RuntimeExpr::If`, `RuntimeExpr::IfLet`, and `RuntimeExpr::Match` bodies.
 
 ## Accepted Contract
 
@@ -36,14 +42,17 @@ The accepted family is intentionally small:
 - Source function declaration parameter patterns must be simple identifier
   bindings.
 - Body must be a final expression or final `return` expression, optionally
-  preceded by simple `let` statements.
+  preceded by simple `let` statements whose RHS is an accepted value
+  expression.
 - Body expressions must lower through strict runtime expression lowering.
   Calls are accepted only when they are local function-value calls or exact
   calls to already-lowered pure helpers resolved through
   `RuntimePureHelperLookup`. Host/top-level non-helper calls, adapter calls,
   effectful calls, suspending calls, pipes, `await`, `try`, threads, dialogue
   calls, placeholders, raw syntax, and lifetime paths remain outside this
-  subset.
+  subset. Pure value control expressions are accepted when their child
+  expressions are accepted: `if`, `if let`, and `match` lower to
+  `RuntimeExpr::If`, `RuntimeExpr::IfLet`, and `RuntimeExpr::Match`.
 - Closure literal expressions are accepted when their parameter patterns do not
   bind names that shadow known function-valued locals and their body
   recursively satisfies this accepted contract. Simple identifier parameters
@@ -74,6 +83,9 @@ lower as ordinary `RuntimeExpr::Let` values, and later calls to those locals
 also lower as local `RuntimeExpr::Apply`. Exact pure-helper calls lower through
 the same strict named-call lowering as flow expressions, so named helper
 arguments are emitted in helper input order rather than source order.
+Value-producing control expressions inside the accepted body preserve their
+runtime shape. Guarded `if let` and `match` expressions bind pattern locals
+before checking guards, matching statement control-flow semantics.
 
 Pure helpers keep priority when a function is also accepted by the pure-helper
 candidate pass. Local function-valued bindings keep priority over both
@@ -106,6 +118,9 @@ These are still not accepted:
 - source function values whose bodies contain host/top-level non-helper calls,
   effects, adapter calls, pipes, closure bodies with host/effect calls,
   `await`, `try`, or other suspension-capable constructs;
+- statement-style control flow such as loops, `while`, `for`, branch
+  statements, and statement blocks that cannot be represented as strict
+  runtime value expressions;
 - `task fn`, `dialogue fn`, and `stream fn` values;
 - trait/impl method values and receiver binding extraction;
 - adapter/host-call-backed callable thunks;
@@ -125,6 +140,8 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_control_expression_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck -- --nocapture
 ```
@@ -196,3 +213,44 @@ Structural measurement after the exact pure-helper call cut:
 | `crates/arcweft-runtime-plan/src/flow/pure_helpers.rs` | `arcweft-runtime-plan` | 751 | 23 | production | 0 | runtime pure-helper inventory and lookup-id construction for flow lowering |
 | `crates/arcweft-runtime-plan/src/function_values.rs` | `arcweft-runtime-plan` | 19768 | 604 | production | 0 | accepted runtime function-value family classification, source-local function materialization, pure-helper exact-call admission |
 | `crates/arcweft-compiler/src/tests.rs` | `arcweft-compiler` | 113891 | 3622 | unit-test module | 3622 | compiler/runtime-plan regression fixtures |
+
+2026-07-09 value-control expression validation:
+
+```bash
+rustfmt --edition 2024 --check crates\arcweft-lang-syntax\src\parser\control_flow.rs crates\arcweft-lang-syntax\src\parser\statements.rs crates\arcweft-lang-sema\src\checker\expr.rs crates\arcweft-lang-sema\src\tests\control_flow.rs crates\arcweft-compiler\src\tests.rs
+git diff --check -- crates\arcweft-lang-syntax\src\parser\control_flow.rs crates\arcweft-lang-syntax\src\parser\statements.rs crates\arcweft-lang-sema\src\checker\expr.rs crates\arcweft-lang-sema\src\tests\control_flow.rs crates\arcweft-compiler\src\tests.rs docs\implementation\function-stack-non-helper-source-function-values-2026-07-09.md docs\implementation\function-stack-current-state-2026-07-09.md docs\implementation\function-stack-status-rollup-2026-07-09.md docs\implementation\function-stack-current-gap-map-2026-07-09.md docs\implementation\2026-07-07-functions-closures-pipeline-language-stack.md docs\reviews\requests\2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md
+cargo test -p arcweft-lang-sema --all-features value_if_let_guard_can_use_pattern_binding -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_control_expression_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture
+cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture
+cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+```
+
+All commands passed. Clippy still reports only existing large-enum warnings in
+`arcweft-lang-syntax` and existing `too_many_lines` warnings in
+`arcweft-lang-sema`. The structure audit scanned 2468 files / 1177 Rust files /
+581839 Rust physical LOC and reported 0 errors / 151 warnings.
+
+Structural measurement before the value-control expression commit, at parent
+revision `ea8619bb` with the current working-copy slice applied:
+
+| Path | Crate | Bytes | Physical LOC | Classification | Embedded test LOC | Responsibilities |
+| --- | --- | ---: | ---: | --- | ---: | --- |
+| `crates/arcweft-lang-syntax/src/parser/control_flow.rs` | `arcweft-lang-syntax` | 44695 | 1114 | production | 0 | structured control-flow and value-control expression parsing |
+| `crates/arcweft-lang-syntax/src/parser/statements.rs` | `arcweft-lang-syntax` | 30761 | 842 | production | 0 | statement parsing, let binding value parsing, control-transfer value parsing |
+| `crates/arcweft-lang-sema/src/checker/expr.rs` | `arcweft-lang-sema` | 94840 | 2362 | production | 0 | expression type checking, branch expression typing, function-value expression checking |
+| `crates/arcweft-lang-sema/src/tests/control_flow.rs` | `arcweft-lang-sema` | 41915 | 1329 | unit-test module | 1329 | control-flow parsing/type-checking regressions |
+| `crates/arcweft-compiler/src/tests.rs` | `arcweft-compiler` | 122902 | 3560 | unit-test module | 3560 | compiler/runtime-plan regression fixtures |
+
+Largest workspace Rust files measured at the same checkout, unchanged by this
+slice:
+
+| Path | Bytes | Physical LOC | Classification |
+| --- | ---: | ---: | --- |
+| `crates/arcweft-text-layout/src/vertical_orientation.rs` | 357456 | 12394 | production generated/lookup-heavy vertical text data |
+| `crates/arcweft-cli/tests/check/cli_runtime_bench.rs` | 255354 | 7443 | integration test |
+| `crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs` | 243053 | 6285 | integration test |
+| `crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_class_mix.rs` | 222475 | 5760 | integration test |
+| `crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs` | 222425 | 5659 | integration test |
