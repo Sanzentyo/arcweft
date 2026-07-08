@@ -8,9 +8,28 @@ function-stack slice.
 Status: **open**. The implemented surface is broad, but the goal is not
 complete.
 
+## Executive Summary
+
+- The latest pushed function-stack baseline is
+  `486738b31 Handle pipe control-expression RHS placeholders`.
+- The function-stack worktree is clean at that baseline. The remaining dirty
+  files are the separate View/Web/text-input track.
+- Implemented language/runtime surface now covers formal function types,
+  curried call groups, closures, runtime apply, non-suspending AWBC apply,
+  fixed-shape `_` partials, fixed-shape pipes, method fallback, typed runtime
+  IDs, user enum shorthand, source identity evidence, and the first accepted
+  non-helper source-local `fn` subset.
+- The active goal remains open only for contract-sized items that should not
+  be guessed from implementation: spread partial/fallback semantics,
+  suspension-aware AWBC dynamic apply, persisted function snapshots, broad
+  non-helper/effectful/suspending callable allocation, and the final closure
+  effect-row model.
+
 ## Baseline
 
-- Current pushed function-stack baseline before this pipe RHS slice:
+- Current pushed function-stack baseline:
+  `486738b31 Handle pipe control-expression RHS placeholders`.
+- The previous function-stack baseline before the pipe RHS hardening slice was
   `3455474e9 Materialize source function control expressions`.
 - Earlier status-cleanup and pure-helper source-function commits were
   `7841f2613 Document current function stack gaps` and
@@ -111,8 +130,11 @@ place, so atom-table storage is not a completion blocker by itself.
 
 ## What Is Implementation-Ready Next
 
-No remaining broad blocker should be implemented by guessing a contract. The
-next implementation slice should either:
+No remaining broad blocker should be implemented by guessing a contract. At
+this audit point, the function-stack items that are obviously
+implementation-ready are narrow hardening/documentation tasks around already
+accepted behavior, not new language semantics. The next implementation slice
+should either:
 
 - answer one of the request boundaries above with a concrete accepted contract,
   then implement the smallest end-to-end behavior covered by that contract; or

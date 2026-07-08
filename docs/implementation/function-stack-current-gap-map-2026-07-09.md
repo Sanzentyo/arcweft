@@ -9,10 +9,12 @@ For the current entry point and reading order, see
 
 ## Repository Baseline
 
-- Current pushed function-stack baseline before this pipe RHS slice:
-  `3455474e9 Materialize source function control expressions`.
+- Current pushed function-stack baseline:
+  `486738b31 Handle pipe control-expression RHS placeholders`.
 - `main` and `origin/main` were aligned at that commit when this gap map was
-  written.
+  refreshed.
+- The previous baseline before the pipe RHS hardening slice was
+  `3455474e9 Materialize source function control expressions`.
 - The working copy still contains View/Web/text-input changes. They are not
   function-stack evidence and should be validated as a separate slice before
   being staged or pushed.
@@ -96,9 +98,11 @@ used as evidence for the function-stack goal.
 ## Recommended Order
 
 1. Keep function-stack commits separate from the dirty View/Web worktree.
-2. Choose one design-blocked request boundary and answer it before
-   changing broader language/runtime behavior.
-3. Audit and commit the View/Web/text-input dirty slice separately.
+2. Treat new function-stack language/runtime behavior as blocked until one of
+   the request boundaries has a concrete accepted contract.
+3. Use only narrow hardening or diagnostic/test fixes when no new contract is
+   available.
+4. Audit and commit the View/Web/text-input dirty slice separately.
 
 ## Validation For This Map
 

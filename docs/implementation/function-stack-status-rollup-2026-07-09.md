@@ -35,7 +35,11 @@ Current supporting audits:
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/current-work-status-2026-07-09.md`
 
-Current pushed baseline before this pipe RHS slice:
+Current pushed baseline:
+
+- `486738b31 Handle pipe control-expression RHS placeholders`
+
+Previous baseline before the pipe RHS hardening slice:
 
 - `3455474e9 Materialize source function control expressions`
 
@@ -204,13 +208,15 @@ function-stack documentation.
 
 For function-stack work:
 
-1. Choose one remaining request boundary and produce a concrete accepted
-   contract before implementing behavior that changes the language/runtime
-   model.
-2. Prefer the smallest executable expansion with clear tests, for example a
-   single accepted non-helper callable family, rather than redesigning all
-   callable families at once.
-3. Keep rejection diagnostics for still-unsupported families explicit and
+1. Do not widen accepted language/runtime behavior without first answering the
+   matching request boundary.
+2. When a contract is available, prefer the smallest executable expansion with
+   clear tests, for example a single accepted non-helper callable family,
+   rather than redesigning all callable families at once.
+3. In the meantime, limit function-stack implementation work to narrow
+   hardening, diagnostics, fixtures, or documentation that preserves the
+   current accepted/rejected boundary.
+4. Keep rejection diagnostics for still-unsupported families explicit and
    structured.
 
 For the separate View/Web/text-input work:

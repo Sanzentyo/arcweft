@@ -1,8 +1,10 @@
 # Function Stack Current Status - 2026-07-08
 
 Current pointer: see
-`docs/implementation/function-stack-status-rollup-2026-07-09.md` for the latest
-goal rollup. This file remains the 2026-07-08 status index and evidence map.
+`docs/implementation/function-stack-current-state-2026-07-09.md` for the latest
+entry point and `docs/implementation/function-stack-status-rollup-2026-07-09.md`
+for the latest goal rollup. This file remains the 2026-07-08 status index and
+evidence map.
 
 This note is the current implementation-status index for the active
 function/closure/currying/pipeline goal. It summarizes what is implemented,
@@ -23,6 +25,8 @@ Related slices are:
 
 ## Current Repository State
 
+- Current pushed function-stack baseline after the latest refresh is
+  `486738b31 Handle pipe control-expression RHS placeholders`.
 - At the start of the enum-shorthand evidence refresh, `main` and
   `origin/main` were aligned at
   `396a6831 Audit function stack goal completion evidence`.

@@ -7,7 +7,8 @@ Source briefs:
 
 Current status index:
 
-- `docs/implementation/function-stack-current-status-2026-07-08.md`
+- `docs/implementation/function-stack-current-state-2026-07-09.md`
+- `docs/implementation/function-stack-status-rollup-2026-07-09.md`
 
 ## Implemented in the current sequence
 

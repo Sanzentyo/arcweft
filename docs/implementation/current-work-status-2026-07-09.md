@@ -9,7 +9,7 @@ historical note. For the current active-goal entry point, see
 ## Repository Baseline
 
 - Current pushed function-stack baseline:
-  `d8254a253 Allow pure helper calls in source function values`.
+  `486738b31 Handle pipe control-expression RHS placeholders`.
 - At the start of this cleanup, `main` and `origin/main` were aligned at that
   head.
 - The working copy still has unrelated View/Web/text-input changes. They are
@@ -53,9 +53,11 @@ The non-function-stack dirty files at this audit point are:
 ## Active Goal Status
 
 The active function/closure/currying/pipeline language-stack goal remains
-open. The implemented surface is broad, and the narrow 07.7 exact pure-helper
-call gap inside accepted source-local function bodies is implemented. Remaining
-completion still depends on explicit request/design areas:
+open. The implemented surface is broad: the narrow 07.7 exact pure-helper call
+gap inside accepted source-local function bodies is implemented, and the latest
+pipe RHS hardening slice now carries `^` substitution through value-position
+`if`, `if let`, and `match` expressions. Remaining completion still depends on
+explicit request/design areas:
 
 1. Spread partial application and spread data-last fallback semantics.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.
@@ -104,6 +106,10 @@ The detailed evidence trail remains:
   implemented fixed-argument paths. Named RHS calls in those pipes now preserve
   callable input-name order for pure helpers and accepted source-function
   candidates.
+- Pipe RHS control-expression hardening: `^` substitution now descends into
+  value-position `if`, `if let`, and `match` expressions, and checked
+  runtime-plan lowering preserves structured branch/scrutinee expressions
+  after substitution.
 - Method-chain fallback: inherent/trait/env methods win before data-last
   callable fallback; implemented fallback cases carry deterministic argument
   ordering and ambiguity diagnostics.
