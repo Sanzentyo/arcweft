@@ -350,11 +350,7 @@ flow @flow.main main {
     );
     let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
+    assert!(typecheck.diagnostics.is_empty());
 
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
@@ -407,11 +403,7 @@ flow @flow.main main {
             },
         ),
     );
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
+    assert!(typecheck.diagnostics.is_empty());
 
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
@@ -560,11 +552,7 @@ flow @flow.main main {
     );
     let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
+    assert!(typecheck.diagnostics.is_empty());
     assert!(
         typecheck.closure_captures.iter().any(|inventory| inventory
             .captures
@@ -1884,6 +1872,111 @@ flow @flow.main main {
         ),
         "expected value to apply source function containing exact pure-helper call, got {value:#?}"
     );
+    assert_source_fn_pure_helper_alias_body_lowers();
+}
+
+fn assert_source_fn_pure_helper_alias_body_lowers() {
+    let parsed = parse_source_text(
+        r#"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    left + right
+}
+
+fn finish_with_alias(label: String, value: i64) -> (String, i64) {
+    let op = add
+    let add_label = op(value)
+    return (label, add_label(5i64))
+}
+
+flow @flow.main main {
+    let value: (String, i64) = finish_with_alias("score", 7i64)
+    return value
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(typecheck.diagnostics.is_empty());
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function containing pure-helper alias");
+
+    let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected value let");
+    };
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["label", "value"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Let { name, expr, body }
+                                    if name == "op"
+                                        && matches!(
+                                            expr.as_ref(),
+                                            RuntimeExpr::Function { params, body }
+                                                if params.as_slice() == ["left", "right"]
+                                                    && matches!(
+                                                        body.as_ref(),
+                                                        RuntimeExpr::Binary { .. }
+                                                    )
+                                        )
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Let { name, expr, body }
+                                                if name == "add_label"
+                                                    && matches!(
+                                                        expr.as_ref(),
+                                                        RuntimeExpr::Apply { callee, args }
+                                                            if matches!(
+                                                                callee.as_ref(),
+                                                                RuntimeExpr::Local(name) if name == "op"
+                                                            ) && matches!(
+                                                                args.as_slice(),
+                                                                [RuntimeExpr::Local(left)]
+                                                                    if left == "value"
+                                                            )
+                                                    )
+                                                    && matches!(
+                                                        body.as_ref(),
+                                                        RuntimeExpr::Tuple(items)
+                                                            if matches!(
+                                                                items.as_slice(),
+                                                                [
+                                                                    RuntimeExpr::Local(label),
+                                                                    RuntimeExpr::Apply { callee, args },
+                                                                ] if label == "label"
+                                                                    && matches!(
+                                                                        callee.as_ref(),
+                                                                        RuntimeExpr::Local(name) if name == "add_label"
+                                                                    )
+                                                                    && matches!(
+                                                                        args.as_slice(),
+                                                                        [RuntimeExpr::Value(right)]
+                                                                            if right == &RuntimeValue::i64(5)
+                                                                    )
+                                                            )
+                                                    )
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(label), RuntimeExpr::Value(value)]
+                        if label == &RuntimeValue::String("score".to_owned())
+                            && value == &RuntimeValue::i64(7)
+                )
+        ),
+        "expected value to apply source function containing pure-helper alias, got {value:#?}"
+    );
 }
 
 #[test]
@@ -1967,6 +2060,96 @@ flow @flow.main main {
                 )
         ),
         "expected value to apply source function containing exact source function call, got {value:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_materializes_source_function_exact_source_alias_body() {
+    let parsed = parse_source_text(
+        r#"
+fn pair(left: String, right: String) -> (String, String) {
+    return (left, right)
+}
+
+fn tail_pair(tail: String) -> (String, String) {
+    let make_pair = pair
+    return make_pair("head", tail)
+}
+
+flow @flow.main main {
+    let value: (String, String) = tail_pair("tail")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function containing source-function alias");
+
+    assert!(
+        report.plan.pure_helpers.is_empty(),
+        "String-valued source functions should not be materialized through pure helpers"
+    );
+
+    let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected value let");
+    };
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["tail"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Let { name, expr, body }
+                                    if name == "make_pair"
+                                        && matches!(
+                                            expr.as_ref(),
+                                            RuntimeExpr::Function { params, body }
+                                                if params.as_slice() == ["left", "right"]
+                                                    && matches!(
+                                                        body.as_ref(),
+                                                        RuntimeExpr::Tuple(items)
+                                                            if items.len() == 2
+                                                    )
+                                        )
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Apply { callee, args }
+                                                if matches!(
+                                                    callee.as_ref(),
+                                                    RuntimeExpr::Local(name) if name == "make_pair"
+                                                ) && matches!(
+                                                    args.as_slice(),
+                                                    [
+                                                        RuntimeExpr::Value(left),
+                                                        RuntimeExpr::Local(right),
+                                                    ] if left == &RuntimeValue::String("head".to_owned())
+                                                        && right == "tail"
+                                                )
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value)]
+                        if value == &RuntimeValue::String("tail".to_owned())
+                )
+        ),
+        "expected value to apply source function containing source-function alias, got {value:#?}"
     );
 }
 

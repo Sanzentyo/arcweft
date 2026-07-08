@@ -1848,3 +1848,13 @@ have focused checked-runtime-plan coverage for missing-input partial
 construction, data-last partial construction, and bare function-value
 references. Details are recorded in
 `docs/implementation/function-stack-source-function-unaccepted-source-call-rejection-2026-07-09.md`.
+
+The source-function top-level alias follow-up closes another accepted-subset
+gap in 07.7. Source-function candidate discovery now treats a simple local
+alias to an already executable top-level pure helper or accepted
+source-function candidate as a local function-valued binding by recording the
+target input arity. Later calls through that alias lower as local
+`RuntimeExpr::Apply`, so `let op = add; op(...)` inside an accepted
+source-function body no longer falls out of the runtime function-value
+candidate family when `add` is already executable. Details are recorded in
+`docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`.

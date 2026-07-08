@@ -56,6 +56,11 @@ outside the accepted runtime function-value family; missing-input partial
 construction and data-last partial construction reject as
 `signature_partial_without_helper`, and bare value references reject as
 `source_function_value_without_runtime_candidate`.
+The twelfth follow-up allows simple local aliases to already executable
+top-level function values inside accepted source-function bodies. A `let`
+binding such as `let op = add` now registers `op` with the arity of `add` when
+`add` is an already-lowered pure helper or already-accepted source-local
+candidate, and later `op(...)` calls lower as local `RuntimeExpr::Apply`.
 
 ## Accepted Contract
 
@@ -90,7 +95,9 @@ The accepted family is intentionally small:
 - Simple `let` bindings become local function values inside the accepted body
   when their expression is a function-typed parameter alias, a simple closure
   literal, a destructuring closure literal, or a partial call to an existing
-  local function value whose result type is still a function.
+  local function value whose result type is still a function. They also become
+  local function values when their expression is an already executable
+  top-level pure-helper or accepted source-function candidate path.
 - `let`, `if let`, `match`, and closure parameter patterns that would shadow a
   function-typed parameter name keep the source function outside this accepted
   subset.
@@ -113,6 +120,10 @@ Exact calls to already-accepted source-local candidates use the same
 declaration-order argument lowering and materialized `RuntimeExpr::Function`
 value path, but remain exact-only inside source-function bodies; missing-input
 source-call partials inside those bodies are still outside this cut.
+Simple aliases to already executable top-level pure-helper and source-function
+candidate paths are arity-tracked as local function values, so later calls
+through the alias lower with the same local `RuntimeExpr::Apply` path used for
+function-typed parameters and closure aliases.
 Value-producing control expressions inside the accepted body preserve their
 runtime shape. Guarded `if let` and `match` expressions bind pattern locals
 before checking guards, matching statement control-flow semantics.
@@ -183,6 +194,7 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_exact_source_alias_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_exact_source_call_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_control_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture

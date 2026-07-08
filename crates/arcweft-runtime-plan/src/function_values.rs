@@ -88,6 +88,15 @@ struct FunctionLocalSignature {
     return_type: Option<TypeRef>,
 }
 
+impl FunctionLocalSignature {
+    fn from_input_names(input_names: &[String]) -> Self {
+        Self {
+            arity: input_names.len(),
+            return_type: None,
+        }
+    }
+}
+
 impl RuntimeFunctionValueContext<'_, '_> {
     fn function_local_arity(&self, name: &str) -> Option<usize> {
         self.function_locals
@@ -97,6 +106,19 @@ impl RuntimeFunctionValueContext<'_, '_> {
 
     fn function_local_signature(&self, name: &str) -> Option<&FunctionLocalSignature> {
         self.function_locals.get(name)
+    }
+
+    fn top_level_function_signature(&self, name: &str) -> Option<FunctionLocalSignature> {
+        self.pure_helpers
+            .pure_helper_input_names(name)
+            .map(FunctionLocalSignature::from_input_names)
+            .or_else(|| {
+                self.pure_helpers
+                    .function_value_candidate(name)
+                    .map(|candidate| {
+                        FunctionLocalSignature::from_input_names(candidate.input_names())
+                    })
+            })
     }
 
     fn shadows_function_local(&self, name: &str) -> bool {
@@ -562,7 +584,10 @@ fn runtime_function_value_expr_function_signature(
     context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> Option<FunctionLocalSignature> {
     match expr {
-        Expr::Path(path) => context.function_local_signature(path.as_label()).cloned(),
+        Expr::Path(path) => context
+            .function_local_signature(path.as_label())
+            .cloned()
+            .or_else(|| context.top_level_function_signature(path.as_label())),
         Expr::Closure {
             params,
             return_type,

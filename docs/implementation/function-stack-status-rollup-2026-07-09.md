@@ -40,6 +40,7 @@ Current supporting audits:
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-prefix-source-partial-rejection-2026-07-09.md`
+- `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
@@ -50,9 +51,10 @@ Current supporting audits:
 
 Current pushed baseline:
 
-- the function-stack baseline that rejects unsupported bare source-function
-  values and data-last source-function partials without executable runtime
-  candidates
+- the function-stack baseline that accepts top-level pure-helper/source-
+  function aliases inside accepted source-function bodies and rejects
+  unsupported bare source-function values and data-last source-function
+  partials without executable runtime candidates
 
 Previous named baseline before the spread rejection hardening slice:
 
@@ -107,7 +109,11 @@ Previous named baseline before the spread rejection hardening slice:
   exact calls to already-lowered pure helpers lower as `RuntimeExpr::PureCall`.
   Candidate discovery is fixed-point based, so exact calls to already-accepted
   source-local candidates also lower through materialized runtime function
-  values. Named missing-input partial calls synthesize wrapper functions that
+  values. Simple local aliases to already executable pure-helper and
+  source-function candidate values inside accepted source-function bodies now
+  register local function arity and lower later calls through local
+  `RuntimeExpr::Apply`. Named missing-input partial calls synthesize wrapper
+  functions that
   preserve declaration argument order, exact named pure-helper calls preserve
   helper input order, and exact named source-candidate calls preserve source
   declaration input order. Pure value-position `if`, `if let`, and `match`
