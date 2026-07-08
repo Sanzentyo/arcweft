@@ -463,19 +463,51 @@ fn lower_strict_closure_expr(
     body: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
 ) -> Result<RuntimeExpr, String> {
-    let params = params
-        .iter()
-        .map(|param| {
-            param
-                .simple_ident()
-                .map(str::to_owned)
-                .ok_or_else(|| "runtime closures must bind simple identifier parameters".to_owned())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    lower_runtime_expr_strict_with_helpers(body, helpers).map(|body| RuntimeExpr::Function {
-        params,
+    let params = runtime_closure_param_bindings(params);
+    let body = lower_runtime_expr_strict_with_helpers(body, helpers)?;
+    let body = params.iter().rev().fold(body, |body, param| {
+        if let Some(pattern) = param.pattern {
+            RuntimeExpr::Match {
+                scrutinee: Box::new(RuntimeExpr::Local(param.name.clone())),
+                arms: vec![RuntimeExprMatchArm {
+                    pattern: lower_runtime_pattern(pattern),
+                    guard: None,
+                    value: body,
+                }],
+            }
+        } else {
+            body
+        }
+    });
+    Ok(RuntimeExpr::Function {
+        params: params.into_iter().map(|param| param.name).collect(),
         body: Box::new(body),
     })
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeClosureParamBinding<'a> {
+    name: String,
+    pattern: Option<&'a Pattern>,
+}
+
+fn runtime_closure_param_bindings(params: &[ClosureParam]) -> Vec<RuntimeClosureParamBinding<'_>> {
+    params
+        .iter()
+        .enumerate()
+        .map(|(index, param)| {
+            param.simple_ident().map_or_else(
+                || RuntimeClosureParamBinding {
+                    name: format!("$arcweft.closure.arg.{index}"),
+                    pattern: Some(param.pattern()),
+                },
+                |name| RuntimeClosureParamBinding {
+                    name: name.to_owned(),
+                    pattern: None,
+                },
+            )
+        })
+        .collect()
 }
 
 fn lower_partial_placeholder_function_expr(

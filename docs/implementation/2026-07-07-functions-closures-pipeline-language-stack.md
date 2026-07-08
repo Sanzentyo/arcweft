@@ -19,6 +19,11 @@ Current status index:
 - Closure parameter patterns are preserved through sema: tuple/destructuring
   patterns bind body locals from the parameter type, and pattern `_` remains a
   discard rather than becoming the expression partial placeholder.
+- Runtime-plan lowering materializes non-simple closure parameter patterns as
+  runtime-only synthetic parameters plus a single-arm `RuntimeExpr::Match`
+  body. This keeps `RuntimeExpr::Function`'s stable named-parameter shape while
+  making tuple/record/variant closure destructuring executable through the
+  existing runtime pattern matcher.
 - Closure expressions now type-check as function values instead of returning an
   untyped `None`.
 - Curried top-level function/task/dialogue/stream signatures are accepted by
@@ -781,6 +786,12 @@ boundaries. Suspension boundaries are now represented internally as typed
 the diagnostic boundary. Closure parameter pattern coverage confirms tuple
 destructuring and discard parameters typecheck without confusing pattern `_`
 with expression `_` placeholder abstraction.
+Runtime-plan and VM execution coverage for destructured closure parameters is
+now fixed by
+`cargo test -p arcweft-runtime-plan --lib --all-features strict_runtime_lowers_destructured_closure_param_to_match_body -- --nocapture`,
+`cargo test -p arcweft-compiler --all-features runtime_plan_lowers_destructured_closure_parameter_application -- --nocapture`,
+and
+`cargo test -p arcweft-core --all-features vm_pure_backend_applies_runtime_function_with_destructured_param_body -- --nocapture`.
 
 The closure effect-composition cut has passing sema coverage that closure body
 effects do not leak into the enclosing flow when the closure value is merely

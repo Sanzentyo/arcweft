@@ -1017,6 +1017,60 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_destructured_closure_parameter_application() {
+    let parsed = parse_source_text(
+        r#"
+flow @flow.main main {
+    let choose = |(left, right): (String, String)| right
+    let value: String = choose(("head", "tail"))
+    return value
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers destructured closure parameter");
+    let [
+        FlowOp::Let { expr: choose, .. },
+        FlowOp::Let { expr: value, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected choose and value lets");
+    };
+    assert!(matches!(
+        choose,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["$arcweft.closure.arg.0"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Match { scrutinee, arms }
+                        if matches!(
+                            scrutinee.as_ref(),
+                            RuntimeExpr::Local(name) if name == "$arcweft.closure.arg.0"
+                        ) && arms.len() == 1
+                )
+    ));
+    assert!(matches!(
+        value,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "choose")
+                && matches!(args.as_slice(), [RuntimeExpr::Tuple(items)] if items.len() == 2)
+    ));
+}
+
+#[test]
 fn checked_runtime_plan_materializes_named_missing_source_function_partial_call() {
     let parsed = parse_source_text(
         r#"

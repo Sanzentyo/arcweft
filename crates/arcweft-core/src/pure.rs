@@ -1,11 +1,12 @@
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
+use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
-    RuntimeExactInteger, RuntimeExpr, RuntimeFieldExpr, RuntimeFieldValue, RuntimeFunctionValue,
-    RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator, RuntimeSeq, RuntimeUInt,
-    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    RuntimeExactInteger, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeFieldValue,
+    RuntimeFunctionValue, RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator, RuntimeSeq,
+    RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
     evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
     evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
     evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_numeric_op,
@@ -1382,12 +1383,14 @@ impl PureEvaluator {
                 then_expr,
                 else_expr,
             } => self.evaluate_if_expr(condition, then_expr, else_expr),
-            RuntimeExpr::IfLet { .. } | RuntimeExpr::Match { .. } => {
-                Err(RuntimeEvalError::UnsupportedPure {
-                    name: "control".to_owned(),
-                    reason: "pattern control is not in the pure helper subset".to_owned(),
-                })
-            }
+            RuntimeExpr::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_expr,
+                else_expr,
+            } => self.evaluate_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
+            RuntimeExpr::Match { scrutinee, arms } => self.evaluate_match_expr(scrutinee, arms),
         }
     }
 
@@ -1447,6 +1450,76 @@ impl PureEvaluator {
         } else {
             self.evaluate_expr(else_expr)
         }
+    }
+
+    fn evaluate_if_let_expr(
+        &mut self,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        guard: Option<&RuntimeExpr>,
+        then_expr: &RuntimeExpr,
+        else_expr: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(expr)?;
+        let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
+            return self.evaluate_expr(else_expr);
+        };
+        let guard_matched = if let Some(guard) = guard {
+            self.with_temp_bindings_ref(&bindings, |this| this.evaluate_bool(guard))?
+        } else {
+            true
+        };
+        if guard_matched {
+            self.with_temp_bindings(bindings, |this| this.evaluate_expr(then_expr))
+        } else {
+            self.evaluate_expr(else_expr)
+        }
+    }
+
+    fn evaluate_match_expr(
+        &mut self,
+        scrutinee: &RuntimeExpr,
+        arms: &[RuntimeExprMatchArm],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(scrutinee)?;
+        for arm in arms {
+            let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
+                continue;
+            };
+            if let Some(guard) = arm.guard.as_ref()
+                && !self.with_temp_bindings_ref(&bindings, |this| this.evaluate_bool(guard))?
+            {
+                continue;
+            }
+            return self.with_temp_bindings(bindings, |this| this.evaluate_expr(&arm.value));
+        }
+        Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
+            &value,
+        )))
+    }
+
+    fn with_temp_bindings<T>(
+        &mut self,
+        bindings: Vec<RuntimeBinding>,
+        f: impl FnOnce(&mut Self) -> Result<T, RuntimeEvalError>,
+    ) -> Result<T, RuntimeEvalError> {
+        self.env.push_scope_with_capacity(bindings.len());
+        self.env.bind_all(bindings);
+        let result = f(self);
+        self.env.pop_scope();
+        result
+    }
+
+    fn with_temp_bindings_ref<T>(
+        &mut self,
+        bindings: &[RuntimeBinding],
+        f: impl FnOnce(&mut Self) -> Result<T, RuntimeEvalError>,
+    ) -> Result<T, RuntimeEvalError> {
+        self.env.push_scope_with_capacity(bindings.len());
+        self.env.bind_all_ref(bindings);
+        let result = f(self);
+        self.env.pop_scope();
+        result
     }
 
     fn unsupported_flow_runtime_expr() -> Result<RuntimeValue, RuntimeEvalError> {

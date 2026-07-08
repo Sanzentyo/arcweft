@@ -58,6 +58,9 @@ Baseline before this status refresh:
 - Closure expressions `|x| expr` and `|| expr` type-check as function values.
 - Typed parameters, destructuring/pattern parameters, braced return
   annotations, and closure-local `return` are implemented.
+- Destructured closure parameters lower to runtime-only synthetic function
+  parameters plus `RuntimeExpr::Match`, and the VM pure backend evaluates that
+  pattern body through the shared runtime pattern matcher.
 - `RuntimeValue::Function`, `RuntimeExpr::Function`, and `RuntimeExpr::Apply`
   execute in the core evaluator.
 - Runtime functions capture deterministic local bindings.

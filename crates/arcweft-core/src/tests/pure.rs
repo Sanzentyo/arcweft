@@ -1,4 +1,5 @@
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
+use crate::pattern::RuntimePattern;
 use crate::plan::{
     RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
     RuntimePureOutputType,
@@ -10,12 +11,12 @@ use crate::pure::{
 };
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
-    RuntimeFieldExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
-    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
-    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
-    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_dense_u128, runtime_sequence_dense_usize,
+    RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeSeq,
+    RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
+    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
+    runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
+    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
+    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
     runtime_sequence_from_literal_values, runtime_sequence_values,
     runtime_value_into_sequence_values,
 };
@@ -64,6 +65,37 @@ fn vm_pure_backend_applies_runtime_function_with_capture() {
         .expect("captured function evaluates");
 
     assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn vm_pure_backend_applies_runtime_function_with_destructured_param_body() {
+    let helper = value_helper(RuntimeExpr::Apply {
+        callee: Box::new(RuntimeExpr::Function {
+            params: vec!["$arcweft.closure.arg.0".to_owned()],
+            body: Box::new(RuntimeExpr::Match {
+                scrutinee: Box::new(RuntimeExpr::Local("$arcweft.closure.arg.0".to_owned())),
+                arms: vec![RuntimeExprMatchArm {
+                    pattern: RuntimePattern::Tuple(vec![
+                        RuntimePattern::Ident("left".to_owned()),
+                        RuntimePattern::Ident("right".to_owned()),
+                    ]),
+                    guard: None,
+                    value: RuntimeExpr::Local("right".to_owned()),
+                }],
+            }),
+        }),
+        args: vec![RuntimeExpr::Tuple(vec![
+            RuntimeExpr::Value(RuntimeValue::String("head".to_owned())),
+            RuntimeExpr::Value(RuntimeValue::String("tail".to_owned())),
+        ])],
+    });
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend
+        .call_values(&helper, &[RuntimeValue::Unit])
+        .expect("destructured runtime function evaluates");
+
+    assert_eq!(value, RuntimeValue::String("tail".to_owned()));
 }
 
 #[test]

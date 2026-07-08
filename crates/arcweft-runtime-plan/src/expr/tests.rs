@@ -1,4 +1,5 @@
 use super::*;
+use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType};
 use arcweft_core::value::RuntimeIntrinsic;
 
@@ -264,6 +265,51 @@ fn strict_runtime_lowers_closure_to_function_expr() {
                     body.as_ref(),
                     RuntimeExpr::Binary { lhs, .. }
                         if matches!(lhs.as_ref(), RuntimeExpr::Local(name) if name == "score")
+                )
+    ));
+}
+
+#[test]
+fn strict_runtime_lowers_destructured_closure_param_to_match_body() {
+    let expr = Expr::Closure {
+        params: vec![ClosureParam::new(
+            Pattern::Tuple(vec![
+                Pattern::Ident("left".to_owned()),
+                Pattern::Ident("right".to_owned()),
+            ]),
+            None,
+        )],
+        return_type: None,
+        body: Box::new(Expr::Path("right".into())),
+    };
+
+    let lowered = lower_runtime_expr_strict(&expr).expect("destructured closure lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["$arcweft.closure.arg.0"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Match { scrutinee, arms }
+                        if matches!(
+                            scrutinee.as_ref(),
+                            RuntimeExpr::Local(name) if name == "$arcweft.closure.arg.0"
+                        )
+                        && matches!(
+                            arms.as_slice(),
+                            [RuntimeExprMatchArm {
+                                pattern: RuntimePattern::Tuple(items),
+                                guard: None,
+                                value,
+                            }] if matches!(
+                                items.as_slice(),
+                                [
+                                    RuntimePattern::Ident(left),
+                                    RuntimePattern::Ident(right),
+                                ] if left == "left" && right == "right"
+                            ) && matches!(value, RuntimeExpr::Local(name) if name == "right")
+                        )
                 )
     ));
 }

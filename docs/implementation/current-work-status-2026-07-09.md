@@ -81,7 +81,8 @@ The detailed evidence trail remains:
   and rejection of curried `flow` parameters.
 - Closure syntax and runtime apply: expression closures, typed/pattern
   parameters, braced closure return annotations, closure-local `return`,
-  captured runtime functions, exact apply, partial apply, and curried apply.
+  captured runtime functions, destructured closure parameters lowered through
+  runtime pattern matches, exact apply, partial apply, and curried apply.
 - First AWBC closure/apply cut: non-suspending generated closures lower through
   `MakeFunction` and `ApplyFunction`; snapshot persistence rejects runtime
   function values explicitly.
