@@ -31,6 +31,12 @@ now parse authored `if` / `if let` / `match` expressions before the let-else
 fallback, value `if let` guards can see the pattern bindings they guard, and
 compiler regressions prove accepted source functions materialize
 `RuntimeExpr::If`, `RuntimeExpr::IfLet`, and `RuntimeExpr::Match` bodies.
+The eighth follow-up changes source-function candidate discovery from an
+independent per-function pass to a deterministic fixed point. Once a
+source-local `fn` has been accepted, later candidate passes may use it inside
+another accepted source-function body. Exact calls to those accepted
+source-local candidates lower as runtime `Apply` expressions, including named
+arguments emitted in declaration input order.
 
 ## Accepted Contract
 
@@ -45,9 +51,10 @@ The accepted family is intentionally small:
   preceded by simple `let` statements whose RHS is an accepted value
   expression.
 - Body expressions must lower through strict runtime expression lowering.
-  Calls are accepted only when they are local function-value calls or exact
-  calls to already-lowered pure helpers resolved through
-  `RuntimePureHelperLookup`. Host/top-level non-helper calls, adapter calls,
+  Calls are accepted only when they are local function-value calls, exact calls
+  to already-lowered pure helpers resolved through `RuntimePureHelperLookup`,
+  or exact calls to source-local `fn` candidates that were already accepted by
+  the fixed-point candidate pass. Host/adapter calls,
   effectful calls, suspending calls, pipes, `await`, `try`, threads, dialogue
   calls, placeholders, raw syntax, and lifetime paths remain outside this
   subset. Pure value control expressions are accepted when their child
@@ -83,6 +90,10 @@ lower as ordinary `RuntimeExpr::Let` values, and later calls to those locals
 also lower as local `RuntimeExpr::Apply`. Exact pure-helper calls lower through
 the same strict named-call lowering as flow expressions, so named helper
 arguments are emitted in helper input order rather than source order.
+Exact calls to already-accepted source-local candidates use the same
+declaration-order argument lowering and materialized `RuntimeExpr::Function`
+value path, but remain exact-only inside source-function bodies; missing-input
+source-call partials inside those bodies are still outside this cut.
 Value-producing control expressions inside the accepted body preserve their
 runtime shape. Guarded `if let` and `match` expressions bind pattern locals
 before checking guards, matching statement control-flow semantics.
@@ -97,10 +108,11 @@ Function-value creation is effect-free. The accepted subset does not contain
 host/effect/suspension syntax outside recursively accepted closure literals,
 direct calls to supplied function values, and local aliases/partials of those
 function values, plus exact pure-helper calls whose helper bodies were already
-accepted by the pure-helper pass, so creating the value cannot perform hidden
-host, adapter, or suspension work in this cut. Calling a supplied function
-value composes that value's behavior at invocation time through the existing
-runtime `Apply` path.
+accepted by the pure-helper pass and exact source-local candidate calls whose
+bodies already satisfy this same contract, so creating the value cannot perform
+hidden host, adapter, or suspension work in this cut. Calling a supplied or
+materialized function value composes that value's behavior at invocation time
+through the existing runtime `Apply` path.
 Returning a closure only allocates another `RuntimeExpr::Function`; its body is
 still constrained by the same accepted subset.
 Destructuring closure parameters do not widen the callable family by
@@ -115,9 +127,10 @@ unsupported-runtime-value path.
 
 These are still not accepted:
 
-- source function values whose bodies contain host/top-level non-helper calls,
-  effects, adapter calls, pipes, closure bodies with host/effect calls,
-  `await`, `try`, or other suspension-capable constructs;
+- source function values whose bodies contain host/adapter/effect calls, calls
+  to source-local functions outside the accepted candidate set, pipes, closure
+  bodies with host/effect calls, `await`, `try`, or other suspension-capable
+  constructs;
 - statement-style control flow such as loops, `while`, `for`, branch
   statements, and statement blocks that cannot be represented as strict
   runtime value expressions;
@@ -140,6 +153,7 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_exact_source_call_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_control_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture

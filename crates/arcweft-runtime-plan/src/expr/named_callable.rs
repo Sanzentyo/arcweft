@@ -19,7 +19,7 @@ pub(super) fn lower_strict_pure_helper_named_call(
     callee: &str,
     args: &[CallArg],
     helper: &RuntimePureHelper,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     match lower_strict_named_callable_args(
         "pure helper",
@@ -46,7 +46,7 @@ pub(super) fn lower_strict_function_value_named_call(
     callee: &str,
     args: &[CallArg],
     candidate: &RuntimeFunctionValueCandidate,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     match lower_strict_named_callable_args(
         "function",
@@ -74,7 +74,7 @@ pub(super) fn lower_strict_named_callable_args(
     callee: &str,
     args: &[CallArg],
     input_names: &[String],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<PureHelperNamedCallLowering, String> {
     let mut lowered = std::iter::repeat_with(|| None)
         .take(input_names.len())

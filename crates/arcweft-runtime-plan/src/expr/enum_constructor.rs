@@ -11,7 +11,7 @@ use arcweft_lang_hir::syntax::{
 pub(super) fn lower_constructor_call(
     callee: &Expr,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<RuntimeExpr> {
     let callee = constructor_callee_label(callee)?;
     let (path, name) = constructor_path(&callee)?;
@@ -38,7 +38,7 @@ pub(super) fn lower_constructor_call(
 pub(super) fn lower_expected_enum_record_constructor(
     expr: &Expr,
     expected_ty: Option<&TypeRef>,
-    helpers: RuntimePureHelperLookup<'_, '_>,
+    helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Record { path, fields } = expr else {
         return None;

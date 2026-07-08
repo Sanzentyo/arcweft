@@ -110,8 +110,9 @@ The following are implemented in pushed commits:
   curried groups, returned simple closure literals, direct calls to
   function-typed parameters, function-valued local aliases/partials,
   destructuring closure literals in those local aliases, exact calls to
-  already-lowered pure helpers, and pure value-position `if` / `if let` /
-  `match` expressions.
+  already-lowered pure helpers, fixed-point exact calls to already-accepted
+  source-local candidates, and pure value-position `if` / `if let` / `match`
+  expressions.
 
 ## Remaining Blocking Work
 
@@ -122,7 +123,7 @@ These items keep the active goal open:
 | Spread partial application and spread data-last fallback | Fixed positional/named partial and fallback paths exist. Spread shapes are intentionally rejected because expansion, arity, rest-parameter, placeholder, and data-last evidence semantics are not specified. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md` |
 | AWBC suspension-aware dynamic apply | Non-suspending dynamic apply works. Applying a function that suspends or budget-yields still has no safe-point/resume contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load now rejects function values explicitly. Serializable closure state, captured environment versioning, and restore semantics are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
-| Broad non-helper callable allocation | The first source-local `fn` subset is implemented, including pure value control expressions. Effectful/suspending bodies, host/top-level non-helper call-bearing bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persisted callable values remain outside the accepted contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
+| Broad non-helper callable allocation | The first source-local `fn` subset is implemented, including pure value control expressions and fixed-point exact calls to already-accepted source-local candidates. Effectful/suspending bodies, host/adapter call-bearing bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persisted callable values remain outside the accepted contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
 | Final closure effect-row model | Current effect composition and closed-row projection are useful, but source row syntax, open-row inference/substitution, row-bearing callable values, and final runtime-plan/verifier/LSP consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows ID comparison,

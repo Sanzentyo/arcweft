@@ -38,12 +38,31 @@ impl RuntimeFunctionValueCandidate {
 
 pub(crate) fn lower_runtime_function_value_candidates(
     module: &HirModule,
-    pure_helpers: RuntimePureHelperLookup<'_, 'static>,
+    pure_helpers: RuntimePureHelperLookup<'_, 'static, 'static>,
 ) -> Vec<RuntimeFunctionValueCandidate> {
+    let mut candidates = BTreeMap::new();
+    loop {
+        let before = candidates.len();
+        for function in module.functions() {
+            if candidates.contains_key(function.name()) {
+                continue;
+            }
+            let candidate = {
+                let lookup = pure_helpers.with_runtime_function_values(&candidates);
+                lower_runtime_function_value_candidate(function, lookup)
+            };
+            if let Some(candidate) = candidate {
+                candidates.insert(candidate.name.clone(), candidate);
+            }
+        }
+        if candidates.len() == before {
+            break;
+        }
+    }
     module
         .functions()
         .iter()
-        .filter_map(|function| lower_runtime_function_value_candidate(function, pure_helpers))
+        .filter_map(|function| candidates.remove(function.name()))
         .collect()
 }
 
@@ -58,9 +77,9 @@ pub(crate) fn runtime_function_value_map(
 }
 
 #[derive(Clone)]
-struct RuntimeFunctionValueContext<'helpers> {
+struct RuntimeFunctionValueContext<'helpers, 'functions> {
     function_locals: BTreeMap<String, FunctionLocalSignature>,
-    pure_helpers: RuntimePureHelperLookup<'helpers, 'static>,
+    pure_helpers: RuntimePureHelperLookup<'helpers, 'functions, 'static>,
 }
 
 #[derive(Clone, Debug)]
@@ -69,7 +88,7 @@ struct FunctionLocalSignature {
     return_type: Option<TypeRef>,
 }
 
-impl RuntimeFunctionValueContext<'_> {
+impl RuntimeFunctionValueContext<'_, '_> {
     fn function_local_arity(&self, name: &str) -> Option<usize> {
         self.function_locals
             .get(name)
@@ -98,7 +117,7 @@ impl RuntimeFunctionValueContext<'_> {
 
 fn lower_runtime_function_value_candidate(
     function: &HirFunction,
-    pure_helpers: RuntimePureHelperLookup<'_, 'static>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
 ) -> Option<RuntimeFunctionValueCandidate> {
     if function.kind() != FunctionKind::Function {
         return None;
@@ -147,10 +166,10 @@ fn runtime_function_value_param_groups(function: &HirFunction) -> Option<Vec<Vec
     (!groups.is_empty()).then_some(groups)
 }
 
-fn runtime_function_value_context<'helpers>(
+fn runtime_function_value_context<'helpers, 'functions>(
     function: &HirFunction,
-    pure_helpers: RuntimePureHelperLookup<'helpers, 'static>,
-) -> RuntimeFunctionValueContext<'helpers> {
+    pure_helpers: RuntimePureHelperLookup<'helpers, 'functions, 'static>,
+) -> RuntimeFunctionValueContext<'helpers, 'functions> {
     let function_locals = function
         .signature()
         .param_groups()
@@ -210,11 +229,11 @@ fn function_local_result_signature(
     None
 }
 
-fn runtime_function_value_supported_context<'helpers>(
-    mut context: RuntimeFunctionValueContext<'helpers>,
+fn runtime_function_value_supported_context<'helpers, 'functions>(
+    mut context: RuntimeFunctionValueContext<'helpers, 'functions>,
     statements: &[Stmt],
     value: &Expr,
-) -> Option<RuntimeFunctionValueContext<'helpers>> {
+) -> Option<RuntimeFunctionValueContext<'helpers, 'functions>> {
     for stmt in statements {
         if !runtime_function_value_statement_supported(stmt, &context) {
             return None;
@@ -244,7 +263,7 @@ fn runtime_function_value_body_parts(function: &HirFunction) -> Option<(&[Stmt],
 fn lower_runtime_function_value_body(
     statements: &[Stmt],
     value: &Expr,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> Option<RuntimeExpr> {
     let function_local_arities = context.function_local_arities();
     let body = lower_runtime_expr_strict_with_function_locals_and_pure(
@@ -283,7 +302,7 @@ fn binding_pattern_name(pattern: &Pattern) -> Option<String> {
 
 fn pattern_binds_function_local(
     pattern: &Pattern,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     match pattern {
         Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
@@ -307,7 +326,7 @@ fn pattern_binds_function_local(
 
 fn variant_payload_binds_function_local(
     payload: &VariantPatternPayload,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     match payload {
         VariantPatternPayload::Tuple(items) => items
@@ -321,7 +340,7 @@ fn variant_payload_binds_function_local(
 
 fn runtime_function_value_statement_supported(
     stmt: &Stmt,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     match stmt {
         Stmt::Let { pattern, expr, .. } => binding_pattern_name(pattern).is_some_and(|name| {
@@ -334,7 +353,7 @@ fn runtime_function_value_statement_supported(
 
 fn runtime_function_value_expr_supported(
     expr: &Expr,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     match expr {
         Expr::Literal(_)
@@ -418,6 +437,7 @@ fn runtime_function_value_expr_supported(
         Expr::Call { callee, args } => {
             runtime_function_value_local_function_call_supported(callee, args, context)
                 || runtime_function_value_pure_helper_call_supported(callee, args, context)
+                || runtime_function_value_source_function_call_supported(callee, args, context)
         }
         Expr::LifetimePath { .. }
         | Expr::Placeholder(_)
@@ -436,7 +456,7 @@ fn runtime_function_value_expr_supported(
 fn runtime_function_value_closure_supported(
     params: &[ClosureParam],
     body: &Expr,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     params
         .iter()
@@ -447,7 +467,7 @@ fn runtime_function_value_closure_supported(
 fn runtime_function_value_local_function_call_supported(
     callee: &Expr,
     args: &[CallArg],
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     let Expr::Path(path) = callee else {
         return false;
@@ -465,7 +485,7 @@ fn runtime_function_value_local_function_call_supported(
 fn runtime_function_value_pure_helper_call_supported(
     callee: &Expr,
     args: &[CallArg],
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     let Expr::Path(path) = callee else {
         return false;
@@ -478,10 +498,30 @@ fn runtime_function_value_pure_helper_call_supported(
         })
 }
 
+fn runtime_function_value_source_function_call_supported(
+    callee: &Expr,
+    args: &[CallArg],
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> bool {
+    let Expr::Path(path) = callee else {
+        return false;
+    };
+    context
+        .pure_helpers
+        .function_value_candidate(path.as_label())
+        .is_some_and(|candidate| {
+            runtime_function_value_exact_callable_args_supported(
+                args,
+                candidate.input_names(),
+                context,
+            )
+        })
+}
+
 fn runtime_function_value_exact_callable_args_supported(
     args: &[CallArg],
     input_names: &[String],
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     let mut filled = vec![false; input_names.len()];
     let mut positional_index = 0usize;
@@ -519,7 +559,7 @@ fn runtime_function_value_exact_callable_args_supported(
 
 fn runtime_function_value_expr_function_signature(
     expr: &Expr,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> Option<FunctionLocalSignature> {
     match expr {
         Expr::Path(path) => context.function_local_signature(path.as_label()).cloned(),
@@ -546,7 +586,7 @@ fn runtime_function_value_expr_function_signature(
 fn runtime_function_value_block_supported(
     statements: &[Stmt],
     value: Option<&Expr>,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     statements
         .iter()
@@ -558,7 +598,7 @@ fn runtime_function_value_memo_block_supported(
     options: &[(String, Expr)],
     statements: &[Stmt],
     value: Option<&Expr>,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     options
         .iter()
@@ -570,7 +610,7 @@ fn runtime_function_value_if_supported(
     condition: &Expr,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     runtime_function_value_expr_supported(condition, context)
         && runtime_function_value_expr_supported(then_branch, context)
@@ -583,7 +623,7 @@ fn runtime_function_value_if_let_supported(
     guard: Option<&Expr>,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     !pattern_binds_function_local(pattern, context)
         && runtime_function_value_expr_supported(expr, context)
@@ -594,7 +634,7 @@ fn runtime_function_value_if_let_supported(
 
 fn runtime_function_value_match_arm_supported(
     arm: &MatchExprArm,
-    context: &RuntimeFunctionValueContext<'_>,
+    context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     !pattern_binds_function_local(arm.pattern(), context)
         && arm

@@ -1284,7 +1284,7 @@ fn implicit_entry_flow(
 /// Lowers HIR flow bodies into executable Sans I/O flow operations.
 pub(crate) fn lower_runtime_flows(
     module: &HirModule,
-    pure_helpers: RuntimePureHelperLookup<'_, 'static>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
     options: &RuntimePlanLowerOptions,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
@@ -1330,7 +1330,7 @@ pub(crate) fn lower_runtime_flows(
 fn lower_agent_controller_flow(
     module: &HirModule,
     agent: &HirAgent,
-    pure_helpers: RuntimePureHelperLookup<'_, 'static>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
 ) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(module, None)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
@@ -1369,7 +1369,7 @@ fn lower_agent_controller_flow(
     }
 }
 
-struct FlowRuntimeLowerer<'a> {
+struct FlowRuntimeLowerer<'helpers, 'functions, 'evidence> {
     agent_controller: bool,
     line_task_groups: Vec<LineTaskGroup>,
     line_display_catalog: LineDisplayCatalog,
@@ -1378,8 +1378,8 @@ struct FlowRuntimeLowerer<'a> {
     presentation_handle_scopes: Vec<BTreeMap<String, PresentationHandleBinding>>,
     function_local_scopes: Vec<BTreeMap<String, usize>>,
     errors: Vec<RuntimePlanLowerError>,
-    pure_helpers: RuntimePureHelperLookup<'a, 'static>,
-    for_iteration_evidence: &'a [RuntimeIteratorEvidence],
+    pure_helpers: RuntimePureHelperLookup<'helpers, 'functions, 'static>,
+    for_iteration_evidence: &'evidence [RuntimeIteratorEvidence],
     for_iteration_cursor: usize,
 }
 
@@ -1406,7 +1406,7 @@ fn runtime_expr_function_arity(
     }
 }
 
-impl FlowRuntimeLowerer<'_> {
+impl FlowRuntimeLowerer<'_, '_, '_> {
     fn lower_runtime_expr_result(&self, expr: &Expr) -> Result<RuntimeExpr, String> {
         let function_locals = self.active_function_locals();
         let context = self.pure_helpers.with_function_locals(&function_locals);

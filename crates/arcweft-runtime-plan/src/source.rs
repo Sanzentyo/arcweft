@@ -27,7 +27,7 @@ use arcweft_lang_hir::syntax::{
 /// Lowers a checked source declaration into a Sans I/O source plan.
 pub(crate) fn lower_source_plan(
     source: &SourceItem,
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Result<SourcePlan, Vec<RuntimePlanLowerError>> {
     let mut errors = Vec::new();
     let id = source.id().map_or_else(
@@ -83,7 +83,7 @@ pub(crate) fn lower_source_plan(
 
 fn lower_source_handler(
     handler: &SourceHandler,
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> SourceHandlerPlan {
     let ops = lower_source_stmt_list(handler.body(), pure_helpers);
     match handler.event() {
@@ -107,7 +107,7 @@ fn lower_source_handler(
 
 fn lower_source_stmt_list(
     statements: &[Stmt],
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Vec<SourceOp> {
     statements
         .iter()
@@ -115,7 +115,7 @@ fn lower_source_stmt_list(
         .collect()
 }
 
-fn lower_source_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>) -> SourceOp {
+fn lower_source_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_, '_>) -> SourceOp {
     match stmt {
         Stmt::Yield(expr) => {
             SourceOp::Yield(lower_runtime_expr_with_pure(expr.expr(), pure_helpers))
@@ -135,7 +135,7 @@ fn lower_source_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>)
 
 fn lower_runtime_expr_with_pure(
     expr: &arcweft_lang_hir::syntax::expr::Expr,
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> RuntimeExpr {
     lower_runtime_expr_strict_with_pure(expr, pure_helpers)
         .unwrap_or_else(|_| lower_runtime_expr(expr))

@@ -1107,7 +1107,7 @@ signature partials now carry the unsupported-family marker
 without pretending the broader non-helper allocation contract is implemented.
 The follow-up source-function-value cut accepts the first narrow non-helper
 family: ordinary source-local `fn` declarations with simple identifier
-parameters and expression bodies that contain no call/effect/suspension-capable
+parameters and expression bodies that contain no host/effect/suspension-capable
 syntax. Curried `ParamGroup`s in that family lower to nested runtime functions.
 Named missing-input partial calls for that family now synthesize wrapper
 functions that preserve declaration argument order. Returned simple closure
@@ -1128,6 +1128,11 @@ pure helpers are now accepted inside that same source-local family. The
 candidate pass receives the existing `RuntimePureHelperLookup`, and strict
 body lowering emits `RuntimeExpr::PureCall`; named helper arguments keep helper
 input order rather than source order.
+Candidate discovery now runs to a deterministic fixed point, so exact calls to
+already-accepted source-local candidates are also accepted inside later
+source-local function bodies. Those calls lower through the materialized
+`RuntimeExpr::Function` value path and named arguments keep source declaration
+order.
 Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_curried_source_function_value -- --nocapture` and
@@ -1136,6 +1141,7 @@ Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture` and
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_exact_source_call_body -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture`.
 
 The named data-last pipe preservation cut has passing focused coverage for

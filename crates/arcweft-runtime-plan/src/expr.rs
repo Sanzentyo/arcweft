@@ -44,16 +44,16 @@ use named_callable::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) struct RuntimePureHelperLookup<'helpers, 'locals> {
+pub(crate) struct RuntimePureHelperLookup<'helpers, 'functions, 'locals> {
     ids: &'helpers BTreeMap<String, RuntimePureHelperId>,
     helpers: &'helpers [RuntimePureHelper],
-    function_values: Option<&'helpers BTreeMap<String, RuntimeFunctionValueCandidate>>,
+    function_values: Option<&'functions BTreeMap<String, RuntimeFunctionValueCandidate>>,
     function_locals: Option<&'locals BTreeMap<String, usize>>,
     typed_lowering_evidence: Option<RuntimeTypedLoweringEvidenceLookup<'helpers>>,
     expression_cursor: Option<&'helpers Cell<usize>>,
 }
 
-impl<'helpers> RuntimePureHelperLookup<'helpers, 'static> {
+impl<'helpers> RuntimePureHelperLookup<'helpers, 'static, 'static> {
     pub(crate) fn new(
         ids: &'helpers BTreeMap<String, RuntimePureHelperId>,
         helpers: &'helpers [RuntimePureHelper],
@@ -69,11 +69,11 @@ impl<'helpers> RuntimePureHelperLookup<'helpers, 'static> {
     }
 }
 
-impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
+impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions, 'locals> {
     pub(crate) fn with_function_locals(
         self,
         function_locals: &'locals BTreeMap<String, usize>,
-    ) -> RuntimePureHelperLookup<'helpers, 'locals> {
+    ) -> RuntimePureHelperLookup<'helpers, 'functions, 'locals> {
         RuntimePureHelperLookup {
             ids: self.ids,
             helpers: self.helpers,
@@ -84,10 +84,10 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
         }
     }
 
-    pub(crate) fn with_runtime_function_values(
+    pub(crate) fn with_runtime_function_values<'new_functions>(
         self,
-        function_values: &'helpers BTreeMap<String, RuntimeFunctionValueCandidate>,
-    ) -> RuntimePureHelperLookup<'helpers, 'locals> {
+        function_values: &'new_functions BTreeMap<String, RuntimeFunctionValueCandidate>,
+    ) -> RuntimePureHelperLookup<'helpers, 'new_functions, 'locals> {
         RuntimePureHelperLookup {
             ids: self.ids,
             helpers: self.helpers,
@@ -102,7 +102,7 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
         self,
         typed_lowering_evidence: &'helpers [RuntimeTypedLoweringEvidence],
         expression_cursor: &'helpers Cell<usize>,
-    ) -> RuntimePureHelperLookup<'helpers, 'locals> {
+    ) -> RuntimePureHelperLookup<'helpers, 'functions, 'locals> {
         RuntimePureHelperLookup {
             ids: self.ids,
             helpers: self.helpers,
@@ -147,10 +147,10 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
             })
     }
 
-    fn function_value_candidate(
+    pub(crate) fn function_value_candidate(
         self,
         name: &str,
-    ) -> Option<&'helpers RuntimeFunctionValueCandidate> {
+    ) -> Option<&'functions RuntimeFunctionValueCandidate> {
         self.function_values
             .and_then(|function_values| function_values.get(name))
     }
@@ -325,7 +325,7 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
 pub(crate) fn lower_runtime_expr_strict_with_function_locals_and_pure(
     expr: &Expr,
     function_locals: &BTreeMap<String, usize>,
-    helpers: RuntimePureHelperLookup<'_, '_>,
+    helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Result<RuntimeExpr, String> {
     lower_runtime_expr_strict_with_helpers(
         expr,
@@ -335,7 +335,7 @@ pub(crate) fn lower_runtime_expr_strict_with_function_locals_and_pure(
 
 pub(crate) fn lower_runtime_expr_strict_with_pure(
     expr: &Expr,
-    helpers: RuntimePureHelperLookup<'_, '_>,
+    helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Result<RuntimeExpr, String> {
     lower_runtime_expr_strict_with_helpers(expr, Some(helpers))
 }
@@ -343,7 +343,7 @@ pub(crate) fn lower_runtime_expr_strict_with_pure(
 pub(crate) fn lower_runtime_expr_strict_with_expected_type(
     expr: &Expr,
     expected_ty: Option<&TypeRef>,
-    helpers: RuntimePureHelperLookup<'_, '_>,
+    helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Result<RuntimeExpr, String> {
     let evidence_expression_id = helpers.current_expression_id();
     if (expected_ty.is_some_and(single_param_function_type)
@@ -363,7 +363,7 @@ pub(crate) fn lower_runtime_expr_strict_with_expected_type(
 
 fn lower_runtime_expr_strict_with_helpers(
     expr: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let expression_id = helpers.and_then(RuntimePureHelperLookup::next_expression_id);
     if expression_id.is_some_and(|id| {
@@ -464,7 +464,7 @@ fn lower_runtime_expr_strict_with_helpers(
 fn lower_strict_closure_expr(
     params: &[ClosureParam],
     body: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let params = runtime_closure_param_bindings(params);
     let body = lower_runtime_expr_strict_with_helpers(body, helpers)?;
@@ -515,7 +515,7 @@ fn runtime_closure_param_bindings(params: &[ClosureParam]) -> Vec<RuntimeClosure
 
 fn lower_partial_placeholder_function_expr(
     expr: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let param_name = "__arcweft_partial";
     let body = substitute_partial_placeholder(partial_placeholder_body_expr(expr), param_name);
@@ -541,7 +541,7 @@ fn lower_strict_binary_expr(
     lhs: &Expr,
     op: BinaryOp,
     rhs: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let Some(op) = lower_runtime_binary_op(op) else {
         return Err(format!(
@@ -560,7 +560,7 @@ fn lower_strict_method_call_dispatch(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
     expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(arg_order) = helpers.and_then(|helpers| {
@@ -586,7 +586,7 @@ fn lower_strict_data_last_method_fallback(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
     arg_order: &[RuntimeDataLastMethodFallbackArg],
 ) -> Result<RuntimeExpr, String> {
     let lowered_args = arg_order
@@ -630,7 +630,7 @@ fn lower_runtime_pipe_expr(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
 fn lower_runtime_pipe_expr_strict(
     lhs: &Expr,
     rhs: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     if expr_contains_pipe_left(rhs) {
         return lower_runtime_expr_strict_with_helpers(&substitute_pipe_left(rhs, lhs), helpers);
@@ -669,7 +669,7 @@ fn lower_runtime_data_last_pipe(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
 fn lower_runtime_data_last_pipe_strict(
     lhs: &Expr,
     rhs: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     if let Some((method, args)) = data_last_collection_method(rhs) {
         return lower_strict_method_call_expr(lhs, method, args, helpers);
@@ -712,7 +712,7 @@ fn lower_strict_named_data_last_pipe_call(
     lhs: &Expr,
     callee: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if !args.iter().any(|arg| matches!(arg, CallArg::Named { .. })) {
         return None;
@@ -828,7 +828,7 @@ fn collect_dense<T, E>(
 
 fn lower_runtime_bracket_seq_strict(
     items: &[Expr],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let lowered = items
         .iter()
@@ -841,7 +841,7 @@ fn lower_runtime_range_expr(
     start: Option<&Expr>,
     end: Option<&Expr>,
     inclusive: bool,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::Range {
         start: start
@@ -870,7 +870,7 @@ fn lower_runtime_range_expr_lossy(
 
 fn lower_runtime_record_expr_strict(
     fields: &[(String, Expr)],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     fields
         .iter()
@@ -931,7 +931,7 @@ fn lower_strict_field_or_constant(
     expr: &Expr,
     target: &Expr,
     field: &str,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(value) = lower_enum_variant_field(target, field) {
         return Ok(value);
@@ -944,7 +944,7 @@ fn lower_strict_field_or_constant(
 fn lower_strict_field_expr(
     target: &Expr,
     field: &str,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let target_expr = lower_runtime_expr_strict_with_helpers(target, helpers)?;
     Ok(if let Some(ordinal) = record_field_ordinal(target, field) {
@@ -990,7 +990,7 @@ fn lower_runtime_index_expr(target: &Expr, index: &Expr) -> Option<RuntimeExpr> 
 fn lower_strict_index_expr(
     target: &Expr,
     index: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     tuple_index_ordinal(target, index).map_or_else(
         || {
@@ -1162,7 +1162,7 @@ fn lower_strict_path_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Path(receiver) = receiver else {
         return None;
@@ -1189,7 +1189,7 @@ fn lower_strict_math_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Path(receiver) = receiver else {
         return None;
@@ -1223,7 +1223,7 @@ fn lower_strict_std_float_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let receiver = expr_label(receiver);
     let method = runtime_method_name(method);
@@ -1249,7 +1249,7 @@ fn lower_strict_external_namespace_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Path(receiver) = receiver else {
         return None;
@@ -1268,7 +1268,7 @@ fn lower_strict_external_namespace_method_call(
 fn lower_strict_call_expr(
     callee: &Expr,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
     expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(lowered) = lower_agent_path_constructor_call(callee, args, helpers) {
@@ -1355,7 +1355,7 @@ fn lower_strict_call_expr(
 fn lower_strict_named_callee_args(
     callee: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<Vec<RuntimeExpr>, String> {
     if args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
         && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
@@ -1382,7 +1382,7 @@ fn lower_strict_named_callee_args(
 fn lower_strict_named_call(
     callee: &str,
     args: Vec<RuntimeExpr>,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> RuntimeExpr {
     if helpers
         .and_then(|helpers| helpers.local_function_arity(callee))
@@ -1422,7 +1422,7 @@ fn lower_strict_named_call(
 fn lower_strict_intrinsic_function_call(
     callee: &Expr,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let label = expr_label(callee);
     if helpers
@@ -1451,7 +1451,7 @@ fn lower_strict_intrinsic_function_call(
 fn lower_agent_path_constructor_call(
     callee: &Expr,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if !matches!(
         expr_label(callee).as_str(),
@@ -1474,7 +1474,7 @@ fn lower_strict_method_call_expr(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(map) = lower_strict_map_method_call(receiver, method, args, helpers) {
         return map;
@@ -1511,7 +1511,7 @@ fn lower_strict_map_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if runtime_method_name(method) != "map" {
         return None;
@@ -1565,7 +1565,7 @@ fn lower_strict_filter_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if runtime_method_name(method) != "filter" {
         return None;
@@ -1624,7 +1624,7 @@ fn lower_runtime_call_arg(arg: &CallArg) -> RuntimeExpr {
 
 fn lower_strict_call_arg(
     arg: &CallArg,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     match arg {
         CallArg::Spread { value } => Ok(RuntimeExpr::SpreadArg(Box::new(
@@ -1666,7 +1666,7 @@ fn lower_dialogue_call_value(
 
 fn lower_strict_block_value(
     value: Option<&Expr>,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     value.map_or_else(
         || Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
@@ -1677,7 +1677,7 @@ fn lower_strict_block_value(
 fn lower_strict_block_expr(
     statements: &[Stmt],
     value: Option<&Expr>,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let body = lower_strict_block_value(value, helpers)?;
     statements.iter().rev().try_fold(body, |body, statement| {
@@ -1688,7 +1688,7 @@ fn lower_strict_block_expr(
 fn lower_strict_block_statement(
     statement: &Stmt,
     body: RuntimeExpr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     match statement {
         Stmt::Let {
@@ -1730,7 +1730,7 @@ fn lower_strict_block_statement(
 
 fn lower_direct_assignment_target(
     target: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<(RuntimeExpr, String), String> {
     let Expr::Select(select) = target else {
         return Err(format!(
@@ -1758,7 +1758,7 @@ fn lower_strict_if_expr(
     condition: &Expr,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::If {
         condition: Box::new(lower_runtime_expr_strict_with_helpers(condition, helpers)?),
@@ -1780,7 +1780,7 @@ fn lower_strict_if_let_expr(
     guard: Option<&Expr>,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::IfLet {
         pattern: lower_runtime_pattern(pattern),
@@ -1804,7 +1804,7 @@ fn lower_strict_if_let_expr(
 fn lower_strict_match_expr(
     scrutinee: &Expr,
     arms: &[MatchExprArm],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::Match {
         scrutinee: Box::new(lower_runtime_expr_strict_with_helpers(scrutinee, helpers)?),
@@ -2157,7 +2157,7 @@ fn lower_runtime_array_repeat(value: &Expr, len: &Expr) -> RuntimeExpr {
 fn lower_runtime_array_repeat_strict(
     value: &Expr,
     len: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let Some(len) = array_repeat_len(len) else {
         return Err(format!(

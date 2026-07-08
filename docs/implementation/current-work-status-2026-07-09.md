@@ -148,6 +148,10 @@ The detailed evidence trail remains:
   source-local runtime function candidates receive the existing pure-helper
   lookup, exact helper calls are accepted, and named helper arguments lower in
   helper input order.
+- Exact source-local candidate calls inside the accepted source-function
+  subset: runtime-plan candidate discovery now runs to a deterministic fixed
+  point, so a later accepted source-local `fn` may call an already-accepted
+  source-local candidate and named arguments lower in source declaration order.
 
 ## Remaining Function-Stack Work
 
@@ -164,9 +168,9 @@ implementation:
   The accepted source-local `fn` subset now covers curried groups, returned
   simple closures, direct function-typed parameter calls, callback aliases and
   partials, destructuring closure literals in local function bindings, and
-  exact calls to already-lowered pure helpers. It still excludes
-  effectful/suspending/top-level non-helper call-bearing bodies and non-`fn`
-  callable families.
+  exact calls to already-lowered pure helpers and already-accepted
+  source-local candidates. It still excludes effectful/suspending
+  host/adapter call-bearing bodies and non-`fn` callable families.
 - Closure effect-row final contract:
   `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
 

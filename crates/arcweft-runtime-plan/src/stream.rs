@@ -12,7 +12,7 @@ use arcweft_lang_hir::syntax::{ast::flow::Stmt, types::TypeRef};
 /// Lowers a HIR stream function into a Sans I/O stream plan.
 pub(crate) fn lower_stream_function(
     function: &arcweft_lang_hir::model::HirFunction,
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> StreamPlan {
     let (item_ty, error_ty) = function
         .signature()
@@ -30,7 +30,7 @@ pub(crate) fn lower_stream_function(
 
 fn lower_stream_stmt_list(
     statements: &[Stmt],
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Vec<StreamOp> {
     statements
         .iter()
@@ -38,7 +38,10 @@ fn lower_stream_stmt_list(
         .collect()
 }
 
-fn lower_stream_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>) -> Vec<StreamOp> {
+fn lower_stream_stmt(
+    stmt: &Stmt,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
+) -> Vec<StreamOp> {
     match stmt {
         Stmt::Let {
             pattern, ty, expr, ..
@@ -90,7 +93,7 @@ fn lower_stream_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>)
 
 fn lower_runtime_expr_with_pure(
     expr: &arcweft_lang_hir::syntax::expr::Expr,
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> RuntimeExpr {
     lower_runtime_expr_strict_with_pure(expr, pure_helpers)
         .unwrap_or_else(|_| lower_runtime_expr(expr))
@@ -99,7 +102,7 @@ fn lower_runtime_expr_with_pure(
 fn lower_runtime_expr_with_expected_type(
     expr: &arcweft_lang_hir::syntax::expr::Expr,
     expected_ty: Option<&TypeRef>,
-    pure_helpers: RuntimePureHelperLookup<'_, '_>,
+    pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> RuntimeExpr {
     lower_runtime_expr_strict_with_expected_type(expr, expected_ty, pure_helpers)
         .unwrap_or_else(|_| lower_runtime_expr(expr))
