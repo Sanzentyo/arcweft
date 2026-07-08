@@ -87,7 +87,9 @@ The detailed evidence trail remains:
   function values explicitly.
 - Placeholder and pipe behavior: expression `_` is distinct from pattern `_`;
   `^` is pipe-RHS scoped; no-`^` pipes use data-last application for the
-  implemented fixed-argument paths.
+  implemented fixed-argument paths. Named RHS calls in those pipes now preserve
+  callable input-name order for pure helpers and accepted source-function
+  candidates.
 - Method-chain fallback: inherent/trait/env methods win before data-last
   callable fallback; implemented fallback cases carry deterministic argument
   ordering and ambiguity diagnostics.

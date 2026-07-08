@@ -34,6 +34,11 @@ Current status index:
   and strict runtime-plan lowering. For example, `2i64 |> add(1i64)` and
   `2i64 |> add(lhs = 1i64)` typecheck as data-last calls rather than as calls
   on the result of `add(...)`.
+- Named call RHS forms preserve callable input-name ordering during strict
+  runtime-plan lowering. For example, `2i64 |> add(rhs = 1i64)` appends the
+  pipe LHS as a synthetic positional input and then uses named-call lowering,
+  so the emitted runtime arguments are `[lhs = 2i64, rhs = 1i64]` instead of
+  source-order `[1i64, 2i64]`.
 - Canonical primitive labels are enforced across sema/runtime-facing surfaces:
   `bool`, `char`, `Unit`, `Never`, and explicit-width numeric primitives use
   the same source labels in diagnostics and LSP-facing type displays; legacy
@@ -232,6 +237,12 @@ Current status index:
   typechecks through function-value evidence and lowers both pipe forms to
   `RuntimeExpr::Apply` against `Local("f")`, preserving data-last argument
   order without reclassifying the local as a helper.
+- Named data-last pipe lowering now also preserves input-name order for direct
+  pure helpers and accepted source-function candidates. A RHS such as
+  `choose(right = "tail")` receives the pipe LHS as the next positional input
+  and lowers through the same named callable path as direct calls, so accepted
+  non-helper source functions emit `RuntimeExpr::Apply` with declaration-order
+  arguments.
 - Expression lexing now represents operators as `Token::Op(ExprOp::...)`
   rather than raw operator string payloads. Parser branches for `->`, `=>`,
   `|>`, range operators, comparison operators, and closure pipes are checked by
@@ -1079,6 +1090,12 @@ Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_param_call -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture`.
+
+The named data-last pipe preservation cut has passing focused coverage for
+both helper-backed and accepted non-helper source functions:
+`cargo test -p arcweft-compiler --all-features runtime_plan_lowers_data_last_pipe_call_with_typecheck -- --nocapture`
+and
+`cargo test -p arcweft-compiler --all-features runtime_plan_lowers_source_function_named_data_last_pipe_to_apply -- --nocapture`.
 
 The runtime-plan closure capture metadata cut adds
 `RuntimeClosureCaptureInventory` / `RuntimeClosureCapture` under the

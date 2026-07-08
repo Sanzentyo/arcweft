@@ -820,6 +820,7 @@ flow @flow.main main {
     let partial = 2i64 |> add
     let positional = 2i64 |> add(1i64)
     let named = 2i64 |> add(lhs = 1i64)
+    let named_rhs = 2i64 |> add(rhs = 1i64)
     return "done"
 }
 "#,
@@ -844,6 +845,9 @@ flow @flow.main main {
             expr: positional, ..
         },
         FlowOp::Let { expr: named, .. },
+        FlowOp::Let {
+            expr: named_rhs, ..
+        },
         ..,
     ] = report.plan.flows[0].ops.as_slice()
     else {
@@ -873,6 +877,17 @@ flow @flow.main main {
                 )
         ));
     }
+    assert!(matches!(
+        named_rhs,
+        RuntimeExpr::PureCall { args, .. }
+            if matches!(
+                args.as_slice(),
+                [
+                    RuntimeExpr::Value(lhs),
+                    RuntimeExpr::Value(rhs),
+                ] if lhs == &RuntimeValue::i64(2) && rhs == &RuntimeValue::i64(1)
+            )
+    ));
 }
 
 #[test]
@@ -931,6 +946,73 @@ flow @flow.main main {
                     args.as_slice(),
                     [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(5)
                 )
+    ));
+}
+
+#[test]
+fn runtime_plan_lowers_source_function_named_data_last_pipe_to_apply() {
+    let parsed = parse_source_text(
+        r#"
+fn choose(left: String, right: String) -> (String, String) {
+    return (left, right)
+}
+
+flow @flow.main main {
+    let via_right: (String, String) = "pipe-left" |> choose(right = "named-right")
+    let via_left: (String, String) = "pipe-right" |> choose(left = "named-left")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers source function named data-last pipe");
+    let [
+        FlowOp::Let {
+            expr: via_right, ..
+        },
+        FlowOp::Let { expr: via_left, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected named data-last pipe lets");
+    };
+    assert!(matches!(
+        via_right,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Value(left), RuntimeExpr::Value(right)]
+                    if left == &RuntimeValue::String("pipe-left".to_owned())
+                        && right == &RuntimeValue::String("named-right".to_owned())
+            )
+    ));
+    assert!(matches!(
+        via_left,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Value(left), RuntimeExpr::Value(right)]
+                    if left == &RuntimeValue::String("named-left".to_owned())
+                        && right == &RuntimeValue::String("pipe-right".to_owned())
+            )
     ));
 }
 

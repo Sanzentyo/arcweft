@@ -87,6 +87,9 @@ Baseline before this status refresh:
 - Pipe RHS with `^` substitutes the pipe LHS before checking/lowering.
 - Pipe RHS without `^` uses data-last application for the implemented fixed
   argument paths.
+- Named RHS calls in no-`^` pipes preserve callable input-name order for pure
+  helpers and accepted source-function candidates instead of lowering by
+  source argument order.
 - Data-last method fallback resolves only after real env/inherent/trait
   methods.
 - Implemented data-last fallback records deterministic runtime argument order

@@ -639,10 +639,20 @@ fn lower_runtime_data_last_pipe_strict(
     if let Some((method, args)) = data_last_collection_method(rhs) {
         return lower_strict_method_call_expr(lhs, method, args, helpers);
     }
-    let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
     match rhs {
-        Expr::Path(path) => Ok(lower_strict_named_call(path.as_label(), vec![lhs], helpers)),
+        Expr::Path(path) => Ok(lower_strict_named_call(
+            path.as_label(),
+            vec![lower_runtime_expr_strict_with_helpers(lhs, helpers)?],
+            helpers,
+        )),
         Expr::Call { callee, args } => {
+            if let Expr::Path(path) = callee.as_ref()
+                && let Some(lowered) =
+                    lower_strict_named_data_last_pipe_call(lhs, path.as_label(), args, helpers)
+            {
+                return lowered;
+            }
+            let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
             let mut args = args
                 .iter()
                 .map(|arg| lower_strict_call_arg(arg, helpers))
@@ -658,9 +668,32 @@ fn lower_runtime_data_last_pipe_strict(
         }
         _ => Ok(RuntimeExpr::Call {
             callee: RuntimeCallTarget::from_label(expr_label(rhs)),
-            args: vec![lhs],
+            args: vec![lower_runtime_expr_strict_with_helpers(lhs, helpers)?],
         }),
     }
+}
+
+fn lower_strict_named_data_last_pipe_call(
+    lhs: &Expr,
+    callee: &str,
+    args: &[CallArg],
+    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+) -> Option<Result<RuntimeExpr, String>> {
+    if !args.iter().any(|arg| matches!(arg, CallArg::Named { .. })) {
+        return None;
+    }
+    let mut pipe_args = args.to_vec();
+    pipe_args.push(CallArg::Positional(lhs.clone()));
+    if let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee)) {
+        return Some(lower_strict_pure_helper_named_call(
+            callee, &pipe_args, helper, helpers,
+        ));
+    }
+    helpers
+        .and_then(|helpers| helpers.function_value_candidate(callee))
+        .map(|candidate| {
+            lower_strict_function_value_named_call(callee, &pipe_args, candidate, helpers)
+        })
 }
 
 fn data_last_collection_method(rhs: &Expr) -> Option<(&str, &[CallArg])> {
