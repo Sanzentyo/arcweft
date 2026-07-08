@@ -29,11 +29,11 @@ partial/fallback shapes, and current 07.8 evidence covers captured function
 alias rows plus borrowed-capture row preservation at an `await` boundary. The
 low-level runtime `Apply` substrate also now has spread expansion regression
 coverage for exact, partial-prefix, and curried function application, and
-source function-value calls accept inline fixed-length literal spread.
+source function-value calls plus direct fixed-parameter signature calls accept
+inline fixed-length literal spread.
 Remaining completion still depends on explicit request/design areas:
 
-1. Spread partial application, spread data-last fallback semantics, and
-   variable-length function-value spread.
+1. Spread data-last fallback semantics and variable-length spread.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.
 3. Serializable persisted closure/function snapshots.
 4. General non-helper/effectful/suspending callable allocation and the final
@@ -128,6 +128,11 @@ The detailed evidence trail remains:
   fixed-length bracket sequence literal spread, including compact numeric
   bracket sequences. Runtime-plan lowering preserves `RuntimeExpr::SpreadArg`
   so the verified runtime apply spread substrate performs argument expansion.
+- Signature fixed spread apply: direct fixed-parameter signature calls accept
+  inline fixed-length bracket sequence literal spread for exact and
+  missing-input partial calls. Runtime-plan lowering preserves
+  `RuntimeExpr::SpreadArg` and uses either source-function `Apply` or pure-call
+  evaluation depending on the selected executable callable.
 
 ## Remaining Function-Stack Work
 
@@ -135,8 +140,7 @@ The remaining items are not "forgotten implementation tasks"; they are
 documented request/design boundaries that must be answered before final
 implementation:
 
-- Spread partials, spread data-last fallback, and variable-length
-  function-value spread:
+- Spread data-last fallback and variable-length spread:
   `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
 - AWBC suspension-aware dynamic apply and persisted closure snapshots:
   `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`

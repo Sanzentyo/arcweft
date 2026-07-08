@@ -14,6 +14,9 @@ runtime expansion/evidence contract is designed.
 A later narrow slice accepts function-value calls whose spread source is an
 inline fixed-length bracket sequence literal. See
 `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
+A second fixed-length slice accepts the same inline literal spread shape for
+direct fixed-parameter signature exact and missing-input partial calls. See
+`docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`.
 
 The change makes the rejection boundary more precise:
 
@@ -48,7 +51,7 @@ spread fallback.
 ## Remaining Contract Work
 
 The request remains open for accepted executable spread semantics beyond the
-fixed-length function-value call subset:
+fixed-length function-value and direct fixed-signature call subsets:
 
 - how spread maps onto fixed parameters, rest parameters, and missing partial
   inputs;

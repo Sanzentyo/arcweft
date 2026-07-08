@@ -21,11 +21,12 @@ checking. Runtime-plan lowering keeps the source call as
 lower to dense runtime sequence values and use the already-verified runtime
 apply spread expansion substrate.
 
-This slice intentionally does not accept source spread partial construction or
-data-last method fallback. Non-literal spread sources such as `values...`
-remain rejected for function-value calls because their runtime length is not
-known to sema and can change whether the result is an exact value or another
-partial function.
+This slice did not accept source spread partial construction or data-last
+method fallback. A later signature-call slice accepts inline fixed-length
+literal spread for direct fixed-parameter signature exact and partial calls;
+non-literal spread sources such as `values...` remain rejected because their
+runtime length is not known to sema and can change whether the result is an
+exact value or another partial function.
 
 ## Evidence
 
@@ -45,7 +46,7 @@ Related lower-runtime substrate coverage remains recorded in
 
 The spread request remains open for:
 
-- source spread partial-call construction;
+- variable-length source spread partial-call construction;
 - source spread data-last method fallback;
 - rest-parameter plus data-last receiver interaction;
 - typed lowering evidence for runtime-expanded argument ranges;

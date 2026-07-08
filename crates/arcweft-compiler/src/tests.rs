@@ -1270,6 +1270,97 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_lowers_signature_fixed_literal_spread_apply() {
+    let parsed = parse_source_text(
+        r#"
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.main main {
+    let add_one = add([1i64]...)
+    let exact: i64 = add([1i64]..., 2i64)
+    let value: i64 = add_one(2i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan lowers fixed literal spread signature calls");
+
+    let [
+        FlowOp::Let { expr: add_one, .. },
+        FlowOp::Let { expr: exact, .. },
+        FlowOp::Let { expr: value, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected add_one, exact, and value lets");
+    };
+    assert!(
+        matches!(
+            add_one,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::SpreadArg(value)]
+                        if matches!(
+                            value.as_ref(),
+                            RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::Dense(
+                                DenseSeq::I64(values)
+                            ))) if matches!(values.as_slice(), [1])
+                        )
+                )
+        ),
+        "expected add_one to partially apply add with fixed literal spread, got {add_one:#?}"
+    );
+    assert!(
+        matches!(
+            exact,
+            RuntimeExpr::PureCall { args, .. }
+                if matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::SpreadArg(value), RuntimeExpr::Value(right)]
+                        if matches!(
+                            value.as_ref(),
+                            RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::Dense(
+                                DenseSeq::I64(values)
+                            ))) if matches!(values.as_slice(), [1])
+                        ) && right == &RuntimeValue::i64(2)
+                )
+        ),
+        "expected exact to apply add with fixed literal spread and positional arg, got {exact:#?}"
+    );
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "add_one")
+                    && matches!(
+                        args.as_slice(),
+                        [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
+                    )
+        ),
+        "expected value let to call add_one, got {value:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_materializes_curried_source_function_value() {
     let parsed = parse_source_text(
         r#"

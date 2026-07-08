@@ -59,6 +59,7 @@ Supporting focused notes:
 - `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
 - `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`
+- `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
@@ -84,7 +85,7 @@ The following are implemented in pushed commits:
 - Runtime `Function` / `Apply`, exact apply, partial apply, and curried apply
   for accepted non-suspending paths, with low-level spread-argument expansion
   verified for runtime `Apply` and inline fixed-length literal spread accepted
-  for source function-value calls.
+  for source function-value calls and direct fixed-parameter signature calls.
 - AWBC `MakeFunction` / `ApplyFunction` for non-suspending generated runtime
   functions.
 - Lazy AWBC lowering for value-position `if`, `if let`, and `match` in
@@ -125,7 +126,7 @@ These items keep the active goal open:
 
 | Area | Current state | Blocking document |
 | --- | --- | --- |
-| Spread partial application and spread data-last fallback | Fixed positional/named partial and fallback paths exist. Low-level runtime `Apply` spread expansion is verified, and source function-value calls accept inline fixed-length literal spread. Source spread partial/fallback shapes and variable-length function-value spread are still intentionally rejected because expansion, arity, rest-parameter, placeholder, and data-last evidence semantics are not specified. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`; `docs/implementation/function-stack-apply-spread-runtime-substrate-2026-07-09.md`; `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md` |
+| Spread partial application and spread data-last fallback | Fixed positional/named partial and fallback paths exist. Low-level runtime `Apply` spread expansion is verified, source function-value calls accept inline fixed-length literal spread, and direct fixed-parameter signature calls accept inline fixed-length literal spread for exact and missing-input partial calls. Data-last fallback spread shapes and variable-length spread remain intentionally rejected because expansion, arity, rest-parameter, placeholder, and data-last evidence semantics are not fully specified. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`; `docs/implementation/function-stack-apply-spread-runtime-substrate-2026-07-09.md`; `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`; `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md` |
 | AWBC suspension-aware dynamic apply | Non-suspending dynamic apply works. Applying a function that suspends or budget-yields still has no safe-point/resume contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load now rejects function values explicitly. Serializable closure state, captured environment versioning, and restore semantics are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Broad non-helper callable allocation | The first source-local `fn` subset is implemented, including pure value control expressions and fixed-point exact calls to already-accepted source-local candidates. Effectful/suspending bodies, host/adapter call-bearing bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persisted callable values remain outside the accepted contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |

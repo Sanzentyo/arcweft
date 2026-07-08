@@ -1707,3 +1707,13 @@ Variable-length function-value spread, spread partial construction, and
 spread data-last fallback remain in the 07.2.1 request boundary. Details are
 recorded in
 `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
+
+The signature fixed spread apply follow-up extends the same fixed-length
+literal contract to direct fixed-parameter signature calls. `add([1i64,
+2i64]...)`, `add([1i64]..., 2i64)`, and missing-input partial forms such as
+`add([1i64]...)` now type-check by expanding the inline literal spread into
+fixed parameter slots. Runtime-plan lowering preserves `RuntimeExpr::SpreadArg`
+so either source-function `Apply` or pure-call evaluation performs runtime
+argument expansion. Data-last fallback spread and variable-length spread
+remain in the 07.2.1 request boundary. Details are recorded in
+`docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`.

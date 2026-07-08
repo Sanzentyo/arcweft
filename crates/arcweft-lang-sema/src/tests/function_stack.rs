@@ -637,6 +637,64 @@ flow @flow.partial_non_pure partial_non_pure {
 }
 
 #[test]
+fn fixed_literal_spread_signature_call_typechecks_as_exact_and_partial_application() {
+    let tree = parse_ok(
+        r"
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.fixed_literal_spread_signature_call fixed_literal_spread_signature_call {
+    let exact_a: i64 = add([1i64, 2i64]...)
+    let exact_b: i64 = add([1i64]..., 2i64)
+    let add_one = add([1i64]...)
+    let three: i64 = add_one(2i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("fixed literal spread signature fixture lowers");
+    validate_typecheck_ready(&hir).expect("fixed literal spread signature fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| matches!(
+            &judgment.ty,
+            TypeKind::Function { params, return_type }
+                if params.as_slice() == [TypeKind::I64]
+                    && return_type.as_ref() == &TypeKind::I64
+        )),
+        "add([1i64]...) should typecheck as a function awaiting the missing right argument: {:?}",
+        report.judgments
+    );
+    assert!(
+        report
+            .typed_lowering_evidence
+            .iter()
+            .any(|evidence| matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall {
+                    callee,
+                    result_ty,
+                    arg_count: 1,
+                } if callee == "add"
+                    && matches!(
+                        result_ty,
+                        TypeKind::Function { params, return_type }
+                            if params.as_slice() == [TypeKind::I64]
+                                && return_type.as_ref() == &TypeKind::I64
+                    )
+            )),
+        "fixed literal spread partial call should record signature partial evidence: {:?}",
+        report.typed_lowering_evidence
+    );
+}
+
+#[test]
 fn bare_signature_prefix_call_statement_reports_missing_argument() {
     let tree = parse_ok(
         r"

@@ -21,6 +21,9 @@ data-last fallback unless a later contract explicitly accepts a shape. A later
 source-level slice accepts only function-value calls whose spread source is an
 inline fixed-length bracket sequence literal; see
 `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
+A second source-level slice accepts direct fixed-parameter signature exact and
+missing-input partial calls with inline fixed-length literal spread; see
+`docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`.
 
 ## Contract Finding
 
