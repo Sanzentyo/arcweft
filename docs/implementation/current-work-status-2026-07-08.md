@@ -7,11 +7,11 @@ or design work.
 
 ## Repository Baseline
 
-- Current checked-in head before this documentation refresh:
-  `a1f14c75 Close expression source range coverage gaps`.
+- Current checked-in head before this request split:
+  `97f34793 Use typed flow ids for AWBC flow lookup`.
 - `main` and `origin/main` are aligned at that head.
 - The dirty files at this audit point are unrelated View rendering, font,
-  sample, and Web IME/player files:
+  sample, Web IME/player, and runtime-driver text-input files:
   - `crates/arcweft-cli/tests/native_text_input_native_interactive_smoke.rs`
   - `crates/arcweft-cli/tests/native_text_input_sample_sidecars.rs`
   - `crates/arcweft-player-scene/src/fonts.rs`
@@ -27,6 +27,7 @@ or design work.
   - `web/assets/README.md`
   - `web/assets/noto-emoji-regular.ttf`
   - `web/ime-player-rendered.awfb`
+  - `web/modern-feedback-view.awfb`
   - `web/player-editcontext.js`
   - `web/player.js`
   - `web/tests/ime-sample-smoke.mjs`
@@ -127,14 +128,22 @@ another request/design cut:
    `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
 2. Resumable AWBC dynamic function apply and suspension resume points:
    `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
-3. Serializable persisted closure snapshots. The current behavior deliberately
-   rejects persisted runtime function values with structured save/load errors.
+3. Serializable persisted closure snapshots:
+   `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
+   covers the versioned representation and restore contract. The current
+   behavior deliberately rejects persisted runtime function values with
+   structured save/load errors.
 4. General non-helper/effectful/suspending top-level callable allocation as
-   first-class runtime function values.
-5. Full closure effect-row contract. The current implementation composes broad
-   effect cases, but the stable effect-row model remains larger design work.
+   first-class runtime function values:
+   `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
+5. Full closure effect-row contract:
+   `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
+   The current implementation composes broad effect cases, but the stable
+   effect-row model remains larger design work.
 6. Runtime ID atom-table storage. The typed path API is in place; interning
-   should wait for profiling evidence.
+   should wait for profiling evidence and remains documented by
+   `docs/reviews/requests/2026-07-07-seq-07.6-relative-runtime-id-boundaries.md`
+   plus `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`.
 
 ## Separate Open Tracks
 
@@ -152,11 +161,11 @@ function-stack goal:
 
 ## Recommended Next Order
 
-1. Keep this runtime-ID cleanup as a function-stack cut.
+1. Keep this request split as a docs-only function-stack cut.
 2. Decide whether to validate and commit the dirty View/Web slice separately or
    leave it for the rendering/IME track.
-3. Audit for another concrete typed-key cleanup site, or pause for a design
-   package on spread partials / AWBC resumable apply.
+3. Audit for another concrete typed-key cleanup site, or wait for design
+   output from the seq-07 request files listed above.
 
 ## Current Structural Risk
 

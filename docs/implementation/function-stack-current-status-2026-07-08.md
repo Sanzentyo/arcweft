@@ -13,11 +13,12 @@ Related slices are:
 - `docs/implementation/view-resource-rename-2026-07-08.md`
 - `docs/implementation/current-work-status-2026-07-08.md`
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
+- `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
 
 ## Current Repository State
 
 - At the start of this refresh, `main` and `origin/main` were aligned at
-  `a1f14c75 Close expression source range coverage gaps`.
+  `97f34793 Use typed flow ids for AWBC flow lookup`.
 - The last completed implementation slices were the source-range follow-up for
   thread expression body statement ranges, the authored-payload conversion for
   `Stmt::Signal` / `Stmt::LifetimeSet`, and the expression source-range
@@ -180,19 +181,22 @@ These should stay as request or design work before implementation:
    `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
    remains open for resumable dynamic apply.
 3. Serializable persisted closure snapshots:
-   current Product AWBC save/load behavior is explicit structured rejection.
-   Snapshot-compatible function values need a versioned closure representation
-   and restore contract first.
+   `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
+   also covers the versioned representation and restore contract. Current
+   Product AWBC save/load behavior is explicit structured rejection.
 4. General non-helper/effectful/suspending top-level callable allocation as
    first-class runtime function values. Helper-backed and local-function paths
-   are implemented; broader callable allocation is tied to the AWBC/apply
-   design boundary.
+   are implemented; broader callable allocation is split to
+   `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`.
 5. Full closure effect-row integration. The implemented effect composition is
    broad, but the stable effect-row contract for closure captures remains a
-   larger language/modeling decision.
+   larger language/modeling decision split to
+   `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`.
 6. Atom-table runtime ID storage. The typed path API is in place; interning is
    deferred until there is measured ID comparison, hashing, serialization, or
-   allocation pressure.
+   allocation pressure, as recorded in
+   `docs/reviews/requests/2026-07-07-seq-07.6-relative-runtime-id-boundaries.md`
+   and `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`.
 
 ## Not Part Of This Goal
 
@@ -205,8 +209,8 @@ These should stay as request or design work before implementation:
 
 The source-range/inlay audit is represented by the coverage matrix, and the
 known AWBC flow-target runtime-ID cleanup has been implemented. The larger
-remaining goal items should stay in request/design space until spread partials
-or resumable AWBC apply receive a more concrete contract, unless another
+remaining goal items now have request/design files and should stay in
+request/design space until those contracts are returned, unless another
 specific typed-key cleanup site is found by code audit.
 
 Do not fold the current dirty View/Web rendering, runtime-driver text-input,

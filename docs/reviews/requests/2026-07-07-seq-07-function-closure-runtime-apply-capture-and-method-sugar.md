@@ -58,7 +58,10 @@ index is
 work is no longer the whole function stack; it is concentrated in expression
 source-range/inlay closure, spread partial/fallback design, resumable AWBC
 dynamic apply, persisted closure snapshots, broader non-helper callable
-allocation, and full closure effect-row integration.
+allocation, and full closure effect-row integration. The latter two are split
+to
+`2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` and
+`2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`.
 
 ## Required decisions
 
@@ -82,8 +85,9 @@ allocation, and full closure effect-row integration.
      partial calls to top-level `#[pure]` functions are implemented for the
      pure helper runtime path. Local function-valued aliases are executable
      apply targets, including through no-`^` data-last pipe lowering. Non-pure
-     callable function-value allocation and AWBC closure/apply allocation
-     remain open.
+     callable function-value allocation is split to
+     `2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`;
+     AWBC closure/apply allocation remains split to 07.5.
 
 2. Define inference boundaries for `_`.
    - `_` with an expected function type is already implemented and should not
@@ -121,7 +125,8 @@ allocation, and full closure effect-row integration.
 1. Complete typed function-valued path call disambiguation and tests. Done for
    pure helper bare paths, non-exact helper calls, top-level `#[pure]` prefix
    partial calls, and local function-valued path callees through typed lowering
-   evidence. Non-pure callable allocation remains tied to AWBC/runtime design.
+   evidence. Non-pure callable allocation is split to
+   `2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`.
 2. Add AWBC closure allocation / apply semantics. Done for non-suspending
    expression closures and split to 07.5 for resumable dynamic apply and
    persisted closure snapshots.
@@ -134,7 +139,8 @@ allocation, and full closure effect-row integration.
    data-last callables; spread fallback remains split to 07.2.1.
 6. Add capture/effect/lifetime diagnostics. Done for the implemented callable
    paths and borrowed-capture suspension diagnostics; full effect-row
-   integration remains open.
+   integration is split to
+   `2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`.
 7. Add LSP/inlay/lint evidence. Done for inferred function-valued `let`
    bindings, numeric fallback lints, closure effect related information, and
    opt-in source-backed expression inlays; expression source-range closure
