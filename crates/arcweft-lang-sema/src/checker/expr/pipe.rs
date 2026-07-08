@@ -1,4 +1,7 @@
-use super::{CallArg, Expr, MatchExprArm, Placeholder, TypeCheckError, TypeChecker, TypeKind};
+use super::{
+    CallArg, Expr, MatchExprArm, Placeholder, TypeCheckError, TypeChecker, TypeExpressionId,
+    TypeKind, TypedLoweringEvidence, TypedLoweringEvidenceKind,
+};
 
 impl TypeChecker<'_> {
     pub(super) fn check_placeholder_expr(&mut self, placeholder: Placeholder) -> Option<TypeKind> {
@@ -16,21 +19,60 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn check_pipe_expr(&mut self, lhs: &Expr, rhs: &Expr) -> Option<TypeKind> {
+    pub(super) fn check_pipe_expr(
+        &mut self,
+        lhs: &Expr,
+        rhs: &Expr,
+        expression_id: TypeExpressionId,
+    ) -> Option<TypeKind> {
         if self.check_lifetime_pipe(lhs, rhs).is_some() {
             return Some(TypeKind::Unit);
         }
         let rhs_source_range = self.source_range_for_expr(rhs);
-        let lowered = if expr_contains_pipe_left(rhs) {
+        let has_pipe_left = expr_contains_pipe_left(rhs);
+        let lowered = if has_pipe_left {
             substitute_pipe_left(rhs, lhs)
         } else {
             data_last_pipe_call(lhs, rhs)
         };
-        if let Some(rhs_source_range) = rhs_source_range {
+        let ty = if let Some(rhs_source_range) = rhs_source_range {
             self.check_desugared_expr_with_authored_ranges(rhs, &lowered, rhs_source_range, None)
         } else {
             self.check_expr(&lowered)
+        };
+        if !has_pipe_left {
+            self.record_data_last_pipe_signature_partial_evidence(
+                expression_id,
+                &lowered,
+                ty.as_ref(),
+            );
         }
+        ty
+    }
+
+    fn record_data_last_pipe_signature_partial_evidence(
+        &mut self,
+        expression_id: TypeExpressionId,
+        lowered: &Expr,
+        ty: Option<&TypeKind>,
+    ) {
+        let Some(result_ty @ TypeKind::Function { .. }) = ty else {
+            return;
+        };
+        let Some((callee, arg_count)) = data_last_pipe_signature_call(lowered) else {
+            return;
+        };
+        if self.function_signature(callee).is_none() {
+            return;
+        }
+        self.record_typed_lowering_evidence(TypedLoweringEvidence {
+            expression_id,
+            kind: TypedLoweringEvidenceKind::SignaturePartialCall {
+                callee: callee.to_owned(),
+                result_ty: result_ty.clone(),
+                arg_count,
+            },
+        });
     }
 }
 
@@ -52,6 +94,16 @@ fn data_last_pipe_call(lhs: &Expr, rhs: &Expr) -> Expr {
         callee: Box::new(rhs.clone()),
         args: vec![CallArg::Positional(lhs.clone())],
     }
+}
+
+fn data_last_pipe_signature_call(expr: &Expr) -> Option<(&str, usize)> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    Some((path.as_label(), args.len()))
 }
 
 fn data_last_collection_method(rhs: &Expr) -> Option<(&str, &[CallArg])> {

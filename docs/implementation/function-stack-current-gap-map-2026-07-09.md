@@ -11,7 +11,8 @@ For the current entry point and reading order, see
 
 - Current pushed function-stack baseline:
   the function-stack baseline that rejects unsupported bare source-function
-  value references without executable runtime candidates.
+  values and data-last source-function partials without executable runtime
+  candidates.
 - `main` and `origin/main` were aligned at that baseline when this gap map was
   refreshed.
 - The previous baseline before the spread rejection hardening slice was
@@ -76,6 +77,10 @@ includes:
   accepted source-function candidate families are rejected as
   `source_function_value_without_runtime_candidate` instead of falling through
   to ordinary local lowering.
+- data-last pipe partials through source functions outside the pure-helper and
+  accepted source-function candidate families are rejected as
+  `signature_partial_without_helper` instead of falling through to direct
+  runtime-call lowering.
 
 The detailed evidence remains in:
 
@@ -84,6 +89,7 @@ The detailed evidence remains in:
 - `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
 - `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
+- `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 
 ## Design-Blocked Remaining Work

@@ -44,6 +44,12 @@ checked runtime-plan lowering rejects those references with
 `source_function_value_without_runtime_candidate` when the function is neither
 a pure helper nor an accepted source-function candidate. This prevents an
 unsupported callable from falling through as `RuntimeExpr::Local`.
+The tenth follow-up applies the same boundary discipline to data-last pipe
+partials. Authored `lhs |> function_name` expressions that type-check as
+signature partial calls now carry `SignaturePartialCall` evidence on the pipe
+expression itself, so runtime-plan pipe lowering rejects unsupported
+source-function partials with `signature_partial_without_helper` instead of
+falling through to direct runtime-call lowering.
 
 ## Accepted Contract
 
@@ -151,6 +157,8 @@ Unsupported signature partial calls still fail as
 function candidate exists.
 Bare top-level source-function value references outside the same executable
 families fail as `source_function_value_without_runtime_candidate`.
+Data-last pipe partials through source functions outside those executable
+families fail as `signature_partial_without_helper`.
 
 ## Validation
 
@@ -167,6 +175,7 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_bare_source_function_value_when_body_calls -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck -- --nocapture
 ```
 

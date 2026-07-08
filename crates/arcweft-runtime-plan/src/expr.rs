@@ -455,7 +455,7 @@ fn lower_runtime_expr_strict_with_helpers(
         Expr::Try { expr } | Expr::Await { expr, .. } => {
             lower_runtime_expr_strict_with_helpers(expr, helpers)
         }
-        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers),
+        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers, expression_id),
         Expr::Thread { .. } | Expr::LifetimePath { .. } | Expr::Placeholder(_) | Expr::Raw(_) => {
             unsupported_strict_runtime_expr(expr)
         }
@@ -653,11 +653,12 @@ fn lower_runtime_pipe_expr_strict(
     lhs: &Expr,
     rhs: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
     if expr_contains_pipe_left(rhs) {
         return lower_runtime_expr_strict_with_helpers(&substitute_pipe_left(rhs, lhs), helpers);
     }
-    lower_runtime_data_last_pipe_strict(lhs, rhs, helpers)
+    lower_runtime_data_last_pipe_strict(lhs, rhs, helpers, expression_id)
 }
 
 fn lower_runtime_data_last_pipe(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
@@ -692,22 +693,35 @@ fn lower_runtime_data_last_pipe_strict(
     lhs: &Expr,
     rhs: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
     if let Some((method, args)) = data_last_collection_method(rhs) {
         return lower_strict_method_call_expr(lhs, method, args, helpers);
     }
     match rhs {
-        Expr::Path(path) => Ok(lower_strict_named_call(
-            path.as_label(),
-            vec![lower_runtime_expr_strict_with_helpers(lhs, helpers)?],
-            helpers,
-        )),
+        Expr::Path(path) => {
+            let callee = path.as_label();
+            reject_signature_partial_without_helper(callee, 1, helpers, expression_id)?;
+            Ok(lower_strict_named_call(
+                callee,
+                vec![lower_runtime_expr_strict_with_helpers(lhs, helpers)?],
+                helpers,
+            ))
+        }
         Expr::Call { callee, args } => {
             if let Expr::Path(path) = callee.as_ref()
                 && let Some(lowered) =
                     lower_strict_named_data_last_pipe_call(lhs, path.as_label(), args, helpers)
             {
                 return lowered;
+            }
+            if let Expr::Path(path) = callee.as_ref() {
+                reject_signature_partial_without_helper(
+                    path.as_label(),
+                    args.len() + 1,
+                    helpers,
+                    expression_id,
+                )?;
             }
             let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
             let mut args = args
@@ -1318,16 +1332,8 @@ fn lower_strict_call_expr(
         Expr::Path(path) => Some(path.as_label()),
         _ => None,
     };
-    if let Some(callee) = path_callee
-        && helpers.is_some_and(|helpers| {
-            helpers.has_signature_partial_call_evidence(expression_id, callee, args.len())
-                && helpers.helper(callee).is_none()
-                && helpers.function_value_candidate(callee).is_none()
-        })
-    {
-        return Err(format!(
-            "unsupported callable family `signature_partial_without_helper`: function `{callee}` partial application requires executable helper lowering; effectful, suspending, ABI-backed, or otherwise non-helper top-level callable allocation is not implemented"
-        ));
+    if let Some(callee) = path_callee {
+        reject_signature_partial_without_helper(callee, args.len(), helpers, expression_id)?;
     }
     if let Some(callee) = path_callee
         && args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
@@ -1372,6 +1378,24 @@ fn lower_strict_call_expr(
     };
     let callee = path.as_label();
     Ok(lower_strict_named_call(callee, args, helpers))
+}
+
+fn reject_signature_partial_without_helper(
+    callee: &str,
+    arg_count: usize,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
+) -> Result<(), String> {
+    if helpers.is_some_and(|helpers| {
+        helpers.has_signature_partial_call_evidence(expression_id, callee, arg_count)
+            && helpers.helper(callee).is_none()
+            && helpers.function_value_candidate(callee).is_none()
+    }) {
+        return Err(format!(
+            "unsupported callable family `signature_partial_without_helper`: function `{callee}` partial application requires executable helper lowering; effectful, suspending, ABI-backed, or otherwise non-helper top-level callable allocation is not implemented"
+        ));
+    }
+    Ok(())
 }
 
 fn lower_strict_named_callee_args(

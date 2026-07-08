@@ -1738,3 +1738,13 @@ helper and no accepted source-function candidate for it. This prevents checked
 runtime-plan lowering from silently treating an unsupported callable as an
 ordinary `RuntimeExpr::Local`. Details are recorded in
 `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`.
+
+The data-last unsupported source partial follow-up applies the same rejection
+boundary to `lhs |> function_name` partials. Pipe type checking now records
+`SignaturePartialCall` evidence on the authored pipe expression when the
+data-last desugaring produces a partial signature call. Runtime-plan pipe
+lowering consumes that evidence before direct named-call fallback, so a
+helper-less source function outside the accepted candidate set fails with
+`signature_partial_without_helper` instead of lowering as an incomplete
+`RuntimeExpr::Call`. Details are recorded in
+`docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`.

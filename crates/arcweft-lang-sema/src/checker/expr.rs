@@ -163,7 +163,7 @@ impl TypeChecker<'_> {
                 Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
             }
             Expr::Index { target, index } => self.check_index_expr(target, index),
-            Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs),
+            Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs, expression_id),
             Expr::Try { expr } => self.check_try_expr(expr),
             Expr::Await { expr, applies_try } => self.check_await_expr_node(expr, *applies_try),
             Expr::Thread { block } => Some(self.check_thread_expr(block)),
