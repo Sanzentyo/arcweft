@@ -10,14 +10,15 @@ complete.
 
 ## Executive Summary
 
-- The latest pushed function-stack baseline includes captured function alias
-  row preservation through returned closures.
+- The latest pushed function-stack baseline rejects unsupported bare
+  source-function value references instead of lowering them as ordinary locals.
 - The function-stack worktree is clean at that baseline.
 - Implemented language/runtime surface now covers formal function types,
   curried call groups, closures, runtime apply, non-suspending AWBC apply,
   fixed-shape `_` partials, fixed-shape pipes, method fallback, typed runtime
-  IDs, user enum shorthand, source identity evidence, and the first accepted
-  non-helper source-local `fn` subset.
+  IDs, user enum shorthand, source identity evidence, the first accepted
+  non-helper source-local `fn` subset, and explicit rejection for bare
+  source-function values outside that accepted subset.
 - The active goal remains open only for contract-sized items that should not
   be guessed from implementation: spread partial/fallback semantics,
   suspension-aware AWBC dynamic apply, persisted function snapshots, broad
@@ -27,8 +28,8 @@ complete.
 ## Baseline
 
 - Current pushed function-stack baseline:
-  the function-stack baseline that includes captured function alias row
-  preservation through returned closures.
+  the function-stack baseline that rejects unsupported bare source-function
+  value references without executable runtime candidates.
 - The previous function-stack baseline before the spread rejection hardening
   slice was `486738b31 Handle pipe control-expression RHS placeholders`.
 - Earlier status-cleanup and pure-helper source-function commits were
@@ -60,6 +61,7 @@ Supporting focused notes:
 - `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`
 - `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`
+- `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
@@ -111,6 +113,9 @@ The following are implemented in pushed commits:
   verified-effects lowering.
 - Product AWBC save/load structured rejection of escaped runtime function
   values.
+- Checked runtime-plan lowering rejects bare top-level source-function value
+  references when type checking proves a function value but no pure helper or
+  accepted source-function candidate exists.
 - A first non-helper source-local `fn` runtime-function subset:
   ordinary source `fn` declarations with fixed identifier declaration
   parameters and simple expression/final-return bodies, including multiple

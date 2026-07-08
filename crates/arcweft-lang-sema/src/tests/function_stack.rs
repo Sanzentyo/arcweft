@@ -149,6 +149,16 @@ flow @flow.local_function_alias local_function_alias {
         report.typed_lowering_evidence.iter().any(|evidence| {
             matches!(
                 &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueReference { callee, ty }
+                    if callee == "add" && ty.function_arity() == Some(2)
+            )
+        }),
+        "expected top-level function path to record function-value reference evidence"
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
                 TypedLoweringEvidenceKind::FunctionValueCall {
                     callee: Some(callee),
                     result_ty,

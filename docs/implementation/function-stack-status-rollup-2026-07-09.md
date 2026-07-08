@@ -35,13 +35,14 @@ Current supporting audits:
 - `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`
 - `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`
+- `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/current-work-status-2026-07-09.md`
 
 Current pushed baseline:
 
-- the function-stack baseline that includes captured function alias row
-  preservation through returned closures
+- the function-stack baseline that rejects unsupported bare source-function
+  value references without executable runtime candidates
 
 Previous named baseline before the spread rejection hardening slice:
 
@@ -183,6 +184,11 @@ Previous named baseline before the spread rejection hardening slice:
   data-last method fallback accept inline fixed-length literal spread.
 - Helper-less signature partials are rejected by checked runtime-plan lowering
   with unsupported callable family `signature_partial_without_helper`.
+- Bare top-level source-function value references are rejected by checked
+  runtime-plan lowering with unsupported callable family
+  `source_function_value_without_runtime_candidate` when sema proves the path
+  is a function value but no pure helper or accepted source-function candidate
+  exists.
 - Runtime function values in product AWBC save/load are rejected with structured
   unsupported-runtime-value errors.
 

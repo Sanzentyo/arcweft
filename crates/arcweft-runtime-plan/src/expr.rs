@@ -199,6 +199,18 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
             .is_some_and(|evidence| evidence.has_expected_function_value(expression_id))
     }
 
+    fn has_function_value_reference_evidence(
+        self,
+        expression_id: Option<RuntimeTypedExpressionId>,
+        callee: &str,
+    ) -> bool {
+        expression_id.is_some_and(|expression_id| {
+            self.typed_lowering_evidence.is_some_and(|evidence| {
+                evidence.has_function_value_reference(expression_id, callee)
+            })
+        })
+    }
+
     fn has_signature_partial_call_evidence(
         self,
         expression_id: Option<RuntimeTypedExpressionId>,
@@ -375,18 +387,7 @@ fn lower_runtime_expr_strict_with_helpers(
     match expr {
         Expr::Literal(literal) => Ok(RuntimeExpr::Value(lower_runtime_literal(literal))),
         Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity_ref_label(entity))),
-        Expr::Path(path) => Ok(constructor_path(path.as_label()).map_or_else(
-            || {
-                helpers
-                    .and_then(|helpers| helpers.value_expr(path.as_label()))
-                    .unwrap_or_else(|| RuntimeExpr::Local(path.as_label().to_owned()))
-            },
-            |(path, name)| RuntimeExpr::Variant {
-                path,
-                name,
-                payload: None,
-            },
-        )),
+        Expr::Path(path) => lower_strict_path_expr(path.as_label(), helpers, expression_id),
         Expr::ShortVariant(name) => Ok(RuntimeExpr::Variant {
             path: None,
             name: name.to_string(),
@@ -459,6 +460,33 @@ fn lower_runtime_expr_strict_with_helpers(
             unsupported_strict_runtime_expr(expr)
         }
     }
+}
+
+fn lower_strict_path_expr(
+    name: &str,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
+) -> Result<RuntimeExpr, String> {
+    if let Some((path, name)) = constructor_path(name) {
+        return Ok(RuntimeExpr::Variant {
+            path,
+            name,
+            payload: None,
+        });
+    }
+    if let Some(value) = helpers.and_then(|helpers| helpers.value_expr(name)) {
+        return Ok(value);
+    }
+    if helpers
+        .is_some_and(|helpers| helpers.has_function_value_reference_evidence(expression_id, name))
+    {
+        return Err(format!(
+            "unsupported callable family `source_function_value_without_runtime_candidate`: \
+             function `{name}` cannot be referenced as a runtime function value because it has no \
+             executable helper or accepted source-function candidate"
+        ));
+    }
+    Ok(RuntimeExpr::Local(name.to_owned()))
 }
 
 fn lower_strict_closure_expr(

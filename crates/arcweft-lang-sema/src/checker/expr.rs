@@ -140,7 +140,9 @@ impl TypeChecker<'_> {
             Expr::Literal(literal) => Some(self.check_literal_expr(literal, expected)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
-            Expr::Path(path) => self.check_path_expr_with_expected(path.as_label(), expected),
+            Expr::Path(path) => {
+                self.check_path_expr_with_expected(path.as_label(), expected, expression_id)
+            }
             Expr::ShortVariant(name) => {
                 Some(self.check_short_variant_expr(name.as_str(), expected))
             }
@@ -356,6 +358,7 @@ impl TypeChecker<'_> {
         &mut self,
         path: &str,
         expected: Option<&TypeKind>,
+        expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
         if let Some(ty) = self.expected_short_variant_type(path, expected) {
             return Some(ty);
@@ -365,7 +368,7 @@ impl TypeChecker<'_> {
         {
             return Some(expected.clone());
         }
-        self.check_path_expr(path)
+        self.check_path_expr(path, expression_id)
     }
 
     fn check_short_variant_expr(&mut self, variant: &str, expected: Option<&TypeKind>) -> TypeKind {
@@ -398,7 +401,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_path_expr(&mut self, path: &str) -> Option<TypeKind> {
+    fn check_path_expr(&mut self, path: &str, expression_id: TypeExpressionId) -> Option<TypeKind> {
         if let Some(state) = self.borrow_local_lifetimes.get(path) {
             match state {
                 BorrowLocalState::Dropped => self.errors.push(TypeCheckError::new(format!(
@@ -416,6 +419,13 @@ impl TypeChecker<'_> {
             return Some(ty);
         }
         if let Some(ty) = self.function_value_type(path) {
+            self.record_typed_lowering_evidence(TypedLoweringEvidence {
+                expression_id,
+                kind: TypedLoweringEvidenceKind::FunctionValueReference {
+                    callee: path.to_owned(),
+                    ty: ty.clone(),
+                },
+            });
             return Some(ty);
         }
         if let Some(ty) = self.check_dotted_path_target(path) {

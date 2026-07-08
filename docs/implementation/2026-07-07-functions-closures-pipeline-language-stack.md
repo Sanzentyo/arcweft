@@ -1728,3 +1728,13 @@ of duplicating the spread for every covered parameter. Variable-length
 fallback spread remains rejected with a structured diagnostic. Details are
 recorded in
 `docs/implementation/function-stack-data-last-fixed-spread-fallback-2026-07-09.md`.
+
+The unsupported bare source-function value follow-up tightens the 07.7
+rejection boundary. Sema now records a `FunctionValueReference` lowering fact
+when a top-level source `fn` path is used in value position. Compiler lowering
+passes that evidence to runtime-plan lowering, where strict `Expr::Path`
+lowering rejects a sema-proven source function value if there is no pure
+helper and no accepted source-function candidate for it. This prevents checked
+runtime-plan lowering from silently treating an unsupported callable as an
+ordinary `RuntimeExpr::Local`. Details are recorded in
+`docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`.

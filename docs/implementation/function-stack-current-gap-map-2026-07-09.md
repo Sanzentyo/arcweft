@@ -10,8 +10,8 @@ For the current entry point and reading order, see
 ## Repository Baseline
 
 - Current pushed function-stack baseline:
-  the function-stack baseline that includes captured function alias row
-  preservation through returned closures.
+  the function-stack baseline that rejects unsupported bare source-function
+  value references without executable runtime candidates.
 - `main` and `origin/main` were aligned at that baseline when this gap map was
   refreshed.
 - The previous baseline before the spread rejection hardening slice was
@@ -72,6 +72,10 @@ includes:
   accept inline fixed-length literal spread for exact and missing-input
   partial calls; data-last method fallback accepts inline fixed-length literal
   spread; variable-length spread remains a separate contract.
+- bare top-level source-function value references outside the pure-helper and
+  accepted source-function candidate families are rejected as
+  `source_function_value_without_runtime_candidate` instead of falling through
+  to ordinary local lowering.
 
 The detailed evidence remains in:
 
@@ -79,6 +83,7 @@ The detailed evidence remains in:
 - `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`
 - `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
 - `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
+- `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 
 ## Design-Blocked Remaining Work

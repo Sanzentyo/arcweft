@@ -254,6 +254,9 @@ pub enum TypedLoweringEvidenceKind {
         actual_ty: TypeKind,
         arity: usize,
     },
+    /// A top-level function path was referenced as a first-class function
+    /// value rather than called directly.
+    FunctionValueReference { callee: String, ty: TypeKind },
     /// A direct named function signature call returned a partial function.
     SignaturePartialCall {
         callee: String,

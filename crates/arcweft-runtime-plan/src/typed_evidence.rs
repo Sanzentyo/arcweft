@@ -33,6 +33,8 @@ pub enum RuntimeTypedLoweringEvidenceKind {
     },
     /// An expression was checked in a function-typed expected context.
     ExpectedFunctionValue { arity: usize },
+    /// A top-level function path was referenced as a runtime function value.
+    FunctionValueReference { callee: String },
     /// A direct named function signature call returned a partial function.
     SignaturePartialCall { callee: String, arg_count: usize },
     /// A method-call expression resolved as data-last callable fallback.
@@ -90,6 +92,22 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
                 && matches!(
                     evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { .. }
+                )
+        })
+    }
+
+    pub(crate) fn has_function_value_reference(
+        self,
+        expression_id: RuntimeTypedExpressionId,
+        callee: &str,
+    ) -> bool {
+        self.evidence.iter().any(|evidence| {
+            evidence.expression_id == expression_id
+                && matches!(
+                    &evidence.kind,
+                    RuntimeTypedLoweringEvidenceKind::FunctionValueReference {
+                        callee: expected_callee,
+                    } if expected_callee == callee
                 )
         })
     }
