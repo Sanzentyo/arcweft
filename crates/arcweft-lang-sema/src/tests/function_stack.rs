@@ -259,6 +259,45 @@ flow @flow.curried curried {
 }
 
 #[test]
+fn curried_function_value_accepts_fixed_literal_spread_group() {
+    let tree = parse_ok(
+        r"
+fn add(a: i64)(b: i64) -> i64 {
+    return a + b
+}
+
+flow @flow.curried_spread_literal_group curried_spread_literal_group {
+    let add_one = add(1i64)
+    let ok: i64 = add_one([2i64]...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried literal spread fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried literal spread fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: Some(callee),
+                    result_ty: TypeKind::I64,
+                    arg_count: 1,
+                    ..
+                } if callee == "add_one"
+            )
+        }),
+        "expected inline fixed literal spread to record function-value apply evidence"
+    );
+}
+
+#[test]
 fn curried_function_value_rejects_later_spread_group_with_structured_diagnostic() {
     let tree = parse_ok(
         r"

@@ -5,11 +5,15 @@ This note records the focused hardening slice for
 
 ## Scope
 
-This slice does not accept executable spread partial application or executable
-spread data-last fallback. It keeps the current language/runtime boundary:
-regular rest-parameter calls may use spread where the existing rest contract
-already applies, while partial-call construction and data-last fallback reject
-spread until the runtime expansion/evidence contract is designed.
+This slice did not accept executable spread partial application or executable
+spread data-last fallback. That boundary still holds: regular rest-parameter
+calls may use spread where the existing rest contract already applies, and
+partial-call construction plus data-last fallback reject spread until the
+runtime expansion/evidence contract is designed.
+
+A later narrow slice accepts function-value calls whose spread source is an
+inline fixed-length bracket sequence literal. See
+`docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
 
 The change makes the rejection boundary more precise:
 
@@ -37,12 +41,14 @@ Focused sema coverage:
 - `method_chain_reports_multiple_spread_data_last_fallback_as_unsupported`
 
 These extend the existing coverage for plain spread partials, `_` placeholder
-spread partials, named missing-input spread partials, curried first/later call
-groups, unsupported single-spread fallback, and ambiguous spread fallback.
+spread partials, named missing-input spread partials, curried first/later
+variable-spread call groups, unsupported single-spread fallback, and ambiguous
+spread fallback.
 
 ## Remaining Contract Work
 
-The request remains open for any accepted executable spread semantics:
+The request remains open for accepted executable spread semantics beyond the
+fixed-length function-value call subset:
 
 - how spread maps onto fixed parameters, rest parameters, and missing partial
   inputs;

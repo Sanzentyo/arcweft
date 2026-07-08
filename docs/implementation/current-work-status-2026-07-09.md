@@ -28,10 +28,12 @@ structured diagnostics for spread-before-fixed and multiple-spread
 partial/fallback shapes, and current 07.8 evidence covers captured function
 alias rows plus borrowed-capture row preservation at an `await` boundary. The
 low-level runtime `Apply` substrate also now has spread expansion regression
-coverage for exact, partial-prefix, and curried function application.
+coverage for exact, partial-prefix, and curried function application, and
+source function-value calls accept inline fixed-length literal spread.
 Remaining completion still depends on explicit request/design areas:
 
-1. Spread partial application and spread data-last fallback semantics.
+1. Spread partial application, spread data-last fallback semantics, and
+   variable-length function-value spread.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.
 3. Serializable persisted closure/function snapshots.
 4. General non-helper/effectful/suspending callable allocation and the final
@@ -122,6 +124,10 @@ The detailed evidence trail remains:
   subset: runtime-plan candidate discovery now runs to a deterministic fixed
   point, so a later accepted source-local `fn` may call an already-accepted
   source-local candidate and named arguments lower in source declaration order.
+- Function-value fixed spread apply: function-value calls accept inline
+  fixed-length bracket sequence literal spread, including compact numeric
+  bracket sequences. Runtime-plan lowering preserves `RuntimeExpr::SpreadArg`
+  so the verified runtime apply spread substrate performs argument expansion.
 
 ## Remaining Function-Stack Work
 
@@ -129,7 +135,8 @@ The remaining items are not "forgotten implementation tasks"; they are
 documented request/design boundaries that must be answered before final
 implementation:
 
-- Spread partials and spread data-last fallback:
+- Spread partials, spread data-last fallback, and variable-length
+  function-value spread:
   `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
 - AWBC suspension-aware dynamic apply and persisted closure snapshots:
   `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`

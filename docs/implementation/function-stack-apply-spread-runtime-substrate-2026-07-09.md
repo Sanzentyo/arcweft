@@ -17,7 +17,10 @@ piece those future shapes would need:
   receives more values than the current function arity.
 
 The surface language still rejects spread partial construction and spread
-data-last fallback unless a later contract explicitly accepts a shape.
+data-last fallback unless a later contract explicitly accepts a shape. A later
+source-level slice accepts only function-value calls whose spread source is an
+inline fixed-length bracket sequence literal; see
+`docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
 
 ## Contract Finding
 

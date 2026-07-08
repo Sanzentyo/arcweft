@@ -1,11 +1,12 @@
 use super::{
-    CallArg, EntityKind, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
+    CallArg, EntityKind, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use crate::checker::helpers::first_arg_type;
 use crate::checker::{CurriedSignatureCallValue, PendingCurriedHigherOrderArg};
 use crate::effect_model::CallableId;
 use crate::env::FunctionParam;
+use arcweft_lang_syntax::expr::Literal;
 
 impl TypeChecker<'_> {
     pub(super) fn check_path_call_expr(
@@ -90,23 +91,13 @@ impl TypeChecker<'_> {
         else {
             unreachable!("function value call evidence must receive a function type");
         };
-        let positional_arg_count = args
-            .iter()
-            .filter(|arg| matches!(arg, CallArg::Positional(_)))
-            .count();
         let curried_group_params = self.remaining_curried_group_params(curried_signature_call);
-        let all_positional_args = args.iter().all(|arg| matches!(arg, CallArg::Positional(_)));
         let curried_group_arg_offset = curried_signature_call
             .map(|curried| curried.group_arg_offset)
             .unwrap_or_default();
-        let finishes_curried_group = curried_signature_call.is_some()
-            && all_positional_args
-            && args.len() == params.len()
-            && curried_group_params
-                .as_ref()
-                .is_some_and(|group| curried_group_arg_offset + params.len() == group.len());
         let FunctionValueCallCheck {
             result_ty,
+            supplied_arg_count,
             supplied_higher_order_args,
             unsupported_arg_syntax,
             arity_mismatch,
@@ -124,10 +115,17 @@ impl TypeChecker<'_> {
             self.last_checked_curried_signature_call = None;
             return TypeKind::Named("_".to_owned());
         }
+        let fixed_positional_slots = function_value_args_have_fixed_positional_slots(args);
+        let finishes_curried_group = curried_signature_call.is_some()
+            && fixed_positional_slots
+            && supplied_arg_count == params.len()
+            && curried_group_params
+                .as_ref()
+                .is_some_and(|group| curried_group_arg_offset + params.len() == group.len());
         self.record_function_value_effect_call(
             callee,
             effect_callable,
-            positional_arg_count,
+            supplied_arg_count,
             params.len(),
         );
         if let Some(curried) = curried_signature_call {
@@ -151,17 +149,17 @@ impl TypeChecker<'_> {
                     has_next_group_metadata,
                     true,
                 );
-            } else if all_positional_args
-                && positional_arg_count < params.len()
+            } else if fixed_positional_slots
+                && supplied_arg_count < params.len()
                 && curried_group_params.as_ref().is_some_and(|group| {
-                    curried.group_arg_offset + positional_arg_count < group.len()
+                    curried.group_arg_offset + supplied_arg_count < group.len()
                 })
                 && matches!(result_ty, TypeKind::Function { .. })
             {
                 self.last_checked_curried_signature_call = Some(CurriedSignatureCallValue {
                     function_name: curried.function_name.clone(),
                     remaining_group_index: curried.remaining_group_index,
-                    group_arg_offset: curried.group_arg_offset + positional_arg_count,
+                    group_arg_offset: curried.group_arg_offset + supplied_arg_count,
                     pending_higher_order_args,
                 });
             } else {
@@ -209,48 +207,22 @@ impl TypeChecker<'_> {
             curried_group_arg_offset,
         } = input;
         let mut supplied_higher_order_args = Vec::new();
-        let mut unsupported_arg_syntax = false;
         let mut arity_mismatch = false;
-        for arg in args {
-            if let CallArg::Named { name, value } = arg {
-                unsupported_arg_syntax = true;
-                self.errors
-                    .push(TypeCheckError::unsupported_function_value_call(
-                        callee,
-                        format!(
-                            "named argument `{name}` is not supported; use positional arguments"
-                        ),
-                    ));
-                self.check_expr(value);
-            }
-            if let CallArg::Spread { value } = arg {
-                unsupported_arg_syntax = true;
-                self.errors
-                    .push(TypeCheckError::unsupported_function_value_call(
-                        callee,
-                        "spread arguments are not supported; use positional arguments",
-                    ));
-                self.check_expr(value);
-            }
-        }
-        let positional = args
-            .iter()
-            .filter_map(|arg| match arg {
-                CallArg::Positional(value) => Some(value),
-                CallArg::Named { .. } | CallArg::Spread { .. } => None,
-            })
-            .collect::<Vec<_>>();
-        if positional.len() > params.len() {
+        let FunctionValueArgSlots {
+            supplied,
+            unsupported_arg_syntax,
+        } = self.collect_function_value_arg_slots(callee, args);
+        if supplied.len() > params.len() {
             arity_mismatch = true;
             self.errors
                 .push(TypeCheckError::function_value_arity_mismatch(
                     callee,
                     params.len(),
-                    positional.len(),
+                    supplied.len(),
                 ));
         }
-        for (index, (value, expected)) in positional.iter().zip(params).enumerate() {
-            let actual = self.check_expr_with_expected(value, Some(expected));
+        for (index, (value, expected)) in supplied.iter().zip(params).enumerate() {
+            let actual = self.check_function_value_arg_slot(value, Some(expected));
             if let Some(actual) = actual.as_ref()
                 && !self.types_compatible(expected, actual)
             {
@@ -264,29 +236,105 @@ impl TypeChecker<'_> {
             if curried_signature_call.is_some()
                 && let Some(group_params) = curried_group_params
                 && let Some(param) = group_params.get(curried_group_arg_offset + index)
+                && let Some(value_expr) = value.source_expr()
             {
                 supplied_higher_order_args.extend(self.higher_order_signature_arg_effect_calls(
                     param,
-                    value,
+                    value_expr,
                     actual.as_ref(),
                 ));
             } else {
                 self.last_checked_closure_effect_callable = None;
             }
         }
-        let result_ty = if positional.len() >= params.len() {
+        for value in supplied.iter().skip(params.len()) {
+            self.check_function_value_arg_slot(value, None);
+        }
+        let result_ty = if supplied.len() >= params.len() {
             return_type.clone()
         } else {
             TypeKind::Function {
-                params: params[positional.len()..].to_vec(),
+                params: params[supplied.len()..].to_vec(),
                 return_type: Box::new(return_type.clone()),
             }
         };
         FunctionValueCallCheck {
             result_ty,
+            supplied_arg_count: supplied.len(),
             supplied_higher_order_args,
             unsupported_arg_syntax,
             arity_mismatch,
+        }
+    }
+
+    fn collect_function_value_arg_slots<'a>(
+        &mut self,
+        callee: Option<&str>,
+        args: &'a [CallArg],
+    ) -> FunctionValueArgSlots<'a> {
+        let mut supplied = Vec::new();
+        let mut unsupported_arg_syntax = false;
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => supplied.push(FunctionValueArgSlot::Expr(value)),
+                CallArg::Named { name, value } => {
+                    unsupported_arg_syntax = true;
+                    self.errors
+                        .push(TypeCheckError::unsupported_function_value_call(
+                            callee,
+                            format!(
+                                "named argument `{name}` is not supported; use positional arguments"
+                            ),
+                        ));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => match value.as_ref() {
+                    Expr::BracketSeq(items) => {
+                        supplied.extend(items.iter().map(FunctionValueArgSlot::Expr));
+                    }
+                    Expr::NumericBracketSeq(seq) => {
+                        supplied.extend(seq.values().iter().map(|value| {
+                            FunctionValueArgSlot::Int {
+                                value: *value,
+                                suffix: seq.suffix(),
+                            }
+                        }));
+                    }
+                    _ => {
+                        unsupported_arg_syntax = true;
+                        self.errors
+                            .push(TypeCheckError::unsupported_function_value_call(
+                                callee,
+                                "spread arguments require an inline fixed-length sequence literal in function-value calls",
+                            ));
+                        self.check_expr(value);
+                    }
+                },
+            }
+        }
+        FunctionValueArgSlots {
+            supplied,
+            unsupported_arg_syntax,
+        }
+    }
+
+    fn check_function_value_arg_slot(
+        &mut self,
+        slot: &FunctionValueArgSlot<'_>,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
+        match slot {
+            FunctionValueArgSlot::Expr(expr) => self.check_expr_with_expected(expr, expected),
+            FunctionValueArgSlot::Int { value, suffix } => {
+                let raw =
+                    suffix.map_or_else(|| value.to_string(), |suffix| format!("{value}{suffix}"));
+                let expr = Expr::Literal(Literal::Int {
+                    raw,
+                    value: *value,
+                    suffix: suffix.map(str::to_owned),
+                });
+                self.check_expr_with_expected(&expr, expected)
+            }
         }
     }
 }
@@ -304,9 +352,42 @@ struct FunctionValueCallInput<'a> {
 
 struct FunctionValueCallCheck {
     result_ty: TypeKind,
+    supplied_arg_count: usize,
     supplied_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
     unsupported_arg_syntax: bool,
     arity_mismatch: bool,
+}
+
+enum FunctionValueArgSlot<'a> {
+    Expr(&'a Expr),
+    Int { value: i64, suffix: Option<&'a str> },
+}
+
+struct FunctionValueArgSlots<'a> {
+    supplied: Vec<FunctionValueArgSlot<'a>>,
+    unsupported_arg_syntax: bool,
+}
+
+impl<'a> FunctionValueArgSlot<'a> {
+    fn source_expr(&self) -> Option<&'a Expr> {
+        match self {
+            Self::Expr(expr) => Some(expr),
+            Self::Int { .. } => None,
+        }
+    }
+}
+
+fn function_value_args_have_fixed_positional_slots(args: &[CallArg]) -> bool {
+    args.iter().all(|arg| match arg {
+        CallArg::Positional(_) => true,
+        CallArg::Named { .. } => false,
+        CallArg::Spread { value } => {
+            matches!(
+                value.as_ref(),
+                Expr::BracketSeq(_) | Expr::NumericBracketSeq(_)
+            )
+        }
+    })
 }
 
 fn function_value_call_label(callee: Option<&str>) -> String {

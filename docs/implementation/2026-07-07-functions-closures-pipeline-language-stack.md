@@ -1695,3 +1695,15 @@ Focused regressions prove direct parser coverage plus checked runtime-plan
 lowering where `RuntimeExpr::IfLet` and `RuntimeExpr::Match` keep the pipe LHS
 as their structured scrutinee after substitution. Details are recorded in
 `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`.
+
+The function-value fixed spread apply follow-up accepts the first
+source-level spread shape backed by the runtime spread substrate. Function
+values may now be called with an inline fixed-length bracket sequence literal
+spread, including compact numeric bracket sequence literals, and sema expands
+that fixed length for arity, result type, and curried group progress. Checked
+runtime-plan lowering preserves `RuntimeExpr::SpreadArg` so the core runtime
+performs expansion through the already verified `RuntimeExpr::Apply` path.
+Variable-length function-value spread, spread partial construction, and
+spread data-last fallback remain in the 07.2.1 request boundary. Details are
+recorded in
+`docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
