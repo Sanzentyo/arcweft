@@ -3,7 +3,7 @@
 //! This module is intentionally renderer-owned. It consumes Arcweft-owned
 //! `ViewPrimitive` values, prepared image/mask resources, and explicit text
 //! handoff records. It does not parse CSS, inspect Takumi computed style, or
-//! route UI through platform-specific DOM/canvas fallback paths.
+//! route View through platform-specific DOM/canvas fallback paths.
 
 use crate::geometry::{PreparedViewMaskResource, PreparedViewSceneResources, RenderImageFrame};
 use crate::view_compositor::{
@@ -35,13 +35,13 @@ pub struct WgpuViewDirectPrimitiveRenderer {
     image_sampler: wgpu::Sampler,
 }
 
-/// Renderer-owned direct primitive frame bound to one prepared UI scene resource table.
+/// Renderer-owned direct primitive frame bound to one prepared View scene resource table.
 pub struct WgpuViewDirectPrimitiveRenderFrame<'a> {
     renderer: &'a WgpuViewDirectPrimitiveRenderer,
     resources: &'a PreparedViewSceneResources,
 }
 
-/// Renderer-owned mask texture provider for one prepared UI scene.
+/// Renderer-owned mask texture provider for one prepared View scene.
 pub struct WgpuPreparedViewMaskTextureProvider {
     masks: Vec<WgpuPreparedViewMaskTexture>,
 }
@@ -1096,8 +1096,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 ";
 
 const IMAGE_SHADER: &str = r"
-@group(0) @binding(0) var ui_texture: texture_2d<f32>;
-@group(0) @binding(1) var ui_sampler: sampler;
+@group(0) @binding(0) var view_texture: texture_2d<f32>;
+@group(0) @binding(1) var view_sampler: sampler;
 
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
@@ -1120,7 +1120,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    let color = textureSample(ui_texture, ui_sampler, in.uv);
+    let color = textureSample(view_texture, view_sampler, in.uv);
     return vec4<f32>(color.rgb, color.a * in.opacity);
 }
 ";

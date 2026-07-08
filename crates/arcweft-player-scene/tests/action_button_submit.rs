@@ -1,13 +1,13 @@
-use arcweft_bundle::resource_codec::ui::{
+use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewActionTextControlPayloadField, ViewRuntimeActionButton,
     ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlStyle,
 };
 use arcweft_id::PublicId;
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
-use arcweft_player_scene::input::{InputController, InputPointerModifiers};
+use arcweft_player_scene::input::{InputController, InputDiagnosticKind, InputPointerModifiers};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint};
-use arcweft_presentation::semantic::SemanticRole;
+use arcweft_presentation::semantic::{SemanticActionError, SemanticNode, SemanticRole};
 use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
@@ -163,6 +163,47 @@ fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
     assert_eq!(
         outcome.actions()[0].payload().map(String::as_str),
         Some("Ada")
+    );
+}
+
+#[test]
+fn pointer_activation_reports_semantic_action_rejection() {
+    let scene = action_invoke_scene();
+    let mut frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let original_node = frame
+        .semantics
+        .find(&target("button.continue"))
+        .expect("button semantic node exists")
+        .clone();
+    frame.semantics = Default::default();
+    frame.semantics.push(
+        SemanticNode::new(
+            original_node.layer().clone(),
+            original_node.target().clone(),
+            original_node.role(),
+            original_node.bounds(),
+        )
+        .with_label("Continue")
+        .with_enabled(true),
+    );
+    let mut input = InputController::default();
+    let position = ViewportPoint::new(64.0, 64.0);
+
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+    assert!(outcome.actions().is_empty());
+    assert_eq!(outcome.diagnostics.len(), 1);
+    assert_eq!(outcome.diagnostics[0].target, target("button.continue"));
+    assert_eq!(
+        outcome.diagnostics[0].kind,
+        InputDiagnosticKind::SemanticActionRejected {
+            action: PublicId::try_new("action.feedback.submit_name").unwrap(),
+            reason: SemanticActionError::UndeclaredAction {
+                target: target("button.continue"),
+                action: PublicId::try_new("action.feedback.submit_name").unwrap(),
+            },
+        }
     );
 }
 

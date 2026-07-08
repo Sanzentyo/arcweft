@@ -108,7 +108,7 @@ impl TakumiCaptureRecord {
         transform: ViewAffine2D,
         clip: Option<ViewClip>,
     ) -> Self {
-        let clip_bounds = clip.as_ref().map(ui_clip_bounds);
+        let clip_bounds = clip.as_ref().map(view_clip_bounds);
         Self {
             metadata,
             primitive_range,
@@ -370,7 +370,7 @@ impl TakumiCaptureFrame {
     }
 }
 
-pub(crate) fn ui_clip_bounds(clip: &ViewClip) -> HitRect {
+pub(crate) fn view_clip_bounds(clip: &ViewClip) -> HitRect {
     match clip {
         ViewClip::Rect(bounds) | ViewClip::RoundedRect { bounds, .. } => *bounds,
     }

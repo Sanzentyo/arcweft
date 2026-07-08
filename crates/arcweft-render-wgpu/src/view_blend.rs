@@ -1,4 +1,4 @@
-//! Shader blend-mode classification for UI compositing.
+//! Shader blend-mode classification for View compositing.
 
 use crate::view_scene::ViewBlendMode;
 

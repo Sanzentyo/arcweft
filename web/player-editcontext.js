@@ -1,5 +1,3 @@
-import { ArcweftClipboardAdapter } from "./player-clipboard.js";
-
 const STATUS_EVENT = "arcweft-text-input-status";
 const RENDER_EVENT = "arcweft-text-input-render";
 const HOST_CLASS = "arcweft-editcontext-host";
@@ -18,7 +16,6 @@ export class ArcweftEditContextPlayerGlue {
   #listeners = [];
   #statusTarget;
   #delegate;
-  #clipboard;
   #mirror;
   #state;
 
@@ -28,7 +25,6 @@ export class ArcweftEditContextPlayerGlue {
     this.#host = host;
     this.#statusTarget = options.statusTarget ?? document;
     this.#delegate = options.delegate ?? null;
-    this.#clipboard = options.clipboard ?? new ArcweftClipboardAdapter({ statusTarget: this.#statusTarget });
     this.#mirror = resolveMirror(options.mirror ?? null, host);
     this.#state = {
       hostId: host.id || options.hostId || "arcweft-editcontext-host",
@@ -46,7 +42,7 @@ export class ArcweftEditContextPlayerGlue {
       pointerSelection: null,
       lastGeometry: null,
       lastCharacterBounds: [],
-      nextClipboardRequestId: 0,
+      compositionAnchorRect: null,
     };
   }
 
@@ -114,6 +110,7 @@ export class ArcweftEditContextPlayerGlue {
 
     this.#installListener(this.#editContext, "compositionstart", async () => {
       this.#state.composing = true;
+      this.#state.compositionAnchorRect = toDomRectInit(this.#selectionBounds());
       await this.#delegateCall("compositionStart", this.#state.hostId);
       this.#emitStatus("composition_start");
       this.#renderMirror();
@@ -122,6 +119,7 @@ export class ArcweftEditContextPlayerGlue {
       this.#state.composing = false;
       this.#state.compositionStart = this.#state.selectionStart;
       this.#state.compositionEnd = this.#state.selectionEnd;
+      this.#state.compositionAnchorRect = null;
       await this.#delegateCall("compositionEnd", this.#state.hostId, false);
       this.#emitStatus("composition_end");
       this.#renderMirror();
@@ -192,17 +190,20 @@ export class ArcweftEditContextPlayerGlue {
         this.#state.composing = false;
         this.#state.compositionStart = this.#state.selectionStart;
         this.#state.compositionEnd = this.#state.selectionEnd;
+        this.#state.compositionAnchorRect = null;
         this.#emitStatus("runtime_composition_commit", { session: command.session });
         this.#renderMirror();
         break;
       case "cancel_composition":
         this.#state.composing = false;
+        this.#state.compositionAnchorRect = null;
         this.#emitStatus("runtime_composition_cancel", { session: command.session });
         this.#renderMirror();
         break;
       case "deactivate":
         this.#state.installed = false;
         this.#state.composing = false;
+        this.#state.compositionAnchorRect = null;
         this.#emitStatus("runtime_deactivated", { session: command.session });
         this.#renderMirror();
         break;
@@ -272,8 +273,13 @@ export class ArcweftEditContextPlayerGlue {
     this.#state.composing = composing;
     this.#state.compositionStart = numberOr(event.compositionStart, update.selectionStart);
     this.#state.compositionEnd = numberOr(event.compositionEnd, update.selectionEnd);
+    if (composing && !this.#state.compositionAnchorRect) {
+      this.#state.compositionAnchorRect = toDomRectInit(this.#selectionBounds());
+    } else if (!composing) {
+      this.#state.compositionAnchorRect = null;
+    }
     this.#syncEditContextText();
-    this.#syncEditContextGeometry();
+    this.#syncEditContextGeometry({ updateCharacterBounds: !composing });
     this.#renderMirror();
     this.#emitStatus(composing ? "composition_update" : "committed_update");
   }
@@ -313,30 +319,7 @@ export class ArcweftEditContextPlayerGlue {
     }
     event.preventDefault();
     await this.#delegateCall("dispatchCommand", this.#state.hostId, command.name, Boolean(command.selecting));
-    if (localClipboardCommand(command.name)) {
-      await this.#applyLocalCommand(command, event);
-      this.#syncEditContextText();
-      this.#syncEditContextGeometry();
-      this.#renderMirror();
-    }
     this.#emitStatus("command", { command: command.name, selecting: Boolean(command.selecting) });
-  }
-
-  async #applyLocalCommand(command, event) {
-    switch (command.name) {
-      case "copy":
-        await this.#writeClipboard(event);
-        break;
-      case "cut":
-        await this.#writeClipboard(event);
-        await this.#replaceSelection("");
-        break;
-      case "paste":
-        await this.#pasteFromEvent(event);
-        break;
-      default:
-        break;
-    }
   }
 
   async #handlePointerDown(event) {
@@ -392,25 +375,11 @@ export class ArcweftEditContextPlayerGlue {
   }
 
   #handleCopy(event) {
-    if (this.#state.secure) {
-      event.preventDefault();
-      this.#emitStatus("clipboard_redacted");
-      return;
-    }
-    this.#writeClipboard(event).catch((error) => this.#emitError(error));
+    this.#handleClipboardCommand(event, "copy").catch((error) => this.#emitError(error));
   }
 
   async #handleCut(event) {
-    if (this.#state.secure) {
-      event.preventDefault();
-      this.#emitStatus("clipboard_redacted");
-      return;
-    }
-    await this.#writeClipboard(event);
-    await this.#replaceSelection("");
-    this.#syncEditContextText();
-    this.#syncEditContextGeometry();
-    this.#renderMirror();
+    await this.#handleClipboardCommand(event, "cut");
   }
 
   async #handlePaste(event) {
@@ -419,71 +388,13 @@ export class ArcweftEditContextPlayerGlue {
       this.#emitStatus("clipboard_redacted");
       return;
     }
-    await this.#pasteFromEvent(event);
-    this.#syncEditContextText();
-    this.#syncEditContextGeometry();
-    this.#renderMirror();
+    await this.#handleClipboardCommand(event, "paste");
   }
 
-  async #writeClipboard(event) {
-    if (this.#state.secure) {
-      event.preventDefault();
-      return;
-    }
-    const text = selectedText(this.#state);
-    const request = this.#clipboardRequest(event?.type === "cut" ? "cut" : "copy", { text });
-    const outcome = await this.#clipboard.apply(request, event);
-    await this.#delegateCall("dispatchClipboardOutcome", this.#state.hostId, outcome);
-    this.#emitStatus("clipboard_write", { requestId: request.requestId });
-  }
-
-  async #pasteFromEvent(event) {
-    const request = this.#clipboardRequest("paste");
-    const outcome = await this.#clipboard.apply(request, event);
-    await this.#delegateCall("dispatchClipboardOutcome", this.#state.hostId, outcome);
-    if (outcome.kind !== "read_committed") {
-      this.#emitStatus("paste_failed", { requestId: request.requestId, kind: outcome.error?.kind });
-      return;
-    }
-    const text = outcome.text ?? "";
-    await this.#replaceSelection(text);
-    this.#emitStatus("paste", { requestId: request.requestId });
-  }
-
-  #clipboardRequest(operation, extra = {}) {
-    this.#state.nextClipboardRequestId += 1;
-    return {
-      requestId: this.#state.nextClipboardRequestId,
-      operation,
-      origin: "user_platform_clipboard_event",
-      secure: Boolean(this.#state.secure),
-      ...extra,
-    };
-  }
-
-  async #replaceSelection(replacement) {
-    const start = Math.min(this.#state.selectionStart, this.#state.selectionEnd);
-    const end = Math.max(this.#state.selectionStart, this.#state.selectionEnd);
-    await this.#replaceRange(start, end, replacement);
-  }
-
-  async #replaceRange(start, end, replacement) {
-    const observedTextBefore = this.#state.text;
-    await this.#delegateCall("dispatchTextUpdate", this.#state.hostId, {
-      updateRangeStart: start,
-      updateRangeEnd: end,
-      text: replacement,
-      selectionStart: start + utf16Length(replacement),
-      selectionEnd: start + utf16Length(replacement),
-      observedTextBefore,
-      composing: false,
-    });
-    this.#state.text = replaceUtf16Range(this.#state.text, start, end, replacement);
-    const caret = start + utf16Length(replacement);
-    this.#setSelection(caret, caret, caret);
-    this.#state.composing = false;
-    this.#state.compositionStart = caret;
-    this.#state.compositionEnd = caret;
+  async #handleClipboardCommand(event, command) {
+    event.preventDefault();
+    await this.#delegateCall("dispatchCommand", this.#state.hostId, command, false);
+    this.#emitStatus("clipboard_command", { command });
   }
 
   async #dispatchSelectionUpdate() {
@@ -513,7 +424,7 @@ export class ArcweftEditContextPlayerGlue {
     if (runtimeOffset !== null) {
       return nearestGraphemeOffset(this.#state.text, runtimeOffset);
     }
-    const rect = this.#host.getBoundingClientRect();
+    const rect = this.#controlBounds();
     const textLength = utf16Length(this.#state.text);
     if (textLength === 0) {
       return 0;
@@ -534,15 +445,17 @@ export class ArcweftEditContextPlayerGlue {
     callIfPresent(this.#editContext, "updateSelection", this.#state.selectionStart, this.#state.selectionEnd);
   }
 
-  #syncEditContextGeometry() {
+  #syncEditContextGeometry({ updateCharacterBounds = true } = {}) {
     if (!this.#editContext) {
       return;
     }
     const controlRect = this.#controlBounds();
     callIfPresent(this.#editContext, "updateControlBounds", controlRect);
-    const selectionRect = this.#selectionBounds();
+    const selectionRect = this.#state.composing && this.#state.compositionAnchorRect
+      ? toDomRect(this.#state.compositionAnchorRect)
+      : this.#selectionBounds();
     callIfPresent(this.#editContext, "updateSelectionBounds", selectionRect);
-    if (!this.#state.secure) {
+    if (updateCharacterBounds && !this.#state.secure) {
       const rangeStart = Math.min(this.#state.compositionStart, this.#state.selectionStart, this.#state.selectionEnd);
       const rangeEnd = Math.max(this.#state.compositionEnd, this.#state.selectionStart, this.#state.selectionEnd, rangeStart + 1);
       const characterBounds = this.#computeCharacterBounds(rangeStart, rangeEnd);
@@ -576,17 +489,40 @@ export class ArcweftEditContextPlayerGlue {
   }
 
   #computeCharacterBounds(rangeStart, rangeEnd) {
-    const runtimeBounds = runtimeRectsForRange(this.#state.lastGeometry?.characterBounds, rangeStart, rangeEnd);
-    if (runtimeBounds.length > 0) {
-      return runtimeBounds.map((entry) => toDomRect(entry.rect));
-    }
     const start = clampOffset(this.#state.text, rangeStart);
     const end = clampOffset(this.#state.text, Math.max(rangeEnd, start));
+    if (this.#state.composing) {
+      return this.#stableCompositionCharacterBounds(start, end);
+    }
+    const runtimeBounds = runtimeRectsForRange(this.#state.lastGeometry?.characterBounds, start, end);
+    const runtimeRects = characterDomRectsForOffsets(runtimeBounds, this.#state.text, start, end);
+    if (runtimeRects.length > 0) {
+      return runtimeRects;
+    }
     const offsets = graphemeOffsets(this.#state.text).filter((offset) => offset >= start && offset < end);
     if (offsets.length === 0) {
       return [this.#rectForOffset(start)];
     }
     return offsets.map((offset) => this.#rectForOffset(offset, this.#nextOffsetForBounds(offset)));
+  }
+
+  #stableCompositionCharacterBounds(start, end) {
+    const compositionBounds = runtimeRectsForRange(this.#state.lastGeometry?.compositionRects, start, end);
+    const compositionRects = characterDomRectsForOffsets(compositionBounds, this.#state.text, start, end);
+    if (compositionRects.length > 0) {
+      return compositionRects;
+    }
+
+    const runtimeBounds = runtimeRectsForRange(this.#state.lastGeometry?.characterBounds, start, end);
+    const runtimeRects = characterDomRectsForOffsets(runtimeBounds, this.#state.text, start, end);
+    if (runtimeRects.length > 0) {
+      return runtimeRects;
+    }
+
+    const anchor = toDomRect(this.#state.compositionAnchorRect ?? this.#selectionBounds());
+    const offsets = graphemeOffsets(this.#state.text).filter((offset) => offset >= start && offset < end);
+    const count = Math.max(1, offsets.length);
+    return Array.from({ length: count }, () => toDomRect(anchor));
   }
 
   #nextOffsetForBounds(offset) {
@@ -595,7 +531,7 @@ export class ArcweftEditContextPlayerGlue {
   }
 
   #rectForOffset(offset, endOffset = offset) {
-    const rect = this.#host.getBoundingClientRect();
+    const rect = this.#controlBounds();
     const advance = this.#characterAdvance(rect);
     const slot = graphemeSlotForOffset(this.#state.text, offset);
     const widthSlots = Math.max(1, graphemeSlotForOffset(this.#state.text, endOffset) - slot);
@@ -607,7 +543,7 @@ export class ArcweftEditContextPlayerGlue {
     });
   }
 
-  #characterAdvance(rect = this.#host.getBoundingClientRect()) {
+  #characterAdvance(rect = this.#controlBounds()) {
     const length = Math.max(1, graphemeOffsets(this.#state.text).length - 1);
     return Math.max(1, (rect.width - this.#textInsetX() * 2) / Math.max(8, length));
   }
@@ -746,6 +682,39 @@ function runtimeRectsForRange(rects = [], start, end) {
   return rects.filter((entry) => entry.start < hi && lo < entry.end);
 }
 
+function characterDomRectsForOffsets(rects = [], text, start, end) {
+  if (!Array.isArray(rects) || rects.length === 0) {
+    return [];
+  }
+  const offsets = graphemeOffsets(text).filter((offset) => offset >= start && offset < end);
+  if (offsets.length === 0) {
+    return [];
+  }
+  const result = [];
+  for (const offset of offsets) {
+    const next = nextGraphemeOffset(text, offset);
+    const entry = rects.find((candidate) => candidate.start <= offset && next <= candidate.end)
+      ?? rects.find((candidate) => candidate.start < next && offset < candidate.end);
+    if (!entry) {
+      return [];
+    }
+    result.push(toDomRectForRangeEntry(entry, offset, next));
+  }
+  return result;
+}
+
+function toDomRectForRangeEntry(entry, start, end) {
+  const rect = entry.rect;
+  const entryStart = numberOr(entry.start, start);
+  const entryEnd = numberOr(entry.end, end);
+  const span = Math.max(1, entryEnd - entryStart);
+  const lo = Math.max(entryStart, Math.min(start, entryEnd));
+  const hi = Math.max(lo, Math.min(end, entryEnd));
+  const x = rect.x + rect.width * ((lo - entryStart) / span);
+  const width = Math.max(1, rect.width * ((hi - lo) / span));
+  return toDomRect({ x, y: rect.y, width, height: rect.height });
+}
+
 function runtimeOffsetForPoint(geometry, x, y) {
   const bounds = geometry?.characterBounds ?? [];
   if (bounds.length === 0) {
@@ -764,21 +733,8 @@ function runtimeOffsetForPoint(geometry, x, y) {
   return last?.end ?? null;
 }
 
-function localClipboardCommand(command) {
-  return command === "copy" || command === "cut" || command === "paste";
-}
-
 function replaceUtf16Range(text, start, end, replacement) {
   return text.slice(0, start) + replacement + text.slice(end);
-}
-
-function selectedText(state) {
-  if (state.secure) {
-    return "";
-  }
-  const start = Math.min(state.selectionStart, state.selectionEnd);
-  const end = Math.max(state.selectionStart, state.selectionEnd);
-  return state.text.slice(start, end);
 }
 
 function utf16Length(text) {

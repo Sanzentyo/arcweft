@@ -64,7 +64,7 @@ fn mcp_repl_command_rejects_read_only_mutating_command() {
     let mut handler = ReplTierCommandHandler::default();
     let mut host = FakeHost;
     let mut tasks =
-        FakeRuntimeTaskOwner::with_tasks(vec![active_task("task.alpha", "scope.ui", 0)]);
+        FakeRuntimeTaskOwner::with_tasks(vec![active_task("task.alpha", "scope.view", 0)]);
     let mut req = request(":cancel all");
     req.trace_policy = McpReplTracePolicy::ReadOnlyTrace;
 
@@ -84,7 +84,7 @@ fn mcp_repl_command_lists_runtime_tasks_through_existing_owner() {
     let mut handler = ReplTierCommandHandler::default();
     let mut host = FakeHost;
     let mut tasks =
-        FakeRuntimeTaskOwner::with_tasks(vec![active_task("task.alpha", "scope.ui", 0)]);
+        FakeRuntimeTaskOwner::with_tasks(vec![active_task("task.alpha", "scope.view", 0)]);
 
     let result = McpReplCommandEndpoint::new(&mut session, &mut handler)
         .with_host(&mut host)
@@ -115,8 +115,8 @@ fn mcp_repl_command_cancels_all_task_and_scope_targets() {
             "task",
         ),
         (
-            ":cancel scope scope.ui",
-            RuntimeTaskCancelTarget::Scope("scope.ui".to_owned()),
+            ":cancel scope scope.view",
+            RuntimeTaskCancelTarget::Scope("scope.view".to_owned()),
             "scope",
         ),
     ];
@@ -126,7 +126,7 @@ fn mcp_repl_command_cancels_all_task_and_scope_targets() {
         let mut handler = ReplTierCommandHandler::default();
         let mut host = FakeHost;
         let mut tasks =
-            FakeRuntimeTaskOwner::with_tasks(vec![active_task("task.alpha", "scope.ui", 0)]);
+            FakeRuntimeTaskOwner::with_tasks(vec![active_task("task.alpha", "scope.view", 0)]);
 
         let result = McpReplCommandEndpoint::new(&mut session, &mut handler)
             .with_host(&mut host)

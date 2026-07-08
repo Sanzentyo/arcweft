@@ -6,10 +6,11 @@ use arcweft_bundle::patch::{
     PatchCompatibility, PatchMaterializationContract, RuntimeAbiRange, SectionChangeDerivation,
     SectionChangeOperation, SectionCompatibilityFingerprint, SectionOperation, encode_patch_bundle,
 };
-use arcweft_bundle::resource_codec::ui::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiSecureInputPolicy, UiTextSelectionPolicy,
-    UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+use arcweft_bundle::resource_codec::view::{
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewSecureInputPolicy,
+    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+    ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -329,8 +330,8 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
                 FlowOp::HostCall {
                     binding: Some(RuntimePattern::Ident("event".to_owned())),
                     target: RuntimeHostCallTarget::new(
-                        "ui.action.await",
-                        "ui.action",
+                        "view.action.await",
+                        "view.action",
                         "await",
                         [RuntimeExpr::EntityRef("action.feedback.submit".to_owned())],
                         RuntimeHostCallMode::Suspend,
@@ -381,25 +382,25 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
 }
 
 fn fixture_action_receive_bundle_with_submit_input() -> ArcweftBundle {
-    fixture_action_receive_bundle().with_ui_input(UiInputResource {
-        options: vec![UiInputOptions {
+    fixture_action_receive_bundle().with_view_input(ViewInputResource {
+        options: vec![ViewInputOptions {
             public_id: "input.feedback".to_owned(),
             view: Some("view.FeedbackForm".to_owned()),
             containing_scroll_region: None,
-            kind: UiInputKind::TextField,
+            kind: ViewInputKind::TextField,
             value_text_source: "text.value.input.feedback".to_owned(),
             placeholder_text_source: None,
-            purpose: UiInputPurpose::Text,
+            purpose: ViewInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,
             enter_key: EnterKeyHint::Send,
             multiline: false,
-            selection_policy: UiTextSelectionPolicy::Enabled,
-            shortcut_policy: UiTextShortcutPolicy::Enabled,
-            tab_policy: UiTextTabPolicy::FocusNavigation,
-            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-            secure_policy: UiSecureInputPolicy::Plain,
+            selection_policy: ViewTextSelectionPolicy::Enabled,
+            shortcut_policy: ViewTextShortcutPolicy::Enabled,
+            tab_policy: ViewTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+            secure_policy: ViewSecureInputPolicy::Plain,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
             submit_handler: Some("action.feedback.submit".to_owned()),
             change_handler: Some("input.feedback".to_owned()),
@@ -659,7 +660,7 @@ fn session_receive_action_host_call_resumes_with_event_value() {
 fn session_text_control_submit_handler_resumes_receive_action() {
     let bundle = fixture_action_receive_bundle_with_submit_input();
     let submit_session = bundle
-        .ui_input
+        .view_input
         .as_ref()
         .expect("fixture has input resource")
         .options[0]

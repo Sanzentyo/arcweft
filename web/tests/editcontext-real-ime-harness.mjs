@@ -431,7 +431,7 @@ function analyzeTrace(trace, snapshot, forceUnsupported) {
   const checks = {
     editContextSupported: support.editContextType === "function" && support.hostHasEditContext === true,
     noHiddenFallback: hiddenFallbackCount === 0 && snapshot.fallbackInstalled === false,
-    playerRenderedBoundary: snapshot.sample?.boundary === "player-rendered" && snapshot.sample?.visibleDomTextUi === false,
+    playerRenderedBoundary: snapshot.sample?.boundary === "player-rendered" && snapshot.sample?.visibleDomTextView === false,
     playerReady: snapshot.sampleState === "ready",
     compositionStarted: events.some((event) => event.kind === "compositionstart"),
     textUpdated: events.some((event) => event.kind === "textupdate" && event.detail.text?.utf16Length > 0),

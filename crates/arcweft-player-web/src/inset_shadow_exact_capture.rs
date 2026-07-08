@@ -1,4 +1,4 @@
-use arcweft_bundle::resource_codec::ui::{
+use arcweft_bundle::resource_codec::view::{
     RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax, ViewElementKind,
     ViewProgramInstruction, ViewProgramResource, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
     ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
@@ -273,6 +273,7 @@ fn exact_view_program() -> ViewProgramResource {
 fn panel_part(public_id: &str) -> ViewProgramInstruction {
     ViewProgramInstruction::OpenElement {
         element: ViewElementKind::Panel,
+        target: None,
         style: None,
         part: Some(public_id.to_owned()),
         key: None,

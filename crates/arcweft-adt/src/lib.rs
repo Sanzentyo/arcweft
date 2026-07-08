@@ -998,7 +998,7 @@ impl<T> TreeNode<T> {
     }
 }
 
-/// Deterministic parent/child tree used by layer, scene, and UI structures.
+/// Deterministic parent/child tree used by layer, scene, and View structures.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Tree<T> {
     nodes: Arena<TreeNode<T>>,
@@ -1062,8 +1062,8 @@ pub type LayerTree<T> = Tree<T>;
 /// Scene graph shares the same deterministic tree contract.
 pub type SceneGraph<T> = Tree<T>;
 
-/// UI tree shares the same deterministic tree contract.
-pub type UiTree<T> = Tree<T>;
+/// View tree shares the same deterministic tree contract.
+pub type ViewTree<T> = Tree<T>;
 
 /// Stable graph node ID.
 #[derive(Debug)]

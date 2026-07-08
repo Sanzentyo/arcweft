@@ -312,7 +312,7 @@ fn runtime_control_paint_span_carries_inline_backdrop_order() {
 fn text_controls_and_buttons_use_authored_font_family() {
     let input_target = target("input.feedback");
     let button_target = target("button.submit_feedback");
-    let font_family = "Arcweft Demo, Yu Gothic, system-ui".to_owned();
+    let font_family = "Arcweft Demo, Yu Gothic, system-view".to_owned();
     let control = text_control(input_target.clone()).with_style(RenderControlStyle {
         normal: RenderControlVisualStyle {
             font_family: Some(font_family.clone()),
@@ -356,12 +356,43 @@ fn text_controls_and_buttons_use_authored_font_family() {
 
     assert_eq!(
         input_text.font_family,
-        RenderFontFamily::Named(font_family.clone())
+        RenderFontFamily::Stack(vec![
+            "Arcweft Demo".to_owned(),
+            "Yu Gothic".to_owned(),
+            "system-view".to_owned(),
+        ])
     );
     assert_eq!(
         button_text.font_family,
-        RenderFontFamily::Named(font_family)
+        RenderFontFamily::Stack(vec![
+            "Arcweft Demo".to_owned(),
+            "Yu Gothic".to_owned(),
+            "system-view".to_owned(),
+        ])
     );
+}
+
+#[test]
+fn text_control_uses_authored_font_metrics() {
+    let control = text_control(target("input.metrics")).with_style(RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            font_size_px: Some(18.0),
+            line_height_px: Some(24.0),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    });
+    let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let input_text = frame
+        .text
+        .iter()
+        .find(|text| text.text == "hello")
+        .expect("input text block exists");
+
+    assert_eq!(input_text.font_size, 18.0);
+    assert_eq!(input_text.line_height, 24.0);
 }
 
 #[test]
@@ -412,7 +443,7 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
 }
 
 #[test]
-fn runtime_control_color_matrix_filters_reach_ui_filter_plan() {
+fn runtime_control_color_matrix_filters_reach_view_filter_plan() {
     let input_target = target("input.feedback");
     let control = text_control(input_target.clone()).with_style(RenderControlStyle {
         normal: RenderControlVisualStyle {

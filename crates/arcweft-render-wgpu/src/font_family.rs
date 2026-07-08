@@ -13,41 +13,57 @@ pub(crate) fn render_font_family(family: &RenderFontFamily) -> Family<'_> {
         RenderFontFamily::Monospace => Family::Monospace,
         RenderFontFamily::Cursive => Family::Cursive,
         RenderFontFamily::Fantasy => Family::Fantasy,
-        RenderFontFamily::Named(name) => render_named_font_family(name),
+        RenderFontFamily::Named(name) => render_single_named_font_family(name),
+        RenderFontFamily::Stack(stack) => render_font_family_stack(stack),
     }
 }
 
-fn render_named_font_family(stack: &str) -> Family<'_> {
-    let Some(family) = preferred_named_font_family(stack) else {
+fn render_font_family_stack(stack: &[String]) -> Family<'_> {
+    let Some(family) = preferred_stack_font_family(stack) else {
         trace_font_once(format_args!(
             "font-family stack={stack:?} selected=<none> glyphon_family=SansSerif"
         ));
         return Family::SansSerif;
     };
+    render_named_font_family_with_trace(family, format_args!("font-family stack={stack:?}"))
+}
+
+fn render_single_named_font_family(family: &str) -> Family<'_> {
+    let family = trim_font_family_token(family);
+    if family.is_empty() {
+        trace_font_once(format_args!(
+            "font-family name={family:?} selected=<none> glyphon_family=SansSerif"
+        ));
+        return Family::SansSerif;
+    }
+    render_named_font_family_with_trace(family, format_args!("font-family name={family:?}"))
+}
+
+fn render_named_font_family_with_trace<'a>(
+    family: &'a str,
+    prefix: fmt::Arguments<'_>,
+) -> Family<'a> {
     if let Some(generic) = generic_font_family(family) {
         trace_font_once(format_args!(
-            "font-family stack={stack:?} selected={family:?} glyphon_family=generic"
+            "{prefix} selected={family:?} glyphon_family=generic"
         ));
         generic
     } else {
         trace_font_once(format_args!(
-            "font-family stack={stack:?} selected={family:?} glyphon_family=name"
+            "{prefix} selected={family:?} glyphon_family=name"
         ));
         Family::Name(family)
     }
 }
 
-fn preferred_named_font_family(stack: &str) -> Option<&str> {
+fn preferred_stack_font_family(stack: &[String]) -> Option<&str> {
     let mut first = None;
     let mut first_non_generic = None;
-    for family in stack.split(',').map(trim_font_family_token) {
+    for family in stack.iter().map(String::as_str).map(trim_font_family_token) {
         if family.is_empty() {
             continue;
         }
         first.get_or_insert(family);
-        if preferred_cjk_font_family(family) {
-            return Some(family);
-        }
         if first_non_generic.is_none() && generic_font_family(family).is_none() {
             first_non_generic = Some(family);
         }
@@ -69,32 +85,17 @@ fn trim_font_family_token(raw: &str) -> &str {
     unquoted.trim()
 }
 
-fn preferred_cjk_font_family(family: &str) -> bool {
-    [
-        "Yu Gothic",
-        "Yu Gothic UI",
-        "Meiryo",
-        "Hiragino Sans",
-        "Hiragino Kaku Gothic ProN",
-        "Noto Sans JP",
-        "Noto Sans CJK JP",
-        "Source Han Sans JP",
-    ]
-    .into_iter()
-    .any(|candidate| family.eq_ignore_ascii_case(candidate))
-}
-
 fn generic_font_family(family: &str) -> Option<Family<'static>> {
     if family.eq_ignore_ascii_case("serif") {
         Some(Family::Serif)
     } else if family.eq_ignore_ascii_case("sans-serif")
         || family.eq_ignore_ascii_case("sans")
-        || family.eq_ignore_ascii_case("system-ui")
-        || family.eq_ignore_ascii_case("ui-sans-serif")
+        || family.eq_ignore_ascii_case("system-view")
+        || family.eq_ignore_ascii_case("view-sans-serif")
     {
         Some(Family::SansSerif)
     } else if family.eq_ignore_ascii_case("monospace")
-        || family.eq_ignore_ascii_case("ui-monospace")
+        || family.eq_ignore_ascii_case("view-monospace")
     {
         Some(Family::Monospace)
     } else if family.eq_ignore_ascii_case("cursive") {
@@ -141,19 +142,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn font_stack_prefers_japanese_system_family() {
+    fn font_stack_preserves_authored_non_generic_order() {
         assert_eq!(
-            preferred_named_font_family(
-                "\"Arcweft Demo\", Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui"
-            ),
-            Some("Yu Gothic")
+            preferred_stack_font_family(&[
+                "Arcweft Demo".to_owned(),
+                "Yu Gothic View".to_owned(),
+                "Yu Gothic".to_owned(),
+                "Hiragino Sans".to_owned(),
+                "Noto Sans JP".to_owned(),
+                "system-view".to_owned(),
+            ]),
+            Some("Arcweft Demo")
         );
     }
 
     #[test]
     fn font_stack_falls_back_to_first_non_generic_family() {
         assert_eq!(
-            preferred_named_font_family("Arcweft Display, system-ui, sans-serif"),
+            preferred_stack_font_family(&[
+                "Arcweft Display".to_owned(),
+                "system-view".to_owned(),
+                "sans-serif".to_owned(),
+            ]),
             Some("Arcweft Display")
         );
     }

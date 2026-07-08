@@ -1,5 +1,5 @@
 use super::{milli_i32_to_f32, milli_u32_to_f32, scroll_adjusted_bounds};
-use arcweft_bundle::resource_codec::ui::{
+use arcweft_bundle::resource_codec::view::{
     RgbaColor, ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter,
     ViewRuntimeControlFilterList, ViewRuntimeControlRadii, ViewRuntimeControlState,
     ViewRuntimeControlVisualStyle, ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
@@ -88,7 +88,7 @@ fn surface_fill_range(
     let fill = visual.fill.filter(|color| color.alpha > 0)?;
     let radii = surface_fill_radii(visual);
     let paint = ViewSurfacePaint::new().with_background(ViewSurfaceBackground::Solid {
-        color: ui_rgba(fill),
+        color: view_rgba(fill),
         radii,
     });
     scene.push_surface_primitives(bounds, &paint)
@@ -99,8 +99,8 @@ fn compositing_effects_from_style(
 ) -> ViewCompositingEffects {
     ViewCompositingEffects {
         opacity: visual.opacity_milli.map_or(1.0, ratio_milli_u16),
-        filters: ui_filter_list(visual.filters.as_ref()),
-        backdrop_filters: ui_filter_list(visual.backdrop_filters.as_ref()),
+        filters: view_filter_list(visual.filters.as_ref()),
+        backdrop_filters: view_filter_list(visual.backdrop_filters.as_ref()),
         box_shadows: ViewBoxShadowList::new(
             visual
                 .shadows
@@ -112,16 +112,16 @@ fn compositing_effects_from_style(
     }
 }
 
-fn ui_filter_list(filters: Option<&ViewRuntimeControlFilterList>) -> ViewFilterList {
+fn view_filter_list(filters: Option<&ViewRuntimeControlFilterList>) -> ViewFilterList {
     ViewFilterList::new(
         filters
             .into_iter()
             .flat_map(|filters| filters.filters.iter().copied())
-            .map(ui_filter_from_runtime),
+            .map(view_filter_from_runtime),
     )
 }
 
-fn ui_filter_from_runtime(filter: ViewRuntimeControlFilter) -> ViewFilter {
+fn view_filter_from_runtime(filter: ViewRuntimeControlFilter) -> ViewFilter {
     match filter {
         ViewRuntimeControlFilter::Brightness { factor_milli } => {
             ViewFilter::Brightness(ratio_milli_u32(factor_milli))
@@ -165,7 +165,7 @@ fn view_box_shadow_from_runtime(
         || ViewBoxShadowRadii::uniform(milli_u32_to_f32(shadow.radius_milli)),
         view_box_shadow_radii_from_runtime,
     );
-    let color = ui_rgba(shadow.color);
+    let color = view_rgba(shadow.color);
     match shadow.kind {
         ViewRuntimeShadowKind::Outer => {
             ViewBoxShadow::outer_with_radii(offset_x, offset_y, blur, spread, radii, color)
@@ -240,7 +240,7 @@ fn direct(range: ViewPrimitiveRange, clip: Option<HitRect>) -> ViewPaintNode {
     })
 }
 
-fn ui_rgba(color: RgbaColor) -> ViewColorRgba8 {
+fn view_rgba(color: RgbaColor) -> ViewColorRgba8 {
     ViewColorRgba8 {
         red: color.red,
         green: color.green,

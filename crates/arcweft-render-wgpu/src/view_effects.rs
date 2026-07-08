@@ -1,4 +1,4 @@
-//! Deterministic effect-pass planning for the Arcweft UI compositor.
+//! Deterministic effect-pass planning for the Arcweft View compositor.
 //!
 //! The types in this module are pure renderer data: they translate the seq06.9a
 //! `ViewFilterList` contract into color-matrix, blur, and drop-shadow passes, and

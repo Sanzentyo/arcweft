@@ -1,4 +1,4 @@
-//! Deterministic CSS layout/cascade coverage data for the retained UI path.
+//! Deterministic CSS layout/cascade coverage data for the retained View path.
 //!
 //! This module is intentionally a coverage/evidence layer around Takumi lowering:
 //! Takumi remains the CSS cascade/layout/stacking source, and Arcweft still lowers
@@ -206,7 +206,7 @@ pub const CSS_COVERAGE_MATRIX: &[CssCoverageMatrixRow] = &[
     CssCoverageMatrixRow::new(
         CssCoverageFeature::PseudoElement,
         CssCoverageStatus::IntentionallyRejected,
-        "`::before`, `::after`, `::part`, and other pseudo-elements would synthesize nodes and are not in this retained-UI cut.",
+        "`::before`, `::after`, `::part`, and other pseudo-elements would synthesize nodes and are not in this retained-View cut.",
     ),
     CssCoverageMatrixRow::new(
         CssCoverageFeature::StructuralSelector,
@@ -271,7 +271,7 @@ pub const CSS_COVERAGE_MATRIX: &[CssCoverageMatrixRow] = &[
     CssCoverageMatrixRow::new(
         CssCoverageFeature::GridLayout,
         CssCoverageStatus::StructuredDiagnostic,
-        "Grid declarations are accepted by data ingestion but reported as out of scope for direct retained UI evidence.",
+        "Grid declarations are accepted by data ingestion but reported as out of scope for direct retained View evidence.",
     ),
     CssCoverageMatrixRow::new(
         CssCoverageFeature::Margin,
@@ -341,7 +341,7 @@ pub const CSS_COVERAGE_MATRIX: &[CssCoverageMatrixRow] = &[
     CssCoverageMatrixRow::new(
         CssCoverageFeature::ViewportMediaQuery,
         CssCoverageStatus::StructuredDiagnostic,
-        "Viewport media queries are diagnosed until retained UI viewport policy is fixed.",
+        "Viewport media queries are diagnosed until retained View viewport policy is fixed.",
     ),
     CssCoverageMatrixRow::new(
         CssCoverageFeature::ContainerQuery,

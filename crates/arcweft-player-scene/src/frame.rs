@@ -4,7 +4,7 @@ use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigatio
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
-use arcweft_bundle::resource_codec::ui::UiTextSelectionPolicy;
+use arcweft_bundle::resource_codec::view::ViewTextSelectionPolicy;
 use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
 use arcweft_presentation::hit::HitRect;
@@ -68,7 +68,7 @@ pub enum PlayerFrameError {
 
 /// Shared player frame construction.
 ///
-/// All interactive hosts should use this path so runtime UI controls, semantic
+/// All interactive hosts should use this path so runtime View controls, semantic
 /// focus, and render geometry cannot drift between native, web, and Agent
 /// observation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -310,7 +310,9 @@ fn render_text_block(
         line_height,
         font_family: visual
             .font_family
-            .map_or(RenderFontFamily::SansSerif, RenderFontFamily::Named),
+            .map_or(RenderFontFamily::SansSerif, |family| {
+                RenderFontFamily::from_css_stack(&family)
+            }),
         weight: render_text_weight(visual.font_weight),
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or([245, 245, 240, 255]),
@@ -320,10 +322,10 @@ fn render_text_block(
     })
 }
 
-fn render_text_selection_policy(policy: UiTextSelectionPolicy) -> RenderTextSelectionPolicy {
+fn render_text_selection_policy(policy: ViewTextSelectionPolicy) -> RenderTextSelectionPolicy {
     match policy {
-        UiTextSelectionPolicy::Enabled => RenderTextSelectionPolicy::Enabled,
-        UiTextSelectionPolicy::Disabled => RenderTextSelectionPolicy::Disabled,
+        ViewTextSelectionPolicy::Enabled => RenderTextSelectionPolicy::Enabled,
+        ViewTextSelectionPolicy::Disabled => RenderTextSelectionPolicy::Disabled,
     }
 }
 

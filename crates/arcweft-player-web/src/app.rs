@@ -14,13 +14,16 @@ use arcweft_player_scene::frame::{
 };
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::{InputController, InputOutcome};
+use arcweft_presentation::clipboard::TextClipboardRequest;
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::TextInputKeyDisposition;
 use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
+use js_sys::{Array, Uint8Array};
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
 use thiserror::Error;
@@ -95,7 +98,7 @@ struct PlayerState {
     keyboard_modifiers: ModifiersState,
     frame_fit: PlayerFrameFit,
     clock: LogicalClockQuantizer,
-    font_bytes: Option<Vec<u8>>,
+    font_set: Option<PlayerFontSet>,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     dialogue_visual_clock: DialogueVisualClock,
     fatal: Option<String>,
@@ -110,9 +113,10 @@ struct BrowserApp {
     state: Rc<RefCell<PlayerState>>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct WebPlayerOptions {
     frame_fit: PlayerFrameFit,
+    additional_font_bytes: Vec<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -125,6 +129,7 @@ impl Default for WebPlayerOptions {
     fn default() -> Self {
         Self {
             frame_fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
+            additional_font_bytes: Vec::new(),
         }
     }
 }
@@ -157,7 +162,7 @@ impl PlayerState {
 }
 
 /// Starts the WebGPU-first browser player using already-fetched bundle/font bytes.
-/// JavaScript remains a bootstrap only; it does not render game UI.
+/// JavaScript remains a bootstrap only; it does not render game View.
 #[wasm_bindgen]
 pub fn start_arcweft_player(
     canvas_id: String,
@@ -180,13 +185,10 @@ pub fn start_arcweft_player_with_options(
     font_bytes: Vec<u8>,
     options: JsValue,
 ) -> Result<(), JsValue> {
-    start(
-        canvas_id,
-        bundle_bytes,
-        font_bytes,
-        web_player_options_from_js(&options),
-    )
-    .map_err(|error| JsValue::from_str(&error.to_string()))
+    let options = web_player_options_from_js(&options)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    start(canvas_id, bundle_bytes, font_bytes, options)
+        .map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
 fn start(
@@ -195,6 +197,16 @@ fn start(
     font_bytes: Vec<u8>,
     options: WebPlayerOptions,
 ) -> Result<(), WebPlayerError> {
+    let WebPlayerOptions {
+        frame_fit,
+        additional_font_bytes,
+    } = options;
+    let mut font_resources = Vec::with_capacity(additional_font_bytes.len().saturating_add(1));
+    font_resources.push(font_bytes);
+    font_resources.extend(additional_font_bytes);
+    let font_set = PlayerFontSet::from_font_resource_bytes(font_resources)
+        .map_err(|error| WebPlayerError::Font(error.to_string()))?;
+
     let document = web_sys::window()
         .and_then(|window| window.document())
         .ok_or(WebPlayerError::MissingDocument)?;
@@ -227,9 +239,9 @@ fn start(
         frame_planner: PlayerFramePlannerState::new(),
         text_input,
         keyboard_modifiers: ModifiersState::default(),
-        frame_fit: options.frame_fit,
+        frame_fit,
         clock,
-        font_bytes: Some(font_bytes),
+        font_set: Some(font_set),
         prepared: None,
         dialogue_visual_clock: DialogueVisualClock::default(),
         fatal: None,
@@ -241,25 +253,25 @@ fn start(
         .map_err(|error| WebPlayerError::EventLoop(error.to_string()))
 }
 
-fn web_player_options_from_js(options: &JsValue) -> WebPlayerOptions {
+fn web_player_options_from_js(options: &JsValue) -> Result<WebPlayerOptions, WebPlayerError> {
     let mut parsed = WebPlayerOptions::default();
-    let Some(frame_fit) = js_property(options, "frameFit") else {
-        return parsed;
-    };
-    let fit = js_string_property(&frame_fit, "fit").unwrap_or_else(|| "contain".to_owned());
-    let design_width = js_u32_property(&frame_fit, "designWidth")
-        .or_else(|| js_u32_property(&frame_fit, "design_width"))
-        .unwrap_or(1280);
-    let design_height = js_u32_property(&frame_fit, "designHeight")
-        .or_else(|| js_u32_property(&frame_fit, "design_height"))
-        .unwrap_or(720);
-    parsed.frame_fit = match fit.as_str() {
-        "raw" | "none" => PlayerFrameFit::raw(),
-        "cover" => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Cover),
-        "stretch" => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Stretch),
-        _ => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Contain),
-    };
-    parsed
+    if let Some(frame_fit) = js_property(options, "frameFit") {
+        let fit = js_string_property(&frame_fit, "fit").unwrap_or_else(|| "contain".to_owned());
+        let design_width = js_u32_property(&frame_fit, "designWidth")
+            .or_else(|| js_u32_property(&frame_fit, "design_width"))
+            .unwrap_or(1280);
+        let design_height = js_u32_property(&frame_fit, "designHeight")
+            .or_else(|| js_u32_property(&frame_fit, "design_height"))
+            .unwrap_or(720);
+        parsed.frame_fit = match fit.as_str() {
+            "raw" | "none" => PlayerFrameFit::raw(),
+            "cover" => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Cover),
+            "stretch" => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Stretch),
+            _ => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Contain),
+        };
+    }
+    parsed.additional_font_bytes = js_u8_array_list_property(options, "additionalFontBytes")?;
+    Ok(parsed)
 }
 
 fn js_property(parent: &JsValue, key: &str) -> Option<JsValue> {
@@ -277,6 +289,30 @@ fn js_u32_property(parent: &JsValue, key: &str) -> Option<u32> {
         return None;
     }
     Some(number.min(f64::from(u32::MAX)) as u32)
+}
+
+fn js_u8_array_list_property(parent: &JsValue, key: &str) -> Result<Vec<Vec<u8>>, WebPlayerError> {
+    let Some(value) = js_property(parent, key) else {
+        return Ok(Vec::new());
+    };
+    if !Array::is_array(&value) {
+        return Err(WebPlayerError::Font(format!(
+            "`{key}` must be an array of Uint8Array font resources"
+        )));
+    }
+    let array = Array::from(&value);
+    array
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let typed = value.dyn_ref::<Uint8Array>().ok_or_else(|| {
+                WebPlayerError::Font(format!("`{key}[{index}]` must be a Uint8Array"))
+            })?;
+            let mut bytes = vec![0; typed.length() as usize];
+            typed.copy_to(&mut bytes);
+            Ok(bytes)
+        })
+        .collect()
 }
 
 impl ApplicationHandler for BrowserApp {
@@ -343,7 +379,8 @@ impl ApplicationHandler for BrowserApp {
             }
             WindowEvent::Focused(focused) => {
                 let outcome = state.input.focus_changed(focused);
-                apply_outcome(&mut state, outcome);
+                let clipboard_requests = apply_outcome(&mut state, outcome);
+                schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
                 if !focused && let Err(error) = state.text_input.blur_active() {
                     set_fatal(&mut state, WebPlayerError::TextInput(error.to_string()));
                     return;
@@ -354,7 +391,8 @@ impl ApplicationHandler for BrowserApp {
                 let logical = logical_position(position, window.scale_factor());
                 if let Some(frame) = state.prepared.clone() {
                     let outcome = state.input.pointer_move(&frame, PointerId(0), logical);
-                    apply_outcome(&mut state, outcome);
+                    let clipboard_requests = apply_outcome(&mut state, outcome);
+                    schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
                 }
                 window.request_redraw();
             }
@@ -391,7 +429,8 @@ impl ApplicationHandler for BrowserApp {
                             state.input.pointer_up(&frame, pointer, position, modifiers)
                         }
                     };
-                    apply_outcome(&mut state, outcome);
+                    let clipboard_requests = apply_outcome(&mut state, outcome);
+                    schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
                 }
                 window.request_redraw();
             }
@@ -404,7 +443,8 @@ impl ApplicationHandler for BrowserApp {
                 };
                 if let Some(frame) = state.prepared.clone() {
                     let outcome = state.input.wheel(&frame, delta_y);
-                    apply_outcome(&mut state, outcome);
+                    let clipboard_requests = apply_outcome(&mut state, outcome);
+                    schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
                 }
                 window.request_redraw();
             }
@@ -418,8 +458,23 @@ impl ApplicationHandler for BrowserApp {
                     ElementState::Released => KeyPhase::Up,
                 };
                 if let Some(frame) = state.prepared.clone() {
-                    if let Err(error) = drain_text_input_edits(&mut state, &frame) {
-                        set_fatal(&mut state, error);
+                    let mut clipboard_requests = Vec::new();
+                    let text_input_changed = match drain_text_input_edits(&mut state, &frame) {
+                        Ok((changed, requests)) => {
+                            clipboard_requests.extend(requests);
+                            changed
+                        }
+                        Err(error) => {
+                            set_fatal(&mut state, error);
+                            return;
+                        }
+                    };
+                    if state.fatal.is_some() {
+                        return;
+                    }
+                    if phase == KeyPhase::Down && text_input_changed {
+                        schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
+                        window.request_redraw();
                         return;
                     }
                     let disposition = state
@@ -434,15 +489,19 @@ impl ApplicationHandler for BrowserApp {
                         shift_pressed,
                         disposition,
                     );
-                    apply_outcome(&mut state, outcome);
+                    clipboard_requests.extend(apply_outcome(&mut state, outcome));
+                    schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
                 }
                 window.request_redraw();
             }
-            WindowEvent::RedrawRequested => {
-                if let Err(error) = redraw(&mut state, &window) {
+            WindowEvent::RedrawRequested => match redraw(&mut state, &window) {
+                Ok(clipboard_requests) => {
+                    schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
+                }
+                Err(error) => {
                     set_fatal(&mut state, error);
                 }
-            }
+            },
             _ => {}
         }
     }
@@ -462,12 +521,11 @@ async fn initialize_gpu(
         .await
         .map_err(|error| WebPlayerError::WebGpu(error.to_string()))?;
     let mut renderer = SharedRenderer::new(host.device(), host.queue(), host.format());
-    let font_bytes = state
+    let font_set = state
         .borrow_mut()
-        .font_bytes
+        .font_set
         .take()
-        .ok_or_else(|| WebPlayerError::Font("font bytes were already consumed".to_owned()))?;
-    let font_set = PlayerFontSet::single(font_bytes);
+        .ok_or_else(|| WebPlayerError::Font("font set was already consumed".to_owned()))?;
     let mut state = state.borrow_mut();
     font_set
         .register_with_renderer_and_planner(&mut renderer, &mut state.frame_planner)
@@ -476,7 +534,11 @@ async fn initialize_gpu(
     Ok(())
 }
 
-fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPlayerError> {
+fn redraw(
+    state: &mut PlayerState,
+    window: &Arc<dyn Window>,
+) -> Result<Vec<TextClipboardRequest>, WebPlayerError> {
+    let mut clipboard_requests = Vec::new();
     let host_millis = now_millis();
     for clock in state
         .clock
@@ -509,7 +571,9 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         .text_input
         .sync_prepared_frame(&prepared, WebRuntimeTextInputFocusReason::RedrawRefresh)
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
-    if drain_text_input_edits(state, &prepared)? {
+    let (changed, requests) = drain_text_input_edits(state, &prepared)?;
+    clipboard_requests.extend(requests);
+    if changed {
         prepared = prepare_web_player_frame(state, viewport, host_millis_u64)?;
         state
             .text_input
@@ -518,7 +582,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
     }
 
     let GpuState::Ready(gpu) = &mut state.gpu else {
-        return Ok(());
+        return Ok(clipboard_requests);
     };
     let paragraph_evidence = gpu
         .renderer
@@ -544,7 +608,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         Err(error) => return Err(WebPlayerError::WebGpu(error.to_string())),
     }
     state.prepared = Some(prepared);
-    Ok(())
+    Ok(clipboard_requests)
 }
 
 fn prepare_web_player_frame(
@@ -617,11 +681,11 @@ impl From<BundleImageCatalogError> for WebPlayerError {
     }
 }
 
-fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
+fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClipboardRequest> {
     let InputOutcome {
         actions,
         text_control_write_backs,
-        clipboard_requests: _,
+        clipboard_requests,
         diagnostics: _,
         dialogue_advance,
         cancel: _,
@@ -642,6 +706,43 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
     {
         set_fatal(state, WebPlayerError::Session(error.to_string()));
     }
+    clipboard_requests
+}
+
+fn schedule_clipboard_requests(
+    state: Rc<RefCell<PlayerState>>,
+    clipboard_requests: Vec<TextClipboardRequest>,
+) {
+    if clipboard_requests.is_empty() {
+        return;
+    }
+    spawn_local(async move {
+        let mut pending = VecDeque::from(clipboard_requests);
+        while let Some(request) = pending.pop_front() {
+            let host_outcome = crate::clipboard::apply_clipboard_request(request).await;
+            let nested = {
+                let mut state = state.borrow_mut();
+                if let Some(frame) = state.prepared.clone() {
+                    match state.input.apply_clipboard_outcome(&frame, host_outcome) {
+                        Ok(outcome) => apply_outcome(&mut state, outcome),
+                        Err(error) => {
+                            set_fatal(&mut state, WebPlayerError::TextEditor(error.to_string()));
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    Vec::new()
+                }
+            };
+            pending.extend(nested);
+            if let Some(window) = state.borrow().window.as_ref() {
+                window.request_redraw();
+            }
+            if state.borrow().fatal.is_some() {
+                break;
+            }
+        }
+    });
 }
 
 fn update_text_input_client_transform(state: &mut PlayerState) -> Result<(), WebPlayerError> {
@@ -658,20 +759,21 @@ fn update_text_input_client_transform(state: &mut PlayerState) -> Result<(), Web
 fn drain_text_input_edits(
     state: &mut PlayerState,
     frame: &arcweft_render_wgpu::geometry::PreparedFrame,
-) -> Result<bool, WebPlayerError> {
+) -> Result<(bool, Vec<TextClipboardRequest>), WebPlayerError> {
     let edits = state
         .text_input
         .drain_pending_edits()
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
     let changed = !edits.is_empty();
+    let mut clipboard_requests = Vec::new();
     for edit in edits {
         let outcome = state
             .input
             .text_input(frame, edit.into_input())
             .map_err(|error| WebPlayerError::TextEditor(error.to_string()))?;
-        apply_outcome(state, outcome);
+        clipboard_requests.extend(apply_outcome(state, outcome));
     }
-    Ok(changed)
+    Ok((changed, clipboard_requests))
 }
 
 fn logical_position(position: PhysicalPosition<f64>, scale_factor: f64) -> ViewportPoint {

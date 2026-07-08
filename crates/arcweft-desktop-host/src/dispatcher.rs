@@ -122,7 +122,7 @@ pub struct DesktopHost<B: DesktopBackend> {
 }
 
 impl<B: DesktopBackend> DesktopHost<B> {
-    /// Binds UI work to the calling thread.
+    /// Binds host-window work to the calling thread.
     pub fn bind_current_thread(backend: B) -> Self {
         Self {
             backend: Arc::new(backend),
@@ -151,7 +151,7 @@ impl<B: DesktopBackend> DesktopHost<B> {
         }
     }
 
-    /// Starts queued UI work and collects asynchronous completions.
+    /// Starts queued host-window work and collects asynchronous completions.
     ///
     /// Native players call this from their event-loop thread once per turn.
     pub fn pump_main_thread(&self) -> Result<PumpReport, DesktopError> {

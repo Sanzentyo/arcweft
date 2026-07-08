@@ -131,7 +131,7 @@ fn glyph_run_requires_explicit_text_handoff() {
         primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
     }));
 
-    let prepared_ui = PreparedViewScene::new(scene).with_resources(resources);
+    let prepared_view = PreparedViewScene::new(scene).with_resources(resources);
 
-    assert_eq!(prepared_ui.resources.glyph_handoffs()[0].run_index, 7);
+    assert_eq!(prepared_view.resources.glyph_handoffs()[0].run_index, 7);
 }

@@ -959,7 +959,7 @@ impl BundleSession {
         let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
-        self.capture_ui_host_calls(output.requests.host_calls, &mut diagnostics);
+        self.capture_view_host_calls(output.requests.host_calls, &mut diagnostics);
         let cancel_scopes = output.requests.cancel_scopes;
         for scope in &cancel_scopes {
             self.tasks
@@ -1065,13 +1065,13 @@ impl BundleSession {
             .collect()
     }
 
-    fn capture_ui_host_calls(
+    fn capture_view_host_calls(
         &mut self,
         requests: Vec<RuntimeHostCallRequest>,
         diagnostics: &mut Vec<String>,
     ) {
         for request in requests {
-            if request.capability == "ui.action" && request.operation == "await" {
+            if request.capability == "view.action" && request.operation == "await" {
                 match action_receive_action_id(&request) {
                     Some(action_id) => {
                         self.waiting_action_receive_calls
@@ -1084,7 +1084,7 @@ impl BundleSession {
                         id: request.id,
                         outcome: Err(RuntimeHostCallError {
                             kind: RuntimeHostCallErrorKind::Rejected,
-                            message: "ui.action.await requires one action target".to_owned(),
+                            message: "view.action.await requires one action target".to_owned(),
                         }),
                     }),
                 }
@@ -1449,12 +1449,12 @@ fn same_runtime_text_control_identity(
 #[cfg(test)]
 mod text_control_writeback_tests {
     use super::*;
-    use arcweft_bundle::resource_codec::ui::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-        UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-        UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeControlStyle,
-        ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
-        ViewRuntimeTextControlOptions,
+    use arcweft_bundle::resource_codec::view::{
+        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+        ViewInputPurpose, ViewRuntimeControlStyle, ViewRuntimeTextControlBounds,
+        ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewSecureInputPolicy,
+        ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+        ViewTextVerticalNavigationPolicy,
     };
     use arcweft_id::PublicId;
     use arcweft_presentation::input::InteractionTarget as PresentationTarget;
@@ -1472,20 +1472,20 @@ mod text_control_writeback_tests {
             value: value.to_owned(),
             selection: ViewRuntimeTextSelection::collapsed_at_end(value),
             options: ViewRuntimeTextControlOptions {
-                purpose: UiInputPurpose::Text,
+                purpose: ViewInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
                 capitalization: TextCapitalization::None,
                 enter_key: EnterKeyHint::Default,
                 multiline: false,
-                selection_policy: UiTextSelectionPolicy::Enabled,
-                shortcut_policy: UiTextShortcutPolicy::Enabled,
-                tab_policy: UiTextTabPolicy::FocusNavigation,
-                vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-                secure_policy: UiSecureInputPolicy::Plain,
+                selection_policy: ViewTextSelectionPolicy::Enabled,
+                shortcut_policy: ViewTextShortcutPolicy::Enabled,
+                tab_policy: ViewTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+                secure_policy: ViewSecureInputPolicy::Plain,
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },
-            kind: UiInputKind::TextField,
+            kind: ViewInputKind::TextField,
             bounds: ViewRuntimeTextControlBounds::from_px(0, 0, 100, 24),
             label: None,
             handlers: ViewRuntimeTextControlHandlers::default(),
@@ -1680,32 +1680,38 @@ fn build_session_runtime(
     if let SessionLaunchTarget::Entry(entry) = launch_target {
         ensure_session_awbc_entry_selects_flow(&program, entry)?;
     }
-    let mut text_inputs = bundle.ui_input.as_ref().map_or_else(Vec::new, |input| {
-        input.runtime_text_controls(bundle.ui_text.as_ref(), bundle.ui_program.as_ref())
+    let mut text_inputs = bundle.view_input.as_ref().map_or_else(Vec::new, |input| {
+        input.runtime_text_controls(bundle.view_text.as_ref(), bundle.view_program.as_ref())
     });
-    let mut action_buttons = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
-        program.runtime_action_buttons(bundle.ui_text.as_ref())
-    });
+    let mut action_buttons = bundle
+        .view_program
+        .as_ref()
+        .map_or_else(Vec::new, |program| {
+            program.runtime_action_buttons(bundle.view_text.as_ref())
+        });
     let scroll_regions = bundle
-        .ui_program
+        .view_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_scroll_regions);
     let styled_surfaces = bundle
-        .ui_program
+        .view_program
         .as_ref()
         .map_or_else(Default::default, |program| {
-            program.runtime_surfaces_with_style(bundle.ui_style.as_ref())
+            program.runtime_surfaces_with_style(bundle.view_style.as_ref())
         });
     let surfaces = styled_surfaces.controls;
-    let mut text_blocks = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
-        program.runtime_text_blocks(bundle.ui_text.as_ref())
-    });
+    let mut text_blocks = bundle
+        .view_program
+        .as_ref()
+        .map_or_else(Vec::new, |program| {
+            program.runtime_text_blocks(bundle.view_text.as_ref())
+        });
     let mut runtime_control_style_diagnostics = styled_surfaces.diagnostics;
     runtime_control_style_diagnostics.extend(
         bundle
-            .ui_program
+            .view_program
             .as_ref()
-            .zip(bundle.ui_style.as_ref())
+            .zip(bundle.view_style.as_ref())
             .map_or_else(Default::default, |(program, style)| {
                 program.apply_runtime_styles(
                     style,
@@ -1716,11 +1722,11 @@ fn build_session_runtime(
             }),
     );
     let focus_groups = bundle
-        .ui_program
+        .view_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_focus_groups);
     let focus_navigation = bundle
-        .ui_program
+        .view_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_focus_navigation);
 

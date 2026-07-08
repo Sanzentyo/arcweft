@@ -62,7 +62,7 @@ test-rich-text-object-goal:
 test-image-animation-goal:
     @cargo test -p arcweft-image -- --nocapture
     @cargo test -p arcweft-presentation image -- --nocapture
-    @cargo test -p arcweft-ui image -- --nocapture
+    @cargo test -p arcweft-view image -- --nocapture
     @cargo test -p arcweft-render-native image -- --nocapture
     @cargo test -p arcweft-lang-sema tests::declarations::parses_surface_alias_and_resource_entity_families -- --exact --nocapture
     @cargo test -p arcweft-lang-sema tests::typecheck::typechecks_presentation_image_object_call_with_named_asset_and_bounds -- --exact --nocapture
@@ -228,10 +228,21 @@ css-layout-cascade-coverage:
     @cargo test -p arcweft-takumi-adapter css_layout_cascade --quiet
     @cargo +nightly -Zscript tools\run-css-layout-cascade-coverage-gates.rs --fixtures fixtures\css-layout-cascade-coverage
 
-reactive-ui-style-sample:
-    @New-Item -ItemType Directory -Force -Path web\local,target\reactive-ui-style,target\reactive-ui-style\interaction-states | Out-Null
-    @cargo run -p arcweft-cli -- bundle samples/reactive-ui-style/src/main.arcw --output web/local/reactive-ui-style.awfb
-    @cargo run -p arcweft-render-wgpu --example ui_interaction_showcase -- --out target\reactive-ui-style\interaction-states
+reactive-view-style-sample:
+    @New-Item -ItemType Directory -Force -Path web\local,target\reactive-view-style,target\reactive-view-style\interaction-states | Out-Null
+    @cargo run -p arcweft-cli -- bundle samples/reactive-view-style/src/main.arcw --output web/local/reactive-view-style.awfb
+    @cargo run -p arcweft-render-wgpu --example view_interaction_showcase -- --out target\reactive-view-style\interaction-states
+
+web-player-refresh:
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown --all-features
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @cargo run -p arcweft-cli --all-features -- bundle web\demo.arcw --output web\demo.awfb
+    @cargo run -p arcweft-cli --all-features -- bundle samples\modern-feedback-ui\src\main.arcw --output web\modern-feedback-ui.awfb
+
+web-player-serve port="4173":
+    @Write-Host "Serving Arcweft web player at http://127.0.0.1:{{port}}/"
+    @Write-Host "Modern feedback: http://127.0.0.1:{{port}}/?bundle=./modern-feedback-ui.awfb"
+    @python -m http.server {{port}} --bind 127.0.0.1 --directory web
 
 ime-sample-web port="8786":
     @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb
@@ -297,7 +308,7 @@ test-tier2: test-slow-mcp test-slow-agent-observe test-visual-golden
 
 seq06-13e1-inset-shadow-policy:
     @cargo +nightly -Zscript tools\source-gates\seq06_13e1_inset_shadow_exact_golden_policy.rs --root .
-    @cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden seq06_13e1_inset_shadow_policy_pins_typed_compositor_route --all-features -- --exact
+    @cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_policy_pins_typed_compositor_route --all-features -- --exact
 
 seq06-13e1-inset-shadow-native-capture out="target\\seq06.13e.1-inset-box-shadow-golden":
     @cargo +nightly -Zscript tools\capture-seq06-13e1-inset-shadow-native-frame.rs --root . --out-dir "{{out}}"
@@ -307,7 +318,7 @@ seq06-13e1-inset-shadow-pinned-native-golden out="target\\seq06.13e.1-inset-box-
 
 seq06-13e1-inset-shadow-pinned-golden out="target\\seq06.13e.1-inset-box-shadow-golden":
     @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{out}}" --mode both --run
-    @cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden --all-features -- --ignored --exact --nocapture
+    @cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden --all-features -- --ignored --exact --nocapture
 
 test-seq06-13e1-inset-shadow-pinned-golden: seq06-13e1-inset-shadow-policy seq06-13e1-inset-shadow-pinned-golden
 

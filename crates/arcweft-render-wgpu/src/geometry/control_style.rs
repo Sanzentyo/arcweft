@@ -283,19 +283,19 @@ impl RenderControlShadow {
 }
 
 impl RenderControlFilterList {
-    fn ui_filter_list(&self) -> ViewFilterList {
+    fn view_filter_list(&self) -> ViewFilterList {
         ViewFilterList::from_filters(
             self.filters
                 .iter()
                 .copied()
-                .map(RenderControlFilter::ui_filter)
+                .map(RenderControlFilter::view_filter)
                 .collect(),
         )
     }
 }
 
 impl RenderControlFilter {
-    const fn ui_filter(self) -> ViewFilter {
+    const fn view_filter(self) -> ViewFilter {
         match self {
             Self::Brightness { factor } => ViewFilter::Brightness(factor),
             Self::Contrast { factor } => ViewFilter::Contrast(factor),
@@ -321,7 +321,7 @@ pub(super) fn control_font_family(visual: &RenderControlVisualStyle) -> RenderFo
         .font_family
         .as_ref()
         .map_or(RenderFontFamily::SansSerif, |font_family| {
-            RenderFontFamily::Named(font_family.clone())
+            RenderFontFamily::from_css_stack(font_family)
         })
 }
 
@@ -411,7 +411,7 @@ pub(super) fn push_control_backdrop_plan(
     let Some(filters) = &visual.backdrop_filters else {
         return;
     };
-    let filters = filters.ui_filter_list();
+    let filters = filters.view_filter_list();
     if filters.is_empty() {
         return;
     }
@@ -432,7 +432,7 @@ pub(super) fn push_control_filter_plan(
     let Some(filters) = &visual.filters else {
         return;
     };
-    let filters = filters.ui_filter_list();
+    let filters = filters.view_filter_list();
     if filters.is_empty() {
         return;
     }

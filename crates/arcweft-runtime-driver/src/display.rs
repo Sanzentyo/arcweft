@@ -681,13 +681,13 @@ mod tests {
     use crate::presentation_handles::{
         PresentationHandleDiagnosticCode, PresentationResourceState,
     };
-    use arcweft_bundle::resource_codec::ui::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-        UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-        UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewFocusDirection, ViewFocusGroupPolicy,
-        ViewFocusInitialPolicy, ViewFocusSkipPolicy, ViewFocusTargetResolution,
-        ViewFocusWrapPolicy, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-        ViewRuntimeFocusNavigationEdge,
+    use arcweft_bundle::resource_codec::view::{
+        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
+        ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusInitialPolicy, ViewFocusSkipPolicy,
+        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewInputKind, ViewInputPurpose,
+        ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeFocusNavigationEdge,
+        ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+        ViewTextVerticalNavigationPolicy,
     };
     use arcweft_bundle::resource_codec::{
         ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlStyle,
@@ -1217,20 +1217,20 @@ mod tests {
             value: String::new(),
             selection: ViewRuntimeTextSelection::new(0, 0),
             options: ViewRuntimeTextControlOptions {
-                purpose: UiInputPurpose::Text,
+                purpose: ViewInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
                 capitalization: TextCapitalization::None,
                 enter_key: EnterKeyHint::Default,
                 multiline: false,
-                selection_policy: UiTextSelectionPolicy::Enabled,
-                shortcut_policy: UiTextShortcutPolicy::Enabled,
-                tab_policy: UiTextTabPolicy::FocusNavigation,
-                vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-                secure_policy: UiSecureInputPolicy::Plain,
+                selection_policy: ViewTextSelectionPolicy::Enabled,
+                shortcut_policy: ViewTextShortcutPolicy::Enabled,
+                tab_policy: ViewTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+                secure_policy: ViewSecureInputPolicy::Plain,
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },
-            kind: UiInputKind::TextField,
+            kind: ViewInputKind::TextField,
             bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
             label: None,
             handlers: ViewRuntimeTextControlHandlers::default(),
@@ -1275,7 +1275,7 @@ mod tests {
             bounds: arcweft_bundle::resource_codec::ViewRuntimeTextBlockBounds::from_px(
                 80, 560, 360, 24,
             ),
-            selection_policy: UiTextSelectionPolicy::Disabled,
+            selection_policy: ViewTextSelectionPolicy::Disabled,
             style: ViewRuntimeControlStyle::default(),
         }
     }
@@ -1286,7 +1286,7 @@ mod tests {
             target: "surface.ModernFeedbackPanel.card".to_owned(),
             view: Some("view.ModernFeedbackPanel".to_owned()),
             containing_scroll_region: None,
-            element: arcweft_bundle::resource_codec::ui::ViewElementKind::Panel,
+            element: arcweft_bundle::resource_codec::view::ViewElementKind::Panel,
             bounds: arcweft_bundle::resource_codec::ViewRuntimeSurfaceBounds::from_px(
                 8, 12, 96, 48,
             ),

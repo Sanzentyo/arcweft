@@ -85,7 +85,7 @@ pub struct ChoiceScroll {
     pub offset_y: f32,
 }
 
-/// One scrollable retained UI region in logical viewport coordinates.
+/// One scrollable retained View region in logical viewport coordinates.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderScrollRegion {
     pub id: String,
@@ -208,7 +208,7 @@ pub struct RenderScene {
     pub scroll_regions: Vec<RenderScrollRegion>,
 }
 
-/// One retained UI scene attached to the normal renderer frame.
+/// One retained View scene attached to the normal renderer frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedViewScene {
     pub scene: ViewScene,
@@ -611,9 +611,30 @@ pub enum RenderFontFamily {
     Cursive,
     Fantasy,
     Named(String),
+    Stack(Vec<String>),
 }
 
 impl RenderFontFamily {
+    pub fn from_css_stack(stack: &str) -> Self {
+        let families = stack
+            .split(',')
+            .map(|family| {
+                family
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .trim()
+                    .to_owned()
+            })
+            .filter(|family| !family.is_empty())
+            .collect::<Vec<_>>();
+        match families.as_slice() {
+            [] => Self::SansSerif,
+            [family] => Self::Named(family.clone()),
+            _ => Self::Stack(families),
+        }
+    }
+
     fn from_rich_text(family: &RichTextFontFamily) -> Self {
         match family {
             RichTextFontFamily::Serif => Self::Serif,
@@ -1508,11 +1529,11 @@ fn build_frame_layers(ids: &FrameIds) -> LayerTree {
         .insert(
             LayerNode::new(
                 ids.choice.clone(),
-                LayerKind::GameUi,
-                order(RenderPhase::GameUi, 0),
+                LayerKind::GameView,
+                order(RenderPhase::GameView, 0),
             )
             .with_parent(ids.root.clone())
-            .with_content(LayerContent::NativeUi(ids.choice_content.clone()))
+            .with_content(LayerContent::NativeView(ids.choice_content.clone()))
             .with_input_policy(LayerInputPolicy::HitTest),
         )
         .expect("choice layer parent is present");
@@ -1520,11 +1541,11 @@ fn build_frame_layers(ids: &FrameIds) -> LayerTree {
         .insert(
             LayerNode::new(
                 ids.text_input.clone(),
-                LayerKind::GameUi,
-                order(RenderPhase::GameUi, 1),
+                LayerKind::GameView,
+                order(RenderPhase::GameView, 1),
             )
             .with_parent(ids.root.clone())
-            .with_content(LayerContent::NativeUi(ids.text_input_content.clone()))
+            .with_content(LayerContent::NativeView(ids.text_input_content.clone()))
             .with_input_policy(LayerInputPolicy::HitTest),
         )
         .expect("text-input layer parent is present");
@@ -1532,11 +1553,11 @@ fn build_frame_layers(ids: &FrameIds) -> LayerTree {
         .insert(
             LayerNode::new(
                 ids.action_button.clone(),
-                LayerKind::GameUi,
-                order(RenderPhase::GameUi, 2),
+                LayerKind::GameView,
+                order(RenderPhase::GameView, 2),
             )
             .with_parent(ids.root.clone())
-            .with_content(LayerContent::NativeUi(ids.action_button_content.clone()))
+            .with_content(LayerContent::NativeView(ids.action_button_content.clone()))
             .with_input_policy(LayerInputPolicy::HitTest),
         )
         .expect("action-button layer parent is present");
@@ -2244,9 +2265,9 @@ impl FrameStaticId {
             Self::TextInputLayer => "layer.player.text_input",
             Self::ActionButtonLayer => "layer.player.action_button",
             Self::DialogueContent => "textbox.player.dialogue",
-            Self::ChoiceContent => "ui.player.choice",
-            Self::TextInputContent => "ui.player.text_input",
-            Self::ActionButtonContent => "ui.player.action_button",
+            Self::ChoiceContent => "view.player.choice",
+            Self::TextInputContent => "view.player.text_input",
+            Self::ActionButtonContent => "view.player.action_button",
         }
     }
 

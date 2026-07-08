@@ -15,7 +15,7 @@ fn web_player_source_has_no_dom_overlay_renderer() {
     ] {
         assert!(
             !app.contains(forbidden),
-            "web player source must not contain DOM/canvas UI fallback: {forbidden}"
+            "web player source must not contain DOM/canvas overlay fallback: {forbidden}"
         );
     }
 }

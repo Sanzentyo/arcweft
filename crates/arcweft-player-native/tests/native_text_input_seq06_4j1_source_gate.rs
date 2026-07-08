@@ -16,7 +16,7 @@ fn normal_player_backend_identity_is_winit_owned_without_platform_identity_leak(
         "WindowsTsf",
         "MacosAppKit",
         "InputConnection",
-        "UiTextInput",
+        "ViewTextInput",
     ] {
         assert!(
             !backend.contains(token),

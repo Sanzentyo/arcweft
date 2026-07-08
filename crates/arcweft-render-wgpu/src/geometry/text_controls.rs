@@ -10,6 +10,7 @@ use super::{
     RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight, RenderViewport,
 };
 use crate::font_family::{font_trace_enabled, render_font_family, trace_font_debug};
+use crate::font_system::new_font_system;
 use crate::text_editor_geometry::{TextEditorGeometryContext, TextEditorGeometryPump};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -92,7 +93,7 @@ struct TextControlDisplayChar {
 impl TextControlFontContext {
     pub(super) fn new() -> Self {
         let mut context = Self {
-            font_system: FontSystem::new(),
+            font_system: new_font_system(),
             layout_cache: HashMap::new(),
             layout_cache_hits: 0,
             layout_cache_misses: 0,
@@ -162,7 +163,7 @@ impl Default for TextControlFontContext {
     }
 }
 
-/// Real text-control input lowered from runtime/product UI state.
+/// Real text-control input lowered from runtime/product View state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderTextInputControl {
     pub target: InteractionTarget,
@@ -341,8 +342,8 @@ pub(super) fn build_text_input(
             clip_bounds: Some(clip_bounds),
             buffer_width: Some(visual_layout.buffer_size.width),
             buffer_height: Some(visual_layout.buffer_size.height),
-            font_size: text_control_font_size(control),
-            line_height: text_control_line_height(control),
+            font_size: text_control_font_size(control, &visual),
+            line_height: text_control_line_height(control, &visual),
             font_family: control_font_family(&visual),
             weight: RenderTextWeight::Regular,
             slant: RenderTextSlant::Upright,
@@ -653,7 +654,7 @@ fn text_caret_rect(control: &RenderTextInputControl, layout: &LaidOutText, offse
                 inner.x,
                 inner.y,
                 CARET_WIDTH,
-                text_control_line_height(control),
+                text_control_line_height(control, &super::RenderControlVisualStyle::default()),
             )
         },
         |glyph| {
@@ -744,13 +745,24 @@ fn apply_viewport_clip_to_rectangles(rectangles: &mut [PaintRect], viewport_clip
     }
 }
 
-fn text_control_font_size(control: &RenderTextInputControl) -> f32 {
-    (control.bounds.height * 0.55).clamp(12.0, 28.0)
+fn text_control_font_size(
+    control: &RenderTextInputControl,
+    visual: &super::RenderControlVisualStyle,
+) -> f32 {
+    visual
+        .font_size_px
+        .unwrap_or_else(|| (control.bounds.height * 0.55).clamp(12.0, 28.0))
+        .max(1.0)
 }
 
-fn text_control_line_height(control: &RenderTextInputControl) -> f32 {
+fn text_control_line_height(
+    control: &RenderTextInputControl,
+    visual: &super::RenderControlVisualStyle,
+) -> f32 {
     let inner_height = (control.bounds.height - TEXT_INSET_Y * 2.0).max(1.0);
-    (text_control_font_size(control) * 1.25)
+    visual
+        .line_height_px
+        .unwrap_or_else(|| text_control_font_size(control, visual) * 1.25)
         .max(1.0)
         .min(inner_height)
 }
@@ -872,7 +884,7 @@ fn laid_out_text_for_control(
     font_context: &mut TextControlFontContext,
 ) -> LaidOutText {
     let inner = text_local_inner_bounds(control);
-    let line_height = text_control_line_height(control);
+    let line_height = text_control_line_height(control, visual);
     let mut glyphs = Vec::new();
     if control.value.is_empty() {
         glyphs.push(empty_text_control_caret_anchor(inner, line_height));
@@ -931,8 +943,8 @@ fn text_control_buffer(
     display_text: &TextControlDisplayText,
     font_context: &mut TextControlFontContext,
 ) -> Buffer {
-    let font_size = text_control_font_size(control);
-    let line_height = text_control_line_height(control);
+    let font_size = text_control_font_size(control, visual);
+    let line_height = text_control_line_height(control, visual);
     let inner = text_local_inner_bounds(control);
     let font_family = control_font_family(visual);
     trace_text_control_shape_request(font_context, control, options, &font_family, display_text);
@@ -1040,15 +1052,15 @@ fn interesting_font_face(face: &fontdb::FaceInfo) -> bool {
         [
             "Arcweft Demo",
             "Yu Gothic",
-            "Yu Gothic UI",
+            "Yu Gothic View",
             "Meiryo",
-            "Meiryo UI",
+            "Meiryo View",
             "MS Gothic",
             "MS PGothic",
             "Noto Sans JP",
             "Noto Sans CJK JP",
             "Microsoft YaHei",
-            "Microsoft YaHei UI",
+            "Microsoft YaHei View",
             "SimSun",
             "NSimSun",
             "MingLiU",
@@ -1326,8 +1338,8 @@ impl TextControlLayoutCacheKey {
             bounds_y: f32_cache_key(control.bounds.y),
             bounds_width: f32_cache_key(control.bounds.width),
             bounds_height: f32_cache_key(control.bounds.height),
-            font_size: f32_cache_key(text_control_font_size(control)),
-            line_height: f32_cache_key(text_control_line_height(control)),
+            font_size: f32_cache_key(text_control_font_size(control, visual)),
+            line_height: f32_cache_key(text_control_line_height(control, visual)),
             font_family: control_font_family(visual),
             multiline: options.is_multiline(),
             secure: options.is_secure(),
@@ -1504,7 +1516,10 @@ mod tests {
             control(value, 0, 136.0).with_options(TextInputOptions::default().multiline(true));
         let layout = laid_out_for_test(&control);
         let inner = text_local_inner_bounds(&control);
-        let line_height = text_control_line_height(&control);
+        let line_height = text_control_line_height(
+            &control,
+            &crate::geometry::RenderControlVisualStyle::default(),
+        );
         let after_first_newline = text_caret_rect(&control, &layout, 2);
         let after_second_newline = text_caret_rect(&control, &layout, 3);
         let after_third_newline = text_caret_rect(&control, &layout, 4);
@@ -1575,7 +1590,13 @@ mod tests {
         let control = control("line one\nTokyo", 14, 136.0);
         let inner = text_inner_bounds(&control);
 
-        assert!(inner.height > text_control_line_height(&control) * 2.0);
+        assert!(
+            inner.height
+                > text_control_line_height(
+                    &control,
+                    &crate::geometry::RenderControlVisualStyle::default(),
+                ) * 2.0
+        );
     }
 
     #[test]

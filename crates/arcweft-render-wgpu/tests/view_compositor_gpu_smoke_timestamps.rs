@@ -2,7 +2,7 @@
 #[ignore = "requires pinned native/web adapters and exact image-readback fixtures"]
 fn gpu_smoke_clip_mask_and_motion_timestamps() {
     // Fixture contract for seq06.13 / seq06.13a:
-    // 1. Build a retained UI style transition with timestamps 0 ms, 80 ms,
+    // 1. Build a retained View style transition with timestamps 0 ms, 80 ms,
     //    160 ms, and 240 ms over background-color, opacity, scale, and
     //    outline-width.
     // 2. Lower each sampled style into the same ViewScene subtree:

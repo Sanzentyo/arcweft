@@ -1134,19 +1134,18 @@ impl ObligationCollector {
             Stmt::LetScope { scope, .. } => self.collect_scope_expr_syntax(scope),
             Stmt::LetLoop { block, .. } => self.collect_flow_items_syntax(block.body()),
             Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
-            Stmt::LetActionReceive { action, .. } => self.collect_expr(action),
+            Stmt::LetActionReceive { action, .. } => self.collect_expr(action.expr()),
             Stmt::Let { expr, .. }
-            | Stmt::Return(expr)
+            | Stmt::Return { expr, .. }
             | Stmt::Out { expr, .. }
-            | Stmt::Goto(expr)
-            | Stmt::Defer { expr, .. }
-            | Stmt::Yield(expr)
-            | Stmt::Close(expr)
-            | Stmt::Select(expr)
-            | Stmt::Expr(expr) => self.collect_expr(expr),
+            | Stmt::Expr { expr, .. } => self.collect_expr(expr),
+            Stmt::Defer { expr, .. } => self.collect_expr(expr.expr()),
+            Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+                self.collect_expr(expr.expr());
+            }
             Stmt::Assign { target, expr } => {
-                self.collect_expr(target);
-                self.collect_expr(expr);
+                self.collect_expr(target.expr());
+                self.collect_expr(expr.expr());
             }
             Stmt::Thread(thread) => self.collect_thread(thread),
             Stmt::DeferBlock { statements, .. } => self.collect_stmts(statements),
@@ -1183,27 +1182,27 @@ impl ObligationCollector {
                 condition,
                 body,
                 else_body,
-            } => self.collect_if_stmt(condition, body, else_body),
+            } => self.collect_if_stmt(condition.expr(), body, else_body),
             Stmt::While { condition, body } => {
-                self.collect_expr(condition);
+                self.collect_expr(condition.expr());
                 self.collect_stmts(body);
             }
             Stmt::Loop { body } => self.collect_stmts(body),
             Stmt::WhileLet {
                 expr, guard, body, ..
             } => {
-                self.collect_expr(expr);
+                self.collect_expr(expr.expr());
                 if let Some(guard) = guard {
-                    self.collect_expr(guard);
+                    self.collect_expr(guard.expr());
                 }
                 self.collect_stmts(body);
             }
             Stmt::For { source, body, .. } => {
-                self.collect_expr(source);
+                self.collect_expr(source.expr());
                 self.collect_stmts(body);
             }
             Stmt::Match { expr, arms } => {
-                self.collect_expr(expr);
+                self.collect_expr(expr.expr());
                 for arm in arms {
                     if let Some(guard) = arm.guard() {
                         self.collect_expr(guard);

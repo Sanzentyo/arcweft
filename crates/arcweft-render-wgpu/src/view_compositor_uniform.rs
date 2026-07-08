@@ -1,4 +1,4 @@
-//! Packed uniform contract for the shared UI compositor WGSL shader.
+//! Packed uniform contract for the shared View compositor WGSL shader.
 
 use crate::view_blend::ViewBlendShaderMode;
 use crate::view_box_shadow::ViewBoxShadowPass;

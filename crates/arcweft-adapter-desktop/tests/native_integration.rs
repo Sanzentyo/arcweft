@@ -20,7 +20,7 @@ fn native_desktop_capabilities_complete_through_host_registry() {
         .submit(&task("desktop.platform", "capabilities"))
         .expect("desktop platform adapter owns capabilities");
     let HostTaskSubmission::Completed(outcome) = submission else {
-        panic!("capabilities should complete without a UI pump");
+        panic!("capabilities should complete without a window pump");
     };
     let payload = outcome.result.expect("capabilities request succeeds");
     let response: DesktopResponse =

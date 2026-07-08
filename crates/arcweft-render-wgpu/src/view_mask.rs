@@ -1,4 +1,4 @@
-//! Mask composition planning for the UI compositor.
+//! Mask composition planning for the View compositor.
 
 use crate::view_effects::ViewTextureExtent;
 use crate::view_scene::{

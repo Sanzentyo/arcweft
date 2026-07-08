@@ -19,6 +19,14 @@ pub struct PlayerFontSet {
 pub enum PlayerFontRegistrationError {
     #[error("player font set must contain at least one font")]
     EmptySet,
+    #[error("font resource {index} must not be empty")]
+    EmptyFontResource { index: usize },
+    #[error("font resource {index} decode failed: {source}")]
+    DecodeFontResource {
+        index: usize,
+        #[source]
+        source: oxifont_webfont::WebFontError,
+    },
     #[error("frame planner font registration failed: {0}")]
     Planner(#[from] PlayerFrameError),
     #[error("renderer font registration failed: {0}")]
@@ -41,6 +49,30 @@ impl PlayerFontSet {
     #[must_use]
     pub fn single(bytes: Vec<u8>) -> Self {
         Self::new(vec![bytes])
+    }
+
+    pub fn from_font_resource_bytes(
+        fonts: Vec<Vec<u8>>,
+    ) -> Result<Self, PlayerFontRegistrationError> {
+        if fonts.is_empty() {
+            return Err(PlayerFontRegistrationError::EmptySet);
+        }
+        fonts
+            .into_iter()
+            .enumerate()
+            .map(|(index, bytes)| {
+                if bytes.is_empty() {
+                    return Err(PlayerFontRegistrationError::EmptyFontResource { index });
+                }
+                oxifont_webfont::decode_auto(&bytes)
+                    .map(|decoded| decoded.sfnt)
+                    .map_err(|source| PlayerFontRegistrationError::DecodeFontResource {
+                        index,
+                        source,
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self::new)
     }
 
     #[must_use]
@@ -127,6 +159,40 @@ mod tests {
         assert!(matches!(
             fonts.register_with_planner(&mut planner),
             Err(PlayerFontRegistrationError::EmptySet)
+        ));
+    }
+
+    #[test]
+    fn sfnt_font_resource_bytes_are_accepted() {
+        let fonts =
+            PlayerFontSet::from_font_resource_bytes(vec![DEFAULT_PLAYER_FONT_BYTES.to_vec()])
+                .expect("sfnt font resource bytes are accepted");
+
+        assert_eq!(fonts.fonts().len(), 1);
+    }
+
+    #[test]
+    fn web_default_japanese_font_resource_bytes_are_accepted() {
+        let font_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../web/assets/noto-sans-jp-vf.ttf");
+        let font_bytes = std::fs::read(font_path).expect("web default Japanese font asset exists");
+        let fonts = PlayerFontSet::from_font_resource_bytes(vec![
+            DEFAULT_PLAYER_FONT_BYTES.to_vec(),
+            font_bytes,
+        ])
+        .expect("web default Japanese font resource bytes are accepted");
+
+        assert_eq!(fonts.fonts().len(), 2);
+    }
+
+    #[test]
+    fn empty_font_resource_is_rejected_with_index() {
+        assert!(matches!(
+            PlayerFontSet::from_font_resource_bytes(vec![
+                DEFAULT_PLAYER_FONT_BYTES.to_vec(),
+                Vec::new()
+            ]),
+            Err(PlayerFontRegistrationError::EmptyFontResource { index: 1 })
         ));
     }
 }

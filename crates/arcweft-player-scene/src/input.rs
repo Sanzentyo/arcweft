@@ -13,6 +13,7 @@ use arcweft_presentation::interaction::{
     FocusState, InteractionState, PointerCapture, PressedTarget,
 };
 use arcweft_presentation::router::{InputRouter, RouteDecision};
+use arcweft_presentation::semantic::SemanticActionError;
 use arcweft_presentation::text_editor::{
     TextEditorError, TextEditorLayout, TextEditorLocalClipboard, TextEditorOutput, TextEditorState,
 };
@@ -170,8 +171,13 @@ pub struct InputDiagnostic {
     pub target: arcweft_presentation::input::InteractionTarget,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InputDiagnosticKind {}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InputDiagnosticKind {
+    SemanticActionRejected {
+        action: PublicId,
+        reason: SemanticActionError,
+    },
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ActionButtonSubmitOutcome {
@@ -1486,15 +1492,25 @@ impl InputController {
         let RenderActionButtonAction::ActionInvoke { action, payload } = &button.action else {
             return ActionButtonSubmitOutcome::default();
         };
-        let action =
-            frame
-                .semantics
-                .lower_action(target, action)
-                .ok()
-                .map(|action| match payload {
-                    Some(payload) => action.with_payload(payload.clone()),
-                    None => action,
-                });
+        let action = match frame.semantics.lower_action(target, action) {
+            Ok(action) => Some(match payload {
+                Some(payload) => action.with_payload(payload.clone()),
+                None => action,
+            }),
+            Err(reason) => {
+                return ActionButtonSubmitOutcome {
+                    action: None,
+                    write_back: None,
+                    diagnostic: Some(InputDiagnostic {
+                        kind: InputDiagnosticKind::SemanticActionRejected {
+                            action: action.clone(),
+                            reason,
+                        },
+                        target: target.clone(),
+                    }),
+                };
+            }
+        };
         ActionButtonSubmitOutcome {
             action,
             write_back: None,

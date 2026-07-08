@@ -1,4 +1,4 @@
-//! Renderer-facing UI scene primitives and compositing graph for direct wgpu rendering.
+//! Renderer-facing View scene primitives and compositing graph for direct wgpu rendering.
 //!
 //! The scene is produced after Arcweft style resolution, text layout, and optional
 //! Takumi CSS/layout/stacking-scene lowering. It contains no OS/IME handles and

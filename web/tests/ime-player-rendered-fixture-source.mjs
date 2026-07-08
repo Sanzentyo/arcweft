@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), "..", ".."));
 const fixture = JSON.parse(await readFile(
-  join(root, "fixtures", "web-ime-player-rendered", "ui-runtime-text-controls.json"),
+  join(root, "fixtures", "web-ime-player-rendered", "view-runtime-text-controls.json"),
   "utf8",
 ));
 
@@ -27,8 +27,8 @@ if (!secure?.secure || secure?.evidence?.plaintextInObservation !== false) {
 if (!fixture.fontStacks?.some((stack) => stack.id === "jp-serif")) {
   hits.push("fixture must record the Japanese serif font stack");
 }
-if (!fixture.fontStacks?.some((stack) => stack.id === "ui-sans")) {
-  hits.push("fixture must record the UI sans font stack");
+if (!fixture.fontStacks?.some((stack) => stack.id === "view-sans")) {
+  hits.push("fixture must record the View sans font stack");
 }
 
 if (hits.length > 0) {

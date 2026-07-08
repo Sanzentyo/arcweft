@@ -1,4 +1,4 @@
-//! Clip-path geometry planning for the UI compositor.
+//! Clip-path geometry planning for the View compositor.
 
 use crate::view_scene::{ViewClipPath, ViewFillRule, ViewLength, ViewPoint, ViewShapeRadius};
 use arcweft_presentation::hit::HitRect;

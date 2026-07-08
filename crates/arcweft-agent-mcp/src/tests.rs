@@ -421,7 +421,7 @@ fn image_object_frame_metadata_fixture() -> serde_json::Value {
                     "object_layer": "layer.foreground",
                     "object_depth": 2500,
                     "image_ref": {
-                        "source": "ui.image.1",
+                        "source": "view.image.1",
                         "object": "image.sample.pulse_sprite",
                         "target": "target.sample.pulse_sprite",
                         "asset": "asset.bg.pulse",

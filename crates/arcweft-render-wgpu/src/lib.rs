@@ -7,6 +7,7 @@
 
 mod convert;
 mod font_family;
+mod font_system;
 
 pub mod geometry;
 pub mod offscreen;

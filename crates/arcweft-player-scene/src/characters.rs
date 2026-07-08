@@ -5,8 +5,8 @@ use arcweft_character::{
     manifest::{CharacterManifest, CharacterManifestCodecError, CharacterManifestError},
     package::CharacterPackage,
 };
-use arcweft_character_ui::{
-    CharacterImageSet, CharacterUiCompatibility, CharacterUiError, CharacterUiView,
+use arcweft_character_view::{
+    CharacterImageSet, CharacterView, CharacterViewCompatibility, CharacterViewError,
 };
 use arcweft_presentation::character::{CharacterRenderSpec, CharacterStageBounds};
 use std::collections::BTreeMap;
@@ -28,7 +28,7 @@ struct DecodedCharacterPackage {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedCharacterStageFrame {
     render: CharacterRenderSpec,
-    view: CharacterUiView,
+    view: CharacterView,
 }
 
 /// Agent-observable character object emitted from a prepared frame.
@@ -63,7 +63,7 @@ pub enum BundleCharacterCatalogError {
     #[error(transparent)]
     Manifest(#[from] CharacterManifestError),
     #[error(transparent)]
-    Ui(#[from] CharacterUiError),
+    View(#[from] CharacterViewError),
 }
 
 impl BundleCharacterCatalog {
@@ -115,10 +115,10 @@ impl BundleCharacterCatalog {
             .ok_or_else(|| BundleCharacterCatalogError::MissingCharacter(character.to_string()))?;
         let look = look.unwrap_or_else(|| decoded.manifest.default_look());
         let render = CharacterRenderSpec::from_manifest(&decoded.manifest, look)?;
-        let view = CharacterUiView::build(
+        let view = CharacterView::build(
             &render,
             &decoded.images,
-            CharacterUiCompatibility::PreserveMetadata,
+            CharacterViewCompatibility::PreserveMetadata,
         )?;
         Ok(PreparedCharacterStageFrame { render, view })
     }
@@ -130,8 +130,8 @@ impl PreparedCharacterStageFrame {
         &self.render
     }
 
-    /// Retained UI lowering consumed by the shared renderer path.
-    pub const fn view(&self) -> &CharacterUiView {
+    /// Retained View lowering consumed by the shared renderer path.
+    pub const fn view(&self) -> &CharacterView {
         &self.view
     }
 

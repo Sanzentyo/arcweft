@@ -1,6 +1,6 @@
 //! Audited Windows-only COM boundary for the TSF `ITextStoreACP` bridge.
 //!
-//! No type from this module may be stored in presentation, runtime-host, UI,
+//! No type from this module may be stored in presentation, runtime-host, View,
 //! replay, capture, or Agent observation data.
 
 #![cfg(target_os = "windows")]
@@ -66,7 +66,7 @@ pub struct TsfOperationBatch {
     operations: Vec<TextInputOperation>,
 }
 
-/// UI-thread owner of TSF thread manager, document manager, and active context.
+/// Window-thread owner of TSF thread manager, document manager, and active context.
 #[derive(Debug)]
 pub struct WindowsTsfThreadContext {
     // RAII guard: COM must stay initialized until the TSF thread/document objects

@@ -6,6 +6,7 @@
 /web/playwright-report/
 /web/pkg/
 /web/local/
+/web/assets/noto-sans-jp-vf.ttf
 /samples/**/.arcweft/
 /.review-temp/
 /.review-tmp/

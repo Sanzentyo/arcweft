@@ -2,7 +2,7 @@
 //
 // This source is the authored marker for the generated product fixture
 // `web/ime-player-rendered.awfb`. The active sample is generated from typed
-// product UI resources by `tools/build-web-ime-player-rendered-fixture.rs` until
+// product View resources by `tools/build-web-ime-player-rendered-fixture.rs` until
 // the `.arcw` grammar grows first-class TextField/TextArea/SecureField syntax.
 //
 // Runtime controls in the generated bundle:

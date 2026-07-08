@@ -142,8 +142,8 @@ fn collect_dialogue_content_ranges_from_stmt(
             }
         }
         Stmt::Assign { target, expr } => {
-            collect_dialogue_content_ranges_from_expr(target, None, None, ranges);
-            collect_dialogue_content_ranges_from_expr(expr, None, None, ranges);
+            collect_dialogue_content_ranges_from_expr(target.expr(), None, None, ranges);
+            collect_dialogue_content_ranges_from_expr(expr.expr(), None, None, ranges);
         }
         Stmt::LetScope { scope, .. } => {
             for stmt in scope.statements() {
@@ -199,7 +199,7 @@ fn collect_dialogue_content_ranges_from_stmt(
         }
         Stmt::LetChoice { .. }
         | Stmt::LetActionReceive { .. }
-        | Stmt::Return(_)
+        | Stmt::Return { expr: _, .. }
         | Stmt::Out { .. }
         | Stmt::Goto(_)
         | Stmt::Defer { .. }
@@ -211,7 +211,7 @@ fn collect_dialogue_content_ranges_from_stmt(
         | Stmt::Select(_)
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
-        | Stmt::Expr(_)
+        | Stmt::Expr { expr: _, .. }
         | Stmt::Raw(_) => {}
     }
 }

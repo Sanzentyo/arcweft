@@ -17,7 +17,7 @@ fn renderer_sources_do_not_introduce_forbidden_full_surface_fallbacks() {
         "takumi::raster",
         "tiny_skia::Pixmap",
         "render_to_rgba",
-        "upload_full_ui_surface",
+        "upload_full_view_surface",
         "read_to_buffer",
         "map_async",
     ];

@@ -1,10 +1,10 @@
-use arcweft_bundle::resource_codec::ui::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiLogicalRect, UiSecureInputPolicy,
-    UiTextResource, UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSourceKind,
-    UiTextSourceRecord, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+use arcweft_bundle::resource_codec::view::{
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
     ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
-    ViewLayoutBoundsResource, ViewProgramResource, ViewScrollAxis, ViewScrollRegionResource,
+    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
+    ViewLogicalRect, ViewProgramResource, ViewScrollAxis, ViewScrollRegionResource,
+    ViewSecureInputPolicy, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
@@ -635,9 +635,9 @@ flow view_scoped_disposed {
     let hir = lower_to_hir(parsed.typed_tree()).expect("authored view fixture lowers to HIR");
     let plan = lower_runtime_plan(&hir).expect("authored view fixture lowers to runtime plan");
     bundle_from_runtime_plan(&plan, SOURCE, "web-authored-view-controls.arcw")
-        .with_ui_text(authored_view_text_resource())
-        .with_ui_program(authored_view_program_resource())
-        .with_ui_input(authored_view_input_resource())
+        .with_view_text(authored_view_text_resource())
+        .with_view_program(authored_view_program_resource())
+        .with_view_input(authored_view_input_resource())
 }
 
 fn bundle_from_runtime_plan(plan: &RuntimePlan, source: &str, source_label: &str) -> ArcweftBundle {
@@ -676,8 +676,8 @@ fn bundle_from_runtime_plan(plan: &RuntimePlan, source: &str, source_label: &str
     .with_product_awbc(product_awbc)
 }
 
-fn authored_view_text_resource() -> UiTextResource {
-    UiTextResource {
+fn authored_view_text_resource() -> ViewTextResource {
+    ViewTextResource {
         sources: vec![
             literal_text_source("text.input.name.value", "Ada"),
             literal_text_source("text.input.name.label", "Name"),
@@ -691,10 +691,10 @@ fn authored_view_text_resource() -> UiTextResource {
     }
 }
 
-fn literal_text_source(public_id: &str, value: &str) -> UiTextSourceRecord {
-    UiTextSourceRecord {
+fn literal_text_source(public_id: &str, value: &str) -> ViewTextSourceRecord {
+    ViewTextSourceRecord {
         public_id: public_id.to_owned(),
-        kind: UiTextSourceKind::Literal {
+        kind: ViewTextSourceKind::Literal {
             value: value.to_owned(),
         },
         source: None,
@@ -703,7 +703,7 @@ fn literal_text_source(public_id: &str, value: &str) -> UiTextSourceRecord {
 
 fn authored_view_program_resource() -> ViewProgramResource {
     ViewProgramResource {
-        program_id: "ui.web_panel".to_owned(),
+        program_id: "view.web_panel".to_owned(),
         root_view: "view.WebPanel".to_owned(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
@@ -713,12 +713,12 @@ fn authored_view_program_resource() -> ViewProgramResource {
         semantic_targets: Vec::new(),
         layout_bounds: vec![ViewLayoutBoundsResource::text_control(
             "input.name",
-            UiLogicalRect::from_px(64, 64, 240, 44),
+            ViewLogicalRect::from_px(64, 64, 240, 44),
         )],
         scroll_regions: vec![ViewScrollRegionResource::new(
             "scroll.panel",
             Some("view.WebPanel".to_owned()),
-            UiLogicalRect::from_px(48, 48, 360, 140),
+            ViewLogicalRect::from_px(48, 48, 360, 140),
             360_000,
             420_000,
             ViewScrollAxis::Vertical,
@@ -737,7 +737,7 @@ fn authored_view_program_resource() -> ViewProgramResource {
                     value: "ready".to_owned(),
                 }),
             },
-            bounds: UiLogicalRect::from_px(64, 124, 160, 44).runtime_button_bounds(),
+            bounds: ViewLogicalRect::from_px(64, 124, 160, 44).runtime_button_bounds(),
             style: None,
             source: None,
         }],
@@ -747,26 +747,26 @@ fn authored_view_program_resource() -> ViewProgramResource {
     }
 }
 
-fn authored_view_input_resource() -> UiInputResource {
-    UiInputResource {
-        options: vec![UiInputOptions {
+fn authored_view_input_resource() -> ViewInputResource {
+    ViewInputResource {
+        options: vec![ViewInputOptions {
             public_id: "input.name".to_owned(),
             view: Some("view.WebPanel".to_owned()),
             containing_scroll_region: Some("scroll.panel".to_owned()),
-            kind: UiInputKind::TextField,
+            kind: ViewInputKind::TextField,
             value_text_source: "text.input.name.value".to_owned(),
             placeholder_text_source: None,
-            purpose: UiInputPurpose::Name,
+            purpose: ViewInputPurpose::Name,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,
             enter_key: EnterKeyHint::Default,
             multiline: false,
-            selection_policy: UiTextSelectionPolicy::Enabled,
-            shortcut_policy: UiTextShortcutPolicy::Enabled,
-            tab_policy: UiTextTabPolicy::FocusNavigation,
-            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-            secure_policy: UiSecureInputPolicy::Plain,
+            selection_policy: ViewTextSelectionPolicy::Enabled,
+            shortcut_policy: ViewTextShortcutPolicy::Enabled,
+            tab_policy: ViewTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+            secure_policy: ViewSecureInputPolicy::Plain,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
             submit_handler: None,
             change_handler: None,

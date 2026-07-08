@@ -1,4 +1,4 @@
-//! Takumi CSS/layout/stacking-scene adapter for Arcweft native UI.
+//! Takumi CSS/layout/stacking-scene adapter for Arcweft native View.
 //!
 //! This crate deliberately uses Takumi as a CSS cascade, layout, and stacking
 //! scene source, not as a CPU bitmap renderer. The primary output is

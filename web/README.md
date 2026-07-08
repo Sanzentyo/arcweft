@@ -10,7 +10,7 @@ This directory contains only:
 
 It intentionally contains no speaker element, dialogue element, choice button,
 rich DOM renderer, Canvas 2D renderer, WebGL fallback, normal game-layout CSS, or
-visible DOM text-input sample UI. Game rendering and interaction live in Rust
+visible DOM text-input sample view. Game rendering and interaction live in Rust
 through `arcweft-render-wgpu`, `arcweft-render-web`, and Arcweft presentation
 hit-testing.
 

@@ -26,11 +26,11 @@ pub struct TakumiDiagnostic {
 pub enum TakumiAdapterError {
     #[error("Takumi CSS parse failed: {message}")]
     CssParseFailed { message: String },
-    #[error("UI fragment root {0:?} does not exist")]
+    #[error("View fragment root {0:?} does not exist")]
     MissingFragmentRoot(NodeId),
     #[error("Takumi scene extraction failed: {message}")]
     SceneExtractionFailed { message: String },
-    #[error("too many UI primitives or capture records")]
+    #[error("too many View primitives or capture records")]
     CapacityExceeded,
 }
 
@@ -64,7 +64,7 @@ impl TakumiDiagnostic {
     pub fn cpu_raster_fallback_forbidden() -> Self {
         Self::new(
             TakumiDiagnosticCode::CpuRasterFallbackForbidden,
-            "CPU RGBA UI-surface fallback is forbidden for the seq06 direct-wgpu path",
+            "CPU RGBA View-surface fallback is forbidden for the seq06 direct-wgpu path",
         )
     }
 
@@ -93,7 +93,7 @@ impl TakumiDiagnostic {
         Self::new(
             TakumiDiagnosticCode::UnsupportedCssSelector,
             format!(
-                "CSS selector `{selector}` is outside the seq06.12 retained UI selector subset"
+                "CSS selector `{selector}` is outside the seq06.12 retained View selector subset"
             ),
         )
     }

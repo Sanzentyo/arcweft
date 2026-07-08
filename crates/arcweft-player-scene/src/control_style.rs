@@ -1,4 +1,4 @@
-use arcweft_bundle::resource_codec::ui::{
+use arcweft_bundle::resource_codec::view::{
     RgbaColor, ViewRuntimeControlBorderStyle, ViewRuntimeControlCornerFrameStyle,
     ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlFilterList,
     ViewRuntimeControlFocusRingStyle, ViewRuntimeControlRadii, ViewRuntimeControlStyle,

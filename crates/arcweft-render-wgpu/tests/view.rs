@@ -7,9 +7,9 @@ use arcweft_presentation::semantic::SemanticRole;
 use arcweft_render_wgpu::view::ViewPaintPlan;
 use arcweft_view::{
     FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
-    Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId, StyleId, UiInteractionSelector,
-    UiPropertyKind, UiPropertyValue, UiSemanticFragmentBuilder, UiSemanticNode, UiStyle,
-    UiStyleTable, ViewFragmentBuilder,
+    Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId, StyleId, ViewFragmentBuilder,
+    ViewInteractionSelector, ViewPropertyKind, ViewPropertyValue, ViewSemanticFragmentBuilder,
+    ViewSemanticNode, ViewStyle, ViewStyleTable,
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -18,7 +18,7 @@ fn public_id(value: &str) -> PublicId {
 
 #[test]
 fn resolved_focus_style_lowers_to_background_and_outline_rectangles() {
-    let layer = LayerId::new(public_id("layer.ui"));
+    let layer = LayerId::new(public_id("layer.view"));
     let target = InteractionTarget::new(public_id("target.button.confirm"));
     let mut fragment = ViewFragmentBuilder::default();
     let node = fragment
@@ -44,9 +44,9 @@ fn resolved_focus_style_lowers_to_background_and_outline_rectangles() {
         )
         .unwrap();
     let display = arcweft_view::DisplayList::from_fragment(&fragment, &layouts).unwrap();
-    let mut semantics = UiSemanticFragmentBuilder::default();
+    let mut semantics = ViewSemanticFragmentBuilder::default();
     semantics
-        .push(UiSemanticNode::new(
+        .push(ViewSemanticNode::new(
             NodeKey(1),
             layer.clone(),
             target.clone(),
@@ -56,28 +56,28 @@ fn resolved_focus_style_lowers_to_background_and_outline_rectangles() {
         .unwrap();
     let semantics = semantics.finish();
 
-    let mut style = UiStyle::default();
+    let mut style = ViewStyle::default();
     style
         .set_base(
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(Rgba8::new(30, 60, 90, 255)),
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(Rgba8::new(30, 60, 90, 255)),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Focused,
-            UiPropertyKind::OutlineColor,
-            UiPropertyValue::Color(Rgba8::new(120, 210, 255, 255)),
+            ViewInteractionSelector::Focused,
+            ViewPropertyKind::OutlineColor,
+            ViewPropertyValue::Color(Rgba8::new(120, 210, 255, 255)),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Focused,
-            UiPropertyKind::OutlineWidth,
-            UiPropertyValue::Milli(Milli::new(3_000)),
+            ViewInteractionSelector::Focused,
+            ViewPropertyKind::OutlineWidth,
+            ViewPropertyValue::Milli(Milli::new(3_000)),
         )
         .unwrap();
-    let mut styles = UiStyleTable::default();
+    let mut styles = ViewStyleTable::default();
     styles.insert(StyleId(1), style).unwrap();
     let mut interaction = InteractionState::default();
     interaction.set_focus(FocusState::new(layer, target));

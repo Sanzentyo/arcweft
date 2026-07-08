@@ -1,11 +1,11 @@
-//! Interaction-aware retained UI paint lowering for the shared wgpu renderer.
+//! Interaction-aware retained View paint lowering for the shared wgpu renderer.
 
 use crate::geometry::PaintRect;
 use arcweft_presentation::hit::HitRect;
-use arcweft_view::{Milli, ResolvedDisplayList, ResolvedUiStyle, Rgba8, UiPropertyKind};
+use arcweft_view::{Milli, ResolvedDisplayList, ResolvedViewStyle, Rgba8, ViewPropertyKind};
 use num_traits::ToPrimitive;
 
-/// Paint rectangles generated from one resolved retained UI display list.
+/// Paint rectangles generated from one resolved retained View display list.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ViewPaintPlan {
     rectangles: Vec<PaintRect>,
@@ -34,17 +34,17 @@ impl ViewPaintPlan {
     }
 }
 
-fn paint_item(layout: arcweft_view::LayoutBox, style: &ResolvedUiStyle) -> Vec<PaintRect> {
+fn paint_item(layout: arcweft_view::LayoutBox, style: &ResolvedViewStyle) -> Vec<PaintRect> {
     if !style.is_visible() {
         return Vec::new();
     }
 
     let [x, y, width, height] = layout.milli_rect();
     let translate_x = style
-        .milli(UiPropertyKind::TranslateX)
+        .milli(ViewPropertyKind::TranslateX)
         .unwrap_or(Milli::ZERO);
     let translate_y = style
-        .milli(UiPropertyKind::TranslateY)
+        .milli(ViewPropertyKind::TranslateY)
         .unwrap_or(Milli::ZERO);
     let scale = milli_scalar(style.scale()).max(0.0);
     let bounds = HitRect::new(
@@ -61,15 +61,15 @@ fn paint_item(layout: arcweft_view::LayoutBox, style: &ResolvedUiStyle) -> Vec<P
     let opacity = milli_scalar(style.opacity()).clamp(0.0, 1.0);
 
     let mut rectangles = Vec::new();
-    if let Some(color) = style.color(UiPropertyKind::BackgroundColor) {
+    if let Some(color) = style.color(ViewPropertyKind::BackgroundColor) {
         rectangles.push(PaintRect::new(bounds, rgba(color, opacity)));
     }
 
     let outline_width = style
-        .milli(UiPropertyKind::OutlineWidth)
+        .milli(ViewPropertyKind::OutlineWidth)
         .map_or(0.0, |width| milli_pixels(width.value()).max(0.0));
     if outline_width > 0.0
-        && let Some(color) = style.color(UiPropertyKind::OutlineColor)
+        && let Some(color) = style.color(ViewPropertyKind::OutlineColor)
     {
         rectangles.extend(outline_rectangles(
             bounds,

@@ -14,8 +14,8 @@ use arcweft_render_wgpu::view::ViewPaintPlan;
 use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
     LayoutResults, LayoutSize, LayoutTree, Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
-    StyleId, UiInteractionSelector, UiLayerOutput, UiPropertyKind, UiPropertyValue,
-    UiSemanticFragmentBuilder, UiSemanticNode, UiStyle, UiStyleTable, ViewFragmentBuilder,
+    StyleId, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput, ViewPropertyKind,
+    ViewPropertyValue, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewStyle, ViewStyleTable,
 };
 use num_traits::ToPrimitive;
 use std::env;
@@ -25,11 +25,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 type VisualStates = Vec<(&'static str, InteractionState)>;
-type Activation = arcweft_view::UiHandlerInvocation;
+type Activation = arcweft_view::ViewHandlerInvocation;
 type ShowcaseFragment = (
     arcweft_view::ViewFragment,
     LayoutResults,
-    arcweft_view::UiSemanticFragment,
+    arcweft_view::ViewSemanticFragment,
     Vec<InteractionTarget>,
 );
 
@@ -76,13 +76,13 @@ fn run() -> Result<(), String> {
 
 fn output_directory() -> Result<PathBuf, String> {
     let mut args = env::args().skip(1);
-    let mut out = PathBuf::from("target/ui-interaction-showcase");
+    let mut out = PathBuf::from("target/view-interaction-showcase");
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--out" => out = PathBuf::from(args.next().ok_or("--out requires a path")?),
             "--help" | "-h" => {
                 println!(
-                    "usage: cargo run -p arcweft-render-wgpu --example ui_interaction_showcase -- [--out DIR]"
+                    "usage: cargo run -p arcweft-render-wgpu --example view_interaction_showcase -- [--out DIR]"
                 );
                 std::process::exit(0);
             }
@@ -92,12 +92,12 @@ fn output_directory() -> Result<PathBuf, String> {
     Ok(out)
 }
 
-fn showcase_output() -> Result<(UiLayerOutput, LayerId, Vec<InteractionTarget>), String> {
-    let layer = LayerId::new(public_id("layer.ui.showcase")?);
+fn showcase_output() -> Result<(ViewLayerOutput, LayerId, Vec<InteractionTarget>), String> {
+    let layer = LayerId::new(public_id("layer.view.showcase")?);
     let (fragment, layouts, semantics, targets) = showcase_fragment(&layer)?;
     let styles = showcase_styles()?;
 
-    UiLayerOutput::from_fragment_with_styles(&fragment, &layouts, semantics, styles)
+    ViewLayerOutput::from_fragment_with_styles(&fragment, &layouts, semantics, styles)
         .map(|output| (output, layer, targets))
         .map_err(|error| error.to_string())
 }
@@ -107,7 +107,7 @@ fn showcase_fragment(layer: &LayerId) -> Result<ShowcaseFragment, String> {
     let mut fragment = ViewFragmentBuilder::default();
     let mut nodes = Vec::new();
     let mut targets = Vec::new();
-    let mut semantics = UiSemanticFragmentBuilder::default();
+    let mut semantics = ViewSemanticFragmentBuilder::default();
 
     for (index, label) in labels.iter().enumerate() {
         let index_u32 = u32::try_from(index).map_err(|error| error.to_string())?;
@@ -127,7 +127,7 @@ fn showcase_fragment(layer: &LayerId) -> Result<ShowcaseFragment, String> {
         let y = 56 + i32::try_from(index).map_err(|error| error.to_string())? * 72;
         semantics
             .push(
-                UiSemanticNode::new(
+                ViewSemanticNode::new(
                     key,
                     layer.clone(),
                     target.clone(),
@@ -159,50 +159,50 @@ fn showcase_fragment(layer: &LayerId) -> Result<ShowcaseFragment, String> {
     Ok((fragment, layouts, semantics.finish(), targets))
 }
 
-fn showcase_styles() -> Result<UiStyleTable, String> {
-    let mut style = UiStyle::default();
+fn showcase_styles() -> Result<ViewStyleTable, String> {
+    let mut style = ViewStyle::default();
     style
         .set_base(
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(Rgba8::new(30, 48, 78, 255)),
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(Rgba8::new(30, 48, 78, 255)),
         )
         .map_err(|error| error.to_string())?;
     style
         .set_rule(
-            UiInteractionSelector::Hovered,
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(Rgba8::new(50, 88, 142, 255)),
+            ViewInteractionSelector::Hovered,
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(Rgba8::new(50, 88, 142, 255)),
         )
         .map_err(|error| error.to_string())?;
     style
         .set_rule(
-            UiInteractionSelector::Focused,
-            UiPropertyKind::OutlineColor,
-            UiPropertyValue::Color(Rgba8::new(118, 205, 255, 255)),
+            ViewInteractionSelector::Focused,
+            ViewPropertyKind::OutlineColor,
+            ViewPropertyValue::Color(Rgba8::new(118, 205, 255, 255)),
         )
         .map_err(|error| error.to_string())?;
     style
         .set_rule(
-            UiInteractionSelector::Focused,
-            UiPropertyKind::OutlineWidth,
-            UiPropertyValue::Milli(Milli::new(3_000)),
+            ViewInteractionSelector::Focused,
+            ViewPropertyKind::OutlineWidth,
+            ViewPropertyValue::Milli(Milli::new(3_000)),
         )
         .map_err(|error| error.to_string())?;
     style
         .set_rule(
-            UiInteractionSelector::Pressed,
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(Rgba8::new(24, 68, 112, 255)),
+            ViewInteractionSelector::Pressed,
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(Rgba8::new(24, 68, 112, 255)),
         )
         .map_err(|error| error.to_string())?;
     style
         .set_rule(
-            UiInteractionSelector::Pressed,
-            UiPropertyKind::Scale,
-            UiPropertyValue::Milli(Milli::new(970)),
+            ViewInteractionSelector::Pressed,
+            ViewPropertyKind::Scale,
+            ViewPropertyValue::Milli(Milli::new(970)),
         )
         .map_err(|error| error.to_string())?;
-    let mut styles = UiStyleTable::default();
+    let mut styles = ViewStyleTable::default();
     styles
         .insert(StyleId(1), style)
         .map_err(|error| error.to_string())?;
@@ -210,7 +210,7 @@ fn showcase_styles() -> Result<UiStyleTable, String> {
 }
 
 fn routed_states(
-    output: &UiLayerOutput,
+    output: &ViewLayerOutput,
     layer: &LayerId,
     targets: &[InteractionTarget],
 ) -> Result<(VisualStates, Activation), String> {
@@ -253,9 +253,9 @@ fn showcase_layers(layer: &LayerId) -> Result<LayerTree, String> {
         .insert(
             LayerNode::new(
                 layer.clone(),
-                LayerKind::GameUi,
+                LayerKind::GameView,
                 LayerOrder {
-                    phase: RenderPhase::GameUi,
+                    phase: RenderPhase::GameView,
                     z: 0,
                     stable_index: 0,
                 },
@@ -370,7 +370,7 @@ fn routed_pointer_down(
 }
 
 fn activation_for(
-    output: &UiLayerOutput,
+    output: &ViewLayerOutput,
     epoch: InputEpoch,
     target: Option<&InteractionTarget>,
 ) -> Result<Activation, String> {
@@ -396,7 +396,7 @@ fn center(bounds: HitRect) -> ViewportPoint {
 fn svg_document(
     state: &str,
     rectangles: &[arcweft_render_wgpu::geometry::PaintRect],
-    semantics: &[UiSemanticNode],
+    semantics: &[ViewSemanticNode],
 ) -> String {
     let mut svg = String::from(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="368" height="300" viewBox="0 0 368 300">"#,

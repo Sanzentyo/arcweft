@@ -1,9 +1,9 @@
-use arcweft_bundle::resource_codec::ui::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-    UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeControlStyle,
-    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
-    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+use arcweft_bundle::resource_codec::view::{
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewInputPurpose, ViewRuntimeControlStyle, ViewRuntimeTextControl,
+    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
+    ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
+    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_id::PublicId;
 use arcweft_player_scene::{
@@ -255,7 +255,7 @@ fn wheel_input_updates_horizontal_scroll_region_under_pointer() {
 
 #[test]
 fn web_hidden_runtime_text_control_rejects_stale_writeback() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -333,7 +333,7 @@ fn web_hidden_view_action_button_rejects_stale_hit_and_focus() {
 
 #[test]
 fn web_hidden_view_text_control_rejects_stale_hit_and_focus() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -373,7 +373,7 @@ fn render_action_button(target: &str, action: &str) -> RenderActionButton {
     }
 }
 
-fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> ViewRuntimeTextControl {
+fn runtime_control(public_id: &str, kind: ViewInputKind, value: &str) -> ViewRuntimeTextControl {
     let end = u32::try_from(value.len()).expect("test text length fits in u32");
     ViewRuntimeTextControl {
         public_id: public_id.to_owned(),
@@ -384,17 +384,17 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> ViewRunti
         value: value.to_owned(),
         selection: ViewRuntimeTextSelection::new(end, end),
         options: ViewRuntimeTextControlOptions {
-            purpose: UiInputPurpose::Text,
+            purpose: ViewInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,
             enter_key: EnterKeyHint::Default,
             multiline: kind.is_multiline(),
-            selection_policy: UiTextSelectionPolicy::Enabled,
-            shortcut_policy: UiTextShortcutPolicy::Enabled,
-            tab_policy: UiTextTabPolicy::FocusNavigation,
-            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-            secure_policy: UiSecureInputPolicy::Plain,
+            selection_policy: ViewTextSelectionPolicy::Enabled,
+            shortcut_policy: ViewTextShortcutPolicy::Enabled,
+            tab_policy: ViewTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+            secure_policy: ViewSecureInputPolicy::Plain,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
         },
         kind,

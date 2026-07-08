@@ -1,4 +1,4 @@
-//! wgpu compositor substrate for seq06.9a UI paint nodes.
+//! wgpu compositor substrate for seq06.9a View paint nodes.
 //!
 //! `ViewCompositorPlan` is the deterministic, testable pass graph. `ViewCompositor`
 //! owns the wgpu pipelines, offscreen texture pool, and callback boundaries that
@@ -184,18 +184,18 @@ pub enum ViewCompositorError {
     BoxShadowPlan(#[from] ViewBoxShadowPlanError),
     #[error("unsupported filter `{name}`: {reason}")]
     UnsupportedFilter { name: Box<str>, reason: Box<str> },
-    #[error("ui scene primitive range {start}..{end} is not present")]
+    #[error("view scene primitive range {start}..{end} is not present")]
     InvalidPrimitiveRange { start: u32, end: u32 },
-    #[error("unsupported ui primitive `{primitive}`: {reason}")]
+    #[error("unsupported view primitive `{primitive}`: {reason}")]
     UnsupportedPrimitive {
         primitive: &'static str,
         reason: Box<str>,
     },
-    #[error("missing ui image resource for resource index {resource_index}")]
+    #[error("missing view image resource for resource index {resource_index}")]
     MissingImageResource { resource_index: u32 },
-    #[error("ui glyph run {run_index} has no explicit PreparedFrame text handoff")]
+    #[error("view glyph run {run_index} has no explicit PreparedFrame text handoff")]
     UnhandledGlyphRun { run_index: u32 },
-    #[error("unsupported ui clip: {reason}")]
+    #[error("unsupported view clip: {reason}")]
     UnsupportedClip { reason: Box<str> },
 }
 

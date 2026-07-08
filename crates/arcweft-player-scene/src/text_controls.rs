@@ -1,10 +1,11 @@
 use crate::control_style::lower_control_style;
 use crate::input::InputController;
-use arcweft_bundle::resource_codec::ui::{
-    EnterKeyHint as UiEnterKeyHint, TextAssistPolicy as UiTextAssistPolicy,
-    TextCapitalization as UiTextCapitalization, UiInputKind, UiInputPurpose, UiTextSelectionPolicy,
-    UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeTextControl,
-    ViewRuntimeTextControlBounds, ViewRuntimeTextSelection,
+use arcweft_bundle::resource_codec::view::{
+    EnterKeyHint as ViewEnterKeyHint, TextAssistPolicy as ViewTextAssistPolicy,
+    TextCapitalization as ViewTextCapitalization, ViewInputKind, ViewInputPurpose,
+    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextSelection,
+    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+    ViewTextVerticalNavigationPolicy,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -120,11 +121,11 @@ fn lower_bounds(bounds: ViewRuntimeTextControlBounds) -> HitRect {
     )
 }
 
-fn lower_role(kind: UiInputKind) -> SemanticRole {
+fn lower_role(kind: ViewInputKind) -> SemanticRole {
     match kind {
-        UiInputKind::TextField => SemanticRole::TextField,
-        UiInputKind::TextArea => SemanticRole::TextArea,
-        UiInputKind::SecureField => SemanticRole::SecureTextField,
+        ViewInputKind::TextField => SemanticRole::TextField,
+        ViewInputKind::TextArea => SemanticRole::TextArea,
+        ViewInputKind::SecureField => SemanticRole::SecureTextField,
     }
 }
 
@@ -145,78 +146,78 @@ fn lower_options(control: &ViewRuntimeTextControl) -> TextInputOptions {
         .secure(control.options.secure_policy.is_secure() || control.kind.is_secure())
 }
 
-fn lower_purpose(purpose: UiInputPurpose) -> TextInputPurpose {
+fn lower_purpose(purpose: ViewInputPurpose) -> TextInputPurpose {
     match purpose {
-        UiInputPurpose::Text => TextInputPurpose::Text,
-        UiInputPurpose::Search => TextInputPurpose::Search,
-        UiInputPurpose::Name => TextInputPurpose::Name,
-        UiInputPurpose::Email => TextInputPurpose::Email,
-        UiInputPurpose::Url => TextInputPurpose::Url,
-        UiInputPurpose::Telephone => TextInputPurpose::Telephone,
-        UiInputPurpose::Number => TextInputPurpose::Number,
-        UiInputPurpose::Decimal => TextInputPurpose::Decimal,
-        UiInputPurpose::Password => TextInputPurpose::Password,
-        UiInputPurpose::Pin => TextInputPurpose::Pin,
-        UiInputPurpose::Terminal => TextInputPurpose::Terminal,
+        ViewInputPurpose::Text => TextInputPurpose::Text,
+        ViewInputPurpose::Search => TextInputPurpose::Search,
+        ViewInputPurpose::Name => TextInputPurpose::Name,
+        ViewInputPurpose::Email => TextInputPurpose::Email,
+        ViewInputPurpose::Url => TextInputPurpose::Url,
+        ViewInputPurpose::Telephone => TextInputPurpose::Telephone,
+        ViewInputPurpose::Number => TextInputPurpose::Number,
+        ViewInputPurpose::Decimal => TextInputPurpose::Decimal,
+        ViewInputPurpose::Password => TextInputPurpose::Password,
+        ViewInputPurpose::Pin => TextInputPurpose::Pin,
+        ViewInputPurpose::Terminal => TextInputPurpose::Terminal,
     }
 }
 
-fn lower_assist(policy: UiTextAssistPolicy) -> TextAssistPolicy {
+fn lower_assist(policy: ViewTextAssistPolicy) -> TextAssistPolicy {
     match policy {
-        UiTextAssistPolicy::PlatformDefault => TextAssistPolicy::PlatformDefault,
-        UiTextAssistPolicy::Enabled => TextAssistPolicy::Enabled,
-        UiTextAssistPolicy::Disabled => TextAssistPolicy::Disabled,
+        ViewTextAssistPolicy::PlatformDefault => TextAssistPolicy::PlatformDefault,
+        ViewTextAssistPolicy::Enabled => TextAssistPolicy::Enabled,
+        ViewTextAssistPolicy::Disabled => TextAssistPolicy::Disabled,
     }
 }
 
-fn lower_capitalization(capitalization: UiTextCapitalization) -> Capitalization {
+fn lower_capitalization(capitalization: ViewTextCapitalization) -> Capitalization {
     match capitalization {
-        UiTextCapitalization::None => Capitalization::None,
-        UiTextCapitalization::Sentences => Capitalization::Sentences,
-        UiTextCapitalization::Words => Capitalization::Words,
-        UiTextCapitalization::Characters => Capitalization::Characters,
+        ViewTextCapitalization::None => Capitalization::None,
+        ViewTextCapitalization::Sentences => Capitalization::Sentences,
+        ViewTextCapitalization::Words => Capitalization::Words,
+        ViewTextCapitalization::Characters => Capitalization::Characters,
     }
 }
 
-fn lower_enter_key(enter_key: UiEnterKeyHint) -> EnterKeyHint {
+fn lower_enter_key(enter_key: ViewEnterKeyHint) -> EnterKeyHint {
     match enter_key {
-        UiEnterKeyHint::Default => EnterKeyHint::Default,
-        UiEnterKeyHint::Enter => EnterKeyHint::Enter,
-        UiEnterKeyHint::Done => EnterKeyHint::Done,
-        UiEnterKeyHint::Go => EnterKeyHint::Go,
-        UiEnterKeyHint::Next => EnterKeyHint::Next,
-        UiEnterKeyHint::Search => EnterKeyHint::Search,
-        UiEnterKeyHint::Send => EnterKeyHint::Send,
+        ViewEnterKeyHint::Default => EnterKeyHint::Default,
+        ViewEnterKeyHint::Enter => EnterKeyHint::Enter,
+        ViewEnterKeyHint::Done => EnterKeyHint::Done,
+        ViewEnterKeyHint::Go => EnterKeyHint::Go,
+        ViewEnterKeyHint::Next => EnterKeyHint::Next,
+        ViewEnterKeyHint::Search => EnterKeyHint::Search,
+        ViewEnterKeyHint::Send => EnterKeyHint::Send,
     }
 }
 
-fn lower_selection_policy(policy: UiTextSelectionPolicy) -> TextSelectionPolicy {
+fn lower_selection_policy(policy: ViewTextSelectionPolicy) -> TextSelectionPolicy {
     match policy {
-        UiTextSelectionPolicy::Enabled => TextSelectionPolicy::Enabled,
-        UiTextSelectionPolicy::Disabled => TextSelectionPolicy::Disabled,
+        ViewTextSelectionPolicy::Enabled => TextSelectionPolicy::Enabled,
+        ViewTextSelectionPolicy::Disabled => TextSelectionPolicy::Disabled,
     }
 }
 
-fn lower_shortcut_policy(policy: UiTextShortcutPolicy) -> TextShortcutPolicy {
+fn lower_shortcut_policy(policy: ViewTextShortcutPolicy) -> TextShortcutPolicy {
     match policy {
-        UiTextShortcutPolicy::Enabled => TextShortcutPolicy::Enabled,
-        UiTextShortcutPolicy::Disabled => TextShortcutPolicy::Disabled,
+        ViewTextShortcutPolicy::Enabled => TextShortcutPolicy::Enabled,
+        ViewTextShortcutPolicy::Disabled => TextShortcutPolicy::Disabled,
     }
 }
 
-fn lower_tab_policy(policy: UiTextTabPolicy) -> TextTabPolicy {
+fn lower_tab_policy(policy: ViewTextTabPolicy) -> TextTabPolicy {
     match policy {
-        UiTextTabPolicy::FocusNavigation => TextTabPolicy::FocusNavigation,
-        UiTextTabPolicy::InsertTab => TextTabPolicy::InsertTab,
+        ViewTextTabPolicy::FocusNavigation => TextTabPolicy::FocusNavigation,
+        ViewTextTabPolicy::InsertTab => TextTabPolicy::InsertTab,
     }
 }
 
 fn lower_vertical_navigation_policy(
-    policy: UiTextVerticalNavigationPolicy,
+    policy: ViewTextVerticalNavigationPolicy,
 ) -> TextVerticalNavigationPolicy {
     match policy {
-        UiTextVerticalNavigationPolicy::LogicalLine => TextVerticalNavigationPolicy::LogicalLine,
-        UiTextVerticalNavigationPolicy::VisualLine => TextVerticalNavigationPolicy::VisualLine,
+        ViewTextVerticalNavigationPolicy::LogicalLine => TextVerticalNavigationPolicy::LogicalLine,
+        ViewTextVerticalNavigationPolicy::VisualLine => TextVerticalNavigationPolicy::VisualLine,
     }
 }
 

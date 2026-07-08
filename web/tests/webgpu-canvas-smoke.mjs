@@ -297,7 +297,7 @@ async function main() {
   });
 
   try {
-    await runSmoke("dialogue and choice are WebGPU canvas content, not DOM game UI", async () => {
+    await runSmoke("dialogue and choice are WebGPU canvas content, not DOM game View", async () => {
       const { page, errors } = await openReady(browser, baseUrl, {
         deterministicClock: Boolean(process.env.ARW_WEB_PARITY_DIR),
       });

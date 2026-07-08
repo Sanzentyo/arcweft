@@ -32,7 +32,7 @@ fn compositing_evidence_does_not_use_cpu_raster_expected_images() {
         "takumi_raster",
         "render_rgba",
         "cpu_rgba",
-        "full ui surface upload",
+        "full view surface upload",
     ] {
         assert!(
             !combined.contains(forbidden),

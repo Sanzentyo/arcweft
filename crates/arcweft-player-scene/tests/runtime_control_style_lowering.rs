@@ -1,11 +1,12 @@
-use arcweft_bundle::resource_codec::ui::{
+use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, TextAssistPolicy, TextCapitalization,
-    UiInputKind, UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-    UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeActionButton,
-    ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlCornerFrameStyle,
-    ViewRuntimeControlFilter, ViewRuntimeControlFilterList, ViewRuntimeControlStyle,
-    ViewRuntimeControlVisualStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
-    ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+    ViewInputKind, ViewInputPurpose, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
+    ViewRuntimeButtonBounds, ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlFilter,
+    ViewRuntimeControlFilterList, ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle,
+    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
+    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection, ViewSecureInputPolicy,
+    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+    ViewTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
@@ -93,7 +94,7 @@ fn runtime_control_font_family_reaches_render_style() {
         "input.feedback",
         ViewRuntimeControlStyle {
             normal: ViewRuntimeControlVisualStyle {
-                font_family: Some("Arcweft Demo, Yu Gothic, system-ui".to_owned()),
+                font_family: Some("Arcweft Demo, Yu Gothic, system-view".to_owned()),
                 ..ViewRuntimeControlVisualStyle::default()
             },
             ..ViewRuntimeControlStyle::default()
@@ -105,8 +106,58 @@ fn runtime_control_font_family_reaches_render_style() {
 
     assert_eq!(
         render[0].style.normal.font_family.as_deref(),
-        Some("Arcweft Demo, Yu Gothic, system-ui")
+        Some("Arcweft Demo, Yu Gothic, system-view")
     );
+}
+
+#[test]
+fn runtime_text_area_preserves_modern_visual_style_while_focused() {
+    let mut input = InputController::default();
+    let target = "input.product_brief";
+    let runtime = text_control_with_kind_and_style(
+        target,
+        ViewInputKind::TextArea,
+        ViewRuntimeControlStyle {
+            normal: ViewRuntimeControlVisualStyle {
+                fill: Some(RgbaColor::rgba(8, 14, 24, 164)),
+                text: Some(RgbaColor::rgb(244, 247, 251)),
+                selection: Some(RgbaColor::rgba(94, 234, 212, 116)),
+                caret: Some(RgbaColor::rgb(94, 234, 212)),
+                font_family: Some(
+                    "Arcweft Demo, Yu Gothic View, Yu Gothic, Meiryo, system-view".to_owned(),
+                ),
+                ..ViewRuntimeControlVisualStyle::default()
+            },
+            focus_visible: Some(ViewRuntimeControlVisualStyle {
+                focus_ring: Some(
+                    arcweft_bundle::resource_codec::view::ViewRuntimeControlFocusRingStyle {
+                        color: RgbaColor::rgb(94, 234, 212),
+                        width_milli: 2_000,
+                        offset_milli: 0,
+                    },
+                ),
+                ..ViewRuntimeControlVisualStyle::default()
+            }),
+            ..ViewRuntimeControlStyle::default()
+        },
+    );
+
+    let render = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
+        .expect("text area lowers");
+
+    assert_eq!(
+        render[0].role,
+        arcweft_presentation::semantic::SemanticRole::TextArea
+    );
+    assert_eq!(
+        render[0].style.normal.fill,
+        Some([8.0 / 255.0, 14.0 / 255.0, 24.0 / 255.0, 164.0 / 255.0])
+    );
+    assert_eq!(
+        render[0].style.normal.font_family.as_deref(),
+        Some("Arcweft Demo, Yu Gothic View, Yu Gothic, Meiryo, system-view")
+    );
+    assert!(render[0].style.focus_visible.is_some());
 }
 
 #[test]
@@ -180,6 +231,14 @@ fn text_control_with_style(
     public_id: &str,
     style: ViewRuntimeControlStyle,
 ) -> ViewRuntimeTextControl {
+    text_control_with_kind_and_style(public_id, ViewInputKind::TextField, style)
+}
+
+fn text_control_with_kind_and_style(
+    public_id: &str,
+    kind: ViewInputKind,
+    style: ViewRuntimeControlStyle,
+) -> ViewRuntimeTextControl {
     ViewRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
@@ -189,20 +248,20 @@ fn text_control_with_style(
         value: "hello".to_owned(),
         selection: ViewRuntimeTextSelection::new(5, 5),
         options: ViewRuntimeTextControlOptions {
-            purpose: UiInputPurpose::Text,
+            purpose: ViewInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,
             enter_key: EnterKeyHint::Default,
-            multiline: false,
-            selection_policy: UiTextSelectionPolicy::Enabled,
-            shortcut_policy: UiTextShortcutPolicy::Enabled,
-            tab_policy: UiTextTabPolicy::FocusNavigation,
-            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-            secure_policy: UiSecureInputPolicy::Plain,
+            multiline: kind.is_multiline(),
+            selection_policy: ViewTextSelectionPolicy::Enabled,
+            shortcut_policy: ViewTextShortcutPolicy::Enabled,
+            tab_policy: ViewTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+            secure_policy: ViewSecureInputPolicy::Plain,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
         },
-        kind: UiInputKind::TextField,
+        kind,
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
         label: Some("Feedback".to_owned()),
         handlers: ViewRuntimeTextControlHandlers::default(),

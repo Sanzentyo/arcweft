@@ -15,6 +15,8 @@ pub mod web_text_input;
 #[cfg(target_arch = "wasm32")]
 mod app;
 #[cfg(target_arch = "wasm32")]
+mod clipboard;
+#[cfg(target_arch = "wasm32")]
 mod inset_shadow_exact_capture;
 
 #[cfg(target_arch = "wasm32")]

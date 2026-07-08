@@ -19,8 +19,8 @@ use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutRect, TextLayoutConfig,
 };
 use arcweft_view::{
-    DisplayItemKind, DisplayList, ImageAlignment, ImageFit, LayoutBox, UiImageSourceTable,
-    UiResolvedImageFrame,
+    DisplayItemKind, DisplayList, ImageAlignment, ImageFit, LayoutBox, ViewImageSourceTable,
+    ViewResolvedImageFrame,
 };
 use glyphon::{
     Affine2, Buffer, Cache, Color, FontSystem, GlyphInstance, GlyphTransform, Metrics, Point,
@@ -1206,13 +1206,13 @@ pub fn capture_image_quads_rgba(
     NativeOffscreenCaptureSession::new()?.capture_image_quads_rgba(quads, width, height)
 }
 
-/// Resolves UI image display items into native textured-quad submissions.
+/// Resolves View image display items into native textured-quad submissions.
 ///
 /// Frame selection is driven only by the supplied presentation visual time, so
 /// static and animated image capture remains deterministic and replayable.
 pub fn native_image_quads_from_display_list<'a>(
     display: &DisplayList,
-    images: &'a UiImageSourceTable,
+    images: &'a ViewImageSourceTable,
     visual_time_millis: u64,
 ) -> Result<Vec<NativeImageQuad<'a>>, NativeWindowError> {
     display
@@ -1232,9 +1232,9 @@ pub fn native_image_quads_from_display_list<'a>(
         .collect()
 }
 
-/// Converts one resolved UI image frame into the native renderer's quad shape.
+/// Converts one resolved View image frame into the native renderer's quad shape.
 pub fn native_image_quad_from_resolved_frame(
-    resolved: UiResolvedImageFrame<'_>,
+    resolved: ViewResolvedImageFrame<'_>,
 ) -> Result<NativeImageQuad<'_>, NativeWindowError> {
     let frame = resolved.frame();
     let dimensions = frame.dimensions();

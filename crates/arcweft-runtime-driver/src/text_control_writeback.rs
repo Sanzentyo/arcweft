@@ -1,4 +1,4 @@
-use arcweft_bundle::resource_codec::ui::{
+use arcweft_bundle::resource_codec::view::{
     ViewRuntimeTextControl, ViewRuntimeTextControlHandler, ViewRuntimeTextSelection,
 };
 use arcweft_presentation::text_input::{

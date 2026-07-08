@@ -7,7 +7,7 @@ const fontUrl = params.get("font") || DEFAULT_FONT_URL;
 const diagnostic = {
   sample: "web-ime-player-rendered",
   boundary: "player-rendered",
-  visibleDomTextUi: false,
+  visibleDomTextView: false,
   hostId: "arcweft-canvas",
   bundleUrl,
   fontUrl,

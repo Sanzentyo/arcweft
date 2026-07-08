@@ -293,7 +293,7 @@ fn stmt_binding_names(statement: &Stmt) -> Vec<String> {
         Stmt::WhileLet { pattern, .. } | Stmt::For { pattern, .. } => {
             pattern_binding_names(pattern)
         }
-        Stmt::Return(_)
+        Stmt::Return { expr: _, .. }
         | Stmt::Assign { .. }
         | Stmt::Out { .. }
         | Stmt::Goto(_)
@@ -303,7 +303,7 @@ fn stmt_binding_names(statement: &Stmt) -> Vec<String> {
         | Stmt::Yield(_)
         | Stmt::Signal { .. }
         | Stmt::LifetimeSet { .. }
-        | Stmt::Expr(_)
+        | Stmt::Expr { expr: _, .. }
         | Stmt::Wait(_)
         | Stmt::On { .. }
         | Stmt::UnsafeLifetime { .. }

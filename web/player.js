@@ -1,6 +1,10 @@
 import { createArcweftEditContextPlayerGlue } from "./player-editcontext.js";
 
 const DEFAULT_WASM_URL = "./pkg/arcweft_player_web.js";
+const DEFAULT_FONT_URLS = [
+  "./assets/arcweft-demo.ttf",
+  "./assets/noto-sans-jp-vf.ttf",
+];
 let wasmModulePromise = null;
 const runtimeTextInputs = new Map();
 let runtimeCommandListenerInstalled = false;
@@ -77,11 +81,15 @@ export async function startArcweftWebPlayer(options = {}) {
     }
     const wasm = await loadArcweftWasm(options.wasmUrl);
     const bundleUrl = options.bundleUrl || params.get("bundle") || "./demo.awfb";
-    const fontUrl = options.fontUrl || params.get("font") || "./assets/arcweft-demo.ttf";
-    const [bundleBytes, fontBytes] = await Promise.all([
+    const fontUrls = resolveFontUrls(options, params);
+    const [bundleBytes, fontByteArrays] = await Promise.all([
       fetchBytes(bundleUrl, "Arcweft bundle"),
-      fetchBytes(fontUrl, "Arcweft font"),
+      Promise.all(
+        fontUrls.map((fontUrl, index) => fetchBytes(fontUrl, `Arcweft font ${index + 1}`)),
+      ),
     ]);
+    const [fontBytes, ...additionalFontBytes] = fontByteArrays;
+    window.__arcweftLoadedFontUrls = fontUrls;
 
     if (options.textInput !== false) {
       await setupArcweftWebTextInput({
@@ -97,6 +105,7 @@ export async function startArcweftWebPlayer(options = {}) {
       wasm.start_arcweft_player_with_options(canvasId, bundleBytes, fontBytes, {
         textInput: options.textInput ?? true,
         frameFit: resolveFrameFitOptions(options, params),
+        additionalFontBytes,
       });
     } else {
       wasm.start_arcweft_player(canvasId, bundleBytes, fontBytes);
@@ -105,6 +114,41 @@ export async function startArcweftWebPlayer(options = {}) {
   } catch (error) {
     showFatal(error);
   }
+}
+
+function resolveFontUrls(options, params) {
+  const explicitFontUrls = urlListOption(options.fontUrls);
+  if (explicitFontUrls.length > 0) {
+    return explicitFontUrls;
+  }
+
+  const queryFontUrls = urlListOption(params.get("fontUrls") ?? params.get("fonts"));
+  if (queryFontUrls.length > 0) {
+    return queryFontUrls;
+  }
+
+  const primary = options.fontUrl || params.get("font");
+  const additional =
+    urlListOption(options.additionalFontUrls).length > 0
+      ? urlListOption(options.additionalFontUrls)
+      : urlListOption(params.get("additionalFontUrls") ?? params.get("additionalFonts"));
+  if (primary) {
+    return [primary, ...additional];
+  }
+  return [...DEFAULT_FONT_URLS, ...additional];
+}
+
+function urlListOption(value) {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function resolveFrameFitOptions(options, params) {
@@ -163,9 +207,6 @@ function wasmDelegate(wasm) {
         String(initialText ?? ""),
         Boolean(secure),
       );
-    },
-    dispatchClipboardOutcome(hostId, outcome) {
-      return wasm.arcweft_web_text_input_runtime_dispatch_clipboard_outcome?.(hostId, outcome);
     },
   };
 }
@@ -251,8 +292,15 @@ function autostartOptionsFromCanvas(canvas) {
     canvasId: canvas.id || "arcweft-canvas",
     bundleUrl: canvas.dataset.arcweftBundleUrl || undefined,
     fontUrl: canvas.dataset.arcweftFontUrl || undefined,
+    fontUrls: dataListOption(canvas.dataset.arcweftFontUrls),
+    additionalFontUrls: dataListOption(canvas.dataset.arcweftAdditionalFontUrls),
     textInput: canvas.dataset.arcweftTextInput === "false" ? false : undefined,
   };
+}
+
+function dataListOption(value) {
+  const values = urlListOption(value);
+  return values.length > 0 ? values : undefined;
 }
 
 function shouldAutostartArcweftWebPlayer(canvas) {

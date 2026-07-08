@@ -147,7 +147,7 @@ impl TakumiCompositingStyle {
         current_color: TakumiColor,
     ) -> Self {
         Self {
-            isolation: ui_isolation_from_takumi(style.isolation),
+            isolation: view_isolation_from_takumi(style.isolation),
             effects: compositing_effects_from_takumi(style, sizing, current_color),
         }
     }
@@ -414,7 +414,7 @@ fn lower_node(
 ) -> Result<Option<ViewPaintNode>, TakumiAdapterError> {
     let bounds = bounds_for_node(node, refs.layout_results)?;
     let path = TakumiPath::from(node.path.clone());
-    let transform = affine_to_ui(node.transform.to_cols_array());
+    let transform = affine_to_view(node.transform.to_cols_array());
     let paint_node_id = build.next_paint_node_id();
     let paint = refs.direct_paint.get(&path);
     let start = build.primitive_start()?;
@@ -460,7 +460,7 @@ fn lower_node(
             .with_layout_bounds(bounds)
             .with_visual_bounds(bounds)
             .with_hit_bounds(bounds)
-            .with_clip_bounds(clip.as_ref().map(crate::capture::ui_clip_bounds)),
+            .with_clip_bounds(clip.as_ref().map(crate::capture::view_clip_bounds)),
         );
     }
     Ok(Some(ViewPaintNode::Direct(scene_context)))
@@ -596,11 +596,11 @@ fn filter_list_from_takumi(
     ViewFilterList::new(
         filters
             .iter()
-            .map(|filter| ui_filter_from_takumi(filter, sizing, current_color)),
+            .map(|filter| view_filter_from_takumi(filter, sizing, current_color)),
     )
 }
 
-fn ui_filter_from_takumi(
+fn view_filter_from_takumi(
     filter: &TakumiFilter,
     sizing: &SizingContext,
     current_color: TakumiColor,
@@ -621,7 +621,7 @@ fn ui_filter_from_takumi(
             offset_x_px: length_px(shadow.offset_x, sizing),
             offset_y_px: length_px(shadow.offset_y, sizing),
             blur_radius_px: length_px(shadow.blur_radius, sizing),
-            color: ui_color_from_takumi(shadow.color.resolve(current_color)),
+            color: view_color_from_takumi(shadow.color.resolve(current_color)),
         },
     }
 }
@@ -653,7 +653,7 @@ fn box_shadow_from_takumi(
     let vertical_shift_px = length_value_px(shadow.offset_y, sizing);
     let blur_radius_px = length_value_px(shadow.blur_radius, sizing).max(0.0);
     let spread_radius_px = length_value_px(shadow.spread_radius, sizing);
-    let color = ui_color_from_takumi(shadow.color.resolve(current_color));
+    let color = view_color_from_takumi(shadow.color.resolve(current_color));
     if shadow.inset {
         ViewBoxShadow::inset_with_radii(
             horizontal_shift_px,
@@ -774,7 +774,7 @@ fn gradient_stops_from_takumi(
                 };
                 result.push(ViewGradientStop {
                     offset: offset.clamp(0.0, 1.0),
-                    color: ui_color_from_takumi(color.resolve(current_color)),
+                    color: view_color_from_takumi(color.resolve(current_color)),
                 });
                 color_index += 1;
             }
@@ -828,7 +828,7 @@ fn clip_path_from_takumi(shape: &BasicShape, sizing: &SizingContext) -> ViewClip
         BasicShape::Polygon(shape) => ViewClipPath::Polygon {
             fill_rule: shape
                 .fill_rule
-                .map_or(ViewFillRule::NonZero, ui_fill_rule_from_takumi),
+                .map_or(ViewFillRule::NonZero, view_fill_rule_from_takumi),
             points: shape
                 .coordinates
                 .iter()
@@ -839,7 +839,7 @@ fn clip_path_from_takumi(shape: &BasicShape, sizing: &SizingContext) -> ViewClip
         BasicShape::Path(shape) => ViewClipPath::Path {
             fill_rule: shape
                 .fill_rule
-                .map_or(ViewFillRule::NonZero, ui_fill_rule_from_takumi),
+                .map_or(ViewFillRule::NonZero, view_fill_rule_from_takumi),
             data: shape.path.clone(),
         },
     }
@@ -850,7 +850,7 @@ fn shape_radius_from_takumi(radius: TakumiShapeRadius, sizing: &SizingContext) -
         TakumiShapeRadius::ClosestSide => ViewShapeRadius::ClosestSide,
         TakumiShapeRadius::FarthestSide => ViewShapeRadius::FarthestSide,
         TakumiShapeRadius::Length(length) => {
-            ViewShapeRadius::Length(ui_length_from_takumi(length, sizing))
+            ViewShapeRadius::Length(view_length_from_takumi(length, sizing))
         }
     }
 }
@@ -861,20 +861,20 @@ where
 {
     let point = point.into();
     ViewPoint {
-        x: ui_length_from_takumi(point.x, sizing),
-        y: ui_length_from_takumi(point.y, sizing),
+        x: view_length_from_takumi(point.x, sizing),
+        y: view_length_from_takumi(point.y, sizing),
     }
 }
 
 fn lengths_from_sides(sides: &[Length; 4], sizing: &SizingContext) -> [ViewLength; 4] {
-    std::array::from_fn(|index| ui_length_from_takumi(sides[index], sizing))
+    std::array::from_fn(|index| view_length_from_takumi(sides[index], sizing))
 }
 
 fn zero_lengths() -> [ViewLength; 4] {
     std::array::from_fn(|_| ViewLength::Px(0.0))
 }
 
-fn ui_length_from_takumi(length: Length, sizing: &SizingContext) -> ViewLength {
+fn view_length_from_takumi(length: Length, sizing: &SizingContext) -> ViewLength {
     match length {
         Length::Auto => ViewLength::Auto,
         Length::Percentage(value) => ViewLength::Percent(value / 100.0),
@@ -890,7 +890,7 @@ fn length_px(length: Length, sizing: &SizingContext) -> f32 {
     length.to_px(sizing, 0.0).max(0.0)
 }
 
-fn ui_color_from_takumi(color: TakumiColor) -> ViewColorRgba8 {
+fn view_color_from_takumi(color: TakumiColor) -> ViewColorRgba8 {
     let [red, green, blue, alpha] = color.0;
     ViewColorRgba8 {
         red,
@@ -900,14 +900,14 @@ fn ui_color_from_takumi(color: TakumiColor) -> ViewColorRgba8 {
     }
 }
 
-fn ui_fill_rule_from_takumi(rule: TakumiFillRule) -> ViewFillRule {
+fn view_fill_rule_from_takumi(rule: TakumiFillRule) -> ViewFillRule {
     match rule {
         TakumiFillRule::EvenOdd => ViewFillRule::EvenOdd,
         TakumiFillRule::NonZero => ViewFillRule::NonZero,
     }
 }
 
-fn ui_isolation_from_takumi(isolation: TakumiIsolation) -> ViewIsolation {
+fn view_isolation_from_takumi(isolation: TakumiIsolation) -> ViewIsolation {
     if matches!(isolation, TakumiIsolation::Isolate) {
         ViewIsolation::Isolate
     } else {
@@ -938,7 +938,7 @@ fn view_blend_mode_from_takumi(mode: TakumiBlendMode) -> ViewBlendMode {
     }
 }
 
-fn affine_to_ui(values: [f32; 6]) -> ViewAffine2D {
+fn affine_to_view(values: [f32; 6]) -> ViewAffine2D {
     ViewAffine2D {
         m11: values[0],
         m12: values[1],

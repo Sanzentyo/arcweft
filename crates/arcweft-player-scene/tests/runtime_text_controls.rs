@@ -1,9 +1,9 @@
-use arcweft_bundle::resource_codec::ui::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-    UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeControlStyle,
-    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
-    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+use arcweft_bundle::resource_codec::view::{
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewInputPurpose, ViewRuntimeControlStyle, ViewRuntimeTextControl,
+    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
+    ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
+    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::input::{InputController, InputPointerModifiers};
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
@@ -21,7 +21,7 @@ use arcweft_render_wgpu::geometry::{
 
 #[test]
 fn runtime_text_control_lowers_into_render_scene_and_focused_target() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("runtime controls lower");
@@ -35,7 +35,7 @@ fn runtime_text_control_lowers_into_render_scene_and_focused_target() {
 
 #[test]
 fn committed_text_updates_player_owned_state_and_next_frame_value() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -78,7 +78,7 @@ fn committed_text_updates_player_owned_state_and_next_frame_value() {
 
 #[test]
 fn selection_update_changes_next_prepared_caret_geometry() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -129,7 +129,7 @@ fn selection_update_changes_next_prepared_caret_geometry() {
 
 #[test]
 fn secure_runtime_text_control_redacts_snapshot_and_visual_secret() {
-    let runtime = runtime_control("input.password", UiInputKind::SecureField, "secret");
+    let runtime = runtime_control("input.password", ViewInputKind::SecureField, "secret");
     let mut input = InputController::default();
     let controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("secure control lowers");
@@ -149,7 +149,7 @@ fn secure_runtime_text_control_redacts_snapshot_and_visual_secret() {
 
 #[test]
 fn pointer_focus_uses_lower_for_frame_activation_path() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -180,7 +180,7 @@ fn pointer_focus_uses_lower_for_frame_activation_path() {
 
 #[test]
 fn pointer_click_places_caret_after_focused_geometry_is_available() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -217,7 +217,7 @@ fn pointer_click_places_caret_after_focused_geometry_is_available() {
 
 #[test]
 fn shift_pointer_click_extends_focused_text_selection() {
-    let mut runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let mut runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     runtime.selection = ViewRuntimeTextSelection::new(1, 1);
     let mut input = InputController::default();
     let controls =
@@ -241,7 +241,7 @@ fn shift_pointer_click_extends_focused_text_selection() {
 
 #[test]
 fn pointer_drag_extends_focused_text_selection() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -276,7 +276,7 @@ fn pointer_drag_extends_focused_text_selection() {
 
 #[test]
 fn repeated_pointer_clicks_select_word_then_line() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "alpha beta");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "alpha beta");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -310,7 +310,7 @@ fn repeated_pointer_clicks_select_word_then_line() {
 
 #[test]
 fn selected_text_drag_moves_text_and_emits_writeback() {
-    let mut runtime = runtime_control("input.name", UiInputKind::TextField, "alpha beta");
+    let mut runtime = runtime_control("input.name", ViewInputKind::TextField, "alpha beta");
     runtime.selection = ViewRuntimeTextSelection::new(0, 5);
     let mut input = InputController::default();
     let controls =
@@ -347,7 +347,7 @@ fn selected_text_drag_moves_text_and_emits_writeback() {
 
 #[test]
 fn pointer_drag_selection_autoscrolls_containing_scroll_region() {
-    let runtime = runtime_control("input.notes", UiInputKind::TextArea, "alpha\nbeta\ngamma");
+    let runtime = runtime_control("input.notes", ViewInputKind::TextArea, "alpha\nbeta\ngamma");
     let mut input = InputController::default();
     let mut controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -383,11 +383,11 @@ fn pointer_drag_selection_autoscrolls_containing_scroll_region() {
 
 #[test]
 fn runtime_text_control_lowers_selection_shortcut_and_tab_policies() {
-    let mut runtime = runtime_control("input.notes", UiInputKind::TextArea, "notes");
-    runtime.options.selection_policy = UiTextSelectionPolicy::Disabled;
-    runtime.options.shortcut_policy = UiTextShortcutPolicy::Disabled;
-    runtime.options.tab_policy = UiTextTabPolicy::InsertTab;
-    runtime.options.vertical_navigation_policy = UiTextVerticalNavigationPolicy::VisualLine;
+    let mut runtime = runtime_control("input.notes", ViewInputKind::TextArea, "notes");
+    runtime.options.selection_policy = ViewTextSelectionPolicy::Disabled;
+    runtime.options.shortcut_policy = ViewTextShortcutPolicy::Disabled;
+    runtime.options.tab_policy = ViewTextTabPolicy::InsertTab;
+    runtime.options.vertical_navigation_policy = ViewTextVerticalNavigationPolicy::VisualLine;
     let mut input = InputController::default();
 
     let controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
@@ -410,7 +410,7 @@ fn runtime_text_control_lowers_selection_shortcut_and_tab_policies() {
 
 #[test]
 fn hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback() {
-    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let runtime = runtime_control("input.name", ViewInputKind::TextField, "Ada");
     let mut input = InputController::default();
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -449,7 +449,7 @@ fn hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback() {
     assert!(frame.focused_text_input_target().is_some());
 }
 
-fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> ViewRuntimeTextControl {
+fn runtime_control(public_id: &str, kind: ViewInputKind, value: &str) -> ViewRuntimeTextControl {
     let end = u32::try_from(value.len()).expect("test text length fits in u32");
     ViewRuntimeTextControl {
         public_id: public_id.to_owned(),
@@ -460,20 +460,20 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> ViewRunti
         value: value.to_owned(),
         selection: ViewRuntimeTextSelection::new(end, end),
         options: ViewRuntimeTextControlOptions {
-            purpose: UiInputPurpose::Text,
+            purpose: ViewInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,
             enter_key: EnterKeyHint::Default,
             multiline: kind.is_multiline(),
-            selection_policy: UiTextSelectionPolicy::Enabled,
-            shortcut_policy: UiTextShortcutPolicy::Enabled,
-            tab_policy: UiTextTabPolicy::FocusNavigation,
-            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
+            selection_policy: ViewTextSelectionPolicy::Enabled,
+            shortcut_policy: ViewTextShortcutPolicy::Enabled,
+            tab_policy: ViewTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
             secure_policy: if kind.is_secure() {
-                UiSecureInputPolicy::Password
+                ViewSecureInputPolicy::Password
             } else {
-                UiSecureInputPolicy::Plain
+                ViewSecureInputPolicy::Plain
             },
             composition_on_blur: CompositionOnBlurPolicy::Commit,
         },

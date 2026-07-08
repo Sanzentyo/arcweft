@@ -1,5 +1,5 @@
 use crate::control_style::lower_control_style;
-use arcweft_bundle::resource_codec::ui::{
+use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
     ViewRuntimeButtonBounds,
 };

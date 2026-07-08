@@ -9,7 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
 arcweft-character = { path = "../arcweft-character" }
-arcweft-character-ui = { path = "../arcweft-character-ui" }
+arcweft-character-view = { path = "../arcweft-character-view" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
 arcweft-layout.workspace = true
@@ -17,6 +17,7 @@ arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
 num-traits = "0.2.19"
+oxifont-webfont.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 

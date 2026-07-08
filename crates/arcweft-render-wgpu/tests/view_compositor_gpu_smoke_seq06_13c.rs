@@ -1,7 +1,7 @@
 //! Optional visual smoke fixture for seq06.13c.
 //!
 //! This test is intentionally ignored until native/web pinned readback exists in CI.
-//! It documents the retained UI scene shape that should be captured on both hosts.
+//! It documents the retained View scene shape that should be captured on both hosts.
 
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::view_scene::{

@@ -15,7 +15,7 @@ use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
 
-/// Player-rendered action button lowered from product UI resources.
+/// Player-rendered action button lowered from product View resources.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderActionButton {
     pub target: InteractionTarget,

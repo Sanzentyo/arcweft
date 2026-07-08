@@ -353,7 +353,7 @@ impl WebFrameTextStyle {
             font_size_milli: f32_milli(style.font_size),
             line_height_milli: f32_milli(style.line_height),
             rgba: style.rgba,
-            font_family: font_family_label(&style.font_family).to_owned(),
+            font_family: font_family_label(&style.font_family),
             weight: text_weight_label(style.weight).to_owned(),
             slant: text_slant_label(style.slant).to_owned(),
         }
@@ -436,14 +436,15 @@ fn f64_milli(value: f64) -> i64 {
     })
 }
 
-fn font_family_label(family: &RenderFontFamily) -> &str {
+fn font_family_label(family: &RenderFontFamily) -> String {
     match family {
-        RenderFontFamily::Serif => "serif",
-        RenderFontFamily::SansSerif => "sans_serif",
-        RenderFontFamily::Monospace => "monospace",
-        RenderFontFamily::Cursive => "cursive",
-        RenderFontFamily::Fantasy => "fantasy",
-        RenderFontFamily::Named(name) => name.as_str(),
+        RenderFontFamily::Serif => "serif".to_owned(),
+        RenderFontFamily::SansSerif => "sans_serif".to_owned(),
+        RenderFontFamily::Monospace => "monospace".to_owned(),
+        RenderFontFamily::Cursive => "cursive".to_owned(),
+        RenderFontFamily::Fantasy => "fantasy".to_owned(),
+        RenderFontFamily::Named(name) => name.clone(),
+        RenderFontFamily::Stack(stack) => stack.join(", "),
     }
 }
 

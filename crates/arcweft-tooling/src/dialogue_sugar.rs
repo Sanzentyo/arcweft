@@ -204,11 +204,25 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
             collect_dialogue_text_sugar_edits_from_stmts(source, else_body, edits, mode, context);
         }
         Stmt::Assign { target, expr } => {
-            collect_dialogue_text_sugar_edits_from_expr(target, None, None, edits, mode, context);
-            collect_dialogue_text_sugar_edits_from_expr(expr, None, None, edits, mode, context);
+            collect_dialogue_text_sugar_edits_from_expr(
+                target.expr(),
+                None,
+                None,
+                edits,
+                mode,
+                context,
+            );
+            collect_dialogue_text_sugar_edits_from_expr(
+                expr.expr(),
+                None,
+                None,
+                edits,
+                mode,
+                context,
+            );
         }
         Stmt::LetChoice { .. }
-        | Stmt::Return(_)
+        | Stmt::Return { expr: _, .. }
         | Stmt::Out { .. }
         | Stmt::Goto(_)
         | Stmt::Defer { .. }
@@ -220,7 +234,7 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
         | Stmt::Select(_)
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
-        | Stmt::Expr(_)
+        | Stmt::Expr { expr: _, .. }
         | Stmt::Raw(_) => {}
         _ => {
             collect_dialogue_text_sugar_edits_from_stmt_children(

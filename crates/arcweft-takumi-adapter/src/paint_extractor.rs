@@ -320,7 +320,7 @@ fn solid_background(
     current_color: TakumiColor,
     radii: ViewCornerRadii,
 ) -> Option<ViewSurfaceBackground> {
-    let color = ui_color(style.background_color.resolve(current_color));
+    let color = view_color(style.background_color.resolve(current_color));
     (color.alpha > 0).then_some(ViewSurfaceBackground::Solid { color, radii })
 }
 
@@ -455,7 +455,7 @@ fn gradient_stops(
                 };
                 result.push(ViewGradientStop {
                     offset: offset.clamp(0.0, 1.0),
-                    color: ui_color(color.resolve(current_color)),
+                    color: view_color(color.resolve(current_color)),
                 });
                 color_index += 1;
             }
@@ -545,10 +545,10 @@ fn supported_border(
         style.border_left_style,
     ];
     let colors = [
-        ui_color(style.border_top_color.resolve(current_color)),
-        ui_color(style.border_right_color.resolve(current_color)),
-        ui_color(style.border_bottom_color.resolve(current_color)),
-        ui_color(style.border_left_color.resolve(current_color)),
+        view_color(style.border_top_color.resolve(current_color)),
+        view_color(style.border_right_color.resolve(current_color)),
+        view_color(style.border_bottom_color.resolve(current_color)),
+        view_color(style.border_left_color.resolve(current_color)),
     ];
 
     let visible = widths
@@ -609,7 +609,7 @@ fn line_width_px(width: LineWidth, sizing: &SizingContext) -> f32 {
     Length::from(width).to_px(sizing, 0.0).max(0.0)
 }
 
-fn ui_color(color: TakumiColor) -> ViewColorRgba8 {
+fn view_color(color: TakumiColor) -> ViewColorRgba8 {
     let [red, green, blue, alpha] = color.0;
     ViewColorRgba8 {
         red,

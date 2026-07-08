@@ -1,6 +1,6 @@
-use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, UiTextSelectionPolicy, ViewElementKind, ViewRuntimeControlCornerRadius,
-    ViewRuntimeControlRadii,
+use arcweft_bundle::resource_codec::view::{
+    RgbaColor, ViewElementKind, ViewRuntimeControlCornerRadius, ViewRuntimeControlRadii,
+    ViewTextSelectionPolicy,
 };
 use arcweft_bundle::resource_codec::{
     ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion,
@@ -211,7 +211,7 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
         containing_scroll_region: None,
         text: "Alpha Beta".to_owned(),
         bounds: ViewRuntimeTextBlockBounds::from_px(40, 48, 260, 40),
-        selection_policy: UiTextSelectionPolicy::Enabled,
+        selection_policy: ViewTextSelectionPolicy::Enabled,
         style: ViewRuntimeControlStyle::default(),
     });
     let images = BundleImageCatalog::empty();
@@ -403,7 +403,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         containing_scroll_region: Some("scroll.notes".to_owned()),
         text: "Arcweft Concierge".to_owned(),
         bounds: ViewRuntimeTextBlockBounds::from_px(56, 112, 220, 24),
-        selection_policy: UiTextSelectionPolicy::Disabled,
+        selection_policy: ViewTextSelectionPolicy::Disabled,
         style: ViewRuntimeControlStyle::default(),
     });
     let images = BundleImageCatalog::empty();

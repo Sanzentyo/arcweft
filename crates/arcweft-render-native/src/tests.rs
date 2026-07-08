@@ -23,9 +23,9 @@ use arcweft_render_text::{
 };
 use arcweft_text_layout::{LayoutPoint, LayoutSize, layout_frame};
 use arcweft_view::{
-    FragmentKind, ImageId, LayoutLength as UiLayoutLength, LayoutPoint as UiLayoutPoint,
-    LayoutResults as UiLayoutResults, LayoutSize as UiLayoutSize, LayoutTree as UiLayoutTree,
-    NodeKey, StyleId, UiImageSource, UiImageSourceTable, ViewFragmentBuilder,
+    FragmentKind, ImageId, LayoutLength as ViewLayoutLength, LayoutPoint as ViewLayoutPoint,
+    LayoutResults as ViewLayoutResults, LayoutSize as ViewLayoutSize, LayoutTree as ViewLayoutTree,
+    NodeKey, StyleId, ViewFragmentBuilder, ViewImageSource, ViewImageSourceTable,
 };
 
 fn line_id(value: &str) -> RuntimeLineId {
@@ -75,7 +75,7 @@ fn styled_ruby_test_frame() -> LineDisplayFrame {
     frame
 }
 
-fn two_frame_ui_image() -> DecodedImage {
+fn two_frame_view_image() -> DecodedImage {
     let dimensions = ImageDimensions::new(2, 1).unwrap();
     DecodedImage::new(
         ImageFormat::Gif,
@@ -92,10 +92,10 @@ fn two_frame_ui_image() -> DecodedImage {
 }
 
 #[test]
-fn native_image_quads_from_display_list_uses_ui_image_frame_and_fit() {
-    let mut images = UiImageSourceTable::default();
+fn native_image_quads_from_display_list_uses_view_image_frame_and_fit() {
+    let mut images = ViewImageSourceTable::default();
     images
-        .insert_with_id(ImageId(7), UiImageSource::new(two_frame_ui_image()))
+        .insert_with_id(ImageId(7), ViewImageSource::new(two_frame_view_image()))
         .unwrap();
 
     let mut builder = ViewFragmentBuilder::default();
@@ -110,14 +110,14 @@ fn native_image_quads_from_display_list_uses_ui_image_frame_and_fit() {
         )
         .unwrap();
     let fragment = builder.finish();
-    let tree = UiLayoutTree::from_fragment(&fragment).unwrap();
-    let mut layouts = UiLayoutResults::new(&tree);
+    let tree = ViewLayoutTree::from_fragment(&fragment).unwrap();
+    let mut layouts = ViewLayoutResults::new(&tree);
     layouts
         .set(
             image_node,
             LayoutBox::new(
-                UiLayoutPoint::new(UiLayoutLength::px(10), UiLayoutLength::px(20)),
-                UiLayoutSize::new(UiLayoutLength::px(100), UiLayoutLength::px(100)),
+                ViewLayoutPoint::new(ViewLayoutLength::px(10), ViewLayoutLength::px(20)),
+                ViewLayoutSize::new(ViewLayoutLength::px(100), ViewLayoutLength::px(100)),
             ),
         )
         .unwrap();
@@ -660,7 +660,7 @@ fn native_measure_reports_text_object_proxy_element_bounds() {
                         declaration: None,
                         type_name: Some("KeywordHit".to_owned()),
                         role: Some("keyword".to_owned()),
-                        layer: Some("ui".to_owned()),
+                        layer: Some("view".to_owned()),
                         depth: Some(Milli(4000)),
                         hit_test: true,
                         params: BTreeMap::new(),

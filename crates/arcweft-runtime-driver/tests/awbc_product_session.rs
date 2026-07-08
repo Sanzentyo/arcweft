@@ -405,7 +405,7 @@ fn view_handle(
         "view.FeedbackPanel".to_owned(),
         Some("flow.feedback".to_owned()),
         state,
-        Some("layer.ui".to_owned()),
+        Some("layer.view".to_owned()),
         1_500,
     )
     .with_epochs(created_epoch, updated_epoch)

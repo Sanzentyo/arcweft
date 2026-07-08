@@ -21,7 +21,7 @@ fn current_color() -> TakumiColor {
     TakumiColor([1, 2, 3, 255])
 }
 
-fn ui_color(red: u8, green: u8, blue: u8, alpha: u8) -> ViewColorRgba8 {
+fn view_color(red: u8, green: u8, blue: u8, alpha: u8) -> ViewColorRgba8 {
     ViewColorRgba8 {
         red,
         green,
@@ -117,7 +117,7 @@ fn one_outer_shadow_lowers_to_view_box_shadow_list() {
             12.0,
             3.0,
             6.0,
-            ui_color(10, 20, 30, 180),
+            view_color(10, 20, 30, 180),
         )]
     );
     assert!(
@@ -344,7 +344,7 @@ fn filter_drop_shadow_remains_distinct_from_css_box_shadow() {
         (*offset_x_px, *offset_y_px, *blur_radius_px),
         (3.0, 5.0, 7.0)
     );
-    assert_eq!(*color, ui_color(1, 2, 3, 200));
+    assert_eq!(*color, view_color(1, 2, 3, 200));
 }
 
 #[test]

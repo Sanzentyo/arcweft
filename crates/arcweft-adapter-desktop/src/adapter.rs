@@ -47,7 +47,7 @@ struct PendingTask {
     request: DesktopRequest,
 }
 
-/// Shared bridge retained by the native player so it can pump UI work.
+/// Shared bridge retained by the native player so it can pump window-thread work.
 pub struct DesktopCoordinator<B: DesktopBackend> {
     host: DesktopHost<B>,
 }

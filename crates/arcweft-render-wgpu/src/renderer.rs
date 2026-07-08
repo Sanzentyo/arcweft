@@ -1,5 +1,6 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::font_family::render_font_family;
+use crate::font_system::new_font_system;
 use crate::geometry::{
     PaintRect, PreparedControlPaint, PreparedControlShadow, PreparedFrame, PreparedViewScene,
     RenderFontFamily, RenderGlyphMotion, RenderGlyphTransformSpan, RenderImage,
@@ -58,7 +59,7 @@ pub enum SharedRendererError {
     TextPrepare(String),
     #[error("glyphon text rendering failed: {0}")]
     TextRender(String),
-    #[error("ui compositor failed: {0}")]
+    #[error("view compositor failed: {0}")]
     ViewCompositor(#[from] ViewCompositorError),
 }
 
@@ -120,7 +121,7 @@ impl SharedRenderer {
             image_sampler,
             viewport: Viewport::new(device, &glyphon_cache),
             _glyphon_cache: glyphon_cache,
-            font_system: FontSystem::new(),
+            font_system: new_font_system(),
             swash_cache: SwashCache::new(),
             atlas,
             text_renderer,
@@ -232,19 +233,19 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         final_target: &wgpu::TextureView,
         frame: &PreparedFrame,
-        prepared_ui: &PreparedViewScene,
+        prepared_view: &PreparedViewScene,
     ) -> Result<(), SharedRendererError> {
         let mut mask_textures =
-            WgpuPreparedViewMaskTextureProvider::prepare(device, queue, &prepared_ui.resources);
+            WgpuPreparedViewMaskTextureProvider::prepare(device, queue, &prepared_view.resources);
         let mut direct_renderer = self
             .view_direct_renderer
-            .for_resources(&prepared_ui.resources);
+            .for_resources(&prepared_view.resources);
         let result = self.view_compositor.render_scene(&mut ViewCompositorFrame {
             device,
             queue,
             encoder,
             final_target,
-            scene: &prepared_ui.scene,
+            scene: &prepared_view.scene,
             target_extent: ViewTextureExtent::new(
                 frame.viewport.physical_width,
                 frame.viewport.physical_height,
@@ -1275,7 +1276,7 @@ impl StyledParagraphEvidenceFontContext {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            font_system: FontSystem::new(),
+            font_system: new_font_system(),
         }
     }
 

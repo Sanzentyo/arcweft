@@ -78,7 +78,7 @@ fn selected_looks_prepare_without_flat_png_swaps() {
 }
 
 #[test]
-fn retained_ui_layers_match_resolved_manifest_order() {
+fn retained_view_layers_match_resolved_manifest_order() {
     let catalog = BundleCharacterCatalog::from_character_package(&package()).expect("catalog");
     let character = CharacterId::try_new("character.zundamon").expect("character");
     let frame = catalog.prepare(&character, None).expect("default frame");

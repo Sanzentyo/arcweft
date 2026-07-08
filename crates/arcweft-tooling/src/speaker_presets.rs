@@ -245,7 +245,7 @@ fn collect_speaker_presets_from_choice_items(
                 if let Some(hotkey) = option.hotkey() {
                     collect_speaker_presets_from_expr(hotkey, character_aliases, presets);
                 }
-                for field in option.ui_fields() {
+                for field in option.view_fields() {
                     collect_speaker_presets_from_expr(field.value(), character_aliases, presets);
                 }
                 match option.action() {
@@ -365,19 +365,19 @@ fn collect_speaker_presets_from_stmt(
                 collect_speaker_presets_from_await_branch(branch, character_aliases, presets);
             }
         }
-        Stmt::Return(expr)
-        | Stmt::Out { expr, .. }
-        | Stmt::Goto(expr)
-        | Stmt::Defer { expr, .. }
-        | Stmt::Yield(expr)
-        | Stmt::Close(expr)
-        | Stmt::Select(expr)
-        | Stmt::Expr(expr) => {
+        Stmt::Return { expr, .. } | Stmt::Out { expr, .. } | Stmt::Expr { expr, .. } => {
             collect_speaker_presets_from_expr(expr, character_aliases, presets);
         }
+        Stmt::Defer { expr, .. }
+        | Stmt::Goto(expr)
+        | Stmt::Yield(expr)
+        | Stmt::Close(expr)
+        | Stmt::Select(expr) => {
+            collect_speaker_presets_from_expr(expr.expr(), character_aliases, presets);
+        }
         Stmt::Assign { target, expr } => {
-            collect_speaker_presets_from_expr(target, character_aliases, presets);
-            collect_speaker_presets_from_expr(expr, character_aliases, presets);
+            collect_speaker_presets_from_expr(target.expr(), character_aliases, presets);
+            collect_speaker_presets_from_expr(expr.expr(), character_aliases, presets);
         }
         Stmt::Thread(block) => {
             collect_speaker_presets_from_flow_items(block.body(), character_aliases, presets);
@@ -405,7 +405,7 @@ fn collect_speaker_presets_from_stmt(
             collect_speaker_presets_from_control_stmt(stmt, character_aliases, presets);
         }
         Stmt::LetActionReceive { action, .. } => {
-            collect_speaker_presets_from_expr(action, character_aliases, presets);
+            collect_speaker_presets_from_expr(action.expr(), character_aliases, presets);
         }
         Stmt::Wait(_) | Stmt::Continue { .. } | Stmt::Raw(_) => {}
     }
@@ -422,29 +422,29 @@ fn collect_speaker_presets_from_control_stmt(
             body,
             else_body,
         } => {
-            collect_speaker_presets_from_expr(condition, character_aliases, presets);
+            collect_speaker_presets_from_expr(condition.expr(), character_aliases, presets);
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
             collect_speaker_presets_from_stmts(else_body, character_aliases, presets);
         }
         Stmt::While { condition, body } => {
-            collect_speaker_presets_from_expr(condition, character_aliases, presets);
+            collect_speaker_presets_from_expr(condition.expr(), character_aliases, presets);
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
         }
         Stmt::WhileLet {
             expr, guard, body, ..
         } => {
-            collect_speaker_presets_from_expr(expr, character_aliases, presets);
+            collect_speaker_presets_from_expr(expr.expr(), character_aliases, presets);
             if let Some(guard) = guard {
-                collect_speaker_presets_from_expr(guard, character_aliases, presets);
+                collect_speaker_presets_from_expr(guard.expr(), character_aliases, presets);
             }
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
         }
         Stmt::For { source, body, .. } => {
-            collect_speaker_presets_from_expr(source, character_aliases, presets);
+            collect_speaker_presets_from_expr(source.expr(), character_aliases, presets);
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
         }
         Stmt::Match { expr, arms } => {
-            collect_speaker_presets_from_expr(expr, character_aliases, presets);
+            collect_speaker_presets_from_expr(expr.expr(), character_aliases, presets);
             for arm in arms {
                 if let Some(guard) = arm.guard() {
                     collect_speaker_presets_from_expr(guard, character_aliases, presets);

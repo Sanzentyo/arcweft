@@ -70,7 +70,7 @@ pub struct RuntimeSchedulerStats {
 /// Cumulative task counters split by scheduler task class.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TaskClassCounts {
-    pub local_ui: usize,
+    pub local_view: usize,
     pub io: usize,
     pub cpu: usize,
     pub gpu_prepare: usize,
@@ -88,7 +88,7 @@ pub struct TaskClassCounts {
 impl TaskClassCounts {
     const fn empty() -> Self {
         Self {
-            local_ui: 0,
+            local_view: 0,
             io: 0,
             cpu: 0,
             gpu_prepare: 0,
@@ -106,7 +106,7 @@ impl TaskClassCounts {
 
     fn record(&mut self, class: &TaskClass) {
         match class {
-            TaskClass::LocalUi => self.local_ui += 1,
+            TaskClass::LocalView => self.local_view += 1,
             TaskClass::Io => self.io += 1,
             TaskClass::Cpu => self.cpu += 1,
             TaskClass::GpuPrepare => self.gpu_prepare += 1,

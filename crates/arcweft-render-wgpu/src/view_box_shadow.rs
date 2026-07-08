@@ -1,4 +1,4 @@
-//! Box-shadow pass planning for Arcweft UI compositing.
+//! Box-shadow pass planning for Arcweft View compositing.
 //!
 //! CSS `box-shadow` is distinct from `filter: drop-shadow(...)`: box-shadow is
 //! generated from a box/radius/spread list, while drop-shadow is generated from
