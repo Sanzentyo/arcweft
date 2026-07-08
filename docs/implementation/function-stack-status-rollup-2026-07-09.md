@@ -38,6 +38,7 @@ Current supporting audits:
 - `docs/implementation/function-stack-spread-contract-closure-2026-07-09.md`
 - `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
+- `docs/implementation/function-stack-prefix-source-partial-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
@@ -194,6 +195,9 @@ Previous named baseline before the spread rejection hardening slice:
 - Data-last pipe partials through helper-less source functions are rejected by
   checked runtime-plan lowering with the same
   `signature_partial_without_helper` family.
+- Positional prefix partials through helper-less source functions outside the
+  accepted source-function candidate set are rejected by checked runtime-plan
+  lowering with `signature_partial_without_helper`.
 - Bare top-level source-function value references are rejected by checked
   runtime-plan lowering with unsupported callable family
   `source_function_value_without_runtime_candidate` when sema proves the path

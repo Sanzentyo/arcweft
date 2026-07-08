@@ -66,6 +66,7 @@ Supporting focused notes:
 - `docs/implementation/function-stack-spread-contract-closure-2026-07-09.md`
 - `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
+- `docs/implementation/function-stack-prefix-source-partial-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`
@@ -131,6 +132,10 @@ The following are implemented in pushed commits:
 - Checked runtime-plan lowering rejects data-last pipe partials through
   unsupported source functions with the same `signature_partial_without_helper`
   family used by direct partial calls.
+- Checked runtime-plan lowering rejects positional prefix partial calls through
+  unsupported source functions with `signature_partial_without_helper`, proving
+  the direct partial-call rejection boundary covers both named missing-input and
+  prefix partial shapes.
 - Checked runtime-plan lowering rejects bare `task fn`, `dialogue fn`, and
   `stream fn` value references with
   `source_function_value_without_runtime_candidate` instead of treating those

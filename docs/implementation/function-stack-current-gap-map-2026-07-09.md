@@ -87,6 +87,9 @@ includes:
   accepted source-function candidate families are rejected as
   `signature_partial_without_helper` instead of falling through to direct
   runtime-call lowering.
+- positional prefix partials through source functions outside the accepted
+  candidate families are rejected with the same
+  `signature_partial_without_helper` family.
 - value-position environment, inherent, and trait/impl method references such
   as `score.above` are rejected as
   `sema.typecheck.unsupported_method_value_reference`, keeping receiver
@@ -103,6 +106,7 @@ The detailed evidence remains in:
 - `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
+- `docs/implementation/function-stack-prefix-source-partial-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md`
 

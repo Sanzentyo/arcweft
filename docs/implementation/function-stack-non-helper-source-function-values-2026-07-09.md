@@ -155,6 +155,8 @@ These are still not accepted:
 Unsupported signature partial calls still fail as
 `signature_partial_without_helper` when no pure helper or accepted source
 function candidate exists.
+That rejection boundary is covered for both named missing-input partials and
+positional prefix partials.
 Bare top-level source-function value references outside the same executable
 families fail as `source_function_value_without_runtime_candidate`.
 Data-last pipe partials through source functions outside those executable
@@ -174,6 +176,7 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_control_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_prefix_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_bare_source_function_value_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck -- --nocapture

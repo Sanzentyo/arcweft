@@ -1779,6 +1779,14 @@ helper-less source function outside the accepted candidate set fails with
 `RuntimeExpr::Call`. Details are recorded in
 `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`.
 
+The prefix source-partial rejection follow-up adds the missing positional
+fixture for 07.7. `trim_right("head")` now has a focused checked runtime-plan
+test showing that prefix partial application to a source function outside the
+accepted runtime-function subset rejects with
+`signature_partial_without_helper`, matching the named missing-input and
+data-last source-partial rejection boundaries. Details are recorded in
+`docs/implementation/function-stack-prefix-source-partial-rejection-2026-07-09.md`.
+
 The method-value rejection follow-up tightens the 07.7 receiver-binding
 boundary. Sema now distinguishes value-position method references such as
 `score.above` from ordinary field selection when the selected member resolves
