@@ -1334,6 +1334,67 @@ effects { }
 }
 
 #[test]
+fn borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary() {
+    let tree = parse_ok(
+        r#"
+flow @flow.borrowed_capture_effect_row borrowed_capture_effect_row
+effects { }
+{
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    let later = || -> String {
+        let loaded = await load_avatar()
+        log.info(pixels)
+        adapter.read_text(path = "story.arcw")
+    }
+    log.info(later)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("borrowed capture effect-row fixture lowers");
+    validate_typecheck_ready(&hir).expect("borrowed capture effect-row fixture is structured");
+
+    let report = analyze_types(&hir, &borrow_capture_read_text_env());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary {
+                    capture,
+                    lifetimes,
+                    boundary,
+                    ..
+                } if capture == "pixels"
+                    && lifetimes.len() == 1
+                    && lifetimes[0] == "asset"
+                    && boundary == "await suspension boundary"
+            ) && diagnostic.stable_code()
+                == "sema.typecheck.borrowed_closure_capture_crosses_boundary"
+        }),
+        "expected borrowed closure capture diagnostic, got {:?}",
+        report.diagnostics
+    );
+
+    let rows = report.effects.closed_effect_rows();
+    let empty_substitution = crate::effect_row::EffectSubstitution::new();
+    let closure_rows = rows
+        .summaries()
+        .filter(|(callable, _)| callable.as_str().starts_with("closure.expr."))
+        .map(|(_, row)| {
+            row.inferred()
+                .resolve(&empty_substitution)
+                .expect("closed closure row resolves")
+                .to_labels()
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        closure_rows
+            .iter()
+            .any(|labels| labels.iter().any(|label| label == "fs.read")),
+        "borrowed capture diagnostic must not drop closure effect-row evidence: {closure_rows:?}"
+    );
+}
+
+#[test]
 fn local_closure_call_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"
@@ -2565,6 +2626,18 @@ fn borrow_capture_env() -> TypeCheckEnv {
             pixel_borrow_ty(),
         )
         .with_function("load_avatar", load_avatar_need_ty())
+}
+
+fn borrow_capture_read_text_env() -> TypeCheckEnv {
+    borrow_capture_env()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()])
 }
 
 fn pixel_borrow_ty() -> TypeKind {

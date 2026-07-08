@@ -38,9 +38,10 @@ Current supporting audits:
 
 Current pushed baseline:
 
-- the status refresh commit titled `Harden spread rejection diagnostics`
+- the function-stack baseline that includes captured function alias row
+  preservation through returned closures
 
-Previous baseline before the spread rejection hardening slice:
+Previous named baseline before the spread rejection hardening slice:
 
 - `486738b31 Handle pipe control-expression RHS placeholders`
 
@@ -190,7 +191,7 @@ These are the pieces that keep the active goal open:
 | AWBC suspension-aware dynamic apply | Non-suspending `MakeFunction` / `ApplyFunction` works, including lazy AWBC branch lowering for value-position `if` / `if let` / `match` bodies. Apply that suspends or budget-yields still has no resumable safe-point contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects function values. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Non-helper/effectful/suspending callable allocation | Callable families are inventoried. The first non-helper source-local `fn` expansion is implemented for expression bodies with no host/effect/suspension syntax, including multiple curried `ParamGroup`s, returned simple closure literals, direct calls to function-typed parameters, local callback aliases/partials, destructuring closure literals in function-valued local bindings, exact calls to already-lowered pure helpers, pure value control expressions, and fixed-point exact calls to already-accepted source-local candidates. Effectful/suspending bodies, host/adapter call-bearing bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persistence remain unaccepted. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`; `docs/implementation/function-stack-current-gap-map-2026-07-09.md` |
-| Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, `no_effect` now has focused closure-invocation coverage, captured function aliases preserve rows through returned closures, closed row report projection exists, and Agent artifact verified-effects lowering consumes that projection. Source row syntax, open-row inference, row-bearing callable values, and runtime-plan/verifier/LSP consumers beyond artifact proofs are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md` |
+| Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, `no_effect` now has focused closure-invocation coverage, captured function aliases preserve rows through returned closures, borrowed captures crossing `await` preserve closed row evidence while reporting the lifetime diagnostic, closed row report projection exists, and Agent artifact verified-effects lowering consumes that projection. Source row syntax, open-row inference, row-bearing callable values, and runtime-plan/verifier/LSP consumers beyond artifact proofs are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md` |
 
 ## Deferred Non-Blocker
 
@@ -201,14 +202,12 @@ API is implemented, so atom-table storage is not a current completion blocker.
 
 ## Separate Work Not To Mix Into This Goal
 
-The working copy has View/Web/text-input changes that are unrelated to this
-function-stack rollup. They include rendering, font, sample, IME/player, and
-runtime-driver text-input files. See
-`docs/implementation/current-work-status-2026-07-09.md` for the exact list.
+View/Web/text-input work is unrelated to this function-stack rollup. Rendering,
+font, sample, IME/player, and runtime-driver text-input changes should be
+validated as their own slice whenever active.
 
-Those files should be validated as their own slice. They must not become
-evidence for this language-stack goal and should not be staged together with
-function-stack documentation.
+Those files must not become evidence for this language-stack goal and should
+not be staged together with function-stack documentation.
 
 ## Practical Next Steps
 
@@ -227,7 +226,7 @@ For function-stack work:
 
 For the separate View/Web/text-input work:
 
-1. Inspect the dirty slice independently.
+1. Inspect the active slice independently.
 2. Decide whether to continue, split, or revert any stale parts.
 3. Run targeted renderer/player/IME validation.
 4. Commit separately from function-stack work.

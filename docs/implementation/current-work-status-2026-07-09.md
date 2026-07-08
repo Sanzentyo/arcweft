@@ -9,57 +9,25 @@ historical note. For the current active-goal entry point, see
 ## Repository Baseline
 
 - Current pushed function-stack baseline:
-  the status refresh commit titled `Harden spread rejection diagnostics`.
+  the function-stack baseline that includes captured function alias row
+  preservation through returned closures.
 - At the start of this cleanup, `main` and `origin/main` were aligned at that
   head.
-- The working copy still has unrelated View/Web/text-input changes. They are
-  not part of the function/closure/currying/pipeline status cleanup and should
-  not be staged with function-stack documentation or language changes unless
-  they are intentionally validated as their own slice.
-
-The non-function-stack dirty files at this audit point are:
-
-- `crates/arcweft-cli/src/app/bundle/tests.rs`
-- `crates/arcweft-cli/src/app/bundle_view.rs`
-- `crates/arcweft-cli/src/app/bundle_view_layout.rs`
-- `crates/arcweft-cli/src/app/progress.rs`
-- `crates/arcweft-cli/src/app/runtime/run.rs`
-- `crates/arcweft-cli/src/app.rs`
-- `crates/arcweft-cli/tests/native_text_input_native_interactive_smoke.rs`
-- `crates/arcweft-cli/tests/native_text_input_sample_sidecars.rs`
-- `crates/arcweft-player-scene/src/fonts.rs`
-- `crates/arcweft-player-scene/src/input.rs`
-- `crates/arcweft-player-scene/tests/action_button_submit.rs`
-- `crates/arcweft-render-wgpu/src/font_system.rs`
-- `crates/arcweft-render-wgpu/src/geometry/text_controls.rs`
-- `crates/arcweft-render-wgpu/src/renderer.rs`
-- `crates/arcweft-render-wgpu/src/view_compositor.rs`
-- `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
-- `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
-- `crates/arcweft-runtime-driver/src/session.rs`
-- `crates/arcweft-runtime-driver/tests/session.rs`
-- `samples/modern-feedback-view/README.md`
-- `samples/modern-feedback-view/src/main.arcw`
-- `web/assets/README.md`
-- `web/assets/noto-emoji-regular.ttf`
-- `web/ime-player-rendered.awfb`
-- `web/index.html`
-- `web/modern-feedback-view.awfb`
-- `web/player-editcontext.js`
-- `web/player.js`
-- `web/tests/ime-sample-smoke.mjs`
-- `web/tests/player-editcontext-glue-unit.mjs`
+- The worktree was clean at this audit point. Future unrelated View/Web/text
+  input work should still be validated and committed as its own slice rather
+  than mixed into function-stack language changes.
 
 ## Active Goal Status
 
 The active function/closure/currying/pipeline language-stack goal remains
 open. The implemented surface is broad: the narrow 07.7 exact pure-helper call
-gap inside accepted source-local function bodies is implemented, and the latest
-pipe RHS hardening slice now carries `^` substitution through value-position
-`if`, `if let`, and `match` expressions. The spread rejection boundary now has
-more precise structured diagnostics for spread-before-fixed and multiple-spread
-partial/fallback shapes. Remaining completion still depends on explicit
-request/design areas:
+gap inside accepted source-local function bodies is implemented, the pipe RHS
+hardening slice carries `^` substitution through value-position `if`,
+`if let`, and `match` expressions, the spread rejection boundary has precise
+structured diagnostics for spread-before-fixed and multiple-spread
+partial/fallback shapes, and current 07.8 evidence covers captured function
+alias rows plus borrowed-capture row preservation at an `await` boundary.
+Remaining completion still depends on explicit request/design areas:
 
 1. Spread partial application and spread data-last fallback semantics.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.
@@ -193,13 +161,12 @@ separately from the function-stack goal:
 
 ## Recommended Next Order
 
-1. Keep function-stack commits separate from the current dirty View/Web
-   worktree.
+1. Keep function-stack commits separate from any View/Web worktree slice.
 2. For the function-stack goal, either receive/author a concrete design answer
    for one of the four request boundaries, or audit code for another narrow
    typed-key/diagnostic gap that is implementation-ready without changing the
    language contract.
-3. Treat the dirty View/Web/text-input files as their own validation slice:
+3. Treat View/Web/text-input work as its own validation slice when active:
    inspect, decide whether to continue or revert, run targeted renderer/player
    checks, then commit separately.
 

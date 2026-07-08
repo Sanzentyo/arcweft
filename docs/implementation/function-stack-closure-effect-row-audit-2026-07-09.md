@@ -54,6 +54,7 @@ effect-row model is introduced:
 | A higher-order function parameter composes the supplied callback effects only if the parameter is actually invoked. | `user_higher_order_function_argument_composes_when_param_is_called`; `user_higher_order_function_argument_does_not_compose_when_param_is_not_called` |
 | Returned closures delay captured callback effects until the returned closure is called. | `returned_closure_callback_does_not_compose_until_closure_is_called`; `returned_closure_callback_composes_when_returned_closure_is_called`; `stored_returned_closure_callback_composes_when_returned_closure_is_called` |
 | Captured function values preserve callback effect rows through local aliases, including aliases captured by returned closures. | `returned_closure_captured_function_alias_does_not_compose_until_called`; `returned_closure_captured_function_alias_composes_when_called` |
+| Borrowed captures that cross suspension boundaries keep their lifetime diagnostic and still project closure body effect rows. | `borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary` |
 | Later curried callback groups compose only when the reached call group invokes the callback. | `curried_higher_order_function_argument_composes_when_later_group_param_is_called`; `partial_curried_higher_order_callback_does_not_compose_until_final_call`; `partial_curried_higher_order_callback_composes_on_final_call`; `partial_curried_higher_order_callback_composes_on_immediate_final_call` |
 | `no_effect` rejects closure body effects when a closure value is actually called, not when it is merely created. | `no_effect_rejects_local_closure_effect_when_called` |
 | The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence` |
@@ -133,6 +134,7 @@ The following 07.8 decisions remain open:
 ```bash
 cargo test -p arcweft-lang-sema --all-features no_effect_rejects_local_closure_effect_when_called -- --nocapture
 cargo test -p arcweft-lang-sema --all-features closure_effect_rows_project_closed_report_evidence -- --nocapture
+cargo test -p arcweft-lang-sema --all-features borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary -- --nocapture
 cargo test -p arcweft-lang-sema --all-features returned_closure_captured_function_alias -- --nocapture
 cargo test -p arcweft-compiler --all-features compile_agent_bundle_with_project_builds_agent_controller_bundle -- --nocapture
 cargo test -p arcweft-compiler --all-features compile_agent_bundle_lowers_inferred_effects_not_unused_source_upper_bound -- --nocapture
@@ -155,6 +157,30 @@ All commands passed. Clippy still reports only existing large-enum warnings in
 `arcweft-lang-syntax` and existing `too_many_lines` warnings in
 `arcweft-lang-sema`; no warning is attributed to this slice. The structure
 audit scanned 2475 files / 1179 Rust files / 582938 Rust physical LOC and
+reported 0 errors / 151 warnings.
+
+2026-07-09 borrowed capture row-evidence validation:
+
+```bash
+cargo test -p arcweft-lang-sema --all-features borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary -- --nocapture
+cargo test -p arcweft-lang-sema --all-features closure_borrow_capture -- --nocapture
+cargo test -p arcweft-lang-sema --all-features closure_effect_rows_project_closed_report_evidence -- --nocapture
+cargo test -p arcweft-lang-sema --all-features returned_closure_captured_function_alias -- --nocapture
+rustfmt --edition 2024 --check crates\arcweft-lang-sema\src\tests\function_stack.rs
+cargo check -p arcweft-lang-sema --all-targets --all-features
+cargo clippy -p arcweft-lang-sema --all-targets --all-features
+git diff --check
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs\implementation\structure-audits\function-stack-effect-row-borrowed-capture-evidence-2026-07-09
+```
+
+This regression covers the 07.8 requirement that a borrowed closure capture
+crossing an `await` boundary reports the lifetime/capture diagnostic while
+still preserving the closure synthetic callable's closed `fs.read` row.
+
+All commands passed. Clippy still reports only existing large-enum warnings in
+`arcweft-lang-syntax` and existing `too_many_lines` warnings in
+`arcweft-lang-sema`; no warning is attributed to this slice. The structure
+audit scanned 2476 files / 1179 Rust files / 583011 Rust physical LOC and
 reported 0 errors / 151 warnings.
 
 Structural measurement after the captured function alias cut:

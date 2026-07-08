@@ -10,14 +10,15 @@ For the current entry point and reading order, see
 ## Repository Baseline
 
 - Current pushed function-stack baseline:
-  the status refresh commit titled `Harden spread rejection diagnostics`.
-- `main` and `origin/main` were aligned at that commit when this gap map was
+  the function-stack baseline that includes captured function alias row
+  preservation through returned closures.
+- `main` and `origin/main` were aligned at that baseline when this gap map was
   refreshed.
 - The previous baseline before the spread rejection hardening slice was
   `486738b31 Handle pipe control-expression RHS placeholders`.
-- The working copy still contains View/Web/text-input changes. They are not
-  function-stack evidence and should be validated as a separate slice before
-  being staged or pushed.
+- The working copy was clean at this refresh point. Future View/Web/text-input
+  changes are not function-stack evidence and should be validated as a
+  separate slice before being staged or pushed.
 
 ## Done And Pushed
 
@@ -62,7 +63,9 @@ includes:
 - product AWBC save/load rejection of escaped function values through the
   structured unsupported-runtime-value path.
 - captured function values preserve effect rows through local aliases,
-  including aliases captured by returned closures.
+  including aliases captured by returned closures;
+- borrowed captures crossing an `await` boundary preserve closed row evidence
+  while reporting the lifetime/capture diagnostic.
 
 The detailed evidence remains in:
 
@@ -82,33 +85,32 @@ These keep the active goal open:
 | AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding dynamic apply still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects runtime functions. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers, pure value control expressions, and exact calls to already-accepted source-local candidates. Task/dialogue/stream functions, trait/impl methods, adapter thunks, host/adapter call-bearing bodies, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
-| Final closure effect-row model | Current composition is useful and broadly covered, including captured function aliases through returned closures, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
+| Final closure effect-row model | Current composition is useful and broadly covered, including captured function aliases through returned closures and borrowed-capture row evidence at an `await` boundary, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows it is needed.
 The typed path API is already in place, so atom storage is not a current
 completion blocker.
 
-## Separate Dirty Track
+## Separate Open Track
 
-The dirty View/Web/text-input files are real work, but they are a separate
-track:
+View/Web/text-input work remains a separate open track:
 
 - native/web View rendering parity;
 - radius, shadow, filter, depth, and translucent modern feedback View visuals;
 - text-control editing, selection, IME, and focus-loss behavior;
 - web player/EditContext glue and generated `.awfb` sample artifacts.
 
-Those changes need their own inspect/validate/commit slice. They should not be
-used as evidence for the function-stack goal.
+Those changes need their own inspect/validate/commit slice when active. They
+should not be used as evidence for the function-stack goal.
 
 ## Recommended Order
 
-1. Keep function-stack commits separate from the dirty View/Web worktree.
+1. Keep function-stack commits separate from any View/Web worktree slice.
 2. Treat new function-stack language/runtime behavior as blocked until one of
    the request boundaries has a concrete accepted contract.
 3. Use only narrow hardening or diagnostic/test fixes when no new contract is
    available.
-4. Audit and commit the View/Web/text-input dirty slice separately.
+4. Audit and commit any View/Web/text-input slice separately.
 
 ## Validation For This Map
 

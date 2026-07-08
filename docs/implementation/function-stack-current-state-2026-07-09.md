@@ -10,10 +10,9 @@ complete.
 
 ## Executive Summary
 
-- The latest pushed function-stack baseline is
-  the status refresh commit titled `Harden spread rejection diagnostics`.
-- The function-stack worktree is clean at that baseline. The remaining dirty
-  files are the separate View/Web/text-input track.
+- The latest pushed function-stack baseline includes captured function alias
+  row preservation through returned closures.
+- The function-stack worktree is clean at that baseline.
 - Implemented language/runtime surface now covers formal function types,
   curried call groups, closures, runtime apply, non-suspending AWBC apply,
   fixed-shape `_` partials, fixed-shape pipes, method fallback, typed runtime
@@ -28,16 +27,17 @@ complete.
 ## Baseline
 
 - Current pushed function-stack baseline:
-  the status refresh commit titled `Harden spread rejection diagnostics`.
+  the function-stack baseline that includes captured function alias row
+  preservation through returned closures.
 - The previous function-stack baseline before the spread rejection hardening
   slice was `486738b31 Handle pipe control-expression RHS placeholders`.
 - Earlier status-cleanup and pure-helper source-function commits were
   `7841f2613 Document current function stack gaps` and
   `d8254a253 Allow pure helper calls in source function values`.
-- The working copy still contains unrelated View/Web/text-input changes. They
-  are not part of this function-stack state and should not be staged with
-  language-stack documentation or implementation unless they are deliberately
-  validated as a separate slice.
+- Keep any future unrelated View/Web/text-input changes separate from this
+  function-stack state; they should not be staged with language-stack
+  documentation or implementation unless deliberately validated as their own
+  slice.
 
 ## Documentation Map
 
@@ -100,9 +100,10 @@ The following are implemented in pushed commits:
 - Source identity and LSP inlay evidence for the audited expression and
   statement families.
 - Current closure-effect composition for the broad implemented closure,
-  callback, higher-order, returned-closure, and curried-call paths, plus a
-  captured-function-alias preservation path and a closed-row report projection
-  consumed by Agent verified-effects lowering.
+  callback, higher-order, returned-closure, and curried-call paths, plus
+  captured-function-alias preservation, borrowed-capture row evidence at an
+  `await` boundary, and a closed-row report projection consumed by Agent
+  verified-effects lowering.
 - Product AWBC save/load structured rejection of escaped runtime function
   values.
 - A first non-helper source-local `fn` runtime-function subset:
