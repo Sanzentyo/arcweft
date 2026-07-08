@@ -1038,6 +1038,10 @@ fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::primitive_name("()"), None);
     assert_eq!(TypeKind::primitive_name("Bool"), None);
     assert_eq!(TypeKind::primitive_name("Char"), None);
+    assert_eq!(TypeKind::primitive_name("int"), None);
+    assert_eq!(TypeKind::primitive_name("uint"), None);
+    assert_eq!(TypeKind::primitive_name("float"), None);
+    assert_eq!(TypeKind::primitive_name("Number"), None);
     assert_ne!(
         TypeKind::primitive_name("i32"),
         TypeKind::primitive_name("usize")
@@ -1052,8 +1056,12 @@ fn numeric_primitive_types_keep_explicit_widths() {
 fn typecheck_rejects_noncanonical_primitive_type_spellings() {
     let tree = parse_ok(
         r#"
-fn bad(value: Bool, letter: Char) -> string {
+fn bad(value: Bool, letter: Char, score: int, mask: uint, alpha: float) -> string {
     return "bad"
+}
+
+fn also_bad(value: Number) -> Unit {
+    return Unit
 }
 "#,
     );
@@ -1076,6 +1084,26 @@ fn bad(value: Bool, letter: Char) -> string {
         error
             .message()
             .contains("`string` is not a canonical primitive type spelling; use `String`")
+    }));
+    assert!(errors.iter().any(|error| {
+        error.message().contains(
+            "`int` is not a concrete primitive type in Arcweft; use an explicit-width signed integer"
+        )
+    }));
+    assert!(errors.iter().any(|error| {
+        error.message().contains(
+            "`uint` is not a concrete primitive type in Arcweft; use an explicit-width unsigned integer"
+        )
+    }));
+    assert!(errors.iter().any(|error| {
+        error.message().contains(
+            "`float` is not a concrete primitive type in Arcweft; use an explicit-width float",
+        )
+    }));
+    assert!(errors.iter().any(|error| {
+        error.message().contains(
+            "`Number` is not a concrete primitive type in Arcweft; use an explicit-width numeric primitive"
+        )
     }));
 }
 

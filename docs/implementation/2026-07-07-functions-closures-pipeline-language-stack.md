@@ -701,8 +701,10 @@ flattened curried trait method arguments.
 
 The canonical primitive spelling cut has passing coverage for rejecting
 `Bool`, `Char`, and `string` in type annotations/signatures with direct
-canonical replacement diagnostics. The native text input sample now uses
-`String` return annotations.
+canonical replacement diagnostics. It also rejects widthless primitive-family
+aliases `int`, `uint`, `float`, and `Number` with diagnostics that direct
+authors to explicit-width numeric primitives. The native text input sample now
+uses `String` return annotations.
 
 The latest local function-valued data-last pipe validation reports structure
 audit 0 errors / 147 warnings. `cargo clippy --workspace --all-targets
