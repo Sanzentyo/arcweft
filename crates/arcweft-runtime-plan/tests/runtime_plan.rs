@@ -95,7 +95,7 @@ fn direct_children(nodes: &[LineTaskNode]) -> Vec<&LineChildTask> {
 }
 
 #[test]
-fn receive_action_lowers_to_ui_action_host_call() {
+fn receive_action_lowers_to_view_action_host_call() {
     let tree = parse_ok(
         r"
 pub action feedback.submit(value: String)
@@ -119,8 +119,8 @@ flow test {
     };
 
     assert_eq!(binding, "event");
-    assert_eq!(target.public_id, "ui.action.await");
-    assert_eq!(target.capability, "ui.action");
+    assert_eq!(target.public_id, "view.action.await");
+    assert_eq!(target.capability, "view.action");
     assert_eq!(target.operation, "await");
     assert_eq!(
         target.args,

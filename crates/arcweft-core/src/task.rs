@@ -86,7 +86,7 @@ pub struct SchedulerBudget {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskClass {
-    LocalUi,
+    LocalView,
     Io,
     Cpu,
     GpuPrepare,

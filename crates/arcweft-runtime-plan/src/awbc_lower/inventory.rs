@@ -697,7 +697,7 @@ impl AwbcInventory {
                 capability: "line_task",
                 operation: "run_child",
                 args: &[],
-                class: AwbcTaskClass::LocalUi,
+                class: AwbcTaskClass::LocalView,
                 priority: task.priority.0,
                 cancel_scope: "line",
                 policy: AwbcTaskPolicy::JoinSameKey,

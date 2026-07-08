@@ -208,20 +208,22 @@ fn index_stmt_symbol_dependency_relations(
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match stmt {
         Stmt::Let { expr, .. }
-        | Stmt::Return(expr)
+        | Stmt::Return { expr, .. }
         | Stmt::Out { expr, .. }
-        | Stmt::Defer { expr, .. }
-        | Stmt::Yield(expr)
         | Stmt::LifetimeSet { expr, .. }
-        | Stmt::Close(expr)
-        | Stmt::Select(expr)
-        | Stmt::Expr(expr)
-        | Stmt::Goto(expr) => {
+        | Stmt::Expr { expr, .. } => {
             index = index_expr_symbol_dependency_relations(parent, expr, index)?;
         }
+        Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::Close(expr)
+        | Stmt::Select(expr)
+        | Stmt::Goto(expr) => {
+            index = index_expr_symbol_dependency_relations(parent, expr.expr(), index)?;
+        }
         Stmt::Assign { target, expr } => {
-            index = index_expr_symbol_dependency_relations(parent, target, index)?;
-            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+            index = index_expr_symbol_dependency_relations(parent, target.expr(), index)?;
+            index = index_expr_symbol_dependency_relations(parent, expr.expr(), index)?;
         }
         Stmt::Signal { target, value } => {
             index = index_expr_symbol_dependency_relations(parent, target, index)?;
@@ -234,7 +236,7 @@ fn index_stmt_symbol_dependency_relations(
             index = index_stmt_body_symbol_dependency_relations(parent, else_body, index)?;
         }
         Stmt::LetActionReceive { action, .. } => {
-            index = index_expr_symbol_dependency_relations(parent, action, index)?;
+            index = index_expr_symbol_dependency_relations(parent, action.expr(), index)?;
         }
         Stmt::DeferBlock { statements, .. } => {
             index = index_stmt_body_symbol_dependency_relations(parent, statements, index)?;
@@ -247,25 +249,25 @@ fn index_stmt_symbol_dependency_relations(
             body,
             else_body,
         } => {
-            index = index_expr_symbol_dependency_relations(parent, condition, index)?;
+            index = index_expr_symbol_dependency_relations(parent, condition.expr(), index)?;
             index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
             index = index_stmt_body_symbol_dependency_relations(parent, else_body, index)?;
         }
         Stmt::While { condition, body } => {
-            index = index_expr_symbol_dependency_relations(parent, condition, index)?;
+            index = index_expr_symbol_dependency_relations(parent, condition.expr(), index)?;
             index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
         }
         Stmt::WhileLet {
             expr, guard, body, ..
         } => {
-            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+            index = index_expr_symbol_dependency_relations(parent, expr.expr(), index)?;
             if let Some(guard) = guard {
-                index = index_expr_symbol_dependency_relations(parent, guard, index)?;
+                index = index_expr_symbol_dependency_relations(parent, guard.expr(), index)?;
             }
             index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
         }
         Stmt::For { source, body, .. } => {
-            index = index_expr_symbol_dependency_relations(parent, source, index)?;
+            index = index_expr_symbol_dependency_relations(parent, source.expr(), index)?;
             index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
         }
         Stmt::Match { arms, .. } => {
@@ -699,8 +701,10 @@ fn index_stmt_relations(
     mut index: ProjectSemanticIndex,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match stmt {
-        Stmt::Goto(Expr::EntityRef(target)) => {
-            if let (Some(parent), Some(target)) = (parent, target.as_absolute()) {
+        Stmt::Goto(expr) => {
+            if let Expr::EntityRef(target) = expr.expr()
+                && let (Some(parent), Some(target)) = (parent, target.as_absolute())
+            {
                 index = index_entity_relation(
                     parent,
                     target,
@@ -708,22 +712,21 @@ fn index_stmt_relations(
                     index,
                 )?;
             }
+            index = index_expr_dependency_relations(parent, expr.expr(), index)?;
         }
         Stmt::Let { expr, .. }
-        | Stmt::Return(expr)
+        | Stmt::Return { expr, .. }
         | Stmt::Out { expr, .. }
-        | Stmt::Defer { expr, .. }
-        | Stmt::Yield(expr)
         | Stmt::LifetimeSet { expr, .. }
-        | Stmt::Close(expr)
-        | Stmt::Select(expr)
-        | Stmt::Expr(expr)
-        | Stmt::Goto(expr) => {
+        | Stmt::Expr { expr, .. } => {
             index = index_expr_dependency_relations(parent, expr, index)?;
         }
+        Stmt::Defer { expr, .. } | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+            index = index_expr_dependency_relations(parent, expr.expr(), index)?;
+        }
         Stmt::Assign { target, expr } => {
-            index = index_expr_dependency_relations(parent, target, index)?;
-            index = index_expr_dependency_relations(parent, expr, index)?;
+            index = index_expr_dependency_relations(parent, target.expr(), index)?;
+            index = index_expr_dependency_relations(parent, expr.expr(), index)?;
         }
         Stmt::Signal { target, value } => {
             index = index_expr_dependency_relations(parent, target, index)?;
@@ -736,7 +739,7 @@ fn index_stmt_relations(
             index = index_stmt_body_relations(parent, else_body, index)?;
         }
         Stmt::LetActionReceive { action, .. } => {
-            index = index_expr_dependency_relations(parent, action, index)?;
+            index = index_expr_dependency_relations(parent, action.expr(), index)?;
         }
         Stmt::DeferBlock { statements, .. } => {
             index = index_stmt_body_relations(parent, statements, index)?;
@@ -749,25 +752,25 @@ fn index_stmt_relations(
             body,
             else_body,
         } => {
-            index = index_expr_dependency_relations(parent, condition, index)?;
+            index = index_expr_dependency_relations(parent, condition.expr(), index)?;
             index = index_stmt_body_relations(parent, body, index)?;
             index = index_stmt_body_relations(parent, else_body, index)?;
         }
         Stmt::While { condition, body } => {
-            index = index_expr_dependency_relations(parent, condition, index)?;
+            index = index_expr_dependency_relations(parent, condition.expr(), index)?;
             index = index_stmt_body_relations(parent, body, index)?;
         }
         Stmt::WhileLet {
             expr, guard, body, ..
         } => {
-            index = index_expr_dependency_relations(parent, expr, index)?;
+            index = index_expr_dependency_relations(parent, expr.expr(), index)?;
             if let Some(guard) = guard {
-                index = index_expr_dependency_relations(parent, guard, index)?;
+                index = index_expr_dependency_relations(parent, guard.expr(), index)?;
             }
             index = index_stmt_body_relations(parent, body, index)?;
         }
         Stmt::For { source, body, .. } => {
-            index = index_expr_dependency_relations(parent, source, index)?;
+            index = index_expr_dependency_relations(parent, source.expr(), index)?;
             index = index_stmt_body_relations(parent, body, index)?;
         }
         Stmt::Match { arms, .. } => {

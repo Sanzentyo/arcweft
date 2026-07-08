@@ -123,7 +123,10 @@ effects {
     assert_eq!(agent.body_statements().len(), 2);
     assert!(matches!(
         &agent.body_statements()[1],
-        Stmt::Expr(Expr::NamedBlock { name, .. }) if name == "scope choose_listen"
+        Stmt::Expr {
+            expr: Expr::NamedBlock { name, .. },
+            ..
+        } if name == "scope choose_listen"
     ));
 }
 

@@ -27,8 +27,8 @@ use super::headers::{
 use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
-    parse_scope_expr_body, parse_scope_expr_body_for_dialect, split_brace_item,
-    split_top_level_binding,
+    parse_scope_expr_body, parse_scope_expr_body_for_dialect, parse_scope_expr_body_with_base,
+    parse_scope_expr_body_with_base_for_dialect, split_brace_item, split_top_level_binding,
 };
 
 impl Parser<'_> {
@@ -139,8 +139,8 @@ impl Parser<'_> {
         let attrs = self.take_pending_attrs();
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_function_block();
-        if !ok {
+        let block = self.take_function_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing function",
@@ -150,6 +150,8 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
+        let body = &block.body;
 
         let header_lines = head
             .lines()
@@ -171,7 +173,10 @@ impl Parser<'_> {
             return None;
         };
         let contracts = parse_contract_clauses(&contract_lines);
-        let (body_statements, body_value) = parse_scope_expr_body(&body);
+        let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
+            || parse_scope_expr_body(body),
+            |range| parse_scope_expr_body_with_base(body, range.start),
+        );
 
         Some(FunctionItem::new(FunctionInit {
             attrs,
@@ -181,10 +186,10 @@ impl Parser<'_> {
             signature,
             signature_text,
             contracts,
-            body: body.into_owned(),
+            body: body.clone().into_owned(),
             body_statements,
             body_value,
-            range: TextRange::new(start_line.start, end),
+            range: TextRange::new(start_line.start, block.end),
         }))
     }
 
@@ -192,8 +197,8 @@ impl Parser<'_> {
         let attrs = self.take_pending_attrs();
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_function_block();
-        if !ok {
+        let block = self.take_function_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing agent",
@@ -203,6 +208,8 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
+        let body = &block.body;
 
         let header_lines = head
             .lines()
@@ -243,8 +250,12 @@ impl Parser<'_> {
             None => None,
         };
         let contracts = parse_contract_clauses(&contract_lines);
-        let (body_statements, body_value) =
-            parse_scope_expr_body_for_dialect(&body, SourceDialect::Agent);
+        let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
+            || parse_scope_expr_body_for_dialect(body, SourceDialect::Agent),
+            |range| {
+                parse_scope_expr_body_with_base_for_dialect(body, range.start, SourceDialect::Agent)
+            },
+        );
 
         Some(AgentItem::new(AgentItemInit {
             attrs,
@@ -255,10 +266,10 @@ impl Parser<'_> {
             signature,
             signature_text,
             contracts,
-            body: body.into_owned(),
+            body: body.clone().into_owned(),
             body_statements,
             body_value,
-            range: TextRange::new(start_line.start, end),
+            range: TextRange::new(start_line.start, block.end),
         }))
     }
 

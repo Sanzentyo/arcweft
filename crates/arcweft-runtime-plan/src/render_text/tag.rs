@@ -52,9 +52,9 @@ pub(crate) fn lower_dialogue_token(
         }
         DialogueToken::Expr(expr) => {
             vec![RichTextNode::Interpolation {
-                expr: expr_label(expr),
-                fallback_source: inline_fallback_source_label(expr),
-                on_error: inline_failure_policy(expr, default_inline_failure_policy),
+                expr: expr_label(expr.expr()),
+                fallback_source: inline_fallback_source_label(expr.expr()),
+                on_error: inline_failure_policy(expr.expr(), default_inline_failure_policy),
             }]
         }
         DialogueToken::Ruby { base, ruby } => {

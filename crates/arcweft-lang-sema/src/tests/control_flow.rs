@@ -333,7 +333,10 @@ flow @flow.validate validate {
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    assert!(matches!(&flow.body()[0], FlowItem::Stmt(Stmt::Expr(_))));
+    assert!(matches!(
+        &flow.body()[0],
+        FlowItem::Stmt(Stmt::Expr { expr: _, .. })
+    ));
     let hir = lower_to_hir(&tree).expect("bail and ensure fixture lowers");
     validate_typecheck_ready(&hir).expect("bail and ensure are typecheck-ready");
     let env = TypeCheckEnv::new()
@@ -1165,7 +1168,10 @@ flow @flow.stream stream {
     assert!(matches!(for_block.source(), Expr::Path(path) if path == "choices"));
     assert!(matches!(
         &for_block.body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+        FlowItem::Stmt(Stmt::Expr {
+            expr: Expr::Call { .. },
+            ..
+        })
     ));
 
     let FlowItem::Select(select) = &flow.body()[1] else {

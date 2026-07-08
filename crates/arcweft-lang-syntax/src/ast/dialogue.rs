@@ -22,9 +22,17 @@ pub enum DialogueToken {
     Mark(LineMark),
     EndTag(String),
     InferredEndTag,
-    Expr(Expr),
+    Expr(DialogueExpr),
     Ruby { base: String, ruby: String },
     Escape(char),
+}
+
+/// Expression interpolation embedded in dialogue text mode.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueExpr {
+    expr: Expr,
+    source: String,
+    range: TextRange,
 }
 
 /// Bracket tag such as `[p]`, `[wait ...]`, or `[ruby rt="..."]`.
@@ -165,6 +173,28 @@ impl DialogueContent {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl DialogueExpr {
+    pub(crate) fn new(expr: Expr, source: String, range: TextRange) -> Self {
+        Self {
+            expr,
+            source,
+            range,
+        }
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 

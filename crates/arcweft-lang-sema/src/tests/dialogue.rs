@@ -21,7 +21,10 @@ pub fragment @frag.alice_enters alice_enters: FlowFragment {
     );
     assert!(matches!(
         &fragment.body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+        FlowItem::Stmt(Stmt::Expr {
+            expr: Expr::Call { .. },
+            ..
+        })
     ));
     assert!(matches!(&fragment.body()[1], FlowItem::SpeakerLine(_)));
 }
@@ -327,7 +330,7 @@ fn dialogue_tokenizer_covers_content_interpolations_and_escapes() {
     assert!(
         tokens
             .iter()
-            .any(|token| matches!(token, DialogueToken::Expr(Expr::Call { .. })))
+            .any(|token| matches!(token, DialogueToken::Expr(expr) if matches!(expr.expr(), Expr::Call { .. })))
     );
     assert!(
         tokens
@@ -402,7 +405,7 @@ fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
     );
 
     assert!(tokens.iter().any(
-        |token| matches!(token, DialogueToken::Expr(Expr::Path(path)) if path == "player_name")
+        |token| matches!(token, DialogueToken::Expr(expr) if matches!(expr.expr(), Expr::Path(path) if path == "player_name"))
     ));
     assert!(tokens.iter().any(
         |token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "call" && tag.attrs() == "flash(color=#ffffff)")
@@ -564,8 +567,8 @@ fn dialogue_tokenizer_normalizes_function_ruby_to_ruby_token() {
     assert!(
         tokens.iter().all(|token| !matches!(
             token,
-            DialogueToken::Expr(Expr::Call { callee, .. })
-                if matches!(callee.as_ref(), Expr::Path(path) if path == "ruby")
+            DialogueToken::Expr(expr)
+                if matches!(expr.expr(), Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(path) if path == "ruby"))
         )),
         "ruby(...) interpolation should normalize to Ruby token, got {tokens:?}"
     );

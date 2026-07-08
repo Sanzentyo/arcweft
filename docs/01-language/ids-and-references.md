@@ -490,8 +490,8 @@ assets/bg/room.png
 assets/voice/ja-JP/alice/game/routes/opening/opening/greeting.ogg
   -> @voice.alice.game.routes.opening.opening.greeting
 
-assets/se/ui/page.ogg
-  -> @se.ui.page
+assets/se/view/page.ogg
+  -> @se.view.page
 
 assets/bgm/alice_theme/main.ogg
   -> @bgm.alice_theme.main

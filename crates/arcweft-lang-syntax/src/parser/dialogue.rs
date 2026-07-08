@@ -10,9 +10,9 @@ use super::{
     find_top_level_punctuation, flat_block_head, indentation, is_with_brace_head,
     parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy, parse_flat_fence,
     parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
-    parse_with_brace_label, parse_with_indent_label, split_brace_item, split_brace_item_with_scan,
-    split_call_head, split_leading_ident, split_speaker_line, split_top_level_binding,
-    split_top_level_punctuation_once,
+    parse_line_plan_attachment_with_body_base, parse_with_brace_label, parse_with_indent_label,
+    split_brace_item, split_brace_item_with_scan, split_call_head, split_leading_ident,
+    split_speaker_line, split_top_level_binding, split_top_level_punctuation_once,
 };
 use crate::cst::CstPunctuationScan;
 
@@ -106,8 +106,12 @@ impl Parser<'_> {
         let expr_untrimmed = &text[expr_offset..=close];
         let expr_leading = expr_untrimmed.len() - expr_untrimmed.trim_start().len();
         let expr_source = expr_untrimmed.trim();
-        let trailing = text[close + 1..].trim();
-        let inline_plan = self.take_trailing_line_plan(trailing, close, &mut cursor, start.start);
+        let trailing_untrimmed = &text[close + 1..];
+        let trailing_leading = trailing_untrimmed.len() - trailing_untrimmed.trim_start().len();
+        let trailing = trailing_untrimmed.trim();
+        let line_leading = start.text.len() - start.text.trim_start().len();
+        let trailing_start = start.start + line_leading + close + 1 + trailing_leading;
+        let inline_plan = self.take_trailing_line_plan(trailing, trailing_start, &mut cursor);
 
         self.index = cursor + 1;
         let plan = inline_plan.or_else(|| self.take_optional_line_plan());
@@ -123,7 +127,6 @@ impl Parser<'_> {
         }
 
         let (pattern, ty) = parse_binding_pattern(pattern);
-        let line_leading = start.text.len() - start.text.trim_start().len();
         let expr_start = start.start + line_leading + expr_offset + expr_leading;
         Some(Stmt::Let {
             pattern,
@@ -222,8 +225,11 @@ impl Parser<'_> {
         let args = args
             .map(|(args, relative)| (args, start.start + line_leading + before_start + relative));
         let raw_content = text[open + 1..close].trim().to_owned();
-        let trailing = text[close + 1..].trim();
-        let inline_plan = self.take_trailing_line_plan(trailing, close, &mut cursor, start.start);
+        let trailing_untrimmed = &text[close + 1..];
+        let trailing_leading = trailing_untrimmed.len() - trailing_untrimmed.trim_start().len();
+        let trailing = trailing_untrimmed.trim();
+        let trailing_start = start.start + line_leading + close + 1 + trailing_leading;
+        let inline_plan = self.take_trailing_line_plan(trailing, trailing_start, &mut cursor);
         let trailing_block = inline_plan
             .is_none()
             .then(|| self.take_trailing_bare_scope(&text, close, &mut cursor, start.start))
@@ -249,9 +255,8 @@ impl Parser<'_> {
     fn take_trailing_line_plan(
         &mut self,
         trailing: &str,
-        close_bracket: usize,
+        trailing_start: usize,
         cursor: &mut usize,
-        base: usize,
     ) -> Option<LinePlan> {
         if !trailing.starts_with("with") {
             return None;
@@ -260,11 +265,14 @@ impl Parser<'_> {
             let punctuation = CstPunctuationScan::new(trailing);
             let mut brace_delta = punctuation.deltas().brace;
             if brace_delta <= 0 {
-                let (head, body) = split_brace_item_with_scan(trailing, &punctuation)?;
-                let range = TextRange::new(base + close_bracket + 1, self.events[*cursor].end);
-                return Some(parse_line_plan_attachment(
+                let source_base = trailing_start;
+                let (head, body, body_base) =
+                    split_brace_item_with_body_base(trailing, source_base, &punctuation)?;
+                let range = TextRange::new(trailing_start, self.events[*cursor].end);
+                return Some(parse_line_plan_attachment_with_body_base(
                     BlockStyle::Brace,
                     body,
+                    body_base,
                     range,
                     parse_with_brace_label(head.trim()),
                     &mut self.errors,
@@ -279,11 +287,15 @@ impl Parser<'_> {
                 block_text.push_str(self.events[*cursor].text.trim_end());
             }
             self.syntax_stats.block_owned_bytes += block_text.len();
-            let (head, body) = split_brace_item(&block_text)?;
-            let range = TextRange::new(base + close_bracket + 1, self.events[*cursor].end);
-            return Some(parse_line_plan_attachment(
+            let source_base = trailing_start;
+            let punctuation = CstPunctuationScan::new(&block_text);
+            let (head, body, body_base) =
+                split_brace_item_with_body_base(&block_text, source_base, &punctuation)?;
+            let range = TextRange::new(trailing_start, self.events[*cursor].end);
+            return Some(parse_line_plan_attachment_with_body_base(
                 BlockStyle::Brace,
                 body,
+                body_base,
                 range,
                 parse_with_brace_label(head.trim()),
                 &mut self.errors,
@@ -293,10 +305,7 @@ impl Parser<'_> {
             parse_line_plan_attachment(
                 BlockStyle::Indent,
                 body,
-                TextRange::new(
-                    base + close_bracket + 1,
-                    base + close_bracket + 1 + trailing.len(),
-                ),
+                TextRange::new(trailing_start, trailing_start + trailing.len()),
                 label,
                 &mut self.errors,
             )
@@ -529,6 +538,26 @@ impl Parser<'_> {
             &mut self.errors,
         )
     }
+}
+
+fn split_brace_item_with_body_base<'a>(
+    source: &'a str,
+    source_base: usize,
+    punctuation: &CstPunctuationScan<'a>,
+) -> Option<(&'a str, &'a str, usize)> {
+    let open = punctuation.find_top_level_punctuation('{')?;
+    let close = punctuation.find_matching_punctuation(open, '{', '}')?;
+    if !source[close + '}'.len_utf8()..].trim().is_empty() {
+        return None;
+    }
+    let raw_body = &source[open + '{'.len_utf8()..close];
+    let body = raw_body.trim();
+    let body_leading = raw_body.len() - raw_body.trim_start().len();
+    Some((
+        source[..open].trim(),
+        body,
+        source_base + open + '{'.len_utf8() + body_leading,
+    ))
 }
 
 fn starts_dialogue_defaults_relative_id(source: &str) -> bool {

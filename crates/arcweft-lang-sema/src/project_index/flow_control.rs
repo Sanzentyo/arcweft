@@ -125,27 +125,27 @@ fn summarize_stmt_body_control(statements: &[Stmt]) -> ProjectFlowControlSummary
 fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
     let mut summary = ProjectFlowControlSummary::default();
     match stmt {
-        Stmt::Goto(Expr::EntityRef(target)) if target.as_absolute().is_some() => {
-            summary.record_static_goto();
-        }
         Stmt::Goto(expr) => {
-            summary.record_dynamic_goto();
-            summary.merge(summarize_expr_control(expr));
+            if matches!(expr.expr(), Expr::EntityRef(target) if target.as_absolute().is_some()) {
+                summary.record_static_goto();
+            } else {
+                summary.record_dynamic_goto();
+                summary.merge(summarize_expr_control(expr.expr()));
+            }
         }
         Stmt::Let { expr, .. }
-        | Stmt::Return(expr)
+        | Stmt::Return { expr, .. }
         | Stmt::Out { expr, .. }
-        | Stmt::Defer { expr, .. }
-        | Stmt::Yield(expr)
         | Stmt::LifetimeSet { expr, .. }
-        | Stmt::Close(expr)
-        | Stmt::Select(expr)
-        | Stmt::Expr(expr) => {
+        | Stmt::Expr { expr, .. } => {
             summary.merge(summarize_expr_control(expr));
         }
+        Stmt::Defer { expr, .. } | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+            summary.merge(summarize_expr_control(expr.expr()));
+        }
         Stmt::Assign { target, expr } => {
-            summary.merge(summarize_expr_control(target));
-            summary.merge(summarize_expr_control(expr));
+            summary.merge(summarize_expr_control(target.expr()));
+            summary.merge(summarize_expr_control(expr.expr()));
         }
         Stmt::Signal { target, value } => {
             summary.merge(summarize_expr_control(target));
@@ -159,7 +159,7 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
             summary.merge(summarize_stmt_body_control(else_body));
         }
         Stmt::LetActionReceive { action, .. } => {
-            summary.merge(summarize_await_expr_control(action));
+            summary.merge(summarize_await_expr_control(action.expr()));
         }
         Stmt::DeferBlock { statements, .. } => {
             summary.merge(summarize_stmt_body_control(statements));
@@ -177,28 +177,28 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
             else_body,
         } => {
             summary.record_branch();
-            summary.merge(summarize_expr_control(condition));
+            summary.merge(summarize_expr_control(condition.expr()));
             summary.merge(summarize_stmt_body_control(body));
             summary.merge(summarize_stmt_body_control(else_body));
         }
         Stmt::While { condition, body } => {
             summary.record_loop();
-            summary.merge(summarize_expr_control(condition));
+            summary.merge(summarize_expr_control(condition.expr()));
             summary.merge(summarize_stmt_body_control(body));
         }
         Stmt::WhileLet {
             expr, guard, body, ..
         } => {
             summary.record_loop();
-            summary.merge(summarize_expr_control(expr));
+            summary.merge(summarize_expr_control(expr.expr()));
             if let Some(guard) = guard {
-                summary.merge(summarize_expr_control(guard));
+                summary.merge(summarize_expr_control(guard.expr()));
             }
             summary.merge(summarize_stmt_body_control(body));
         }
         Stmt::For { source, body, .. } => {
             summary.record_loop();
-            summary.merge(summarize_expr_control(source));
+            summary.merge(summarize_expr_control(source.expr()));
             summary.merge(summarize_stmt_body_control(body));
         }
         Stmt::Match { arms, .. } => {

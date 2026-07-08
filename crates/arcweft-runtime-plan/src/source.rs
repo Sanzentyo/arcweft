@@ -117,16 +117,18 @@ fn lower_source_stmt_list(
 
 fn lower_source_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>) -> SourceOp {
     match stmt {
-        Stmt::Yield(expr) => SourceOp::Yield(lower_runtime_expr_with_pure(expr, pure_helpers)),
+        Stmt::Yield(expr) => {
+            SourceOp::Yield(lower_runtime_expr_with_pure(expr.expr(), pure_helpers))
+        }
         Stmt::Signal { target, value } => SourceOp::SignalWrite(RuntimeAssignment {
             target: expr_label(target),
             value: expr_label(value),
         }),
-        Stmt::Expr(expr) => match runtime_call_effect(expr) {
+        Stmt::Expr { expr, .. } => match runtime_call_effect(expr) {
             LineEffectRequest::Log(log) => SourceOp::Log(log),
             effect => SourceOp::Effect(effect),
         },
-        Stmt::Close(expr) => SourceOp::Close(SourceId(expr_label(expr))),
+        Stmt::Close(expr) => SourceOp::Close(SourceId(expr_label(expr.expr()))),
         _ => SourceOp::Noop,
     }
 }

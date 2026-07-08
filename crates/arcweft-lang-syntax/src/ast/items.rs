@@ -52,7 +52,7 @@ pub enum Item {
     Raw(RawItem),
 }
 
-/// Top-level retained style declaration lowered into product UI resources.
+/// Top-level retained style declaration lowered into product View resources.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StyleItem {
     attrs: Vec<Attribute>,
@@ -60,9 +60,9 @@ pub struct StyleItem {
     id: EntityRef,
     syntax: StyleSyntax,
     inline_source: Option<String>,
-    tokens: Vec<UiStyleTokenDecl>,
-    rules: Vec<UiStyleRuleDecl>,
-    environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
+    tokens: Vec<ViewStyleTokenDecl>,
+    rules: Vec<ViewStyleRuleDecl>,
+    environment_predicates: Vec<ViewStyleEnvironmentPredicateDecl>,
     range: TextRange,
 }
 
@@ -72,29 +72,29 @@ pub(crate) struct StyleItemInit {
     pub(crate) id: EntityRef,
     pub(crate) syntax: StyleSyntax,
     pub(crate) inline_source: Option<String>,
-    pub(crate) tokens: Vec<UiStyleTokenDecl>,
-    pub(crate) rules: Vec<UiStyleRuleDecl>,
-    pub(crate) environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
+    pub(crate) tokens: Vec<ViewStyleTokenDecl>,
+    pub(crate) rules: Vec<ViewStyleRuleDecl>,
+    pub(crate) environment_predicates: Vec<ViewStyleEnvironmentPredicateDecl>,
     pub(crate) range: TextRange,
 }
 
 /// A named style token declared inside a `style` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiStyleTokenDecl {
+pub struct ViewStyleTokenDecl {
     public_id: String,
-    value: UiStyleValueDecl,
+    value: ViewStyleValueDecl,
 }
 
 /// A selector rule declared inside a `style` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiStyleRuleDecl {
-    selector: Vec<UiStyleSelectorPartDecl>,
-    declarations: Vec<UiStyleDeclarationDecl>,
+pub struct ViewStyleRuleDecl {
+    selector: Vec<ViewStyleSelectorPartDecl>,
+    declarations: Vec<ViewStyleDeclarationDecl>,
 }
 
-/// Selector segment for retained Arcweft-authored UI style rules.
+/// Selector segment for retained Arcweft-authored View style rules.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UiStyleSelectorPartDecl {
+pub enum ViewStyleSelectorPartDecl {
     Element(String),
     Part(String),
     State(String),
@@ -105,22 +105,22 @@ pub enum UiStyleSelectorPartDecl {
 
 /// A single style property assignment in a `style` selector rule.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiStyleDeclarationDecl {
+pub struct ViewStyleDeclarationDecl {
     property: String,
-    value: UiStyleValueDecl,
-    op: UiStyleAssignOpDecl,
+    value: ViewStyleValueDecl,
+    op: ViewStyleAssignOpDecl,
 }
 
-/// Assignment operation for retained UI style declarations.
+/// Assignment operation for retained View style declarations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiStyleAssignOpDecl {
+pub enum ViewStyleAssignOpDecl {
     Replace,
     Append,
 }
 
-/// Style value syntax that maps directly to the product UI style model.
+/// Style value syntax that maps directly to the product View style model.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UiStyleValueDecl {
+pub enum ViewStyleValueDecl {
     Token(String),
     SystemColor(String),
     Rgba {
@@ -131,13 +131,13 @@ pub enum UiStyleValueDecl {
     },
     Milli(i32),
     Text(String),
-    List(Vec<UiStyleValueDecl>),
+    List(Vec<ViewStyleValueDecl>),
     Resource(String),
 }
 
 /// Resource-level environment predicate for a `style` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UiStyleEnvironmentPredicateDecl {
+pub enum ViewStyleEnvironmentPredicateDecl {
     TextScaleAtLeastMilli(u32),
 }
 
@@ -301,15 +301,15 @@ impl StyleItem {
         self.inline_source.as_deref()
     }
 
-    pub fn tokens(&self) -> &[UiStyleTokenDecl] {
+    pub fn tokens(&self) -> &[ViewStyleTokenDecl] {
         &self.tokens
     }
 
-    pub fn rules(&self) -> &[UiStyleRuleDecl] {
+    pub fn rules(&self) -> &[ViewStyleRuleDecl] {
         &self.rules
     }
 
-    pub fn environment_predicates(&self) -> &[UiStyleEnvironmentPredicateDecl] {
+    pub fn environment_predicates(&self) -> &[ViewStyleEnvironmentPredicateDecl] {
         &self.environment_predicates
     }
 
@@ -318,8 +318,8 @@ impl StyleItem {
     }
 }
 
-impl UiStyleTokenDecl {
-    pub(crate) fn new(public_id: String, value: UiStyleValueDecl) -> Self {
+impl ViewStyleTokenDecl {
+    pub(crate) fn new(public_id: String, value: ViewStyleValueDecl) -> Self {
         Self { public_id, value }
     }
 
@@ -327,15 +327,15 @@ impl UiStyleTokenDecl {
         &self.public_id
     }
 
-    pub const fn value(&self) -> &UiStyleValueDecl {
+    pub const fn value(&self) -> &ViewStyleValueDecl {
         &self.value
     }
 }
 
-impl UiStyleRuleDecl {
+impl ViewStyleRuleDecl {
     pub(crate) fn new(
-        selector: Vec<UiStyleSelectorPartDecl>,
-        declarations: Vec<UiStyleDeclarationDecl>,
+        selector: Vec<ViewStyleSelectorPartDecl>,
+        declarations: Vec<ViewStyleDeclarationDecl>,
     ) -> Self {
         Self {
             selector,
@@ -343,17 +343,21 @@ impl UiStyleRuleDecl {
         }
     }
 
-    pub fn selector(&self) -> &[UiStyleSelectorPartDecl] {
+    pub fn selector(&self) -> &[ViewStyleSelectorPartDecl] {
         &self.selector
     }
 
-    pub fn declarations(&self) -> &[UiStyleDeclarationDecl] {
+    pub fn declarations(&self) -> &[ViewStyleDeclarationDecl] {
         &self.declarations
     }
 }
 
-impl UiStyleDeclarationDecl {
-    pub(crate) fn new(property: String, value: UiStyleValueDecl, op: UiStyleAssignOpDecl) -> Self {
+impl ViewStyleDeclarationDecl {
+    pub(crate) fn new(
+        property: String,
+        value: ViewStyleValueDecl,
+        op: ViewStyleAssignOpDecl,
+    ) -> Self {
         Self {
             property,
             value,
@@ -365,11 +369,11 @@ impl UiStyleDeclarationDecl {
         &self.property
     }
 
-    pub const fn value(&self) -> &UiStyleValueDecl {
+    pub const fn value(&self) -> &ViewStyleValueDecl {
         &self.value
     }
 
-    pub const fn op(&self) -> UiStyleAssignOpDecl {
+    pub const fn op(&self) -> ViewStyleAssignOpDecl {
         self.op
     }
 }

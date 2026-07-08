@@ -20,7 +20,7 @@ Arcweft prelude defines a global default dialogue textbox:
 
 ```arcw
 pub textbox @textbox.main default_textbox {
-    layer = @layer.ui.dialogue
+    layer = @layer.view.dialogue
     position = bottom
     frame = rect(x=80, y=520, w=1120, h=160)
     page_policy = wait_then_clear
@@ -46,7 +46,7 @@ A project may replace the default window for all ordinary lines:
 
 ```arcw
 pub textbox @textbox.main main_textbox {
-    layer = @layer.ui.dialogue
+    layer = @layer.view.dialogue
     position = bottom
     frame = rect(x=72, y=512, w=1136, h=174)
     page_policy = wait_then_scroll
@@ -71,7 +71,7 @@ Text windows can be addressed explicitly:
 
 ```arcw
 pub textbox @textbox.side side_note {
-    layer = @layer.ui.overlay
+    layer = @layer.view.overlay
     position = right
     frame = rect(x=900, y=80, w=360, h=240)
     page_policy = append

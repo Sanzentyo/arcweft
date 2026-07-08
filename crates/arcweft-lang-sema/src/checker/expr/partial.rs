@@ -413,16 +413,20 @@ fn stmt_contains_partial_placeholder(stmt: &arcweft_lang_syntax::ast::flow::Stmt
 
     match stmt {
         Stmt::Let { expr, .. }
-        | Stmt::Assign { expr, .. }
         | Stmt::LetElse { expr, .. }
-        | Stmt::LetActionReceive { action: expr, .. }
-        | Stmt::Expr(expr)
-        | Stmt::Return(expr)
-        | Stmt::Out { expr, .. }
-        | Stmt::Goto(expr)
-        | Stmt::Defer { expr, .. }
-        | Stmt::Yield(expr)
-        | Stmt::Match { expr, .. } => expr_contains_partial_placeholder(expr),
+        | Stmt::Expr { expr, .. }
+        | Stmt::Return { expr, .. }
+        | Stmt::Out { expr, .. } => expr_contains_partial_placeholder(expr),
+        Stmt::LetActionReceive { action, .. } | Stmt::Defer { expr: action, .. } => {
+            expr_contains_partial_placeholder(action.expr())
+        }
+        Stmt::Assign { target, expr } => {
+            expr_contains_partial_placeholder(target.expr())
+                || expr_contains_partial_placeholder(expr.expr())
+        }
+        Stmt::Match { expr, .. } | Stmt::Goto(expr) | Stmt::Yield(expr) => {
+            expr_contains_partial_placeholder(expr.expr())
+        }
         Stmt::Signal { target, value } => {
             expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(value)
         }
@@ -438,16 +442,25 @@ fn stmt_contains_partial_placeholder(stmt: &arcweft_lang_syntax::ast::flow::Stmt
             body,
             else_body,
         } => {
-            expr_contains_partial_placeholder(condition)
+            expr_contains_partial_placeholder(condition.expr())
                 || body.iter().any(stmt_contains_partial_placeholder)
                 || else_body.iter().any(stmt_contains_partial_placeholder)
         }
         Stmt::While { condition, body } => {
-            expr_contains_partial_placeholder(condition)
+            expr_contains_partial_placeholder(condition.expr())
+                || body.iter().any(stmt_contains_partial_placeholder)
+        }
+        Stmt::WhileLet {
+            expr, guard, body, ..
+        } => {
+            expr_contains_partial_placeholder(expr.expr())
+                || guard
+                    .as_ref()
+                    .is_some_and(|guard| expr_contains_partial_placeholder(guard.expr()))
                 || body.iter().any(stmt_contains_partial_placeholder)
         }
         Stmt::For { source, body, .. } => {
-            expr_contains_partial_placeholder(source)
+            expr_contains_partial_placeholder(source.expr())
                 || body.iter().any(stmt_contains_partial_placeholder)
         }
         _ => false,

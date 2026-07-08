@@ -88,7 +88,7 @@ choice @choice.opening.first {
         enabled = can_enter_alice
         visible = true
         order = 10
-        ui {
+        view {
             disabled_reason = if can_enter_alice { None } else { Some("好感度が足りません") }
             badge = if can_enter_alice { None } else { Some("LOCKED") }
         }
@@ -115,7 +115,7 @@ choice @choice.opening.first {
     assert!(option.enabled().is_some());
     assert!(option.visible().is_some());
     assert!(option.order().is_some());
-    assert_eq!(option.ui_fields().len(), 2);
+    assert_eq!(option.view_fields().len(), 2);
     assert_eq!(
         option.target().expect("goto target").body(),
         "flow.alice_intro"
@@ -267,17 +267,17 @@ with {
     assert!(matches!(
         &plan.items()[3],
         ChoicePlanItem::Timeout { body, .. }
-            if matches!(body.first(), Some(Stmt::Select(Expr::EntityRef(_))))
+            if matches!(body.first(), Some(Stmt::Select(target)) if matches!(target.expr(), Expr::EntityRef(_)))
     ));
     assert!(matches!(
         &plan.items()[4],
         ChoicePlanItem::Cancel { body, .. }
-            if matches!(body.first(), Some(Stmt::Return(Expr::Call { .. })))
+            if matches!(body.first(), Some(Stmt::Return { expr: Expr::Call { .. }, .. }))
     ));
     assert!(matches!(
         &plan.items()[5],
         ChoicePlanItem::OnSelect { body, .. }
-            if matches!(body.first(), Some(Stmt::Expr(Expr::Call { .. })))
+            if matches!(body.first(), Some(Stmt::Expr { expr: Expr::Call { .. }, .. }))
     ));
     assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
     let option = &choice.options()[0];
@@ -313,7 +313,7 @@ with:
     assert!(matches!(
         &plan.items()[1],
         ChoicePlanItem::Timeout { body, .. }
-            if matches!(body.first(), Some(Stmt::Select(Expr::EntityRef(_))))
+            if matches!(body.first(), Some(Stmt::Select(target)) if matches!(target.expr(), Expr::EntityRef(_)))
     ));
 }
 
@@ -330,7 +330,7 @@ choice @choice.opening.routes {
         visible = route.visible
         order = route.order
 
-        ui {
+        view {
             disabled_reason = route.disabled_reason
             badge = route.badge
         }

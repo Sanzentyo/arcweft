@@ -11,7 +11,7 @@ Related:
 - [Dialogue Windows, Character Styles, and Read-State Hooks](dialogue-windows-and-hooks.md)
 - [Localization for Dialogue](localization-dialogue.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
-- [UI Reactive](../03-presentation/ui-reactive.md)
+- [View Reactive](../03-presentation/view-reactive.md)
 
 ---
 
@@ -327,11 +327,11 @@ narrator = "textbox.narrator"
 missing = "textbox.main"
 ```
 
-Custom dialogue windows can be declared as UI views or text surfaces:
+Custom dialogue windows can be declared as Views or text surfaces:
 
 ```arcw
 pub textbox @textbox.phone_message PhoneMessageBox {
-    layer = @layer.ui.messages
+    layer = @layer.view.messages
     anchor = bottom_right
     width = 420
 
@@ -359,7 +359,7 @@ alice.say(window=@textbox.phone_message, voice=auto)[
 The canonical parameter name is `window`. `textbox` is not a line option name;
 it remains the entity kind for dialogue window objects.
 
-A dialogue window target is a stateful UI object. Updating a line in that textbox affects the selected window only. Agent observation exposes the target window, current line ID, visible text, reveal cursor, and actionable wait state.
+A dialogue window target is a stateful View object. Updating a line in that textbox affects the selected window only. Agent observation exposes the target window, current line ID, visible text, reveal cursor, and actionable wait state.
 
 ---
 
@@ -493,7 +493,7 @@ variables, and stage handles belong in flows, speaker presets, or line plans.
 RichText defaults are grouped under `rich_text` instead of flattening every
 text parameter into `dialogue defaults`. This keeps ruby, vertical writing,
 font choice, wrapping, effects, and future typography parameters in one
-namespace that can also be reused by choices, UI text, logs, and HUD text.
+namespace that can also be reused by choices, View text, logs, and HUD text.
 
 ```arcw
 pub dialogue defaults @dialogue.defaults {

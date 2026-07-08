@@ -342,7 +342,7 @@ OptionField := 'label' '=' Expr
              | 'enabled' '=' Expr
              | 'order' '=' Expr
              | 'hotkey' '=' Expr
-             | 'ui' Block
+             | 'view' Block
              | 'select' Block
              | LetStmt
 
@@ -354,7 +354,7 @@ ChoiceArmAction := '->' EntityRef | '=>' Expr
 ChoicePlan := 'with' Block | 'with' ':' Newline IndentedItems
 ```
 
-`choice` displays a choice UI and may also be used as an expression. A choice body is a lexical scope. `option` creates an option candidate. Inline arm `if` is enabled-state sugar; wrapping an option in a block `if` controls whether the option exists. `visible = expr` controls rendering. `ui { ... }` is propagated to rendering, accessibility, test, and Agent observation.
+`choice` displays a choice view and may also be used as an expression. A choice body is a lexical scope. `option` creates an option candidate. Inline arm `if` is enabled-state sugar; wrapping an option in a block `if` controls whether the option exists. `visible = expr` controls rendering. `view { ... }` is propagated to rendering, accessibility, test, and Agent observation.
 
 `-> target` is sugar for `select { goto target }`. `=> value` is sugar for `select { out value }`.
 Compact choice arms use only static option IDs because their syntax must be

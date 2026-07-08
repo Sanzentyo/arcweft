@@ -220,7 +220,7 @@ let next_flow = choice @choice.opening.first {
 goto next_flow
 ```
 
-Use full `option` blocks when the UI needs visible/enabled state, disabled reasons, badges, hotkeys, or a multi-statement selected action.
+Use full `option` blocks when the view needs visible/enabled state, disabled reasons, badges, hotkeys, or a multi-statement selected action.
 
 ```arcw
 let can_enter_alice = state.affection[@character.alice] >= 3
@@ -232,7 +232,7 @@ choice @choice.opening.first {
         visible = true
         order = 10
 
-        ui {
+        view {
             disabled_reason = if can_enter_alice { None } else { Some("アリスの好感度が足りません") }
             badge = if can_enter_alice { None } else { Some("LOCKED") }
             style = if can_enter_alice { @style.choice.normal } else { @style.choice.locked }
@@ -269,7 +269,7 @@ choice @choice.opening.routes {
             label = route.label
             enabled = route.enabled
 
-            ui {
+            view {
                 disabled_reason = route.disabled_reason
                 badge = route.badge
             }
@@ -313,8 +313,8 @@ one-shot list of strings:
 
 1. Enter the choice body's lexical scope.
 2. Evaluate local `let`, block `if`, `match`, and `for` items to build option candidates.
-3. Evaluate each candidate's `visible`, `enabled`, `order`, `hotkey`, and `ui { ... }` state.
-4. Send visible options to the choice UI, accessibility layer, tests, and Agent observation.
+3. Evaluate each candidate's `visible`, `enabled`, `order`, `hotkey`, and `view { ... }` state.
+4. Send visible options to the choice view, accessibility layer, tests, and Agent observation.
 5. Suspend the flow while waiting for player, Agent, test, timeout, or cancel input.
 6. Re-evaluate dependent option state when tracked state/signals change.
 7. Run choice-level `on select selected` handlers.
@@ -335,7 +335,7 @@ choice @choice.opening.routes {
         value = route.target
         enabled = route.enabled
 
-        ui {
+        view {
             disabled_reason = route.disabled_reason
             badge = route.badge
         }

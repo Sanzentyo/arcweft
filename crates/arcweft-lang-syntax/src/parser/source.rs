@@ -285,16 +285,24 @@ fn parse_source_stmt(trimmed: &str) -> Option<Stmt> {
         return None;
     }
     if let Some(rest) = trimmed.strip_prefix("from ") {
-        return Some(Stmt::Expr(Expr::Call {
-            callee: Box::new(Expr::Path("from".into())),
-            args: vec![CallArg::Positional(parse_expr_lossy(rest.trim()))],
-        }));
+        return Some(Stmt::Expr {
+            expr: Expr::Call {
+                callee: Box::new(Expr::Path("from".into())),
+                args: vec![CallArg::Positional(parse_expr_lossy(rest.trim()))],
+            },
+            expr_source: Some(rest.trim().to_owned()),
+            expr_range: None,
+        });
     }
     if trimmed.starts_with("on ") {
         // Source handlers are preserved structurally on SourceItem::handlers.
         // Keep the body-statement view typecheck-ready without duplicating
         // handler effects into the ordinary statement stream.
-        return Some(Stmt::Expr(Expr::Tuple(Vec::new())));
+        return Some(Stmt::Expr {
+            expr: Expr::Tuple(Vec::new()),
+            expr_source: None,
+            expr_range: None,
+        });
     }
     Some(parse_stmt(trimmed))
 }

@@ -8,7 +8,10 @@ use super::{
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
 use arcweft_lang_syntax::{
-    ast::{common::TextRange, flow::StmtMatchArm},
+    ast::{
+        common::TextRange,
+        flow::{AuthoredExpr, StmtMatchArm},
+    },
     types::TypeRef,
 };
 
@@ -17,25 +20,30 @@ impl TypeChecker<'_> {
         &mut self,
         statements: &[Stmt],
         expr: &Expr,
+        expr_source: Option<&str>,
+        expr_range: Option<TextRange>,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
+        self.register_expr_source_ranges(expr, expr_source, expr_range);
         let ty = self.with_local_mutation_scope(|this| {
             for stmt in statements {
                 this.check_stmt(stmt);
             }
             this.stats.statements += 1;
-            this.with_inferred_signature_partial_calls(true, |this| {
-                this.check_expr_with_expected(expr, expected)
+            this.with_inferred_signature_partial_calls(true, |this| match expr_range {
+                Some(range) => this.check_expr_with_expected_at_range(expr, expected, range),
+                None => this.check_expr_with_expected(expr, expected),
             })
         });
         if let Some(ty) = ty.as_ref() {
-            self.record_type_judgment(
+            self.record_type_judgment_with_source_range(
                 TypeJudgmentSubject::Return {
                     context: "tail block expression".to_owned(),
                 },
                 TypeJudgmentRule::Return,
                 ty.clone(),
                 expected,
+                expr_range,
             );
         }
         self.reject_borrow_escape(ty.as_ref(), "function return");
@@ -46,13 +54,7 @@ impl TypeChecker<'_> {
         self.stats.statements += 1;
         self.check_seq_stmt_policy(stmt);
         match stmt {
-            Stmt::Let {
-                pattern,
-                ty,
-                expr,
-                expr_range,
-                ..
-            } => self.check_let_stmt(pattern, ty.as_ref(), expr, *expr_range),
+            Stmt::Let { .. } => self.check_let_stmt_node(stmt),
             Stmt::Assign { target, expr } => self.check_assign_stmt(target, expr),
             Stmt::LetElse {
                 pattern,
@@ -67,12 +69,12 @@ impl TypeChecker<'_> {
             Stmt::LetActionReceive { pattern, action } => {
                 self.check_action_receive_binding(pattern, action);
             }
-            Stmt::Return(expr) | Stmt::Close(expr) => self.check_return_stmt(expr),
-            Stmt::Expr(expr) | Stmt::Select(expr) => {
-                self.with_inferred_signature_partial_calls(false, |this| {
-                    this.check_expr(expr);
-                });
-                self.release_direct_drop_expr(expr);
+            Stmt::Return { .. } => self.check_return_stmt_node(stmt),
+            Stmt::Close(expr) => self.check_return_stmt(expr.expr(), expr.source(), expr.range()),
+            Stmt::Expr { .. } => self.check_expr_stmt_node(stmt),
+            Stmt::Select(expr) => {
+                self.check_expr_stmt(expr.expr(), expr.source(), expr.range());
+                self.release_direct_drop_expr(expr.expr());
             }
             Stmt::Out { label, expr } => {
                 if self.line_out_depth == 0 {
@@ -85,24 +87,17 @@ impl TypeChecker<'_> {
                 self.reject_borrow_escape(ty.as_ref(), "line-plan out value");
             }
             Stmt::Goto(expr) => {
-                self.expect_expr_type(
+                self.expect_authored_expr_type(
                     expr,
                     &TypeKind::entity_ref(EntityKind::Flow),
                     "goto destination",
                 );
             }
-            Stmt::Thread(thread) => {
-                self.check_thread_body(thread.body());
-            }
-            Stmt::DeferBlock { statements, .. } => {
-                self.reject_active_borrows(SuspensionBoundary::DeferCleanup);
-                for stmt in statements {
-                    self.check_stmt(stmt);
-                }
-            }
+            Stmt::Thread(thread) => self.check_thread_stmt(thread),
+            Stmt::DeferBlock { statements, .. } => self.check_defer_block_stmt(statements),
             Stmt::Defer { expr, .. } => {
                 self.reject_active_borrows(SuspensionBoundary::Defer);
-                self.check_expr(expr);
+                self.check_authored_expr(expr);
             }
             Stmt::Yield(expr) => self.check_yield_stmt(expr),
             Stmt::Signal { target, value } => self.check_two_exprs(target, value),
@@ -141,17 +136,58 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_return_stmt(&mut self, expr: &Expr) {
+    fn check_let_stmt_node(&mut self, stmt: &Stmt) {
+        let Stmt::Let {
+            pattern,
+            ty,
+            expr,
+            expr_source,
+            expr_range,
+        } = stmt
+        else {
+            return;
+        };
+        self.check_let_stmt(
+            pattern,
+            ty.as_ref(),
+            expr,
+            expr_source.as_deref(),
+            *expr_range,
+        );
+    }
+
+    fn check_defer_block_stmt(&mut self, statements: &[Stmt]) {
+        self.reject_active_borrows(SuspensionBoundary::DeferCleanup);
+        for stmt in statements {
+            self.check_stmt(stmt);
+        }
+    }
+
+    fn check_thread_stmt(&mut self, thread: &arcweft_lang_syntax::ast::flow::ThreadBlock) {
+        self.check_thread_body(thread.body());
+    }
+
+    fn check_return_stmt(
+        &mut self,
+        expr: &Expr,
+        expr_source: Option<&str>,
+        expr_range: Option<TextRange>,
+    ) {
         let expected = self.expected_returns.last().cloned().flatten();
-        let ty = self.check_expr_with_expected(expr, expected.as_ref());
+        self.register_expr_source_ranges(expr, expr_source, expr_range);
+        let ty = match expr_range {
+            Some(range) => self.check_expr_with_expected_at_range(expr, expected.as_ref(), range),
+            None => self.check_expr_with_expected(expr, expected.as_ref()),
+        };
         if let Some(ty) = ty.as_ref() {
-            self.record_type_judgment(
+            self.record_type_judgment_with_source_range(
                 TypeJudgmentSubject::Return {
                     context: "return statement".to_owned(),
                 },
                 TypeJudgmentRule::Return,
                 ty.clone(),
                 expected.as_ref(),
+                expr_range,
             );
         }
         if let (Some(expected), Some(actual)) = (expected.as_ref(), ty.as_ref())
@@ -164,6 +200,83 @@ impl TypeChecker<'_> {
             )));
         }
         self.reject_borrow_escape(ty.as_ref(), "function or flow return");
+    }
+
+    fn check_return_stmt_node(&mut self, stmt: &Stmt) {
+        let Stmt::Return {
+            expr,
+            expr_source,
+            expr_range,
+        } = stmt
+        else {
+            return;
+        };
+        self.check_return_stmt(expr, expr_source.as_deref(), *expr_range);
+    }
+
+    fn check_expr_stmt_node(&mut self, stmt: &Stmt) {
+        let Stmt::Expr {
+            expr,
+            expr_source,
+            expr_range,
+        } = stmt
+        else {
+            return;
+        };
+        self.check_expr_stmt(expr, expr_source.as_deref(), *expr_range);
+        self.release_direct_drop_expr(expr);
+    }
+
+    fn check_expr_stmt(
+        &mut self,
+        expr: &Expr,
+        expr_source: Option<&str>,
+        expr_range: Option<TextRange>,
+    ) {
+        self.register_expr_source_ranges(expr, expr_source, expr_range);
+        self.with_inferred_signature_partial_calls(false, |this| match expr_range {
+            Some(range) => {
+                this.check_expr_with_expected_at_range(expr, None, range);
+            }
+            None => {
+                this.check_expr(expr);
+            }
+        });
+    }
+
+    pub(super) fn check_authored_expr(&mut self, authored: &AuthoredExpr) -> Option<TypeKind> {
+        self.check_authored_expr_with_expected(authored, None)
+    }
+
+    pub(super) fn check_authored_expr_with_expected(
+        &mut self,
+        authored: &AuthoredExpr,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
+        self.register_expr_source_ranges(authored.expr(), authored.source(), authored.range());
+        match authored.range() {
+            Some(range) => self.check_expr_with_expected_at_range(authored.expr(), expected, range),
+            None => self.check_expr_with_expected(authored.expr(), expected),
+        }
+    }
+
+    pub(super) fn expect_authored_expr_type(
+        &mut self,
+        authored: &AuthoredExpr,
+        expected: &TypeKind,
+        context: &str,
+    ) {
+        let actual = self.check_authored_expr_with_expected(authored, Some(expected));
+        if !actual
+            .as_ref()
+            .is_some_and(|actual| self.types_compatible(expected, actual))
+        {
+            let actual = super::helpers::optional_type_kind_label(actual.as_ref());
+            self.errors.push(TypeCheckError::new(format!(
+                "{context} must have type {}, found {actual}",
+                type_kind_label(expected)
+            )));
+        }
     }
 
     fn check_seq_stmt_policy(&mut self, stmt: &Stmt) {
@@ -205,8 +318,8 @@ impl TypeChecker<'_> {
         )));
     }
 
-    fn check_action_receive_binding(&mut self, pattern: &Pattern, action: &Expr) {
-        self.expect_expr_type(
+    fn check_action_receive_binding(&mut self, pattern: &Pattern, action: &AuthoredExpr) {
+        self.expect_authored_expr_type(
             action,
             &TypeKind::entity_ref(EntityKind::Action),
             "action receive target",
@@ -222,33 +335,40 @@ impl TypeChecker<'_> {
         self.check_expr(second);
     }
 
-    fn check_assign_stmt(&mut self, target: &Expr, expr: &Expr) {
-        let Some((receiver, field)) = direct_assignment_target(target) else {
+    fn check_assign_stmt(&mut self, target: &AuthoredExpr, expr: &AuthoredExpr) {
+        self.register_expr_source_ranges(target.expr(), target.source(), target.range());
+        self.register_expr_source_ranges(expr.expr(), expr.source(), expr.range());
+        let Some((receiver, field)) = direct_assignment_target(target.expr()) else {
             self.errors
                 .push(TypeCheckError::unsupported_assignment_target(
-                    assignment_target_label(target),
+                    assignment_target_label(target.expr()),
                     "only direct local record fields are executable",
                 ));
-            self.check_expr(expr);
+            self.check_authored_expr(expr);
             return;
         };
         let Some(receiver_ty) = self.symbol_type(receiver).cloned() else {
             self.errors.push(TypeCheckError::new(format!(
                 "assignment receiver `{receiver}` is not bound"
             )));
-            self.check_expr(expr);
+            self.check_authored_expr(expr);
             return;
         };
         let Some(target_ty) = self.nominal_field_type(&receiver_ty, field) else {
             self.errors
                 .push(TypeCheckError::unsupported_assignment_target(
-                    assignment_target_label(target),
+                    assignment_target_label(target.expr()),
                     format!("field `{field}` is not known on {receiver_ty:?}"),
                 ));
-            self.check_expr(expr);
+            self.check_authored_expr(expr);
             return;
         };
-        let expr_ty = self.check_expr_with_expected(expr, Some(&target_ty));
+        let expr_ty = match expr.range() {
+            Some(range) => {
+                self.check_expr_with_expected_at_range(expr.expr(), Some(&target_ty), range)
+            }
+            None => self.check_expr_with_expected(expr.expr(), Some(&target_ty)),
+        };
         if let Some(expr_ty) = expr_ty
             && !self.types_compatible(&target_ty, &expr_ty)
         {
@@ -278,8 +398,8 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_stmt_while(&mut self, condition: &Expr, body: &[Stmt]) {
-        self.expect_expr_type(condition, &TypeKind::Bool, "while condition");
+    fn check_stmt_while(&mut self, condition: &AuthoredExpr, body: &[Stmt]) {
+        self.expect_authored_expr_type(condition, &TypeKind::Bool, "while condition");
         self.with_statement_loop(|this| {
             for stmt in body {
                 this.check_stmt(stmt);
@@ -292,10 +412,12 @@ impl TypeChecker<'_> {
         pattern: &Pattern,
         annotation: Option<&TypeRef>,
         expr: &Expr,
+        expr_source: Option<&str>,
         expr_range: Option<TextRange>,
     ) {
         self.last_checked_closure_effect_callable = None;
         self.last_checked_curried_signature_call = None;
+        self.register_expr_source_ranges(expr, expr_source, expr_range);
         let annotated_ty = annotation.map(type_ref_kind);
         let ty = self
             .with_inferred_signature_partial_calls(true, |this| match expr_range {
@@ -428,8 +550,8 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt], else_body: &[Stmt]) {
-        self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
+    fn check_if_stmt(&mut self, condition: &AuthoredExpr, body: &[Stmt], else_body: &[Stmt]) {
+        self.expect_authored_expr_type(condition, &TypeKind::Bool, "if condition");
         let borrow_checkpoint = self.checkpoint_borrow_state();
         self.with_local_mutation_scope(|this| {
             for stmt in body {
@@ -470,16 +592,16 @@ impl TypeChecker<'_> {
     fn check_stmt_while_let(
         &mut self,
         pattern: &Pattern,
-        expr: &Expr,
-        guard: Option<&Expr>,
+        expr: &AuthoredExpr,
+        guard: Option<&AuthoredExpr>,
         body: &[Stmt],
     ) {
-        let expr_type = self.check_expr(expr);
+        let expr_type = self.check_authored_expr(expr);
         let borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
         if let Some(guard) = guard {
-            self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
+            self.expect_authored_expr_type(guard, &TypeKind::Bool, "while-let guard");
         }
         self.with_statement_loop(|this| {
             for stmt in body {
@@ -490,8 +612,8 @@ impl TypeChecker<'_> {
         self.restore_scoped_locals(local_snapshot);
     }
 
-    fn check_stmt_for(&mut self, pattern: &Pattern, source: &Expr, body: &[Stmt]) {
-        let source_ty = self.check_expr(source);
+    fn check_stmt_for(&mut self, pattern: &Pattern, source: &AuthoredExpr, body: &[Stmt]) {
+        let source_ty = self.check_authored_expr(source);
         let borrow_checkpoint = self.checkpoint_borrow_state();
         let item_ty = self
             .check_for_iteration_source(source_ty.as_ref())
@@ -508,8 +630,8 @@ impl TypeChecker<'_> {
         self.restore_scoped_locals(local_snapshot);
     }
 
-    fn check_match_stmt(&mut self, expr: &Expr, arms: &[StmtMatchArm]) {
-        let expr_type = self.check_expr(expr);
+    fn check_match_stmt(&mut self, expr: &AuthoredExpr, arms: &[StmtMatchArm]) {
+        let expr_type = self.check_authored_expr(expr);
         let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let mut arm_states = Vec::new();
         for arm in arms {

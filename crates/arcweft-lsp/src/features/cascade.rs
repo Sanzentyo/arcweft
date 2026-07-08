@@ -321,7 +321,7 @@ fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
         Stmt::LetChoice { .. }
         | Stmt::LetActionReceive { .. }
         | Stmt::Assign { .. }
-        | Stmt::Return(_)
+        | Stmt::Return { expr: _, .. }
         | Stmt::Out { .. }
         | Stmt::Goto(_)
         | Stmt::Defer { .. }
@@ -333,7 +333,7 @@ fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
         | Stmt::Select(_)
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
-        | Stmt::Expr(_)
+        | Stmt::Expr { expr: _, .. }
         | Stmt::Raw(_) => None,
     }
 }

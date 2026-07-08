@@ -717,9 +717,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 condition,
                 body,
                 else_body,
-            } => self.analyze_if_stmt(condition, body, else_body, facts, context),
+            } => self.analyze_if_stmt(condition.expr(), body, else_body, facts, context),
             Stmt::Match { expr, arms } => {
-                self.collect_expr(expr, &mut facts);
+                self.collect_expr(expr.expr(), &mut facts);
                 let mut flow = BlockFlow::default();
                 for arm in arms {
                     let mut arm_facts = facts.clone();
@@ -735,20 +735,20 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             Stmt::Loop { body } => self.analyze_loop_stmts(body, facts, context, false),
             Stmt::While { condition, body } => {
-                self.collect_expr(condition, &mut facts);
+                self.collect_expr(condition.expr(), &mut facts);
                 self.analyze_loop_stmts(body, facts, context, true)
             }
             Stmt::WhileLet {
                 expr, guard, body, ..
             } => {
-                self.collect_expr(expr, &mut facts);
+                self.collect_expr(expr.expr(), &mut facts);
                 if let Some(guard) = guard {
-                    self.collect_expr(guard, &mut facts);
+                    self.collect_expr(guard.expr(), &mut facts);
                 }
                 self.analyze_loop_stmts(body, facts, context, true)
             }
             Stmt::For { source, body, .. } => {
-                self.collect_expr(source, &mut facts);
+                self.collect_expr(source.expr(), &mut facts);
                 self.analyze_loop_stmts(body, facts, context, true)
             }
             Stmt::DeferBlock {
@@ -763,8 +763,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 BlockFlow::from_fallthrough(facts)
             }
             Stmt::Defer { outcome, expr } => {
-                facts.register_cleanup(DeferredCleanup::new(*outcome, drop_keys_in_expr(expr)));
-                self.inspect_cleanup_expr(expr);
+                facts.register_cleanup(DeferredCleanup::new(
+                    *outcome,
+                    drop_keys_in_expr(expr.expr()),
+                ));
+                self.inspect_cleanup_expr(expr.expr());
                 BlockFlow::from_fallthrough(facts)
             }
             Stmt::Thread(thread) => {
@@ -863,14 +866,14 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn collect_transfer_stmt_expr(&mut self, stmt: &Stmt, facts: &mut FlowFacts) {
         match stmt {
-            Stmt::Return(expr)
-            | Stmt::Close(expr)
-            | Stmt::Goto(expr)
-            | Stmt::Yield(expr)
+            Stmt::Return { expr, .. }
             | Stmt::Out { expr, .. }
             | Stmt::Break {
                 expr: Some(expr), ..
             } => self.collect_expr(expr, facts),
+            Stmt::Close(expr) | Stmt::Goto(expr) | Stmt::Yield(expr) => {
+                self.collect_expr(expr.expr(), facts);
+            }
             _ => {}
         }
     }
@@ -899,28 +902,27 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::LetScope { scope, .. } => self.collect_scope_expr_syntax(scope),
             Stmt::LetLoop { block, .. } => self.collect_loop_syntax(block),
             Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
-            Stmt::LetActionReceive { action, .. } => self.collect_expr(action, state),
-            Stmt::Return(expr)
-            | Stmt::Close(expr)
-            | Stmt::Expr(expr)
-            | Stmt::Select(expr)
-            | Stmt::Goto(expr)
-            | Stmt::Yield(expr)
-            | Stmt::Defer { expr, .. }
+            Stmt::LetActionReceive { action, .. } => self.collect_expr(action.expr(), state),
+            Stmt::Return { expr, .. }
+            | Stmt::Expr { expr, .. }
             | Stmt::Let { expr, .. }
             | Stmt::Out { expr, .. }
             | Stmt::Break {
                 expr: Some(expr), ..
             } => self.collect_expr(expr, state),
+            Stmt::Defer { expr, .. } => self.collect_expr(expr.expr(), state),
+            Stmt::Close(expr) | Stmt::Select(expr) | Stmt::Goto(expr) | Stmt::Yield(expr) => {
+                self.collect_expr(expr.expr(), state);
+            }
             Stmt::Thread(thread) => self.collect_thread(thread),
             Stmt::DeferBlock { statements, .. } => {
                 self.collect_stmts(statements, state);
             }
-            Stmt::Assign {
-                target,
-                expr: value,
+            Stmt::Assign { target, expr } => {
+                self.collect_expr(target.expr(), state);
+                self.collect_expr(expr.expr(), state);
             }
-            | Stmt::Signal { target, value }
+            Stmt::Signal { target, value }
             | Stmt::LifetimeSet {
                 target,
                 expr: value,
@@ -953,28 +955,28 @@ impl<'a> SemanticAnalyzer<'a> {
                 condition,
                 body,
                 else_body,
-            } => self.collect_if_stmt(condition, body, else_body, state),
+            } => self.collect_if_stmt(condition.expr(), body, else_body, state),
             Stmt::Loop { body } | Stmt::While { body, .. } => {
                 if let Stmt::While { condition, .. } = stmt {
-                    self.collect_expr(condition, state);
+                    self.collect_expr(condition.expr(), state);
                 }
                 self.collect_nested_statement_scope(body, state);
             }
             Stmt::WhileLet {
                 expr, guard, body, ..
             } => {
-                self.collect_expr(expr, state);
+                self.collect_expr(expr.expr(), state);
                 if let Some(guard) = guard {
-                    self.collect_expr(guard, state);
+                    self.collect_expr(guard.expr(), state);
                 }
                 self.collect_nested_statement_scope(body, state);
             }
             Stmt::For { source, body, .. } => {
-                self.collect_expr(source, state);
+                self.collect_expr(source.expr(), state);
                 self.collect_nested_statement_scope(body, state);
             }
             Stmt::Match { expr, arms } => {
-                self.collect_expr(expr, state);
+                self.collect_expr(expr.expr(), state);
                 self.collect_match_stmt_arms(arms, state);
             }
             Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}

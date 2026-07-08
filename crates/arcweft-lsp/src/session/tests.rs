@@ -1477,6 +1477,78 @@ flow @flow.function_inlays function_inlays {
 }
 
 #[test]
+fn expression_type_inlays_are_profile_gated_and_skip_trivial_sites() {
+    let uri = "file:///expression-inlays.arcw"
+        .parse::<Uri>()
+        .expect("uri");
+    let source = r#"
+struct Choice {
+    label: String,
+    enabled: bool,
+}
+
+fn add(lhs: i64, rhs: i64) -> i64 { lhs + rhs }
+
+flow @flow.expression_inlays expression_inlays {
+    let base = 2i64
+    let copy = base
+    let choice = Choice { label: "Start", enabled: true }
+    let label = choice.label
+    let total = add(1i64, base + 3i64)
+    let piped = base |> add(4i64)
+}
+"#;
+
+    let mut default_session = ArcweftLspSession::new(&LspConfig::default());
+    open_text(&mut default_session, uri.clone(), source);
+    let default_labels = inlay_hint_labels(&mut default_session, uri.clone());
+    assert!(
+        !default_labels.iter().any(|label| label == ": i64"),
+        "expression type inlays should be opt-in, got {default_labels:?}"
+    );
+
+    let mut enabled_session =
+        ArcweftLspSession::new(&LspConfig::default().with_arbitrary_expression_type_inlays(true));
+    open_text(&mut enabled_session, uri.clone(), source);
+    let enabled_hints = inlay_hints(&mut enabled_session, uri);
+    let enabled_labels = inlay_hint_string_labels(&enabled_hints);
+    let i64_inlays = enabled_labels
+        .iter()
+        .filter(|label| label.as_str() == ": i64")
+        .count();
+    assert!(
+        i64_inlays >= 3,
+        "expected expression inlays for call, binary, and pipe-family expressions; got {enabled_labels:?}"
+    );
+    assert!(
+        i64_inlays < 5,
+        "literal and trivial path expression sites should stay suppressed; got {enabled_labels:?}"
+    );
+    assert!(
+        enabled_labels.iter().any(|label| label == ": String"),
+        "enabled expression inlays should include non-trivial selector expressions; got {enabled_labels:?}"
+    );
+    assert!(
+        !enabled_labels.iter().any(|label| label == ": Choice"),
+        "aggregate literal sites should stay suppressed under the conservative expression inlay policy; got {enabled_labels:?}"
+    );
+    let unique_sites = enabled_hints
+        .iter()
+        .filter_map(|hint| {
+            let InlayHintLabel::String(label) = &hint.label else {
+                return None;
+            };
+            Some((hint.position.line, hint.position.character, label.as_str()))
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        unique_sites.len(),
+        enabled_hints.len(),
+        "expression inlays should not duplicate the same label at the same source position: {enabled_hints:?}"
+    );
+}
+
+#[test]
 fn definition_request_returns_effective_style_contributor_ranges() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
@@ -2021,6 +2093,10 @@ fn signature_help(
 }
 
 fn inlay_hint_labels(session: &mut ArcweftLspSession, uri: Uri) -> Vec<String> {
+    inlay_hint_string_labels(&inlay_hints(session, uri))
+}
+
+fn inlay_hints(session: &mut ArcweftLspSession, uri: Uri) -> Vec<InlayHint> {
     let response = session.handle_request(Request {
         id: RequestId::from(4),
         method: InlayHintRequest::METHOD.to_owned(),
@@ -2032,9 +2108,13 @@ fn inlay_hint_labels(session: &mut ArcweftLspSession, uri: Uri) -> Vec<String> {
     });
     serde_json::from_value::<Vec<InlayHint>>(response.result.expect("inlay hint response"))
         .expect("inlay hint response decodes")
-        .into_iter()
-        .filter_map(|hint| match hint.label {
-            InlayHintLabel::String(label) => Some(label),
+}
+
+fn inlay_hint_string_labels(hints: &[InlayHint]) -> Vec<String> {
+    hints
+        .iter()
+        .filter_map(|hint| match &hint.label {
+            InlayHintLabel::String(label) => Some(label.clone()),
             InlayHintLabel::LabelParts(_) => None,
         })
         .collect()

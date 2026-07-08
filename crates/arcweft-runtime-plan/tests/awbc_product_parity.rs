@@ -306,11 +306,11 @@ fn audio_set_bus_gain() -> LineEffectRequest {
 fn non_control_effect_table() -> Vec<LineEffectRequest> {
     vec![
         LineEffectRequest::RegisterHandle {
-            key: "handle.ui".to_owned(),
+            key: "handle.view".to_owned(),
             handle: "h-001".to_owned(),
         },
         LineEffectRequest::DropHandle {
-            key: "handle.ui".to_owned(),
+            key: "handle.view".to_owned(),
         },
         LineEffectRequest::Wait(RuntimeWaitTarget::Duration(LogicalDuration::from_nanos(17))),
         LineEffectRequest::Call(RuntimeCall {

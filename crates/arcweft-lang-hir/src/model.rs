@@ -3,7 +3,7 @@ use arcweft_lang_syntax::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
         common::{TextRange, Visibility},
         dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
-        flow::{AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
+        flow::{AuthoredExpr, AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
             AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
@@ -208,7 +208,7 @@ pub struct HirScopeExpr {
 /// HIR-facing if block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirIf {
-    pub(crate) condition: Expr,
+    pub(crate) condition: AuthoredExpr,
     pub(crate) body: Vec<HirFlowItem>,
     pub(crate) else_body: Vec<HirFlowItem>,
 }
@@ -217,8 +217,8 @@ pub struct HirIf {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirIfLet {
     pub(crate) pattern: Pattern,
-    pub(crate) expr: Expr,
-    pub(crate) guard: Option<Expr>,
+    pub(crate) expr: AuthoredExpr,
+    pub(crate) guard: Option<AuthoredExpr>,
     pub(crate) body: Vec<HirFlowItem>,
     pub(crate) else_body: Vec<HirFlowItem>,
 }
@@ -226,7 +226,7 @@ pub struct HirIfLet {
 /// HIR-facing match block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirMatch {
-    pub(crate) expr: Expr,
+    pub(crate) expr: AuthoredExpr,
     pub(crate) arms: Vec<HirMatchArm>,
 }
 
@@ -234,7 +234,7 @@ pub struct HirMatch {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirMatchArm {
     pub(crate) pattern: Pattern,
-    pub(crate) guard: Option<Expr>,
+    pub(crate) guard: Option<AuthoredExpr>,
     pub(crate) body: Vec<HirFlowItem>,
 }
 
@@ -249,14 +249,14 @@ pub struct HirLoop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFor {
     pub(crate) pattern: Pattern,
-    pub(crate) source: Expr,
+    pub(crate) source: AuthoredExpr,
     pub(crate) body: Vec<HirFlowItem>,
 }
 
 /// HIR-facing `while` statement loop.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirWhile {
-    pub(crate) condition: Expr,
+    pub(crate) condition: AuthoredExpr,
     pub(crate) body: Vec<HirFlowItem>,
 }
 
@@ -264,8 +264,8 @@ pub struct HirWhile {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirWhileLet {
     pub(crate) pattern: Pattern,
-    pub(crate) expr: Expr,
-    pub(crate) guard: Option<Expr>,
+    pub(crate) expr: AuthoredExpr,
+    pub(crate) guard: Option<AuthoredExpr>,
     pub(crate) body: Vec<HirFlowItem>,
 }
 
@@ -690,6 +690,10 @@ impl HirSourceLocale {
 
 impl HirIf {
     pub const fn condition(&self) -> &Expr {
+        self.condition.expr()
+    }
+
+    pub const fn condition_authored(&self) -> &AuthoredExpr {
         &self.condition
     }
 
@@ -708,10 +712,21 @@ impl HirIfLet {
     }
 
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 
     pub const fn guard(&self) -> Option<&Expr> {
+        match self.guard.as_ref() {
+            Some(guard) => Some(guard.expr()),
+            None => None,
+        }
+    }
+
+    pub fn guard_authored(&self) -> Option<&AuthoredExpr> {
         self.guard.as_ref()
     }
 
@@ -726,6 +741,10 @@ impl HirIfLet {
 
 impl HirMatch {
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 
@@ -740,6 +759,13 @@ impl HirMatchArm {
     }
 
     pub const fn guard(&self) -> Option<&Expr> {
+        match self.guard.as_ref() {
+            Some(guard) => Some(guard.expr()),
+            None => None,
+        }
+    }
+
+    pub fn guard_authored(&self) -> Option<&AuthoredExpr> {
         self.guard.as_ref()
     }
 
@@ -754,6 +780,10 @@ impl HirFor {
     }
 
     pub const fn source(&self) -> &Expr {
+        self.source.expr()
+    }
+
+    pub const fn source_authored(&self) -> &AuthoredExpr {
         &self.source
     }
 
@@ -764,6 +794,10 @@ impl HirFor {
 
 impl HirWhile {
     pub const fn condition(&self) -> &Expr {
+        self.condition.expr()
+    }
+
+    pub const fn condition_authored(&self) -> &AuthoredExpr {
         &self.condition
     }
 
@@ -778,10 +812,21 @@ impl HirWhileLet {
     }
 
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 
     pub const fn guard(&self) -> Option<&Expr> {
+        match self.guard.as_ref() {
+            Some(guard) => Some(guard.expr()),
+            None => None,
+        }
+    }
+
+    pub fn guard_authored(&self) -> Option<&AuthoredExpr> {
         self.guard.as_ref()
     }
 

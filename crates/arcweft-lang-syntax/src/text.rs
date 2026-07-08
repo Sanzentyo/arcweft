@@ -1,6 +1,6 @@
 use crate::ast::{
     common::TextRange,
-    dialogue::{DialogueTag, DialogueToken, LineMark},
+    dialogue::{DialogueExpr, DialogueTag, DialogueToken, LineMark},
 };
 use crate::expr::{CallArg, Expr, Literal, parse_expr};
 
@@ -35,6 +35,14 @@ pub fn parse_dialogue_tokens(source: &str) -> Vec<DialogueToken> {
 /// source, which keeps localization extraction and editor tooling stable.
 #[must_use]
 pub fn parse_dialogue_text(source: &str) -> DialogueTextParse {
+    parse_dialogue_text_at(source, 0)
+}
+
+/// Parses dialogue-text mode with token source ranges shifted by `base`.
+///
+/// `base` is the byte offset of `source` in the original `.arcw` document.
+#[must_use]
+pub fn parse_dialogue_text_at(source: &str, base: usize) -> DialogueTextParse {
     let mut tokens = Vec::new();
     let mut diagnostics = Vec::new();
     let mut text = String::new();
@@ -77,7 +85,7 @@ pub fn parse_dialogue_text(source: &str) -> DialogueTextParse {
                 let _ = chars.next();
                 if let Some((expr, consumed_to)) = take_balanced_bracket(source, index + 2) {
                     flush_text(&mut text, &mut tokens);
-                    tokens.push(parse_dialogue_expr_token(&expr));
+                    tokens.push(parse_dialogue_expr_token(&expr, base + index + 2));
                     skip_to(&mut chars, consumed_to);
                 } else {
                     text.push_str("#[");
@@ -87,7 +95,7 @@ pub fn parse_dialogue_text(source: &str) -> DialogueTextParse {
                 let _ = chars.next();
                 if let Some((expr, consumed_to)) = take_balanced_paren(source, index + 2) {
                     flush_text(&mut text, &mut tokens);
-                    tokens.push(DialogueToken::Expr(parse_dialogue_expr_lossy(&expr)));
+                    tokens.push(parse_dialogue_expr_token(&expr, base + index + 2));
                     skip_to(&mut chars, consumed_to);
                 } else {
                     text.push_str("$(");
@@ -519,9 +527,20 @@ fn parse_dialogue_expr_lossy(source: &str) -> Expr {
     parse_expr(source).unwrap_or_else(|_| Expr::Raw(source.to_owned()))
 }
 
-fn parse_dialogue_expr_token(source: &str) -> DialogueToken {
-    let expr = parse_dialogue_expr_lossy(source);
-    function_ruby_token(&expr).unwrap_or(DialogueToken::Expr(expr))
+fn parse_dialogue_expr_token(source: &str, absolute_start: usize) -> DialogueToken {
+    let (expr_source, range) = trimmed_expr_source(source, absolute_start);
+    let expr = parse_dialogue_expr_lossy(expr_source);
+    function_ruby_token(&expr).unwrap_or_else(|| {
+        DialogueToken::Expr(DialogueExpr::new(expr, expr_source.to_owned(), range))
+    })
+}
+
+fn trimmed_expr_source(source: &str, absolute_start: usize) -> (&str, TextRange) {
+    let leading = source.len() - source.trim_start().len();
+    let trimmed = source.trim();
+    let start = absolute_start + leading;
+    let end = start + trimmed.len();
+    (trimmed, TextRange::new(start, end))
 }
 
 fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {

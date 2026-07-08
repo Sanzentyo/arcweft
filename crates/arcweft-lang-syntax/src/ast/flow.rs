@@ -183,7 +183,7 @@ pub struct ScopeExprBlock {
 /// Typed `if expr { ... }` flow block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IfBlock {
-    condition: Expr,
+    condition: AuthoredExpr,
     body: Vec<FlowItem>,
     else_body: Vec<FlowItem>,
     range: TextRange,
@@ -193,8 +193,8 @@ pub struct IfBlock {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IfLetBlock {
     pattern: Pattern,
-    expr: Expr,
-    guard: Option<Expr>,
+    expr: AuthoredExpr,
+    guard: Option<AuthoredExpr>,
     body: Vec<FlowItem>,
     else_body: Vec<FlowItem>,
     range: TextRange,
@@ -203,7 +203,7 @@ pub struct IfLetBlock {
 /// Typed `match expr { ... }` flow block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MatchBlock {
-    expr: Expr,
+    expr: AuthoredExpr,
     arms: Vec<MatchArm>,
     range: TextRange,
 }
@@ -212,7 +212,7 @@ pub struct MatchBlock {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MatchArm {
     pattern: Pattern,
-    guard: Option<Expr>,
+    guard: Option<AuthoredExpr>,
     body: Vec<FlowItem>,
 }
 
@@ -228,7 +228,7 @@ pub struct LoopBlock {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForBlock {
     pattern: Pattern,
-    source: Expr,
+    source: AuthoredExpr,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -236,7 +236,7 @@ pub struct ForBlock {
 /// `while condition { ... }` statement loop.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WhileBlock {
-    condition: Expr,
+    condition: AuthoredExpr,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -245,8 +245,8 @@ pub struct WhileBlock {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WhileLetBlock {
     pattern: Pattern,
-    expr: Expr,
-    guard: Option<Expr>,
+    expr: AuthoredExpr,
+    guard: Option<AuthoredExpr>,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -317,8 +317,8 @@ pub enum Stmt {
     },
     /// `target = expr` mutation statement.
     Assign {
-        target: Expr,
-        expr: Expr,
+        target: AuthoredExpr,
+        expr: AuthoredExpr,
     },
     /// `let PAT = EXPR else { ... }` binding whose else block must diverge.
     LetElse {
@@ -350,15 +350,19 @@ pub enum Stmt {
     /// `let PAT = receive action(@action.id)` waits for a typed semantic action.
     LetActionReceive {
         pattern: Pattern,
-        action: Expr,
+        action: AuthoredExpr,
     },
-    Return(Expr),
+    Return {
+        expr: Expr,
+        expr_source: Option<String>,
+        expr_range: Option<TextRange>,
+    },
     /// `out expr` or `out 'label expr` from a line/cue/content continuation.
     Out {
         label: Option<String>,
         expr: Expr,
     },
-    Goto(Expr),
+    Goto(AuthoredExpr),
     /// `thread name { ... }` / `thread name:` scoped VM child task.
     Thread(ThreadBlock),
     /// `defer { ... }` cleanup block registered on the current runtime scope.
@@ -368,9 +372,9 @@ pub enum Stmt {
     },
     Defer {
         outcome: DeferOutcome,
-        expr: Expr,
+        expr: AuthoredExpr,
     },
-    Yield(Expr),
+    Yield(AuthoredExpr),
     Signal {
         target: Expr,
         value: Expr,
@@ -396,7 +400,7 @@ pub enum Stmt {
         body: Vec<Stmt>,
     },
     If {
-        condition: Expr,
+        condition: AuthoredExpr,
         body: Vec<Stmt>,
         else_body: Vec<Stmt>,
     },
@@ -406,28 +410,28 @@ pub enum Stmt {
     },
     /// `while expr { ... }` inside typed statement bodies.
     While {
-        condition: Expr,
+        condition: AuthoredExpr,
         body: Vec<Stmt>,
     },
     /// `while let PAT = EXPR when GUARD { ... }` inside typed statement bodies.
     WhileLet {
         pattern: Pattern,
-        expr: Expr,
-        guard: Option<Expr>,
+        expr: AuthoredExpr,
+        guard: Option<AuthoredExpr>,
         body: Vec<Stmt>,
     },
     /// `for PAT in EXPR { ... }` inside typed statement bodies.
     For {
         pattern: Pattern,
-        source: Expr,
+        source: AuthoredExpr,
         body: Vec<Stmt>,
     },
     Match {
-        expr: Expr,
+        expr: AuthoredExpr,
         arms: Vec<StmtMatchArm>,
     },
-    Close(Expr),
-    Select(Expr),
+    Close(AuthoredExpr),
+    Select(AuthoredExpr),
     /// `break`, `break expr`, or `break 'label expr`.
     Break {
         label: Option<String>,
@@ -437,8 +441,20 @@ pub enum Stmt {
     Continue {
         label: Option<String>,
     },
-    Expr(Expr),
+    Expr {
+        expr: Expr,
+        expr_source: Option<String>,
+        expr_range: Option<TextRange>,
+    },
     Raw(RawSyntax),
+}
+
+/// Expression payload whose original authored source slice is known.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthoredExpr {
+    expr: Expr,
+    source: Option<String>,
+    range: Option<TextRange>,
 }
 
 /// A scoped VM child task owned by the nearest runtime scope.
@@ -460,6 +476,42 @@ pub enum ThreadModifier {
 pub enum WaitTarget {
     Duration(Expr),
     Expr(Expr),
+}
+
+impl AuthoredExpr {
+    pub const fn new(expr: Expr) -> Self {
+        Self {
+            expr,
+            source: None,
+            range: None,
+        }
+    }
+
+    pub fn with_source(expr: Expr, source: String, range: Option<TextRange>) -> Self {
+        Self {
+            expr,
+            source: Some(source),
+            range,
+        }
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub fn source(&self) -> Option<&str> {
+        self.source.as_deref()
+    }
+
+    pub const fn range(&self) -> Option<TextRange> {
+        self.range
+    }
+}
+
+impl From<Expr> for AuthoredExpr {
+    fn from(expr: Expr) -> Self {
+        Self::new(expr)
+    }
 }
 
 impl ThreadBlock {
@@ -603,14 +655,14 @@ impl Flow {
 }
 
 impl IfBlock {
-    pub(crate) const fn new(
-        condition: Expr,
+    pub(crate) fn new(
+        condition: impl Into<AuthoredExpr>,
         body: Vec<FlowItem>,
         else_body: Vec<FlowItem>,
         range: TextRange,
     ) -> Self {
         Self {
-            condition,
+            condition: condition.into(),
             body,
             else_body,
             range,
@@ -618,6 +670,10 @@ impl IfBlock {
     }
 
     pub const fn condition(&self) -> &Expr {
+        self.condition.expr()
+    }
+
+    pub const fn condition_authored(&self) -> &AuthoredExpr {
         &self.condition
     }
 
@@ -635,17 +691,17 @@ impl IfBlock {
 }
 
 impl IfLetBlock {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         pattern: Pattern,
-        expr: Expr,
-        guard: Option<Expr>,
+        expr: impl Into<AuthoredExpr>,
+        guard: Option<AuthoredExpr>,
         body: Vec<FlowItem>,
         else_body: Vec<FlowItem>,
         range: TextRange,
     ) -> Self {
         Self {
             pattern,
-            expr,
+            expr: expr.into(),
             guard,
             body,
             else_body,
@@ -658,10 +714,21 @@ impl IfLetBlock {
     }
 
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 
     pub const fn guard(&self) -> Option<&Expr> {
+        match self.guard.as_ref() {
+            Some(guard) => Some(guard.expr()),
+            None => None,
+        }
+    }
+
+    pub fn guard_authored(&self) -> Option<&AuthoredExpr> {
         self.guard.as_ref()
     }
 
@@ -679,11 +746,23 @@ impl IfLetBlock {
 }
 
 impl MatchBlock {
-    pub(crate) const fn new(expr: Expr, arms: Vec<MatchArm>, range: TextRange) -> Self {
-        Self { expr, arms, range }
+    pub(crate) fn new(
+        expr: impl Into<AuthoredExpr>,
+        arms: Vec<MatchArm>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            expr: expr.into(),
+            arms,
+            range,
+        }
     }
 
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 
@@ -697,7 +776,7 @@ impl MatchBlock {
 }
 
 impl MatchArm {
-    pub(crate) const fn new(pattern: Pattern, guard: Option<Expr>, body: Vec<FlowItem>) -> Self {
+    pub(crate) fn new(pattern: Pattern, guard: Option<AuthoredExpr>, body: Vec<FlowItem>) -> Self {
         Self {
             pattern,
             guard,
@@ -710,6 +789,13 @@ impl MatchArm {
     }
 
     pub const fn guard(&self) -> Option<&Expr> {
+        match self.guard.as_ref() {
+            Some(guard) => Some(guard.expr()),
+            None => None,
+        }
+    }
+
+    pub fn guard_authored(&self) -> Option<&AuthoredExpr> {
         self.guard.as_ref()
     }
 
@@ -737,15 +823,15 @@ impl LoopBlock {
 }
 
 impl ForBlock {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         pattern: Pattern,
-        source: Expr,
+        source: impl Into<AuthoredExpr>,
         body: Vec<FlowItem>,
         range: TextRange,
     ) -> Self {
         Self {
             pattern,
-            source,
+            source: source.into(),
             body,
             range,
         }
@@ -756,6 +842,10 @@ impl ForBlock {
     }
 
     pub const fn source(&self) -> &Expr {
+        self.source.expr()
+    }
+
+    pub const fn source_authored(&self) -> &AuthoredExpr {
         &self.source
     }
 
@@ -769,15 +859,23 @@ impl ForBlock {
 }
 
 impl WhileBlock {
-    pub(crate) const fn new(condition: Expr, body: Vec<FlowItem>, range: TextRange) -> Self {
+    pub(crate) fn new(
+        condition: impl Into<AuthoredExpr>,
+        body: Vec<FlowItem>,
+        range: TextRange,
+    ) -> Self {
         Self {
-            condition,
+            condition: condition.into(),
             body,
             range,
         }
     }
 
     pub const fn condition(&self) -> &Expr {
+        self.condition.expr()
+    }
+
+    pub const fn condition_authored(&self) -> &AuthoredExpr {
         &self.condition
     }
 
@@ -791,16 +889,16 @@ impl WhileBlock {
 }
 
 impl WhileLetBlock {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         pattern: Pattern,
-        expr: Expr,
-        guard: Option<Expr>,
+        expr: impl Into<AuthoredExpr>,
+        guard: Option<AuthoredExpr>,
         body: Vec<FlowItem>,
         range: TextRange,
     ) -> Self {
         Self {
             pattern,
-            expr,
+            expr: expr.into(),
             guard,
             body,
             range,
@@ -812,10 +910,21 @@ impl WhileLetBlock {
     }
 
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 
     pub const fn guard(&self) -> Option<&Expr> {
+        match self.guard.as_ref() {
+            Some(guard) => Some(guard.expr()),
+            None => None,
+        }
+    }
+
+    pub fn guard_authored(&self) -> Option<&AuthoredExpr> {
         self.guard.as_ref()
     }
 

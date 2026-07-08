@@ -166,9 +166,9 @@ let assets = try await load_opening_assets() with {
 }
 ```
 
-## UI の AwaitView
+## View の AwaitView
 
-UI でも lazy 値の暗黙 force は禁止。
+View でも lazy 値の暗黙 force は禁止。
 
 ```arcw
 AwaitView(typeset(@typeset.credits)) {

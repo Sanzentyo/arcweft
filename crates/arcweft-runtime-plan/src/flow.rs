@@ -44,7 +44,9 @@ use arcweft_lang_hir::model::{
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
-    flow::{AwaitBranchKind, FlowItem, ScopeExprBlock, Stmt, StmtMatchArm, ThreadBlock},
+    flow::{
+        AuthoredExpr, AwaitBranchKind, FlowItem, ScopeExprBlock, Stmt, StmtMatchArm, ThreadBlock,
+    },
     ids::{EntityRef, EntityRefSyntax},
     items::{EntryItem, EntryKind, FunctionKind},
     line_plan::LinePlan,
@@ -1891,7 +1893,7 @@ impl FlowRuntimeLowerer<'_> {
                 body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
             }],
             Stmt::LetActionReceive { pattern, action } => {
-                self.lower_action_receive_stmt(pattern, action)
+                self.lower_action_receive_stmt(pattern, action.expr())
             }
             Stmt::LetElse {
                 pattern,
@@ -1903,21 +1905,20 @@ impl FlowRuntimeLowerer<'_> {
                 expr: self.lower_runtime_expr_with_expected_type(ty.as_ref(), expr),
                 else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
             }],
-            Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr))],
-            Stmt::Return(expr) => vec![FlowOp::ReturnExpr(
+            Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr.expr()))],
+            Stmt::Return { expr, .. } => vec![FlowOp::ReturnExpr(
                 self.lower_runtime_expr_result(expr)
                     .unwrap_or_else(|_| lower_runtime_expr(expr)),
             )],
-            Stmt::Assign { target, expr } => {
-                self.lower_assignment_stmt(target, expr)
-                    .map_or_else(Vec::new, |expr| {
-                        vec![FlowOp::Let {
-                            pattern: RuntimePattern::Discard,
-                            expr,
-                        }]
-                    })
-            }
-            Stmt::Expr(expr) => self
+            Stmt::Assign { target, expr } => self
+                .lower_assignment_stmt(target.expr(), expr.expr())
+                .map_or_else(Vec::new, |expr| {
+                    vec![FlowOp::Let {
+                        pattern: RuntimePattern::Discard,
+                        expr,
+                    }]
+                }),
+            Stmt::Expr { expr, .. } => self
                 .lower_presentation_handle_method(expr)
                 .or_else(|| Self::lower_explicit_presentation_mount(flow_id, expr))
                 .or_else(|| self.lower_agent_host_call_expr(expr))
@@ -1932,12 +1933,12 @@ impl FlowRuntimeLowerer<'_> {
                 condition,
                 body,
                 else_body,
-            } => self.lower_if_stmt(flow_id, flow_index, condition, body, else_body),
+            } => self.lower_if_stmt(flow_id, flow_index, condition.expr(), body, else_body),
             Stmt::Loop { body } => vec![FlowOp::Loop {
                 body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
             Stmt::While { condition, body } => vec![FlowOp::While {
-                condition: self.lower_runtime_expr(condition),
+                condition: self.lower_runtime_expr(condition.expr()),
                 body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
             Stmt::WhileLet {
@@ -1947,18 +1948,18 @@ impl FlowRuntimeLowerer<'_> {
                 body,
             } => vec![FlowOp::WhileLet {
                 pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr(expr),
-                guard: self.lower_optional_runtime_expr(guard.as_ref()),
+                expr: self.lower_runtime_expr(expr.expr()),
+                guard: self.lower_optional_runtime_expr(guard.as_ref().map(AuthoredExpr::expr)),
                 body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
             Stmt::For {
                 pattern,
                 source,
                 body,
-            } => self.lower_for_stmt(flow_id, flow_index, pattern, source, body),
+            } => self.lower_for_stmt(flow_id, flow_index, pattern, source.expr(), body),
             Stmt::Thread(thread) => self.lower_thread_stmt(flow_id, flow_index, thread),
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
-                scrutinee: self.lower_runtime_expr(expr),
+                scrutinee: self.lower_runtime_expr(expr.expr()),
                 arms: self.lower_stmt_match_arms(flow_id, flow_index, arms),
             }],
             Stmt::Break { expr, .. } => {
@@ -1998,8 +1999,8 @@ impl FlowRuntimeLowerer<'_> {
         vec![FlowOp::HostCall {
             binding: Some(lower_runtime_pattern(pattern)),
             target: RuntimeHostCallTarget::new(
-                "ui.action.await",
-                "ui.action",
+                "view.action.await",
+                "view.action",
                 "await",
                 [self.lower_runtime_expr(action)],
                 RuntimeHostCallMode::Suspend,

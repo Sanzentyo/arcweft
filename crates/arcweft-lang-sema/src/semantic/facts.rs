@@ -151,12 +151,14 @@ impl BlockFlow {
 
 pub(super) fn transfer_reason(stmt: &Stmt, context: ExitReason) -> Option<ExitReason> {
     match stmt {
-        Stmt::Return(_) | Stmt::Close(_) | Stmt::Goto(_) | Stmt::Yield(_) | Stmt::Out { .. } => {
-            Some(context)
-        }
+        Stmt::Return { expr: _, .. }
+        | Stmt::Close(_)
+        | Stmt::Goto(_)
+        | Stmt::Yield(_)
+        | Stmt::Out { .. } => Some(context),
         Stmt::Break { .. } => Some(ExitReason::Break),
         Stmt::Continue { .. } => Some(ExitReason::Continue),
-        Stmt::Expr(expr) if expr_is_failed_transfer(expr) => Some(ExitReason::Failed),
+        Stmt::Expr { expr, .. } if expr_is_failed_transfer(expr) => Some(ExitReason::Failed),
         _ => None,
     }
 }

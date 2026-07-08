@@ -16,9 +16,9 @@ use crate::ast::{
     common::{ModuleDecl, TextRange},
     ids::EntityRef,
     items::{
-        Item, RawItem, StyleItem, StyleItemInit, UiStyleAssignOpDecl, UiStyleDeclarationDecl,
-        UiStyleEnvironmentPredicateDecl, UiStyleRuleDecl, UiStyleSelectorPartDecl,
-        UiStyleTokenDecl, UiStyleValueDecl,
+        Item, RawItem, StyleItem, StyleItemInit, ViewStyleAssignOpDecl, ViewStyleDeclarationDecl,
+        ViewStyleEnvironmentPredicateDecl, ViewStyleRuleDecl, ViewStyleSelectorPartDecl,
+        ViewStyleTokenDecl, ViewStyleValueDecl,
     },
     style::StyleSyntax,
 };
@@ -394,8 +394,10 @@ impl Parser<'_> {
         }
         let inline_source = Some(body.to_string());
         let fields = match syntax {
-            StyleSyntax::Arcweft => UiStyleFields::parse(&body, start_line.start, &mut self.errors),
-            StyleSyntax::Css => UiStyleFields::default(),
+            StyleSyntax::Arcweft => {
+                ViewStyleFields::parse(&body, start_line.start, &mut self.errors)
+            }
+            StyleSyntax::Css => ViewStyleFields::default(),
         };
         Some(StyleItem::new(StyleItemInit {
             attrs,
@@ -554,22 +556,22 @@ fn parse_style_syntax_tail(
 }
 
 #[derive(Default)]
-struct UiStyleFields {
-    tokens: Vec<UiStyleTokenDecl>,
-    rules: Vec<UiStyleRuleDecl>,
-    environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
+struct ViewStyleFields {
+    tokens: Vec<ViewStyleTokenDecl>,
+    rules: Vec<ViewStyleRuleDecl>,
+    environment_predicates: Vec<ViewStyleEnvironmentPredicateDecl>,
 }
 
 #[derive(Debug)]
-struct PendingUiStyleRule {
-    selector: Vec<UiStyleSelectorPartDecl>,
-    declarations: Vec<UiStyleDeclarationDecl>,
+struct PendingViewStyleRule {
+    selector: Vec<ViewStyleSelectorPartDecl>,
+    declarations: Vec<ViewStyleDeclarationDecl>,
 }
 
-impl UiStyleFields {
+impl ViewStyleFields {
     fn parse(body: &str, base: usize, errors: &mut Vec<super::ParseError>) -> Self {
         let mut fields = Self::default();
-        let mut pending_rule: Option<PendingUiStyleRule> = None;
+        let mut pending_rule: Option<PendingViewStyleRule> = None;
         for line in body.lines() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///") {
@@ -579,7 +581,7 @@ impl UiStyleFields {
                 if let Some(rule) = pending_rule.take() {
                     fields
                         .rules
-                        .push(UiStyleRuleDecl::new(rule.selector, rule.declarations));
+                        .push(ViewStyleRuleDecl::new(rule.selector, rule.declarations));
                 } else {
                     errors.push(simple_error(
                         base,
@@ -594,7 +596,7 @@ impl UiStyleFields {
                 if let Some(rule) = pending_rule.take() {
                     fields
                         .rules
-                        .push(UiStyleRuleDecl::new(rule.selector, rule.declarations));
+                        .push(ViewStyleRuleDecl::new(rule.selector, rule.declarations));
                 }
                 let selector = trimmed.trim_end_matches('{').trim();
                 if selector.is_empty() {
@@ -606,26 +608,26 @@ impl UiStyleFields {
                     ));
                     continue;
                 }
-                pending_rule = Some(PendingUiStyleRule {
-                    selector: parse_ui_style_selector(selector, base, errors),
+                pending_rule = Some(PendingViewStyleRule {
+                    selector: parse_view_style_selector(selector, base, errors),
                     declarations: Vec::new(),
                 });
                 continue;
             }
             if let Some(rule) = &mut pending_rule {
-                if let Some(declaration) = parse_ui_style_declaration(trimmed, base, errors) {
+                if let Some(declaration) = parse_view_style_declaration(trimmed, base, errors) {
                     rule.declarations.push(declaration);
                 }
                 continue;
             }
             if let Some(token) = trimmed.strip_prefix("token ") {
-                if let Some(token) = parse_ui_style_token(token, base, errors) {
+                if let Some(token) = parse_view_style_token(token, base, errors) {
                     fields.tokens.push(token);
                 }
                 continue;
             }
             if let Some(predicate) = trimmed.strip_prefix("environment ") {
-                if let Some(predicate) = parse_ui_style_environment(predicate, base, errors) {
+                if let Some(predicate) = parse_view_style_environment(predicate, base, errors) {
                     fields.environment_predicates.push(predicate);
                 }
                 continue;
@@ -640,75 +642,75 @@ impl UiStyleFields {
         if let Some(rule) = pending_rule {
             fields
                 .rules
-                .push(UiStyleRuleDecl::new(rule.selector, rule.declarations));
+                .push(ViewStyleRuleDecl::new(rule.selector, rule.declarations));
         }
         fields
     }
 }
 
-fn parse_ui_style_token(
+fn parse_view_style_token(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Option<UiStyleTokenDecl> {
+) -> Option<ViewStyleTokenDecl> {
     let Some((name, value)) = split_top_level_binding(source.trim()) else {
         errors.push(simple_error(
             base,
             source.len(),
-            "invalid UI style token",
+            "invalid view style token",
             "token public.id = value",
         ));
         return None;
     };
-    parse_ui_style_value(value.trim(), base, errors)
-        .map(|value| UiStyleTokenDecl::new(name.trim().to_owned(), value))
+    parse_view_style_value(value.trim(), base, errors)
+        .map(|value| ViewStyleTokenDecl::new(name.trim().to_owned(), value))
 }
 
-fn parse_ui_style_declaration(
+fn parse_view_style_declaration(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Option<UiStyleDeclarationDecl> {
+) -> Option<ViewStyleDeclarationDecl> {
     let (op, body) = if let Some(rest) = source.strip_prefix("append ") {
-        (UiStyleAssignOpDecl::Append, rest.trim())
+        (ViewStyleAssignOpDecl::Append, rest.trim())
     } else {
-        (UiStyleAssignOpDecl::Replace, source)
+        (ViewStyleAssignOpDecl::Replace, source)
     };
     let Some((name, value)) = split_top_level_binding(body) else {
         errors.push(simple_error(
             base,
             source.len(),
-            "invalid UI style declaration",
+            "invalid view style declaration",
             "property-name = value",
         ));
         return None;
     };
-    parse_ui_style_value(value.trim(), base, errors)
-        .map(|value| UiStyleDeclarationDecl::new(name.trim().to_owned(), value, op))
+    parse_view_style_value(value.trim(), base, errors)
+        .map(|value| ViewStyleDeclarationDecl::new(name.trim().to_owned(), value, op))
 }
 
-fn parse_ui_style_environment(
+fn parse_view_style_environment(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Option<UiStyleEnvironmentPredicateDecl> {
+) -> Option<ViewStyleEnvironmentPredicateDecl> {
     let Some((name, value)) = split_top_level_binding(source.trim()) else {
         errors.push(simple_error(
             base,
             source.len(),
-            "invalid UI style environment predicate",
+            "invalid view style environment predicate",
             "environment text_scale_at_least_milli = 1000",
         ));
         return None;
     };
     match name.trim() {
         "text_scale_at_least_milli" => parse_u32_literal(value.trim())
-            .map(UiStyleEnvironmentPredicateDecl::TextScaleAtLeastMilli),
+            .map(ViewStyleEnvironmentPredicateDecl::TextScaleAtLeastMilli),
         other => {
             errors.push(simple_error(
                 base,
                 other.len(),
-                &format!("unknown UI style environment predicate `{other}`"),
+                &format!("unknown view style environment predicate `{other}`"),
                 "text_scale_at_least_milli",
             ));
             None
@@ -716,23 +718,23 @@ fn parse_ui_style_environment(
     }
 }
 
-fn parse_ui_style_selector(
+fn parse_view_style_selector(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Vec<UiStyleSelectorPartDecl> {
+) -> Vec<ViewStyleSelectorPartDecl> {
     let mut parts = Vec::new();
     for token in source.split_whitespace() {
         if token == ">" {
-            parts.push(UiStyleSelectorPartDecl::Child);
+            parts.push(ViewStyleSelectorPartDecl::Child);
         } else if token == "*" {
-            parts.push(UiStyleSelectorPartDecl::Descendant);
+            parts.push(ViewStyleSelectorPartDecl::Descendant);
         } else if let Some(value) = call_arg(token, "part") {
-            parts.push(UiStyleSelectorPartDecl::Part(value.to_owned()));
+            parts.push(ViewStyleSelectorPartDecl::Part(value.to_owned()));
         } else if let Some(value) = call_arg(token, "state") {
-            parts.push(UiStyleSelectorPartDecl::State(value.to_owned()));
+            parts.push(ViewStyleSelectorPartDecl::State(value.to_owned()));
         } else if let Some(value) = call_arg(token, "interaction") {
-            parts.push(UiStyleSelectorPartDecl::Interaction(value.to_owned()));
+            parts.push(ViewStyleSelectorPartDecl::Interaction(value.to_owned()));
         } else {
             push_style_selector_compound(token, &mut parts);
         }
@@ -748,7 +750,7 @@ fn parse_ui_style_selector(
     parts
 }
 
-fn push_style_selector_compound(token: &str, parts: &mut Vec<UiStyleSelectorPartDecl>) {
+fn push_style_selector_compound(token: &str, parts: &mut Vec<ViewStyleSelectorPartDecl>) {
     let mut segments = token.split(':');
     if let Some(head) = segments
         .next()
@@ -756,9 +758,9 @@ fn push_style_selector_compound(token: &str, parts: &mut Vec<UiStyleSelectorPart
         .filter(|head| !head.is_empty())
     {
         if let Some(part) = head.strip_prefix('.') {
-            parts.push(UiStyleSelectorPartDecl::Part(part.to_owned()));
+            parts.push(ViewStyleSelectorPartDecl::Part(part.to_owned()));
         } else {
-            parts.push(UiStyleSelectorPartDecl::Element(canonical_style_element(
+            parts.push(ViewStyleSelectorPartDecl::Element(canonical_style_element(
                 head,
             )));
         }
@@ -769,9 +771,9 @@ fn push_style_selector_compound(token: &str, parts: &mut Vec<UiStyleSelectorPart
             .map(|segment| {
                 let selector = canonical_style_selector_symbol(segment.trim());
                 if is_interaction_selector(&selector) {
-                    UiStyleSelectorPartDecl::Interaction(selector)
+                    ViewStyleSelectorPartDecl::Interaction(selector)
                 } else {
-                    UiStyleSelectorPartDecl::State(selector)
+                    ViewStyleSelectorPartDecl::State(selector)
                 }
             }),
     );
@@ -801,56 +803,56 @@ fn is_interaction_selector(source: &str) -> bool {
     matches!(source, "hover" | "active" | "disabled")
 }
 
-fn parse_ui_style_value(
+fn parse_view_style_value(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Option<UiStyleValueDecl> {
+) -> Option<ViewStyleValueDecl> {
     if let Some(value) = call_arg(source, "token") {
-        Some(UiStyleValueDecl::Token(value.to_owned()))
+        Some(ViewStyleValueDecl::Token(value.to_owned()))
     } else if let Some(value) = call_arg(source, "system_color") {
-        Some(UiStyleValueDecl::SystemColor(value.to_owned()))
+        Some(ViewStyleValueDecl::SystemColor(value.to_owned()))
     } else if let Some(value) = call_arg(source, "milli") {
-        parse_i32_literal(value).map(UiStyleValueDecl::Milli)
+        parse_i32_literal(value).map(ViewStyleValueDecl::Milli)
     } else if let Some(value) = source.trim().strip_suffix("milli") {
-        parse_i32_literal(value.trim()).map(UiStyleValueDecl::Milli)
+        parse_i32_literal(value.trim()).map(ViewStyleValueDecl::Milli)
     } else if source.trim().ends_with("px") {
-        Some(UiStyleValueDecl::Text(source.trim().to_owned()))
+        Some(ViewStyleValueDecl::Text(source.trim().to_owned()))
     } else if let Some(value) = call_arg(source, "text") {
-        ui_style_text_value(value).map(UiStyleValueDecl::Text)
+        view_style_text_value(value).map(ViewStyleValueDecl::Text)
     } else if source.starts_with('[') && source.ends_with(']') {
-        parse_ui_style_list_value(source, base, errors)
+        parse_view_style_list_value(source, base, errors)
     } else if let Some(value) = call_arg(source, "resource") {
-        Some(UiStyleValueDecl::Resource(value.to_owned()))
+        Some(ViewStyleValueDecl::Resource(value.to_owned()))
     } else if let Some(value) = call_arg(source, "rgba") {
         parse_rgba_value(value, base, errors)
     } else {
         errors.push(simple_error(
             base,
             source.len(),
-            &format!("unknown UI style value `{source}`"),
+            &format!("unknown view style value `{source}`"),
             "token(id) | system_color(name) | milli(1000) | 1000milli | 1px | text(\"value\") | [\"value\", ...] | resource(id) | rgba(r, g, b, a)",
         ));
         None
     }
 }
 
-fn parse_ui_style_list_value(
+fn parse_view_style_list_value(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Option<UiStyleValueDecl> {
+) -> Option<ViewStyleValueDecl> {
     let inner = source.trim().strip_prefix('[')?.strip_suffix(']')?.trim();
     let values = split_top_level_punctuation(inner, ',')
         .into_iter()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| parse_ui_style_list_item(value, base, errors))
+        .map(|value| parse_view_style_list_item(value, base, errors))
         .collect::<Option<Vec<_>>>()?;
-    Some(UiStyleValueDecl::List(values))
+    Some(ViewStyleValueDecl::List(values))
 }
 
-fn ui_style_text_value(value: &str) -> Option<String> {
+fn view_style_text_value(value: &str) -> Option<String> {
     match parse_expr_lossy(value) {
         Expr::Literal(Literal::String(value)) => Some(value),
         Expr::Path(value) => Some(value.as_label().to_owned()),
@@ -859,19 +861,19 @@ fn ui_style_text_value(value: &str) -> Option<String> {
     }
 }
 
-fn parse_ui_style_list_item(
+fn parse_view_style_list_item(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Option<UiStyleValueDecl> {
+) -> Option<ViewStyleValueDecl> {
     match parse_expr_lossy(source) {
-        Expr::Literal(Literal::String(value)) => Some(UiStyleValueDecl::Text(value)),
-        Expr::Path(value) => Some(UiStyleValueDecl::Text(value.as_label().to_owned())),
-        Expr::ShortVariant(value) => Some(UiStyleValueDecl::Text(format!(".{value}"))),
+        Expr::Literal(Literal::String(value)) => Some(ViewStyleValueDecl::Text(value)),
+        Expr::Path(value) => Some(ViewStyleValueDecl::Text(value.as_label().to_owned())),
+        Expr::ShortVariant(value) => Some(ViewStyleValueDecl::Text(format!(".{value}"))),
         Expr::Raw(value) if !value.trim().is_empty() && !value.contains(char::is_whitespace) => {
-            Some(UiStyleValueDecl::Text(value.trim().to_owned()))
+            Some(ViewStyleValueDecl::Text(value.trim().to_owned()))
         }
-        _ => parse_ui_style_value(source, base, errors),
+        _ => parse_view_style_value(source, base, errors),
     }
 }
 
@@ -887,7 +889,7 @@ fn parse_rgba_value(
     source: &str,
     base: usize,
     errors: &mut Vec<super::ParseError>,
-) -> Option<UiStyleValueDecl> {
+) -> Option<ViewStyleValueDecl> {
     let channels = source
         .split(',')
         .map(str::trim)
@@ -897,12 +899,12 @@ fn parse_rgba_value(
         errors.push(simple_error(
             base,
             source.len(),
-            "rgba UI style value needs four channels",
+            "rgba view style value needs four channels",
             "rgba(255, 255, 255, 255)",
         ));
         return None;
     };
-    Some(UiStyleValueDecl::Rgba {
+    Some(ViewStyleValueDecl::Rgba {
         red: *red,
         green: *green,
         blue: *blue,

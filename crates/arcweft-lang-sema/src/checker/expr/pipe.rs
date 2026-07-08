@@ -20,12 +20,17 @@ impl TypeChecker<'_> {
         if self.check_lifetime_pipe(lhs, rhs).is_some() {
             return Some(TypeKind::Unit);
         }
+        let rhs_source_range = self.source_range_for_expr(rhs);
         let lowered = if expr_contains_pipe_left(rhs) {
             substitute_pipe_left(rhs, lhs)
         } else {
             data_last_pipe_call(lhs, rhs)
         };
-        self.check_expr(&lowered)
+        if let Some(rhs_source_range) = rhs_source_range {
+            self.check_desugared_expr_with_authored_ranges(rhs, &lowered, rhs_source_range, None)
+        } else {
+            self.check_expr(&lowered)
+        }
     }
 }
 

@@ -983,7 +983,7 @@ fn index_top_level_declaration(
             );
         }
         HirTopLevelDecl::Style(item) => {
-            index = index_ui_style_entity(index, item, source_name)?;
+            index = index_view_style_entity(index, item, source_name)?;
         }
         HirTopLevelDecl::State(_)
         | HirTopLevelDecl::Trait(_)
@@ -1003,15 +1003,15 @@ fn index_top_level_declaration(
     Ok(index)
 }
 
-fn index_ui_style_entity(
+fn index_view_style_entity(
     index: ProjectSemanticIndex,
     item: &StyleItem,
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    index_ui_resource_entity(index, item.id(), EntityKind::Style, source_name, "style")
+    index_view_resource_entity(index, item.id(), EntityKind::Style, source_name, "style")
 }
 
-fn index_ui_resource_entity(
+fn index_view_resource_entity(
     index: ProjectSemanticIndex,
     id: &EntityRef,
     kind: EntityKind,
@@ -1037,7 +1037,7 @@ fn index_view_text_control_inputs(
     };
     for input in view.text_control_inputs() {
         let input = input.canonical_entity_ref();
-        index = index_ui_resource_entity(index, &input, EntityKind::Input, source_name, "input")?;
+        index = index_view_resource_entity(index, &input, EntityKind::Input, source_name, "input")?;
     }
     Ok(index)
 }

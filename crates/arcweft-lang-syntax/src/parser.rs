@@ -1,9 +1,9 @@
 use crate::ast::common::{DocBlock, ModuleDecl, TextRange, UseItem};
 use crate::ast::dialogue::{ContentCall, DialogueContent, SpeakerLine};
 use crate::ast::flow::{
-    BorrowBlock, Flow, FlowInit, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
-    MatchBlock, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
-    StmtMatchArm, UnsafeAuditInsertion, WaitTarget, WhileBlock, WhileLetBlock,
+    AuthoredExpr, BorrowBlock, Flow, FlowInit, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock,
+    MatchArm, MatchBlock, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
+    Stmt, StmtMatchArm, UnsafeAuditInsertion, WaitTarget, WhileBlock, WhileLetBlock,
 };
 use crate::ast::ids::{IdRef, RelativeId, RelativeIdSpelling};
 use crate::ast::items::{Attribute, Item, RawSyntax, TypedSyntaxTree};
@@ -19,7 +19,7 @@ use crate::cst::{
 use crate::expr::Expr;
 use crate::pattern::parse_pattern;
 use crate::source::ParsedSource;
-use crate::text::parse_dialogue_text;
+use crate::text::{parse_dialogue_text, parse_dialogue_text_at};
 use arcweft_source::{SourceAnchor, SourceName};
 use std::borrow::Cow;
 use std::ops::Range;
@@ -44,7 +44,8 @@ pub mod view;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
     parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr, parse_scope_expr_body,
-    parse_scope_expr_body_for_dialect, parse_stmt_lines, parse_stmt_match_arms,
+    parse_scope_expr_body_for_dialect, parse_scope_expr_body_with_base,
+    parse_scope_expr_body_with_base_for_dialect, parse_stmt_lines, parse_stmt_match_arms,
     split_pattern_guard,
 };
 pub use fragment::{
@@ -52,12 +53,13 @@ pub use fragment::{
     SourceDialect, parse_document, parse_fragment,
 };
 use helpers::{
-    PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items, collect_wiki_links,
-    contains_dialogue_expr, find_content_bracket, flat_block_head, indentation,
-    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_binding_pattern,
-    parse_computation_block_kind, parse_dialogue_call_expr_source, parse_expr_lossy,
-    parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
-    parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
+    PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items,
+    collect_logical_block_items_with_base, collect_wiki_links, contains_dialogue_expr,
+    find_content_bracket, flat_block_head, indentation, is_expression_statement_call,
+    is_typed_stmt, is_with_brace_head, parse_binding_pattern, parse_computation_block_kind,
+    parse_dialogue_call_expr_source, parse_expr_lossy, parse_expr_lossy_with_stats,
+    parse_expr_with_inline_line_plan_with_stats, parse_inline_with_colon_plan, parse_line_options,
+    parse_line_plan_attachment, parse_line_plan_attachment_with_body_base,
     parse_memo_block_options, parse_outer_attribute, parse_with_brace_label,
     parse_with_indent_label, source_take, split_brace_item, split_brace_item_with_scan,
     split_call_head, split_comma_args, split_optional_block_label, split_speaker_line,
@@ -68,8 +70,9 @@ use line_plan::{
 };
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{
-    parse_scope_head, parse_stmt, parse_stmt_for_dialect, parse_stmt_with_stats_and_base,
-    parse_unsafe_lifetime_block, raw_stmt,
+    braced_expr_source, expr_source_start_in_line, parse_scope_head, parse_stmt,
+    parse_stmt_for_dialect, parse_stmt_for_dialect_with_stats_and_base, parse_stmt_with_base,
+    parse_stmt_with_stats_and_base, parse_unsafe_lifetime_block, raw_stmt,
 };
 
 /// Parses an Arcweft source string.
@@ -259,9 +262,8 @@ impl<'a> Parser<'a> {
         event
     }
 
-    fn take_function_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
-        let event = self.take_block_event(CstBlockOpenRule::FunctionBody);
-        (event.head, event.body, event.end, event.ok)
+    fn take_function_block_event(&mut self) -> CstBlockEvent<'a> {
+        self.take_block_event(CstBlockOpenRule::FunctionBody)
     }
 
     fn next_nonblank_line_is_brace(&self) -> bool {
@@ -531,7 +533,7 @@ impl<'a> Parser<'a> {
     }
 
     fn dialogue_content(&mut self, raw: String, range: TextRange) -> DialogueContent {
-        let parsed = parse_dialogue_text(&raw);
+        let parsed = parse_dialogue_text_at(&raw, range.start());
         for diagnostic in parsed.diagnostics() {
             let diagnostic_range = TextRange::new(
                 range.start() + diagnostic.range().start(),

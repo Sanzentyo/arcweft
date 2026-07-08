@@ -40,7 +40,7 @@ let (actor, (face0, _, voice)) = line_result
 ```arcw
 match event {
     .ChoiceSelected { id } => handle_choice(id)
-    .Ui { event: ui_event } => handle_ui(ui_event)
+    .View { event: view_event } => handle_view(view_event)
     .TruckFinished { result: TruckResult { score, rank, .. } } => handle_rank(rank)
     _ => ()
 }

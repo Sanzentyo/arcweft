@@ -20,9 +20,11 @@ use thiserror::Error;
 mod char_literal;
 mod closure_parse;
 mod closure_source;
+mod source_ranges;
 
 use closure_parse::parse_closure_params;
 use closure_source::ClosureBodySource;
+pub use source_ranges::{ExprSourceRange, collect_expr_source_ranges};
 
 /// Identifier segment used by expression paths and shorthand selectors.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1773,7 +1775,11 @@ impl ExprParser {
         let body = if body_source.trim().is_empty() {
             Vec::new()
         } else {
-            vec![FlowItem::Stmt(Stmt::Expr(parse_expr(body_source.trim())?))]
+            vec![FlowItem::Stmt(Stmt::Expr {
+                expr: parse_expr(body_source.trim())?,
+                expr_source: None,
+                expr_range: None,
+            })]
         };
         Ok(Expr::Thread {
             block: Box::new(ThreadBlock::new(

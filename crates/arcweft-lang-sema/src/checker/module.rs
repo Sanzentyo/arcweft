@@ -276,9 +276,20 @@ impl TypeChecker<'_> {
             return self.check_block_expr_with_expected(statements, value, expected);
         }
         match statements.split_last() {
-            Some((Stmt::Return(expr), statements)) => {
-                self.check_tail_return_block_expr_with_expected(statements, expr, expected)
-            }
+            Some((
+                Stmt::Return {
+                    expr,
+                    expr_source,
+                    expr_range,
+                },
+                statements,
+            )) => self.check_tail_return_block_expr_with_expected(
+                statements,
+                expr,
+                expr_source.as_deref(),
+                *expr_range,
+                expected,
+            ),
             _ => self.check_block_expr(statements, None),
         }
     }
@@ -675,7 +686,7 @@ impl TypeChecker<'_> {
         let actual = action_payload_type(payload);
         if !self.types_compatible(param.ty(), &actual) {
             self.errors.push(TypeCheckError::new(format!(
-                "action.invoke payload `{payload_name}` for `{action_id}` expects {}, but UI payload has {}",
+                "action.invoke payload `{payload_name}` for `{action_id}` expects {}, but View payload has {}",
                 type_kind_label(param.ty()),
                 type_kind_label(&actual)
             )));

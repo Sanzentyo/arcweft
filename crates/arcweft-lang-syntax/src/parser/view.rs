@@ -1129,7 +1129,7 @@ fn action_invoke_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
             .and_then(|value| action_invoke_action(value, range))
             .or_else(|| {
                 statements.iter().find_map(|statement| match statement {
-                    Stmt::Expr(expr) => action_invoke_action(expr, range),
+                    Stmt::Expr { expr, .. } => action_invoke_action(expr, range),
                     _ => None,
                 })
             }),

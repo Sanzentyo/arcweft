@@ -629,17 +629,17 @@ fn collect_contract_clause(contract: &ContractClause, uses: &mut Vec<SymbolUse>)
 
 fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
     match stmt {
-        Stmt::Let { expr, .. }
-        | Stmt::Return(expr)
-        | Stmt::Goto(expr)
-        | Stmt::Yield(expr)
-        | Stmt::Close(expr)
-        | Stmt::Defer { expr, .. }
-        | Stmt::Expr(expr) => {
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             collect_expr(expr, uses);
         }
-        Stmt::Assign { target, expr }
-        | Stmt::Signal {
+        Stmt::Defer { expr, .. } | Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) => {
+            collect_expr(expr.expr(), uses);
+        }
+        Stmt::Assign { target, expr } => {
+            collect_expr(target.expr(), uses);
+            collect_expr(expr.expr(), uses);
+        }
+        Stmt::Signal {
             target,
             value: expr,
         }
@@ -654,7 +654,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             collect_stmt_block(else_body, uses);
         }
         Stmt::LetActionReceive { pattern, action } => {
-            collect_binding_expr_stmt(pattern, action, uses);
+            collect_binding_expr_stmt(pattern, action.expr(), uses);
         }
         Stmt::LetChoice { choice, .. } => collect_choice_stmt(choice, uses),
         Stmt::LetScope { scope, .. } => {
@@ -677,8 +677,8 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Break {
             expr: Some(expr), ..
         }
-        | Stmt::Select(expr)
         | Stmt::Out { expr, .. } => collect_expr(expr, uses),
+        Stmt::Select(expr) => collect_expr(expr.expr(), uses),
         Stmt::Wait(target) => collect_wait_target(target, uses),
         Stmt::On { body, .. } | Stmt::Loop { body } => collect_stmt_block(body, uses),
         Stmt::UnsafeLifetime { reason, body, .. } => {
@@ -692,12 +692,12 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             body,
             else_body,
         } => {
-            collect_expr(condition, uses);
+            collect_expr(condition.expr(), uses);
             collect_stmt_block(body, uses);
             collect_stmt_block(else_body, uses);
         }
         Stmt::While { condition, body } => {
-            collect_expr(condition, uses);
+            collect_expr(condition.expr(), uses);
             collect_stmt_block(body, uses);
         }
         Stmt::WhileLet {
@@ -707,9 +707,9 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             body,
         } => {
             collect_pattern(pattern, uses);
-            collect_expr(expr, uses);
+            collect_expr(expr.expr(), uses);
             if let Some(guard) = guard {
-                collect_expr(guard, uses);
+                collect_expr(guard.expr(), uses);
             }
             collect_stmt_block(body, uses);
         }
@@ -719,10 +719,10 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             body,
         } => {
             collect_pattern(pattern, uses);
-            collect_expr(source, uses);
+            collect_expr(source.expr(), uses);
             collect_stmt_block(body, uses);
         }
-        Stmt::Match { expr, arms } => collect_stmt_match(expr, arms, uses),
+        Stmt::Match { expr, arms } => collect_stmt_match(expr.expr(), arms, uses),
         Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
         Stmt::Raw(raw) => collect_raw_stmt(raw, uses),
     }
@@ -844,7 +844,7 @@ fn collect_trigger_pattern(trigger: &TriggerPattern, uses: &mut Vec<SymbolUse>) 
 fn collect_dialogue_content(tokens: &[DialogueToken], uses: &mut Vec<SymbolUse>) {
     for token in tokens {
         if let DialogueToken::Expr(expr) = token {
-            collect_expr(expr, uses);
+            collect_expr(expr.expr(), uses);
         }
     }
 }

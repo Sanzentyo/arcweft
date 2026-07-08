@@ -6,11 +6,12 @@ use super::{
     TypeChecker, TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
     type_contains_borrow_ref, unify_loop_break_types,
 };
+use arcweft_lang_syntax::ast::flow::AuthoredExpr;
 
 impl TypeChecker<'_> {
-    pub(super) fn check_yield_stmt(&mut self, expr: &Expr) {
+    pub(super) fn check_yield_stmt(&mut self, expr: &AuthoredExpr) {
         self.reject_active_borrows(SuspensionBoundary::Yield);
-        let actual = self.check_expr(expr);
+        let actual = self.check_authored_expr(expr);
         let Some(context) = self.yield_stack.last_mut() else {
             self.errors.push(TypeCheckError::new(
                 "`yield` is only valid in `seq`, `stream`, or `source` contexts".to_owned(),
@@ -129,17 +130,21 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_while_block(&mut self, block: &arcweft_lang_hir::model::HirWhile) {
-        self.expect_expr_type(block.condition(), &TypeKind::Bool, "while condition");
+        self.expect_authored_expr_type(
+            block.condition_authored(),
+            &TypeKind::Bool,
+            "while condition",
+        );
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
     }
 
     pub(super) fn check_if_let_block(&mut self, block: &arcweft_lang_hir::model::HirIfLet) {
-        let expr_type = self.check_expr(block.expr());
+        let expr_type = self.check_authored_expr(block.expr_authored());
         let borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(block.pattern(), expr_type.as_ref()));
-        if let Some(guard) = block.guard() {
-            self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
+        if let Some(guard) = block.guard_authored() {
+            self.expect_authored_expr_type(guard, &TypeKind::Bool, "if-let guard");
         }
         self.check_flow_items(block.body());
         let then_state = self.capture_borrow_state_delta(borrow_checkpoint);
@@ -155,12 +160,12 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_while_let_block(&mut self, block: &arcweft_lang_hir::model::HirWhileLet) {
-        let expr_type = self.check_expr(block.expr());
+        let expr_type = self.check_authored_expr(block.expr_authored());
         let borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(block.pattern(), expr_type.as_ref()));
-        if let Some(guard) = block.guard() {
-            self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
+        if let Some(guard) = block.guard_authored() {
+            self.expect_authored_expr_type(guard, &TypeKind::Bool, "while-let guard");
         }
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
         self.restore_borrow_state(borrow_checkpoint);
@@ -168,7 +173,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_for_block(&mut self, block: &arcweft_lang_hir::model::HirFor) {
-        let source_ty = self.check_expr(block.source());
+        let source_ty = self.check_authored_expr(block.source_authored());
         let borrow_checkpoint = self.checkpoint_borrow_state();
         let item_ty = self
             .check_for_iteration_source(source_ty.as_ref())

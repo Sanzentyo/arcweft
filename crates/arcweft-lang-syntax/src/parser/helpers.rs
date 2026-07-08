@@ -6,6 +6,7 @@ use super::headers::{
     parse_required_entity_ref_syntax, parse_required_id_ref, parse_visibility_prefix, simple_error,
 };
 use super::line_plan::parse_line_plan_body;
+use super::line_plan::parse_line_plan_body_with_body_base;
 use super::recovery::ParseError;
 use super::statements::parse_label_ref;
 use crate::ast::{
@@ -297,17 +298,36 @@ pub(super) fn split_comma_args(source: &str) -> Vec<&str> {
     split_top_level_punctuation(source, ',')
 }
 
+pub(super) struct LogicalBlockItem<'a> {
+    pub(super) source: Cow<'a, str>,
+    pub(super) base: usize,
+}
+
 pub(super) fn collect_logical_block_items(body: &str) -> Vec<Cow<'_, str>> {
-    let mut lines: Vec<Cow<'_, str>> = Vec::new();
-    let mut current: Option<String> = None;
+    collect_logical_block_items_with_base(body, 0)
+        .into_iter()
+        .map(|item| item.source)
+        .collect()
+}
+
+pub(super) fn collect_logical_block_items_with_base(
+    body: &str,
+    body_base: usize,
+) -> Vec<LogicalBlockItem<'_>> {
+    let mut lines: Vec<LogicalBlockItem<'_>> = Vec::new();
+    let mut current: Option<(String, usize)> = None;
     let mut depth = 0_i32;
     let line_deltas = CstPunctuationScan::new(body).line_deltas(body);
+    let mut line_base = body_base;
 
     for (line_index, raw_line) in body.lines().enumerate() {
+        let raw_line_base = line_base;
+        line_base += raw_line.len() + '\n'.len_utf8();
         if raw_line.trim().is_empty() {
             continue;
         }
         let trimmed = raw_line.trim_start();
+        let trimmed_base = raw_line_base + raw_line.len() - trimmed.len();
         // Method-chain continuation lines belong to the preceding logical item.
         // Without this, multi-line `Option.context(...)?` or `Need.context(...)`
         // parses the dot line as an unrelated raw flow item.
@@ -315,10 +335,10 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<Cow<'_, str>> {
             && trimmed.starts_with('.')
             && let Some(previous) = lines.pop()
         {
-            current = Some(previous.into_owned());
+            current = Some((previous.source.into_owned(), previous.base));
         }
-        if let Some(current) = current.as_mut() {
-            if !current.is_empty() {
+        if let Some((current, _)) = current.as_mut() {
+            if !current.trim().is_empty() {
                 current.push('\n');
             }
             current.push_str(raw_line);
@@ -326,19 +346,34 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<Cow<'_, str>> {
         let deltas = line_deltas.get(line_index).copied().unwrap_or_default();
         depth += deltas.brace + deltas.paren + deltas.bracket;
         if depth <= 0 {
-            let line = current.take().map_or(Cow::Borrowed(raw_line), Cow::Owned);
-            lines.push(line);
+            let item = current.take().map_or_else(
+                || LogicalBlockItem {
+                    source: Cow::Borrowed(trimmed),
+                    base: trimmed_base,
+                },
+                |(source, base)| trimmed_logical_block_item(&source, base),
+            );
+            lines.push(item);
             depth = 0;
         } else if current.is_none() {
-            current = Some(raw_line.to_owned());
+            current = Some((trimmed.to_owned(), trimmed_base));
         }
     }
-    if let Some(current) = current
+    if let Some((current, base)) = current
         && !current.trim().is_empty()
     {
-        lines.push(Cow::Owned(current));
+        lines.push(trimmed_logical_block_item(&current, base));
     }
     lines
+}
+
+fn trimmed_logical_block_item(source: &str, base: usize) -> LogicalBlockItem<'static> {
+    let start_trim = source.len() - source.trim_start().len();
+    let end = source.trim_end().len();
+    LogicalBlockItem {
+        source: Cow::Owned(source[start_trim..end].to_owned()),
+        base: base + start_trim,
+    }
 }
 
 pub(super) fn split_brace_item(source: &str) -> Option<(&str, &str)> {
@@ -441,6 +476,20 @@ pub(super) fn parse_line_plan_attachment(
     errors: &mut Vec<ParseError>,
 ) -> LinePlan {
     attach_line_plan_label(parse_line_plan_body(style, body, range, errors), label)
+}
+
+pub(super) fn parse_line_plan_attachment_with_body_base(
+    style: BlockStyle,
+    body: &str,
+    body_base: usize,
+    range: TextRange,
+    label: Option<String>,
+    errors: &mut Vec<ParseError>,
+) -> LinePlan {
+    attach_line_plan_label(
+        parse_line_plan_body_with_body_base(style, body, body_base, range, errors),
+        label,
+    )
 }
 
 pub(super) fn flat_block_head(kind: &str, head: &str) -> String {

@@ -1,6 +1,6 @@
 use crate::ast::choice::{
     ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan,
-    ChoicePlanItem, ChoiceUiField,
+    ChoicePlanItem, ChoiceViewField,
 };
 use crate::ast::common::TextRange;
 use crate::ast::flow::Stmt;
@@ -387,7 +387,7 @@ fn parse_choice_option_block(
     let mut visible = None;
     let mut order = None;
     let mut hotkey = None;
-    let mut ui_fields = Vec::new();
+    let mut view_fields = Vec::new();
     let mut action = ChoiceAction::None;
 
     for line in collect_logical_block_items(body) {
@@ -422,11 +422,11 @@ fn parse_choice_option_block(
             order = Some(parse_expr_lossy(value.trim()));
         } else if let Some(value) = trimmed.strip_prefix("hotkey =") {
             hotkey = Some(parse_expr_lossy(value.trim()));
-        } else if let Some((head, ui_body)) = split_brace_item(trimmed) {
-            if head == "ui" {
-                ui_fields = parse_choice_ui_fields(ui_body);
+        } else if let Some((head, view_body)) = split_brace_item(trimmed) {
+            if head == "view" {
+                view_fields = parse_choice_view_fields(view_body);
             } else if head == "select" {
-                action = parse_choice_select_action(ui_body);
+                action = parse_choice_select_action(view_body);
             }
         }
     }
@@ -453,15 +453,15 @@ fn parse_choice_option_block(
     if let Some(hotkey) = hotkey {
         option = option.with_hotkey(hotkey);
     }
-    Some(option.with_ui_fields(ui_fields))
+    Some(option.with_view_fields(view_fields))
 }
 
-fn parse_choice_ui_fields(body: &str) -> Vec<ChoiceUiField> {
+fn parse_choice_view_fields(body: &str) -> Vec<ChoiceViewField> {
     body.lines()
         .map(str::trim)
         .filter_map(|line| {
             let (name, value) = split_top_level_binding(line)?;
-            Some(ChoiceUiField::new(
+            Some(ChoiceViewField::new(
                 name.trim().to_owned(),
                 parse_expr_lossy(value.trim()),
             ))
@@ -472,7 +472,10 @@ fn parse_choice_ui_fields(body: &str) -> Vec<ChoiceUiField> {
 fn parse_choice_select_action(body: &str) -> ChoiceAction {
     let statements = parse_stmt_lines(body);
     match statements.as_slice() {
-        [Stmt::Goto(crate::expr::Expr::EntityRef(target))] => ChoiceAction::Goto(target.clone()),
+        [Stmt::Goto(target)] => match target.expr() {
+            crate::expr::Expr::EntityRef(target) => ChoiceAction::Goto(target.clone()),
+            _ => ChoiceAction::SelectBlock(statements),
+        },
         [Stmt::Out { expr, .. }] => ChoiceAction::Out(expr.clone()),
         [] => ChoiceAction::None,
         _ => ChoiceAction::SelectBlock(statements),

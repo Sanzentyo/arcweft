@@ -91,7 +91,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_flow_if_block(&mut self, block: &arcweft_lang_hir::model::HirIf) {
-        self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
+        self.expect_authored_expr_type(block.condition_authored(), &TypeKind::Bool, "if condition");
         let borrow_checkpoint = self.checkpoint_borrow_state();
         self.check_flow_items(block.body());
         let then_state = self.capture_borrow_state_delta(borrow_checkpoint);
@@ -106,15 +106,15 @@ impl TypeChecker<'_> {
     }
 
     fn check_flow_match_block(&mut self, block: &arcweft_lang_hir::model::HirMatch) {
-        let expr_type = self.check_expr(block.expr());
+        let expr_type = self.check_authored_expr(block.expr_authored());
         let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let mut arm_states = Vec::new();
         for arm in block.arms() {
             self.restore_borrow_state(base_borrow_checkpoint);
             let local_snapshot =
                 self.insert_scoped_locals(let_else_bindings(arm.pattern(), expr_type.as_ref()));
-            if let Some(guard) = arm.guard() {
-                self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
+            if let Some(guard) = arm.guard_authored() {
+                self.expect_authored_expr_type(guard, &TypeKind::Bool, "match arm guard");
             }
             self.check_flow_items(arm.body());
             arm_states.push(self.capture_borrow_state_delta(base_borrow_checkpoint));

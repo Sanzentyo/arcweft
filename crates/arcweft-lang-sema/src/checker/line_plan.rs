@@ -228,10 +228,15 @@ impl TypeChecker<'_> {
         let mut marks = HashSet::new();
         for token in tokens {
             match token {
-                DialogueToken::Expr(expr) => {
-                    let expr_ty = self.check_expr(expr);
+                DialogueToken::Expr(expr_token) => {
+                    self.register_expr_source_ranges(
+                        expr_token.expr(),
+                        Some(expr_token.source()),
+                        Some(expr_token.range()),
+                    );
+                    let expr_ty = self.check_expr(expr_token.expr());
                     reject_fallible_inline_value_without_failure_policy(
-                        expr,
+                        expr_token.expr(),
                         expr_ty.as_ref(),
                         has_default_inline_failure_policy,
                         &mut self.errors,

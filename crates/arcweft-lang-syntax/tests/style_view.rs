@@ -1,6 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{
-        items::{Item, UiStyleValueDecl},
+        items::{Item, ViewStyleValueDecl},
         style::StyleSyntax,
         view::{
             ViewAction, ViewActionPayload, ViewAwaitBranchKind, ViewExpr, ViewModifier,
@@ -59,11 +59,11 @@ pub style danger_button: .Css {
     );
     assert_eq!(
         active_declarations[0].value(),
-        &UiStyleValueDecl::Milli(920)
+        &ViewStyleValueDecl::Milli(920)
     );
     assert_eq!(
         active_declarations[2].value(),
-        &UiStyleValueDecl::Text("12px".to_owned())
+        &ViewStyleValueDecl::Text("12px".to_owned())
     );
     assert!(
         styles[2]
@@ -524,57 +524,6 @@ pub view ListForm() {
         messages
             .iter()
             .any(|message| message.contains("unsupported View expression head `Badge`"))
-    );
-}
-
-#[test]
-fn top_level_ui_text_input_is_rejected() {
-    let parsed = parse_source(
-        r#"
-ui text_input @input.feedback {
-  label = "Message"
-}
-"#,
-    );
-
-    assert!(
-        parsed
-            .typed_tree()
-            .items()
-            .iter()
-            .any(|item| matches!(item, Item::Raw(_)))
-    );
-    assert!(
-        !parsed
-            .errors()
-            .iter()
-            .any(|error| error.message().contains("removed"))
-    );
-}
-
-#[test]
-fn ui_action_button_is_rejected() {
-    let parsed = parse_source(
-        r#"
-ui action_button @button.send {
-  label = "Send"
-  action = @action.feedback.submit
-}
-"#,
-    );
-
-    assert!(
-        parsed
-            .typed_tree()
-            .items()
-            .iter()
-            .any(|item| matches!(item, Item::Raw(_)))
-    );
-    assert!(
-        !parsed
-            .errors()
-            .iter()
-            .any(|error| error.message().contains("ui action_button"))
     );
 }
 

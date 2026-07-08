@@ -1,5 +1,5 @@
 use super::support::*;
-use crate::check::{ForIterationEvidenceFamily, StandardIteratorFamily};
+use crate::check::{ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport};
 
 #[test]
 fn typechecks_flow_signature_parameters_as_locals() {
@@ -1265,11 +1265,878 @@ flow @flow.source_ranges source_ranges {
                     TypeJudgmentSubject::Expr { kind, .. },
                     TypeJudgmentRule::Expr,
                     TypeKind::I32
-                ) if *kind == "literal" && judgment.source_range.is_none()
+                ) if *kind == "literal"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "1i32")
             )
         }),
-        "child literal judgments should not inherit the root let RHS range"
+        "child literal judgments should carry their own source ranges"
     );
+}
+
+#[test]
+fn nested_let_rhs_expression_judgments_carry_source_ranges() {
+    let source = r"
+fn add(lhs: i64, rhs: i64) -> i64 {
+    lhs + rhs
+}
+
+flow @flow.nested_source_ranges nested_source_ranges {
+    let base = 2i64
+    let total = add(1i64, base + 3i64)
+    let piped = base |> add(4i64)
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("nested source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::I64
+                ) if *kind == "binary"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "base + 3i64")
+            )
+        }),
+        "nested call argument expression should carry its own range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::I64
+                ) if *kind == "call"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "add(4i64)")
+            )
+        }),
+        "pipe RHS call expression should keep the authored RHS range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::I64
+                ) if *kind == "pipe"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "base |> add(4i64)")
+            )
+        }),
+        "pipe expression should retain the full authored pipe range"
+    );
+}
+
+#[test]
+fn desugared_function_stack_expression_judgments_keep_authored_source_ranges() {
+    let source = r#"
+struct Choice {
+    label: String,
+    enabled: bool,
+}
+
+fn add(lhs: i64, rhs: i64) -> i64 {
+    lhs + rhs
+}
+
+fn above(min: i64, value: i64) -> bool {
+    value >= min
+}
+
+flow @flow.desugared_source_ranges desugared_source_ranges {
+    let threshold = 80i64
+    let values: Vec<i64> = [79i64, 81i64]
+    let choice = Choice { label: "Start", enabled: true }
+    let label = choice.label
+    let high = values.filter(_ > threshold)
+    let mapped = values.map(|value: i64| value + 1i64)
+    let pipe_with_placeholder = threshold |> add(^, 11i64)
+    let pipe_data_last = threshold |> add(22i64)
+    let method_fallback = threshold.above(70i64)
+}
+"#;
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("desugared source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "_ > threshold",
+        |ty| matches!(ty, TypeKind::Bool | TypeKind::Function { .. }),
+        "partial-placeholder abstraction body should keep the authored body range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "select",
+        "choice.label",
+        |ty| matches!(ty, TypeKind::String),
+        "ordinary selector expressions should retain the full visible selector range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "path",
+        "choice",
+        |ty| matches!(ty, TypeKind::Named(name) if name == "Choice"),
+        "selector target expressions should retain their authored receiver range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "value + 1i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "closure body expression should keep its authored body range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "11i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "pipe RHS `^` substitution should keep source ranges for authored RHS children",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "22i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "data-last pipe rewriting should keep source ranges for authored RHS children",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "call",
+        "threshold.above(70i64)",
+        |ty| matches!(ty, TypeKind::Bool),
+        "method-chain data-last fallback should retain the visible method-call range",
+    );
+    assert!(
+        !report.judgments.iter().any(|judgment| {
+            judgment
+                .source_range
+                .is_some_and(|range| &source[range.as_range()] == "^")
+        }),
+        "substituted pipe LHS must not pretend the `^` token is the authored LHS range"
+    );
+}
+
+fn assert_expr_source_judgment(
+    report: &TypeCheckReport,
+    source: &str,
+    kind: &str,
+    source_snippet: &str,
+    ty_matches: impl Fn(&TypeKind) -> bool,
+    message: &str,
+) {
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.subject,
+                TypeJudgmentSubject::Expr { kind: actual_kind, .. } if *actual_kind == kind
+            ) && ty_matches(&judgment.ty)
+                && judgment
+                    .source_range
+                    .is_some_and(|range| &source[range.as_range()] == source_snippet)
+        }),
+        "{message}; candidates: {:?}",
+        report
+            .judgments
+            .iter()
+            .filter_map(|judgment| {
+                let TypeJudgmentSubject::Expr { kind, .. } = &judgment.subject else {
+                    return None;
+                };
+                let source_range = judgment.source_range?;
+                Some((
+                    *kind,
+                    judgment.ty.source_label(),
+                    source[source_range.as_range()].to_owned(),
+                ))
+            })
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn assignment_statement_rhs_judgments_carry_source_ranges() {
+    let source = r"
+struct Counter {
+    value: i64,
+}
+
+flow @flow.assignment_source_ranges assignment_source_ranges {
+    let counter = Counter { value: 1i64 }
+    counter.value = counter.value + 2i64
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("assignment source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "counter.value + 2i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "assignment RHS root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "2i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "assignment RHS literal should carry its own authored range",
+    );
+}
+
+#[test]
+fn action_receive_and_defer_judgments_carry_source_ranges() {
+    let source = r"
+pub action feedback.submit(value: String)
+
+flow @flow.action_defer_source_ranges action_defer_source_ranges {
+    let event = receive action(@action:.feedback.submit)
+    defer 3i64 + 4i64
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("action/defer source range fixture lowers");
+    validate_hir_references(&hir, &registry_from_hir(&hir))
+        .expect("action/defer source range references resolve");
+    let report = analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "entity_ref",
+        "@action:.feedback.submit",
+        |ty| ty.is_entity_ref_kind(&EntityKind::Action),
+        "receive action target should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "3i64 + 4i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "defer expression root should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "4i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "defer expression child literal should carry its own range",
+    );
+}
+
+#[test]
+fn return_and_expression_statement_judgments_carry_source_ranges() {
+    let source = r"
+fn ret() -> i64 {
+    3i64 + 4i64
+    return 1i64 + 2i64
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("statement source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+
+    let return_judgment = report
+        .judgments
+        .iter()
+        .find(|judgment| {
+            matches!(
+                (&judgment.subject, judgment.rule, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Return { context },
+                    TypeJudgmentRule::Return,
+                    TypeKind::I64
+                ) if context == "tail block expression"
+            )
+        })
+        .expect("return statement should be judged");
+    let return_range = return_judgment
+        .source_range
+        .expect("return judgment should retain its expression source range");
+    assert_eq!(&source[return_range.as_range()], "1i64 + 2i64");
+
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::I64
+                ) if *kind == "binary"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "3i64 + 4i64")
+            )
+        }),
+        "expression statement root should carry its full authored range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::I64
+                ) if *kind == "literal"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "4i64")
+            )
+        }),
+        "expression statement child literal should carry its own range"
+    );
+}
+
+#[test]
+fn control_transfer_statement_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.control_source_ranges control_source_ranges {
+    goto @flow.next
+    close @flow.next
+    let _line = alice.say()[Pick one.] with {
+        select @choice.primary
+    }
+}
+
+stream fn sample_stream(frames: Stream<i64, String>) -> Stream<i64, String> {
+    yield 1i64 + 2i64
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("control-transfer source range fixture lowers");
+    let report = analyze_types(
+        &hir,
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    ty
+                ) if *kind == "entity_ref"
+                    && ty.is_entity_ref_kind(&EntityKind::Flow)
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "@flow.next")
+            )
+        }),
+        "goto destination should retain its authored range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    ty
+                ) if *kind == "entity_ref"
+                    && ty.is_entity_ref_kind(&EntityKind::Choice)
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "@choice.primary")
+            )
+        }),
+        "line-plan select target should retain its authored range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::I64
+                ) if *kind == "binary"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "1i64 + 2i64")
+            )
+        }),
+        "yield expression should retain its authored range"
+    );
+}
+
+#[test]
+fn control_statement_expression_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.control_stmt_source_ranges control_stmt_source_ranges {
+    let ready = true
+    let keep_going = false
+    let selected = true
+    let values: Vec<i64> = [1i64, 2i64]
+    if ready && true {
+        let then_value = 1i64
+    }
+    while keep_going {
+        break
+    }
+    for value in values {
+        let copy = value
+    }
+    match selected {
+        true => let truthy = 1i64
+        false => let falsy = 0i64
+    }
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("control statement source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::Bool
+                ) if *kind == "binary"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "ready && true")
+            )
+        }),
+        "if condition root expression should carry its source range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::Bool
+                ) if *kind == "path"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "keep_going")
+            )
+        }),
+        "while condition expression should carry its source range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::Vec(_)
+                ) if *kind == "path"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "values")
+            )
+        }),
+        "for source expression should carry its source range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::Bool
+                ) if *kind == "path"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "selected")
+            )
+        }),
+        "match scrutinee expression should carry its source range"
+    );
+}
+
+#[test]
+fn dialogue_interpolation_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.dialogue_source_ranges dialogue_source_ranges {
+    alice: Score #[score + 1i64] / $( player_name )[p]
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("dialogue source range fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
+        .with_symbol("score", TypeKind::I64)
+        .with_symbol("player_name", TypeKind::String);
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::I64
+                ) if *kind == "binary"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "score + 1i64")
+            )
+        }),
+        "dialogue binary interpolation should retain its authored range"
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeKind::String
+                ) if *kind == "path"
+                    && judgment
+                        .source_range
+                        .is_some_and(|range| &source[range.as_range()] == "player_name")
+            )
+        }),
+        "dialogue path interpolation should retain its trimmed authored range"
+    );
+}
+
+#[test]
+fn container_and_control_expression_judgments_carry_source_ranges() {
+    let source = r#"
+struct Choice {
+    label: String,
+    enabled: bool,
+}
+
+flow @flow.container_source_ranges container_source_ranges {
+    let ready = true
+    let limit = 8i64
+    let pair = (101i64, 202i64)
+    let numbers: Vec<i64> = [303i64, 404i64]
+    let repeated: Array<i64, 2> = [505i64; 2]
+    let picked = numbers[1i64]
+    let bounded = 1i64..=limit
+    let choice = Choice { label: "Start", enabled: ready }
+    let block_value = { 606i64 + 707i64 }
+    let if_value = if ready {
+        808i64
+    } else {
+        909i64
+    }
+    let if_let_value = if let .Some(value) = maybe when ready && true {
+        value
+    } else {
+        0i64
+    }
+    let match_value = match ready {
+        true => 1001i64
+        false => 1002i64
+    }
+}
+"#;
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("container/control source range fixture lowers");
+    let report = analyze_types(
+        &hir,
+        &TypeCheckEnv::new().with_symbol("maybe", TypeKind::Option(Box::new(TypeKind::I64))),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "tuple",
+        "(101i64, 202i64)",
+        |ty| matches!(ty, TypeKind::Tuple(items) if items == &[TypeKind::I64, TypeKind::I64]),
+        "tuple root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "numeric_bracket_seq",
+        "[303i64, 404i64]",
+        |ty| matches!(ty, TypeKind::Vec(item) if item.as_ref() == &TypeKind::I64),
+        "bracket sequence root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "array_repeat",
+        "[505i64; 2]",
+        |ty| matches!(ty, TypeKind::Array { item, len } if item.as_ref() == &TypeKind::I64 && len == "2"),
+        "array repeat root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "505i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "array repeat value should carry its own authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "index",
+        "numbers[1i64]",
+        |ty| matches!(ty, TypeKind::I64),
+        "index root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "range",
+        "1i64..=limit",
+        |ty| matches!(ty, TypeKind::Range(item) if item.as_ref() == &TypeKind::I64),
+        "range root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "record",
+        r#"Choice { label: "Start", enabled: ready }"#,
+        |ty| matches!(ty, TypeKind::Named(name) if name == "Choice"),
+        "nominal record constructor should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "path",
+        "ready",
+        |ty| matches!(ty, TypeKind::Bool),
+        "record field values should carry their authored ranges",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "block",
+        "{ 606i64 + 707i64 }",
+        |ty| matches!(ty, TypeKind::I64),
+        "block expression root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "606i64 + 707i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "block final value should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "if",
+        "if ready {\n        808i64\n    } else {\n        909i64\n    }",
+        |ty| matches!(ty, TypeKind::I64),
+        "if expression root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "if_let",
+        "if let .Some(value) = maybe when ready && true {\n        value\n    } else {\n        0i64\n    }",
+        |ty| matches!(ty, TypeKind::I64),
+        "if-let expression root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "path",
+        "maybe",
+        |ty| matches!(ty, TypeKind::Option(item) if item.as_ref() == &TypeKind::I64),
+        "if-let scrutinee should not absorb the guard source",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "ready && true",
+        |ty| matches!(ty, TypeKind::Bool),
+        "if-let guard should carry its own authored range",
+    );
+    assert!(
+        !report.judgments.iter().any(|judgment| {
+            judgment
+                .source_range
+                .is_some_and(|range| &source[range.as_range()] == "maybe when ready && true")
+        }),
+        "if-let scrutinee range must stop before `when` guard source"
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "match",
+        "match ready {\n        true => 1001i64\n        false => 1002i64\n    }",
+        |ty| matches!(ty, TypeKind::I64),
+        "match expression root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "1002i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "match arm values should carry their authored ranges",
+    );
+}
+
+#[test]
+fn effect_and_prefix_expression_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.await_question_source_ranges await_question_source_ranges {
+    let bg = await? load_bg()
+}
+
+fn option_source_ranges(maybe: Option<i64>, flag: bool) -> Option<i64> {
+    let unwrapped = maybe?
+    let prefix = try Some(unwrapped)
+    let negated = -unwrapped
+    let inverted = !flag
+    return Some(prefix + negated)
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("effect/prefix source range fixture lowers");
+    let env = TypeCheckEnv::new().with_function(
+        "load_bg",
+        TypeKind::Need {
+            ready: Box::new(TypeKind::Named("Image".to_owned())),
+            error: Box::new(TypeKind::Named("AssetError".to_owned())),
+        },
+    );
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "await",
+        "await? load_bg()",
+        |ty| matches!(ty, TypeKind::Named(name) if name == "Image"),
+        "await? root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "call",
+        "load_bg()",
+        |ty| matches!(ty, TypeKind::Need { ready, .. } if ready.as_ref() == &TypeKind::Named("Image".to_owned())),
+        "await? inner call should start after the question marker",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "try",
+        "maybe?",
+        |ty| matches!(ty, TypeKind::I64),
+        "postfix try root should carry the full question expression range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "path",
+        "maybe",
+        |ty| matches!(ty, TypeKind::Option(item) if item.as_ref() == &TypeKind::I64),
+        "postfix try operand should keep its own source range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "try",
+        "try Some(unwrapped)",
+        |ty| matches!(ty, TypeKind::I64),
+        "prefix try root should carry the full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "call",
+        "Some(unwrapped)",
+        |ty| matches!(ty, TypeKind::Option(item) if item.as_ref() == &TypeKind::I64),
+        "prefix try operand should keep its own source range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "unary",
+        "-unwrapped",
+        |ty| matches!(ty, TypeKind::I64),
+        "numeric unary expression should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "unary",
+        "!flag",
+        |ty| matches!(ty, TypeKind::Bool),
+        "boolean unary expression should carry its full authored range",
+    );
+    assert!(!report.judgments.iter().any(|judgment| {
+        judgment
+            .source_range
+            .is_some_and(|range| &source[range.as_range()] == "? load_bg()")
+    }));
 }
 
 #[test]

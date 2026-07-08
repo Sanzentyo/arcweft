@@ -91,14 +91,14 @@ pub struct ChoiceOption {
     visible: Option<Expr>,
     order: Option<Expr>,
     hotkey: Option<Expr>,
-    ui_fields: Vec<ChoiceUiField>,
+    view_fields: Vec<ChoiceViewField>,
     action: ChoiceAction,
     range: TextRange,
 }
 
-/// UI state propagated from a choice option to rendering, accessibility, and Agent observation.
+/// View state propagated from a choice option to rendering, accessibility, and Agent observation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ChoiceUiField {
+pub struct ChoiceViewField {
     name: String,
     value: Expr,
 }
@@ -129,7 +129,7 @@ impl ChoiceOption {
             visible: None,
             order: None,
             hotkey: None,
-            ui_fields: Vec::new(),
+            view_fields: Vec::new(),
             action,
             range,
         }
@@ -170,8 +170,8 @@ impl ChoiceOption {
         self
     }
 
-    pub(crate) fn with_ui_fields(mut self, ui_fields: Vec<ChoiceUiField>) -> Self {
-        self.ui_fields = ui_fields;
+    pub(crate) fn with_view_fields(mut self, view_fields: Vec<ChoiceViewField>) -> Self {
+        self.view_fields = view_fields;
         self
     }
 
@@ -215,8 +215,8 @@ impl ChoiceOption {
         self.hotkey.as_ref()
     }
 
-    pub fn ui_fields(&self) -> &[ChoiceUiField] {
-        &self.ui_fields
+    pub fn view_fields(&self) -> &[ChoiceViewField] {
+        &self.view_fields
     }
 
     pub const fn action(&self) -> &ChoiceAction {
@@ -235,7 +235,7 @@ impl ChoiceOption {
     }
 }
 
-impl ChoiceUiField {
+impl ChoiceViewField {
     pub(crate) const fn new(name: String, value: Expr) -> Self {
         Self { name, value }
     }

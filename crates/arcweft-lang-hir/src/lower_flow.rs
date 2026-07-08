@@ -189,7 +189,7 @@ fn lower_loop(block: &LoopBlock, context: &mut LowerContext) -> Result<HirLoop, 
 
 fn lower_while(block: &WhileBlock, context: &mut LowerContext) -> Result<HirWhile, HirLowerError> {
     Ok(HirWhile {
-        condition: block.condition().clone(),
+        condition: block.condition_authored().clone(),
         body: block
             .body()
             .iter()
@@ -204,8 +204,8 @@ fn lower_while_let(
 ) -> Result<HirWhileLet, HirLowerError> {
     Ok(HirWhileLet {
         pattern: block.pattern().clone(),
-        expr: block.expr().clone(),
-        guard: block.guard().cloned(),
+        expr: block.expr_authored().clone(),
+        guard: block.guard_authored().cloned(),
         body: block
             .body()
             .iter()
@@ -217,7 +217,7 @@ fn lower_while_let(
 fn lower_for(block: &ForBlock, context: &mut LowerContext) -> Result<HirFor, HirLowerError> {
     Ok(HirFor {
         pattern: block.pattern().clone(),
-        source: block.source().clone(),
+        source: block.source_authored().clone(),
         body: block
             .body()
             .iter()
@@ -250,7 +250,7 @@ fn lower_select(
 
 fn lower_if(block: &IfBlock, context: &mut LowerContext) -> Result<HirIf, HirLowerError> {
     Ok(HirIf {
-        condition: block.condition().clone(),
+        condition: block.condition_authored().clone(),
         body: block
             .body()
             .iter()
@@ -267,8 +267,8 @@ fn lower_if(block: &IfBlock, context: &mut LowerContext) -> Result<HirIf, HirLow
 fn lower_if_let(block: &IfLetBlock, context: &mut LowerContext) -> Result<HirIfLet, HirLowerError> {
     Ok(HirIfLet {
         pattern: block.pattern().clone(),
-        expr: block.expr().clone(),
-        guard: block.guard().cloned(),
+        expr: block.expr_authored().clone(),
+        guard: block.guard_authored().cloned(),
         body: block
             .body()
             .iter()
@@ -284,14 +284,14 @@ fn lower_if_let(block: &IfLetBlock, context: &mut LowerContext) -> Result<HirIfL
 
 fn lower_match(block: &MatchBlock, context: &mut LowerContext) -> Result<HirMatch, HirLowerError> {
     Ok(HirMatch {
-        expr: block.expr().clone(),
+        expr: block.expr_authored().clone(),
         arms: block
             .arms()
             .iter()
             .map(|arm| {
                 Ok(HirMatchArm {
                     pattern: arm.pattern().clone(),
-                    guard: arm.guard().cloned(),
+                    guard: arm.guard_authored().cloned(),
                     body: arm
                         .body()
                         .iter()

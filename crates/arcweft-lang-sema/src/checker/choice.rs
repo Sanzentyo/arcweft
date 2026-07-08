@@ -115,7 +115,7 @@ impl TypeChecker<'_> {
         if let Some(hotkey) = option.hotkey() {
             self.check_expr(hotkey);
         }
-        for field in option.ui_fields() {
+        for field in option.view_fields() {
             self.check_expr(field.value());
         }
         self.check_choice_action(option.action());

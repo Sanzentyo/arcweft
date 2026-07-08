@@ -47,7 +47,10 @@ use game.prelude.*
     assert_eq!(flow.body().len(), 2);
     assert!(matches!(
         &flow.body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+        FlowItem::Stmt(Stmt::Expr {
+            expr: Expr::Call { .. },
+            ..
+        })
     ));
     assert!(matches!(&flow.body()[1], FlowItem::Include(_)));
 }
@@ -130,7 +133,11 @@ flow @flow.opening opening {
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    let FlowItem::Stmt(Stmt::Expr(Expr::Call { callee, args })) = &flow.body()[0] else {
+    let FlowItem::Stmt(Stmt::Expr {
+        expr: Expr::Call { callee, args },
+        ..
+    }) = &flow.body()[0]
+    else {
         panic!("expected call statement");
     };
     assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "show"));

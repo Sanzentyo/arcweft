@@ -8,7 +8,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
 requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
 requires progress in 0.0..=1.0
-effects { asset.read, ui.show }
+effects { asset.read, view.show }
 ensures no_effect network.request
 {
     goto @flow.title
@@ -136,7 +136,7 @@ fn typechecks_flow_contract_expressions() {
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
 requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
-effects { asset.read, ui.show }
+effects { asset.read, view.show }
 ensures no_effect network.request
 {
     goto @flow.title
@@ -153,7 +153,7 @@ ensures no_effect network.request
         )
         .with_symbol("character", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("asset.read", TypeKind::Named("Effect".to_owned()))
-        .with_symbol("ui.show", TypeKind::Named("Effect".to_owned()))
+        .with_symbol("view.show", TypeKind::Named("Effect".to_owned()))
         .with_symbol("network.request", TypeKind::Named("Effect".to_owned()))
         .with_index(
             TypeKind::Named("OrderedMap<Character, i64>".to_owned()),

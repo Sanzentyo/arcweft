@@ -349,8 +349,8 @@ mod tests {
 
     #[test]
     fn effect_sets_are_sorted_and_deduplicated() {
-        let effects =
-            EffectSet::from_labels(["ui.show", "fs.read", "ui.show"]).expect("valid effect set");
-        assert_eq!(effects.to_labels(), vec!["fs.read", "ui.show"]);
+        let effects = EffectSet::from_labels(["view.show", "fs.read", "view.show"])
+            .expect("valid effect set");
+        assert_eq!(effects.to_labels(), vec!["fs.read", "view.show"]);
     }
 }

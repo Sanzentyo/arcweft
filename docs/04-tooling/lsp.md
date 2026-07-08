@@ -52,7 +52,7 @@
 - parser preview
 - shader diagnostics
 - audio cue / signal / BGM completion
-- UI view preview
+- View preview
 
 ## Effective presentation context
 

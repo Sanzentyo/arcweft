@@ -28,6 +28,7 @@ pub struct LspProfile {
     dialogue_defaults_selection: Option<ProfileSourceSelection>,
     characters: CharacterCatalog,
     diagnostics: Vec<LspProfileDiagnostic>,
+    arbitrary_expression_type_inlays: bool,
 }
 
 /// Source location of a launch-profile-selected setting.
@@ -49,6 +50,7 @@ impl LspProfile {
             dialogue_defaults_selection: None,
             characters: CharacterCatalog::new(),
             diagnostics: Vec::new(),
+            arbitrary_expression_type_inlays: false,
         }
     }
 
@@ -62,7 +64,15 @@ impl LspProfile {
             dialogue_defaults_selection: None,
             characters: CharacterCatalog::new(),
             diagnostics: Vec::new(),
+            arbitrary_expression_type_inlays: false,
         }
+    }
+
+    /// Enables or disables expression-level type inlays for this profile.
+    #[must_use]
+    pub const fn with_arbitrary_expression_type_inlays(mut self, enabled: bool) -> Self {
+        self.arbitrary_expression_type_inlays = enabled;
+        self
     }
 
     /// Adapter manifest selected for this profile.
@@ -100,6 +110,11 @@ impl LspProfile {
         self.dialogue_defaults_selection.as_ref()
     }
 
+    /// Whether expression-level type inlays are enabled for this profile.
+    pub const fn arbitrary_expression_type_inlays(&self) -> bool {
+        self.arbitrary_expression_type_inlays
+    }
+
     /// Builds a Sans I/O LSP context for helper calls.
     pub fn context(&self) -> ArcweftLspContext<'_> {
         ArcweftLspProfileContextBuilder::new(&self.adapter)
@@ -123,6 +138,7 @@ pub struct LspProfileResolver {
     runner: RuntimeHostRunnerKind,
     manifest_name: String,
     profile_id: Option<String>,
+    arbitrary_expression_type_inlays: bool,
 }
 
 /// One profile metadata diagnostic independent of source parsing.
@@ -184,12 +200,21 @@ impl LspProfileResolver {
             runner,
             manifest_name: DEFAULT_MANIFEST_NAME.to_owned(),
             profile_id,
+            arbitrary_expression_type_inlays: false,
         }
+    }
+
+    /// Carries editor-selected inlay policy into every resolved profile.
+    #[must_use]
+    pub const fn with_arbitrary_expression_type_inlays(mut self, enabled: bool) -> Self {
+        self.arbitrary_expression_type_inlays = enabled;
+        self
     }
 
     /// Minimal built-in profile used when no document-specific metadata is cached.
     pub fn default_profile(&self) -> LspProfile {
         LspProfile::default_for_runner(self.runner)
+            .with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
     }
 
     /// Resolves a profile for one LSP document URI.
@@ -302,13 +327,14 @@ impl LspProfileResolver {
             }),
             characters,
             diagnostics,
+            arbitrary_expression_type_inlays: self.arbitrary_expression_type_inlays,
         }
     }
 
     fn default_with_diagnostic(&self, diagnostic: LspProfileDiagnostic) -> LspProfile {
         let mut profile = LspProfile::default_for_runner(self.runner);
         profile.diagnostics.push(diagnostic);
-        profile
+        profile.with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
     }
 }
 

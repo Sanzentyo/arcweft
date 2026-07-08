@@ -113,7 +113,7 @@ Structured bindings:
 match event {
     .ChoiceSelected { id } => handle_choice(id)
     .TruckFinished { result: TruckResult { score, rank, .. } } => handle_rank(rank)
-    .Ui { event: ui_event } => handle_ui(ui_event)
+    .View { event: view_event } => handle_view(view_event)
     _ => ()
 }
 ```

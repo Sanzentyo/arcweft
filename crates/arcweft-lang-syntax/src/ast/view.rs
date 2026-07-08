@@ -1,7 +1,7 @@
 //! Syntax-level View DSL nodes for Arcweft views.
 //!
 //! These nodes are intentionally still syntax/HIR-facing. They preserve source
-//! structure for diagnostics and lowering without depending on runtime, UI, or
+//! structure for diagnostics and lowering without depending on runtime, View, or
 //! renderer crates.
 
 use crate::ast::common::TextRange;
@@ -1357,16 +1357,19 @@ fn collect_stmt_action_invokes(
 ) {
     match statement {
         Stmt::Let { expr, .. }
-        | Stmt::Assign { expr, .. }
-        | Stmt::LetActionReceive { action: expr, .. }
-        | Stmt::Return(expr)
-        | Stmt::Goto(expr)
-        | Stmt::Defer { expr, .. }
-        | Stmt::Yield(expr)
-        | Stmt::Close(expr)
-        | Stmt::Select(expr)
-        | Stmt::Expr(expr)
+        | Stmt::Return { expr, .. }
+        | Stmt::Expr { expr, .. }
         | Stmt::Out { expr, .. } => collect_expr_action_invokes(expr, range, invokes),
+        Stmt::LetActionReceive { action, .. } | Stmt::Defer { expr: action, .. } => {
+            collect_expr_action_invokes(action.expr(), range, invokes);
+        }
+        Stmt::Assign { target, expr } => {
+            collect_expr_action_invokes(target.expr(), range, invokes);
+            collect_expr_action_invokes(expr.expr(), range, invokes);
+        }
+        Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+            collect_expr_action_invokes(expr.expr(), range, invokes);
+        }
         Stmt::Signal { target, value } => {
             collect_expr_action_invokes(target, range, invokes);
             collect_expr_action_invokes(value, range, invokes);
@@ -1402,29 +1405,29 @@ fn collect_stmt_action_invokes(
             body,
             else_body,
         } => {
-            collect_expr_action_invokes(condition, range, invokes);
+            collect_expr_action_invokes(condition.expr(), range, invokes);
             collect_stmt_list_action_invokes(body, range, invokes);
             collect_stmt_list_action_invokes(else_body, range, invokes);
         }
         Stmt::While { condition, body } => {
-            collect_expr_action_invokes(condition, range, invokes);
+            collect_expr_action_invokes(condition.expr(), range, invokes);
             collect_stmt_list_action_invokes(body, range, invokes);
         }
         Stmt::WhileLet {
             expr, guard, body, ..
         } => {
-            collect_expr_action_invokes(expr, range, invokes);
+            collect_expr_action_invokes(expr.expr(), range, invokes);
             if let Some(guard) = guard {
-                collect_expr_action_invokes(guard, range, invokes);
+                collect_expr_action_invokes(guard.expr(), range, invokes);
             }
             collect_stmt_list_action_invokes(body, range, invokes);
         }
         Stmt::For { source, body, .. } => {
-            collect_expr_action_invokes(source, range, invokes);
+            collect_expr_action_invokes(source.expr(), range, invokes);
             collect_stmt_list_action_invokes(body, range, invokes);
         }
         Stmt::Match { expr, arms } => {
-            collect_expr_action_invokes(expr, range, invokes);
+            collect_expr_action_invokes(expr.expr(), range, invokes);
             for arm in arms {
                 if let Some(guard) = arm.guard() {
                     collect_expr_action_invokes(guard, range, invokes);

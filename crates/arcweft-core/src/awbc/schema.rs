@@ -1389,7 +1389,7 @@ pub struct AwbcTaskPlan {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcTaskClass {
-    LocalUi,
+    LocalView,
     Io,
     Cpu,
     GpuPrepare,

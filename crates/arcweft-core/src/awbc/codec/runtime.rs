@@ -96,7 +96,7 @@ impl Wire for AwbcTaskPlan {
 }
 
 wire_enum!(AwbcTaskClass, "task class", {
-    0 => AwbcTaskClass::LocalUi,
+    0 => AwbcTaskClass::LocalView,
     1 => AwbcTaskClass::Io,
     2 => AwbcTaskClass::Cpu,
     3 => AwbcTaskClass::GpuPrepare,

@@ -1,6 +1,6 @@
 # 契約プログラミング
 
-契約は関数、flow、reducer、Activity、parser、shader、UI view、Rust extern に付けられる。
+契約は関数、flow、reducer、Activity、parser、shader、View、Rust extern に付けられる。
 
 ## requires / ensures
 
@@ -55,7 +55,7 @@ Effect contract:
 
 ```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
-effects { asset.read, audio.play, ui.show }
+effects { asset.read, audio.play, view.show }
 ensures no_effect network.request
 {
     ...

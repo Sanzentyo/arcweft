@@ -1128,7 +1128,7 @@ fn speaker_preset_edit_from_stmt(
         | Stmt::Assign { .. }
         | Stmt::LetChoice { .. }
         | Stmt::LetActionReceive { .. }
-        | Stmt::Return(_)
+        | Stmt::Return { expr: _, .. }
         | Stmt::Out { .. }
         | Stmt::Goto(_)
         | Stmt::Defer { .. }
@@ -1140,7 +1140,7 @@ fn speaker_preset_edit_from_stmt(
         | Stmt::Select(_)
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
-        | Stmt::Expr(_)
+        | Stmt::Expr { expr: _, .. }
         | Stmt::Raw(_) => None,
     }
 }

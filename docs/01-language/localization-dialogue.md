@@ -1,6 +1,6 @@
 # Localization for Dialogue, Voice, and Text Keys
 
-Arcweft is Japanese-first by default: ordinary `.arcw` source can be written directly in Japanese. The compiler extracts each dialogue line, narration line, choice label, and UI label into stable text units with generated IDs shown by LSP inlay hints.
+Arcweft is Japanese-first by default: ordinary `.arcw` source can be written directly in Japanese. The compiler extracts each dialogue line, narration line, choice label, and View label into stable text units with generated IDs shown by LSP inlay hints.
 
 Related:
 

@@ -13,6 +13,7 @@ use arcweft_lang_syntax::ast::items::{Item, TypedSyntaxTree};
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_verify_lsp::inferred_id_inlay_hints_with_mapper;
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel};
+use std::collections::HashSet;
 
 /// Computes Arcweft inlay hints for one source snapshot.
 pub fn hints(profile: &LspProfile, document: &DocumentSnapshot) -> Vec<InlayHint> {
@@ -43,7 +44,7 @@ fn function_type_inlay_hints(profile: &LspProfile, document: &DocumentSnapshot) 
 
     let judgments = let_type_judgments(&report);
     let mut judgment_cursor = 0usize;
-    function_let_sites(tree, document.text())
+    let mut hints = function_let_sites(tree, document.text())
         .into_iter()
         .filter_map(|site| {
             let judgment = next_matching_let_judgment(
@@ -58,9 +59,13 @@ fn function_type_inlay_hints(profile: &LspProfile, document: &DocumentSnapshot) 
             let TypeKind::Function { .. } = judgment.ty else {
                 return None;
             };
-            Some(inlay_for_site(&site, judgment.ty, document))
+            Some(let_inlay_for_site(&site, judgment.ty, document))
         })
-        .collect()
+        .collect::<Vec<_>>();
+    if profile.arbitrary_expression_type_inlays() {
+        hints.extend(expression_type_inlay_hints(&report, document));
+    }
+    hints
 }
 
 fn let_type_judgments(report: &TypeCheckReport) -> Vec<LetTypeJudgment<'_>> {
@@ -97,7 +102,7 @@ fn next_matching_let_judgment<'a>(
     judgments.get(absolute).copied()
 }
 
-fn inlay_for_site(
+fn let_inlay_for_site(
     site: &LetTypeInlaySite,
     ty: &TypeKind,
     document: &DocumentSnapshot,
@@ -107,6 +112,88 @@ fn inlay_for_site(
             .line_index()
             .position_from_byte_offset(site.position),
         label: InlayHintLabel::String(format!(": {}", ty.source_label())),
+        kind: Some(InlayHintKind::TYPE),
+        text_edits: None,
+        tooltip: None,
+        padding_left: None,
+        padding_right: None,
+        data: None,
+    }
+}
+
+fn expression_type_inlay_hints(
+    report: &TypeCheckReport,
+    document: &DocumentSnapshot,
+) -> Vec<InlayHint> {
+    let mut emitted = HashSet::new();
+    report
+        .judgments
+        .iter()
+        .filter_map(|judgment| {
+            let TypeJudgmentSubject::Expr { kind, .. } = &judgment.subject else {
+                return None;
+            };
+            let source_range = judgment.source_range?;
+            if source_range.start() >= source_range.end()
+                || source_range.end() > document.text().len()
+            {
+                return None;
+            }
+            let source = document
+                .text()
+                .get(source_range.start()..source_range.end())?;
+            if !should_emit_expression_type_inlay(kind, &judgment.ty, source) {
+                return None;
+            }
+            let label = judgment.ty.source_label();
+            if !emitted.insert((source_range.end(), label.clone())) {
+                return None;
+            }
+            Some(expression_inlay_for_range(source_range, label, document))
+        })
+        .collect()
+}
+
+fn should_emit_expression_type_inlay(kind: &str, ty: &TypeKind, source: &str) -> bool {
+    if matches!(ty, TypeKind::Function { .. } | TypeKind::Never) {
+        return false;
+    }
+    if aggregate_literal_inlay_site(kind, ty, source) {
+        return false;
+    }
+    !matches!(
+        kind,
+        "literal"
+            | "entity_ref"
+            | "lifetime_path"
+            | "path"
+            | "short_variant"
+            | "placeholder"
+            | "tuple"
+            | "bracket_seq"
+            | "numeric_bracket_seq"
+            | "record_literal"
+            | "raw"
+    )
+}
+
+fn aggregate_literal_inlay_site(kind: &str, ty: &TypeKind, source: &str) -> bool {
+    matches!(ty, TypeKind::Named(_))
+        && matches!(kind, "call" | "record" | "record_literal")
+        && source.trim_end().ends_with('}')
+        && source.contains('{')
+}
+
+fn expression_inlay_for_range(
+    source_range: TextRange,
+    type_label: String,
+    document: &DocumentSnapshot,
+) -> InlayHint {
+    InlayHint {
+        position: document
+            .line_index()
+            .position_from_byte_offset(source_range.end()),
+        label: InlayHintLabel::String(format!(": {type_label}")),
         kind: Some(InlayHintKind::TYPE),
         text_edits: None,
         tooltip: None,
@@ -274,9 +361,9 @@ fn collect_stmt_site(stmt: &Stmt, source: &str, sites: &mut Vec<LetTypeInlaySite
         | Stmt::LetLoop { .. }
         | Stmt::LetAwait { .. }
         | Stmt::LetActionReceive { .. }
-        | Stmt::Return(_)
+        | Stmt::Return { expr: _, .. }
         | Stmt::Close(_)
-        | Stmt::Expr(_)
+        | Stmt::Expr { expr: _, .. }
         | Stmt::Select(_)
         | Stmt::Out { .. }
         | Stmt::Goto(_)

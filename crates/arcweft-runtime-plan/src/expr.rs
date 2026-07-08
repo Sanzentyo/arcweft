@@ -1967,15 +1967,18 @@ fn lower_strict_block_statement(
             })
         }
         Stmt::Assign { target, expr } => {
-            let (target, field) = lower_direct_assignment_target(target, helpers)?;
+            let (target, field) = lower_direct_assignment_target(target.expr(), helpers)?;
             Ok(RuntimeExpr::AssignField {
                 target: Box::new(target),
                 field,
-                expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
+                expr: Box::new(lower_runtime_expr_strict_with_helpers(
+                    expr.expr(),
+                    helpers,
+                )?),
                 body: Box::new(body),
             })
         }
-        Stmt::Return(expr) => lower_runtime_expr_strict_with_helpers(expr, helpers),
+        Stmt::Return { expr, .. } => lower_runtime_expr_strict_with_helpers(expr, helpers),
         other => Err(format!("unsupported runtime block statement `{other:?}`")),
     }
 }

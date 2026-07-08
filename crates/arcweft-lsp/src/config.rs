@@ -5,6 +5,7 @@ use arcweft_runtime_host::RuntimeHostRunnerKind;
 pub struct LspConfig {
     runner: RuntimeHostRunnerKind,
     profile_id: Option<String>,
+    arbitrary_expression_type_inlays: bool,
 }
 
 impl Default for LspConfig {
@@ -12,6 +13,7 @@ impl Default for LspConfig {
         Self {
             runner: RuntimeHostRunnerKind::Native,
             profile_id: None,
+            arbitrary_expression_type_inlays: false,
         }
     }
 }
@@ -22,6 +24,7 @@ impl LspConfig {
         Self {
             runner,
             profile_id: None,
+            arbitrary_expression_type_inlays: false,
         }
     }
 
@@ -29,6 +32,13 @@ impl LspConfig {
     #[must_use]
     pub fn with_profile_id(mut self, profile_id: impl Into<String>) -> Self {
         self.profile_id = Some(profile_id.into());
+        self
+    }
+
+    /// Enables expression type inlays outside let-binding sites.
+    #[must_use]
+    pub const fn with_arbitrary_expression_type_inlays(mut self, enabled: bool) -> Self {
+        self.arbitrary_expression_type_inlays = enabled;
         self
     }
 
@@ -40,5 +50,10 @@ impl LspConfig {
     /// Optional launch profile id selected by the embedding process.
     pub fn profile_id(&self) -> Option<&str> {
         self.profile_id.as_deref()
+    }
+
+    /// Whether the editor explicitly requested expression-level type inlays.
+    pub const fn arbitrary_expression_type_inlays(&self) -> bool {
+        self.arbitrary_expression_type_inlays
     }
 }

@@ -23,7 +23,7 @@ pub(super) fn parent_helper(...) -> ...
 ```arcw
 use game.prelude.*
 use game.logic.affection.{affection_of, has_affection_at_least}
-use game.ui.settings as settings_ui
+use game.view.settings as settings_view
 pub use game.types.{GameState, GameEvent}
 use crate.game.prelude.*
 use self.characters.{alice, bob}

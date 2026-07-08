@@ -116,7 +116,9 @@ impl RuntimePlanLowerer {
 
     fn lower_stmt_dialogue(&mut self, flow_id: Option<&EntityRef>, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { expr, .. } | Stmt::Expr(expr) => self.lower_dialogue_expr(flow_id, expr),
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
+                self.lower_dialogue_expr(flow_id, expr)
+            }
             _ => {}
         }
     }
@@ -386,7 +388,7 @@ impl LinePlanGraphLowerer {
                 Vec::new()
             }
             Stmt::Defer { outcome, expr } => {
-                push_defer_block(*outcome, self.lower_expr_effect(expr), scope);
+                push_defer_block(*outcome, self.lower_expr_effect(expr.expr()), scope);
                 Vec::new()
             }
             other => effect_nodes(self.lower_stmt(other)),
@@ -407,7 +409,7 @@ impl LinePlanGraphLowerer {
                     scope.push_defer(*outcome, self.lower_cleanup_block(statements));
                 }
                 Stmt::Defer { outcome, expr } => {
-                    let effects = self.lower_expr_effect(expr);
+                    let effects = self.lower_expr_effect(expr.expr());
                     scope.push_defer(*outcome, effects);
                 }
                 other => scope.body.extend(self.lower_stmt(other)),
@@ -448,13 +450,13 @@ impl LinePlanGraphLowerer {
                     value: expr_label(value),
                 })]
             }
-            Stmt::Expr(expr) => self.lower_expr_effect(expr),
+            Stmt::Expr { expr, .. } => self.lower_expr_effect(expr),
             Stmt::Out { label, expr } => vec![LineEffectRequest::Out(LineOutRequest {
                 label: label.clone(),
                 value: expr_label(expr),
             })],
-            Stmt::Return(expr) => vec![LineEffectRequest::Return(expr_label(expr))],
-            Stmt::Goto(expr) => vec![LineEffectRequest::Goto(expr_label(expr))],
+            Stmt::Return { expr, .. } => vec![LineEffectRequest::Return(expr_label(expr))],
+            Stmt::Goto(expr) => vec![LineEffectRequest::Goto(expr_label(expr.expr()))],
             Stmt::Yield(_) => {
                 self.errors.push(LinePlanLowerError::new(
                     "`yield` cannot be lowered from a dialogue line plan; use `out` for line results"
@@ -462,8 +464,8 @@ impl LinePlanGraphLowerer {
                 ));
                 Vec::new()
             }
-            Stmt::Close(expr) => vec![LineEffectRequest::Close(expr_label(expr))],
-            Stmt::Select(expr) => vec![LineEffectRequest::Select(expr_label(expr))],
+            Stmt::Close(expr) => vec![LineEffectRequest::Close(expr_label(expr.expr()))],
+            Stmt::Select(expr) => vec![LineEffectRequest::Select(expr_label(expr.expr()))],
             Stmt::Break { label, expr } => vec![LineEffectRequest::Break {
                 label: label.clone(),
                 value: expr.as_ref().map(expr_label),

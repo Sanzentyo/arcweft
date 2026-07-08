@@ -17,7 +17,7 @@ Option<T>        presence/absence dimension
 
 ## Await result type
 
-`await need with:` waits for readiness and handles pending UI. It returns `Result<T, E>`.
+`await need with:` waits for readiness and handles pending View. It returns `Result<T, E>`.
 
 ```arcw
 let bg_result = await asset.image(@asset:.bg.room) with:
@@ -196,7 +196,7 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
 }
 ```
 
-If a task may be visible to the player, callers still handle pending at the flow/UI layer.
+If a task may be visible to the player, callers still handle pending at the flow/View layer.
 
 ## Summary
 

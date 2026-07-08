@@ -16,11 +16,11 @@ Object hook と memoization は、描画・入力・状態監視・lazy 評価�
 
 ```text
 hook:
-  Entity / Layer / UI node / Activity / Signal / StatePath / Need / Shader に紐づく宣言的な割り込み点。
+  Entity / Layer / View node / Activity / Signal / StatePath / Need / Shader に紐づく宣言的な割り込み点。
   phase、check policy、condition、priority、effect capability を持つ。
 
 memo:
-  pure computation、hook condition、UI layout、shader reflection、text/typeset layout、TaskKey deduplication を再利用する仕組み。
+  pure computation、hook condition、View layout、shader reflection、text/typeset layout、TaskKey deduplication を再利用する仕組み。
 ```
 
 hook は通常の callback ではない。全 hook は compile 時に `HookTable` へ lowering され、phase / priority / Layer order / EntityId で安定順に実行される。これにより replay、test、Agent debug、形式検証と整合する。
@@ -44,7 +44,7 @@ effects { emit_event, log, input_disposition }
 }
 ```
 
-UI modifier 形式も許可するが、内部では hook に正規化する。
+View modifier 形式も許可するが、内部では hook に正規化する。
 
 ```arcw
 Button("聞いてみる")
@@ -60,7 +60,7 @@ Button("聞いてみる")
 
 ```arcw
 on @choice.opening.listen
-on @layer.ui.modal
+on @layer.view.modal
 on @character.alice
 on @activity.truck_game
 on @signal.loading_progress
@@ -73,9 +73,9 @@ query target も使える。
 hook @hook.disable_all_choices
 on query ChoiceOption where parent == @choice.opening.first
 phase StateChanged
-when state.ui.locked
+when state.view.locked
 {
-    command ui.disable(target)
+    command view.disable(target)
 }
 ```
 
@@ -97,8 +97,8 @@ pub enum HookPhase {
     AfterFlowResume,
     BeforeTaskCommit,
     AfterTaskCommit,
-    BeforeUiDiff,
-    AfterUiDiff,
+    BeforeViewDiff,
+    AfterViewDiff,
     BeforeRender,
     LayerPreRender,
     LayerPostRender,
@@ -129,7 +129,7 @@ once per save
 
 ```arcw
 hook @hook.modal_blocks_world
-on @layer.ui.modal
+on @layer.view.modal
 phase InputCapture
 check on input PointerClick
 when layer.visible
@@ -175,7 +175,7 @@ pub enum CheckPolicy {
 
 ```arcw
 on signal @signal.loading_progress
-on layer @layer.ui.modal visibility_changed
+on layer @layer.view.modal visibility_changed
 on need @task.opening_assets ready
 ```
 
@@ -250,10 +250,10 @@ throttle 250ms
 
 ```arcw
 hook @hook.search_text_changed
-on state changed .ui.search_text
+on state changed .view.search_text
 debounce 300ms
 {
-    command search.rebuild_preview(state.ui.search_text)
+    command search.rebuild_preview(state.view.search_text)
 }
 ```
 
@@ -406,7 +406,7 @@ task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
 
 ---
 
-## UI / Render memoization
+## View / Render memoization
 
 ```arcw
 view SettingsPanel(props: SettingsProps) {

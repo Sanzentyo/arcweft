@@ -199,8 +199,8 @@ mod tests {
     #[test]
     fn css_style_sources_distinguish_file_and_embed() {
         let range = TextRange::new(0, 32);
-        let file = StyleDeclBody::css_file("ui/dialogue.css", range);
-        let embed = StyleDeclBody::css_embed("ui/default.css", range);
+        let file = StyleDeclBody::css_file("view/dialogue.css", range);
+        let embed = StyleDeclBody::css_embed("view/default.css", range);
 
         assert!(matches!(
             file.source(),

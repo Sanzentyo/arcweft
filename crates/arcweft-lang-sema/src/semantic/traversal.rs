@@ -77,29 +77,29 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Let { expr, .. }
         | Stmt::LetElse { expr, .. }
-        | Stmt::Return(expr)
+        | Stmt::Return { expr, .. }
         | Stmt::Out { expr, .. }
-        | Stmt::Goto(expr)
-        | Stmt::Defer { expr, .. }
-        | Stmt::Yield(expr)
-        | Stmt::Expr(expr)
-        | Stmt::Close(expr)
-        | Stmt::Select(expr)
+        | Stmt::Expr { expr, .. }
         | Stmt::Break {
             expr: Some(expr), ..
         }
         | Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
             expr_contains_unchecked_promotion(expr)
         }
+        Stmt::Defer { expr, .. } => expr_contains_unchecked_promotion(expr.expr()),
+        Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+            expr_contains_unchecked_promotion(expr.expr())
+        }
         Stmt::Assign { target, expr } => {
-            expr_contains_unchecked_promotion(target) || expr_contains_unchecked_promotion(expr)
+            expr_contains_unchecked_promotion(target.expr())
+                || expr_contains_unchecked_promotion(expr.expr())
         }
         Stmt::Signal { target, value }
         | Stmt::LifetimeSet {
             target,
             expr: value,
         } => expr_contains_unchecked_promotion(target) || expr_contains_unchecked_promotion(value),
-        Stmt::LetActionReceive { action, .. } => expr_contains_unchecked_promotion(action),
+        Stmt::LetActionReceive { action, .. } => expr_contains_unchecked_promotion(action.expr()),
         Stmt::LetChoice { .. }
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
@@ -461,7 +461,8 @@ pub(super) fn drop_keys_in_stmts(stmts: &[Stmt]) -> HashSet<LifetimeKey> {
 
 fn collect_stmt_drop_keys(stmt: &Stmt, keys: &mut HashSet<LifetimeKey>) {
     match stmt {
-        Stmt::Expr(expr) | Stmt::Defer { expr, .. } => collect_expr_drop_keys(expr, keys),
+        Stmt::Expr { expr, .. } => collect_expr_drop_keys(expr, keys),
+        Stmt::Defer { expr, .. } => collect_expr_drop_keys(expr.expr(), keys),
         Stmt::DeferBlock { statements, .. }
         | Stmt::Loop { body: statements }
         | Stmt::While {
@@ -573,8 +574,11 @@ fn collect_stmt_write_accesses(stmt: &Stmt, accesses: &mut BTreeSet<ResourceAcce
         Stmt::Signal { target, .. } => {
             accesses.insert(resource_write_for_signal(expr_label(target)));
         }
-        Stmt::Expr(expr) | Stmt::Defer { expr, .. } => {
+        Stmt::Expr { expr, .. } => {
             collect_expr_write_accesses(expr, accesses);
+        }
+        Stmt::Defer { expr, .. } => {
+            collect_expr_write_accesses(expr.expr(), accesses);
         }
         Stmt::DeferBlock { statements, .. } => {
             for stmt in statements {

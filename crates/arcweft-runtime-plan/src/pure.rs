@@ -411,7 +411,7 @@ fn pure_helper_body_parts(
         });
     };
     match last {
-        Stmt::Return(value) => Ok((statements, value)),
+        Stmt::Return { expr: value, .. } => Ok((statements, value)),
         _ => Err(PureHelperLowerError::UnsupportedBody {
             name: function.name().to_owned(),
         }),

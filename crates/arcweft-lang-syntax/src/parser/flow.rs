@@ -10,9 +10,8 @@ use super::{
     UnsafeAuditInsertion, flat_block_head, indentation, is_await_with_head,
     is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
     parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
-    parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
-    parse_stmt_with_stats_and_base, parse_thread_block, parse_unsafe_lifetime_block,
-    parse_with_brace_label, split_call_head,
+    parse_line_plan_attachment, parse_scope_head, parse_stmt_lines, parse_stmt_with_stats_and_base,
+    parse_thread_block, parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head,
 };
 use std::borrow::Cow;
 use std::ops::Range;
@@ -343,7 +342,11 @@ impl<'a> Parser<'a> {
         }
         if is_expression_statement_call(trimmed) {
             self.index += 1;
-            return Some(FlowItem::Stmt(Stmt::Expr(parse_expr_lossy(trimmed))));
+            return Some(FlowItem::Stmt(Stmt::Expr {
+                expr: parse_expr_lossy(trimmed),
+                expr_source: Some(trimmed.to_owned()),
+                expr_range: Some(TextRange::new(line.start, line.end)),
+            }));
         }
         if let Some(rest) = trimmed.strip_prefix("include ") {
             let entity =
@@ -449,7 +452,13 @@ impl<'a> Parser<'a> {
         }
         if trimmed.starts_with("defer ") && !trimmed.contains('{') {
             self.index += 1;
-            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+            let base =
+                start_line.start + start_line.text.len() - start_line.text.trim_start().len();
+            return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
+                trimmed,
+                &mut self.syntax_stats,
+                base,
+            )));
         }
         let (head, body, _, ok) = self.take_brace_block();
         if ok && let Some(outcome) = parse_defer_outcome(head.trim()) {

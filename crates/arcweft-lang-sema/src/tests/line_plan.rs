@@ -575,7 +575,8 @@ flow @flow.opening opening {
     };
     assert!(matches!(
         back_rule.action(),
-        [Stmt::Goto(Expr::EntityRef(target))] if target.body() == "flow.title"
+        [Stmt::Goto(target)]
+            if matches!(target.expr(), Expr::EntityRef(target) if target.body() == "flow.title")
     ));
 
     let hir = lower_to_hir(&tree).expect("line plan cancel actions lower");
@@ -621,8 +622,8 @@ flow @flow.opening opening {
     assert!(matches!(
         rule.action(),
         [
-            Stmt::Expr(stop),
-            Stmt::Expr(flush),
+            Stmt::Expr { expr: stop, .. },
+            Stmt::Expr { expr: flush, .. },
             Stmt::Continue { label: None }
         ] if selected_call_member(stop) == Some("stop") && selected_call_member(flush) == Some("flush")
     ));

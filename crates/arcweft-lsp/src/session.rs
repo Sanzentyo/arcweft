@@ -67,7 +67,8 @@ impl ArcweftLspSession {
     /// Creates a session before initialize is received.
     pub fn new(config: &LspConfig) -> Self {
         let profile_resolver =
-            LspProfileResolver::new(config.runner(), config.profile_id().map(str::to_owned));
+            LspProfileResolver::new(config.runner(), config.profile_id().map(str::to_owned))
+                .with_arbitrary_expression_type_inlays(config.arbitrary_expression_type_inlays());
         let default_profile = profile_resolver.default_profile();
         Self {
             documents: DocumentStore::default(),

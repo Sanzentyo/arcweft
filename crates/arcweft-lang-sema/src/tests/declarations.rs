@@ -36,7 +36,10 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
     assert_eq!(hook.effects().len(), 1);
     assert!(matches!(
         hook.body_statements(),
-        [Stmt::Expr(Expr::Call { .. })]
+        [Stmt::Expr {
+            expr: Expr::Call { .. },
+            ..
+        }]
     ));
 
     let Item::MemoFn(memo) = &tree.items()[1] else {
@@ -970,7 +973,10 @@ fn score(base: i64, bonus: i64) -> i64 {
     let hir = lower_to_hir(&tree).expect("function lowers");
     assert!(matches!(
         hir.functions()[0].statements().last(),
-        Some(Stmt::Return(Expr::If { .. }))
+        Some(Stmt::Return {
+            expr: Expr::If { .. },
+            ..
+        })
     ));
 
     typecheck_hir(&hir, &TypeCheckEnv::default())
@@ -1127,7 +1133,7 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     assert!(source.handlers().iter().any(|handler| matches!(
         handler.event(),
         SourceEventPattern::Disconnected
-            if matches!(handler.body(), [Stmt::Expr(_), Stmt::Expr(_)])
+            if matches!(handler.body(), [Stmt::Expr { expr: _, .. }, Stmt::Expr { expr: _, .. }])
     )));
 
     let hir = lower_to_hir(&tree).expect("documented source item lowers");
@@ -1254,8 +1260,8 @@ pub character @character.alice Alice {
     nameplate = visible
 }
 
-pub layer @layer.ui.game: NativeUi {
-    phase = Ui
+pub layer @layer.view.game: NativeView {
+    phase = View
     z = 500
 }
 

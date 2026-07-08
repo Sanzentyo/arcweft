@@ -397,7 +397,7 @@ fn task_spec(task: &LineChildTask) -> TaskSpec {
     TaskSpec::new(
         task.id.clone(),
         key,
-        TaskClass::LocalUi,
+        TaskClass::LocalView,
         task.priority,
         CancelScopeId("line".to_owned()),
         TaskPolicy::JoinSameKey,

@@ -1,16 +1,17 @@
 use super::control_flow::parse_final_block_expr;
 use super::headers::parse_required_id_ref;
 use super::{
-    CstStmtKind, DeferOutcome, Expr, IdRef, ParseError, Parser, RawSyntax, RelativeId,
-    RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, UnsafeAuditInsertion, WaitTarget,
-    classify_stmt, parse_binding_pattern, parse_braced_while_let_stmt, parse_defer_outcome,
-    parse_expr_lossy, parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
-    parse_memo_block_options, parse_named_block_expr, parse_pattern, parse_scope_expr_body,
-    parse_stmt_lines, parse_stmt_match_arms, parse_thread_block, parse_trigger_pattern,
-    split_top_level_binding, split_top_level_keyword_once,
+    AuthoredExpr, CstStmtKind, DeferOutcome, Expr, IdRef, ParseError, Parser, RawSyntax,
+    RelativeId, RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, UnsafeAuditInsertion,
+    WaitTarget, classify_stmt, parse_binding_pattern, parse_braced_while_let_stmt,
+    parse_defer_outcome, parse_expr_lossy, parse_expr_lossy_with_stats,
+    parse_expr_with_inline_line_plan_with_stats, parse_memo_block_options, parse_named_block_expr,
+    parse_pattern, parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms,
+    parse_thread_block, parse_trigger_pattern, split_top_level_binding,
+    split_top_level_keyword_once,
 };
 use crate::cst::{
-    ArcweftPunctuation, CstPunctuationScan, SyntaxParseStats,
+    ArcweftPunctuation, CstBlockEvent, CstPunctuationScan, SyntaxParseStats,
     split_top_level_arcweft_punctuation_once,
 };
 
@@ -47,8 +48,8 @@ impl Parser<'_> {
 
     pub(super) fn parse_let_block(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
-        let (head, body, _end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing block expression",
@@ -58,6 +59,7 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, block_head) = split_top_level_binding(rest)?;
         if !block_head.trim().is_empty() {
@@ -65,19 +67,20 @@ impl Parser<'_> {
         }
 
         let (pattern, ty) = parse_binding_pattern(pattern);
+        let (expr_source, expr_range) = braced_expr_source(&block, block_expr_start(&block)?, "");
         Some(Stmt::Let {
             pattern,
             ty,
-            expr: super::parse_block_expr(&body),
-            expr_source: None,
-            expr_range: None,
+            expr: super::parse_block_expr(&block.body),
+            expr_source,
+            expr_range,
         })
     }
 
     pub(super) fn parse_let_computation_block(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
-        let (head, body, _end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing computation block expression",
@@ -87,12 +90,19 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, block_head) = split_top_level_binding(rest)?;
-        let kind = super::parse_computation_block_kind(block_head.trim())?;
-        let (statements, value) = parse_scope_expr_body(&body);
+        let block_head = block_head.trim();
+        let kind = super::parse_computation_block_kind(block_head)?;
+        let (statements, value) = parse_scope_expr_body(&block.body);
 
         let (pattern, ty) = parse_binding_pattern(pattern);
+        let (expr_source, expr_range) = braced_expr_source(
+            &block,
+            expr_source_start_in_line(&start_line.text, start_line.start, block_head)?,
+            block_head,
+        );
         Some(Stmt::Let {
             pattern,
             ty,
@@ -101,15 +111,15 @@ impl Parser<'_> {
                 statements,
                 value: value.map(Box::new),
             },
-            expr_source: None,
-            expr_range: None,
+            expr_source,
+            expr_range,
         })
     }
 
     pub(super) fn parse_let_memo_block(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
-        let (head, body, _end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing memo expression",
@@ -119,12 +129,19 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, block_head) = split_top_level_binding(rest)?;
-        let options = parse_memo_block_options(block_head.trim())?;
-        let (statements, value) = parse_scope_expr_body(&body);
+        let block_head = block_head.trim();
+        let options = parse_memo_block_options(block_head)?;
+        let (statements, value) = parse_scope_expr_body(&block.body);
 
         let (pattern, ty) = parse_binding_pattern(pattern);
+        let (expr_source, expr_range) = braced_expr_source(
+            &block,
+            expr_source_start_in_line(&start_line.text, start_line.start, block_head)?,
+            block_head,
+        );
         Some(Stmt::Let {
             pattern,
             ty,
@@ -133,8 +150,8 @@ impl Parser<'_> {
                 statements,
                 value: value.map(Box::new),
             },
-            expr_source: None,
-            expr_range: None,
+            expr_source,
+            expr_range,
         })
     }
 }
@@ -143,10 +160,14 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
     parse_stmt_inner(trimmed, None, None)
 }
 
+pub(super) fn parse_stmt_with_base(trimmed: &str, base: usize) -> Stmt {
+    parse_stmt_inner(trimmed, None, Some(base))
+}
+
 pub(super) fn parse_stmt_for_dialect(trimmed: &str, dialect: super::SourceDialect) -> Stmt {
     if dialect == super::SourceDialect::Agent && matches!(classify_stmt(trimmed), CstStmtKind::Wait)
     {
-        return Stmt::Expr(parse_expr_lossy(trimmed));
+        return expr_stmt(parse_expr_lossy(trimmed), None, None);
     }
     parse_stmt(trimmed)
 }
@@ -156,6 +177,23 @@ pub(super) fn parse_stmt_with_stats_and_base(
     stats: &mut SyntaxParseStats,
     base: usize,
 ) -> Stmt {
+    parse_stmt_inner(trimmed, Some(stats), Some(base))
+}
+
+pub(super) fn parse_stmt_for_dialect_with_stats_and_base(
+    trimmed: &str,
+    dialect: super::SourceDialect,
+    stats: &mut SyntaxParseStats,
+    base: usize,
+) -> Stmt {
+    if dialect == super::SourceDialect::Agent && matches!(classify_stmt(trimmed), CstStmtKind::Wait)
+    {
+        return expr_stmt(
+            parse_expr_lossy_with_stats(trimmed, Some(stats)),
+            Some(trimmed.to_owned()),
+            Some(TextRange::new(base, base + trimmed.len())),
+        );
+    }
     parse_stmt_inner(trimmed, Some(stats), Some(base))
 }
 
@@ -181,22 +219,32 @@ fn parse_stmt_inner(
         }
         CstStmtKind::Let => parse_let_stmt(trimmed, stats, base),
         CstStmtKind::DeferBlock | CstStmtKind::Braced | CstStmtKind::UnsafeLifetime => {
-            parse_braced_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
+            parse_braced_stmt(trimmed, stats, base).unwrap_or_else(|| raw_stmt(trimmed))
         }
         CstStmtKind::Defer => trimmed.strip_prefix("defer ").map_or_else(
             || raw_stmt(trimmed),
-            |rest| Stmt::Defer {
-                outcome: DeferOutcome::Always,
-                expr: parse_expr_lossy_with_stats(rest.trim(), stats.as_deref_mut()),
+            |rest| {
+                let source = rest.trim();
+                Stmt::Defer {
+                    outcome: DeferOutcome::Always,
+                    expr: authored_expr_in_stmt(trimmed, source, base, stats.as_deref_mut()),
+                }
             },
         ),
         CstStmtKind::ControlTransfer => {
-            parse_control_transfer_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
+            parse_control_transfer_stmt(trimmed, base).unwrap_or_else(|| raw_stmt(trimmed))
         }
         CstStmtKind::On => parse_on_stmt(trimmed),
         CstStmtKind::AmbiguousBlockHead => raw_stmt(trimmed),
-        CstStmtKind::Expr => parse_assign_stmt(trimmed, stats.as_deref_mut())
-            .unwrap_or_else(|| Stmt::Expr(parse_expr_lossy_with_stats(trimmed, stats))),
+        CstStmtKind::Expr => {
+            parse_assign_stmt(trimmed, stats.as_deref_mut(), base).unwrap_or_else(|| {
+                expr_stmt(
+                    parse_expr_lossy_with_stats(trimmed, stats),
+                    Some(trimmed.to_owned()),
+                    base.map(|base| TextRange::new(base, base + trimmed.len())),
+                )
+            })
+        }
     }
 }
 
@@ -214,7 +262,7 @@ pub(super) fn raw_stmt(source: &str) -> Stmt {
 
 fn parse_let_stmt(
     trimmed: &str,
-    stats: Option<&mut SyntaxParseStats>,
+    mut stats: Option<&mut SyntaxParseStats>,
     base: Option<usize>,
 ) -> Stmt {
     let Some(rest) = trimmed.strip_prefix("let ") else {
@@ -226,9 +274,14 @@ fn parse_let_stmt(
         if ty.is_none()
             && let Some(action) = receive_action_target(expr)
         {
+            let action_start = base.and_then(|base| trimmed.find(action).map(|start| base + start));
             return Stmt::LetActionReceive {
                 pattern,
-                action: parse_expr_lossy_with_stats(action, stats),
+                action: AuthoredExpr::with_source(
+                    parse_expr_lossy_with_stats(action, stats.as_deref_mut()),
+                    action.to_owned(),
+                    action_start.map(|start| TextRange::new(start, start + action.len())),
+                ),
             };
         }
         let expr_start = trimmed
@@ -258,17 +311,88 @@ fn receive_action_target(expr: &str) -> Option<&str> {
         .filter(|target| !target.is_empty())
 }
 
-fn parse_assign_stmt(trimmed: &str, mut stats: Option<&mut SyntaxParseStats>) -> Option<Stmt> {
+pub(super) fn expr_source_start_in_line(
+    line: &str,
+    line_start: usize,
+    expr_head: &str,
+) -> Option<usize> {
+    line.find(expr_head).map(|offset| line_start + offset)
+}
+
+pub(super) fn block_expr_start(block: &CstBlockEvent<'_>) -> Option<usize> {
+    block
+        .body_range
+        .as_ref()
+        .and_then(|body_range| body_range.start.checked_sub('{'.len_utf8()))
+}
+
+pub(super) fn braced_expr_source(
+    block: &CstBlockEvent<'_>,
+    expr_start: usize,
+    prefix: &str,
+) -> (Option<String>, Option<TextRange>) {
+    let Some(body_range) = block.body_range.as_ref() else {
+        return (None, None);
+    };
+    let Some(open) = body_range.start.checked_sub('{'.len_utf8()) else {
+        return (None, None);
+    };
+    let Some(end) = body_range.end.checked_add('}'.len_utf8()) else {
+        return (None, None);
+    };
+    let Some(prefix_len) = open.checked_sub(expr_start) else {
+        return (None, None);
+    };
+
+    let mut source = String::new();
+    push_prefix_with_len(&mut source, prefix, prefix_len);
+    source.push('{');
+    source.push_str(&block.body);
+    source.push('}');
+    (Some(source), Some(TextRange::new(expr_start, end)))
+}
+
+fn push_prefix_with_len(source: &mut String, prefix: &str, target_len: usize) {
+    if target_len == 0 {
+        return;
+    }
+    if let Some(prefix) = prefix.get(..target_len) {
+        source.push_str(prefix);
+    } else {
+        source.push_str(prefix);
+    }
+    while source.len() < target_len {
+        source.push(' ');
+    }
+}
+
+fn parse_assign_stmt(
+    trimmed: &str,
+    mut stats: Option<&mut SyntaxParseStats>,
+    base: Option<usize>,
+) -> Option<Stmt> {
     let (target, expr) = split_top_level_binding(trimmed)?;
-    if target.trim().is_empty() || expr.trim().is_empty() {
+    let target = target.trim();
+    let expr = expr.trim();
+    if target.is_empty() || expr.is_empty() {
         return None;
     }
-    if target.trim_end().ends_with(['!', '<', '>', '=']) || expr.trim_start().starts_with('=') {
+    if target.ends_with(['!', '<', '>', '=']) || expr.starts_with('=') {
         return None;
     }
+    let target_start = statement_value_start(trimmed, target, base);
+    let expr_start = statement_value_start(trimmed, expr, base);
     Some(Stmt::Assign {
-        target: parse_expr_lossy_with_stats(target.trim(), stats.as_deref_mut()),
-        expr: parse_expr_lossy_with_stats(expr.trim(), stats),
+        target: AuthoredExpr::with_source(
+            parse_expr_lossy_with_stats(target, stats.as_deref_mut()),
+            target.to_owned(),
+            target_start.map(|start| TextRange::new(start, start + target.len())),
+        ),
+        expr: AuthoredExpr::with_source(
+            parse_expr_lossy_with_stats(expr, stats),
+            expr.to_owned(),
+            expr_start.map(|start| TextRange::new(start, start + expr.len())),
+        ),
     })
 }
 
@@ -305,11 +429,15 @@ fn wait_stmt_source(trimmed: &str) -> Option<&str> {
         .map(str::trim)
 }
 
-fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
+fn parse_braced_stmt(
+    trimmed: &str,
+    mut stats: Option<&mut SyntaxParseStats>,
+    base: Option<usize>,
+) -> Option<Stmt> {
     if trimmed.starts_with("if ") {
-        return parse_if_stmt(trimmed);
+        return parse_if_stmt(trimmed, stats, base);
     }
-    let (head, body) = super::split_brace_item(trimmed)?;
+    let (head, body, body_base) = split_brace_item_with_body_base(trimmed, base)?;
     if head.starts_with("unsafe lifetime ") {
         let mut errors = Vec::new();
         return Some(parse_unsafe_lifetime_block(
@@ -326,74 +454,168 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
     if let Some(outcome) = parse_defer_outcome(head) {
         return Some(Stmt::DeferBlock {
             outcome,
-            statements: parse_stmt_lines(body),
+            statements: parse_stmt_lines_with_optional_base(body, stats.as_deref_mut(), body_base),
         });
     }
     if head.starts_with("scope") {
-        return Some(Stmt::Expr(parse_named_block_expr(head, body)));
+        return Some(expr_stmt(parse_named_block_expr(head, body), None, None));
     }
     if head == "loop" {
         return Some(Stmt::Loop {
-            body: parse_stmt_lines(body),
+            body: parse_stmt_lines_with_optional_base(body, stats.as_deref_mut(), body_base),
         });
     }
     if let Some(stmt) = parse_braced_while_let_stmt(head, body) {
         return Some(stmt);
     }
     if let Some(condition) = head.strip_prefix("while ") {
+        let condition = condition.trim();
         return Some(Stmt::While {
-            condition: parse_expr_lossy(condition.trim()),
-            body: parse_stmt_lines(body),
+            condition: authored_expr_in_stmt(trimmed, condition, base, stats.as_deref_mut()),
+            body: parse_stmt_lines_with_optional_base(body, stats.as_deref_mut(), body_base),
         });
     }
     if let Some(rest) = head.strip_prefix("for ") {
         let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") else {
             return Some(raw_stmt(trimmed));
         };
+        let source = source.trim();
         return Some(Stmt::For {
             pattern: parse_pattern(pattern.trim()),
-            source: parse_expr_lossy(source.trim()),
-            body: parse_stmt_lines(body),
+            source: authored_expr_in_stmt(trimmed, source, base, stats.as_deref_mut()),
+            body: parse_stmt_lines_with_optional_base(body, stats.as_deref_mut(), body_base),
         });
     }
-    head.strip_prefix("match ").map(|expr| Stmt::Match {
-        expr: parse_expr_lossy(expr.trim()),
-        arms: parse_stmt_match_arms(body),
+    head.strip_prefix("match ").map(|expr| {
+        let expr = expr.trim();
+        Stmt::Match {
+            expr: authored_expr_in_stmt(trimmed, expr, base, stats),
+            arms: parse_stmt_match_arms(body),
+        }
     })
 }
 
-fn parse_if_stmt(source: &str) -> Option<Stmt> {
-    let (head, body, trailing) = split_braced_stmt_with_trailing(source)?;
-    let condition = head.strip_prefix("if ")?;
+fn parse_if_stmt(
+    source: &str,
+    mut stats: Option<&mut SyntaxParseStats>,
+    base: Option<usize>,
+) -> Option<Stmt> {
+    let (head, body, body_base, trailing, trailing_base) =
+        split_braced_stmt_with_trailing_base(source, base)?;
+    let condition = head.strip_prefix("if ")?.trim();
     Some(Stmt::If {
-        condition: parse_expr_lossy(condition.trim()),
-        body: parse_stmt_lines(body),
-        else_body: parse_else_stmt_tail(trailing)?,
+        condition: authored_expr_in_stmt(source, condition, base, stats.as_deref_mut()),
+        body: parse_stmt_lines_with_optional_base(body, stats.as_deref_mut(), body_base),
+        else_body: parse_else_stmt_tail(trailing, stats, trailing_base)?,
     })
 }
 
-fn parse_else_stmt_tail(trailing: &str) -> Option<Vec<Stmt>> {
-    let trailing = trailing.trim();
+fn parse_else_stmt_tail(
+    trailing: &str,
+    stats: Option<&mut SyntaxParseStats>,
+    base: Option<usize>,
+) -> Option<Vec<Stmt>> {
+    let (trailing, base) = trim_with_base(trailing, base);
     if trailing.is_empty() {
         return Some(Vec::new());
     }
-    let rest = trailing.strip_prefix("else")?.trim_start();
+    let rest = trailing.strip_prefix("else")?;
+    let rest_base = base.map(|base| base + "else".len());
+    let (rest, rest_base) = trim_start_with_base(rest, rest_base);
     if rest.starts_with("if ") {
-        return parse_if_stmt(rest).map(|stmt| vec![stmt]);
+        return parse_if_stmt(rest, stats, rest_base).map(|stmt| vec![stmt]);
     }
-    let (head, body, trailing) = split_braced_stmt_with_trailing(rest)?;
-    (head.is_empty() && trailing.trim().is_empty()).then(|| parse_stmt_lines(body))
+    let (head, body, body_base, trailing, _) =
+        split_braced_stmt_with_trailing_base(rest, rest_base)?;
+    (head.is_empty() && trailing.trim().is_empty())
+        .then(|| parse_stmt_lines_with_optional_base(body, stats, body_base))
 }
 
-fn split_braced_stmt_with_trailing(source: &str) -> Option<(&str, &str, &str)> {
+type BracedStmtParts<'a> = (&'a str, &'a str, Option<usize>, &'a str, Option<usize>);
+
+fn split_brace_item_with_body_base(
+    source: &str,
+    base: Option<usize>,
+) -> Option<(&str, &str, Option<usize>)> {
     let punctuation = CstPunctuationScan::new(source);
     let open = punctuation.find_top_level_punctuation('{')?;
     let close = punctuation.find_matching_punctuation(open, '{', '}')?;
+    (source[close + '}'.len_utf8()..].trim().is_empty()).then(|| {
+        let body = &source[open + '{'.len_utf8()..close];
+        let (body, body_base) = trim_with_base(body, base.map(|base| base + open + 1));
+        (source[..open].trim(), body, body_base)
+    })
+}
+
+fn split_braced_stmt_with_trailing_base(
+    source: &str,
+    base: Option<usize>,
+) -> Option<BracedStmtParts<'_>> {
+    let punctuation = CstPunctuationScan::new(source);
+    let open = punctuation.find_top_level_punctuation('{')?;
+    let close = punctuation.find_matching_punctuation(open, '{', '}')?;
+    let body = &source[open + '{'.len_utf8()..close];
+    let trailing_start = close + '}'.len_utf8();
+    let trailing = &source[trailing_start..];
+    let (body, body_base) = trim_with_base(body, base.map(|base| base + open + 1));
+    let (trailing, trailing_base) =
+        trim_with_base(trailing, base.map(|base| base + trailing_start));
     Some((
         source[..open].trim(),
-        source[open + '{'.len_utf8()..close].trim(),
-        source[close + '}'.len_utf8()..].trim(),
+        body,
+        body_base,
+        trailing,
+        trailing_base,
     ))
+}
+
+fn parse_stmt_lines_with_optional_base(
+    body: &str,
+    mut stats: Option<&mut SyntaxParseStats>,
+    body_base: Option<usize>,
+) -> Vec<Stmt> {
+    let Some(body_base) = body_base else {
+        return parse_stmt_lines(body);
+    };
+    super::collect_logical_block_items_with_base(body, body_base)
+        .into_iter()
+        .filter_map(|line| {
+            let source = line.source.trim();
+            (!source.is_empty())
+                .then(|| parse_stmt_inner(source, stats.as_deref_mut(), Some(line.base)))
+        })
+        .collect()
+}
+
+fn authored_expr_in_stmt(
+    stmt_source: &str,
+    expr_source: &str,
+    base: Option<usize>,
+    stats: Option<&mut SyntaxParseStats>,
+) -> AuthoredExpr {
+    let range = base.and_then(|base| {
+        stmt_source.find(expr_source).map(|start| {
+            let absolute_start = base + start;
+            TextRange::new(absolute_start, absolute_start + expr_source.len())
+        })
+    });
+    AuthoredExpr::with_source(
+        parse_expr_lossy_with_stats(expr_source, stats),
+        expr_source.to_owned(),
+        range,
+    )
+}
+
+fn trim_with_base(source: &str, base: Option<usize>) -> (&str, Option<usize>) {
+    let (trimmed, base) = trim_start_with_base(source, base);
+    let end = trimmed.trim_end().len();
+    (&trimmed[..end], base)
+}
+
+fn trim_start_with_base(source: &str, base: Option<usize>) -> (&str, Option<usize>) {
+    let trimmed = source.trim_start();
+    let leading = source.len() - trimmed.len();
+    (trimmed, base.map(|base| base + leading))
 }
 
 pub(super) fn parse_unsafe_lifetime_block(
@@ -450,7 +672,7 @@ pub(super) fn parse_unsafe_lifetime_block(
     }
 }
 
-fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
+fn parse_control_transfer_stmt(trimmed: &str, base: Option<usize>) -> Option<Stmt> {
     if trimmed == "break" {
         return Some(Stmt::Break {
             label: None,
@@ -482,25 +704,69 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
             expr: (!expr.trim().is_empty()).then(|| parse_expr_lossy(expr.trim())),
         });
     }
+    if let Some(source) = trimmed.strip_prefix("return ").map(str::trim) {
+        let start = statement_value_start(trimmed, source, base);
+        return Some(Stmt::Return {
+            expr: parse_stmt_value_expr(source),
+            expr_source: Some(source.to_owned()),
+            expr_range: start.map(|start| TextRange::new(start, start + source.len())),
+        });
+    }
     [
-        ("return ", Stmt::Return as fn(Expr) -> Stmt),
-        ("goto ", Stmt::Goto),
-        ("yield ", Stmt::Yield),
-        ("close ", Stmt::Close),
-        ("select ", Stmt::Select),
+        ("goto ", ControlTransferKind::Goto),
+        ("yield ", ControlTransferKind::Yield),
+        ("close ", ControlTransferKind::Close),
+        ("select ", ControlTransferKind::Select),
     ]
     .into_iter()
-    .find_map(|(prefix, build)| {
-        trimmed
-            .strip_prefix(prefix)
-            .map(str::trim)
-            .map(parse_stmt_value_expr)
-            .map(build)
+    .find_map(|(prefix, kind)| {
+        let source = trimmed.strip_prefix(prefix).map(str::trim)?;
+        let start = statement_value_start(trimmed, source, base);
+        let value = AuthoredExpr::with_source(
+            parse_stmt_value_expr(source),
+            source.to_owned(),
+            start.map(|start| TextRange::new(start, start + source.len())),
+        );
+        Some(kind.into_stmt(value))
     })
 }
 
 fn parse_stmt_value_expr(source: &str) -> Expr {
     parse_final_block_expr(source).unwrap_or_else(|| parse_expr_lossy(source))
+}
+
+#[derive(Clone, Copy)]
+enum ControlTransferKind {
+    Goto,
+    Yield,
+    Close,
+    Select,
+}
+
+impl ControlTransferKind {
+    fn into_stmt(self, value: AuthoredExpr) -> Stmt {
+        match self {
+            Self::Goto => Stmt::Goto(value),
+            Self::Yield => Stmt::Yield(value),
+            Self::Close => Stmt::Close(value),
+            Self::Select => Stmt::Select(value),
+        }
+    }
+}
+
+fn expr_stmt(expr: Expr, expr_source: Option<String>, expr_range: Option<TextRange>) -> Stmt {
+    Stmt::Expr {
+        expr,
+        expr_source,
+        expr_range,
+    }
+}
+
+fn statement_value_start(trimmed: &str, source: &str, base: Option<usize>) -> Option<usize> {
+    trimmed
+        .len()
+        .checked_sub(source.len())
+        .and_then(|offset| base.map(|base| base + offset))
 }
 
 fn split_optional_label_ref(input: &str) -> (Option<String>, &str) {

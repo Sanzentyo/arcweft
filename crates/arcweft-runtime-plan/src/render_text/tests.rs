@@ -420,7 +420,7 @@ pub struct KeywordHit {
     channel: String
 }
 
-#[text_proxy(kind="hover", default_hit=false, depth=2, layer=ui)]
+#[text_proxy(kind="hover", default_hit=false, depth=2, layer=view)]
 pub struct HoverHit {
     layer: String
 }
@@ -522,7 +522,7 @@ pub struct KeywordHit {
     channel: String
 }
 
-#[text_proxy(kind="hover", default_hit=false, depth=2, layer=ui)]
+#[text_proxy(kind="hover", default_hit=false, depth=2, layer=view)]
 pub struct HoverHit {
     layer: String
 }
@@ -598,7 +598,7 @@ flow @flow.main main {
     );
     assert_eq!(hover.type_name.as_deref(), Some("HoverHit"));
     assert_eq!(hover.role.as_deref(), Some("hover"));
-    assert_eq!(hover.layer.as_deref(), Some("ui"));
+    assert_eq!(hover.layer.as_deref(), Some("view"));
     assert_eq!(hover.depth, Some(Milli(7000)));
     assert!(hover.hit_test);
     assert_eq!(

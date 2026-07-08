@@ -198,7 +198,7 @@ EntityStore<T>
 Tree<T>
 LayerTree<T>
 SceneGraph<T>
-UiTree<T>
+ViewTree<T>
 StableGraph<N, E>
 DependencyGraph<N>
 RouteGraph
@@ -210,7 +210,7 @@ and debug manifests. `SlotMap<T>` uses `GenerationalId<T>` so stale runtime
 handles can be rejected.
 
 `Tree<T>` is the shared deterministic parent/child shape for layer, scene, and
-UI trees. `StableGraph<N, E>` preserves node insertion order and explicit edge
+View trees. `StableGraph<N, E>` preserves node insertion order and explicit edge
 order; `DependencyGraph<N>` is a unit-edge graph for memo, asset, and build
 dependencies.
 

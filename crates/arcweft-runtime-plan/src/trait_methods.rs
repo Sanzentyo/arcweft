@@ -107,7 +107,7 @@ fn method_body_parts<'a>(
         });
     };
     match last {
-        Stmt::Return(value) => Ok((statements, value)),
+        Stmt::Return { expr: value, .. } => Ok((statements, value)),
         _ => Err(TraitMethodLowerDiagnostic::MissingMethodBody {
             method: method.to_owned(),
         }),
@@ -140,8 +140,8 @@ fn lower_prefix_statement(
             })
         }
         Stmt::Assign { target, expr } => {
-            let (target, field) = lower_direct_assignment_target(method, target)?;
-            let expr = lower_runtime_expr_strict(expr).map_err(|reason| {
+            let (target, field) = lower_direct_assignment_target(method, target.expr())?;
+            let expr = lower_runtime_expr_strict(expr.expr()).map_err(|reason| {
                 TraitMethodLowerDiagnostic::UnsupportedBody {
                     method: method.to_owned(),
                     reason,

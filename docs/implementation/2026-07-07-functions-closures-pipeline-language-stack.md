@@ -122,6 +122,26 @@ Source briefs:
   substrate wires parser-provided `let` RHS expression ranges into the root
   expression judgment, giving LSP/tooling a typed expression-to-source bridge
   without inventing traversal-index heuristics.
+- Flow-level and statement-level control expressions now also retain authored
+  source ranges through syntax, HIR, and sema. `if`/`if let`, `while`/
+  `while let`, `for`, and `match` conditions/scrutinees/sources use the same
+  `AuthoredExpr` path as control-transfer statements, so type judgments for
+  those expressions can be mapped back to the original `.arcw` bytes.
+- Structured value-producing `let` forms now retain authored source ranges for
+  braced block expressions, computation/memo blocks, `if`/`if let`
+  expressions, and `match` expressions. The expression source-range collector
+  also uses a delimiter matcher that can find the matching `}` inside those
+  expression roots, so nested block values and match arm values receive source
+  ranges instead of stopping at the root expression.
+- Guarded value-producing `if let` expressions now split the condition source
+  at the `when` guard boundary. The matched expression keeps only its authored
+  scrutinee range, and the guard receives its own source range instead of being
+  absorbed into the scrutinee expression site.
+- Desugared pipe RHS checking now keeps authored RHS child expression ranges
+  in a temporary checker scope. `^` substitution and data-last call rewriting
+  keep ranges for visible RHS children without assigning the `^` token to the
+  inserted LHS clone, and method-chain data-last fallback retains the visible
+  method-call range.
 - Let-binding type judgments now retain the same RHS source range, and LSP
   function-type inlays match `let` sites against sema evidence by pattern and
   RHS range instead of pattern/traversal order alone.
@@ -313,7 +333,7 @@ Source briefs:
 - `expr.rs` was split further by moving closure source splitting and character
   literal decoding into `expr/closure_source.rs` and `expr/char_literal.rs`,
   keeping the expression parser below the structure-audit error threshold.
-- UI interaction view-surface examples were updated from removed
+- View interaction view-surface examples were updated from removed
   `ForEach(...) |item| { ... }` / unsupported `Grid(...)` authoring to the
   current `for item in items key = item.id { ... }` View DSL and supported
   container elements.
@@ -451,8 +471,8 @@ Source briefs:
   versioning are designed. Numeric fallback lints
   inside inferred closure bodies are implemented for scalar integer/float
   fallback and numeric sequence fallback. LSP inlays are implemented for
-  inferred function-valued `let` bindings; broader expression inlays still need
-  a source-span contract for sema expression evidence.
+  inferred function-valued `let` bindings and opt-in source-backed expression
+  judgments.
 - Closure `return expr` now binds to the nearest closure/function-like sema
   boundary for type checking. Strict runtime block lowering already preserves
   simple early-return shape by discarding later block statements after a
@@ -468,12 +488,13 @@ Source briefs:
 - Closure capture inventory collection, borrowed-capture suspension-boundary
   lifetime diagnostics, and runtime-plan capture metadata projection exist.
   Effect-row integration for closure captures remains open.
-- LSP inlays currently cover inferred function-valued `let` bindings. Sema
-  expression judgments now carry optional source ranges for parser-provided
-  `let` RHS expressions, but full arbitrary expression inlays remain open until
-  expression AST/statement surfaces provide source ranges for every expression
-  position and LSP policy decides which arbitrary expression judgments should
-  be rendered. This has been split to
+- LSP inlays now cover inferred function-valued `let` bindings and opt-in
+  arbitrary expression type hints for source-backed expression judgments. The
+  policy suppresses literals, paths, placeholders, function values, `Never`,
+  aggregate literal sites, and duplicate `(source end, type label)` positions so
+  the default profile stays quiet and enabled hints do not become noisy while
+  source-range coverage is still expanding. Full source identity for every
+  generated/desugared expression site remains open under
   `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
 
 ## Follow-up request
@@ -819,9 +840,11 @@ workspace. A current full workspace check,
 `cargo check --workspace --all-targets --all-features`, also passed with one
 unrelated dirty presentation test unused-import warning. Structure audit still
 reports the unrelated existing
-`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error. Full arbitrary
-expression inlays remain open until source ranges are available for all
-expression positions and LSP rendering policy is specified.
+`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error. Arbitrary
+expression inlays are no longer blocked on the initial LSP rendering policy;
+the profile-gated source-range path below is the active implementation.
+Completion for the split request still requires auditing any remaining
+expression families that do not yet produce stable source identity.
 
 The expression source-range substrate cut adds `TypeJudgment::source_range` and
 threads parser-provided `let` RHS ranges into root expression judgments. Focused
@@ -831,11 +854,74 @@ followed by full
 `cargo test -p arcweft-lang-sema --all-features --quiet` and
 `cargo clippy -p arcweft-lang-sema --all-targets --all-features --quiet`.
 Clippy still reports only the existing `TraitMember` / `ImplMember`
-large-enum warnings from `arcweft-lang-syntax`. Current workspace check is
-blocked by unrelated dirty `arcweft-bundle` view-renaming work:
-`ViewSemanticTargetResource` is referenced after the model was renamed to
-`ViewSemanticTarget`. Structure audit still reports the unrelated existing
+large-enum warnings from `arcweft-lang-syntax`. The current focused
+all-features check for `arcweft-lang-syntax`, `arcweft-lang-sema`, and
+`arcweft-bundle` passes. Structure audit still reports the unrelated existing
 `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error.
+
+The nested expression source-range cut extends the same substrate beyond the
+root `let` RHS judgment. `arcweft-lang-syntax::expr::collect_expr_source_ranges`
+now lives in `expr/source_ranges.rs` and collects syntax-owned subtree ranges
+for authored expression nodes such as call arguments, selectors, pipes, binary
+expressions, closures, block values, and match/if subexpressions. Sema consumes
+the dormant `Stmt::Let::expr_source` field before type checking and registers
+those ranges against the current HIR expression nodes, so nested judgments can
+carry their own source slices without falling back to judgment traversal order.
+Pipe expressions now pass the authored RHS range to the desugared data-last or
+`^`-substituted RHS root, so generated call judgment ranges point at the
+authored RHS expression and do not pretend the inserted LHS was written inside
+that RHS. Focused coverage passed with
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+and the broader validation passed with
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-bundle --all-targets --all-features`
+and
+`cargo test -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-bundle --all-features`.
+Focused clippy passed with
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-bundle --all-targets --all-features`;
+only the existing `TraitMember` / `ImplMember` `large_enum_variant` warnings
+remain. Structure audit for this cut now reports only the unrelated existing
+`crates/arcweft-cli/src/app/bundle_view.rs` error and 148 warnings. This cut
+does not enable arbitrary expression LSP inlays by default; the profile/policy
+and display-placement contract remains with
+`docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
+
+The first profile-gated arbitrary expression inlay cut wires that source-range
+substrate into `arcweft-lsp`. `LspConfig::with_arbitrary_expression_type_inlays`
+sets an opt-in policy that is carried through `LspProfileResolver` into each
+`LspProfile`; the default remains unchanged and only emits the existing inferred
+function-valued `let` inlays. When enabled, LSP inlay hints consume sema
+`TypeJudgmentSubject::Expr` records with authoritative `source_range` evidence
+and place a type inlay after the authored expression. The conservative policy
+suppresses literal, path, entity, lifetime, short-variant, placeholder, raw,
+function-valued, and `Never` sites, so nested call/binary/pipe expressions can
+be inspected without turning every token into noise. Focused coverage passed
+with
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`
+and preserves the existing function-valued binding behavior with
+`cargo test -p arcweft-lsp --all-features inlay_hint_request_reports_inferred_function_types -- --nocapture`.
+Full LSP validation passed with `cargo test -p arcweft-lsp --all-features`.
+Focused clippy for `arcweft-lsp` completed; it reports only existing dependency
+warnings from `arcweft-lang-syntax` large enum variants and unrelated
+`arcweft-runtime-host` clipboard lifetime names. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the current dirty worktree reports 2443 scanned files, 1170 Rust files, 572965
+Rust physical LOC, and the same unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The selector source-range follow-up fixes the 07.4.1 selector policy with
+explicit evidence: ordinary selector expressions retain the full visible range
+such as `choice.label`, while the selector receiver keeps its own authored
+range for nested judgments. The profile-gated LSP expression inlay test now
+also verifies that a non-trivial selector can emit `: String` when arbitrary
+expression inlays are enabled, while default profiles remain quiet. Focused
+validation passed with
+`cargo test -p arcweft-lang-sema --all-features desugared_function_stack_expression_judgments_keep_authored_source_ranges -- --nocapture`
+and
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`.
+`cargo fmt --all --check` also passed. Remaining expression-inlay work before
+closing the split request is to audit additional expression families against the
+source identity contract rather than relying on the earlier let-RHS-only
+boundary.
 
 The non-annotated top-level prefix partial cut removes the sema-only
 `#[pure]` gate from signature partial calls. Sema now types `add(2i64)` from a
@@ -950,3 +1036,244 @@ The changed Rust file measured by the structure-audit CSV for this cut is
 `crates/arcweft-lang-sema/src/tests/function_stack.rs` 94,633 bytes / 2,924
 physical LOC; it remains a test file and no production structure-audit error is
 introduced by this slice.
+
+The statement expression source-range cut extends the existing `let` RHS
+source-range substrate into function body statements. The syntax parser now has
+a base-aware logical block item collector, and function/agent body parsing uses
+the CST block body range when building typed statements. Sema registers authored
+expression slices for `return` statements and expression statements, including
+their nested child expression ranges, before emitting `TypeJudgment` records.
+Focused coverage passed with
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+including `return_and_expression_statement_judgments_carry_source_ranges`.
+The same slice passed
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`
+and the LSP profile-gated arbitrary expression inlay smoke
+`cargo test -p arcweft-lsp --all-features expression_type_inlays -- --nocapture`.
+Focused clippy,
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`,
+completed successfully; it still reports existing warnings from
+`TraitMember`/`ImplMember` large enum variants plus unrelated dirty
+runtime-plan/runtime-host warnings, with no new warning from this cut.
+This does not yet claim complete source identity for every generated/desugared
+expression site; those remain governed by
+`docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
+
+The dialogue interpolation source-range cut extends the expression source-range
+substrate into dialogue text tokens. `DialogueToken::Expr` now stores a
+`DialogueExpr` wrapper carrying the parsed expression, the trimmed authored
+expression source, and the absolute document byte range. Full-document dialogue
+parsing uses a base-aware tokenizer so `#[...]` and `$()` interpolation ranges
+line up with the original `.arcw` source instead of the isolated dialogue
+string. Sema registers those ranges before type checking line-plan dialogue
+content, which lets interpolation expression judgments participate in the same
+source-backed tooling path as `let`, `return`, and expression-statement
+judgments. Focused validation passed with
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp --all-targets --all-features`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_dialogue_syntax_and_defaults dialogue_interpolation_tokens_carry_document_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features dialogue_interpolation_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features dialogue_tokenizer -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_dialogue_syntax_and_defaults -- --nocapture`,
+and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp --all-targets --all-features`.
+Focused clippy still reports only existing dependency warnings from
+`TraitMember`/`ImplMember` large enum variants plus unrelated dirty
+runtime-plan/runtime-host warnings. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the current dirty worktree reports 2445 scanned files, 1170 Rust files, 573543
+Rust physical LOC, and the same unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The control-transfer statement source-range cut introduces
+`arcweft_lang_syntax::ast::flow::AuthoredExpr` and changes `Stmt::Goto`,
+`Stmt::Yield`, `Stmt::Close`, and `Stmt::Select` from bare expression payloads
+to source-aware expression payloads. Parser statement lowering records the
+trimmed authored expression and absolute range when a base offset is available,
+and sema registers that source before checking `goto`, `yield`, `close`, and
+`select` statement expressions. Read-only traversal/lowering layers now unwrap
+the payload through `AuthoredExpr::expr()`, so symbol collection, semantic
+project indexing, verifier collection, runtime-plan lowering, line-task/source/
+stream lowering, tooling scanners, and view-mount extraction keep the same
+expression semantics while preserving source identity for tooling. Focused
+validation passed with
+`cargo test -p arcweft-lang-sema --all-features control_transfer_statement_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`,
+and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`.
+Focused clippy exits successfully with existing unrelated warnings from
+`arcweft-render-wgpu::font_system`, `TraitMember` / `ImplMember` large enum
+variants, `runtime-plan/src/line_task.rs`, runtime-host clipboard lifetime
+names, and player-native clipboard code. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the current dirty worktree reports 2445 scanned files, 1170 Rust files, 573743
+Rust physical LOC, and the same unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings. The
+line-plan simple statement rows are now parsed through the same base-aware
+statement path, so full-document `select @choice.primary` expressions preserve
+their authored range as well. This cut verifies `goto`, `close`, stream
+`yield`, and line-plan `select` judgments.
+
+The control-statement expression source-range cut extends `AuthoredExpr`
+through both `Stmt` and HIR flow block payloads. Syntax AST and HIR keep
+existing `condition()`/`expr()`/`source()` accessors returning `&Expr` for
+read-only traversal/lowering code, while checker-facing authored accessors
+carry the original expression text and absolute range. Flow block parsing now
+uses the trim-adjusted head base for `if`, `if let`, `while`, `while let`,
+`for`, and `match`, and match arm body statements are parsed with their real
+body-line base rather than a zero-origin nested parser range. Sema checks
+flow-level and statement-level control expressions through the authored path,
+so type judgments for `if` conditions, loop conditions, `for` sources, and
+`match` scrutinees retain source ranges. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features control_flow -- --nocapture`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`,
+and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-hir -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`.
+Focused clippy exits successfully with existing warnings from
+`arcweft-render-wgpu::font_system`, `TraitMember` / `ImplMember` large enum
+variants, line-plan `Stmt` enum size after source-range payload retention,
+`runtime-plan/src/line_task.rs`, runtime-host clipboard lifetime names, and
+player-native clipboard code. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the current dirty worktree reports 2445 scanned files, 1170 Rust files, 574101
+Rust physical LOC, and the same unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The desugared pipe/function-stack expression source-range cut fixes cloned RHS
+nodes created during `|>` lowering. Sema now copies authored RHS subtree ranges
+onto the desugared expression only for the duration of checking, restoring the
+pointer-keyed range map afterward so temporary clone addresses cannot leak into
+later judgments. This preserves child ranges for `add(^, 11i64)` and
+`add(22i64)` after pipe lowering, keeps `_ > threshold` partial-placeholder
+and `|value| value + 1i64` closure body judgments source-backed, and verifies
+that `threshold.above(70i64)` method-chain data-last fallback retains the
+visible call expression range. Focused validation passed with
+`cargo fmt --all --check`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp --all-targets --all-features`,
+and
+`cargo clippy -p arcweft-lang-sema --all-targets --all-features`. Clippy exits
+successfully with the existing `TraitMember` / `ImplMember` / `LinePlanItem`
+large-enum warnings from `arcweft-lang-syntax`. The source-range transfer code
+is split into `checker/source_ranges.rs` to avoid adding more responsibility to
+the already-large checker module. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the current dirty worktree reports 2446 scanned files, 1171 Rust files, 574710
+Rust physical LOC, and the same unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The assignment statement source-range cut changes `Stmt::Assign` target and RHS
+payloads from bare expressions to `AuthoredExpr`. Parser statement lowering now
+records the trimmed target and RHS text with absolute ranges, while traversal,
+tooling, verifier, runtime-plan lowering, view-mount extraction, and sema unwrap
+through `AuthoredExpr::expr()` at their existing expression boundaries. Sema
+registers both assignment-side expression source trees and checks the RHS
+against the inferred assignment target type at the authored RHS range, so
+expected-type judgments now point back to the visible source instead of an
+anonymous parser expression. The regression
+`assignment_statement_rhs_judgments_carry_source_ranges` verifies the RHS root
+and child literal ranges for `counter.value = counter.value + 2i64`. Focused
+validation passed with
+`cargo fmt --all --check`,
+`cargo test -p arcweft-lang-sema --all-features assignment_statement_rhs_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`,
+and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`.
+Focused clippy exits successfully with existing unrelated warnings from
+`arcweft-lang-syntax` large enum variants, `arcweft-lang-sema::symbols`
+`collect_stmt`, `arcweft-runtime-plan/src/line_task.rs`, runtime-host clipboard
+lifetimes, `arcweft-render-wgpu::font_system`, and player-native clipboard
+mapping code. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the current dirty worktree reports 2446 scanned files, 1171 Rust files, 574836
+Rust physical LOC, and the same unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The action receive and single-line defer statement source-range cut changes
+`Stmt::LetActionReceive::action` and `Stmt::Defer::expr` from bare `Expr`
+payloads to `AuthoredExpr`. `receive action(...)` now records the inner action
+target range rather than using suffix-based statement range math, and flow-level
+single-line `defer expr` parsing now routes through the base-aware statement
+parser instead of the range-less fallback path. Sema checks both payloads
+through the authored expression helpers, while project indexes, symbol
+collection, verifier collection, runtime-plan lowering, tooling scans, and view
+mount extraction unwrap through `AuthoredExpr::expr()` at read-only boundaries.
+The regression `action_receive_and_defer_judgments_carry_source_ranges`
+verifies the action target range for
+`receive action(@action:.feedback.submit)` and the defer expression root/child
+ranges for `defer 3i64 + 4i64`. Focused validation passed with
+`cargo fmt --all --check`,
+`cargo test -p arcweft-lang-sema --all-features action_receive_and_defer_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`,
+and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-cli -p arcweft-tooling -p arcweft-verify --all-targets --all-features`.
+Focused clippy exits successfully with the same existing unrelated warnings from
+`arcweft-lang-syntax` large enum variants, `arcweft-runtime-plan/src/line_task.rs`,
+runtime-host clipboard lifetimes, `arcweft-render-wgpu::font_system`, and
+player-native clipboard mapping code. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the current dirty worktree reports 2446 scanned files, 1171 Rust files, 574915
+Rust physical LOC, and the same unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The LSP expression-inlay stabilization cut keeps arbitrary expression type
+inlays profile-gated and source-backed. It deduplicates identical labels at the
+same source end, suppresses aggregate literal sites such as `Choice { ... }`,
+and preserves the default quiet profile. Focused validation passed with
+`cargo fmt --all --check`,
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`,
+`cargo test -p arcweft-lsp --all-features inlay_hint_request_reports_inferred_function_types -- --nocapture`,
+and
+`cargo check -p arcweft-lsp -p arcweft-lang-sema --all-targets --all-features`.
+
+The structured container/control expression source-range cut closes the next
+part of request
+`docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
+Flow parser value-producing `let` forms now reconstruct source slices from the
+`CstBlockEvent` range instead of leaving `expr_source` empty for structured
+braced expressions. This covers `let x = { ... }`, computation/memo blocks,
+`let x = if ... { ... } else { ... }`, `let x = if let ...`, and
+`let x = match ... { ... }`. The syntax expression source collector also fixes
+delimiter matching for control-expression roots so `if` branch block children
+and `match` arm values are collected under their authored ranges. Focused
+validation passed with
+`cargo test -p arcweft-lang-syntax --all-features match_expression_arm_values_keep_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features container_and_control_expression_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features desugared_function_stack_expression_judgments_keep_authored_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`,
+`cargo test -p arcweft-lsp --all-features inlay_hint_request_reports_inferred_function_types -- --nocapture`,
+`cargo fmt --all --check`, and
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`.
+
+The guarded if-let source-range follow-up fixes the remaining condition split
+inside value-producing `if let ... when ...` expressions. The syntax collector
+now uses the language-level `when` boundary, so the scrutinee range stops before
+the guard and the guard expression gets its own source-backed judgment. The
+regression lives in
+`container_and_control_expression_judgments_carry_source_ranges` and asserts
+that `maybe`, `ready && true`, and the full `if let` root each carry distinct
+authored source ranges. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features container_and_control_expression_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`,
+`cargo test -p arcweft-lang-syntax --all-features match_expression_arm_values_keep_source_ranges -- --nocapture`,
+`cargo fmt --all --check`, and
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`.
+
+The effect/prefix expression source-range follow-up closes another narrow part
+of the same 07.4.1 request. The syntax expression source collector now treats
+`await? expr` as its own prefix spelling when advancing the child expression
+base offset, so nested ranges start after the question marker instead of one
+byte early. Sema coverage now verifies source-backed judgments for flow-level
+`await? load_bg()`, postfix `maybe?`, prefix `try Some(unwrapped)`, numeric
+unary `-unwrapped`, and boolean unary `!flag`. Focused validation passed with
+`cargo test -p arcweft-lang-syntax --all-features await_question_keeps_inner_expression_source_range_after_question_mark -- --nocapture`
+and
+`cargo test -p arcweft-lang-sema --all-features effect_and_prefix_expression_judgments_carry_source_ranges -- --nocapture`.

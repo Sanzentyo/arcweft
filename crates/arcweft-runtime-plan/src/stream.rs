@@ -52,23 +52,23 @@ fn lower_stream_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>)
             body,
         } => vec![StreamOp::ForNext {
             pattern: lower_runtime_pattern(pattern),
-            source: lower_runtime_expr_with_pure(source, pure_helpers),
+            source: lower_runtime_expr_with_pure(source.expr(), pure_helpers),
             body: lower_stream_stmt_list(body, pure_helpers),
         }],
         Stmt::Yield(expr) => vec![StreamOp::Yield {
-            expr: lower_runtime_expr_with_pure(expr, pure_helpers),
+            expr: lower_runtime_expr_with_pure(expr.expr(), pure_helpers),
         }],
         Stmt::If {
             condition,
             body,
             else_body,
         } => vec![StreamOp::If {
-            condition: lower_runtime_expr_with_pure(condition, pure_helpers),
+            condition: lower_runtime_expr_with_pure(condition.expr(), pure_helpers),
             then_ops: lower_stream_stmt_list(body, pure_helpers),
             else_ops: lower_stream_stmt_list(else_body, pure_helpers),
         }],
         Stmt::Match { expr, arms } => vec![StreamOp::Match {
-            scrutinee: lower_runtime_expr_with_pure(expr, pure_helpers),
+            scrutinee: lower_runtime_expr_with_pure(expr.expr(), pure_helpers),
             arms: arms
                 .iter()
                 .map(|arm| StreamMatchArm {
@@ -81,9 +81,9 @@ fn lower_stream_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>)
                 .collect(),
         }],
         Stmt::Close(expr) => vec![StreamOp::Close {
-            source: lower_runtime_expr_with_pure(expr, pure_helpers),
+            source: lower_runtime_expr_with_pure(expr.expr(), pure_helpers),
         }],
-        Stmt::Return(_) => vec![StreamOp::Return],
+        Stmt::Return { expr: _, .. } => vec![StreamOp::Return],
         _ => vec![StreamOp::Noop],
     }
 }

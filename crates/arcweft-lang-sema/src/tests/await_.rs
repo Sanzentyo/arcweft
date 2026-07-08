@@ -73,7 +73,10 @@ flow @flow.loading loading {
     assert_eq!(pending.kind(), AwaitBranchKind::Pending);
     assert!(matches!(
         pending.body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+        FlowItem::Stmt(Stmt::Expr {
+            expr: Expr::Call { .. },
+            ..
+        })
     ));
 }
 
@@ -105,7 +108,10 @@ flow @flow.loading loading {
     ));
     assert!(matches!(
         await_with.branches()[1].body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+        FlowItem::Stmt(Stmt::Expr {
+            expr: Expr::Call { .. },
+            ..
+        })
     ));
 
     let hir = lower_to_hir(&tree).expect("await branches lower");
@@ -139,7 +145,10 @@ flow @flow.loading loading {
     assert_eq!(pending.body().len(), 1);
     assert!(matches!(
         pending.body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+        FlowItem::Stmt(Stmt::Expr {
+            expr: Expr::Call { .. },
+            ..
+        })
     ));
 }
 

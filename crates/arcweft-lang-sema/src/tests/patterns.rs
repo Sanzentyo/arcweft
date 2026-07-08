@@ -25,11 +25,15 @@ flow @flow.opening opening {
     ));
     assert!(matches!(
         &flow.body()[1],
-        FlowItem::Stmt(Stmt::Return(Expr::Call { .. }))
+        FlowItem::Stmt(Stmt::Return {
+            expr: Expr::Call { .. },
+            ..
+        })
     ));
     assert!(matches!(
         &flow.body()[2],
-        FlowItem::Stmt(Stmt::Goto(Expr::EntityRef(entity))) if entity.body() == "flow.title"
+        FlowItem::Stmt(Stmt::Goto(target))
+            if matches!(target.expr(), Expr::EntityRef(entity) if entity.body() == "flow.title")
     ));
 }
 
