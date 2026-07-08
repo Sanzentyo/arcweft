@@ -1,5 +1,10 @@
 # Function Stack Goal Completion Audit - 2026-07-08
 
+Current pointer: see
+`docs/implementation/function-stack-status-rollup-2026-07-09.md` for the latest
+one-page status. This file remains the 2026-07-08 requirement-by-requirement
+audit.
+
 ## Purpose
 
 This audit maps the active function/closure/currying/pipeline goal to current

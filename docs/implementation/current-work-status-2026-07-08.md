@@ -1,5 +1,10 @@
 # Current Work Status - 2026-07-08
 
+Current pointer: see
+`docs/implementation/current-work-status-2026-07-09.md` for the latest
+operational worktree map. This file remains historical evidence for the
+2026-07-08 cuts.
+
 This note is the short operational map for the current Arcweft worktree. It
 does not replace the detailed implementation logs; it records what is actually
 complete, what is still implementation-ready, and what should stay as request

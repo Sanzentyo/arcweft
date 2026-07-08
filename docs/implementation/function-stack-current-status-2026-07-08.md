@@ -1,5 +1,9 @@
 # Function Stack Current Status - 2026-07-08
 
+Current pointer: see
+`docs/implementation/function-stack-status-rollup-2026-07-09.md` for the latest
+goal rollup. This file remains the 2026-07-08 status index and evidence map.
+
 This note is the current implementation-status index for the active
 function/closure/currying/pipeline goal. It summarizes what is implemented,
 what remains implementation-ready, and what should stay in request/design space.
