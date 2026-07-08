@@ -180,6 +180,14 @@ fn collect_stmt_source_ranges<'a>(
         Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
             collect_authored_expr_source_ranges(expr, ranges);
         }
+        Stmt::Signal { target, value }
+        | Stmt::LifetimeSet {
+            target,
+            expr: value,
+        } => {
+            collect_authored_expr_source_ranges(target, ranges);
+            collect_authored_expr_source_ranges(value, ranges);
+        }
         Stmt::If { .. }
         | Stmt::While { .. }
         | Stmt::WhileLet { .. }
@@ -193,8 +201,6 @@ fn collect_stmt_source_ranges<'a>(
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
         | Stmt::LetAwait { .. }
-        | Stmt::Signal { .. }
-        | Stmt::LifetimeSet { .. }
         | Stmt::Continue { .. }
         | Stmt::Raw(_) => {}
     }

@@ -17,11 +17,9 @@ Related slices are:
 
 - At the start of this refresh, `main` and `origin/main` were aligned at
   `8b77f6dd9 Fix thread body source ranges`.
-- The last completed implementation slice was the source-range follow-up for
-  thread expression body statement ranges.
-- The next concrete implementation-ready source-range gap is
-  `Stmt::Signal` and `Stmt::LifetimeSet`, which still store bare `Expr`
-  payloads instead of source-backed `AuthoredExpr` payloads.
+- The last completed implementation slices were the source-range follow-up for
+  thread expression body statement ranges and the authored-payload conversion
+  for `Stmt::Signal` / `Stmt::LifetimeSet`.
 - The only dirty files outside that slice were unrelated Web IME/player files
   under `web/`.
 
@@ -131,8 +129,8 @@ their own slice if they are still desired.
   dialogue interpolation/call expressions, action/defer/assignment/control
   transfer statements, container child expressions, computation blocks, braced
   closures, guarded `if let`, effect/prefix expressions, `wait(...)`,
-  dialogue-call line-plan colon blocks such as `let cue = at(...):`, and
-  thread expression body statement sources.
+  dialogue-call line-plan colon blocks such as `let cue = at(...):`, thread
+  expression body statement sources, and lifetime registry write values.
 
 ### Runtime ID Boundary
 
@@ -148,16 +146,13 @@ their own slice if they are still desired.
 
 These items can be advanced without redesigning the goal:
 
-1. Convert `Stmt::Signal` and `Stmt::LifetimeSet` to source-backed authored
-   payloads and add focused sema/source-range coverage for both statement
-   families.
-2. Audit the remaining expression source-range families against
+1. Audit the remaining expression source-range families against
    `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
    Many families are already implemented; the remaining useful slice is now a
    matrix-style audit that lists still-untested families, closes any discovered
    local gaps, and adds internal diagnostics or stats for judgments that should
    have a source range but do not.
-3. Continue typed-runtime-ID cleanup at AWBC/report boundaries where internal
+2. Continue typed-runtime-ID cleanup at AWBC/report boundaries where internal
    maps still use public strings, but only where the AWBC schema/data-format
    boundary allows typed keys without a larger format change.
 
@@ -197,10 +192,9 @@ These should stay as request or design work before implementation:
 ## Recommended Next Slice
 
 Finish the expression source-range/inlay audit as the next implementation
-slice, starting with `Stmt::Signal` and `Stmt::LifetimeSet` authored payloads.
-It is local to syntax/sema/runtime-plan/tooling call sites, does not require a
-new runtime contract, and directly reduces the largest remaining
-implementation-ready ambiguity in the active goal.
+slice. It is local to syntax/sema/LSP evidence, does not require a new runtime
+contract, and directly reduces the largest remaining implementation-ready
+ambiguity in the active goal.
 
 After that slice, either:
 

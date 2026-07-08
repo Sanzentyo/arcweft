@@ -1511,3 +1511,13 @@ with
 the dirty worktree reports 2448 scanned files, 1172 Rust files, 577086 Rust
 physical LOC, and the existing unrelated
 `crates/arcweft-cli/src/app/bundle_view.rs` error with 150 warnings.
+
+The lifetime-registry statement source-range follow-up closes the next
+localized 07.4.1 gap from the status refresh. `Stmt::Signal` and
+`Stmt::LifetimeSet` now store `AuthoredExpr` payloads instead of bare `Expr`
+values. Parser-produced lifetime registry writes such as
+`'flow.flags.score <- score + 1i64` carry authored value ranges through sema,
+while runtime-plan, verifier, project-index, tooling, and View scanners project
+those authored payloads back to plain expressions only where source identity is
+irrelevant. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features lifetime_set_statement_value_judgments_carry_source_ranges -- --nocapture`.

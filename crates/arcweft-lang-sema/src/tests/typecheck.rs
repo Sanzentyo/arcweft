@@ -1629,6 +1629,40 @@ flow @flow.assignment_source_ranges assignment_source_ranges {
 }
 
 #[test]
+fn lifetime_set_statement_value_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.lifetime_set_source_ranges lifetime_set_source_ranges {
+    let score = 2i64
+    'flow.flags.score <- score + 1i64
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("lifetime-set source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "score + 1i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "lifetime-set value root should carry its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "1i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "lifetime-set value literal should carry its own authored range",
+    );
+}
+
+#[test]
 fn action_receive_and_defer_judgments_carry_source_ranges() {
     let source = r"
 pub action feedback.submit(value: String)

@@ -207,13 +207,11 @@ fn index_stmt_symbol_dependency_relations(
     mut index: ProjectSemanticIndex,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match stmt {
-        Stmt::Let { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::LifetimeSet { expr, .. }
-        | Stmt::Expr { expr, .. } => {
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             index = index_expr_symbol_dependency_relations(parent, expr, index)?;
         }
-        Stmt::Out { expr, .. }
+        Stmt::LifetimeSet { expr, .. }
+        | Stmt::Out { expr, .. }
         | Stmt::Defer { expr, .. }
         | Stmt::Yield(expr)
         | Stmt::Close(expr)
@@ -221,13 +219,13 @@ fn index_stmt_symbol_dependency_relations(
         | Stmt::Goto(expr) => {
             index = index_expr_symbol_dependency_relations(parent, expr.expr(), index)?;
         }
-        Stmt::Assign { target, expr } => {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        } => {
             index = index_expr_symbol_dependency_relations(parent, target.expr(), index)?;
             index = index_expr_symbol_dependency_relations(parent, expr.expr(), index)?;
-        }
-        Stmt::Signal { target, value } => {
-            index = index_expr_symbol_dependency_relations(parent, target, index)?;
-            index = index_expr_symbol_dependency_relations(parent, value, index)?;
         }
         Stmt::LetElse {
             expr, else_body, ..
@@ -714,26 +712,24 @@ fn index_stmt_relations(
             }
             index = index_expr_dependency_relations(parent, expr.expr(), index)?;
         }
-        Stmt::Let { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::LifetimeSet { expr, .. }
-        | Stmt::Expr { expr, .. } => {
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             index = index_expr_dependency_relations(parent, expr, index)?;
         }
-        Stmt::Out { expr, .. }
+        Stmt::LifetimeSet { expr, .. }
+        | Stmt::Out { expr, .. }
         | Stmt::Defer { expr, .. }
         | Stmt::Yield(expr)
         | Stmt::Close(expr)
         | Stmt::Select(expr) => {
             index = index_expr_dependency_relations(parent, expr.expr(), index)?;
         }
-        Stmt::Assign { target, expr } => {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        } => {
             index = index_expr_dependency_relations(parent, target.expr(), index)?;
             index = index_expr_dependency_relations(parent, expr.expr(), index)?;
-        }
-        Stmt::Signal { target, value } => {
-            index = index_expr_dependency_relations(parent, target, index)?;
-            index = index_expr_dependency_relations(parent, value, index)?;
         }
         Stmt::LetElse {
             expr, else_body, ..

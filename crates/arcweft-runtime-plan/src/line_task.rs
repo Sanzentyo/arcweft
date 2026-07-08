@@ -425,8 +425,8 @@ impl LinePlanGraphLowerer {
     fn lower_stmt(&mut self, stmt: &Stmt) -> Vec<LineEffectRequest> {
         match stmt {
             Stmt::LifetimeSet { target, expr } => vec![LineEffectRequest::RegisterHandle {
-                key: expr_label(target),
-                handle: expr_label(expr),
+                key: expr_label(target.expr()),
+                handle: expr_label(expr.expr()),
             }],
             Stmt::Wait(WaitTarget::Duration(expr)) => {
                 if let Some(duration) = duration_expr(expr.expr()) {
@@ -446,8 +446,8 @@ impl LinePlanGraphLowerer {
             }
             Stmt::Signal { target, value } => {
                 vec![LineEffectRequest::SignalWrite(RuntimeAssignment {
-                    target: expr_label(target),
-                    value: expr_label(value),
+                    target: expr_label(target.expr()),
+                    value: expr_label(value.expr()),
                 })]
             }
             Stmt::Expr { expr, .. } => self.lower_expr_effect(expr),

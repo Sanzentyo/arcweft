@@ -1363,20 +1363,17 @@ fn collect_stmt_action_invokes(
         Stmt::LetActionReceive { action, .. } | Stmt::Defer { expr: action, .. } => {
             collect_expr_action_invokes(action.expr(), range, invokes);
         }
-        Stmt::Assign { target, expr } => {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        }
+        | Stmt::LifetimeSet { target, expr } => {
             collect_expr_action_invokes(target.expr(), range, invokes);
             collect_expr_action_invokes(expr.expr(), range, invokes);
         }
         Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
             collect_expr_action_invokes(expr.expr(), range, invokes);
-        }
-        Stmt::Signal { target, value } => {
-            collect_expr_action_invokes(target, range, invokes);
-            collect_expr_action_invokes(value, range, invokes);
-        }
-        Stmt::LifetimeSet { target, expr } => {
-            collect_expr_action_invokes(target, range, invokes);
-            collect_expr_action_invokes(expr, range, invokes);
         }
         Stmt::LetElse {
             expr, else_body, ..

@@ -100,7 +100,7 @@ impl TypeChecker<'_> {
                 self.check_authored_expr(expr);
             }
             Stmt::Yield(expr) => self.check_yield_stmt(expr),
-            Stmt::Signal { target, value } => self.check_two_exprs(target, value),
+            Stmt::Signal { target, value } => self.check_two_authored_exprs(target, value),
             Stmt::LifetimeSet { target, expr } => self.check_lifetime_set_stmt(target, expr),
             Stmt::Wait(target) => self.check_wait_stmt(target),
             Stmt::On { body, .. } => self.check_on_stmt(stmt, body),
@@ -330,9 +330,9 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_two_exprs(&mut self, first: &Expr, second: &Expr) {
-        self.check_expr(first);
-        self.check_expr(second);
+    fn check_two_authored_exprs(&mut self, first: &AuthoredExpr, second: &AuthoredExpr) {
+        self.check_authored_expr(first);
+        self.check_authored_expr(second);
     }
 
     fn check_assign_stmt(&mut self, target: &AuthoredExpr, expr: &AuthoredExpr) {

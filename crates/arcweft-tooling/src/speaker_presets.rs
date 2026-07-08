@@ -391,8 +391,8 @@ fn collect_speaker_presets_from_stmt(
             target,
             expr: value,
         } => {
-            collect_speaker_presets_from_expr(target, character_aliases, presets);
-            collect_speaker_presets_from_expr(value, character_aliases, presets);
+            collect_speaker_presets_from_expr(target.expr(), character_aliases, presets);
+            collect_speaker_presets_from_expr(value.expr(), character_aliases, presets);
         }
         Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
             collect_speaker_presets_from_stmts(body, character_aliases, presets);

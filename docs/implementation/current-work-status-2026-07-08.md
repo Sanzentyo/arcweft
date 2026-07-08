@@ -58,6 +58,10 @@ The following is implemented and evidenced by tests or implementation logs:
 - Canonical primitive spellings are enforced without compatibility aliases.
 - Runtime lookup IDs now use typed `RuntimeIdPath` wrappers instead of raw
   `FlowRuntimeId("flow.main")`-style string newtypes.
+- `Stmt::Signal` and `Stmt::LifetimeSet` now use source-backed
+  `AuthoredExpr` payloads. `LifetimeSet` parser output carries authored ranges
+  through sema so lifetime write values can produce source-backed type
+  judgments.
 
 ## Completed Adjacent Cleanup
 
@@ -75,14 +79,12 @@ new concrete defect appears:
 
 These can be implemented without a new design package:
 
-1. Finish the expression source-range closure pass for request
+1. Finish the remaining expression source-range closure pass for request
    `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
-   The largest concrete code-level gap found in this audit is that
-   `Stmt::Signal` and `Stmt::LifetimeSet` still store bare `Expr` payloads and
-   are type-checked through bare expression paths. They should move to
-   `AuthoredExpr` payloads, with syntax/HIR/sema/runtime-plan/tooling call
-   sites projecting to `Expr` only where source identity is irrelevant.
-2. Add a small source-range coverage matrix after that conversion. The point is
+   The `Stmt::Signal` / `Stmt::LifetimeSet` authored-payload conversion is now
+   complete; the next useful work is the coverage matrix and any remaining
+   discovered local gaps.
+2. Add a small source-range coverage matrix. The point is
    to list expression families that are covered, intentionally generated with
    no source, or still missing source-backed judgments.
 3. Add internal diagnostics or stats for sema judgments that should carry a
@@ -125,12 +127,10 @@ function-stack goal:
 
 ## Recommended Next Order
 
-1. Implement `Stmt::Signal` and `Stmt::LifetimeSet` as source-backed
-   `AuthoredExpr` statements and add focused source-range tests.
-2. Add the source-range coverage matrix and any missing local tests found by
+1. Add the source-range coverage matrix and any missing local tests found by
    that matrix.
-3. Commit and push that source-range closure slice.
-4. Decide whether to take the next implementation-ready runtime-ID cleanup or
+2. Commit and push that source-range closure slice.
+3. Decide whether to take the next implementation-ready runtime-ID cleanup or
    pause for a design package on spread partials / AWBC resumable apply.
 
 ## Current Structural Risk

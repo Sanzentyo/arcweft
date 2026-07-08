@@ -1156,12 +1156,12 @@ impl ObligationCollector {
                 target: condition,
                 value: message,
             } => {
-                self.collect_expr(condition);
-                self.collect_expr(message);
+                self.collect_expr(condition.expr());
+                self.collect_expr(message.expr());
             }
             Stmt::LifetimeSet { target, expr } => {
-                self.collect_lifetime_write(target);
-                self.collect_expr(expr);
+                self.collect_lifetime_write(target.expr());
+                self.collect_expr(expr.expr());
             }
             Stmt::Wait(target) => self.collect_wait(target),
             Stmt::On { trigger, body } => {

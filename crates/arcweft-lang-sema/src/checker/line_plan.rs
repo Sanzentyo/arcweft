@@ -7,7 +7,7 @@ use super::{
     TypeKind, lifetime_key, merge_line_output,
 };
 use arcweft_lang_syntax::ast::{
-    flow::{FlowItem, WaitTarget},
+    flow::{AuthoredExpr, FlowItem, WaitTarget},
     line_plan::LinePlan,
 };
 use arcweft_lang_syntax::expr::parse_expr;
@@ -276,13 +276,13 @@ impl TypeChecker<'_> {
         marks
     }
 
-    pub(super) fn check_lifetime_set_stmt(&mut self, target: &Expr, expr: &Expr) {
-        let value_ty = self.check_expr(expr);
-        let Some(key) = lifetime_key(target) else {
+    pub(super) fn check_lifetime_set_stmt(&mut self, target: &AuthoredExpr, expr: &AuthoredExpr) {
+        let value_ty = self.check_authored_expr(expr);
+        let Some(key) = lifetime_key(target.expr()) else {
             self.errors.push(TypeCheckError::new(
                 "lifetime registry assignment target must be `'scope.key`".to_owned(),
             ));
-            self.check_expr(target);
+            self.check_authored_expr(target);
             return;
         };
         self.check_lifetime_access(&key, LifetimeAccessMode::Write);

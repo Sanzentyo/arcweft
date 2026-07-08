@@ -209,9 +209,11 @@ fn parse_stmt_inner(
             else {
                 return raw_stmt(trimmed);
             };
+            let target = target.trim();
+            let expr = expr.trim();
             Stmt::LifetimeSet {
-                target: parse_expr_lossy_with_stats(target.trim(), stats.as_deref_mut()),
-                expr: parse_expr_lossy_with_stats(expr.trim(), stats.as_deref_mut()),
+                target: authored_expr_in_stmt(trimmed, target, base, stats.as_deref_mut()),
+                expr: authored_expr_in_stmt(trimmed, expr, base, stats.as_deref_mut()),
             }
         }
         CstStmtKind::Wait => wait_stmt_source(trimmed).map_or_else(

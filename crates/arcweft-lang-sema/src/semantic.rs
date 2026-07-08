@@ -928,10 +928,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 expr: value,
             } => {
                 if matches!(stmt, Stmt::LifetimeSet { .. }) {
-                    self.collect_lifetime_write(target);
+                    self.collect_lifetime_write(target.expr());
                 }
-                self.collect_expr(target, state);
-                self.collect_expr(value, state);
+                self.collect_expr(target.expr(), state);
+                self.collect_expr(value.expr(), state);
             }
             Stmt::Wait(target) => self.collect_wait(target, state),
             Stmt::On { trigger, body } => {

@@ -482,7 +482,7 @@ facade file has 2153 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/tests/typecheck.rs`
 
-3871 physical LOC exceeds the 2500 LOC review threshold
+3905 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -500,7 +500,7 @@ facade file has 2153 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-lang-syntax/src/ast/view.rs`
 
-1552 physical LOC exceeds the 1200 LOC review threshold
+1549 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 

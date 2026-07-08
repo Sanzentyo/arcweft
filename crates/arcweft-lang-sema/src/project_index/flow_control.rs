@@ -133,26 +133,24 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
                 summary.merge(summarize_expr_control(expr.expr()));
             }
         }
-        Stmt::Let { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::LifetimeSet { expr, .. }
-        | Stmt::Expr { expr, .. } => {
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             summary.merge(summarize_expr_control(expr));
         }
-        Stmt::Out { expr, .. }
+        Stmt::LifetimeSet { expr, .. }
+        | Stmt::Out { expr, .. }
         | Stmt::Defer { expr, .. }
         | Stmt::Yield(expr)
         | Stmt::Close(expr)
         | Stmt::Select(expr) => {
             summary.merge(summarize_expr_control(expr.expr()));
         }
-        Stmt::Assign { target, expr } => {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        } => {
             summary.merge(summarize_expr_control(target.expr()));
             summary.merge(summarize_expr_control(expr.expr()));
-        }
-        Stmt::Signal { target, value } => {
-            summary.merge(summarize_expr_control(target));
-            summary.merge(summarize_expr_control(value));
         }
         Stmt::LetElse {
             expr, else_body, ..

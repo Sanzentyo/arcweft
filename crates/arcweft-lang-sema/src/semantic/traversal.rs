@@ -97,7 +97,10 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::LifetimeSet {
             target,
             expr: value,
-        } => expr_contains_unchecked_promotion(target) || expr_contains_unchecked_promotion(value),
+        } => {
+            expr_contains_unchecked_promotion(target.expr())
+                || expr_contains_unchecked_promotion(value.expr())
+        }
         Stmt::LetActionReceive { action, .. } => expr_contains_unchecked_promotion(action.expr()),
         Stmt::LetChoice { .. }
         | Stmt::LetScope { .. }
@@ -564,14 +567,13 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
 
 fn collect_stmt_write_accesses(stmt: &Stmt, accesses: &mut BTreeSet<ResourceAccess>) {
     match stmt {
-        Stmt::LifetimeSet {
-            target: Expr::LifetimePath { key, .. },
-            ..
-        } => {
-            accesses.insert(resource_write_for_lifetime(key.as_dotted()));
+        Stmt::LifetimeSet { target, .. } => {
+            if let Expr::LifetimePath { key, .. } = target.expr() {
+                accesses.insert(resource_write_for_lifetime(key.as_dotted()));
+            }
         }
         Stmt::Signal { target, .. } => {
-            accesses.insert(resource_write_for_signal(expr_label(target)));
+            accesses.insert(resource_write_for_signal(expr_label(target.expr())));
         }
         Stmt::Expr { expr, .. } => {
             collect_expr_write_accesses(expr, accesses);

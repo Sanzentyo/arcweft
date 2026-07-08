@@ -124,13 +124,14 @@ fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
         | Stmt::Select(expr) => {
             collect_mounted_view_ids_from_expr(expr.expr(), ids);
         }
-        Stmt::Assign { target, expr } => {
+        Stmt::Assign { target, expr }
+        | Stmt::LifetimeSet { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        } => {
             collect_mounted_view_ids_from_expr(target.expr(), ids);
             collect_mounted_view_ids_from_expr(expr.expr(), ids);
-        }
-        Stmt::LifetimeSet { target, expr } => {
-            collect_mounted_view_ids_from_expr(target, ids);
-            collect_mounted_view_ids_from_expr(expr, ids);
         }
         Stmt::LetElse {
             expr, else_body, ..
@@ -152,10 +153,6 @@ fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
         }
         Stmt::DeferBlock { statements, .. } => {
             collect_mounted_view_ids_from_stmts(statements, ids);
-        }
-        Stmt::Signal { target, value } => {
-            collect_mounted_view_ids_from_expr(target, ids);
-            collect_mounted_view_ids_from_expr(value, ids);
         }
         Stmt::Wait(target) => match target {
             WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => {

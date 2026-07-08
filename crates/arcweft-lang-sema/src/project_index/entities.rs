@@ -145,11 +145,11 @@ fn index_stmt_agent_actions(
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match stmt {
-        Stmt::Let { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::LifetimeSet { expr, .. }
-        | Stmt::Expr { expr, .. } => index = index_expr_agent_actions(expr, index, source_name)?,
-        Stmt::Out { expr, .. }
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
+            index = index_expr_agent_actions(expr, index, source_name)?;
+        }
+        Stmt::LifetimeSet { expr, .. }
+        | Stmt::Out { expr, .. }
         | Stmt::Defer { expr, .. }
         | Stmt::Goto(expr)
         | Stmt::Yield(expr)
@@ -157,13 +157,13 @@ fn index_stmt_agent_actions(
         | Stmt::Select(expr) => {
             index = index_expr_agent_actions(expr.expr(), index, source_name)?;
         }
-        Stmt::Assign { target, expr } => {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        } => {
             index = index_expr_agent_actions(target.expr(), index, source_name)?;
             index = index_expr_agent_actions(expr.expr(), index, source_name)?;
-        }
-        Stmt::Signal { target, value } => {
-            index = index_expr_agent_actions(target, index, source_name)?;
-            index = index_expr_agent_actions(value, index, source_name)?;
         }
         Stmt::LetElse {
             expr, else_body, ..

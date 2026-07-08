@@ -635,17 +635,14 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Defer { expr, .. } | Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) => {
             collect_expr(expr.expr(), uses);
         }
-        Stmt::Assign { target, expr } => {
-            collect_expr(target.expr(), uses);
-            collect_expr(expr.expr(), uses);
-        }
-        Stmt::Signal {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
             target,
             value: expr,
         }
         | Stmt::LifetimeSet { target, expr } => {
-            collect_expr(target, uses);
-            collect_expr(expr, uses);
+            collect_expr(target.expr(), uses);
+            collect_expr(expr.expr(), uses);
         }
         Stmt::LetElse {
             expr, else_body, ..

@@ -422,18 +422,17 @@ fn stmt_contains_partial_placeholder(stmt: &arcweft_lang_syntax::ast::flow::Stmt
         }
         | Stmt::Defer { expr, .. } => expr_contains_partial_placeholder(expr.expr()),
         Stmt::LetActionReceive { action, .. } => expr_contains_partial_placeholder(action.expr()),
-        Stmt::Assign { target, expr } => {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        }
+        | Stmt::LifetimeSet { target, expr } => {
             expr_contains_partial_placeholder(target.expr())
                 || expr_contains_partial_placeholder(expr.expr())
         }
         Stmt::Match { expr, .. } | Stmt::Goto(expr) | Stmt::Yield(expr) => {
             expr_contains_partial_placeholder(expr.expr())
-        }
-        Stmt::Signal { target, value } => {
-            expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(value)
-        }
-        Stmt::LifetimeSet { target, expr } => {
-            expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(expr)
         }
         Stmt::UnsafeLifetime { body, .. }
         | Stmt::DeferBlock {

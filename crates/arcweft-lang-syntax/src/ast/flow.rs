@@ -349,13 +349,13 @@ pub enum Stmt {
     },
     Yield(AuthoredExpr),
     Signal {
-        target: Expr,
-        value: Expr,
+        target: AuthoredExpr,
+        value: AuthoredExpr,
     },
     /// `'line.key <- expr` stores a scoped handle in the named lifetime registry.
     LifetimeSet {
-        target: Expr,
-        expr: Expr,
+        target: AuthoredExpr,
+        expr: AuthoredExpr,
     },
     /// `wait(mark(.name))` or `wait(0.35s)` waits inside a line-local task.
     Wait(WaitTarget),

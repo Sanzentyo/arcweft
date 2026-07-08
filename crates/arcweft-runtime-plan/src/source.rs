@@ -121,8 +121,8 @@ fn lower_source_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_, '_>)
             SourceOp::Yield(lower_runtime_expr_with_pure(expr.expr(), pure_helpers))
         }
         Stmt::Signal { target, value } => SourceOp::SignalWrite(RuntimeAssignment {
-            target: expr_label(target),
-            value: expr_label(value),
+            target: expr_label(target.expr()),
+            value: expr_label(value.expr()),
         }),
         Stmt::Expr { expr, .. } => match runtime_call_effect(expr) {
             LineEffectRequest::Log(log) => SourceOp::Log(log),
