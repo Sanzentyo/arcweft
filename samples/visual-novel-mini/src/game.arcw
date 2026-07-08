@@ -8,8 +8,8 @@ pub surface character narrator {
     default_voice = auto
 }
 
-signal @signal:.current_flow: Watch<Ref<Flow>>
-metric gauge @metric:.opening_lines: i32
+signal current_flow: Watch<Ref<Flow>>
+metric gauge opening_lines: i32
 
 entry game @entry.main {
     goto @flow.opening

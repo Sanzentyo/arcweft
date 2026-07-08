@@ -2,8 +2,7 @@ entry cli @entry.main {
     goto @flow.main
 }
 
-flow @flow.main main(argc: i32) {
+flow main(argc: i32) {
     log.info("tool invoked")
     return argc
 }
-

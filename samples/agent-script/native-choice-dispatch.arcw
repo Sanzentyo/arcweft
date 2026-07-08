@@ -1,4 +1,4 @@
-signal @signal.current_flow: Watch<Ref<Flow>>
+signal current_flow: Watch<Ref<Flow>>
 
 entry game @entry.main {
     goto @flow.opening

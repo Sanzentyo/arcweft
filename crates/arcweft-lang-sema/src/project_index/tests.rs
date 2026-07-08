@@ -54,7 +54,7 @@ flow @flow.opening opening {
     goto @flow.listen
 }
 
-pub fragment @frag.intro intro: FlowFragment {
+pub fragment intro: FlowFragment {
     return "intro"
 }
 

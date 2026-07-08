@@ -3,7 +3,7 @@ use crate::model::HirLowerError;
 use arcweft_lang_syntax::ast::{
     choice::ChoiceAction,
     common::TextRange,
-    flow::{Flow, FlowKind},
+    flow::Flow,
     ids::{EntityRef, EntityRefSyntax, IdRef, RelativeId},
 };
 
@@ -14,7 +14,7 @@ use arcweft_lang_syntax::ast::{
 // project hierarchy.
 
 pub(crate) fn normalize_flow_decl_id(flow: &Flow) -> Result<Option<EntityRef>, HirLowerError> {
-    let family = flow_decl_family(flow.kind());
+    let family = flow.kind().declaration_family();
     match flow.id() {
         Some(IdRef::Absolute(id)) => Ok(Some(id.clone())),
         Some(IdRef::Relative(relative)) => Ok(Some(EntityRef::new(
@@ -23,11 +23,11 @@ pub(crate) fn normalize_flow_decl_id(flow: &Flow) -> Result<Option<EntityRef>, H
             *relative.range(),
         ))),
         Some(IdRef::FamilyRelative(relative)) => {
-            if !flow_decl_family_matches(flow.kind(), relative.family()) {
+            if !flow.kind().accepts_declaration_family(relative.family()) {
                 return Err(HirLowerError::new(
                     format!(
                         "{} declaration cannot use `{}` family-relative id",
-                        flow_decl_family(flow.kind()),
+                        flow.kind().declaration_family(),
                         relative.family()
                     ),
                     Some(*relative.range()),
@@ -263,6 +263,7 @@ pub(crate) fn content_callee_slug(callee: &str) -> String {
 pub(crate) fn flow_slug_from_entity(id: &EntityRef) -> String {
     id.body()
         .strip_prefix("flow.")
+        .or_else(|| id.body().strip_prefix("frag."))
         .or_else(|| id.body().strip_prefix("fragment."))
         .unwrap_or(id.body())
         .to_owned()
@@ -350,18 +351,4 @@ fn line_id_to_text_key(line_id: &str) -> String {
     line_id
         .strip_prefix("say.")
         .map_or_else(|| format!("text.{line_id}"), |tail| format!("text.{tail}"))
-}
-
-fn flow_decl_family(kind: FlowKind) -> &'static str {
-    match kind {
-        FlowKind::Flow => "flow",
-        FlowKind::Fragment => "fragment",
-    }
-}
-
-fn flow_decl_family_matches(kind: FlowKind, family: &str) -> bool {
-    match kind {
-        FlowKind::Flow => family == "flow",
-        FlowKind::Fragment => matches!(family, "fragment" | "frag"),
-    }
 }

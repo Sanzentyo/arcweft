@@ -2006,7 +2006,7 @@ fn named_iter_item_type_extracts_sequence_items() {
 fn typechecks_fragment_hir_and_include_target() {
     let tree = parse_ok(
         r"
-pub fragment @frag.alice_enters alice_enters: FlowFragment {
+pub fragment alice_enters: FlowFragment {
     alice: おはよう。[p]
 }
 

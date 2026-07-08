@@ -99,14 +99,14 @@ fragment @frag:. shared {
     );
     assert_eq!(
         hir.flows()[4].id().expect("fragment id").body(),
-        "fragment.intro"
+        "frag.intro"
     );
     assert_eq!(
         hir.flows()[5]
             .id()
             .expect("empty marker fragment id")
             .body(),
-        "fragment.shared"
+        "frag.shared"
     );
     let HirFlowItem::Dialogue(line) = &hir.flows()[0].body()[0] else {
         panic!("expected dialogue");

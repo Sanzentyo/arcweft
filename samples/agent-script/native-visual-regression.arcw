@@ -3,13 +3,13 @@ pub surface character narrator {
     default_voice = auto
 }
 
-signal @signal.current_flow: Watch<Ref<Flow>>
+signal current_flow: Watch<Ref<Flow>>
 
 entry game @entry.main {
     goto @flow.opening
 }
 
-flow @flow.opening opening effects { signal.write } {
+flow opening effects { signal.write } {
     signal.set(@signal.current_flow, @flow.opening)
 
     narrator:

@@ -3,10 +3,10 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow @flow.health health {
+flow health {
     return "ok"
 }
 
-flow @flow.hello hello(name: String) {
+flow hello(name: String) {
     return name
 }

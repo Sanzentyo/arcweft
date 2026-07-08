@@ -114,6 +114,24 @@ pub enum FlowKind {
     Fragment,
 }
 
+impl FlowKind {
+    /// Canonical public ID family produced by this flow-like declaration.
+    pub const fn declaration_family(self) -> &'static str {
+        match self {
+            Self::Flow => "flow",
+            Self::Fragment => "frag",
+        }
+    }
+
+    /// Returns whether a family-relative declaration spelling targets this item kind.
+    pub fn accepts_declaration_family(self, family: &str) -> bool {
+        match self {
+            Self::Flow => family == "flow",
+            Self::Fragment => matches!(family, "frag" | "fragment"),
+        }
+    }
+}
+
 /// Syntax allowed in a `flow` body and in top-level scenario snippets.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowItem {

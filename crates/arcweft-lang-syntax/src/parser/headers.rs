@@ -278,10 +278,7 @@ pub(super) fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {
 }
 
 pub(super) fn flow_decl_family(kind: FlowKind) -> &'static str {
-    match kind {
-        FlowKind::Flow => "flow",
-        FlowKind::Fragment => "fragment",
-    }
+    kind.declaration_family()
 }
 
 pub(super) fn find_header_value(lines: &[&str], prefix: &str) -> String {
@@ -556,7 +553,11 @@ pub(super) fn normalize_decl_id_ref(
 }
 
 pub(super) fn decl_family_matches(expected: &str, actual: &str) -> bool {
-    expected == actual || expected == "fragment" && actual == "frag"
+    expected == actual
+        || matches!(
+            (expected, actual),
+            ("frag" | "fragment", "frag" | "fragment")
+        )
 }
 
 pub(super) fn split_empty_decl_relative_marker(

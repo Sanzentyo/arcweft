@@ -1,15 +1,15 @@
-pub fragment @frag.intro intro: FlowFragment {
+pub fragment intro: FlowFragment {
     return "intro"
 }
 
-signal @signal.current_flow: Watch<Ref<Flow>>
+signal current_flow: Watch<Ref<Flow>>
 
-flow @flow.opening opening {
+flow opening {
     let current = @signal.current_flow
     include @frag.intro
     goto @flow.next
 }
 
-flow @flow.next next {
+flow next {
     return "next"
 }
