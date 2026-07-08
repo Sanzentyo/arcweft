@@ -1,14 +1,18 @@
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, PendingAwbcClosure};
-use crate::awbc_lower::pattern::lower_pattern;
+use crate::awbc_lower::pattern::{lower_pattern, pattern_binding_names};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBinaryOp, AwbcBlock, AwbcEffectSetId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionKind,
-    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcPureHelperId, AwbcRegisterId,
-    AwbcSafePointKind, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcUnaryOp,
+    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFunction,
+    AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
+    AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcSafePointKind, AwbcScopeId,
+    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp,
 };
+use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::RuntimeReceiverMode;
-use arcweft_core::value::{RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeUnaryOp};
+use arcweft_core::value::{
+    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprMatchArm, RuntimeUnaryOp,
+};
 use std::collections::BTreeSet;
 
 /// Expression lowerer used by flow/source/stream builders.
@@ -371,83 +375,8 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 });
                 dst
             }
-            RuntimeExpr::If {
-                condition,
-                then_expr,
-                else_expr,
-            } => {
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let condition = self.lower(condition);
-                let then_value = self.lower(then_expr);
-                let else_value = self.lower(else_expr);
-                let intrinsic = self.intern_intrinsic("select.bool", 3);
-                self.inventory
-                    .push_instruction(AwbcInstruction::CallIntrinsic {
-                        dst: Some(dst),
-                        intrinsic,
-                        args: vec![condition, then_value, else_value],
-                    });
-                dst
-            }
-            RuntimeExpr::IfLet {
-                pattern,
-                expr,
-                guard,
-                then_expr,
-                else_expr,
-            } => {
-                let value = self.lower(expr);
-                let matched = self.frame.temp(self.inventory.bool_ty());
-                let pattern = lower_pattern(self.inventory, self.frame, pattern);
-                self.inventory
-                    .push_instruction(AwbcInstruction::TestPattern {
-                        dst: matched,
-                        pattern,
-                        value,
-                    });
-                let matched = if let Some(guard) = guard {
-                    let guard = self.lower(guard);
-                    let both = self.frame.temp(self.inventory.bool_ty());
-                    self.inventory.push_instruction(AwbcInstruction::Binary {
-                        dst: both,
-                        op: AwbcBinaryOp::And,
-                        lhs: matched,
-                        rhs: guard,
-                    });
-                    both
-                } else {
-                    matched
-                };
-                let then_value = self.lower(then_expr);
-                let else_value = self.lower(else_expr);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let intrinsic = self.intern_intrinsic("select.bool", 3);
-                self.inventory
-                    .push_instruction(AwbcInstruction::CallIntrinsic {
-                        dst: Some(dst),
-                        intrinsic,
-                        args: vec![matched, then_value, else_value],
-                    });
-                dst
-            }
-            RuntimeExpr::Match { scrutinee, arms } => {
-                let scrutinee = self.lower(scrutinee);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let mut args = vec![scrutinee];
-                for arm in arms {
-                    args.push(self.lower(&arm.value));
-                    if let Some(guard) = &arm.guard {
-                        args.push(self.lower(guard));
-                    }
-                }
-                let intrinsic = self.intern_intrinsic("match.value", args.len());
-                self.inventory
-                    .push_instruction(AwbcInstruction::CallIntrinsic {
-                        dst: Some(dst),
-                        intrinsic,
-                        args,
-                    });
-                dst
+            RuntimeExpr::If { .. } | RuntimeExpr::IfLet { .. } | RuntimeExpr::Match { .. } => {
+                self.lower_value_control_expr(expr)
             }
         }
     }
@@ -475,11 +404,14 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
 
     fn lower_function(&mut self, params: &[String], body: &RuntimeExpr) -> AwbcRegisterId {
         let param_names = params.iter().map(String::as_str).collect::<BTreeSet<_>>();
+        let free_names = runtime_expr_free_local_names(body);
         let captures = self
             .frame
             .capture_slots()
             .into_iter()
-            .filter(|capture| !param_names.contains(capture.name.as_str()))
+            .filter(|capture| {
+                !param_names.contains(capture.name.as_str()) && free_names.contains(&capture.name)
+            })
             .collect::<Vec<_>>();
         let function = self.inventory.reserve_function_slot();
         let params = params
@@ -508,6 +440,45 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 params: params.into_iter().map(|(_, name)| name).collect(),
                 capture_names: captures.iter().map(|capture| capture.name_id).collect(),
                 captures: captures.iter().map(|capture| capture.register).collect(),
+            });
+        dst
+    }
+
+    fn lower_value_control_expr(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
+        let free_names = runtime_expr_free_local_names(expr);
+        let captures = self
+            .frame
+            .capture_slots()
+            .into_iter()
+            .filter(|capture| free_names.contains(&capture.name))
+            .collect::<Vec<_>>();
+        let function = self.inventory.reserve_function_slot();
+        self.inventory.push_pending_closure(PendingAwbcClosure {
+            function,
+            params: Vec::new(),
+            captures: captures
+                .iter()
+                .map(|capture| (capture.name.clone(), capture.name_id))
+                .collect(),
+            body: expr.clone(),
+            path: format!("{}.control.{}", self.path, function.0),
+        });
+
+        let callee = self.frame.temp(self.inventory.dynamic_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::MakeFunction {
+                dst: callee,
+                function,
+                params: Vec::new(),
+                capture_names: captures.iter().map(|capture| capture.name_id).collect(),
+                captures: captures.iter().map(|capture| capture.register).collect(),
+            });
+        let dst = self.frame.temp(self.inventory.dynamic_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::ApplyFunction {
+                dst,
+                callee,
+                args: Vec::new(),
             });
         dst
     }
@@ -563,20 +534,18 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory) {
             frame.parameter(name, *name_id, dynamic_ty);
         }
 
-        let instruction_start = table_index(inventory.program.instructions.len());
-        let value =
-            AwbcExprLowerer::new(inventory, &mut frame, closure.path.clone()).lower(&closure.body);
-        let instruction_len =
-            table_range_len(instruction_start, inventory.program.instructions.len());
+        let mut body = ExprBodyBuilder::new(inventory, closure.function);
+        lower_closure_body(
+            inventory,
+            &mut frame,
+            &mut body,
+            &closure.body,
+            &closure.path,
+        );
         let layout =
             inventory.intern_frame_layout(format!("{}:frame", closure.path), frame.finish());
-        let block = inventory.push_block(AwbcBlock {
-            owner: closure.function,
-            instructions: AwbcTableRange::new(instruction_start, instruction_len),
-            terminator: AwbcTerminator::Return { value: Some(value) },
-            safe_point: AwbcSafePointKind::CallableBoundary,
-            source_map: None,
-        });
+        let block = body.block_start;
+        let block_len = table_range_len(block.0, inventory.program.blocks.len());
         let signature = inventory.intern_signature(
             vec![dynamic_ty; closure.captures.len().saturating_add(closure.params.len())],
             Some(dynamic_ty),
@@ -589,11 +558,590 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory) {
                 kind: AwbcFunctionKind::Synthetic,
                 signature,
                 frame_layout: layout,
-                blocks: AwbcTableRange::new(block.0, 1),
+                blocks: AwbcTableRange::new(block.0, block_len),
                 entry_block: block,
                 flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
             },
         );
+    }
+}
+
+struct ExprBodyBuilder {
+    owner: arcweft_core::awbc::schema::AwbcFunctionId,
+    block_start: AwbcBlockId,
+    instruction_start: u32,
+    terminated: bool,
+}
+
+impl ExprBodyBuilder {
+    fn new(inventory: &AwbcInventory, owner: arcweft_core::awbc::schema::AwbcFunctionId) -> Self {
+        let block_start = AwbcBlockId(table_index(inventory.program.blocks.len()));
+        Self {
+            owner,
+            block_start,
+            instruction_start: table_index(inventory.program.instructions.len()),
+            terminated: false,
+        }
+    }
+
+    fn close_block(
+        &mut self,
+        inventory: &mut AwbcInventory,
+        terminator: AwbcTerminator,
+        safe_point: AwbcSafePointKind,
+    ) -> AwbcBlockId {
+        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
+        let instruction_len =
+            table_range_len(self.instruction_start, inventory.program.instructions.len());
+        inventory.push_block(AwbcBlock {
+            owner: self.owner,
+            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
+            terminator,
+            safe_point,
+            source_map: None,
+        });
+        self.instruction_start = table_index(inventory.program.instructions.len());
+        block
+    }
+
+    fn reopen_after_terminated_branch(&mut self, inventory: &AwbcInventory) -> AwbcBlockId {
+        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
+        self.instruction_start = table_index(inventory.program.instructions.len());
+        self.terminated = false;
+        block
+    }
+
+    fn terminate(
+        &mut self,
+        inventory: &mut AwbcInventory,
+        terminator: AwbcTerminator,
+        safe_point: AwbcSafePointKind,
+    ) {
+        if self.terminated {
+            return;
+        }
+        self.close_block(inventory, terminator, safe_point);
+        self.terminated = true;
+    }
+}
+
+fn lower_closure_body(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    body: &mut ExprBodyBuilder,
+    expr: &RuntimeExpr,
+    path: &str,
+) {
+    match expr {
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => lower_if_value_expr(
+            inventory, frame, body, condition, then_expr, else_expr, path,
+        ),
+        RuntimeExpr::IfLet {
+            pattern,
+            expr,
+            guard,
+            then_expr,
+            else_expr,
+        } => lower_if_let_value_expr(
+            inventory,
+            frame,
+            body,
+            IfLetValueExprInput {
+                pattern,
+                expr,
+                guard: guard.as_deref(),
+                then_expr,
+                else_expr,
+                path,
+            },
+        ),
+        RuntimeExpr::Match { scrutinee, arms } => {
+            lower_match_value_expr(inventory, frame, body, scrutinee, arms, path);
+        }
+        other => terminate_return_expr(inventory, frame, body, other, path, None),
+    }
+}
+
+fn lower_if_value_expr(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    body: &mut ExprBodyBuilder,
+    condition: &RuntimeExpr,
+    then_expr: &RuntimeExpr,
+    else_expr: &RuntimeExpr,
+    path: &str,
+) {
+    let condition = AwbcExprLowerer::new(inventory, frame, path).lower(condition);
+    let then_block = AwbcBlockId(table_index(
+        inventory.program.blocks.len().saturating_add(1),
+    ));
+    let branch_block = body.close_block(
+        inventory,
+        AwbcTerminator::Branch {
+            condition,
+            then_block,
+            else_block: then_block,
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+    terminate_return_expr(
+        inventory,
+        frame,
+        body,
+        then_expr,
+        &format!("{path}.then"),
+        None,
+    );
+    let else_block = body.reopen_after_terminated_branch(inventory);
+    patch_branch_else_block(inventory, branch_block, else_block);
+    terminate_return_expr(
+        inventory,
+        frame,
+        body,
+        else_expr,
+        &format!("{path}.else"),
+        None,
+    );
+}
+
+#[derive(Clone, Copy)]
+struct IfLetValueExprInput<'a> {
+    pattern: &'a RuntimePattern,
+    expr: &'a RuntimeExpr,
+    guard: Option<&'a RuntimeExpr>,
+    then_expr: &'a RuntimeExpr,
+    else_expr: &'a RuntimeExpr,
+    path: &'a str,
+}
+
+fn lower_if_let_value_expr(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    body: &mut ExprBodyBuilder,
+    input: IfLetValueExprInput<'_>,
+) {
+    let value = AwbcExprLowerer::new(inventory, frame, input.path).lower(input.expr);
+    let pattern = lower_branch_pattern(inventory, frame, input.pattern);
+    let matched = frame.temp(inventory.bool_ty());
+    inventory.push_instruction(AwbcInstruction::TestPattern {
+        dst: matched,
+        pattern,
+        value,
+    });
+    let candidate_block = AwbcBlockId(table_index(
+        inventory.program.blocks.len().saturating_add(1),
+    ));
+    let branch_block = body.close_block(
+        inventory,
+        AwbcTerminator::Branch {
+            condition: matched,
+            then_block: candidate_block,
+            else_block: candidate_block,
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+
+    if let Some(guard) = input.guard {
+        let scope = enter_pattern_scope(inventory, frame, pattern, value);
+        let guard =
+            AwbcExprLowerer::new(inventory, frame, format!("{}.guard", input.path)).lower(guard);
+        let then_block = AwbcBlockId(table_index(
+            inventory.program.blocks.len().saturating_add(1),
+        ));
+        let guard_branch_block = body.close_block(
+            inventory,
+            AwbcTerminator::Branch {
+                condition: guard,
+                then_block,
+                else_block: then_block,
+            },
+            AwbcSafePointKind::CallableBoundary,
+        );
+        terminate_return_expr(
+            inventory,
+            frame,
+            body,
+            input.then_expr,
+            &format!("{}.then", input.path),
+            Some(scope),
+        );
+        let guard_false_block = body.reopen_after_terminated_branch(inventory);
+        patch_branch_else_block(inventory, guard_branch_block, guard_false_block);
+        inventory.push_instruction(AwbcInstruction::ExitScope { scope });
+        let guard_false_jump = body.close_block(
+            inventory,
+            AwbcTerminator::Jump {
+                target: AwbcBlockId::default(),
+            },
+            AwbcSafePointKind::CallableBoundary,
+        );
+        let else_block = AwbcBlockId(table_index(inventory.program.blocks.len()));
+        patch_branch_else_block(inventory, branch_block, else_block);
+        patch_jump_target(inventory, guard_false_jump, else_block);
+        terminate_return_expr(
+            inventory,
+            frame,
+            body,
+            input.else_expr,
+            &format!("{}.else", input.path),
+            None,
+        );
+    } else {
+        let scope = enter_pattern_scope(inventory, frame, pattern, value);
+        terminate_return_expr(
+            inventory,
+            frame,
+            body,
+            input.then_expr,
+            &format!("{}.then", input.path),
+            Some(scope),
+        );
+        let else_block = body.reopen_after_terminated_branch(inventory);
+        patch_branch_else_block(inventory, branch_block, else_block);
+        terminate_return_expr(
+            inventory,
+            frame,
+            body,
+            input.else_expr,
+            &format!("{}.else", input.path),
+            None,
+        );
+    }
+}
+
+fn lower_match_value_expr(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    body: &mut ExprBodyBuilder,
+    scrutinee: &RuntimeExpr,
+    arms: &[RuntimeExprMatchArm],
+    path: &str,
+) {
+    let scrutinee = AwbcExprLowerer::new(inventory, frame, path).lower(scrutinee);
+    for (index, arm) in arms.iter().enumerate() {
+        let pattern = lower_branch_pattern(inventory, frame, &arm.pattern);
+        let matched = frame.temp(inventory.bool_ty());
+        inventory.push_instruction(AwbcInstruction::TestPattern {
+            dst: matched,
+            pattern,
+            value: scrutinee,
+        });
+        let candidate_block = AwbcBlockId(table_index(
+            inventory.program.blocks.len().saturating_add(1),
+        ));
+        let branch_block = body.close_block(
+            inventory,
+            AwbcTerminator::Branch {
+                condition: matched,
+                then_block: candidate_block,
+                else_block: candidate_block,
+            },
+            AwbcSafePointKind::CallableBoundary,
+        );
+
+        if let Some(guard) = arm.guard.as_ref() {
+            let scope = enter_pattern_scope(inventory, frame, pattern, scrutinee);
+            let guard = AwbcExprLowerer::new(inventory, frame, format!("{path}.arm.{index}.guard"))
+                .lower(guard);
+            let body_block = AwbcBlockId(table_index(
+                inventory.program.blocks.len().saturating_add(1),
+            ));
+            let guard_branch_block = body.close_block(
+                inventory,
+                AwbcTerminator::Branch {
+                    condition: guard,
+                    then_block: body_block,
+                    else_block: body_block,
+                },
+                AwbcSafePointKind::CallableBoundary,
+            );
+            terminate_return_expr(
+                inventory,
+                frame,
+                body,
+                &arm.value,
+                &format!("{path}.arm.{index}.value"),
+                Some(scope),
+            );
+            let guard_false_block = body.reopen_after_terminated_branch(inventory);
+            patch_branch_else_block(inventory, guard_branch_block, guard_false_block);
+            inventory.push_instruction(AwbcInstruction::ExitScope { scope });
+            let guard_false_jump = body.close_block(
+                inventory,
+                AwbcTerminator::Jump {
+                    target: AwbcBlockId::default(),
+                },
+                AwbcSafePointKind::CallableBoundary,
+            );
+            let next_arm_block = AwbcBlockId(table_index(inventory.program.blocks.len()));
+            patch_branch_else_block(inventory, branch_block, next_arm_block);
+            patch_jump_target(inventory, guard_false_jump, next_arm_block);
+        } else {
+            let scope = enter_pattern_scope(inventory, frame, pattern, scrutinee);
+            terminate_return_expr(
+                inventory,
+                frame,
+                body,
+                &arm.value,
+                &format!("{path}.arm.{index}.value"),
+                Some(scope),
+            );
+            let next_arm_block = body.reopen_after_terminated_branch(inventory);
+            patch_branch_else_block(inventory, branch_block, next_arm_block);
+        }
+    }
+    let message = inventory.intern_string("match pattern did not match");
+    body.terminate(
+        inventory,
+        AwbcTerminator::Trap {
+            code: AwbcTrapCode::PatternMismatch,
+            message: Some(message),
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+}
+
+fn terminate_return_expr(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    body: &mut ExprBodyBuilder,
+    expr: &RuntimeExpr,
+    path: &str,
+    exit_scope: Option<AwbcScopeId>,
+) {
+    let mut value = AwbcExprLowerer::new(inventory, frame, path).lower(expr);
+    if let Some(scope) = exit_scope {
+        let scoped_value = value;
+        value = frame.root_temp(inventory.dynamic_ty());
+        inventory.push_instruction(AwbcInstruction::Move {
+            dst: value,
+            src: scoped_value,
+        });
+        inventory.push_instruction(AwbcInstruction::ExitScope { scope });
+        frame.exit_scope();
+    }
+    body.terminate(
+        inventory,
+        AwbcTerminator::Return { value: Some(value) },
+        AwbcSafePointKind::CallableBoundary,
+    );
+}
+
+fn lower_branch_pattern(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    pattern: &RuntimePattern,
+) -> AwbcPatternId {
+    let restored_scope_depth = frame.scope_depth();
+    let _ = frame.enter_scope();
+    let pattern = lower_pattern(inventory, frame, pattern);
+    frame.restore_scope_depth_after_branch(restored_scope_depth);
+    pattern
+}
+
+fn enter_pattern_scope(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    pattern: AwbcPatternId,
+    value: AwbcRegisterId,
+) -> AwbcScopeId {
+    let scope = frame.enter_scope();
+    inventory.push_instruction(AwbcInstruction::EnterScope { scope });
+    inventory.push_instruction(AwbcInstruction::BindPattern {
+        pattern,
+        value,
+        mode: AwbcBindMode::Declare,
+    });
+    scope
+}
+
+fn patch_branch_else_block(
+    inventory: &mut AwbcInventory,
+    branch_block: AwbcBlockId,
+    else_block: AwbcBlockId,
+) {
+    let Some(block) = inventory.program.blocks.get_mut(branch_block.index()) else {
+        return;
+    };
+    let AwbcTerminator::Branch {
+        else_block: target, ..
+    } = &mut block.terminator
+    else {
+        return;
+    };
+    *target = else_block;
+}
+
+fn patch_jump_target(
+    inventory: &mut AwbcInventory,
+    jump_block: AwbcBlockId,
+    target_block: AwbcBlockId,
+) {
+    let Some(block) = inventory.program.blocks.get_mut(jump_block.index()) else {
+        return;
+    };
+    let AwbcTerminator::Jump { target } = &mut block.terminator else {
+        return;
+    };
+    *target = target_block;
+}
+
+fn runtime_expr_free_local_names(expr: &RuntimeExpr) -> BTreeSet<String> {
+    let mut collector = RuntimeExprFreeLocalCollector::default();
+    collector.collect_expr(expr);
+    collector.names
+}
+
+#[derive(Default)]
+struct RuntimeExprFreeLocalCollector {
+    declared: BTreeSet<String>,
+    names: BTreeSet<String>,
+}
+
+impl RuntimeExprFreeLocalCollector {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "RuntimeExpr free-local collection mirrors the enum so closure capture stays precise."
+    )]
+    fn collect_expr(&mut self, expr: &RuntimeExpr) {
+        match expr {
+            RuntimeExpr::Local(name) => {
+                if !self.declared.contains(name) {
+                    self.names.insert(name.clone());
+                }
+            }
+            RuntimeExpr::Let { name, expr, body } => {
+                self.collect_expr(expr);
+                self.collect_with_declared(std::slice::from_ref(name), |this| {
+                    this.collect_expr(body);
+                });
+            }
+            RuntimeExpr::AssignField {
+                target, expr, body, ..
+            } => {
+                self.collect_expr(target);
+                self.collect_expr(expr);
+                self.collect_expr(body);
+            }
+            RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
+                for item in items {
+                    self.collect_expr(item);
+                }
+            }
+            RuntimeExpr::RepeatSeq { value, .. } => self.collect_expr(value),
+            RuntimeExpr::Range { start, end, .. } => {
+                self.collect_optional_expr(start.as_deref());
+                self.collect_optional_expr(end.as_deref());
+            }
+            RuntimeExpr::Record(fields) => {
+                for field in fields {
+                    self.collect_expr(&field.value);
+                }
+            }
+            RuntimeExpr::Variant { payload, .. } => {
+                if let Some(payload) = payload {
+                    self.collect_expr(payload);
+                }
+            }
+            RuntimeExpr::Field { target, .. }
+            | RuntimeExpr::ProjectTuple { target, .. }
+            | RuntimeExpr::ProjectRecord { target, .. }
+            | RuntimeExpr::SpreadArg(target)
+            | RuntimeExpr::Sum { source: target }
+            | RuntimeExpr::Unary { expr: target, .. } => self.collect_expr(target),
+            RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
+                self.collect_exprs(args);
+            }
+            RuntimeExpr::Function { params, body } => {
+                self.collect_with_declared(params, |this| this.collect_expr(body));
+            }
+            RuntimeExpr::Apply { callee, args } => {
+                self.collect_expr(callee);
+                self.collect_exprs(args);
+            }
+            RuntimeExpr::MethodCall { receiver, args, .. }
+            | RuntimeExpr::TraitCall { receiver, args, .. } => {
+                self.collect_expr(receiver);
+                self.collect_exprs(args);
+            }
+            RuntimeExpr::Map {
+                source,
+                param,
+                body,
+            }
+            | RuntimeExpr::Filter {
+                source,
+                param,
+                body,
+            } => {
+                self.collect_expr(source);
+                self.collect_with_declared(std::slice::from_ref(param), |this| {
+                    this.collect_expr(body);
+                });
+            }
+            RuntimeExpr::Binary { lhs, rhs, .. } => {
+                self.collect_expr(lhs);
+                self.collect_expr(rhs);
+            }
+            RuntimeExpr::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                self.collect_expr(condition);
+                self.collect_expr(then_expr);
+                self.collect_expr(else_expr);
+            }
+            RuntimeExpr::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_expr,
+                else_expr,
+            } => {
+                self.collect_expr(expr);
+                let names = pattern_binding_names(pattern);
+                self.collect_with_declared(&names, |this| {
+                    this.collect_optional_expr(guard.as_deref());
+                    this.collect_expr(then_expr);
+                });
+                self.collect_expr(else_expr);
+            }
+            RuntimeExpr::Match { scrutinee, arms } => {
+                self.collect_expr(scrutinee);
+                for arm in arms {
+                    let names = pattern_binding_names(&arm.pattern);
+                    self.collect_with_declared(&names, |this| {
+                        this.collect_optional_expr(arm.guard.as_ref());
+                        this.collect_expr(&arm.value);
+                    });
+                }
+            }
+            RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => {}
+        }
+    }
+
+    fn collect_exprs(&mut self, exprs: &[RuntimeExpr]) {
+        for expr in exprs {
+            self.collect_expr(expr);
+        }
+    }
+
+    fn collect_optional_expr(&mut self, expr: Option<&RuntimeExpr>) {
+        if let Some(expr) = expr {
+            self.collect_expr(expr);
+        }
+    }
+
+    fn collect_with_declared(&mut self, names: &[String], f: impl FnOnce(&mut Self)) {
+        let declared = self.declared.clone();
+        self.declared.extend(names.iter().cloned());
+        f(self);
+        self.declared = declared;
     }
 }
 

@@ -7,14 +7,14 @@ historical note.
 
 ## Repository Baseline
 
-- Baseline before this status cleanup:
-  `a19fe72e3 Execute destructured closure parameters`.
+- Baseline before the AWBC control-expression parity cut:
+  `917f3a1ad Accept destructured source closure locals`.
 - At the start of this cleanup, `main` and `origin/main` were aligned at that
   head.
-- The working copy still has unrelated View/Web/text-input/AWBC-lowering
-  changes. They are not part of the function/closure/currying/pipeline status
-  cleanup and should not be staged with function-stack documentation or
-  language changes unless they are intentionally validated as their own slice.
+- The working copy still has unrelated View/Web/text-input changes. They are
+  not part of the function/closure/currying/pipeline status cleanup and should
+  not be staged with function-stack documentation or language changes unless
+  they are intentionally validated as their own slice.
 
 The non-function-stack dirty files at this audit point are:
 
@@ -37,12 +37,6 @@ The non-function-stack dirty files at this audit point are:
 - `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
 - `crates/arcweft-runtime-driver/src/session.rs`
 - `crates/arcweft-runtime-driver/tests/session.rs`
-- `crates/arcweft-runtime-plan/src/awbc_lower/expr.rs`
-- `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs`
-- `crates/arcweft-runtime-plan/src/awbc_lower/frame.rs`
-- `crates/arcweft-runtime-plan/src/awbc_lower/pattern.rs`
-- `crates/arcweft-runtime-plan/src/line_task.rs`
-- `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs`
 - `samples/modern-feedback-view/README.md`
 - `samples/modern-feedback-view/src/main.arcw`
 - `web/assets/README.md`
@@ -81,6 +75,7 @@ The detailed evidence trail remains:
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
+- `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 
 ## Completed And Pushed Function-Stack Slices
 
@@ -96,6 +91,10 @@ The detailed evidence trail remains:
 - First AWBC closure/apply cut: non-suspending generated closures lower through
   `MakeFunction` and `ApplyFunction`; snapshot persistence rejects runtime
   function values explicitly.
+- AWBC control-expression parity: value-position `if`, `if let`, and `match`
+  inside generated runtime functions now lower to lazy AWBC branch blocks,
+  pattern scopes, jumps, returns, and pattern-mismatch traps instead of eager
+  selector intrinsics.
 - Placeholder and pipe behavior: expression `_` is distinct from pattern `_`;
   `^` is pipe-RHS scoped; no-`^` pipes use data-last application for the
   implemented fixed-argument paths. Named RHS calls in those pipes now preserve
@@ -167,7 +166,6 @@ separately from the function-stack goal:
   feedback View visuals.
 - Text-control editing, selection, IME handling, and focus-loss behavior.
 - Web player/EditContext glue and generated `.awfb` samples.
-- AWBC product-lowering parity changes currently present in the working copy.
 - Scoped presentation handle save/load and rollback follow-ups.
 - Parser file/module naming cleanup.
 - Pinned exact visual PNG baseline promotion and Web exact readback.

@@ -11,8 +11,9 @@ use arcweft_core::awbc::schema::{
     AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectPlanId,
     AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
     AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId,
-    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId,
+    AwbcPatternId, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint,
+    AwbcResumePointId, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTrapCode,
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::pattern::RuntimePattern;
@@ -44,6 +45,27 @@ struct ForLoweringInput<'a> {
     evidence: &'a RuntimeIteratorEvidence,
     ops: &'a [FlowOp],
     path: &'a str,
+}
+
+struct BranchJoin {
+    fallthroughs: Vec<AwbcBlockId>,
+}
+
+struct GuardedCandidate {
+    guard_false_jump: AwbcBlockId,
+    fallthrough: Option<AwbcBlockId>,
+}
+
+impl BranchJoin {
+    const fn new() -> Self {
+        Self {
+            fallthroughs: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, block: AwbcBlockId) {
+        self.fallthroughs.push(block);
+    }
 }
 
 impl FlowBodyBuilder {
@@ -425,16 +447,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 expr,
                 else_ops,
             } => {
-                let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
-                let pattern_id = lower_pattern(self.inventory, frame, pattern);
-                let matched = frame.temp(self.inventory.bool_ty());
-                self.inventory
-                    .push_instruction(AwbcInstruction::TestPattern {
-                        dst: matched,
-                        pattern: pattern_id,
-                        value,
-                    });
-                self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
+                self.lower_let_else(frame, body, pattern, expr, else_ops, path);
             }
             FlowOp::Dialogue { line, task_group } => {
                 let group = AwbcLineTaskGroupId(table_index(*task_group));
@@ -557,17 +570,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 then_ops,
                 else_ops,
             } => {
-                let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(condition);
-                let scope = frame.enter_scope();
-                self.inventory
-                    .push_instruction(AwbcInstruction::EnterScope { scope });
-                self.lower_ops(frame, body, then_ops, &format!("{path}.then"));
-                self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
-                if !body.terminated {
-                    self.inventory
-                        .push_instruction(AwbcInstruction::ExitScope { scope });
-                }
-                frame.exit_scope();
+                self.lower_if(frame, body, condition, then_ops, else_ops, path);
             }
             FlowOp::IfLet {
                 pattern,
@@ -576,20 +579,16 @@ impl<'a> AwbcFlowLowerer<'a> {
                 then_ops,
                 else_ops,
             } => {
-                let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
-                let pattern = lower_pattern(self.inventory, frame, pattern);
-                let matched = frame.temp(self.inventory.bool_ty());
-                self.inventory
-                    .push_instruction(AwbcInstruction::TestPattern {
-                        dst: matched,
-                        pattern,
-                        value,
-                    });
-                if let Some(guard) = guard {
-                    let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(guard);
-                }
-                self.lower_ops(frame, body, then_ops, &format!("{path}.then"));
-                self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
+                self.lower_if_let(
+                    frame,
+                    body,
+                    pattern,
+                    expr,
+                    guard.as_ref(),
+                    then_ops,
+                    else_ops,
+                    path,
+                );
             }
             FlowOp::Match { scrutinee, arms } => {
                 self.lower_match(frame, body, scrutinee, arms, path);
@@ -853,6 +852,166 @@ impl<'a> AwbcFlowLowerer<'a> {
             .intern_choice(format!("choice:{id:?}:{options:?}"), public_id, lowered)
     }
 
+    fn lower_let_else(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        else_ops: &[FlowOp],
+        path: &str,
+    ) {
+        let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
+        let pattern = lower_pattern(self.inventory, frame, pattern);
+        let matched = frame.temp(self.inventory.bool_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::TestPattern {
+                dst: matched,
+                pattern,
+                value,
+            });
+
+        let matched_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        let branch_block = body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition: matched,
+                then_block: matched_block,
+                else_block: matched_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value,
+                mode: AwbcBindMode::Declare,
+            });
+        let mut join = BranchJoin::new();
+        join.push(self.close_jump_to_join(body));
+
+        let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+        patch_branch_else_block(self.inventory, branch_block, else_block);
+        self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
+        if !body.terminated {
+            join.push(self.close_jump_to_join(body));
+        }
+        self.finish_join(body, join);
+    }
+
+    fn lower_if(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        condition: &RuntimeExpr,
+        then_ops: &[FlowOp],
+        else_ops: &[FlowOp],
+        path: &str,
+    ) {
+        let condition = AwbcExprLowerer::new(self.inventory, frame, path).lower(condition);
+        let then_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        let branch_block = body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition,
+                then_block,
+                else_block: then_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        let mut join = BranchJoin::new();
+        self.lower_scoped_branch_ops(frame, body, None, then_ops, &format!("{path}.then"));
+        if body.terminated {
+            let else_block = body.reopen_after_terminated_branch(self.inventory);
+            patch_branch_else_block(self.inventory, branch_block, else_block);
+        } else {
+            join.push(self.close_jump_to_join(body));
+            let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+            patch_branch_else_block(self.inventory, branch_block, else_block);
+        }
+
+        self.lower_scoped_branch_ops(frame, body, None, else_ops, &format!("{path}.else"));
+        if !body.terminated {
+            join.push(self.close_jump_to_join(body));
+        }
+        self.finish_join(body, join);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn lower_if_let(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        guard: Option<&RuntimeExpr>,
+        then_ops: &[FlowOp],
+        else_ops: &[FlowOp],
+        path: &str,
+    ) {
+        let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
+        let pattern = self.lower_branch_pattern(frame, pattern);
+        let matched = frame.temp(self.inventory.bool_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::TestPattern {
+                dst: matched,
+                pattern,
+                value,
+            });
+        let candidate_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        let branch_block = body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition: matched,
+                then_block: candidate_block,
+                else_block: candidate_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        let mut join = BranchJoin::new();
+        if let Some(guard) = guard {
+            let guarded =
+                self.lower_guarded_candidate(frame, body, pattern, value, guard, then_ops, path);
+            if let Some(fallthrough) = guarded.fallthrough {
+                join.push(fallthrough);
+            }
+            let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+            patch_branch_else_block(self.inventory, branch_block, else_block);
+            patch_jump_target(self.inventory, guarded.guard_false_jump, else_block);
+        } else {
+            self.lower_scoped_branch_ops(
+                frame,
+                body,
+                Some((pattern, value)),
+                then_ops,
+                &format!("{path}.then"),
+            );
+            if body.terminated {
+                let else_block = body.reopen_after_terminated_branch(self.inventory);
+                patch_branch_else_block(self.inventory, branch_block, else_block);
+            } else {
+                join.push(self.close_jump_to_join(body));
+                let else_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+                patch_branch_else_block(self.inventory, branch_block, else_block);
+            }
+        }
+
+        self.lower_scoped_branch_ops(frame, body, None, else_ops, &format!("{path}.else"));
+        if !body.terminated {
+            join.push(self.close_jump_to_join(body));
+        }
+        self.finish_join(body, join);
+    }
+
     fn lower_match(
         &mut self,
         frame: &mut FrameBuilder,
@@ -862,8 +1021,9 @@ impl<'a> AwbcFlowLowerer<'a> {
         path: &str,
     ) {
         let scrutinee = AwbcExprLowerer::new(self.inventory, frame, path).lower(scrutinee);
-        for arm in arms {
-            let pattern = lower_pattern(self.inventory, frame, &arm.pattern);
+        let mut join = BranchJoin::new();
+        for (index, arm) in arms.iter().enumerate() {
+            let pattern = self.lower_branch_pattern(frame, &arm.pattern);
             let matched = frame.temp(self.inventory.bool_ty());
             self.inventory
                 .push_instruction(AwbcInstruction::TestPattern {
@@ -871,14 +1031,206 @@ impl<'a> AwbcFlowLowerer<'a> {
                     pattern,
                     value: scrutinee,
                 });
-            if let Some(guard) = &arm.guard {
-                let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(guard);
-            }
-            self.lower_ops(frame, body, &arm.ops, &format!("{path}.arm"));
-            if body.terminated {
-                break;
+            let candidate_block = AwbcBlockId(table_index(
+                self.inventory.program.blocks.len().saturating_add(1),
+            ));
+            let branch_block = body.close_block(
+                self.inventory,
+                AwbcTerminator::Branch {
+                    condition: matched,
+                    then_block: candidate_block,
+                    else_block: candidate_block,
+                },
+                AwbcSafePointKind::None,
+            );
+
+            if let Some(guard) = arm.guard.as_ref() {
+                let guarded = self.lower_guarded_candidate(
+                    frame,
+                    body,
+                    pattern,
+                    scrutinee,
+                    guard,
+                    &arm.ops,
+                    &format!("{path}.arm.{index}"),
+                );
+                if let Some(fallthrough) = guarded.fallthrough {
+                    join.push(fallthrough);
+                }
+                let next_arm_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+                patch_branch_else_block(self.inventory, branch_block, next_arm_block);
+                patch_jump_target(self.inventory, guarded.guard_false_jump, next_arm_block);
+            } else {
+                self.lower_scoped_branch_ops(
+                    frame,
+                    body,
+                    Some((pattern, scrutinee)),
+                    &arm.ops,
+                    &format!("{path}.arm.{index}"),
+                );
+                if body.terminated {
+                    let next_arm_block = body.reopen_after_terminated_branch(self.inventory);
+                    patch_branch_else_block(self.inventory, branch_block, next_arm_block);
+                } else {
+                    join.push(self.close_jump_to_join(body));
+                    let next_arm_block =
+                        AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+                    patch_branch_else_block(self.inventory, branch_block, next_arm_block);
+                }
             }
         }
+        self.terminate_pattern_mismatch(body, "match pattern did not match");
+        self.finish_join(body, join);
+    }
+
+    fn lower_scoped_branch_ops(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        binding: Option<(AwbcPatternId, AwbcRegisterId)>,
+        ops: &[FlowOp],
+        path: &str,
+    ) {
+        let restored_scope_depth = frame.scope_depth();
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        if let Some((pattern, value)) = binding {
+            self.inventory
+                .push_instruction(AwbcInstruction::BindPattern {
+                    pattern,
+                    value,
+                    mode: AwbcBindMode::Declare,
+                });
+        }
+        self.lower_ops(frame, body, ops, path);
+        if !body.terminated {
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
+            frame.exit_scope();
+        }
+        frame.restore_scope_depth_after_branch(restored_scope_depth);
+    }
+
+    fn lower_branch_pattern(
+        &mut self,
+        frame: &mut FrameBuilder,
+        pattern: &RuntimePattern,
+    ) -> AwbcPatternId {
+        let restored_scope_depth = frame.scope_depth();
+        let _ = frame.enter_scope();
+        let pattern = lower_pattern(self.inventory, frame, pattern);
+        frame.restore_scope_depth_after_branch(restored_scope_depth);
+        pattern
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Guarded pattern candidates need the active frame, body, pattern, value, guard, branch ops, and diagnostic path together."
+    )]
+    fn lower_guarded_candidate(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        pattern: AwbcPatternId,
+        value: AwbcRegisterId,
+        guard: &RuntimeExpr,
+        ops: &[FlowOp],
+        path: &str,
+    ) -> GuardedCandidate {
+        let restored_scope_depth = frame.scope_depth();
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value,
+                mode: AwbcBindMode::Declare,
+            });
+        let guard =
+            AwbcExprLowerer::new(self.inventory, frame, format!("{path}.guard")).lower(guard);
+        let body_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        let guard_branch_block = body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition: guard,
+                then_block: body_block,
+                else_block: body_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        self.lower_ops(frame, body, ops, &format!("{path}.then"));
+        if !body.terminated {
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
+            frame.exit_scope();
+        }
+        frame.restore_scope_depth_after_branch(restored_scope_depth);
+
+        let fallthrough = if body.terminated {
+            None
+        } else {
+            Some(self.close_jump_to_join(body))
+        };
+        let guard_false_block = if body.terminated {
+            body.reopen_after_terminated_branch(self.inventory)
+        } else {
+            AwbcBlockId(table_index(self.inventory.program.blocks.len()))
+        };
+        patch_branch_else_block(self.inventory, guard_branch_block, guard_false_block);
+        self.inventory
+            .push_instruction(AwbcInstruction::ExitScope { scope });
+        let guard_false_jump = body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: AwbcBlockId::default(),
+            },
+            AwbcSafePointKind::None,
+        );
+        GuardedCandidate {
+            guard_false_jump,
+            fallthrough,
+        }
+    }
+
+    fn close_jump_to_join(&mut self, body: &mut FlowBodyBuilder) -> AwbcBlockId {
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: AwbcBlockId::default(),
+            },
+            AwbcSafePointKind::None,
+        )
+    }
+
+    fn finish_join(&mut self, body: &mut FlowBodyBuilder, join: BranchJoin) {
+        if join.fallthroughs.is_empty() {
+            return;
+        }
+        let join_block = if body.terminated {
+            body.reopen_after_terminated_branch(self.inventory)
+        } else {
+            AwbcBlockId(table_index(self.inventory.program.blocks.len()))
+        };
+        for block in join.fallthroughs {
+            patch_jump_target(self.inventory, block, join_block);
+        }
+    }
+
+    fn terminate_pattern_mismatch(&mut self, body: &mut FlowBodyBuilder, message: &str) {
+        let message = self.inventory.intern_string(message);
+        body.terminate(
+            self.inventory,
+            AwbcTerminator::Trap {
+                code: AwbcTrapCode::PatternMismatch,
+                message: Some(message),
+            },
+            AwbcSafePointKind::None,
+        );
     }
 
     fn lower_for(
@@ -1259,6 +1611,20 @@ fn patch_branch_else_block(
     *target = else_block;
 }
 
+fn patch_jump_target(
+    inventory: &mut AwbcInventory,
+    jump_block: AwbcBlockId,
+    target_block: AwbcBlockId,
+) {
+    let Some(block) = inventory.program.blocks.get_mut(jump_block.index()) else {
+        return;
+    };
+    let AwbcTerminator::Jump { target } = &mut block.terminator else {
+        return;
+    };
+    *target = target_block;
+}
+
 fn entry_target_flows(plan: &RuntimePlan) -> BTreeSet<FlowRuntimeId> {
     let mut targets = BTreeSet::new();
     if let Some(entry_flow) = plan.entry_flow.as_ref() {
@@ -1374,9 +1740,11 @@ impl EntryParameterCollector {
                 else_ops,
             } => {
                 self.collect_expr(expr);
-                self.collect_optional_expr(guard.as_ref());
                 let names = pattern_names(pattern);
-                self.collect_with_declared(&names, |this| this.collect_ops(then_ops));
+                self.collect_with_declared(&names, |this| {
+                    this.collect_optional_expr(guard.as_ref());
+                    this.collect_ops(then_ops);
+                });
                 self.collect_scoped_ops(else_ops);
             }
             FlowOp::Match { scrutinee, arms } => {
@@ -1408,9 +1776,11 @@ impl EntryParameterCollector {
                 body,
             } => {
                 self.collect_expr(expr);
-                self.collect_optional_expr(guard.as_ref());
                 let names = pattern_names(pattern);
-                self.collect_with_declared(&names, |this| this.collect_ops(body));
+                self.collect_with_declared(&names, |this| {
+                    this.collect_optional_expr(guard.as_ref());
+                    this.collect_ops(body);
+                });
             }
             FlowOp::For {
                 pattern,
@@ -1666,9 +2036,11 @@ impl EntryParameterCollector {
         else_expr: &RuntimeExpr,
     ) {
         self.collect_expr(expr);
-        self.collect_optional_expr(guard);
         let names = pattern_names(pattern);
-        self.collect_with_declared(&names, |this| this.collect_expr(then_expr));
+        self.collect_with_declared(&names, |this| {
+            this.collect_optional_expr(guard);
+            this.collect_expr(then_expr);
+        });
         self.collect_expr(else_expr);
     }
 

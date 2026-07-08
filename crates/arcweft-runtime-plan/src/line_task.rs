@@ -117,7 +117,7 @@ impl RuntimePlanLowerer {
     fn lower_stmt_dialogue(&mut self, flow_id: Option<&EntityRef>, stmt: &Stmt) {
         match stmt {
             Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
-                self.lower_dialogue_expr(flow_id, expr)
+                self.lower_dialogue_expr(flow_id, expr);
             }
             _ => {}
         }

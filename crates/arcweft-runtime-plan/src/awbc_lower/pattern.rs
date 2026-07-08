@@ -93,6 +93,42 @@ pub(crate) fn lower_pattern(
     }
 }
 
+pub(crate) fn pattern_binding_names(pattern: &RuntimePattern) -> Vec<String> {
+    match pattern {
+        RuntimePattern::Ident(name)
+        | RuntimePattern::MutIdent(name)
+        | RuntimePattern::Typed { name, .. } => vec![name.clone()],
+        RuntimePattern::Whole { name, pattern } => {
+            let mut names = vec![name.clone()];
+            names.extend(pattern_binding_names(pattern));
+            names
+        }
+        RuntimePattern::Tuple(patterns) => {
+            patterns.iter().flat_map(pattern_binding_names).collect()
+        }
+        RuntimePattern::Record { fields, .. } => fields
+            .iter()
+            .flat_map(|field| pattern_binding_names(&field.pattern))
+            .collect(),
+        RuntimePattern::BracketSeq { items, rest } => {
+            let mut names = items
+                .iter()
+                .flat_map(pattern_binding_names)
+                .collect::<Vec<_>>();
+            if let Some(rest) = rest {
+                names.push(rest.clone());
+            }
+            names
+        }
+        RuntimePattern::Variant { payload, .. } => payload
+            .as_deref()
+            .map_or_else(Vec::new, pattern_binding_names),
+        RuntimePattern::Discard | RuntimePattern::Literal(_) | RuntimePattern::Entity(_) => {
+            Vec::new()
+        }
+    }
+}
+
 fn record_field(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,

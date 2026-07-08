@@ -11,6 +11,9 @@ The active function/closure/currying/pipeline goal status is summarized in
 `docs/implementation/function-stack-status-rollup-2026-07-09.md`; the detailed
 implementation log and evidence trail remain
 `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`.
+The current AWBC non-suspending control-expression parity cut for that goal is
+tracked in
+`docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`.
 
 Latest executable-runtime-core implementation notes are tracked in
 `docs/implementation/executable-runtime-core-2026-06-24.md`; the corresponding

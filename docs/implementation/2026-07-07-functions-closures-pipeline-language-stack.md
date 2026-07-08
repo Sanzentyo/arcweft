@@ -674,6 +674,18 @@ application in the shape `make_adder(2i64)(5i64)`
 (`generated_awbc_curried_closure_apply_executes_returned_function`), and a
 function value whose body calls a lowered pure helper
 (`generated_awbc_function_value_apply_can_call_pure_helper_body`).
+The AWBC control-expression parity cut extends that non-suspending generated
+function path to value-position `if`, `if let`, and `match` expressions. Those
+expressions now lower to real AWBC branch blocks, pattern-test instructions,
+lexical pattern scopes, jumps, returns, and pattern-mismatch traps instead of
+eager `select.bool` / `match.value` intrinsics. This is the product AWBC
+execution path for destructured closure parameters, because those parameters
+lower through `RuntimeExpr::Match`.
+Focused validation passed with
+`cargo test -p arcweft-runtime-plan --all-features --test awbc_product_parity -- --nocapture`,
+`cargo check -p arcweft-runtime-plan --all-targets --all-features`,
+`cargo clippy -p arcweft-runtime-plan --all-targets --all-features`, and
+`cargo +nightly -Zscript tools/structure-audit.rs --root .`.
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies

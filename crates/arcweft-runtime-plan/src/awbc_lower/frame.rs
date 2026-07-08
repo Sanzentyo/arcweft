@@ -155,6 +155,15 @@ impl FrameBuilder {
         self.scope_depth = 0;
     }
 
+    pub const fn scope_depth(&self) -> u32 {
+        self.scope_depth
+    }
+
+    pub fn restore_scope_depth_after_branch(&mut self, depth: u32) {
+        self.scope_depth = depth;
+        self.max_scope_depth = self.max_scope_depth.max(depth);
+    }
+
     pub fn active_scope_ids_for_exit(&self) -> Vec<AwbcScopeId> {
         (0..self.scope_depth).rev().map(AwbcScopeId).collect()
     }

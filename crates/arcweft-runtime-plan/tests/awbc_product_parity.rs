@@ -9,8 +9,8 @@ use arcweft_core::line_task::{LineOutRequest, LineTaskGroup, LineTaskNode, LineT
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
-    RuntimeIteratorEvidence, RuntimeLineId, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
-    RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
+    RuntimeIteratorEvidence, RuntimeLineId, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
+    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
 };
 use arcweft_core::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
@@ -28,8 +28,8 @@ use arcweft_core::task::{
 };
 use arcweft_core::time::LogicalDuration;
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeExpr, RuntimePayload,
-    RuntimeSeq, RuntimeValue,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeExpr,
+    RuntimeExprMatchArm, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
 use arcweft_interaction_model::{
     audio::{AudioCommand, AudioDispatchId, AudioMillis, GainDbMilli},
@@ -431,6 +431,235 @@ fn awbc_product_parity_entry_root_bindings_named_equivalent() {
             binding("right", RuntimeValue::i64(5)),
             binding("left", RuntimeValue::i64(2)),
         ],
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_if_executes_only_selected_branch() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::If {
+                condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
+                then_ops: vec![FlowOp::Effect(call("effect.then"))],
+                else_ops: vec![FlowOp::Effect(call("effect.else"))],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![call("effect.then")]
+    );
+}
+
+#[test]
+fn awbc_product_parity_nested_else_if_executes_only_selected_branch() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::If {
+                condition: RuntimeExpr::Value(RuntimeValue::Bool(false)),
+                then_ops: vec![FlowOp::Effect(call("effect.first"))],
+                else_ops: vec![FlowOp::If {
+                    condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
+                    then_ops: vec![FlowOp::Effect(call("effect.second"))],
+                    else_ops: vec![FlowOp::Effect(call("effect.third"))],
+                }],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![call("effect.second")]
+    );
+}
+
+#[test]
+fn awbc_product_parity_if_let_guard_binds_before_guard() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::IfLet {
+                pattern: RuntimePattern::Ident("name".to_owned()),
+                expr: RuntimeExpr::Value(RuntimeValue::String("Ada".to_owned())),
+                guard: Some(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("name".to_owned())),
+                    op: RuntimeBinaryOp::Eq,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::String("Ada".to_owned()))),
+                }),
+                then_ops: vec![FlowOp::Effect(call("effect.then"))],
+                else_ops: vec![FlowOp::Effect(call("effect.else"))],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![call("effect.then")]
+    );
+}
+
+#[test]
+fn awbc_product_parity_let_else_skips_else_when_pattern_matches() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::LetElse {
+                pattern: RuntimePattern::Literal(RuntimeValue::String("ok".to_owned())),
+                expr: RuntimeExpr::Value(RuntimeValue::String("ok".to_owned())),
+                else_ops: vec![FlowOp::Effect(call("effect.else"))],
+            },
+            FlowOp::Effect(call("effect.after")),
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![call("effect.after")]
+    );
+}
+
+#[test]
+fn awbc_product_parity_match_executes_only_selected_guarded_arm() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Match {
+                scrutinee: RuntimeExpr::Value(RuntimeValue::String("Ada".to_owned())),
+                arms: vec![
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Literal(RuntimeValue::String("Bob".to_owned())),
+                        guard: None,
+                        ops: vec![FlowOp::Effect(call("effect.bob"))],
+                    },
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Ident("name".to_owned()),
+                        guard: Some(RuntimeExpr::Binary {
+                            lhs: Box::new(RuntimeExpr::Local("name".to_owned())),
+                            op: RuntimeBinaryOp::Eq,
+                            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::String(
+                                "Ada".to_owned(),
+                            ))),
+                        }),
+                        ops: vec![FlowOp::Effect(call("effect.ada"))],
+                    },
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Discard,
+                        guard: None,
+                        ops: vec![FlowOp::Effect(call("effect.fallback"))],
+                    },
+                ],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![call("effect.ada")]
+    );
+}
+
+#[test]
+fn awbc_product_parity_match_guard_false_continues_to_next_arm() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Match {
+                scrutinee: RuntimeExpr::Value(RuntimeValue::String("Bob".to_owned())),
+                arms: vec![
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Ident("name".to_owned()),
+                        guard: Some(RuntimeExpr::Binary {
+                            lhs: Box::new(RuntimeExpr::Local("name".to_owned())),
+                            op: RuntimeBinaryOp::Eq,
+                            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::String(
+                                "Ada".to_owned(),
+                            ))),
+                        }),
+                        ops: vec![FlowOp::Effect(call("effect.guard"))],
+                    },
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Discard,
+                        guard: None,
+                        ops: vec![FlowOp::Effect(call("effect.fallback"))],
+                    },
+                ],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![call("effect.fallback")]
+    );
+}
+
+#[test]
+fn awbc_product_parity_if_let_expression_guard_binds_before_guard() {
+    let steps = run_parity(
+        flow(vec![FlowOp::ReturnExpr(RuntimeExpr::IfLet {
+            pattern: RuntimePattern::Ident("name".to_owned()),
+            expr: Box::new(RuntimeExpr::Value(RuntimeValue::String("Ada".to_owned()))),
+            guard: Some(Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("name".to_owned())),
+                op: RuntimeBinaryOp::Eq,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::String("Ada".to_owned()))),
+            })),
+            then_expr: Box::new(RuntimeExpr::Local("name".to_owned())),
+            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::String(
+                "fallback".to_owned(),
+            ))),
+        })]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_match_expression_executes_selected_guarded_arm() {
+    let steps = run_parity(
+        flow(vec![FlowOp::ReturnExpr(RuntimeExpr::Match {
+            scrutinee: Box::new(RuntimeExpr::Value(RuntimeValue::String("Ada".to_owned()))),
+            arms: vec![
+                RuntimeExprMatchArm {
+                    pattern: RuntimePattern::Literal(RuntimeValue::String("Bob".to_owned())),
+                    guard: None,
+                    value: RuntimeExpr::Value(RuntimeValue::String("bob".to_owned())),
+                },
+                RuntimeExprMatchArm {
+                    pattern: RuntimePattern::Ident("name".to_owned()),
+                    guard: Some(RuntimeExpr::Binary {
+                        lhs: Box::new(RuntimeExpr::Local("name".to_owned())),
+                        op: RuntimeBinaryOp::Eq,
+                        rhs: Box::new(RuntimeExpr::Value(RuntimeValue::String("Ada".to_owned()))),
+                    }),
+                    value: RuntimeExpr::Local("name".to_owned()),
+                },
+                RuntimeExprMatchArm {
+                    pattern: RuntimePattern::Discard,
+                    guard: None,
+                    value: RuntimeExpr::Value(RuntimeValue::String("fallback".to_owned())),
+                },
+            ],
+        })]),
         vec![RuntimeStepInput::default()],
     );
 
