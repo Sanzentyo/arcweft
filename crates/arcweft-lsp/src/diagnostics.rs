@@ -431,6 +431,31 @@ flow @flow.opening opening {
     }
 
     #[test]
+    fn diagnostics_publish_numeric_fallback_warning() {
+        let source = r"
+flow @flow.closure_numeric_fallback closure_numeric_fallback {
+    let fallback = || 1
+}
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code
+                    == Some(NumberOrString::String(
+                        "sema.numeric.fallback_in_inferred_closure".into(),
+                    ))
+            })
+            .expect("numeric fallback warning diagnostic");
+
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-sema"));
+        assert!(diagnostic.message.contains("defaults to I32"));
+    }
+
+    #[test]
     fn diagnostics_include_stable_syntax_lint_codes() {
         let source = r"
 flow @flow.opening start {

@@ -115,9 +115,12 @@ Examples:
 "#fff"
 ```
 
-Unsuffixed numeric literals require an expected type from annotation or
-signature. There is no default `i32`/`f64` fallback, and there are no concrete
-`int`, `uint`, `float`, or `Number` primitive type names.
+Unsuffixed numeric literals use the expected type from an annotation,
+signature, or surrounding expression when one is available. Without an expected
+type, integer literals fall back to `i32` and float literals fall back to
+`f64`; tooling may lint those fallbacks when they appear in inferred contracts
+such as closure bodies. There are no concrete `int`, `uint`, `float`, or
+`Number` primitive type names.
 
 ## Module items
 

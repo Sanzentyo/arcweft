@@ -48,7 +48,9 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 - 変数は immutable。`mut` は局所的にのみ許可。
 - `null` はない。`Option` を使う。
 - 数値 primitive は `i32`, `u64`, `f32` のように bit 幅を明示する。
-- 型推論の期待型がない数値 literal は `10i32`, `2.0f32` のような suffix が必要。
+- 数値 literal は期待型があればそれを使う。期待型がない整数 literal は `i32`、
+  float literal は `f64` に fallback し、推論された closure body など契約が
+  見えにくい場所では lint/warning で明示化を促す。
 
 ## Traits and impls
 

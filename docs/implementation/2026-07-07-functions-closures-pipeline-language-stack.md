@@ -294,6 +294,11 @@ Source briefs:
   primitive type inside a closure body whose return type is inferred. Explicit
   closure return annotations and concrete expected function return types
   suppress the warning because they provide the numeric contract.
+- Stable language docs now match this policy: unsuffixed numeric literals use
+  expected types first, then fall back to `i32`/`f64` when no expected type is
+  available, with tooling warnings for inferred contracts where the fallback
+  would otherwise be hidden. LSP diagnostics publish the sema warning with the
+  stable `sema.numeric.fallback_in_inferred_closure` code.
 - LSP inlay hints now include inferred function-valued `let` bindings when the
   source binding has no explicit type ascription and sema proves the binding is
   a `TypeKind::Function`. This covers inferred closures such as `let f = || 1`
