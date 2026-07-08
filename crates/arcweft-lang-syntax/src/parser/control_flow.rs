@@ -3,8 +3,8 @@ use super::helpers::LogicalBlockItem;
 use super::{
     AuthoredExpr, BorrowBlock, CstBlockEvent, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock,
     MatchArm, MatchBlock, ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
-    StmtMatchArm, TextRange, WhileBlock, WhileLetBlock, braced_expr_source,
-    collect_logical_block_items, collect_logical_block_items_with_base, expr_source_start_in_line,
+    StmtMatchArm, TextRange, WhileBlock, WhileLetBlock, binding_value_start_in_line,
+    braced_expr_source, collect_logical_block_items, collect_logical_block_items_with_base,
     indentation, is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt,
     parse_stmt_for_dialect_with_stats_and_base, parse_stmt_with_base, raw_stmt, split_brace_item,
     split_optional_block_label, split_top_level_binding, split_top_level_keyword_once,
@@ -79,7 +79,7 @@ impl Parser<'_> {
         let if_head = if_head.trim();
         let (expr_source, expr_range) = braced_expr_source(
             &block,
-            expr_source_start_in_line(&start_line.text, start_line.start, if_head)?,
+            binding_value_start_in_line(&start_line.text, start_line.start, if_head)?,
             if_head,
         );
         Some(Stmt::Let {
@@ -127,7 +127,7 @@ impl Parser<'_> {
         let if_head = if_head.trim();
         let (expr_source, expr_range) = braced_expr_source(
             &block,
-            expr_source_start_in_line(&start_line.text, start_line.start, if_head)?,
+            binding_value_start_in_line(&start_line.text, start_line.start, if_head)?,
             if_head,
         );
         Some(Stmt::Let {
@@ -167,7 +167,7 @@ impl Parser<'_> {
         let (pattern, ty) = parse_binding_pattern(pattern);
         let (expr_source, expr_range) = braced_expr_source(
             &block,
-            expr_source_start_in_line(&start_line.text, start_line.start, match_head)?,
+            binding_value_start_in_line(&start_line.text, start_line.start, match_head)?,
             match_head,
         );
         Some(Stmt::Let {

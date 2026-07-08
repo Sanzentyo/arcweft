@@ -2260,6 +2260,80 @@ flow @flow.container_child_source_ranges container_child_source_ranges {
 }
 
 #[test]
+fn computation_and_braced_closure_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.block_value_source_ranges block_value_source_ranges {
+    let from_result = result {
+        141i64 + 142i64
+    }
+    let from_task = task {
+        151i64 + 152i64
+    }
+    let make_value = || -> i64 {
+        161i64 + 162i64
+    }
+    let from_closure = make_value()
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("block value source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "computation_block",
+        "result {\n        141i64 + 142i64\n    }",
+        |ty| matches!(ty, TypeKind::I64),
+        "result computation block root should retain its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "141i64 + 142i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "result computation block value should retain its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "151i64 + 152i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "task computation block value should retain its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "closure",
+        "|| -> i64 {\n        161i64 + 162i64\n    }",
+        |ty| {
+            matches!(
+                ty,
+                TypeKind::Function {
+                    params,
+                    return_type,
+                } if params.is_empty() && return_type.as_ref() == &TypeKind::I64
+            )
+        },
+        "braced closure root should retain its full authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "161i64 + 162i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "braced closure body value should retain its authored range",
+    );
+}
+
+#[test]
 fn memo_block_option_expression_judgments_carry_source_ranges() {
     let source = r"
 flow @flow.memo_option_source_ranges memo_option_source_ranges {

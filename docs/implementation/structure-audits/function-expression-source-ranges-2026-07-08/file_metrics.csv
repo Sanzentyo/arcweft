@@ -752,7 +752,7 @@ crates/arcweft-lang-sema/src/tests/resolve_symbols.rs,3752,139,123,test,true,tru
 crates/arcweft-lang-sema/src/tests/script_tests.rs,2340,99,88,test,true,true,false,false
 crates/arcweft-lang-sema/src/tests/semantic.rs,16350,556,505,test,true,true,false,false
 crates/arcweft-lang-sema/src/tests/support.rs,4092,115,108,test,true,true,false,false
-crates/arcweft-lang-sema/src/tests/typecheck.rs,113852,3751,3542,test,true,true,false,false
+crates/arcweft-lang-sema/src/tests/typecheck.rs,115992,3825,3615,test,true,true,false,false
 crates/arcweft-lang-sema/src/traits/format.rs,463,17,14,production,true,false,false,false
 crates/arcweft-lang-sema/src/traits/standard_iter.rs,8050,286,267,production,true,false,false,false
 crates/arcweft-lang-sema/src/traits.rs,63900,1922,1745,production,true,false,false,false
@@ -786,13 +786,13 @@ crates/arcweft-lang-syntax/src/cst.rs,11936,422,318,production,true,false,false,
 crates/arcweft-lang-syntax/src/expr/char_literal.rs,1785,49,46,production,true,false,false,false
 crates/arcweft-lang-syntax/src/expr/closure_parse.rs,10393,266,250,production,true,false,false,false
 crates/arcweft-lang-syntax/src/expr/closure_source.rs,2013,60,57,production,true,false,false,false
-crates/arcweft-lang-syntax/src/expr/source_ranges.rs,37836,1123,1053,production,true,false,false,true
+crates/arcweft-lang-syntax/src/expr/source_ranges.rs,38482,1143,1072,production,true,false,false,true
 crates/arcweft-lang-syntax/src/expr.rs,70179,2315,2077,production,true,false,false,true
 crates/arcweft-lang-syntax/src/lib.rs,427,19,12,production,true,false,false,false
 crates/arcweft-lang-syntax/src/lint.rs,26476,897,803,production,true,false,false,true
 crates/arcweft-lang-syntax/src/parser/await_.rs,19094,549,502,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/choice.rs,18523,490,464,production,true,false,false,false
-crates/arcweft-lang-syntax/src/parser/control_flow.rs,41670,1097,1043,production,true,false,false,false
+crates/arcweft-lang-syntax/src/parser/control_flow.rs,41678,1097,1043,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/dialogue.rs,28968,736,705,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/flow.rs,31279,769,728,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/fragment.rs,11112,373,327,production,true,false,false,true
@@ -804,10 +804,10 @@ crates/arcweft-lang-syntax/src/parser/line_plan.rs,20499,618,587,production,true
 crates/arcweft-lang-syntax/src/parser/proof.rs,8783,255,244,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/recovery.rs,5139,185,149,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/source.rs,11838,308,288,production,true,false,false,false
-crates/arcweft-lang-syntax/src/parser/statements.rs,27306,807,756,production,true,false,false,false
+crates/arcweft-lang-syntax/src/parser/statements.rs,27817,816,765,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/top_level.rs,36400,953,909,production,true,false,false,false
 crates/arcweft-lang-syntax/src/parser/view.rs,45245,1339,1272,production,true,false,false,false
-crates/arcweft-lang-syntax/src/parser.rs,19512,552,494,production,true,false,false,false
+crates/arcweft-lang-syntax/src/parser.rs,19514,552,494,production,true,false,false,false
 crates/arcweft-lang-syntax/src/pattern.rs,7597,241,225,production,true,false,false,false
 crates/arcweft-lang-syntax/src/source.rs,4869,167,113,production,true,false,false,false
 crates/arcweft-lang-syntax/src/tests/cst.rs,20021,608,547,test,true,true,false,false
@@ -1480,7 +1480,7 @@ docs/implementation/2026-07-04-text-control-visual-navigation-and-component-capt
 docs/implementation/2026-07-05-runtime-control-css-radius-filter-frame-fit.md,6304,100,88,text,false,false,false,false
 docs/implementation/2026-07-06-dialogue-speaker-display-label.md,1555,38,27,text,false,false,false,false
 docs/implementation/2026-07-07-call-select-unification-refactor.md,2368,31,23,text,false,false,false,false
-docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,94165,1374,1313,text,false,false,false,false
+docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,95871,1397,1335,text,false,false,false,false
 docs/implementation/2026-07-08-samples-dsl-canonical-decl-identity.md,3509,74,58,text,false,false,false,false
 docs/implementation/2026-07-08-selectable-static-view-text-blocks.md,2344,40,26,text,false,false,false,false
 docs/implementation/README.md,129902,1853,1833,text,false,false,false,false

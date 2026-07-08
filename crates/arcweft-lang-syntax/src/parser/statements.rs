@@ -100,7 +100,7 @@ impl Parser<'_> {
         let (pattern, ty) = parse_binding_pattern(pattern);
         let (expr_source, expr_range) = braced_expr_source(
             &block,
-            expr_source_start_in_line(&start_line.text, start_line.start, block_head)?,
+            binding_value_start_in_line(&start_line.text, start_line.start, block_head)?,
             block_head,
         );
         Some(Stmt::Let {
@@ -139,7 +139,7 @@ impl Parser<'_> {
         let (pattern, ty) = parse_binding_pattern(pattern);
         let (expr_source, expr_range) = braced_expr_source(
             &block,
-            expr_source_start_in_line(&start_line.text, start_line.start, block_head)?,
+            binding_value_start_in_line(&start_line.text, start_line.start, block_head)?,
             block_head,
         );
         Some(Stmt::Let {
@@ -311,12 +311,21 @@ fn receive_action_target(expr: &str) -> Option<&str> {
         .filter(|target| !target.is_empty())
 }
 
-pub(super) fn expr_source_start_in_line(
+pub(super) fn binding_value_start_in_line(
     line: &str,
     line_start: usize,
-    expr_head: &str,
+    value_head: &str,
 ) -> Option<usize> {
-    line.find(expr_head).map(|offset| line_start + offset)
+    let trimmed = line.trim_start();
+    let trimmed_start = line_start + line.len() - trimmed.len();
+    let rest = trimmed.strip_prefix("let")?;
+    let rest_start = trimmed_start + "let".len();
+    let binding = CstPunctuationScan::new(rest).find_top_level_punctuation('=')?;
+    let value_with_ws = &rest[binding + '='.len_utf8()..];
+    let value = value_with_ws.trim_start();
+    let leading = value_with_ws.len() - value.len();
+    let value_start = rest_start + binding + '='.len_utf8() + leading;
+    value.starts_with(value_head).then_some(value_start)
 }
 
 pub(super) fn block_expr_start(block: &CstBlockEvent<'_>) -> Option<usize> {

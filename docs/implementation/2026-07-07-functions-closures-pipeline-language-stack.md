@@ -1294,6 +1294,29 @@ block path rather than as an expression literal. Focused validation passed with
 `cargo test -p arcweft-lang-sema --all-features container_child_expression_judgments_carry_source_ranges -- --nocapture` and
 `cargo test -p arcweft-lang-sema --all-features container_and_control_expression_judgments_carry_source_ranges -- --nocapture`.
 
+The computation/closure block-value source-range follow-up fixes two concrete
+coordinate bugs found while auditing the authored expression wrapper path.
+Structured `let` parsing now derives braced value starts from the top-level
+binding `=` instead of searching the whole line for the RHS head, so bindings
+like `let from_result = result { ... }` no longer anchor the expression range
+inside the local name. Closure body source collection also accounts for the
+stripped `->` token before locating a braced return-typed closure body, and
+block-value collection now descends through prefixed braced roots such as
+`result { ... }`, `task { ... }`, and `memo(...) { ... }`. The regression
+`computation_and_braced_closure_judgments_carry_source_ranges` verifies
+source-backed judgments for computation block roots, computation block final
+values, return-typed braced closure roots, and closure body final values.
+Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features computation_and_braced_closure_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture`,
+`cargo fmt --all --check`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`, and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`.
+The focused clippy command exits successfully with existing unrelated warnings
+from `arcweft-lang-syntax` large enum variants, `arcweft-runtime-plan`, sema
+line-count lints, and runtime-host clipboard lifetime names.
+
 The guarded if-let source-range follow-up fixes the remaining condition split
 inside value-producing `if let ... when ...` expressions. The syntax collector
 now uses the language-level `when` boundary, so the scrutinee range stops before

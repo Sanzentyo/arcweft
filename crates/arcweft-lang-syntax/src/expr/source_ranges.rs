@@ -462,7 +462,7 @@ fn collect_block_value_source_ranges<'a>(
     ranges: &mut Vec<ExprSourceRange<'a>>,
 ) {
     if let Some(value) = value
-        && let Some((inner, inner_base)) = delimited_inner(source, base, '{', '}')
+        && let Some((inner, inner_base)) = braced_block_inner(source, base)
         && let Some((value_source, value_base)) = last_block_value_source(inner, inner_base)
     {
         collect_expr_source_ranges_inner(value, value_source, value_base, ranges);
@@ -693,6 +693,25 @@ fn delimited_inner(source: &str, base: usize, open: char, close: char) -> Option
         .map(|inner| (inner, base + open.len_utf8()))
 }
 
+fn braced_block_inner(source: &str, base: usize) -> Option<(&str, usize)> {
+    let (source, base) = trim_source_with_base(source, base);
+    if let Some(inner) = source
+        .strip_prefix('{')
+        .and_then(|source| source.strip_suffix('}'))
+    {
+        return Some((inner, base + '{'.len_utf8()));
+    }
+    if let Some(open) = find_top_level_char(source, '{')
+        && source.ends_with('}')
+    {
+        return Some((
+            &source[open + '{'.len_utf8()..source.len() - '}'.len_utf8()],
+            base + open + '{'.len_utf8(),
+        ));
+    }
+    None
+}
+
 fn postfix_delimiter_bounds(source: &str, open: char, close: char) -> Option<(usize, usize)> {
     let close_start = source
         .char_indices()
@@ -878,9 +897,10 @@ fn closure_body_source(source: &str, base: usize) -> Option<(&str, usize)> {
         return None;
     };
     let (rest, rest_base) = trim_source_with_base(&source[after_params..], base + after_params);
-    if let Some(rest) = rest.strip_prefix("->") {
-        if let Some(open) = find_top_level_char(rest, '{') {
-            return Some((&rest[open..], rest_base + open));
+    if let Some(after_arrow) = rest.strip_prefix("->") {
+        if let Some(open) = find_top_level_char(after_arrow, '{') {
+            let body_base = rest_base + "->".len() + open;
+            return Some((&after_arrow[open..], body_base));
         }
         return None;
     }

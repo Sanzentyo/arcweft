@@ -70,7 +70,7 @@ use line_plan::{
 };
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{
-    braced_expr_source, expr_source_start_in_line, parse_scope_head, parse_stmt,
+    binding_value_start_in_line, braced_expr_source, parse_scope_head, parse_stmt,
     parse_stmt_for_dialect, parse_stmt_for_dialect_with_stats_and_base, parse_stmt_with_base,
     parse_stmt_with_stats_and_base, parse_unsafe_lifetime_block, raw_stmt,
 };
