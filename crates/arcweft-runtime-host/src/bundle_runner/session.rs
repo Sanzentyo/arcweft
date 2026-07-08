@@ -24,7 +24,7 @@ pub struct BundleRunnerSessionStep {
     pub finished: bool,
 }
 
-/// Stateful bundle runner for hosts that must keep their UI event loop alive.
+/// Stateful bundle runner for hosts that must keep their View event loop alive.
 ///
 /// Unlike `run_bundle_with_native_adapters`, this type executes at most one
 /// runtime step per call. `pump_main_thread` may also be called independently

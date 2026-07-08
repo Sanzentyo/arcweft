@@ -19,16 +19,16 @@ pub enum ProductSectionCodecKind {
     LocaleText,
     AudioGraph,
     Shader,
-    Ui,
+    View,
     Entity,
     DebugSymbols,
     Contracts,
     GraphIndex,
-    UiProgram,
-    UiStyle,
-    UiText,
-    UiInput,
-    UiTheme,
+    ViewProgram,
+    ViewStyle,
+    ViewText,
+    ViewInput,
+    ViewTheme,
 }
 
 /// Migration status for compact product resource section families.
@@ -59,16 +59,16 @@ impl ProductSectionCodecKind {
             Self::LocaleText => 8,
             Self::AudioGraph => 9,
             Self::Shader => 10,
-            Self::Ui => 11,
+            Self::View => 11,
             Self::Entity => 12,
             Self::DebugSymbols => 13,
             Self::Contracts => 14,
             Self::GraphIndex => 15,
-            Self::UiProgram => 16,
-            Self::UiStyle => 17,
-            Self::UiText => 18,
-            Self::UiInput => 19,
-            Self::UiTheme => 20,
+            Self::ViewProgram => 16,
+            Self::ViewStyle => 17,
+            Self::ViewText => 18,
+            Self::ViewInput => 19,
+            Self::ViewTheme => 20,
         }
     }
 
@@ -85,16 +85,16 @@ impl ProductSectionCodecKind {
             8 => Some(Self::LocaleText),
             9 => Some(Self::AudioGraph),
             10 => Some(Self::Shader),
-            11 => Some(Self::Ui),
+            11 => Some(Self::View),
             12 => Some(Self::Entity),
             13 => Some(Self::DebugSymbols),
             14 => Some(Self::Contracts),
             15 => Some(Self::GraphIndex),
-            16 => Some(Self::UiProgram),
-            17 => Some(Self::UiStyle),
-            18 => Some(Self::UiText),
-            19 => Some(Self::UiInput),
-            20 => Some(Self::UiTheme),
+            16 => Some(Self::ViewProgram),
+            17 => Some(Self::ViewStyle),
+            18 => Some(Self::ViewText),
+            19 => Some(Self::ViewInput),
+            20 => Some(Self::ViewTheme),
             _ => None,
         }
     }
@@ -112,16 +112,16 @@ impl ProductSectionCodecKind {
             Self::LocaleText => "locale_text",
             Self::AudioGraph => "audio_graph",
             Self::Shader => "shader",
-            Self::Ui => "ui",
+            Self::View => "view",
             Self::Entity => "entity",
             Self::DebugSymbols => "debug_symbols",
             Self::Contracts => "contracts",
             Self::GraphIndex => "graph_index",
-            Self::UiProgram => "ui_program",
-            Self::UiStyle => "ui_style",
-            Self::UiText => "ui_text",
-            Self::UiInput => "ui_input",
-            Self::UiTheme => "ui_theme",
+            Self::ViewProgram => "view_program",
+            Self::ViewStyle => "view_style",
+            Self::ViewText => "view_text",
+            Self::ViewInput => "view_input",
+            Self::ViewTheme => "view_theme",
         }
     }
 
@@ -138,16 +138,16 @@ impl ProductSectionCodecKind {
             Self::LocaleText => *b"AWLT\r\n\x1a\n",
             Self::AudioGraph => *b"AWAG\r\n\x1a\n",
             Self::Shader => *b"AWSH\r\n\x1a\n",
-            Self::Ui => *b"AWUI\r\n\x1a\n",
+            Self::View => *b"AWVW\r\n\x1a\n",
             Self::Entity => *b"AWEN\r\n\x1a\n",
             Self::DebugSymbols => *b"AWDS\r\n\x1a\n",
             Self::Contracts => *b"AWCT\r\n\x1a\n",
             Self::GraphIndex => *b"AWGI\r\n\x1a\n",
-            Self::UiProgram => *b"AWUP\r\n\x1a\n",
-            Self::UiStyle => *b"AWUS\r\n\x1a\n",
-            Self::UiText => *b"AWUT\r\n\x1a\n",
-            Self::UiInput => *b"AWUN\r\n\x1a\n",
-            Self::UiTheme => *b"AWUH\r\n\x1a\n",
+            Self::ViewProgram => *b"AWVP\r\n\x1a\n",
+            Self::ViewStyle => *b"AWVS\r\n\x1a\n",
+            Self::ViewText => *b"AWVT\r\n\x1a\n",
+            Self::ViewInput => *b"AWVI\r\n\x1a\n",
+            Self::ViewTheme => *b"AWVH\r\n\x1a\n",
         }
     }
 
@@ -165,12 +165,12 @@ impl ProductSectionCodecKind {
             Self::LocaleText => Some(BundleSectionKind::LocaleCatalog),
             Self::AudioGraph => Some(BundleSectionKind::AudioGraph),
             Self::DebugSymbols => Some(BundleSectionKind::DebugSymbols),
-            Self::UiProgram => Some(BundleSectionKind::UiProgram),
-            Self::UiStyle => Some(BundleSectionKind::UiStyle),
-            Self::UiText => Some(BundleSectionKind::UiText),
-            Self::UiInput => Some(BundleSectionKind::UiInput),
-            Self::UiTheme => Some(BundleSectionKind::UiTheme),
-            Self::Shader | Self::Ui | Self::Entity | Self::Contracts | Self::GraphIndex => None,
+            Self::ViewProgram => Some(BundleSectionKind::ViewProgram),
+            Self::ViewStyle => Some(BundleSectionKind::ViewStyle),
+            Self::ViewText => Some(BundleSectionKind::ViewText),
+            Self::ViewInput => Some(BundleSectionKind::ViewInput),
+            Self::ViewTheme => Some(BundleSectionKind::ViewTheme),
+            Self::Shader | Self::View | Self::Entity | Self::Contracts | Self::GraphIndex => None,
         }
     }
 
@@ -188,11 +188,11 @@ impl ProductSectionCodecKind {
             BundleSectionKind::LocaleCatalog => Some(Self::LocaleText),
             BundleSectionKind::AudioGraph => Some(Self::AudioGraph),
             BundleSectionKind::DebugSymbols => Some(Self::DebugSymbols),
-            BundleSectionKind::UiProgram => Some(Self::UiProgram),
-            BundleSectionKind::UiStyle => Some(Self::UiStyle),
-            BundleSectionKind::UiText => Some(Self::UiText),
-            BundleSectionKind::UiInput => Some(Self::UiInput),
-            BundleSectionKind::UiTheme => Some(Self::UiTheme),
+            BundleSectionKind::ViewProgram => Some(Self::ViewProgram),
+            BundleSectionKind::ViewStyle => Some(Self::ViewStyle),
+            BundleSectionKind::ViewText => Some(Self::ViewText),
+            BundleSectionKind::ViewInput => Some(Self::ViewInput),
+            BundleSectionKind::ViewTheme => Some(Self::ViewTheme),
             BundleSectionKind::ProgramBytecode
             | BundleSectionKind::AssetBlob
             | BundleSectionKind::NormalizedSource
@@ -211,13 +211,13 @@ impl ProductSectionCodecKind {
             | Self::DisplayCatalog
             | Self::SourceMap
             | Self::AudioGraph
-            | Self::UiProgram
-            | Self::UiStyle
-            | Self::UiText
-            | Self::UiInput
-            | Self::UiTheme => ProductResourceMigrationStatus::CompactFirst,
+            | Self::ViewProgram
+            | Self::ViewStyle
+            | Self::ViewText
+            | Self::ViewInput
+            | Self::ViewTheme => ProductResourceMigrationStatus::CompactFirst,
             Self::LocaleText | Self::DebugSymbols => ProductResourceMigrationStatus::JsonTemporary,
-            Self::Shader | Self::Ui | Self::Entity | Self::Contracts | Self::GraphIndex => {
+            Self::Shader | Self::View | Self::Entity | Self::Contracts | Self::GraphIndex => {
                 ProductResourceMigrationStatus::Future
             }
         }
@@ -234,7 +234,7 @@ impl ProductSectionCodecKind {
                 | Self::Entrypoints
                 | Self::AdapterRequirements
                 | Self::Contracts
-                | Self::UiInput
+                | Self::ViewInput
                 | Self::GraphIndex
         )
     }
@@ -245,7 +245,7 @@ impl ProductSectionCodecKind {
             | Self::Entrypoints
             | Self::AdapterRequirements
             | Self::Contracts
-            | Self::UiInput => PatchCompatibility::RestartRequired,
+            | Self::ViewInput => PatchCompatibility::RestartRequired,
             Self::GraphIndex => PatchCompatibility::CodeCompatible,
             Self::ContentCatalog
             | Self::AssetCatalog
@@ -254,13 +254,13 @@ impl ProductSectionCodecKind {
             | Self::LocaleText
             | Self::AudioGraph
             | Self::Shader
-            | Self::Ui
+            | Self::View
             | Self::Entity
             | Self::DebugSymbols
-            | Self::UiProgram
-            | Self::UiStyle
-            | Self::UiText
-            | Self::UiTheme => PatchCompatibility::ContentOnly,
+            | Self::ViewProgram
+            | Self::ViewStyle
+            | Self::ViewText
+            | Self::ViewTheme => PatchCompatibility::ContentOnly,
         }
     }
 }

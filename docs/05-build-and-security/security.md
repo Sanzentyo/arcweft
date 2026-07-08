@@ -4,7 +4,7 @@
 
 ```text
 Tier 0 ObservePublic:
-  screenshot, public UI tree, visible bbox
+  screenshot, public View tree, visible bbox
 
 Tier 1 ControlPublic:
   click, choose, key input
@@ -26,7 +26,7 @@ Tier 4 UnsafeDev:
 - host import whitelist。
 - memory/fuel/time limit。
 
-## HTML UI
+## HTML View
 
 - `app://` bundle resource only。
 - remote network off by default。
@@ -63,7 +63,7 @@ Microphone, camera, and screen capture are high-risk capabilities. Product build
 Rules:
 
 - Capture requests must be explicit ModuleItems.
-- User-facing permission UI is mandatory.
+- User-facing permission View is mandatory.
 - Product mode must show an active microphone/camera indicator.
 - Raw capture frames/samples are not exposed to Agent tools, logs, telemetry, or plugins without a specific capability.
 - Activities consume granted capture ports; they do not enumerate or open devices themselves.
@@ -83,7 +83,7 @@ See [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md)
 
 ## Virtual controller policy
 
-- Virtual touch controls are visible UI and must expose accessible labels.
+- Virtual touch controls are visible View and must expose accessible labels.
 - Touch controls consume their layer input before lower scene layers unless explicitly configured otherwise.
 - Product builds may allow user layout customization, but generated controller mappings remain contract-checked.
 
@@ -122,7 +122,7 @@ web_usb = false unless allowlisted and user-granted
 web_hid = false unless allowlisted and user-granted
 ```
 
-Raw packets are not logged by default. Device use requires audit events and, for camera/microphone/raw USB/HID, visible indicators or equivalent product UI. Virtual controller events are safe logical inputs and may be enabled in product mode, but debug-only state mutation through controller injection requires an Agent capability token.
+Raw packets are not logged by default. Device use requires audit events and, for camera/microphone/raw USB/HID, visible indicators or equivalent product View. Virtual controller events are safe logical inputs and may be enabled in product mode, but debug-only state mutation through controller injection requires an Agent capability token.
 
 
 ## USB / HID / Serial devices
@@ -143,7 +143,7 @@ See [USB / HID / Serial device support](../03-presentation/usb-devices.md) and [
 
 ## Virtual touch controller
 
-Virtual touch controllers are product-safe UI components, but debug-only controls must be marked and hidden from product builds. They emit typed input events through the LayerTree and must not directly mutate `GameState`.
+Virtual touch controllers are product-safe View components, but debug-only controls must be marked and hidden from product builds. They emit typed input events through the LayerTree and must not directly mutate `GameState`.
 
 See [Virtual Touch Controller](../03-presentation/virtual-controller.md).
 
@@ -159,5 +159,5 @@ Rules:
 - Device serial numbers are redacted unless debug capability is enabled.
 - Activities receive granted ports and normalized `InputAction` streams, not backend handles.
 - Standard gamepads should use `gilrs` or browser Gamepad API instead of raw USB/HID.
-- Virtual controllers emit the same `InputAction` values as physical devices and are visible to Agent Debug Bus as normal UI action targets.
+- Virtual controllers emit the same `InputAction` values as physical devices and are visible to Agent Debug Bus as normal View action targets.
 - WebUSB/WebHID access must be user-gesture/permission gated and may be unavailable on some browsers.

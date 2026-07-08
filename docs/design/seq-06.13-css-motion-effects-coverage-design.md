@@ -6,7 +6,7 @@ This design is the broad seq06.13 cut. The narrower seq06.13a clip/mask closure
 is specified in `seq-06.13a-clip-path-mask-render-closure-design.md` and shares
 this package's renderer policy.
 
-The first cut keeps Arcweft on Arcweft-owned retained UI and wgpu/native-web
+The first cut keeps Arcweft on Arcweft-owned retained View and wgpu/native-web
 shared paths. It does not introduce browser DOM rendering, CSS canvas fallback,
 CPU-rasterized Takumi output, or screenshot-derived layout input.
 
@@ -25,7 +25,7 @@ CPU-rasterized Takumi output, or screenshot-derived layout input.
 ### Timeline source
 
 Motion never reads wall-clock time. The host/player samples a monotonic player
-presentation timeline and passes `UiTimelineMillis` to transitions and keyframe
+presentation timeline and passes `ViewTimelineMillis` to transitions and keyframe
 tracks. This lets native and web captures evaluate the same frame at the same
 logical timestamp.
 
@@ -58,8 +58,8 @@ Interpolation behavior is added to the Arcweft-owned boundary types:
 
 - `Milli::lerp` clamps progress to `0..=1000` and uses saturating integer math;
 - `Rgba8::lerp` interpolates each channel in 8-bit sRGB channel space;
-- `UiPropertyKind::is_transitionable` owns the property-family decision;
-- `UiPropertyKind::interpolate_value` rejects system colors, resources, booleans,
+- `ViewPropertyKind::is_transitionable` owns the property-family decision;
+- `ViewPropertyKind::interpolate_value` rejects system colors, resources, booleans,
   incompatible value families, and non-transitionable kinds.
 
 No extension trait or stringly helper is used for these rules.
@@ -78,11 +78,11 @@ stable deterministic output without a new dependency.
 
 ### Keyframes
 
-`UiKeyframeTrack` is per-property. A track contains ordered `UiKeyframe` values,
+`ViewKeyframeTrack` is per-property. A track contains ordered `ViewKeyframe` values,
 each with:
 
 - normalized offset in `Milli` progress units;
-- typed `UiPropertyValue`;
+- typed `ViewPropertyValue`;
 - easing used from this keyframe to the next keyframe.
 
 The track sorts and clamps offsets on construction, requires at least two
@@ -92,7 +92,7 @@ families.
 ### Interruption and reversal
 
 When a new target arrives while a transition is running, the runtime/player calls
-`UiTransition::interrupt`. The old transition is sampled at the interruption
+`ViewTransition::interrupt`. The old transition is sampled at the interruption
 timestamp and the new transition starts from that sampled value. Reversal is not
 a separate path; it is the same interruption rule with a previous value as the
 new target.
@@ -110,7 +110,7 @@ for normal, accessibility, and deterministic-capture runs.
 
 ### Motion evidence
 
-Each sample returns `UiMotionSample`:
+Each sample returns `ViewMotionSample`:
 
 - property;
 - timestamp;

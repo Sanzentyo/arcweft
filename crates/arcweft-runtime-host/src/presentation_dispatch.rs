@@ -14,7 +14,7 @@ pub enum PresentationActionDestination {
     Runtime,
     TextBox,
     Activity,
-    UiEntity,
+    ViewEntity,
 }
 
 /// One routed presentation action with its host dispatch destination.
@@ -85,7 +85,7 @@ pub enum PresentationActionExecutionError {
     },
 }
 
-/// Runtime-host adapter contract for `TextBox`, `Activity`, UI, and runtime actions.
+/// Runtime-host adapter contract for `TextBox`, `Activity`, View, and runtime actions.
 pub trait PresentationActionHandlers {
     fn handle_runtime_action(
         &mut self,
@@ -105,14 +105,14 @@ pub trait PresentationActionHandlers {
         output: &mut PresentationActionHandlerOutput,
     ) -> Result<(), PresentationActionHandlerError>;
 
-    fn handle_ui_entity_action(
+    fn handle_view_entity_action(
         &mut self,
         action: &Action,
         output: &mut PresentationActionHandlerOutput,
     ) -> Result<(), PresentationActionHandlerError>;
 }
 
-/// Registered host-side action handlers for concrete `TextBox`, `Activity`, UI, and runtime adapters.
+/// Registered host-side action handlers for concrete `TextBox`, `Activity`, View, and runtime adapters.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PresentationActionHandlerRegistry {
     handlers: Vec<PresentationActionHandlerRegistration>,
@@ -195,7 +195,7 @@ pub fn dispatch_presentation_action(
             | SemanticRole::SecureTextField
             | SemanticRole::Image
             | SemanticRole::Debug
-            | SemanticRole::Custom => PresentationActionDestination::UiEntity,
+            | SemanticRole::Custom => PresentationActionDestination::ViewEntity,
         },
     };
     Ok(DispatchedPresentationAction {
@@ -234,8 +234,8 @@ pub fn execute_presentation_action_plan(
             PresentationActionDestination::Activity => {
                 handlers.handle_activity_action(dispatched.action(), &mut output)
             }
-            PresentationActionDestination::UiEntity => {
-                handlers.handle_ui_entity_action(dispatched.action(), &mut output)
+            PresentationActionDestination::ViewEntity => {
+                handlers.handle_view_entity_action(dispatched.action(), &mut output)
             }
         };
         result.map_err(|source| PresentationActionExecutionError::Handler { index, source })?;
@@ -367,12 +367,12 @@ impl PresentationActionHandlers for PresentationActionHandlerRegistry {
         self.handle_registered_action(PresentationActionDestination::Activity, action, output)
     }
 
-    fn handle_ui_entity_action(
+    fn handle_view_entity_action(
         &mut self,
         action: &Action,
         output: &mut PresentationActionHandlerOutput,
     ) -> Result<(), PresentationActionHandlerError> {
-        self.handle_registered_action(PresentationActionDestination::UiEntity, action, output)
+        self.handle_registered_action(PresentationActionDestination::ViewEntity, action, output)
     }
 }
 
@@ -582,10 +582,10 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_batch_partitions_textbox_activity_ui_and_runtime_actions() {
+    fn dispatch_batch_partitions_textbox_activity_view_and_runtime_actions() {
         let textbox = target("textbox.main");
         let activity = target("activity.truck");
-        let button = target("ui.button");
+        let button = target("view.button");
         let mut semantics = SemanticTree::default();
         semantics.push(SemanticNode::new(
             layer_id("dialogue"),
@@ -600,7 +600,7 @@ mod tests {
             HitRect::new(0.0, 0.0, 100.0, 100.0),
         ));
         semantics.push(SemanticNode::new(
-            layer_id("ui"),
+            layer_id("view"),
             button.clone(),
             SemanticRole::Button,
             HitRect::new(0.0, 0.0, 20.0, 20.0),
@@ -635,7 +635,7 @@ mod tests {
             vec![
                 PresentationActionDestination::TextBox,
                 PresentationActionDestination::Activity,
-                PresentationActionDestination::UiEntity,
+                PresentationActionDestination::ViewEntity,
                 PresentationActionDestination::Runtime,
             ]
         );
@@ -723,7 +723,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             dispatched.destination(),
-            PresentationActionDestination::UiEntity
+            PresentationActionDestination::ViewEntity
         );
 
         let raw = RawInputEvent::new(
@@ -742,10 +742,10 @@ mod tests {
 
     #[test]
     fn activity_action_rejects_non_activity_semantic_target() {
-        let button = target("ui.button");
+        let button = target("view.button");
         let mut semantics = SemanticTree::default();
         semantics.push(SemanticNode::new(
-            layer_id("ui"),
+            layer_id("view"),
             button.clone(),
             SemanticRole::Button,
             HitRect::new(0.0, 0.0, 20.0, 20.0),
@@ -769,7 +769,7 @@ mod tests {
     fn execute_plan_calls_handlers_in_dispatch_order_and_collects_output() {
         let textbox = target("textbox.main");
         let activity = target("activity.truck");
-        let button = target("ui.button");
+        let button = target("view.button");
         let mut plan = PresentationActionDispatchPlan::default();
         plan.push(DispatchedPresentationAction {
             destination: PresentationActionDestination::TextBox,
@@ -786,7 +786,7 @@ mod tests {
             ),
         });
         plan.push(DispatchedPresentationAction {
-            destination: PresentationActionDestination::UiEntity,
+            destination: PresentationActionDestination::ViewEntity,
             action: Action::new(ActionTarget::Entity(button), public_id("action.select")),
         });
         plan.push(DispatchedPresentationAction {
@@ -802,7 +802,7 @@ mod tests {
             vec![
                 "textbox:action.advance",
                 "activity:action.pause",
-                "ui:action.select",
+                "view:action.select",
                 "runtime:action.open_menu",
             ]
         );
@@ -818,14 +818,14 @@ mod tests {
 
     #[test]
     fn execute_plan_reports_handler_failure_index_without_running_later_actions() {
-        let button = target("ui.button");
+        let button = target("view.button");
         let mut plan = PresentationActionDispatchPlan::default();
         plan.push(DispatchedPresentationAction {
             destination: PresentationActionDestination::Runtime,
             action: Action::new(ActionTarget::Runtime, public_id("action.first")),
         });
         plan.push(DispatchedPresentationAction {
-            destination: PresentationActionDestination::UiEntity,
+            destination: PresentationActionDestination::ViewEntity,
             action: Action::new(ActionTarget::Entity(button), public_id("action.fail")),
         });
         plan.push(DispatchedPresentationAction {
@@ -834,7 +834,7 @@ mod tests {
         });
 
         let mut handlers = RecordingHandlers {
-            fail_ui: true,
+            fail_view: true,
             ..RecordingHandlers::default()
         };
 
@@ -843,7 +843,7 @@ mod tests {
             Err(PresentationActionExecutionError::Handler {
                 index: 1,
                 source: PresentationActionHandlerError::Rejected {
-                    destination: PresentationActionDestination::UiEntity,
+                    destination: PresentationActionDestination::ViewEntity,
                     action: public_id("action.fail"),
                     reason: "test rejection".to_owned(),
                 },
@@ -919,10 +919,10 @@ mod tests {
 
     #[test]
     fn registered_handlers_reject_unregistered_or_mismatched_activity_sources() {
-        let button = target("ui.button");
+        let button = target("view.button");
         let mut unregistered_plan = PresentationActionDispatchPlan::default();
         unregistered_plan.push(DispatchedPresentationAction::new(
-            PresentationActionDestination::UiEntity,
+            PresentationActionDestination::ViewEntity,
             Action::new(
                 ActionTarget::Entity(button.clone()),
                 public_id("action.select"),
@@ -934,7 +934,7 @@ mod tests {
             Err(PresentationActionExecutionError::Handler {
                 index: 0,
                 source: PresentationActionHandlerError::Unhandled {
-                    destination: PresentationActionDestination::UiEntity,
+                    destination: PresentationActionDestination::ViewEntity,
                     action: public_id("action.select"),
                 },
             })
@@ -942,13 +942,13 @@ mod tests {
 
         let mut mismatched_plan = PresentationActionDispatchPlan::default();
         mismatched_plan.push(DispatchedPresentationAction::new(
-            PresentationActionDestination::UiEntity,
+            PresentationActionDestination::ViewEntity,
             Action::new(ActionTarget::Entity(button), public_id("action.select")),
         ));
         registry
             .register(
                 PresentationActionHandlerRegistration::new(
-                    PresentationActionDestination::UiEntity,
+                    PresentationActionDestination::ViewEntity,
                     public_id("action.select"),
                 )
                 .with_effect(PresentationActionHandlerEffect::host_event(
@@ -962,7 +962,7 @@ mod tests {
             Err(PresentationActionExecutionError::Handler {
                 index: 0,
                 source: PresentationActionHandlerError::Rejected {
-                    destination: PresentationActionDestination::UiEntity,
+                    destination: PresentationActionDestination::ViewEntity,
                     action: public_id("action.select"),
                     reason: "incoming action target is not an Activity".to_owned(),
                 },
@@ -997,7 +997,7 @@ mod tests {
     #[derive(Default)]
     struct RecordingHandlers {
         calls: Vec<String>,
-        fail_ui: bool,
+        fail_view: bool,
     }
 
     impl RecordingHandlers {
@@ -1047,19 +1047,19 @@ mod tests {
             Ok(())
         }
 
-        fn handle_ui_entity_action(
+        fn handle_view_entity_action(
             &mut self,
             action: &Action,
             _output: &mut PresentationActionHandlerOutput,
         ) -> Result<(), PresentationActionHandlerError> {
-            if self.fail_ui {
+            if self.fail_view {
                 return Err(PresentationActionHandlerError::rejected(
-                    PresentationActionDestination::UiEntity,
+                    PresentationActionDestination::ViewEntity,
                     action,
                     "test rejection",
                 ));
             }
-            self.record("ui", action);
+            self.record("view", action);
             Ok(())
         }
     }

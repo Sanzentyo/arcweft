@@ -360,11 +360,11 @@ impl CharacterBlendMode {
         )
     }
 
-    /// Whether the retained UI image node path reproduces this mode exactly.
+    /// Whether the retained View image node path reproduces this mode exactly.
     ///
-    /// The behavior belongs to the owned enum so importers and UI adapters do
+    /// The behavior belongs to the owned enum so importers and View adapters do
     /// not grow separate blend-mode switches or extension traits.
-    pub const fn is_retained_ui_supported(self) -> bool {
+    pub const fn is_retained_view_supported(self) -> bool {
         matches!(self, Self::PassThrough | Self::Normal)
     }
 
@@ -437,7 +437,7 @@ impl CharacterVariant {
         &self.asset
     }
 
-    /// Deterministic resource id used by presentation/UI resource nodes.
+    /// Deterministic resource id used by presentation/View resource nodes.
     ///
     /// # Panics
     ///

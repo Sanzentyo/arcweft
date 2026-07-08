@@ -79,7 +79,7 @@ control over Windows native composition UI is split into:
 - `cargo check -p arcweft-player-native --all-targets`
 - `cargo test -p arcweft-player-native --test native_text_input_bridge --quiet`
 - `cargo test -p arcweft-player-native --test native_text_input_seq06_4j1_source_gate --quiet`
-- `cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-ui\arcw.toml`
+- `cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-view\arcw.toml`
 - `cargo clippy -p arcweft-player-native -p arcweft-player-scene --all-targets`
 - `cargo tree -p arcweft-player-native -i winit`
 - `cargo tree -p arcweft-player-native -i winit-core`

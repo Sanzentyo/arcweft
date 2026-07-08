@@ -16,7 +16,7 @@ use crate::resource_codec::product_catalog::migrated_product_catalog_section_com
 use crate::resource_codec::runtime::{
     RuntimeResourceCompatibility, migrated_runtime_section_compatibility,
 };
-use crate::resource_codec::ui::migrated_ui_section_compatibility;
+use crate::resource_codec::view::migrated_view_section_compatibility;
 use arcweft_core::awbc::codec::AwbcDecodeBudget;
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
@@ -116,7 +116,7 @@ pub enum SectionChangeOperation {
 pub enum SectionChangeDerivation {
     RuntimeCompactCodec,
     ProductCatalogCompactCodec,
-    UiCompactCodec,
+    ViewCompactCodec,
     AwbcExecutableFingerprint,
     ExternalDescriptor,
     SectionKindDefault,
@@ -1206,8 +1206,8 @@ fn replace_compatibility(
             SectionChangeDerivation::ProductCatalogCompactCodec,
         ));
     }
-    if let Some(compatibility) = ui_resource_compatibility(kind, base, target, next.id())? {
-        return Ok((compatibility, SectionChangeDerivation::UiCompactCodec));
+    if let Some(compatibility) = view_resource_compatibility(kind, base, target, next.id())? {
+        return Ok((compatibility, SectionChangeDerivation::ViewCompactCodec));
     }
     if kind == BundleSectionKind::ProgramBytecode {
         let old = decoded_section(
@@ -1271,7 +1271,7 @@ fn product_catalog_compatibility(
     })
 }
 
-fn ui_resource_compatibility(
+fn view_resource_compatibility(
     kind: BundleSectionKind,
     base: &BundleView<'_>,
     target: &BundleView<'_>,
@@ -1279,7 +1279,7 @@ fn ui_resource_compatibility(
 ) -> Result<Option<PatchCompatibility>, PatchBundleError> {
     let old = decoded_section(base, id, PatchBundleError::MissingBaseSection(id))?;
     let new = decoded_section(target, id, PatchBundleError::MissingSectionPayload(id))?;
-    migrated_ui_section_compatibility(kind, &old, &new).map_err(|error| {
+    migrated_view_section_compatibility(kind, &old, &new).map_err(|error| {
         PatchBundleError::Compatibility {
             message: error.to_string(),
         }

@@ -14,12 +14,12 @@ Focused TextField/TextArea geometry is now sourced from Arcweft renderer/text-la
 
 ```bash
 cargo fmt --all -- --check
-cargo check -p arcweft-presentation -p arcweft-text-layout -p arcweft-render-wgpu -p arcweft-ui -p arcweft-runtime-host -p arcweft-player-web --all-targets
+cargo check -p arcweft-presentation -p arcweft-text-layout -p arcweft-render-wgpu -p arcweft-view -p arcweft-runtime-host -p arcweft-player-web --all-targets
 cargo test -p arcweft-presentation text_editor -- --nocapture
 cargo test -p arcweft-render-wgpu text_editor_geometry -- --nocapture
-cargo test -p arcweft-ui text_input_geometry -- --nocapture
+cargo test -p arcweft-view text_input_geometry -- --nocapture
 cargo test -p arcweft-runtime-host text_input -- --nocapture
-cargo clippy -p arcweft-presentation -p arcweft-render-wgpu -p arcweft-ui -p arcweft-runtime-host -p arcweft-player-web --all-targets --all-features -- -D warnings
+cargo clippy -p arcweft-presentation -p arcweft-render-wgpu -p arcweft-view -p arcweft-runtime-host -p arcweft-player-web --all-targets --all-features -- -D warnings
 npm run test:ime
 cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```

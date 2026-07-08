@@ -2,7 +2,7 @@
 
 ## 目的
 
-wgpu を基盤にした、native と WebGPU/WebGL 経路の両方に対応するノベルゲームエンジンを作る。ノベルゲーム本編だけでなく、トラックゲームや FPS ミニゲーム、HTML/CSS UI、リアクティブ native UI、カスタム WGSL、WASM plugin、Rust plugin、Cranelift JIT、形式検証、LLM デバッグを一体として扱う。
+wgpu を基盤にした、native と WebGPU/WebGL 経路の両方に対応するノベルゲームエンジンを作る。ノベルゲーム本編だけでなく、トラックゲームや FPS ミニゲーム、HTML/CSS View、リアクティブ native View、カスタム WGSL、WASM plugin、Rust plugin、Cranelift JIT、形式検証、LLM デバッグを一体として扱う。
 
 ## 全体図
 
@@ -14,12 +14,12 @@ Game Source / Bundle
   .typ / rich text / typst blocks
   .wasm plugin
   Rust Activity crate
-  assets / audio / ui html
+  assets / audio / view html
         │
         ▼
 Compiler / Tooling
   lossless CST → typed AST/HIR → Typed IR → Bytecode/Bundle
-  contracts / parser / shader / audio / UI / graph / RAG
+  contracts / parser / shader / audio / View / graph / RAG
   optional native JIT / generated Rust / generated Wasm helpers
         │
         ▼
@@ -37,8 +37,8 @@ Host / Adapter Layer
   native-only Cranelift pure-function tier
   wgpu renderer
   Render / Input LayerTree
-  Game Native UI renderer
-  Servo / DOM HTML UI backend
+  Game Native View renderer
+  Servo / DOM HTML View backend
   Audio mixer / spatial / TTS / BGM graph
   Agent Debug Bus / MCP / CLI
 ```
@@ -71,7 +71,7 @@ Native product の基本形は AOT compiled player + embedded `.awfb` / bytecode
 
 asset load、content ensure、shader compile、Activity instantiate、TTS 生成、BGM pre-render、Typeset block の組版などは `Need<T, E>` として扱う。
 
-`Need<T, E>` は `T` に暗黙変換できない。`flow` や UI では `await ... with { pending ... }` または `AwaitView` で待機時の挙動を明示する。
+`Need<T, E>` は `T` に暗黙変換できない。`flow` や View では `await ... with { pending ... }` または `AwaitView` で待機時の挙動を明示する。
 
 ### 実行可能単位は Activity
 
@@ -90,17 +90,17 @@ Snapshot は pure data。serialize、compress、encrypt、file write は host / 
 
 ### Layer は描画と入力の共通境界
 
-描画 system は `LayerTree` を持ち、world、character、effect、Activity、native UI、HTML UI、modal、debug overlay を明示的な layer として扱う。入力も同じ layer stack で上位から hit-test し、`Consumed` / `PassThrough` / `Blocked` を返す。詳細は [Layer System](../03-presentation/layers.md)。
+描画 system は `LayerTree` を持ち、world、character、effect、Activity、native View、HTML View、modal、debug overlay を明示的な layer として扱う。入力も同じ layer stack で上位から hit-test し、`Consumed` / `PassThrough` / `Blocked` を返す。詳細は [Layer System](../03-presentation/layers.md)。
 
 
 ### LayerTree は描画と入力の共通単位
 
-`RenderSpec` は `LayerTree` を持ち、背景、立ち絵、dialogue、choice、native UI、HTML UI、modal、debug overlay、Activity を同じ tree 上で扱う。入力は derived input order の上位 layer から routing され、modal、focus、pointer capture、semantic action、Agent hit-test は layer state として管理する。詳細は [Render / Input Layer System](../03-presentation/render-input-layers.md)。
+`RenderSpec` は `LayerTree` を持ち、背景、立ち絵、dialogue、choice、native View、HTML View、modal、debug overlay、Activity を同じ tree 上で扱う。入力は derived input order の上位 layer から routing され、modal、focus、pointer capture、semantic action、Agent hit-test は layer state として管理する。詳細は [Render / Input Layer System](../03-presentation/render-input-layers.md)。
 
-### UI は二系統
+### View は二系統
 
-- Game Native UI: SwiftUI 風、リアクティブ、wgpu/vector/text、Agent 観測に最適。
-- HTML/CSS UI: native は Servo、web は browser DOM。
+- Game Native View: SwiftUI 風、リアクティブ、wgpu/vector/text、Agent 観測に最適。
+- HTML/CSS View: native は Servo、web は browser DOM。
 
 どちらも layer に載り、最終的に route 済み input と `ActionTarget` / semantic action を返す。
 
@@ -113,7 +113,7 @@ BGM、SE、Voice、TTS、spatial source、mixer bus、ducking、loudness、loop�
 Agent Debug Bus は画像だけでなく以下を返す。
 
 - screenshot
-- UI tree
+- View tree
 - scene graph
 - bbox / polygon / segmentation mask
 - action target

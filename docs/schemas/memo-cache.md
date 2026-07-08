@@ -1,6 +1,6 @@
 # Memoization Cache schema
 
-Memoization Cache は `memo fn`、`memo task`、UI layout cache、typeset cache、shader/JIT artifact cache の共通 metadata schema である。
+Memoization Cache は `memo fn`、`memo task`、View layout cache、typeset cache、shader/JIT artifact cache の共通 metadata schema である。
 
 関連:
 
@@ -95,7 +95,7 @@ dependency version changed:
   invalidate entries whose dependency snapshot is stale
 
 hot reload patch committed:
-  invalidate affected function/entity/layer/UI subtree caches
+  invalidate affected function/entity/layer/View subtree caches
 
 profile/build mode changed:
   invalidate JIT and debug-sensitive memo entries

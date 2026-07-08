@@ -4,7 +4,7 @@
 pub struct ObserveRequest {
     pub image: ImageRequest,
     pub objects: ObjectRequest,
-    pub ui_tree: bool,
+    pub view_tree: bool,
     pub scene_graph: bool,
     pub state: StateRequest,
     pub audio: bool,

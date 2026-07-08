@@ -38,7 +38,7 @@ fn tree(root: &LayerId) -> LayerTree {
 
 #[test]
 fn shared_state_tracks_hover_focus_pressed_and_capture_by_stable_target() {
-    let ui = layer("ui");
+    let view = layer("view");
     let first = target("button.first");
     let second = target("button.second");
     let mut state = InteractionState::default();
@@ -48,13 +48,13 @@ fn shared_state_tracks_hover_focus_pressed_and_capture_by_stable_target() {
         vec![target("panel"), second.clone()],
     ));
     let _ = state.set_hover_path(HoverPath::new(PointerId(1), vec![first.clone()]));
-    state.set_focus(FocusState::new(ui.clone(), second.clone()));
+    state.set_focus(FocusState::new(view.clone(), second.clone()));
     state.capture_pointer(PointerCapture::new(
         PointerId(2),
-        ui.clone(),
+        view.clone(),
         second.clone(),
     ));
-    state.press_pointer(PressedTarget::new(PointerId(2), ui, second.clone()));
+    state.press_pointer(PressedTarget::new(PointerId(2), view, second.clone()));
 
     assert_eq!(state.primary_hovered_target(), Some(&first));
     assert_eq!(state.primary_pressed_target(), Some(&second));
@@ -84,7 +84,7 @@ fn focus_events_and_hit_hover_paths_keep_behavior_on_the_owned_types() {
     assert!(InputEventKind::Activate.is_activate());
 
     let record = HitRecord::new(
-        layer("ui"),
+        layer("view"),
         button.clone(),
         HitRect::new(0.0, 0.0, 80.0, 24.0),
     )
@@ -95,12 +95,12 @@ fn focus_events_and_hit_hover_paths_keep_behavior_on_the_owned_types() {
 #[test]
 fn replay_hash_changes_when_hover_or_pressed_state_changes() {
     let root = layer("root");
-    let ui = layer("ui");
+    let view = layer("view");
     let button = target("button.confirm");
     let layers = tree(&root);
     let mut hits = HitTree::default();
     hits.push(HitRecord::new(
-        ui.clone(),
+        view.clone(),
         button.clone(),
         HitRect::new(0.0, 0.0, 80.0, 24.0),
     ));
@@ -111,6 +111,6 @@ fn replay_hash_changes_when_hover_or_pressed_state_changes() {
     let hovered_hash = routing_hash(&layers, &hits, &hovered);
     assert_ne!(neutral, hovered_hash);
 
-    hovered.press_pointer(PressedTarget::new(PointerId(0), ui, button));
+    hovered.press_pointer(PressedTarget::new(PointerId(0), view, button));
     assert_ne!(hovered_hash, routing_hash(&layers, &hits, &hovered));
 }

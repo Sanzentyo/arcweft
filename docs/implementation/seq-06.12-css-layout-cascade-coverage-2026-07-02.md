@@ -1,7 +1,7 @@
 # Seq06.12 CSS layout/cascade coverage implementation note — 2026-07-02
 
 This implementation slice adds deterministic CSS coverage classification around
-Takumi retained UI lowering.
+Takumi retained View lowering.
 
 ## Added code
 

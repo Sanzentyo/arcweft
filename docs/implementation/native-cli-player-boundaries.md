@@ -78,13 +78,13 @@ output returns through `ActivityStepOutputSink` as `ActionBatch` and
 model without adding per-Activity routers or sending raw input into
 `arcweft-core`.
 
-`arcweft-runtime-host` also owns the first UI frame commit boundary. It depends
-on `arcweft-ui` as the host-layer join point and validates UI frame output
+`arcweft-runtime-host` also owns the first View frame commit boundary. It depends
+on `arcweft-view` as the host-layer join point and validates View frame output
 against the committed `LayerTree`: component rendering now produces a per-layer
-`UiLayerOutput` that pairs the renderer-facing `DisplayList` with the
-`UiSemanticFragment` used for Agent observation and presentation action
-dispatch. `UiFrameCommitBuilder` accepts that typed output, rejects unknown or
-duplicate layers, orders committed UI layers by `LayerTree::render_order`, and
+`ViewLayerOutput` that pairs the renderer-facing `DisplayList` with the
+`ViewSemanticFragment` used for Agent observation and presentation action
+dispatch. `ViewFrameCommitBuilder` accepts that typed output, rejects unknown or
+duplicate layers, orders committed View layers by `LayerTree::render_order`, and
 exposes merged `SemanticTree` data. This keeps `arcweft-presentation`
 independent from the higher-level UI crate while still giving host
 orchestration a typed place to combine Component output, display items, and
@@ -104,8 +104,8 @@ The unified UI design is adopted as the long-term boundary for future work:
   `HostEventBatch`. The companion `arcweft_presentation::layer` module now
   provides the first shared `LayerTree` data model: `LayerNode`, `LayerOrder`,
   `LayerInputPolicy`, and `LayerContent` cover render order, future input
-  routing order, and TextBox/Activity/UI content ownership without introducing
-  public compatibility concepts such as `ActivityViewport` or `UiEvent`.
+  routing order, and TextBox/Activity/View content ownership without introducing
+  public compatibility concepts such as `ActivityViewport` or `ViewEvent`.
   `arcweft_presentation::hit`, `arcweft_presentation::interaction`, and
   `arcweft_presentation::router` now add the first routing boundary:
   `HitTree`, `HitRecord`, `InteractionState`, `FocusState`, pointer capture
@@ -134,26 +134,26 @@ The unified UI design is adopted as the long-term boundary for future work:
   derive ordinary `HitTree` records from semantic bounds, and lower declared
   semantic actions to `ActionTarget` only after Agent semantic invocation has
   passed through `InputRouter` modal, visibility, and layer-policy checks. This
-  keeps semantic actions from introducing `UiEvent`, `ActivityViewport`, or a
+  keeps semantic actions from introducing `ViewEvent`, `ActivityViewport`, or a
   separate Agent-only invoke path.
-- `arcweft-ui` now owns the first Sans I/O UI state boundaries. Typed view
-  descriptors live in `view`: `ViewId`, `ViewSchemaId`, `UiProgramId`,
+- `arcweft-view` now owns the first Sans I/O UI state boundaries. Typed view
+  descriptors live in `view`: `ViewId`, `ViewSchemaId`, `ViewProgramId`,
   `RustViewId`, `ViewDescriptor`, and `ViewRegistry` resolve public view names
   to dense load-time IDs without hot-path string lookup. Stateful UI view
   instances live in `entity`: `RawEntity`, `Entity<T>`, `DirtyFlags`, and
   `EntityStore` provide safe generational handles, reject stale reused slots,
   and track dirty state without `unsafe`, leaked state, or public compatibility
-  aliases. `semantics` still owns `UiSemanticNode`, `UiSemanticFragment`, and
-  `UiSemanticFragmentBuilder`, which produce ordered UI semantic nodes and
+  aliases. `semantics` still owns `ViewSemanticNode`, `ViewSemanticFragment`, and
+  `ViewSemanticFragmentBuilder`, which produce ordered UI semantic nodes and
   lower them into `arcweft_presentation::semantic::SemanticTree` without
-  introducing `UiEvent` or a separate UI router. `fragment` now owns the first
+  introducing `ViewEvent` or a separate UI router. `fragment` now owns the first
   retained flat fragment boundary: `ViewFragment`, `ViewFragmentBuilder`,
   `FragmentNode`, `FragmentKind`, `Span32`, and sidecar child/event vectors keep
   rich text, plain text, images, stateful views, and custom host elements in one
   deterministic node list. Fragment event bindings are handler IDs plus event
-  kinds, not a public `UiEvent` compatibility family. `style` now owns
+  kinds, not a public `ViewEvent` compatibility family. `style` now owns
   the first property-binding invalidation boundary: `PropertyBinding`,
-  `PropertyBindingTable`, `UiPropertyKind`, `ValueSourceId`, and `Invalidation`
+  `PropertyBindingTable`, `ViewPropertyKind`, `ValueSourceId`, and `Invalidation`
   distinguish paint-only changes such as opacity, color, and transforms from
   layout, semantic, and structural fragment changes. `reactive` now adds the
   first retained dependency boundary: `ReactiveGraph` maps dynamic
@@ -167,14 +167,14 @@ The unified UI design is adopted as the long-term boundary for future work:
   text, rich text, image, and custom element nodes into ordered pure-data
   `DisplayItem` values, while containers and mounted view nodes remain
   structural and do not emit renderer primitives directly. `frame` pairs that
-  display list with the corresponding `UiSemanticFragment` as `UiLayerOutput`,
+  display list with the corresponding `ViewSemanticFragment` as `ViewLayerOutput`,
   giving runtime-host a single View-output payload to validate against the
   committed LayerTree before renderer submission integration.
 - `TextBox` is a dialogue domain object, not a View. It may use an anonymous or
   named View as its view implementation.
 - Activity, TextBox, UI, Agent, and replay input must all route through the same
   LayerTree / HitTree / InteractionTarget model.
-- `UiEvent` is not a public runtime-step concept; UI handlers lower to routed
+- `ViewEvent` is not a public runtime-step concept; UI handlers lower to routed
   input, `ActionTarget`, or semantic action data owned by presentation/runtime
   host boundaries.
 - Rich text display data is owned once by the line display store/catalog;
@@ -187,7 +187,7 @@ the order of future implementation cuts:
 - Public vocabulary is intentionally small: `Activity`, `Layer`/`LayerTree`,
   `Component`, `TextBox`, `TextField`, `TextArea`, `RawInputEvent`,
   `InputEvent`, `Action`, and `HostEvent`. Names such as `DialogueWindow`,
-  `TextBoxComponent`, `ActivityViewport`, `UiInputEvent`, and `UiEvent` must
+  `TextBoxComponent`, `ActivityViewport`, `ViewInputEvent`, and `ViewEvent` must
   not become public compatibility concepts.
 - `@textbox.main` is the canonical default TextBox ID. `@textbox.0` is not a
   runtime alias; it should be handled only by a one-shot migration path.
@@ -200,7 +200,7 @@ the order of future implementation cuts:
   `arcweft-input` crate: LayerTree, HitTree, focus, modal, capture, hover,
   gesture, replay hash, TextBox presentation state, and Activity presentation
   descriptors are one Sans I/O presentation boundary.
-- `arcweft-ui` starts as one crate for UI semantic node production and remains
+- `arcweft-view` starts as one crate for UI semantic node production and remains
   the future home for typed Component descriptors, retained flat fragments,
   generational Entity storage, reactivity, style/property bindings, and layout
   integration.
@@ -275,11 +275,11 @@ remaining architectural cuts are:
    Input, audio, save/load, and other product host behavior should extend this
    runner/player split; source execution remains a developer mode, not the
    product-player model.
-3. Continue extending `arcweft-ui` from its initial semantic, Component
+3. Continue extending `arcweft-view` from its initial semantic, Component
    descriptor, generational Entity, retained flat fragment, property
    invalidation, reactive dependency, layout, and display-list boundaries toward
    renderer submission integration, without adding public names such as
-   `ActivityViewport`, `TextBoxComponent`, `UiEvent`, or per-Activity input
+   `ActivityViewport`, `TextBoxComponent`, `ViewEvent`, or per-Activity input
    routers.
 4. Keep the unified TextBox model as the current source of truth: canonical
    `@textbox.main`, dialogue `window`, manifest `window`, and generic typed
@@ -290,14 +290,14 @@ remaining architectural cuts are:
    the host-owned boundaries now in place:
    `PresentationActionHandlerRegistry` / `PresentationActionHandlers` for
    semantic actions, `ActivityHostRegistry` / `ActivityHost` for Activity
-   stepping, and `UiFrameCommitBuilder` with `UiLayerOutput` for Component
+   stepping, and `ViewFrameCommitBuilder` with `ViewLayerOutput` for Component
    rendering output. Later Component and Activity work must use `ActionBatch`,
    `HostEventBatch`, routed `InputEvent`, `LayerContent`, `LayerTransform`,
    `HoverPath`, `GestureArena`, `RoutingHash`, `RouteDecision`, `SemanticTree`,
-   `UiFrameCommit`, `PresentationActionDispatchPlan`,
+   `ViewFrameCommit`, `PresentationActionDispatchPlan`,
    `PresentationActionHandlers`, `PresentationActionHandlerRegistry`, and
    `ActivityHostRegistry` instead of introducing per-Activity routers,
-   `ActivityViewport`, `UiEvent` aliases, or Agent-only semantic invoke
+   `ActivityViewport`, `ViewEvent` aliases, or Agent-only semantic invoke
    shortcuts.
 
 ## Invariants

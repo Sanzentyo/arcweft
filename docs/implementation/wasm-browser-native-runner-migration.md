@@ -27,7 +27,7 @@ The current `arcweft-render-native` mixes shared visual work with winit, surface
 arcweft-render-wgpu
   geometry / visual plan
   text layout + glyphon
-  image/UI pipelines
+  image/View pipelines
   pipeline/bind-group/resource caches
   render(Device, Queue, TextureView, viewport, frame)
 
@@ -50,7 +50,7 @@ Before connecting the Web host:
    - choice layout,
    - hover, pressed and visible keyboard focus,
    - resize and scale-factor geometry,
-   - image/UI display-list paths already supported by native.
+   - image/View display-list paths already supported by native.
 3. Compare pre-extraction and post-extraction captures. Any change must be either fixed or explicitly approved with a documented tolerance.
 4. Assert that renderer-produced semantic bounds and `HitTree` bounds match the pixels/layout used for each choice.
 5. Keep native capture in `arcweft-render-native`; shared renderer must not gain blocking readback.

@@ -57,7 +57,7 @@ impl AgentBBox {
 pub enum AgentCoordinateSpace {
     Viewport,
     World,
-    Ui,
+    View,
 }
 
 /// Point in an Agent coordinate space.

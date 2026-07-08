@@ -1,6 +1,6 @@
-//! Safe generational UI entity storage for stateful views.
+//! Safe generational View entity storage for stateful views.
 
-use crate::{UiError, ViewId};
+use crate::{ViewError, ViewId};
 use core::{any::Any, marker::PhantomData, num::NonZeroU32};
 
 /// Untyped generational entity handle.
@@ -30,7 +30,7 @@ struct EntitySlot {
     queued: bool,
 }
 
-/// Reusable store for stateful UI view entities.
+/// Reusable store for stateful View view entities.
 #[derive(Debug, Default)]
 pub struct EntityStore {
     slots: Vec<EntitySlot>,
@@ -126,13 +126,13 @@ impl EntitySlot {
         }
     }
 
-    fn next_generation(&mut self) -> Result<NonZeroU32, UiError> {
+    fn next_generation(&mut self) -> Result<NonZeroU32, ViewError> {
         let next = self
             .generation
             .get()
             .checked_add(1)
             .and_then(NonZeroU32::new)
-            .ok_or(UiError::CapacityExceeded)?;
+            .ok_or(ViewError::CapacityExceeded)?;
         self.generation = next;
         Ok(next)
     }
@@ -143,12 +143,12 @@ impl EntityStore {
         &mut self,
         state: T,
         view: Option<ViewId>,
-    ) -> Result<Entity<T>, UiError> {
+    ) -> Result<Entity<T>, ViewError> {
         if let Some(index) = self.free.pop() {
             let slot = self
                 .slots
                 .get_mut(index as usize)
-                .ok_or(UiError::CapacityExceeded)?;
+                .ok_or(ViewError::CapacityExceeded)?;
             let generation = slot.next_generation()?;
             slot.state = Some(Box::new(state));
             slot.view = view;
@@ -157,7 +157,7 @@ impl EntityStore {
             return Ok(Entity::from_raw(RawEntity::new(index, generation)));
         }
 
-        let index = u32::try_from(self.slots.len()).map_err(|_| UiError::CapacityExceeded)?;
+        let index = u32::try_from(self.slots.len()).map_err(|_| ViewError::CapacityExceeded)?;
         self.slots.push(EntitySlot::occupied(state, view));
         Ok(Entity::from_raw(RawEntity::new(index, NonZeroU32::MIN)))
     }
@@ -172,22 +172,25 @@ impl EntityStore {
             .and_then(|slot| slot.state.as_mut()?.downcast_mut())
     }
 
-    pub fn remove<T: 'static>(&mut self, entity: Entity<T>) -> Result<T, UiError> {
+    pub fn remove<T: 'static>(&mut self, entity: Entity<T>) -> Result<T, ViewError> {
         let slot = self
             .valid_slot_mut(entity.raw)
-            .ok_or(UiError::StaleEntity(entity.raw))?;
+            .ok_or(ViewError::StaleEntity(entity.raw))?;
         if !slot
             .state
             .as_ref()
-            .ok_or(UiError::StaleEntity(entity.raw))?
+            .ok_or(ViewError::StaleEntity(entity.raw))?
             .is::<T>()
         {
-            return Err(UiError::EntityTypeMismatch(entity.raw));
+            return Err(ViewError::EntityTypeMismatch(entity.raw));
         }
-        let boxed = slot.state.take().ok_or(UiError::StaleEntity(entity.raw))?;
+        let boxed = slot
+            .state
+            .take()
+            .ok_or(ViewError::StaleEntity(entity.raw))?;
         let state = boxed
             .downcast::<T>()
-            .map_err(|_| UiError::EntityTypeMismatch(entity.raw))?;
+            .map_err(|_| ViewError::EntityTypeMismatch(entity.raw))?;
         slot.view = None;
         slot.dirty = DirtyFlags::NONE;
         slot.queued = false;
@@ -203,19 +206,19 @@ impl EntityStore {
         self.valid_slot(entity.raw).map(|slot| slot.dirty)
     }
 
-    pub fn mark_dirty<T>(&mut self, entity: Entity<T>, flag: DirtyFlags) -> Result<(), UiError> {
+    pub fn mark_dirty<T>(&mut self, entity: Entity<T>, flag: DirtyFlags) -> Result<(), ViewError> {
         let slot = self
             .valid_slot_mut(entity.raw)
-            .ok_or(UiError::StaleEntity(entity.raw))?;
+            .ok_or(ViewError::StaleEntity(entity.raw))?;
         slot.dirty.insert(flag);
         slot.queued = true;
         Ok(())
     }
 
-    pub fn clear_dirty<T>(&mut self, entity: Entity<T>, flag: DirtyFlags) -> Result<(), UiError> {
+    pub fn clear_dirty<T>(&mut self, entity: Entity<T>, flag: DirtyFlags) -> Result<(), ViewError> {
         let slot = self
             .valid_slot_mut(entity.raw)
-            .ok_or(UiError::StaleEntity(entity.raw))?;
+            .ok_or(ViewError::StaleEntity(entity.raw))?;
         slot.dirty.remove(flag);
         slot.queued = slot.dirty != DirtyFlags::NONE;
         Ok(())

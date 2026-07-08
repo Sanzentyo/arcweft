@@ -222,7 +222,7 @@ wasm harness used a no-op direct primitive renderer.
 The pinned rerun also exposed a WebGPU WGSL validation error in the shared
 compositor shader: browser validation rejected `textureSample` in a helper that
 can be reached from non-uniform control flow. The compositor shader now uses
-`textureSampleLevel(..., 0.0)` for its UI compositor texture reads, avoiding
+`textureSampleLevel(..., 0.0)` for its View compositor texture reads, avoiding
 implicit derivatives and allowing the browser WebGPU shader module to validate.
 
 The generic `npm --prefix web test` smoke remains logged as supporting evidence,

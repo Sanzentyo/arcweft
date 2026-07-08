@@ -18,7 +18,7 @@ layer @layer.dialogue: Group {
 layer @layer.choices: Choice {
     z = 120
     input = hit_test
-    hit_test = ui_layout
+    hit_test = view_layout
 }
 
 layer @layer.settings_modal: Modal {
@@ -59,10 +59,10 @@ view SettingsPanel(config: Binding<Config>) {
         Text("Settings")
 
         Slider(value = bind state.config.master_volume, range = 0.0..1.0)
-            .agent_target(@ui.settings.volume)
+            .agent_target(@view.settings.volume)
 
         Button("閉じる")
-            .agent_target(@ui.settings.close)
+            .agent_target(@view.settings.close)
             .on_click { action.invoke(@action.settings.close) }
     }
     .layer(@layer.settings_modal)
@@ -75,12 +75,12 @@ view SettingsPanel(config: Binding<Config>) {
 test @test.layered_input_blocks_lower scenario {
     goto @flow.opening
 
-    ui.open(@ui.settings)
+    view.open(@view.settings)
 
     choose(@choice.opening.listen)
     expect.no_event(GameEvent.ChoiceSelected)
 
-    invoke(@ui.settings.close, "click")
+    invoke(@view.settings.close, "click")
     choose(@choice.opening.listen)
     expect.event(GameEvent.ChoiceSelected, id=@choice.opening.listen)
 }

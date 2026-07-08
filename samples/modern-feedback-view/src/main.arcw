@@ -1,0 +1,233 @@
+pub character concierge {
+  display = "Arcweft Concierge"
+  default_voice = auto
+}
+
+pub asset bg.glass_lights {
+  kind = image
+  file = "bg/glass_lights.png"
+}
+
+pub image glass_bg {
+  asset = @asset:.bg.glass_lights
+  target = @target.modern.glass_bg
+  layer = @layer.background
+  x = 0px
+  y = 0px
+  width = 1280px
+  height = 720px
+  fit = cover
+  opacity = 1
+  depth = -1000
+  visible = true
+}
+
+pub action feedback.submit_name(value: String)
+pub action feedback.submit_brief(value: String)
+
+entry game @entry.modern_feedback_view {
+  goto @flow.modern_feedback_view
+}
+
+pub style modern_feedback_panel {
+  token font.view_stack = ["Arcweft Demo", "Yu Gothic UI", "Yu Gothic", "Meiryo", "MS PGothic", "MS Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]
+  token color.canvas = rgba(11, 16, 22, 210)
+  token color.panel = rgba(28, 41, 56, 178)
+  token color.panel_hover = rgba(50, 70, 88, 214)
+  token color.field = rgba(8, 14, 24, 164)
+  token color.accent = rgba(94, 234, 212, 255)
+  token color.accent_pressed = rgba(45, 212, 191, 255)
+  token color.selection = rgba(94, 234, 212, 116)
+  token color.text = rgba(244, 247, 251, 255)
+  token color.muted = rgba(164, 176, 194, 255)
+  token color.glass_border = rgba(158, 245, 231, 96)
+  token shadow.glass_control = text("0px 18px 42px 0px rgba(0,0,0,0.42), inset 0px 1px 0px 0px rgba(255,255,255,0.18)")
+  token shadow.glass_button = text("0px 14px 30px 0px rgba(0,0,0,0.36), inset 0px 1px 0px 0px rgba(255,255,255,0.14)")
+  token filter.glass_blur = text("blur(10px)")
+  token depth.field = 1200milli
+  token depth.button = 1600milli
+  token depth.button_hover = 2200milli
+  token metric.corner_lg = 14000milli
+  token metric.corner_md = 9000milli
+  token metric.focus_ring = 2000milli
+  token metric.corner_frame = 26000milli
+  token metric.corner_frame_width = 3000milli
+  token metric.corner_frame_offset = 2000milli
+
+  Panel {
+    background-color = token(color.canvas)
+    color = token(color.text)
+    font-family = token(font.view_stack)
+  }
+
+  Column {
+    gap = 14000milli
+  }
+
+  Row {
+    gap = 10000milli
+  }
+
+  TextField {
+    background-color = token(color.field)
+    color = token(color.text)
+    caret-color = token(color.accent)
+    selection-color = token(color.selection)
+    border-color = token(color.glass_border)
+    border-radius = token(metric.corner_md)
+    opacity = 940milli
+    box-shadow = token(shadow.glass_control)
+    backdrop-filter = token(filter.glass_blur)
+    z-index = token(depth.field)
+  }
+
+  TextArea {
+    background-color = token(color.field)
+    color = token(color.text)
+    caret-color = token(color.accent)
+    selection-color = token(color.selection)
+    border-color = token(color.glass_border)
+    border-radius = token(metric.corner_md)
+    corner-frame-color = rgba(158, 245, 231, 210)
+    corner-frame-width = token(metric.corner_frame_width)
+    corner-frame-length = token(metric.corner_frame)
+    corner-frame-offset = token(metric.corner_frame_offset)
+    opacity = 920milli
+    box-shadow = token(shadow.glass_control)
+    backdrop-filter = token(filter.glass_blur)
+    z-index = token(depth.field)
+  }
+
+  TextField:focus-visible {
+    focus-ring-color = token(color.accent)
+    focus-ring-width = token(metric.focus_ring)
+  }
+
+  TextArea:focus-visible {
+    focus-ring-color = token(color.accent)
+    focus-ring-width = token(metric.focus_ring)
+  }
+
+  Button {
+    background-color = token(color.panel)
+    color = token(color.text)
+    border-radius = token(metric.corner_lg)
+    border-color = rgba(255, 255, 255, 44)
+    opacity = 960milli
+    box-shadow = token(shadow.glass_button)
+    z-index = token(depth.button)
+  }
+
+  Button:hover {
+    background-color = token(color.panel_hover)
+    color = token(color.accent)
+    z-index = token(depth.button_hover)
+  }
+
+  Button:active {
+    background-color = token(color.accent_pressed)
+  }
+
+  Button:disabled {
+    opacity = 460milli
+  }
+
+  environment text_scale_at_least_milli = 1000
+}
+
+pub view ModernFeedbackPanel() {
+  let visitor_name = input.text(@input:.visitor_name, initial = "")
+  let product_brief = input.text(@input:.product_brief, initial = "")
+
+  Panel {
+    Column {
+      Text("Control deck")
+        .style {
+          color = rgba(244, 247, 251, 255)
+          font-size = 36000milli
+          font-weight = text("720")
+        }
+
+      Text("A player-rendered view with Arcweft style tokens, input resources, and flow-backed submit actions.")
+        .style {
+          color = rgba(164, 176, 194, 255)
+          font-size = 16000milli
+      }
+
+      Row {
+        TextField(visitor_name)
+          .label("Name")
+          .placeholder("Your name")
+          .purpose(.name)
+          .enter_key(.next)
+          .style(@style:.modern_feedback_panel)
+          .on_submit {
+            action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
+          }
+
+        Button(@button:.continue, label = "Continue")
+          .style(@style:.modern_feedback_panel)
+          .enabled(true)
+          .focusable(true)
+          .on_click {
+            action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
+          }
+      }
+
+      TextArea(product_brief)
+        .label("Product brief")
+        .placeholder("Write one sharp product idea")
+        .purpose(.text)
+        .enter_key(.send)
+        .style(@style:.modern_feedback_panel)
+        .on_submit {
+          action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
+        }
+
+      Row {
+        Button(@button:.send_brief, label = "Send brief")
+          .style(@style:.modern_feedback_panel)
+          .enabled(true)
+          .focusable(true)
+          .on_click {
+            action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
+          }
+
+        Button(@button:.draft_status, label = "Draft saved")
+          .style(@style:.modern_feedback_panel)
+          .enabled(false)
+          .focusable(false)
+      }
+    }
+  }
+}
+
+flow modern_feedback_view {
+  player_viewport(width = 1280px, height = 720px, fit = contain)
+  image(@image.glass_bg)
+  let panel = view(@view:.ModernFeedbackPanel)
+
+  concierge:
+    This sample pairs a translucent view panel with a normal Arcweft flow.[p]
+    Fill the name field first, then submit the brief with Enter, IME send, or the Send brief button.
+
+  let name_event = receive action(@action:.feedback.submit_name)
+  let visitor_name = name_event.value
+
+  if visitor_name == "" {
+    concierge: We will keep the greeting anonymous for now.
+  } else {
+    concierge: Nice to meet you, #[visitor_name].
+  }
+
+  let brief_event = receive action(@action:.feedback.submit_brief)
+  let brief = brief_event.value
+
+  if brief == "" {
+    concierge: No brief was submitted. The View stays ready for another pass.
+  } else {
+    concierge: Captured the view-backed brief. The next runtime step can branch into a planning route.
+  }
+
+  return brief
+}

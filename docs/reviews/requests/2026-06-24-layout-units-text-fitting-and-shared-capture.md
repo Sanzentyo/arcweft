@@ -15,7 +15,7 @@ Please specify the design for:
 - The typed layout unit model for `px`, `sp`/text, `%`, `vw`, `vh`, `cw`, `ch`,
   `em`, glyph `ch`, and safe-area units.
 - Where unit parsing belongs and what typed representation crosses parser,
-  HIR/sema, runtime-plan, UI layout, renderer, and Agent observation
+  HIR/sema, runtime-plan, View layout, renderer, and Agent observation
   boundaries.
 - Whether text fitting is a renderer-only behavior, a runtime observation
   behavior, or a shared Sans I/O layout result.

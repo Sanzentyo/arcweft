@@ -17,17 +17,17 @@ pub layer @layer.world.characters: Character {
     hit_test = bbox
 }
 
-pub layer @layer.ui.game: NativeUi {
+pub layer @layer.view.game: NativeView {
     z = 1000
     input = block_below on_hit
-    hit_test = ui_tree
-    focus = ui_tree_order
+    hit_test = view_tree
+    focus = view_tree_order
 }
 
-pub layer @layer.ui.modal: Modal {
+pub layer @layer.view.modal: Modal {
     z = 3000
     input = modal
-    hit_test = ui_tree
+    hit_test = view_tree
     focus = trap
 }
 ```
@@ -48,7 +48,7 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
                 .agent_target(@character.alice)
         }
 
-        layer @layer.ui.game {
+        layer @layer.view.game {
             TextBox(current_text())
             ChoiceList(opening_choices())
         }
@@ -61,17 +61,17 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
 }
 ```
 
-Modal UI:
+Modal View:
 
 ```arcw
 view SettingsPanel(config: Binding<Config>) {
     Column {
         Text("Settings")
         Button("閉じる")
-            .agent_target(@ui.settings.close)
+            .agent_target(@view.settings.close)
             .on_click { action.invoke(@action.settings.close) }
     }
-    .layer(@layer.ui.modal)
+    .layer(@layer.view.modal)
 }
 ```
 
@@ -80,11 +80,11 @@ Test:
 ```arcw
 test @test.settings_modal_blocks_world scenario {
     goto @flow.opening
-    invoke(@ui.settings.open)
+    invoke(@view.settings.open)
 
     input.click(@character.alice)
 
-    expect.input(blocked_by=@layer.ui.modal)
+    expect.input(blocked_by=@layer.view.modal)
     expect.no_event(GameEvent.CharacterClicked)
 }
 ```

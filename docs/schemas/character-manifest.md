@@ -22,7 +22,7 @@ asset.character.{character-suffix}.{part}.{variant}
 ```
 
 For example, `character.akane`, part `eyes`, variant `smile` becomes
-`asset.character.akane.eyes.smile`. This lets UI/view resource nodes and the
+`asset.character.akane.eyes.smile`. This lets View resource nodes and the
 presentation layer tree refer to the same typed resource without serializing a
 redundant id into every manifest.
 

@@ -88,8 +88,8 @@ For this cut:
 
 Supported first cut:
 
-- block and block-like retained UI containers;
-- inline retained UI containers and text participants from the existing text substrate;
+- block and block-like retained View containers;
+- inline retained View containers and text participants from the existing text substrate;
 - flexbox container/item properties and deterministic gap/padding/margin behavior;
 - width, height, min/max sizes, aspect ratio;
 - position/inset/z-index via Takumi layout/stacking;
@@ -105,7 +105,7 @@ Out of scope:
 
 Arcweft already has a pure presentation environment for color scheme, contrast,
 reduced motion, and text scale. The first cut records media/container/query
-coverage but does not branch retained UI rendering on CSS media queries yet.
+coverage but does not branch retained View rendering on CSS media queries yet.
 
 - `@media (prefers-color-scheme: ...)`: structured diagnostic.
 - `@media (prefers-contrast: ...)`: structured diagnostic.

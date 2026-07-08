@@ -79,7 +79,7 @@ Additional verification:
 ```bash
 cargo test -p arcweft-player-native --all-features native_player_session_save_pairs_runtime_and_input_snapshots
 cargo test -p arcweft-cli --all-features --test native_text_input_trace_cli runtime_run_session_save_flags_are_native_player_only
-cargo run -p arcweft-cli --all-features --quiet -- run --runner headless samples\modern-feedback-ui\src\main.arcw --session-save-out target\arcweft\session-smoke.awfs
+cargo run -p arcweft-cli --all-features --quiet -- run --runner headless samples\modern-feedback-view\src\main.arcw --session-save-out target\arcweft\session-smoke.awfs
 ```
 
 The last command is an expected native-only rejection check.

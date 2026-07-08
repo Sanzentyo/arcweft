@@ -4,7 +4,8 @@ use super::capture::{
     agent_native_masked_framebuffer_capture,
 };
 use super::image_mapping::{
-    agent_image_objects_from_ui_frame, agent_image_observation_from_ui_frame, agent_observed_views,
+    agent_image_objects_from_view_frame, agent_image_observation_from_view_frame,
+    agent_observed_views,
 };
 use super::mcp_protocol::{
     agent_mcp_call_get_state, agent_mcp_call_log_query, agent_mcp_call_session_info,
@@ -30,7 +31,7 @@ use super::runtime_observation::agent_observe_layout_scene_graph;
 use super::*;
 use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentSessionInfo};
 use arcweft_agent_protocol::{
-    presentation::AgentPresentationTree, session::AgentAudioState, ui::AgentUiTree,
+    presentation::AgentPresentationTree, session::AgentAudioState, view::AgentViewTree,
 };
 use arcweft_debug_model::{
     diagnostic::DebugDiagnostic,
@@ -115,8 +116,8 @@ fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObser
         objects: Vec::new(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
-        ui_tree: AgentUiTree {
-            root: "ui.root".to_owned(),
+        view_tree: AgentViewTree {
+            root: "view.root".to_owned(),
             children: Vec::new(),
         },
         scene_graph: Vec::new(),
@@ -2736,7 +2737,7 @@ fn view_uri_capture_request_parses_scope_and_kind() {
     let report = test_agent_observation_report(Some(1250));
     let request = agent_capture_request_from_uri(
         &report,
-        "arcweft://session/cli/frame/3/view.ui.login_form.object-id.png",
+        "arcweft://session/cli/frame/3/view.view.login_form.object-id.png",
     )
     .expect("view object-id URI should parse");
 
@@ -2746,24 +2747,24 @@ fn view_uri_capture_request_parses_scope_and_kind() {
     let AgentCaptureScope::View(view_id) = request.scope else {
         panic!("request should target a view scope");
     };
-    assert_eq!(view_id, "ui.login_form");
+    assert_eq!(view_id, "view.login_form");
 }
 
 #[test]
 fn observed_views_group_visible_objects_by_parent_id() {
     let mut label = test_observed_object("object.input.label", 10, 20, 40, 12);
-    label.parent_id = Some("ui.login_form".to_owned());
+    label.parent_id = Some("view.login_form".to_owned());
     let mut field = test_observed_object("object.input.field", 20, 40, 80, 20);
-    field.parent_id = Some("ui.login_form".to_owned());
+    field.parent_id = Some("view.login_form".to_owned());
     let mut hidden = test_observed_object("object.hidden", 200, 200, 10, 10);
-    hidden.parent_id = Some("ui.login_form".to_owned());
+    hidden.parent_id = Some("view.login_form".to_owned());
     hidden.visible = false;
 
     let views = agent_observed_views("cli", 3, &[label, field, hidden]);
 
     assert_eq!(views.len(), 1);
     let view = &views[0];
-    assert_eq!(view.id, "ui.login_form");
+    assert_eq!(view.id, "view.login_form");
     assert_eq!(view.object_count, 2);
     assert_eq!(
         view.object_refs,
@@ -2780,14 +2781,14 @@ fn observed_views_group_visible_objects_by_parent_id() {
         view.capture_refs
             .captures
             .iter()
-            .any(|capture| capture.uri.ends_with("/view.ui.login_form.mask.rgba"))
+            .any(|capture| capture.uri.ends_with("/view.view.login_form.mask.rgba"))
     );
 }
 
 #[test]
 fn observed_views_drop_hidden_only_parent_scope() {
     let mut hidden = test_observed_object("object.hidden", 200, 200, 10, 10);
-    hidden.parent_id = Some("ui.hidden_panel".to_owned());
+    hidden.parent_id = Some("view.hidden_panel".to_owned());
     hidden.visible = false;
 
     let views = agent_observed_views("cli", 3, &[hidden]);
@@ -2798,9 +2799,9 @@ fn observed_views_drop_hidden_only_parent_scope() {
 #[test]
 fn native_view_capture_targets_select_member_objects() {
     let mut first = test_observed_object("object.input.label", 10, 20, 40, 12);
-    first.parent_id = Some("ui.login_form".to_owned());
+    first.parent_id = Some("view.login_form".to_owned());
     let mut second = test_observed_object("object.input.field", 20, 40, 80, 20);
-    second.parent_id = Some("ui.login_form".to_owned());
+    second.parent_id = Some("view.login_form".to_owned());
     let outside = test_observed_object("object.other", 200, 200, 10, 10);
     let objects = vec![first, second, outside];
     let frame = test_line_display_frame();
@@ -2814,7 +2815,7 @@ fn native_view_capture_targets_select_member_objects() {
             page_index: 0,
             capture_time_seconds: 0.0,
         },
-        &AgentCaptureScope::View("ui.login_form".to_owned()),
+        &AgentCaptureScope::View("view.login_form".to_owned()),
     )
     .expect("view scope selects its member objects");
 
@@ -2828,7 +2829,7 @@ fn native_view_capture_targets_select_member_objects() {
 #[test]
 fn native_view_capture_targets_reject_hidden_member_objects() {
     let mut hidden = test_observed_object("object.hidden", 10, 20, 40, 12);
-    hidden.parent_id = Some("ui.hidden_panel".to_owned());
+    hidden.parent_id = Some("view.hidden_panel".to_owned());
     hidden.visible = false;
     let objects = vec![hidden];
     let frame = test_line_display_frame();
@@ -2842,7 +2843,7 @@ fn native_view_capture_targets_reject_hidden_member_objects() {
             page_index: 0,
             capture_time_seconds: 0.0,
         },
-        &AgentCaptureScope::View("ui.hidden_panel".to_owned()),
+        &AgentCaptureScope::View("view.hidden_panel".to_owned()),
     );
 
     assert!(selected.is_err());
@@ -2860,7 +2861,7 @@ fn test_observed_object(id: &str, x: u32, y: u32, width: u32, height: u32) -> Ag
         id: id.to_owned(),
         parent_id: None,
         entity: None,
-        layer: "ui".to_owned(),
+        layer: "view".to_owned(),
         role: "panel".to_owned(),
         visible: true,
         enabled: true,
@@ -2945,15 +2946,15 @@ fn agent_hit_test_uses_image_object_polygon_inside_bbox() {
 #[test]
 fn agent_image_object_mask_capture_uses_observed_geometry_without_textbox() {
     let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
-    object.entity = Some("ui.image.7".to_owned());
+    object.entity = Some("view.image.7".to_owned());
     object.layer = "hud".to_owned();
     object.role = "image".to_owned();
     object.object_layer = Some("hud".to_owned());
     object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "ui.image.7".to_owned(),
+        source: "view.image.7".to_owned(),
         object: None,
         target: None,
-        asset: Some("asset.ui.logo".to_owned()),
+        asset: Some("asset.view.logo".to_owned()),
         frame_index: Some(0),
         local_time_millis: Some(0),
         opacity_milli: None,
@@ -3023,7 +3024,7 @@ fn agent_image_object_color_capture_requires_image_pixels() {
     let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
     object.role = "image".to_owned();
     object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "ui.image.7".to_owned(),
+        source: "view.image.7".to_owned(),
         object: None,
         target: None,
         asset: None,
@@ -3065,7 +3066,7 @@ fn agent_image_object_color_capture_uses_stored_native_image_frame() {
     let mut object = test_observed_object("object.image.logo", 10, 20, 2, 2);
     object.role = "image".to_owned();
     object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "ui.image.7".to_owned(),
+        source: "view.image.7".to_owned(),
         object: None,
         target: None,
         asset: None,
@@ -3128,7 +3129,7 @@ fn agent_viewport_color_capture_uses_image_frames_without_textbox() {
     let mut object = test_observed_object("object.image.logo", 1, 1, 2, 2);
     object.role = "image".to_owned();
     object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "ui.image.7".to_owned(),
+        source: "view.image.7".to_owned(),
         object: None,
         target: None,
         asset: None,
@@ -3189,7 +3190,7 @@ fn agent_viewport_color_capture_uses_image_frames_without_textbox() {
 
 #[test]
 #[allow(clippy::too_many_lines)]
-fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
+fn agent_view_image_items_become_typed_image_objects_with_active_frame() {
     use arcweft_id::PublicId;
     use arcweft_image::{
         DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
@@ -3197,11 +3198,11 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
     use arcweft_presentation::layer::{
         LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
     };
-    use arcweft_runtime_host::UiFrameCommitBuilder;
+    use arcweft_runtime_host::ViewFrameCommitBuilder;
     use arcweft_view::{
         DisplayList, FragmentKind, ImageId, ImagePlayback, LayoutBox, LayoutLength, LayoutPoint,
-        LayoutResults, LayoutSize, LayoutTree, NodeKey, StyleId, UiImageSource, UiImageSourceTable,
-        UiLayerOutput, UiSemanticFragment, ViewFragmentBuilder,
+        LayoutResults, LayoutSize, LayoutTree, NodeKey, StyleId, ViewFragmentBuilder,
+        ViewImageSource, ViewImageSourceTable, ViewLayerOutput, ViewSemanticFragment,
     };
 
     fn public_id(value: &str) -> PublicId {
@@ -3223,11 +3224,11 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
         ],
     )
     .unwrap();
-    let mut image_sources = UiImageSourceTable::default();
+    let mut image_sources = ViewImageSourceTable::default();
     image_sources
         .insert_with_id(
             ImageId(7),
-            UiImageSource::new(image).with_playback(ImagePlayback::new(0)),
+            ViewImageSource::new(image).with_playback(ImagePlayback::new(0)),
         )
         .unwrap();
 
@@ -3246,9 +3247,9 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
         .insert(
             LayerNode::new(
                 hud.clone(),
-                LayerKind::GameUi,
+                LayerKind::GameView,
                 LayerOrder {
-                    phase: RenderPhase::GameUi,
+                    phase: RenderPhase::GameView,
                     z: 0,
                     stable_index: 0,
                 },
@@ -3280,15 +3281,15 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
             ),
         )
         .unwrap();
-    let output = UiLayerOutput::new(
+    let output = ViewLayerOutput::new(
         DisplayList::from_fragment(&fragment, &layouts).unwrap(),
-        UiSemanticFragment::default(),
+        ViewSemanticFragment::default(),
     );
-    let mut builder = UiFrameCommitBuilder::new(&layers);
+    let mut builder = ViewFrameCommitBuilder::new(&layers);
     builder.push_layer(hud, output).unwrap();
     let commit = builder.finish();
 
-    let observation = agent_image_observation_from_ui_frame(
+    let observation = agent_image_observation_from_view_frame(
         "cli",
         4,
         &AgentViewport {
@@ -3312,15 +3313,15 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
     assert_eq!(object.bbox.height, 10);
     assert!(object.rich_text_ref.is_none());
     let AgentObservedObjectContent::Image(content) = &object.content else {
-        panic!("UI image item should become image object content");
+        panic!("View image item should become image object content");
     };
-    assert_eq!(content.source, "ui.image.7");
+    assert_eq!(content.source, "view.image.7");
     assert_eq!(content.frame_index, Some(1));
     assert_eq!(content.local_time_millis, Some(150));
     assert_eq!(content.intrinsic_width, Some(2));
     assert_eq!(content.intrinsic_height, Some(1));
 
-    let object_only_bridge = agent_image_objects_from_ui_frame(
+    let object_only_bridge = agent_image_objects_from_view_frame(
         "cli",
         4,
         &AgentViewport {
@@ -3373,7 +3374,7 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
 
 #[test]
 #[allow(clippy::too_many_lines)]
-fn agent_captures_presentation_image_objects_lowered_through_ui_frame() {
+fn agent_captures_presentation_image_objects_lowered_through_view_frame() {
     use arcweft_id::PublicId;
     use arcweft_image::{
         DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
@@ -3387,8 +3388,8 @@ fn agent_captures_presentation_image_objects_lowered_through_ui_frame() {
     use arcweft_presentation::layer::{
         LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
     };
-    use arcweft_runtime_host::UiFrameCommitBuilder;
-    use arcweft_view::{UiImagePresentationFrame, UiImagePresentationInput};
+    use arcweft_runtime_host::ViewFrameCommitBuilder;
+    use arcweft_view::{ViewImagePresentationFrame, ViewImagePresentationInput};
 
     fn public_id(value: &str) -> PublicId {
         PublicId::try_new(value).unwrap()
@@ -3421,9 +3422,9 @@ fn agent_captures_presentation_image_objects_lowered_through_ui_frame() {
         .insert(
             LayerNode::new(
                 hud.clone(),
-                LayerKind::GameUi,
+                LayerKind::GameView,
                 LayerOrder {
-                    phase: RenderPhase::GameUi,
+                    phase: RenderPhase::GameView,
                     z: 0,
                     stable_index: 0,
                 },
@@ -3442,16 +3443,16 @@ fn agent_captures_presentation_image_objects_lowered_through_ui_frame() {
     .with_transform(ImageObjectTransform::translation_milli(5_000, 6_000))
     .with_playback(ImageObjectPlayback::new(0).pinned_local_time(150));
     let frame =
-        UiImagePresentationFrame::from_inputs([UiImagePresentationInput::new(object, image)])
+        ViewImagePresentationFrame::from_inputs([ViewImagePresentationInput::new(object, image)])
             .unwrap();
     let (outputs, image_sources) = frame.into_parts();
-    let mut builder = UiFrameCommitBuilder::new(&layers);
+    let mut builder = ViewFrameCommitBuilder::new(&layers);
     for (layer, output) in outputs {
         builder.push_layer(layer, output).unwrap();
     }
     let commit = builder.finish();
 
-    let observation = agent_image_observation_from_ui_frame(
+    let observation = agent_image_observation_from_view_frame(
         "cli",
         5,
         &AgentViewport {
@@ -3524,8 +3525,8 @@ fn native_masked_framebuffer_crop_keeps_selected_rects_and_transparent_gap() {
         diagnostics: Vec::new(),
     };
     let objects = vec![
-        test_observed_object("object.ui.left", 1, 1, 2, 2),
-        test_observed_object("object.ui.right", 5, 1, 2, 2),
+        test_observed_object("object.view.left", 1, 1, 2, 2),
+        test_observed_object("object.view.right", 5, 1, 2, 2),
     ];
     let selected = objects
         .iter()
@@ -3576,7 +3577,7 @@ fn native_non_text_debug_capture_reports_dedicated_attachments() {
         content_pixels: 0,
         diagnostics: Vec::new(),
     };
-    let objects = vec![test_observed_object("object.ui.panel", 4, 5, 7, 6)];
+    let objects = vec![test_observed_object("object.view.panel", 4, 5, 7, 6)];
     let selected = objects
         .iter()
         .map(AgentNativeCaptureTarget::Observed)
@@ -3612,7 +3613,7 @@ fn native_non_text_debug_capture_reports_dedicated_attachments() {
             height: 6,
         })
     );
-    let object_id_color = agent_object_id_color("object.ui.panel");
+    let object_id_color = agent_object_id_color("object.view.panel");
     assert_eq!(
         pixel_at(
             &AgentRasterCapture {

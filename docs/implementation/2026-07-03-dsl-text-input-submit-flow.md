@@ -1,21 +1,22 @@
 # DSL text input resources and submit flow sample
 
 This cut moves the native text-input sample's input controls out of
-`scene-contract.json` / product UI JSON sidecars and into Arcweft DSL.
+`scene-contract.json` / product View JSON sidecars and into Arcweft DSL.
 
 ## Implemented
 
-- Added `ui text_input`, `ui text_area`, and `ui secure_field` top-level DSL
-  declarations with typed `@input.*` IDs.
+- Added early top-level text-control DSL declarations with typed `@input.*`
+  IDs. This surface has since been replaced by View-owned `TextField`,
+  `TextArea`, and `SecureField` heads.
 - Added `style` top-level DSL declarations with retained `token`, selector
   blocks, and `environment` entries lowered into compact
-  `UiStyleResource`.
+  `ViewStyleResource`.
 - Added `EntityKind::Input` so input IDs are indexed, resolved, and type
   checked as a real entity family rather than `Other("input")`.
 - Added `EntityKind::Style` so style IDs are indexed, resolved, and type
   checked as a real entity family.
 - Added `let PAT = text_submit @input.id` as a flow statement lowered to the
-  suspending host call `ui.text_input.await_submit`.
+  suspending host call `view.text_input.await_submit`.
 - Wired `BundleSession` so submitted text-control write-backs resume pending
   `text_submit` host calls with the submitted `String`.
 - Added `String.len()` to sema and pure runtime evaluation, returning character
@@ -23,7 +24,7 @@ This cut moves the native text-input sample's input controls out of
 - Fixed flow `if count < 5 { ... }` parsing: CST block detection no longer lets
   comparison `<` hide the following block `{`.
 - Updated `samples/native-text-input/src/main.arcw` to declare its three text
-  controls and retained UI style in DSL, then removed the old
+  controls and retained View style in DSL, then removed the old
   input/program/text/style/scene-contract JSON files.
 - Added `samples/text-submit-flow/`, a separate sample that waits for
   Enter/IME send, branches by submitted text length, uses the submitted string
@@ -33,7 +34,7 @@ This cut moves the native text-input sample's input controls out of
 
 The new sample supports Enter and the platform IME send/done action. A visible
 Arcweft-rendered submit button is not implemented in this cut because it needs
-a typed UI action/handler contract that can synthesize the same text-control
+a typed View action/handler contract that can synthesize the same text-control
 submit write-back on web and native without HTML/DOM or compatibility-layer
 fallbacks. That is split into
 `docs/reviews/requests/2026-07-03-seq-06.16-player-rendered-text-submit-button-package.md`.

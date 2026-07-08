@@ -507,7 +507,7 @@ mod tests {
                         generation: Some(4),
                         logical_epoch: Some(12),
                         sequence: Some(7),
-                        cancel_scope: Some("scope.ui".to_owned()),
+                        cancel_scope: Some("scope.view".to_owned()),
                     }],
                 },
             }),

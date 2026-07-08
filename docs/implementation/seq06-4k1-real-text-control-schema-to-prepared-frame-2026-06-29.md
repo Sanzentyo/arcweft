@@ -18,13 +18,13 @@ This cut applies the seq06.4k.1 package as a production implementation of the re
 
 ## Non-Goals And Follow-Up
 
-The normal product/runtime UI schema still does not emit real `RenderTextInputControl` values into story frames. Existing native/web scene builders therefore pass `text_inputs: Vec::new()` until a typed product/runtime text-control collection is exposed.
+The normal product/runtime View schema still does not emit real `RenderTextInputControl` values into story frames. Existing native/web scene builders therefore pass `text_inputs: Vec::new()` until a typed product/runtime text-control collection is exposed.
 
 Follow-up request:
 
 - `docs/reviews/requests/2026-06-29-seq-06.4k.1.1-product-runtime-text-control-emission.md`
 
-That follow-up must wire authored/runtime UI text controls into `RenderScene::text_inputs` and use `InputController::apply_live_text_control_state` before frame planning.
+That follow-up must wire authored/runtime View text controls into `RenderScene::text_inputs` and use `InputController::apply_live_text_control_state` before frame planning.
 
 ## Validation
 

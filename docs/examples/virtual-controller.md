@@ -1,7 +1,7 @@
 # Example: Touch Virtual Controller
 
 ```arcw
-mod game.ui.virtual_controller
+mod game.view.virtual_controller
 
 pub virtual_controller @controller.touch.default {
     layer = @layer.input.overlay

@@ -39,7 +39,7 @@ Please propose concrete answers for:
    binary codecs first?
 2. What are the canonical binary schemas for runtime types, entrypoints,
    adapter requirements, content catalog, display catalog, asset catalog,
-   source maps, locale/text resources, audio graphs, shader/UI resources, debug
+   source maps, locale/text resources, audio graphs, shader/View resources, debug
    symbols, contracts, and graph/entity indexes?
 3. How are schema versions, optional fields, enum registries, string tables,
    public-id tables, and cross-section references encoded?

@@ -46,7 +46,7 @@ in JSON are serde output from typed Rust enums.
 - hit-test point conversion;
 - deterministic fit-transform metadata.
 
-Renderers, UI layout, capture adapters, and Agent observation may cache or
+Renderers, View layout, capture adapters, and Agent observation may cache or
 serialize these values, but they must not reimplement the math.
 
 ## Scale policies in Agent observe and capture metadata
@@ -89,7 +89,7 @@ zero and `scale.x != scale.y` is allowed.
 ## Layout unit resolution model
 
 Parsing owns token recognition only. The typed representation crossing parser,
-HIR, sema, runtime-plan, UI layout, renderer, and Agent observe boundaries is
+HIR, sema, runtime-plan, View layout, renderer, and Agent observe boundaries is
 `LayoutLengthExpr` plus `LayoutUnit`.
 
 Resolution phases are:
@@ -100,7 +100,7 @@ Resolution phases are:
    values.
 3. `runtime-plan`: may fold pure numeric `px` constants and preserve typed
    expressions for context-dependent units.
-4. `UI layout`: provides project/profile design viewport and containing boxes.
+4. `View layout`: provides project/profile design viewport and containing boxes.
 5. `renderer`: provides content rect, safe-area, font size, and glyph metrics;
    this is the first phase where all v1 units can be fully evaluated.
 6. `Agent observe`: must report the evaluated context and resulting basis when
@@ -113,7 +113,7 @@ V1 supported units are:
 | `px` | design-space logical pixel | runtime-plan for constants; renderer for mixed expressions |
 | `sp` | text scale unit equal to current font size multiplier | renderer |
 | `%` | containing-box axis percentage | renderer |
-| `vw`, `vh` | design viewport width/height percentage | UI layout |
+| `vw`, `vh` | design viewport width/height percentage | View layout |
 | `cw`, `ch` | fitted content rect width/height percentage in output space | renderer |
 | `safe_area_*` | output safe-area inset multiplier | renderer |
 | `em` | current font-size multiplier | renderer |
@@ -227,7 +227,7 @@ and smoke, not exact pixels.
    `TextFitResult`.
 6. Add selected object/layer capture metadata types and constructors in
    `arcweft-layout`.
-7. Wire renderer/UI layout to these contracts without moving renderer/GPU/I/O
+7. Wire renderer/View layout to these contracts without moving renderer/GPU/I/O
    into `arcweft-layout`.
 8. Add deterministic metadata tests first; then add visual smoke/golden fixtures.
 

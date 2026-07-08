@@ -2,23 +2,24 @@ use arcweft_bundle::{
     BundleImageObject, BundleImageObjectBounds,
     container::BundleDigest,
     resource_codec::{
-        UiInputResource, UiLogicalRect, UiTextResource, ViewActionButtonActionResource,
-        ViewActionButtonResource, ViewActionPayloadResource, ViewActionTextControlPayloadField,
-        ViewAwaitBranchSpan, ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource,
-        ViewFocusInitialPolicy, ViewFocusNavigationEdge, ViewFocusNavigationResource,
-        ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
-        ViewLayoutBoundsResource, ViewPartStyleRule, ViewProgramResource, ViewRuntimeButtonBounds,
-        ViewRuntimeTextBlockBounds, ViewScrollAxis, ViewScrollOverflowPolicy,
-        ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
+        ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
+        ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewFocusDirection,
+        ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy,
+        ViewFocusNavigationEdge, ViewFocusNavigationResource, ViewFocusSkipPolicy,
+        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewInputResource,
+        ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule, ViewProgramResource,
+        ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
+        ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource,
+        ViewTextBlockResource, ViewTextResource,
         types::DigestRef,
-        ui::{
+        view::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleAssignOp, StyleSourceIdentity,
-            StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization, UiInputKind,
-            UiInputOptions, UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy,
-            UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
-            UiTextVerticalNavigationPolicy, ViewElementKind, ViewProgramInstruction,
-            ViewSemanticTarget, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleSelector,
-            ViewStyleSelectorPart, ViewStyleValue,
+            StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization, ViewElementKind,
+            ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewProgramInstruction,
+            ViewSecureInputPolicy, ViewSemanticTarget, ViewStyleApplyRef, ViewStyleDeclaration,
+            ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue, ViewTextSelectionPolicy,
+            ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
+            ViewTextVerticalNavigationPolicy,
         },
     },
 };
@@ -45,8 +46,8 @@ use super::bundle_view_overflow::validate_interactive_overflow_modifiers;
 pub(in crate::app) struct ViewBundleSidecars {
     pub(in crate::app) program: Option<ViewProgramResource>,
     pub(in crate::app) style: Option<ViewStyleResource>,
-    pub(in crate::app) text: Option<UiTextResource>,
-    pub(in crate::app) input: Option<UiInputResource>,
+    pub(in crate::app) text: Option<ViewTextResource>,
+    pub(in crate::app) input: Option<ViewInputResource>,
     pub(in crate::app) image_objects: Vec<BundleImageObject>,
 }
 
@@ -65,8 +66,8 @@ pub(in crate::app) enum ViewSidecarError {
 #[derive(Default)]
 struct ViewLoweringState {
     instructions: Vec<ViewProgramInstruction>,
-    text_sources: Vec<UiTextSourceRecord>,
-    input_options: Vec<UiInputOptions>,
+    text_sources: Vec<ViewTextSourceRecord>,
+    input_options: Vec<ViewInputOptions>,
     semantic_targets: Vec<ViewSemanticTarget>,
     layout_bounds: Vec<ViewLayoutBoundsResource>,
     scroll_regions: Vec<ViewScrollRegionResource>,
@@ -100,14 +101,14 @@ struct AuthoredTextControl {
     value: String,
     label: Option<String>,
     placeholder: Option<String>,
-    purpose: UiInputPurpose,
+    purpose: ViewInputPurpose,
     enter_key: EnterKeyHint,
     multiline: bool,
-    selection_policy: UiTextSelectionPolicy,
-    shortcut_policy: UiTextShortcutPolicy,
-    tab_policy: UiTextTabPolicy,
-    vertical_navigation_policy: UiTextVerticalNavigationPolicy,
-    secure_policy: UiSecureInputPolicy,
+    selection_policy: ViewTextSelectionPolicy,
+    shortcut_policy: ViewTextShortcutPolicy,
+    tab_policy: ViewTextTabPolicy,
+    vertical_navigation_policy: ViewTextVerticalNavigationPolicy,
+    secure_policy: ViewSecureInputPolicy,
     submit_handler: Option<String>,
     change_handler: Option<String>,
 }
@@ -148,8 +149,8 @@ impl ViewLayoutCursor {
         }
     }
 
-    const fn text_control_rect(self, kind: UiInputKind) -> UiLogicalRect {
-        UiLogicalRect::new(
+    const fn text_control_rect(self, kind: ViewInputKind) -> ViewLogicalRect {
+        ViewLogicalRect::new(
             self.x_milli,
             self.y_milli,
             VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
@@ -173,14 +174,7 @@ impl ViewLayoutFrame {
         }
     }
 
-    const fn text_line() -> Self {
-        Self::new(
-            VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
-            VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI,
-        )
-    }
-
-    const fn text_control(kind: UiInputKind) -> Self {
+    const fn text_control(kind: ViewInputKind) -> Self {
         Self::new(
             VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
             kind.default_text_control_height_milli(),
@@ -237,7 +231,7 @@ pub(in crate::app) fn view_sidecars(
     }
     Ok(ViewBundleSidecars {
         program: Some(ViewProgramResource {
-            program_id: format!("ui.program.{}", first.id().body()),
+            program_id: format!("view.program.{}", first.id().body()),
             root_view: first.id().body().to_owned(),
             instructions: state.instructions,
             child_spans: Vec::new(),
@@ -256,7 +250,7 @@ pub(in crate::app) fn view_sidecars(
         }),
         style: (!state.inline_arcweft_sources.is_empty() || !state.inline_css_sources.is_empty())
             .then(|| ViewStyleResource {
-                style_program_id: "ui.style.inline.view".to_owned(),
+                style_program_id: "view.style.inline.view".to_owned(),
                 arcweft_sources: state.inline_arcweft_sources,
                 css_sources: state.inline_css_sources,
                 tokens: Vec::new(),
@@ -267,11 +261,11 @@ pub(in crate::app) fn view_sidecars(
                 external_css_descriptors: Vec::new(),
                 adapter_requirements: Vec::new(),
             }),
-        text: (!state.text_sources.is_empty()).then(|| UiTextResource {
+        text: (!state.text_sources.is_empty()).then(|| ViewTextResource {
             sources: state.text_sources,
-            ..UiTextResource::default()
+            ..ViewTextResource::default()
         }),
-        input: (!state.input_options.is_empty()).then(|| UiInputResource {
+        input: (!state.input_options.is_empty()).then(|| ViewInputResource {
             options: state.input_options,
             adapter_requirements: Vec::new(),
         }),
@@ -539,7 +533,7 @@ fn lower_element(
     state: &mut ViewLoweringState,
     layout: &mut ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
-    if let Some(kind) = ui_element_kind(element.callee()) {
+    if let Some(kind) = view_element_kind(element.callee()) {
         validate_interactive_overflow_modifiers(
             element.callee(),
             element.modifiers(),
@@ -549,6 +543,7 @@ fn lower_element(
             .instructions
             .push(ViewProgramInstruction::OpenElement {
                 element: kind,
+                target: None,
                 style: None,
                 part: first_part(element.modifiers()),
                 key: None,
@@ -658,7 +653,7 @@ fn lower_scroll_region(
         ViewScrollRegionResource::new(
             scroll_id,
             Some(view_resource_id(view_id)),
-            UiLogicalRect::new(
+            ViewLogicalRect::new(
                 origin.x_milli,
                 origin.y_milli,
                 width_milli,
@@ -1228,9 +1223,9 @@ fn lower_text(
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     validate_interactive_overflow_modifiers("Text", text.modifiers(), false)?;
     let id = next_text_source_id(view_id, state);
-    state.text_sources.push(UiTextSourceRecord {
+    state.text_sources.push(ViewTextSourceRecord {
         public_id: id.clone(),
-        kind: UiTextSourceKind::Literal {
+        kind: ViewTextSourceKind::Literal {
             value: expr_source(text.source()),
         },
         source: None,
@@ -1242,7 +1237,7 @@ fn lower_text(
         source: None,
     });
     lower_modifiers(view_id, text.modifiers(), state);
-    let frame = ViewLayoutFrame::text_line();
+    let frame = text_line_frame(text.modifiers());
     let text_block_id = next_text_block_id(view_id, state);
     let view = Some(view_resource_id(view_id));
     let scroll_region = state.scroll_stack.last().cloned();
@@ -1276,35 +1271,35 @@ fn lower_text_field(
     )?;
     let control = AuthoredTextControl::from_field(view_id, field, state);
     let public_id = control.public_id.clone();
-    let kind = ui_input_kind(field.mode());
+    let kind = view_input_kind(field.mode());
     let rect = layout.text_control_rect(kind);
     let value_text_source = input_text_source_id("value", &control.public_id);
-    state.text_sources.push(UiTextSourceRecord {
+    state.text_sources.push(ViewTextSourceRecord {
         public_id: value_text_source.clone(),
-        kind: UiTextSourceKind::Literal {
+        kind: ViewTextSourceKind::Literal {
             value: control.value,
         },
         source: None,
     });
     let label_text_source = control.label.map(|label| {
         let id = input_text_source_id("label", &control.public_id);
-        state.text_sources.push(UiTextSourceRecord {
+        state.text_sources.push(ViewTextSourceRecord {
             public_id: id.clone(),
-            kind: UiTextSourceKind::Literal { value: label },
+            kind: ViewTextSourceKind::Literal { value: label },
             source: None,
         });
         id
     });
     let placeholder_text_source = control.placeholder.map(|placeholder| {
         let id = input_text_source_id("placeholder", &control.public_id);
-        state.text_sources.push(UiTextSourceRecord {
+        state.text_sources.push(ViewTextSourceRecord {
             public_id: id.clone(),
-            kind: UiTextSourceKind::Literal { value: placeholder },
+            kind: ViewTextSourceKind::Literal { value: placeholder },
             source: None,
         });
         id
     });
-    state.input_options.push(UiInputOptions {
+    state.input_options.push(ViewInputOptions {
         public_id: control.public_id.clone(),
         view: Some(view_resource_id(view_id)),
         containing_scroll_region: state.scroll_stack.last().cloned(),
@@ -1341,7 +1336,7 @@ fn lower_text_field(
         ));
     state.semantic_targets.push(ViewSemanticTarget {
         public_id: public_id.clone(),
-        target: public_id,
+        target: public_id.clone(),
         view: Some(view_resource_id(view_id)),
         label_text_source,
         source: None,
@@ -1356,7 +1351,8 @@ fn lower_text_field(
     state
         .instructions
         .push(ViewProgramInstruction::OpenElement {
-            element: ui_element_kind_for_text_field(field.mode()),
+            element: view_element_kind_for_text_field(field.mode()),
+            target: Some(public_id.clone()),
             style: None,
             part: first_part(field.modifiers()),
             key: None,
@@ -1381,9 +1377,9 @@ fn lower_button(
         .map_or_else(|| next_button_id(view_id, state), normalize_entity_ref);
     let label_text_source = format!("text.button.label.{button_id}");
     let label = button_display_label(button, &button_id);
-    state.text_sources.push(UiTextSourceRecord {
+    state.text_sources.push(ViewTextSourceRecord {
         public_id: label_text_source.clone(),
-        kind: UiTextSourceKind::Literal {
+        kind: ViewTextSourceKind::Literal {
             value: label.clone(),
         },
         source: None,
@@ -1392,6 +1388,7 @@ fn lower_button(
         .instructions
         .push(ViewProgramInstruction::OpenElement {
             element: ViewElementKind::Button,
+            target: Some(button_id.clone()),
             style: None,
             part: first_part(button.modifiers()),
             key: None,
@@ -1739,15 +1736,15 @@ fn inline_style_value(raw: &str) -> ViewStyleValue {
     if let Some(argument) = style_function_argument(value, "resource") {
         return ViewStyleValue::Resource(unquote_style_argument(argument));
     }
-    if let Some(argument) = style_function_argument(value, "milli") {
-        if let Ok(milli) = argument.trim().parse::<i32>() {
-            return ViewStyleValue::Milli(milli);
-        }
+    if let Some(argument) = style_function_argument(value, "milli")
+        && let Ok(milli) = argument.trim().parse::<i32>()
+    {
+        return ViewStyleValue::Milli(milli);
     }
-    if let Some(raw_milli) = value.strip_suffix("milli") {
-        if let Ok(milli) = raw_milli.trim().parse::<i32>() {
-            return ViewStyleValue::Milli(milli);
-        }
+    if let Some(raw_milli) = value.strip_suffix("milli")
+        && let Ok(milli) = raw_milli.trim().parse::<i32>()
+    {
+        return ViewStyleValue::Milli(milli);
     }
     ViewStyleValue::Text(unquote_style_argument(value))
 }
@@ -2009,7 +2006,7 @@ fn lower_text_control_payload_field(
     }
 }
 
-fn ui_element_kind(value: &str) -> Option<ViewElementKind> {
+fn view_element_kind(value: &str) -> Option<ViewElementKind> {
     Some(match value {
         "Panel" => ViewElementKind::Panel,
         "Box" => ViewElementKind::Box,
@@ -2025,7 +2022,7 @@ fn ui_element_kind(value: &str) -> Option<ViewElementKind> {
     })
 }
 
-fn ui_element_kind_for_text_field(mode: ViewTextFieldMode) -> ViewElementKind {
+fn view_element_kind_for_text_field(mode: ViewTextFieldMode) -> ViewElementKind {
     match mode {
         ViewTextFieldMode::TextField => ViewElementKind::TextField,
         ViewTextFieldMode::TextArea => ViewElementKind::TextArea,
@@ -2041,11 +2038,11 @@ fn text_field_mode_callee(mode: ViewTextFieldMode) -> &'static str {
     }
 }
 
-fn ui_input_kind(mode: ViewTextFieldMode) -> UiInputKind {
+fn view_input_kind(mode: ViewTextFieldMode) -> ViewInputKind {
     match mode {
-        ViewTextFieldMode::TextField => UiInputKind::TextField,
-        ViewTextFieldMode::TextArea => UiInputKind::TextArea,
-        ViewTextFieldMode::SecureField => UiInputKind::SecureField,
+        ViewTextFieldMode::TextField => ViewInputKind::TextField,
+        ViewTextFieldMode::TextArea => ViewInputKind::TextArea,
+        ViewTextFieldMode::SecureField => ViewInputKind::SecureField,
     }
 }
 
@@ -2152,7 +2149,37 @@ fn modifier_layout_length_u32(modifiers: &[ViewModifier], names: &[&str]) -> Opt
     })
 }
 
-fn text_block_selection_policy(modifiers: &[ViewModifier]) -> UiTextSelectionPolicy {
+fn text_line_frame(modifiers: &[ViewModifier]) -> ViewLayoutFrame {
+    let font_size_milli =
+        modifier_inline_style_length_u32(modifiers, &["font-size"]).unwrap_or(20_000);
+    let fallback_line_height = font_size_milli.saturating_mul(6).saturating_add(4) / 5;
+    let line_height_milli =
+        modifier_inline_style_length_u32(modifiers, &["line-height", "line-height-milli"])
+            .unwrap_or(fallback_line_height)
+            .max(VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI);
+    ViewLayoutFrame::new(VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI, line_height_milli)
+}
+
+fn modifier_inline_style_length_u32(modifiers: &[ViewModifier], names: &[&str]) -> Option<u32> {
+    modifiers.iter().find_map(|modifier| {
+        let ViewModifier::Style(
+            ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
+        ) = modifier
+        else {
+            return None;
+        };
+        inline_style_properties(source).find_map(|(name, value)| {
+            let name = normalize_property_name(&name);
+            names
+                .iter()
+                .any(|candidate| name == normalize_property_name(candidate))
+                .then(|| style_layout_length_u32(&value))
+                .flatten()
+        })
+    })
+}
+
+fn text_block_selection_policy(modifiers: &[ViewModifier]) -> ViewTextSelectionPolicy {
     modifiers
         .iter()
         .find_map(|modifier| match modifier {
@@ -2170,8 +2197,8 @@ fn text_block_selection_policy(modifiers: &[ViewModifier]) -> UiTextSelectionPol
                 if matches!(name.as_str(), "selectable" | "user_select" | "userSelect") =>
             {
                 match value {
-                    Expr::Literal(Literal::Bool(true)) => Some(UiTextSelectionPolicy::Enabled),
-                    Expr::Literal(Literal::Bool(false)) => Some(UiTextSelectionPolicy::Disabled),
+                    Expr::Literal(Literal::Bool(true)) => Some(ViewTextSelectionPolicy::Enabled),
+                    Expr::Literal(Literal::Bool(false)) => Some(ViewTextSelectionPolicy::Disabled),
                     _ => symbol_expr_name(value)
                         .as_deref()
                         .map(|value| text_control_selection_policy(Some(value))),
@@ -2179,7 +2206,7 @@ fn text_block_selection_policy(modifiers: &[ViewModifier]) -> UiTextSelectionPol
             }
             _ => None,
         })
-        .unwrap_or(UiTextSelectionPolicy::Disabled)
+        .unwrap_or(ViewTextSelectionPolicy::Disabled)
 }
 
 fn expr_px_milli(expr: &Expr) -> Option<i32> {
@@ -2519,20 +2546,20 @@ fn symbol_expr_name(expr: &Expr) -> Option<String> {
     (!value.is_empty()).then(|| value.to_owned())
 }
 
-fn text_control_purpose(value: Option<&str>, mode: ViewTextFieldMode) -> UiInputPurpose {
+fn text_control_purpose(value: Option<&str>, mode: ViewTextFieldMode) -> ViewInputPurpose {
     match value {
-        Some("search") => UiInputPurpose::Search,
-        Some("name") => UiInputPurpose::Name,
-        Some("email") => UiInputPurpose::Email,
-        Some("url") => UiInputPurpose::Url,
-        Some("telephone" | "tel") => UiInputPurpose::Telephone,
-        Some("number") => UiInputPurpose::Number,
-        Some("decimal") => UiInputPurpose::Decimal,
-        Some("password") => UiInputPurpose::Password,
-        Some("pin") => UiInputPurpose::Pin,
-        Some("terminal") => UiInputPurpose::Terminal,
-        _ if mode == ViewTextFieldMode::SecureField => UiInputPurpose::Password,
-        _ => UiInputPurpose::Text,
+        Some("search") => ViewInputPurpose::Search,
+        Some("name") => ViewInputPurpose::Name,
+        Some("email") => ViewInputPurpose::Email,
+        Some("url") => ViewInputPurpose::Url,
+        Some("telephone" | "tel") => ViewInputPurpose::Telephone,
+        Some("number") => ViewInputPurpose::Number,
+        Some("decimal") => ViewInputPurpose::Decimal,
+        Some("password") => ViewInputPurpose::Password,
+        Some("pin") => ViewInputPurpose::Pin,
+        Some("terminal") => ViewInputPurpose::Terminal,
+        _ if mode == ViewTextFieldMode::SecureField => ViewInputPurpose::Password,
+        _ => ViewInputPurpose::Text,
     }
 }
 
@@ -2548,43 +2575,48 @@ fn text_control_enter_key(value: Option<&str>) -> EnterKeyHint {
     }
 }
 
-fn text_control_selection_policy(value: Option<&str>) -> UiTextSelectionPolicy {
+fn text_control_selection_policy(value: Option<&str>) -> ViewTextSelectionPolicy {
     match value {
-        Some("disabled" | "none" | "false") => UiTextSelectionPolicy::Disabled,
-        _ => UiTextSelectionPolicy::Enabled,
+        Some("disabled" | "none" | "false") => ViewTextSelectionPolicy::Disabled,
+        _ => ViewTextSelectionPolicy::Enabled,
     }
 }
 
-fn text_control_shortcut_policy(value: Option<&str>) -> UiTextShortcutPolicy {
+fn text_control_shortcut_policy(value: Option<&str>) -> ViewTextShortcutPolicy {
     match value {
-        Some("disabled" | "none" | "false") => UiTextShortcutPolicy::Disabled,
-        _ => UiTextShortcutPolicy::Enabled,
+        Some("disabled" | "none" | "false") => ViewTextShortcutPolicy::Disabled,
+        _ => ViewTextShortcutPolicy::Enabled,
     }
 }
 
-fn text_control_tab_policy(value: Option<&str>) -> UiTextTabPolicy {
+fn text_control_tab_policy(value: Option<&str>) -> ViewTextTabPolicy {
     match value {
-        Some("insert" | "insert_tab" | "insertTab" | "text") => UiTextTabPolicy::InsertTab,
-        _ => UiTextTabPolicy::FocusNavigation,
+        Some("insert" | "insert_tab" | "insertTab" | "text") => ViewTextTabPolicy::InsertTab,
+        _ => ViewTextTabPolicy::FocusNavigation,
     }
 }
 
-fn text_control_vertical_navigation_policy(value: Option<&str>) -> UiTextVerticalNavigationPolicy {
+fn text_control_vertical_navigation_policy(
+    value: Option<&str>,
+) -> ViewTextVerticalNavigationPolicy {
     match value {
         Some("visual" | "visual_line" | "visualLine" | "soft_wrap" | "softWrap") => {
-            UiTextVerticalNavigationPolicy::VisualLine
+            ViewTextVerticalNavigationPolicy::VisualLine
         }
-        _ => UiTextVerticalNavigationPolicy::LogicalLine,
+        _ => ViewTextVerticalNavigationPolicy::LogicalLine,
     }
 }
 
-fn text_control_secure_policy(value: Option<&str>, mode: ViewTextFieldMode) -> UiSecureInputPolicy {
+fn text_control_secure_policy(
+    value: Option<&str>,
+    mode: ViewTextFieldMode,
+) -> ViewSecureInputPolicy {
     match value {
-        Some("plain") => UiSecureInputPolicy::Plain,
-        Some("sensitive") => UiSecureInputPolicy::Sensitive,
-        Some("password") => UiSecureInputPolicy::Password,
-        Some("one_time_code" | "oneTimeCode" | "otp") => UiSecureInputPolicy::OneTimeCode,
-        _ if mode == ViewTextFieldMode::SecureField => UiSecureInputPolicy::Password,
-        _ => UiSecureInputPolicy::Plain,
+        Some("plain") => ViewSecureInputPolicy::Plain,
+        Some("sensitive") => ViewSecureInputPolicy::Sensitive,
+        Some("password") => ViewSecureInputPolicy::Password,
+        Some("one_time_code" | "oneTimeCode" | "otp") => ViewSecureInputPolicy::OneTimeCode,
+        _ if mode == ViewTextFieldMode::SecureField => ViewSecureInputPolicy::Password,
+        _ => ViewSecureInputPolicy::Plain,
     }
 }

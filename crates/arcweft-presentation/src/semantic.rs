@@ -9,7 +9,7 @@ use crate::router::{InputRouter, RouteDecision};
 use crate::text_input::TextInputOptions;
 use arcweft_id::PublicId;
 
-/// Semantic role shared by `TextBox`, `Activity`, UI, Agent, and accessibility.
+/// Semantic role shared by `TextBox`, `Activity`, View, Agent, and accessibility.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SemanticRole {
     TextBox,
@@ -65,7 +65,7 @@ pub struct SemanticNode {
     visible: bool,
 }
 
-/// Frame semantic tree normalized across `TextBox`, `Activity`, and UI output.
+/// Frame semantic tree normalized across `TextBox`, `Activity`, and View output.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SemanticTree {
     nodes: Vec<SemanticNode>,

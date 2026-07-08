@@ -7,9 +7,8 @@ Sequence: seq06.16.3
 
 This cut turns the native text-input window smoke into an explicit, repeatable
 manual evidence fixture. The authored language/resource contract is unchanged:
-component/View `TextField`, `TextArea`, and `SecureField` remain the source of
-input resources, and no top-level `ui text_input`, `ui text_area`, or
-`ui secure_field` declarations are reintroduced.
+View `TextField`, `TextArea`, and `SecureField` remain the source of input
+resources, and removed top-level text-control declarations are not reintroduced.
 
 The smoke remains manual because a real native window, real keyboard focus, and
 a platform IME are environment-dependent. The repository implementation added by
@@ -17,7 +16,7 @@ this cut provides:
 
 - a focused integration test that guards the selected samples and command
   contract;
-- a refreshed seq06.4j.1 source gate that now matches the component-authored,
+- a refreshed seq06.4j.1 source gate that now matches the View-authored,
   no-sidecar input contract;
 - a trace verifier for the manual run output;
 - Justfile entrypoints that separate preflight/bundle checks from the blocking
@@ -30,8 +29,8 @@ widgets, DOM controls, hidden native controls, or a second text-input backend.
 The expected route is:
 
 ```text
-component/View text control
-  -> component lowering / UiInputResource
+View text control
+  -> View lowering / ViewInputResource
   -> player-rendered runtime text control
   -> native player winit text-input bridge
   -> shared player text editor / text_submit write-back
@@ -43,7 +42,7 @@ component/View text control
 | --- | --- | --- |
 | `samples/native-text-input` | Primary native window/IME sample. It has `TextField`, multiline `TextArea`, and secure `SecureField`. | Launch through `arcw run --runner native`; collect a trace under `target/native-text-input-trace/seq06.16.3/`. |
 | `samples/text-submit-flow` | Submit parity sample. | Source and bundle checks prove Enter/IME submit and Button `.on_click` use the same `text_submit` target. |
-| `samples/modern-feedback-ui` | Component/View integration sample. | Source and bundle checks prove component-authored text controls and submit buttons remain available. This is not a style-resolution acceptance for seq06.16.4. |
+| `samples/modern-feedback-view` | View integration sample. | Source and bundle checks prove View-authored text controls and submit buttons remain available. This is not a style-resolution acceptance for seq06.16.4. |
 
 ## Commands
 
@@ -60,10 +59,10 @@ cargo test -p arcweft-cli --test native_text_input_sample_sidecars --quiet
 cargo test -p arcweft-cli --test native_text_input_native_interactive_smoke --quiet
 cargo run -p arcweft-cli -- check --manifest-path samples/native-text-input/arcw.toml
 cargo run -p arcweft-cli -- check --manifest-path samples/text-submit-flow/arcw.toml
-cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-ui/arcw.toml
+cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-view/arcw.toml
 cargo run -p arcweft-cli -- bundle samples/native-text-input/src/main.arcw --output target/arcweft/native-text-input-seq06.16.3.awfb
 cargo run -p arcweft-cli -- bundle samples/text-submit-flow/src/main.arcw --output target/arcweft/text-submit-flow-seq06.16.3.awfb
-cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui-seq06.16.3.awfb
+cargo run -p arcweft-cli -- bundle samples/modern-feedback-view/src/main.arcw --output target/arcweft/modern-feedback-view-seq06.16.3.awfb
 ```
 
 Manual native window launch:
@@ -136,7 +135,7 @@ the GitHub connector:
   records that the three selected samples bundle without top-level text-control
   declarations.
 - `samples/native-text-input/src/main.arcw`, `samples/text-submit-flow/src/main.arcw`,
-  and `samples/modern-feedback-ui/src/main.arcw` were inspected and are the basis
+  and `samples/modern-feedback-view/src/main.arcw` were inspected and are the basis
   for the sample selection above.
 
 Packaging-environment blockers:
@@ -203,6 +202,6 @@ this cut:
 - Real Windows/macOS/Linux IME acceptance must be captured on machines with the
   target OS, display server, keyboard layout, and IME.
 - Mobile and Web validation are out of scope for this native-only smoke.
-- Modern feedback UI style-to-runtime-control rendering remains tracked by
+- Modern feedback View style-to-runtime-control rendering remains tracked by
   seq06.16.4; this smoke only checks that the component-authored text-control and
   submit routes remain launchable through the player-backed path.

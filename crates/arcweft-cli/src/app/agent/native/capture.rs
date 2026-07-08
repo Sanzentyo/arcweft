@@ -123,7 +123,7 @@ pub(super) struct AgentImageFrameStore {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct AgentUiImageObservation {
+pub(super) struct AgentViewImageObservation {
     pub(super) objects: Vec<AgentObservedObject>,
     pub(super) image_frames: AgentImageFrameStore,
 }

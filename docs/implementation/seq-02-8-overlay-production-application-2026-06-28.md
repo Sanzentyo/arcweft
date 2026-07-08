@@ -47,8 +47,8 @@ Decision:
 | seq-02.3 content/presentation/entity package | Entity graph / ad hoc entity section ideas | Speculative / future | Reject for seq-02.8 | The product model and AWFB carrier decisions were not concrete enough; entity/graph-index work remains a future design slice. |
 | seq-02.3/02.4 package application | Compact `ContentCatalog`, `AssetCatalog`, `DisplayCatalog`, `SourceMap`, `AudioGraph` owner codecs | Already implemented | Keep | These migrated current product truth without inventing unsupported dialogue/entity projections. |
 | seq-02.4 audio package | Full-file `product.rs` / `Cargo.toml` replacement | Unsafe / superseded | Reject | The implementation note records that full-file replacement was not used; only narrow production edits against current APIs were accepted. |
-| seq-02.4.1 UI/style/text/input/theme package | New section kinds and compact codecs for `UiProgram`, `UiStyle`, `UiText`, `UiInput`, `UiTheme` | Already implemented | Keep | UI families are explicit compact-first sections; the legacy umbrella `Ui` codec family remains reserved/future. |
-| seq-02.4.1 UI package | UI tests for deterministic bytes, budgets, CSS descriptor identity, palette/input compatibility, source gate | Already implemented | Keep as focused tests | These are production tests, not scratch overlay fixtures. |
+| seq-02.4.1 View/style/text/input/theme package | New section kinds and compact codecs for `ViewProgram`, `ViewStyle`, `ViewText`, `ViewInput`, `ViewTheme` | Already implemented | Keep | View families are explicit compact-first sections; the legacy umbrella `View` codec family remains reserved/future. |
+| seq-02.4.1 View package | View tests for deterministic bytes, budgets, CSS descriptor identity, palette/input compatibility, source gate | Already implemented | Keep as focused tests | These are production tests, not scratch overlay fixtures. |
 | seq-02.5 patch package, earlier shape | Separate versioned patch submodule / schema-1 compatibility reader | Obsolete | Reject | Production directly replaced `arcweft_bundle::patch` with schema 2 because the old patch surface is not a stable external API. |
 | seq-02.5 direct replacement package | `patch.rs` schema 2 manifest, materialization contract, per-section fingerprints, target identity checks | Already implemented | Keep | Schema 2 is the only decoded patch schema; materialized targets are unsigned from core and validated against target identity. |
 | seq-02.5 direct replacement package | Section default compatibility on `BundleSectionKind` and inverse product mapping on `ProductSectionCodecKind` | Already implemented | Keep | Behavior lives on Arcweft-owned enums instead of scattered helper matches or extension traits. |
@@ -88,7 +88,7 @@ Rejected or discarded hunk families were rejected for one or more of these reaso
 | seq-02.1 common wire fixtures | Golden/focused tests | Keep deterministic byte, table, budget, unknown-field, digest, and inspection tests. |
 | seq-02.2 runtime resource fixtures | Golden/focused tests | Keep deterministic runtime section round trips, compatibility fingerprints, and migrated runtime product gate. |
 | seq-02.3/02.4 catalog/audio fixtures | Focused tests | Keep current-product-truth round trips and source gate against JSON fallback. |
-| seq-02.4.1 UI fixtures | Focused tests | Keep UI family codec tests and fallback rejection/source-gate coverage. |
+| seq-02.4.1 View fixtures | Focused tests | Keep UI family codec tests and fallback rejection/source-gate coverage. |
 | seq-02.5 patch schema fixtures | Focused tests | Keep schema-2 round trip/materialization/unknown optional/external descriptor/source-gate tests. |
 | seq-02.6/02.7 AWFR/signing/cache fixtures | Focused unit/adapter tests | Keep archive/signing-policy/external-payload cache tests. |
 | Original generated overlay scratch fixtures | Deleted / not preserved | Not present in the repository snapshot and not promoted as active fixtures. |
@@ -98,7 +98,7 @@ Rejected or discarded hunk families were rejected for one or more of these reaso
 
 | Gate | Evidence / decision |
 | --- | --- |
-| No migrated product JSON fallback | Runtime and catalog source gates are checked in. `product.rs` emits/decodes migrated runtime, catalog/audio, and UI families through compact owner codecs. JSON remains only manifest/inspection/export where still allowed. |
+| No migrated product JSON fallback | Runtime and catalog source gates are checked in. `product.rs` emits/decodes migrated runtime, catalog/audio, and View families through compact owner codecs. JSON remains only manifest/inspection/export where still allowed. |
 | No codec probing | Product decode calls expected `decode_canonical_section` functions by AWFB section kind. The seq-02.1 contract requires callers to provide the expected `ProductSectionCodecKind`; migrated families do not choose by probing bytes. |
 | No legacy compatibility layers | Patch schema 2 directly replaces schema 1; no alternate schema-1 reader or compatibility module is preserved. Current public names remain only as primary schema-2 names. |
 | No raw signature passthrough | Core patch materialization emits unsigned changed targets; signing policy distinguishes unchanged preservation from changed-target invalidation and adapter-required signatures. |
@@ -114,7 +114,7 @@ Seq-02.8 accepts no additional Rust production code. All accepted production hun
 - seq-02.1: common compact resource envelope and source gate;
 - seq-02.2: runtime compact resource sections and migrated runtime product gate;
 - seq-02.3/02.4: content/catalog/source/audio compact resource sections and gate;
-- seq-02.4.1: UI/style/text/input/theme compact resource sections and tests;
+- seq-02.4.1: View/style/text/input/theme compact resource sections and tests;
 - seq-02.5: direct patch schema-2 replacement and declared compatibility materialization;
 - seq-02.6/02.7: AWFR/external carrier/signing policy Sans I/O models, local/cache external payload adapter, and CLI fetch-external wiring.
 
@@ -130,7 +130,7 @@ The following validation was recorded by the earlier production cut notes:
 | seq-02.1 | `cargo fmt --all -- --check`, common codec tests, source gate, bundle check/clippy, structure audit, and `git diff --check` passed; structure audit reported 0 errors and 105 warnings. |
 | seq-02.2 | Runtime resource tests, migrated runtime product gate, runtime codec integration tests, bundle/runtime-driver check/clippy, structure audit, `git diff --check`, and broader bundle tests passed; structure audit reported 0 errors and 106 warnings. |
 | seq-02.3/02.4 | Product catalog/audio codec tests, source gate, bundle full tests, focused check/clippy, structure audit, and `git diff --check` passed; structure audit reported 0 errors and 106 warnings. |
-| seq-02.4.1 | UI resource codec tests, bundle all-target tests, clippy, structure audit, `git diff --check`, and `just test-workspace` passed; structure audit reported 0 errors and 107 warnings. |
+| seq-02.4.1 | View resource codec tests, bundle all-target tests, clippy, structure audit, `git diff --check`, and `just test-workspace` passed; structure audit reported 0 errors and 107 warnings. |
 | seq-02.5 | Patch schema, runtime-driver patch source gate, native endpoint tests, focused check/clippy, CLI regression/run-bundle patch tests, structure audit, `git diff --check`, and `just test-workspace` passed. |
 | seq-02.6/02.7 | Release archive/signing-policy tests, project-loader external payload cache tests, CLI cache tests, focused clippy, bundle/project-loader tests, structure audit, `git diff --check`, and `just test-workspace` passed; structure audit reported 0 errors and 107 warnings. |
 | seq-02.8 | Connector audit completed; no Rust/source hunks were changed; no local Cargo/Jujutsu commands were run in this environment. |
@@ -155,7 +155,7 @@ cargo test -p arcweft-bundle --test resource_codec_source_gate --all-features --
 cargo test -p arcweft-bundle migrated_runtime_sections_do_not_use_product_json_fallback --all-features -- --nocapture
 cargo test -p arcweft-bundle --test runtime_resource_product_gate --all-features -- --nocapture
 cargo test -p arcweft-bundle --test product_catalog_source_gate --all-features -- --nocapture
-cargo test -p arcweft-bundle --test ui_resource_codecs --all-features -- --nocapture
+cargo test -p arcweft-bundle --test view_resource_codecs --all-features -- --nocapture
 cargo test -p arcweft-runtime-driver --test patch_source_gate --all-features -- --nocapture
 ```
 
@@ -183,7 +183,7 @@ Historical production cut points are already separated by implementation note:
 2. seq-02.1: common resource wire substrate.
 3. seq-02.2: runtime compact resource sections.
 4. seq-02.3/02.4: catalog/audio compact resource sections.
-5. seq-02.4.1: UI/style/text/input/theme resource sections.
+5. seq-02.4.1: View/style/text/input/theme resource sections.
 6. seq-02.5: patch schema 2 direct replacement.
 7. seq-02.6/02.7: AWFR/external payload/signing boundary.
 8. seq-02.8: this docs-only overlay production-application closure.

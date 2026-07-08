@@ -82,7 +82,7 @@ Please provide concrete answers for:
    codecs first?
 2. What are the canonical binary schemas for runtime types, entrypoints,
    adapter requirements, content catalogs, display catalogs, asset catalogs,
-   source maps, locale/text resources, audio graphs, shader/UI resources,
+   source maps, locale/text resources, audio graphs, shader/View resources,
    contracts, debug symbols, and graph/entity indexes?
 3. How are schema versions, optional fields, enum registries, string tables,
    public-id tables, and cross-section references encoded?
@@ -170,7 +170,7 @@ requests:
 - `docs/reviews/requests/2026-06-27-seq-02.2-runtime-types-entrypoints-adapter-requirements-codecs.md`
 - `docs/reviews/requests/2026-06-27-seq-02.3-content-presentation-entity-resource-codecs.md`
 - `docs/reviews/requests/2026-06-27-seq-02.4-shader-ui-audio-debug-contract-resource-codecs.md`
-- `docs/reviews/requests/2026-06-27-seq-02.4.1-ui-style-text-input-resource-codec.md`
+- `docs/reviews/requests/2026-06-27-seq-02.4.1-view-style-text-input-resource-codec.md`
 - `docs/reviews/requests/2026-06-27-seq-02.5-patch-v2-compatibility-and-materialization.md`
 - `docs/reviews/requests/2026-06-27-seq-02.6-awfr-release-archive-and-external-payload-carrier.md`
 - `docs/reviews/requests/2026-06-27-seq-02.7-signing-policy-redesign.md`

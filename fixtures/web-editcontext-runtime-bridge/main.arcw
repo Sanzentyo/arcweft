@@ -1,7 +1,7 @@
 // Fixture source for seq06.4a.3 Web player runtime text-input bridge.
 //
 // This intentionally uses stable ids and three control kinds.  The exact syntax
-// may need the current Arcweft UI lowering spelling in the target checkout; keep
+// may need the current Arcweft View lowering spelling in the target checkout; keep
 // the ids, labels, and evidence roles stable when adapting.
 
 scene web_editcontext_runtime_bridge {

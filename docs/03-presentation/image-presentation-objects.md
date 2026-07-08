@@ -103,7 +103,7 @@ adapter.
 
 ## Object Model
 
-Image objects lower through the Sans I/O presentation model and then through UI
+Image objects lower through the Sans I/O presentation model and then through View
 frame commit as typed image display items. Adapters receive an image source id,
 the decoded source table entry, object bounds, transform, opacity, layer, depth,
 actions, params, proxies, and playback policy. Downstream tools must preserve

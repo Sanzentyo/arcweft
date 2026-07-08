@@ -1,6 +1,6 @@
 # Arcweft Engine 設計仕様
 
-このフォルダは、wgpu を中核にしたノベルゲームエンジンの設計仕様です。独自 DSL、Rust 拡張、WASM、Cranelift JIT、LayerTree、Object Hook、Memoization、Servo/DOM UI、リアクティブ UI、Typst 級テキスト、WGSL シェーダー、音声、マイク/カメラ入力、USB/HIDデバイス、タッチ向けバーチャルコントローラー、形式検証、RAG、Jujutsu 履歴管理、LLM デバッグインターフェースを統合した実装方針をまとめています。
+このフォルダは、wgpu を中核にしたノベルゲームエンジンの設計仕様です。独自 DSL、Rust 拡張、WASM、Cranelift JIT、LayerTree、Object Hook、Memoization、Servo/DOM View、リアクティブ View、Typst 級テキスト、WGSL シェーダー、音声、マイク/カメラ入力、USB/HIDデバイス、タッチ向けバーチャルコントローラー、形式検証、RAG、Jujutsu 履歴管理、LLM デバッグインターフェースを統合した実装方針をまとめています。
 
 ## 読み方
 
@@ -12,7 +12,7 @@
 6. [Entries and Capabilities](01-language/entries-and-capabilities.md)
 7. [実行モデル](02-runtime/README.md)
 8. [RuntimeStep and Executors](02-runtime/runtime-step-and-executors.md)
-9. [描画・UI・音声](03-presentation/README.md)
+9. [描画・View・音声](03-presentation/README.md)
 10. [ツール・検証・LLM デバッグ](04-tooling/README.md)
 
 ## Arcweft 固有の命名

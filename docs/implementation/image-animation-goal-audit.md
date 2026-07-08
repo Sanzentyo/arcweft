@@ -21,9 +21,9 @@ must not rely on debug-raster transition layers.
 | Requirement | Current evidence | Status |
 |---|---|---|
 | Decode static PNG/JPEG/WebP and animated GIF/WebP into a shared RGBA frame model | `arcweft-image`; tests `decodes_gif_animation_to_rgba_frames`, `frame_selection_loops_animated_images`, `finite_animation_clamps_to_final_loop`; bundle sample covers PNG/JPEG/static WebP/GIF/animated WebP | Covered |
-| Deterministic frame timing independent of wall clock | `DecodedImage::frame_at_time_millis`, `ImageObjectPlayback`, `UiImageSourceTable::resolve_frame`, Agent `capture_time`; hit-test/readback regressions compare frame metadata across pinned times | Covered |
+| Deterministic frame timing independent of wall clock | `DecodedImage::frame_at_time_millis`, `ImageObjectPlayback`, `ViewImageSourceTable::resolve_frame`, Agent `capture_time`; hit-test/readback regressions compare frame metadata across pinned times | Covered |
 | Semantic image object data model | `arcweft-presentation::image::ImagePresentationObject`; presentation tests for semantic image node and pinned playback | Covered |
-| UI frame lowering preserves image sources, metadata, layer, transform, params, and proxies | `arcweft-ui::UiImagePresentationFrame`; `presentation_image_objects_lower_to_ui_sources_display_and_semantics`; `image_source_table_resolves_static_and_animated_frames` | Covered |
+| View frame lowering preserves image sources, metadata, layer, transform, params, and proxies | `arcweft-view::ViewImagePresentationFrame`; `presentation_image_objects_lower_to_ui_sources_display_and_semantics`; `image_source_table_resolves_static_and_animated_frames` | Covered |
 | Native renderer uses real textured quads, not debug raster fallback | `arcweft-render-native::capture_image_quads_rgba`; renderer tests for image pixels, debug alpha, opacity, transform, and display-list frame selection | Covered |
 | Source surface can author static/animated image ids and bounded image objects | Compact `asset ...` declarations and `image @image...` entity declarations in `samples/image-animation.arcw`; family-relative asset refs such as `bg(@asset:.bg.room)` and bounded `image(asset = @asset:.bg.pulse, ...)`; declared `image(@image...)`; sema tests for declared image assets and image object calls | Covered |
 | Source-level declared image object syntax beyond bounded `image(...)` calls | `image @image... { ... }` declares reusable object metadata and `image(@image...)` lowers through the same `ImagePresentationObject` path as inline bounded calls. | Covered |
@@ -50,7 +50,7 @@ the core image-animation object model:
 ```bash
 cargo test -p arcweft-image -- --nocapture
 cargo test -p arcweft-presentation image -- --nocapture
-cargo test -p arcweft-ui image -- --nocapture
+cargo test -p arcweft-view image -- --nocapture
 cargo test -p arcweft-render-native image -- --nocapture
 cargo test -p arcweft-lang-sema tests::declarations::parses_surface_alias_and_resource_entity_families -- --exact --nocapture
 cargo test -p arcweft-lang-sema tests::typecheck::typechecks_presentation_image_object_call_with_named_asset_and_bounds -- --exact --nocapture

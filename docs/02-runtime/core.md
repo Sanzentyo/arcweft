@@ -440,7 +440,7 @@ line-scope defer stacks.
 - wall-clock を state に入れない。
 - random は seeded RNG capability。
 - task 完了は frame boundary で正規化。
-- replay は `RuntimeStepInput` 列と task/audio/ui result を記録。
+- replay は `RuntimeStepInput` 列と task/audio/view result を記録。
 
 ## Flow fiber
 
@@ -464,7 +464,7 @@ pub enum FlowFiber {
 Hook は直接 state を変更せず、phase ごとに許可された pure output だけを返す。
 Phase 2.0 の `RuntimeStepOutput` は diagnostics、flow events、`RuntimeEffectBatch`、
 `HostRequestBatch` に分かれ、render/audio/device の実行は adapter 側に残る。将来の
-presentation runtime は、この境界から render/audio/ui desired state を導出する。
+presentation runtime は、この境界から render/audio/view desired state を導出する。
 
 ```rust
 pub struct RuntimeStepOutput {

@@ -15,7 +15,7 @@ This overlay implements the production contract around existing Arcweft characte
   - Rejects missing manifest/layer virtual files.
 - `crates/arcweft-player-scene/src/characters.rs`
   - Host-neutral character package decode and prepared-frame creation.
-  - Produces `CharacterRenderSpec` plus `CharacterUiView` from the same path for native and web.
+  - Produces `CharacterRenderSpec` plus `CharacterViewView` from the same path for native and web.
 - LSP feature edits
   - richer completion items for character ids, looks, parts, and variants;
   - hover metadata for character ids and manifest-derived look/part/variant tokens.
@@ -27,7 +27,7 @@ This overlay implements the production contract around existing Arcweft characte
 - `crates/arcweft-presentation/src/character.rs`: adds source-layer metadata, stable canvas-anchor bbox, and typed render diagnostics.
 - `crates/arcweft-bundle/src/lib.rs`: schema version `5`, `character_packages` field, duplicate/missing package validation, and builder/accessor methods.
 - `crates/arcweft-bundle/Cargo.toml`: adds `arcweft-character` dependency.
-- `crates/arcweft-player-scene/Cargo.toml`: adds `arcweft-character` and `arcweft-character-ui` dependencies.
+- `crates/arcweft-player-scene/Cargo.toml`: adds `arcweft-character` and `arcweft-character-view` dependencies.
 - `crates/arcweft-player-scene/src/lib.rs`: exports `characters`.
 - `crates/arcweft-lsp/src/features.rs`: exports character metadata helper.
 - `crates/arcweft-lsp/src/features/completion.rs`: character-aware completion enrichment.
@@ -51,7 +51,7 @@ This overlay implements the production contract around existing Arcweft characte
 - `crates/arcweft-player-scene/tests/character_stage.rs`
   - typed package prepares normal/smile looks without flat pose PNGs;
   - stable bbox is identical across look switching;
-  - retained UI layers match manifest order;
+  - retained View layers match manifest order;
   - Agent observe metadata reports selected look, stable bbox, and per-layer capture refs.
 - `crates/arcweft-lsp/tests/character_completions.rs`
   - `character_manifests` profile loading feeds completions;
@@ -109,7 +109,7 @@ Known CLI behavior: `arcw check --profile dev` uses launch-profile metadata and 
 ## Explicit deferred list
 
 - Exact GPU equations for every Photoshop blend mode.
-- Retained-UI clipping-mask composition.
+- Retained-View clipping-mask composition.
 - Full Photoshop group/pass-through compositing.
 - Runtime PSD parsing.
 - DOM-based browser character rendering.

@@ -713,19 +713,19 @@ facade file has 2458 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 
-## warning SIZE002 — `crates/arcweft-ui/src/lib.rs`
+## warning SIZE002 — `crates/arcweft-view/src/lib.rs`
 
 facade file has 1027 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 
-## warning SIZE001 — `crates/arcweft-ui/src/text_field.rs`
+## warning SIZE001 — `crates/arcweft-view/src/text_field.rs`
 
 1433 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
-## warning TEST001 — `crates/arcweft-ui/src/text_field.rs`
+## warning TEST001 — `crates/arcweft-view/src/text_field.rs`
 
 large production file contains an embedded #[cfg(test)] module
 

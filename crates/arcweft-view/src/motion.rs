@@ -1,20 +1,20 @@
-//! Deterministic UI motion model for retained Arcweft UI styles.
+//! Deterministic View motion model for retained Arcweft View styles.
 //!
 //! This module is deliberately Sans I/O. It never reads wall-clock time itself;
 //! native and web players pass sampled timeline milliseconds into transitions or
 //! keyframe tracks. CSS parsing remains outside this crate, while interpolation
 //! behavior lives on Arcweft-owned style boundary types.
 
-use crate::style::{Milli, UiPropertyKind, UiPropertyValue};
+use crate::style::{Milli, ViewPropertyKind, ViewPropertyValue};
 use thiserror::Error;
 
 /// Monotonic player timeline timestamp in milliseconds.
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub struct UiTimelineMillis(u64);
+pub struct ViewTimelineMillis(u64);
 
 /// Reduced-motion behavior selected by the host/player accessibility policy.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum UiReducedMotionPolicy {
+pub enum ViewReducedMotionPolicy {
     /// Preserve author durations and easing exactly.
     #[default]
     Full,
@@ -26,22 +26,22 @@ pub enum UiReducedMotionPolicy {
 
 /// Easing functions supported by the first Arcweft CSS-motion cut.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum UiEasingFunction {
+pub enum ViewEasingFunction {
     Linear,
     Ease,
     EaseIn,
     EaseOut,
     EaseInOut,
-    CubicBezier(UiCubicBezier),
+    CubicBezier(ViewCubicBezier),
     Steps {
         steps: u16,
-        position: UiStepPosition,
+        position: ViewStepPosition,
     },
 }
 
 /// Cubic bezier control points in CSS timing-function coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiCubicBezier {
+pub struct ViewCubicBezier {
     pub x1: f32,
     pub y1: f32,
     pub x2: f32,
@@ -50,37 +50,37 @@ pub struct UiCubicBezier {
 
 /// CSS step timing position.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiStepPosition {
+pub enum ViewStepPosition {
     JumpStart,
     JumpEnd,
 }
 
 /// Transition timing and property selection.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiTransitionSpec {
-    pub property: UiPropertyKind,
+pub struct ViewTransitionSpec {
+    pub property: ViewPropertyKind,
     pub duration_ms: u32,
     pub delay_ms: i32,
-    pub easing: UiEasingFunction,
+    pub easing: ViewEasingFunction,
 }
 
 /// One running transition from a sampled source value to a target value.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiTransition {
-    spec: UiTransitionSpec,
-    started_at: UiTimelineMillis,
-    source_value: UiPropertyValue,
-    target_value: UiPropertyValue,
+pub struct ViewTransition {
+    spec: ViewTransitionSpec,
+    started_at: ViewTimelineMillis,
+    source_value: ViewPropertyValue,
+    target_value: ViewPropertyValue,
 }
 
 /// One sampled transition/keyframe evidence packet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UiMotionSample {
-    pub property: UiPropertyKind,
-    pub timestamp: UiTimelineMillis,
-    pub source_value: UiPropertyValue,
-    pub target_value: UiPropertyValue,
-    pub sampled_value: UiPropertyValue,
+pub struct ViewMotionSample {
+    pub property: ViewPropertyKind,
+    pub timestamp: ViewTimelineMillis,
+    pub source_value: ViewPropertyValue,
+    pub target_value: ViewPropertyValue,
+    pub sampled_value: ViewPropertyValue,
     pub linear_progress: Milli,
     pub eased_progress: Milli,
     pub finished: bool,
@@ -88,37 +88,37 @@ pub struct UiMotionSample {
 
 /// One keyframe value in a per-property animation track.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiKeyframe {
+pub struct ViewKeyframe {
     pub offset: Milli,
-    pub value: UiPropertyValue,
-    pub easing_after: UiEasingFunction,
+    pub value: ViewPropertyValue,
+    pub easing_after: ViewEasingFunction,
 }
 
 /// A normalized per-property keyframe track.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiKeyframeTrack {
-    property: UiPropertyKind,
+pub struct ViewKeyframeTrack {
+    property: ViewPropertyKind,
     duration_ms: u32,
-    keyframes: Vec<UiKeyframe>,
+    keyframes: Vec<ViewKeyframe>,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum UiMotionError {
-    #[error("UI property {0:?} is not transitionable in the seq06.13 motion model")]
-    NonTransitionableProperty(UiPropertyKind),
+pub enum ViewMotionError {
+    #[error("View property {0:?} is not transitionable in the seq06.13 motion model")]
+    NonTransitionableProperty(ViewPropertyKind),
     #[error(
-        "UI property {property:?} cannot interpolate from {source_value:?} to {target_value:?}"
+        "View property {property:?} cannot interpolate from {source_value:?} to {target_value:?}"
     )]
     IncompatibleValues {
-        property: UiPropertyKind,
-        source_value: UiPropertyValue,
-        target_value: UiPropertyValue,
+        property: ViewPropertyKind,
+        source_value: ViewPropertyValue,
+        target_value: ViewPropertyValue,
     },
     #[error("keyframe track for {0:?} must contain at least two ordered keyframes")]
-    InvalidKeyframes(UiPropertyKind),
+    InvalidKeyframes(ViewPropertyKind),
 }
 
-impl UiTimelineMillis {
+impl ViewTimelineMillis {
     pub const ZERO: Self = Self(0);
 
     pub const fn new(value: u64) -> Self {
@@ -134,7 +134,7 @@ impl UiTimelineMillis {
     }
 }
 
-impl UiReducedMotionPolicy {
+impl ViewReducedMotionPolicy {
     pub const fn duration_ms(self, author_duration_ms: u32) -> u32 {
         match self {
             Self::Full => author_duration_ms,
@@ -150,17 +150,17 @@ impl UiReducedMotionPolicy {
     }
 }
 
-impl UiCubicBezier {
+impl ViewCubicBezier {
     pub const fn new(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
         Self { x1, y1, x2, y2 }
     }
 }
 
-impl UiEasingFunction {
-    pub const CSS_EASE: Self = Self::CubicBezier(UiCubicBezier::new(0.25, 0.1, 0.25, 1.0));
-    pub const CSS_EASE_IN: Self = Self::CubicBezier(UiCubicBezier::new(0.42, 0.0, 1.0, 1.0));
-    pub const CSS_EASE_OUT: Self = Self::CubicBezier(UiCubicBezier::new(0.0, 0.0, 0.58, 1.0));
-    pub const CSS_EASE_IN_OUT: Self = Self::CubicBezier(UiCubicBezier::new(0.42, 0.0, 0.58, 1.0));
+impl ViewEasingFunction {
+    pub const CSS_EASE: Self = Self::CubicBezier(ViewCubicBezier::new(0.25, 0.1, 0.25, 1.0));
+    pub const CSS_EASE_IN: Self = Self::CubicBezier(ViewCubicBezier::new(0.42, 0.0, 1.0, 1.0));
+    pub const CSS_EASE_OUT: Self = Self::CubicBezier(ViewCubicBezier::new(0.0, 0.0, 0.58, 1.0));
+    pub const CSS_EASE_IN_OUT: Self = Self::CubicBezier(ViewCubicBezier::new(0.42, 0.0, 0.58, 1.0));
 
     pub fn sample(self, linear_progress: Milli) -> Milli {
         let linear_progress = clamp_progress(linear_progress);
@@ -176,8 +176,12 @@ impl UiEasingFunction {
     }
 }
 
-impl UiTransitionSpec {
-    pub const fn new(property: UiPropertyKind, duration_ms: u32, easing: UiEasingFunction) -> Self {
+impl ViewTransitionSpec {
+    pub const fn new(
+        property: ViewPropertyKind,
+        duration_ms: u32,
+        easing: ViewEasingFunction,
+    ) -> Self {
         Self {
             property,
             duration_ms,
@@ -193,13 +197,13 @@ impl UiTransitionSpec {
     }
 }
 
-impl UiTransition {
+impl ViewTransition {
     pub fn new(
-        spec: UiTransitionSpec,
-        started_at: UiTimelineMillis,
-        source_value: UiPropertyValue,
-        target_value: UiPropertyValue,
-    ) -> Result<Self, UiMotionError> {
+        spec: ViewTransitionSpec,
+        started_at: ViewTimelineMillis,
+        source_value: ViewPropertyValue,
+        target_value: ViewPropertyValue,
+    ) -> Result<Self, ViewMotionError> {
         ensure_interpolable(spec.property, source_value, target_value)?;
         Ok(Self {
             spec,
@@ -209,35 +213,35 @@ impl UiTransition {
         })
     }
 
-    pub const fn spec(&self) -> UiTransitionSpec {
+    pub const fn spec(&self) -> ViewTransitionSpec {
         self.spec
     }
 
-    pub const fn source_value(&self) -> UiPropertyValue {
+    pub const fn source_value(&self) -> ViewPropertyValue {
         self.source_value
     }
 
-    pub const fn target_value(&self) -> UiPropertyValue {
+    pub const fn target_value(&self) -> ViewPropertyValue {
         self.target_value
     }
 
     pub fn sample(
         &self,
-        timestamp: UiTimelineMillis,
-        policy: UiReducedMotionPolicy,
-    ) -> Result<UiMotionSample, UiMotionError> {
+        timestamp: ViewTimelineMillis,
+        policy: ViewReducedMotionPolicy,
+    ) -> Result<ViewMotionSample, ViewMotionError> {
         let linear_progress = self.linear_progress(timestamp, policy);
         let eased_progress = self.spec.easing.sample(linear_progress);
         let sampled_value = self
             .spec
             .property
             .interpolate_value(self.source_value, self.target_value, eased_progress)
-            .ok_or(UiMotionError::IncompatibleValues {
+            .ok_or(ViewMotionError::IncompatibleValues {
                 property: self.spec.property,
                 source_value: self.source_value,
                 target_value: self.target_value,
             })?;
-        Ok(UiMotionSample {
+        Ok(ViewMotionSample {
             property: self.spec.property,
             timestamp,
             source_value: self.source_value,
@@ -252,16 +256,20 @@ impl UiTransition {
     /// Start a new transition at `timestamp` from the current sampled value.
     pub fn interrupt(
         &self,
-        timestamp: UiTimelineMillis,
-        target_value: UiPropertyValue,
-        spec: UiTransitionSpec,
-        policy: UiReducedMotionPolicy,
-    ) -> Result<Self, UiMotionError> {
+        timestamp: ViewTimelineMillis,
+        target_value: ViewPropertyValue,
+        spec: ViewTransitionSpec,
+        policy: ViewReducedMotionPolicy,
+    ) -> Result<Self, ViewMotionError> {
         let sampled = self.sample(timestamp, policy)?;
         Self::new(spec, timestamp, sampled.sampled_value, target_value)
     }
 
-    fn linear_progress(&self, timestamp: UiTimelineMillis, policy: UiReducedMotionPolicy) -> Milli {
+    fn linear_progress(
+        &self,
+        timestamp: ViewTimelineMillis,
+        policy: ViewReducedMotionPolicy,
+    ) -> Milli {
         let duration_ms = u64::from(policy.duration_ms(self.spec.duration_ms));
         if duration_ms == 0 {
             return Milli::ONE;
@@ -281,35 +289,35 @@ impl UiTransition {
     }
 }
 
-impl UiKeyframe {
-    pub const fn new(offset: Milli, value: UiPropertyValue) -> Self {
+impl ViewKeyframe {
+    pub const fn new(offset: Milli, value: ViewPropertyValue) -> Self {
         Self {
             offset,
             value,
-            easing_after: UiEasingFunction::Linear,
+            easing_after: ViewEasingFunction::Linear,
         }
     }
 
     #[must_use]
-    pub const fn with_easing_after(mut self, easing_after: UiEasingFunction) -> Self {
+    pub const fn with_easing_after(mut self, easing_after: ViewEasingFunction) -> Self {
         self.easing_after = easing_after;
         self
     }
 }
 
-impl UiKeyframeTrack {
+impl ViewKeyframeTrack {
     pub fn new(
-        property: UiPropertyKind,
+        property: ViewPropertyKind,
         duration_ms: u32,
-        keyframes: impl IntoIterator<Item = UiKeyframe>,
-    ) -> Result<Self, UiMotionError> {
+        keyframes: impl IntoIterator<Item = ViewKeyframe>,
+    ) -> Result<Self, ViewMotionError> {
         if !property.is_transitionable() {
-            return Err(UiMotionError::NonTransitionableProperty(property));
+            return Err(ViewMotionError::NonTransitionableProperty(property));
         }
         let mut keyframes = keyframes.into_iter().collect::<Vec<_>>();
         keyframes.sort_by_key(|keyframe| clamp_progress(keyframe.offset).value());
         if keyframes.len() < 2 {
-            return Err(UiMotionError::InvalidKeyframes(property));
+            return Err(ViewMotionError::InvalidKeyframes(property));
         }
         for keyframe in &mut keyframes {
             keyframe.offset = clamp_progress(keyframe.offset);
@@ -321,7 +329,7 @@ impl UiKeyframeTrack {
         })
     }
 
-    pub const fn property(&self) -> UiPropertyKind {
+    pub const fn property(&self) -> ViewPropertyKind {
         self.property
     }
 
@@ -329,16 +337,16 @@ impl UiKeyframeTrack {
         self.duration_ms
     }
 
-    pub fn keyframes(&self) -> &[UiKeyframe] {
+    pub fn keyframes(&self) -> &[ViewKeyframe] {
         &self.keyframes
     }
 
     pub fn sample(
         &self,
-        started_at: UiTimelineMillis,
-        timestamp: UiTimelineMillis,
-        policy: UiReducedMotionPolicy,
-    ) -> Result<UiMotionSample, UiMotionError> {
+        started_at: ViewTimelineMillis,
+        timestamp: ViewTimelineMillis,
+        policy: ViewReducedMotionPolicy,
+    ) -> Result<ViewMotionSample, ViewMotionError> {
         let progress = transition_progress(started_at, timestamp, self.duration_ms, policy);
         let first = self.keyframes[0];
         if progress.value() <= first.offset.value() {
@@ -363,29 +371,29 @@ impl UiKeyframeTrack {
         let last = *self
             .keyframes
             .last()
-            .ok_or(UiMotionError::InvalidKeyframes(self.property))?;
+            .ok_or(ViewMotionError::InvalidKeyframes(self.property))?;
         self.sample_between(timestamp, last, last, Milli::ONE, Milli::ONE, true)
     }
 
     fn sample_between(
         &self,
-        timestamp: UiTimelineMillis,
-        start: UiKeyframe,
-        end: UiKeyframe,
+        timestamp: ViewTimelineMillis,
+        start: ViewKeyframe,
+        end: ViewKeyframe,
         linear_progress: Milli,
         eased_progress: Milli,
         finished: bool,
-    ) -> Result<UiMotionSample, UiMotionError> {
+    ) -> Result<ViewMotionSample, ViewMotionError> {
         ensure_interpolable(self.property, start.value, end.value)?;
         let sampled_value = self
             .property
             .interpolate_value(start.value, end.value, eased_progress)
-            .ok_or(UiMotionError::IncompatibleValues {
+            .ok_or(ViewMotionError::IncompatibleValues {
                 property: self.property,
                 source_value: start.value,
                 target_value: end.value,
             })?;
-        Ok(UiMotionSample {
+        Ok(ViewMotionSample {
             property: self.property,
             timestamp,
             source_value: start.value,
@@ -398,7 +406,7 @@ impl UiKeyframeTrack {
     }
 }
 
-impl UiCubicBezier {
+impl ViewCubicBezier {
     fn sample(self, linear_progress: Milli) -> Milli {
         let target_x = progress_to_unit(linear_progress);
         let mut low = 0.0;
@@ -416,18 +424,18 @@ impl UiCubicBezier {
 }
 
 fn ensure_interpolable(
-    property: UiPropertyKind,
-    source: UiPropertyValue,
-    target: UiPropertyValue,
-) -> Result<(), UiMotionError> {
+    property: ViewPropertyKind,
+    source: ViewPropertyValue,
+    target: ViewPropertyValue,
+) -> Result<(), ViewMotionError> {
     if !property.is_transitionable() {
-        return Err(UiMotionError::NonTransitionableProperty(property));
+        return Err(ViewMotionError::NonTransitionableProperty(property));
     }
     if property
         .interpolate_value(source, target, Milli::ZERO)
         .is_none()
     {
-        return Err(UiMotionError::IncompatibleValues {
+        return Err(ViewMotionError::IncompatibleValues {
             property,
             source_value: source,
             target_value: target,
@@ -437,10 +445,10 @@ fn ensure_interpolable(
 }
 
 fn transition_progress(
-    started_at: UiTimelineMillis,
-    timestamp: UiTimelineMillis,
+    started_at: ViewTimelineMillis,
+    timestamp: ViewTimelineMillis,
     duration_ms: u32,
-    policy: UiReducedMotionPolicy,
+    policy: ViewReducedMotionPolicy,
 ) -> Milli {
     let duration_ms = u64::from(policy.duration_ms(duration_ms));
     if duration_ms == 0 {
@@ -466,12 +474,12 @@ fn segment_progress(progress: Milli, start: Milli, end: Milli) -> Milli {
     Milli(i32::try_from((numerator + denominator / 2) / denominator).unwrap_or(Milli::ONE.value()))
 }
 
-fn sample_steps(progress: Milli, steps: u16, position: UiStepPosition) -> Milli {
+fn sample_steps(progress: Milli, steps: u16, position: ViewStepPosition) -> Milli {
     let steps = i32::from(steps.max(1));
     let progress = clamp_progress(progress).value();
     let raw_step = match position {
-        UiStepPosition::JumpStart => (progress.saturating_mul(steps) + 999) / 1_000,
-        UiStepPosition::JumpEnd => progress.saturating_mul(steps) / 1_000,
+        ViewStepPosition::JumpStart => (progress.saturating_mul(steps) + 999) / 1_000,
+        ViewStepPosition::JumpEnd => progress.saturating_mul(steps) / 1_000,
     };
     Milli(raw_step.clamp(0, steps).saturating_mul(1_000) / steps)
 }

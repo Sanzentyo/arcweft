@@ -211,7 +211,7 @@ is an execution readiness decision, not artifact classification.
 
 - AWFR release archive/fetch-cache policy remains seq-02.6.
 - Signing key access and target signature generation remain adapter responsibilities.
-- Shader/UI/entity/contracts/graph-index compact codecs remain future work until
+- Shader/View/entity/contracts/graph-index compact codecs remain future work until
   their section-family designs are concrete.
 
 ## Applied Validation

@@ -16,7 +16,7 @@ render/capture.
   preferred text-local x column across repeated vertical moves.
 - If geometry is unavailable, invalid, non-renderer-backed, or non-horizontal
   writing mode, the editor falls back to the existing logical-line behavior.
-- Runtime UI resource options and component-view lowering can carry the policy
+- Runtime View resource options and component-view lowering can carry the policy
   through `vertical_navigation`, `vertical_navigation_policy`,
   `verticalNavigation`, or `verticalNavigationPolicy`.
 
@@ -54,8 +54,8 @@ Completed during implementation:
 
 ```bash
 cargo test -p arcweft-presentation --test text_editor_behavior
-cargo test -p arcweft-bundle --test ui_runtime_text_controls
-cargo test -p arcweft-bundle --test ui_resource_codecs
+cargo test -p arcweft-bundle --test view_runtime_text_controls
+cargo test -p arcweft-bundle --test view_resource_codecs
 cargo test -p arcweft-player-scene --test runtime_text_controls
 cargo test -p arcweft-player-scene --test runtime_control_style_lowering
 cargo check -p arcweft-cli --all-targets

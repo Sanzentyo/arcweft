@@ -1,6 +1,6 @@
-//! UI semantic fragment lowering into presentation semantics.
+//! View semantic fragment lowering into presentation semantics.
 
-use crate::{NodeKey, SemanticSpecId, UiError};
+use crate::{NodeKey, SemanticSpecId, ViewError};
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -8,13 +8,13 @@ use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
 use std::collections::BTreeSet;
 
-/// Frame-local node identifier inside one flat UI semantic fragment.
+/// Frame-local node identifier inside one flat View semantic fragment.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct UiNodeId(pub u32);
+pub struct ViewNodeId(pub u32);
 
-/// Flat retained semantic node produced by UI view rendering.
+/// Flat retained semantic node produced by View view rendering.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiSemanticNode {
+pub struct ViewSemanticNode {
     key: NodeKey,
     layer: LayerId,
     target: InteractionTarget,
@@ -26,20 +26,20 @@ pub struct UiSemanticNode {
     visible: bool,
 }
 
-/// Ordered semantic fragment emitted by UI views before presentation merge.
+/// Ordered semantic fragment emitted by View views before presentation merge.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiSemanticFragment {
-    nodes: Vec<UiSemanticNode>,
+pub struct ViewSemanticFragment {
+    nodes: Vec<ViewSemanticNode>,
 }
 
-/// Builder for one flat UI semantic fragment.
+/// Builder for one flat View semantic fragment.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiSemanticFragmentBuilder {
-    nodes: Vec<UiSemanticNode>,
+pub struct ViewSemanticFragmentBuilder {
+    nodes: Vec<ViewSemanticNode>,
     keys: BTreeSet<NodeKey>,
 }
 
-impl UiSemanticNode {
+impl ViewSemanticNode {
     pub fn new(
         key: NodeKey,
         layer: LayerId,
@@ -139,16 +139,16 @@ impl UiSemanticNode {
     }
 }
 
-impl UiSemanticFragment {
-    pub fn as_slice(&self) -> &[UiSemanticNode] {
+impl ViewSemanticFragment {
+    pub fn as_slice(&self) -> &[ViewSemanticNode] {
         &self.nodes
     }
 
-    pub fn get(&self, id: SemanticSpecId) -> Option<&UiSemanticNode> {
+    pub fn get(&self, id: SemanticSpecId) -> Option<&ViewSemanticNode> {
         self.nodes.get(id.0 as usize)
     }
 
-    pub fn find_target(&self, target: &InteractionTarget) -> Option<&UiSemanticNode> {
+    pub fn find_target(&self, target: &InteractionTarget) -> Option<&ViewSemanticNode> {
         self.nodes.iter().find(|node| node.target() == target)
     }
 
@@ -160,22 +160,22 @@ impl UiSemanticFragment {
         tree
     }
 
-    pub fn into_vec(self) -> Vec<UiSemanticNode> {
+    pub fn into_vec(self) -> Vec<ViewSemanticNode> {
         self.nodes
     }
 }
 
-impl UiSemanticFragmentBuilder {
-    pub fn push(&mut self, node: UiSemanticNode) -> Result<UiNodeId, UiError> {
+impl ViewSemanticFragmentBuilder {
+    pub fn push(&mut self, node: ViewSemanticNode) -> Result<ViewNodeId, ViewError> {
         if !self.keys.insert(node.key()) {
-            return Err(UiError::DuplicateNodeKey(node.key()));
+            return Err(ViewError::DuplicateNodeKey(node.key()));
         }
-        let index = u32::try_from(self.nodes.len()).map_err(|_| UiError::CapacityExceeded)?;
+        let index = u32::try_from(self.nodes.len()).map_err(|_| ViewError::CapacityExceeded)?;
         self.nodes.push(node);
-        Ok(UiNodeId(index))
+        Ok(ViewNodeId(index))
     }
 
-    pub fn finish(self) -> UiSemanticFragment {
-        UiSemanticFragment { nodes: self.nodes }
+    pub fn finish(self) -> ViewSemanticFragment {
+        ViewSemanticFragment { nodes: self.nodes }
     }
 }

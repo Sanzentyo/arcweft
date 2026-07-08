@@ -10,7 +10,7 @@ This design does not use browser DOM clipping, SVG filters, canvas fallback, CSS
 
 The existing seq06.13a boundaries remain the right ownership split:
 
-- `ViewClipPath` and `ViewMaskImage` carry renderer-facing retained UI data.
+- `ViewClipPath` and `ViewMaskImage` carry renderer-facing retained View data.
 - `ViewClipGeometryPlan` owns clip-path normalization, path parsing, flattening, and typed diagnostics.
 - `ViewMaskPassPlan` owns mask image classification, sizing, positioning, repeat distribution, and gradient stop canonicalization.
 - `ViewCompositorUniform` owns GPU packing for the shared compositor WGSL contract.
@@ -88,7 +88,7 @@ Oversized plans return `TooManyPathCommands` or `TooManyPathEdges` with count an
 
 ## `clip-path: url(...)`
 
-`clip-path: url(...)` remains unsupported in this cut. The design adds a typed retained-UI variant, `ViewClipPath::Url(Box<str>)`, so renderer/player adapters can preserve the resource reference. Planning returns `ViewClipPathPlanError::UrlClipResourceUnsupported { resource }`.
+`clip-path: url(...)` remains unsupported in this cut. The design adds a typed retained-View variant, `ViewClipPath::Url(Box<str>)`, so renderer/player adapters can preserve the resource reference. Planning returns `ViewClipPathPlanError::UrlClipResourceUnsupported { resource }`.
 
 Reusable SVG/vector clip resources need a resource table, lifecycle, cycle prevention, and CSS reference-box rules. That is intentionally left as a later resource-clip package.
 
@@ -96,7 +96,7 @@ Reusable SVG/vector clip resources need a resource table, lifecycle, cycle preve
 
 Gradient masks are rendered by the compositor shader as generated coverage. They do not allocate hidden DOM, SVG, canvas, Takumi raster output, or CPU-generated mask textures.
 
-### Supported retained-UI gradient forms
+### Supported retained-View gradient forms
 
 `ViewMaskImage::Gradient(ViewMaskGradient)` supports:
 
@@ -104,7 +104,7 @@ Gradient masks are rendered by the compositor shader as generated coverage. They
 - `Radial { center, radius_x, radius_y, stops }`;
 - `Conic { center, from_degrees, stops }`.
 
-The Takumi/CSS adapter in this package lowers non-repeating `linear-gradient(...)` mask images. Radial and conic gradient mask types are available to retained UI and shader planning, but CSS/Takumi lowering for radial/conic remains a structured unsupported diagnostic until the adapter exposes enough normalized shape data and fixture coverage.
+The Takumi/CSS adapter in this package lowers non-repeating `linear-gradient(...)` mask images. Radial and conic gradient mask types are available to retained View and shader planning, but CSS/Takumi lowering for radial/conic remains a structured unsupported diagnostic until the adapter exposes enough normalized shape data and fixture coverage.
 
 ### Color stop interpolation
 

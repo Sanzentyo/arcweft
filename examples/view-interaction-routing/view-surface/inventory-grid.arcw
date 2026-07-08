@@ -1,0 +1,17 @@
+pub view @view.sample.inventory InventoryGrid(items: Vec<InventoryItem>) {
+    Scroll(axis = .vertical) {
+        Column(spacing = 12) {
+            for item in items key = item.id {
+                Button(@button:.inventory_slot)
+                    .label(item.label)
+                    .agent_target(@view.sample.inventory.slot)
+                    .enabled(item.enabled)
+                    .style {
+                        background-color = rgba(42, 52, 68, 255)
+                        focus-ring-width = milli(3000)
+                    }
+                    .on_click(|| action.invoke(@action.inventory.select, payload = item.id))
+            }
+        }
+    }
+}

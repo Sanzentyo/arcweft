@@ -55,7 +55,7 @@ Canvas は `Props + Theme + LogicalTime -> VectorScene` の純粋関数として
 ## SVG import
 
 ```arcw
-pub svg @svg.icon.settings from "ui/icons/settings.svg"
+pub svg @svg.icon.settings from "view/icons/settings.svg"
 sandbox {
     external_resources = false
     scripting = false
@@ -81,7 +81,7 @@ SVG file
 ## Render backend
 
 ```rust
-pub enum UiRenderBackend {
+pub enum ViewRenderBackend {
     WgpuNative,
     Vello,
     VelloHybrid,

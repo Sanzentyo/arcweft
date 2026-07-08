@@ -70,7 +70,7 @@ Example input:
 pub device #device.serial_knob: Serial {
     baud = 115200
     parser line parse_knob_line: Parser<KnobEvent, ParseError>
-    emits { .Turn { delta } => InputEvent.AxisDelta(.UiScroll, delta) }
+    emits { .Turn { delta } => InputEvent.AxisDelta(.ViewScroll, delta) }
 }
 ```
 

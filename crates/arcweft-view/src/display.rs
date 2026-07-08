@@ -1,9 +1,9 @@
-//! Display-list generation boundary for laid-out retained UI fragments.
+//! Display-list generation boundary for laid-out retained View fragments.
 
 use crate::{
-    CustomElementId, FragmentKind, ImageId, LayoutBox, LayoutResults, NodeId, ResolvedUiStyle,
-    RichTextSourceId, SemanticSpecId, StyleId, TextSourceId, UiError, UiSemanticFragment,
-    UiStyleTable, ViewFragment,
+    CustomElementId, FragmentKind, ImageId, LayoutBox, LayoutResults, NodeId, ResolvedViewStyle,
+    RichTextSourceId, SemanticSpecId, StyleId, TextSourceId, ViewError, ViewFragment,
+    ViewSemanticFragment, ViewStyleTable,
 };
 use arcweft_presentation::interaction::InteractionState;
 
@@ -11,7 +11,7 @@ use arcweft_presentation::interaction::InteractionState;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct DisplayItemId(pub u32);
 
-/// Renderer-facing display payload produced from a retained UI fragment.
+/// Renderer-facing display payload produced from a retained View fragment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DisplayItemKind {
     Text(TextSourceId),
@@ -30,7 +30,7 @@ pub struct DisplayItem {
     semantics: Option<SemanticSpecId>,
 }
 
-/// Ordered UI display list for renderer submission.
+/// Ordered View display list for renderer submission.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DisplayList {
     items: Vec<DisplayItem>,
@@ -40,7 +40,7 @@ pub struct DisplayList {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedDisplayItem {
     item: DisplayItem,
-    style: ResolvedUiStyle,
+    style: ResolvedViewStyle,
 }
 
 /// Ordered display list after hover/focus/pressed/disabled style resolution.
@@ -75,7 +75,7 @@ impl DisplayList {
     pub fn from_fragment(
         fragment: &ViewFragment,
         layouts: &LayoutResults,
-    ) -> Result<Self, UiError> {
+    ) -> Result<Self, ViewError> {
         let items = fragment
             .nodes()
             .iter()
@@ -83,7 +83,7 @@ impl DisplayList {
             .filter_map(|(index, node)| {
                 let id = match u32::try_from(index) {
                     Ok(index) => NodeId(index),
-                    Err(_) => return Some(Err(UiError::CapacityExceeded)),
+                    Err(_) => return Some(Err(ViewError::CapacityExceeded)),
                 };
                 let kind = match node.kind() {
                     FragmentKind::Text(source) => DisplayItemKind::Text(source),
@@ -100,31 +100,33 @@ impl DisplayList {
                     semantics: node.semantics(),
                 }))
             })
-            .collect::<Result<Vec<_>, UiError>>()?;
+            .collect::<Result<Vec<_>, ViewError>>()?;
         Ok(Self { items })
     }
 
     pub fn resolve_interaction_styles(
         &self,
-        semantics: &UiSemanticFragment,
-        styles: &UiStyleTable,
+        semantics: &ViewSemanticFragment,
+        styles: &ViewStyleTable,
         interaction: &InteractionState,
-    ) -> Result<ResolvedDisplayList, UiError> {
+    ) -> Result<ResolvedDisplayList, ViewError> {
         self.items
             .iter()
             .copied()
             .map(|item| {
                 let semantic = match item.semantics() {
-                    Some(id) => Some(semantics.get(id).ok_or(UiError::UnknownDisplaySemantic {
-                        node: item.node(),
-                        semantic: id,
-                    })?),
+                    Some(id) => {
+                        Some(semantics.get(id).ok_or(ViewError::UnknownDisplaySemantic {
+                            node: item.node(),
+                            semantic: id,
+                        })?)
+                    }
                     None => None,
                 };
                 let resolved = styles.resolve(
                     item.style(),
-                    semantic.map(crate::UiSemanticNode::target),
-                    semantic.is_none_or(crate::UiSemanticNode::enabled),
+                    semantic.map(crate::ViewSemanticNode::target),
+                    semantic.is_none_or(crate::ViewSemanticNode::enabled),
                     interaction,
                 )?;
                 Ok(ResolvedDisplayItem {
@@ -132,7 +134,7 @@ impl DisplayList {
                     style: resolved,
                 })
             })
-            .collect::<Result<Vec<_>, UiError>>()
+            .collect::<Result<Vec<_>, ViewError>>()
             .map(|items| ResolvedDisplayList { items })
     }
 
@@ -150,7 +152,7 @@ impl ResolvedDisplayItem {
         self.item
     }
 
-    pub const fn style(&self) -> &ResolvedUiStyle {
+    pub const fn style(&self) -> &ResolvedViewStyle {
         &self.style
     }
 }

@@ -169,7 +169,7 @@ pub capture @capture.face_camera: Camera {
 }
 ```
 
-Starting capture returns a `Need` and therefore must define a pending UI in a player-visible `flow` or `view`.
+Starting capture returns a `Need` and therefore must define a pending View in a player-visible `flow` or `view`.
 
 ```arcw
 let mic =
@@ -228,14 +228,14 @@ Camera frames are treated as live external textures/frames. They may be:
 - copied into an Arcweft-owned texture,
 - converted to RGBA/I420/NV12 by a capture preprocessing task,
 - passed to an Activity through a frame lease,
-- exposed to UI as `CameraPreviewView`,
+- exposed to View as `CameraPreviewView`,
 - used as a shader resource only if the capability permits it.
 
 ```arcw
 CameraPreview(@capture.face_camera)
     .fit(cover)
     .clip(.rounded_rect(radius = 16))
-    .agent_target(@ui.camera_preview)
+    .agent_target(@view.camera_preview)
 ```
 
 For zero-copy or borrowed frame paths, lifetimes follow the existing borrow rules: `VideoFrameRef<'frame>` cannot cross `await`, `yield`, or `thread` boundaries. If a frame must outlive the callback/frame scope, it must become an owned frame handle.

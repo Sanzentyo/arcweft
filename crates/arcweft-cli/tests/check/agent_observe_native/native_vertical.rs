@@ -956,7 +956,7 @@ fn agent_observe_native_textbox_capture_wraps_long_horizontal_lines() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [font "Segoe UI"]AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[/font][p]
+    alice: [font "Segoe View"]AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[/font][p]
 }
 "#,
     );

@@ -12,7 +12,7 @@
 | Oversized path geometry | Structured diagnostic | `TooManyPathCommands`, `TooManyPathEdges` | Fixed shader uniform budget. |
 | `clip-path: url(...)` | Typed unsupported diagnostic | `ViewClipPath::Url`, `UrlClipResourceUnsupported` | Reusable vector clip resources are not in this cut. |
 | External URL mask image | Implemented, unchanged | `ViewMaskImage::Url`, `ViewMaskTextureProvider` | Resource acquisition remains outside planning. |
-| Gradient mask image, retained UI | Implemented subset | `ViewMaskImage::Gradient`, WGSL generated coverage | Linear/radial/conic retained types. |
+| Gradient mask image, retained View | Implemented subset | `ViewMaskImage::Gradient`, WGSL generated coverage | Linear/radial/conic retained types. |
 | Gradient mask image, CSS/Takumi | Linear implemented, radial/conic diagnostic | `lowering.rs` overlay | Non-repeating linear only in adapter cut. |
 | Gradient color stops | Implemented subset | `ViewMaskGradientPlan` | 2..=8 stops, deterministic coverage interpolation. |
 | Alpha mask mode | Implemented | texture and gradient mask tests | `coverage = a`. |

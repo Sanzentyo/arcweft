@@ -67,4 +67,4 @@ git diff --check
 
 ## Follow-up
 
-Seq06.11b should consume the contract in `docs/design/seq-06.11b-frame-paint-contract.md` and the existing request `docs/reviews/requests/2026-06-30-seq-06.11b-ui-scene-compositor-player-path-integration-package.md`.
+Seq06.11b should consume the contract in `docs/design/seq-06.11b-frame-paint-contract.md` and the existing request `docs/reviews/requests/2026-06-30-seq-06.11b-view-scene-compositor-player-path-integration-package.md`.

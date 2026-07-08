@@ -24,7 +24,7 @@ owns only browser `EditContext` object identity and DOM event listeners.
 
 `PreparedFrame::focused_text_input_target()` still returns `None` in the inspected
 main.  Therefore this overlay cannot claim real browser IME acceptance until the
-renderer/UI layer publishes real focused `PreparedTextInputTarget` snapshots for
+renderer/View layer publishes real focused `PreparedTextInputTarget` snapshots for
 Arcweft `TextField`, `TextArea`, and `SecureField` controls.
 
 The bridge deliberately does not fabricate a focused target, does not revive

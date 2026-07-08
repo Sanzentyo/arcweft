@@ -6,7 +6,7 @@ Date: 2026-06-29
 
 This package is designed against the latest inspected main-line state after
 seq06.9a and seq06.9b, specifically the commit whose message is `Apply seq06.9b
-wgpu UI compositor effects` (`21476c5843845eed29e0376efb9aa4930c6abf02`).
+wgpu View compositor effects` (`21476c5843845eed29e0376efb9aa4930c6abf02`).
 
 ## Implemented overlay
 

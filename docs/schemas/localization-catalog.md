@@ -20,7 +20,7 @@ key,locale,speaker,source_text,target_text,status,source_hash,voice,context,note
 | `status` | `missing`, `draft`, `translated`, `reviewed`, `stale` |
 | `source_hash` | source hash used to detect stale translations |
 | `voice` | optional locale-specific voice key |
-| `context` | flow, choice, UI view, or other context ID |
+| `context` | flow, choice, View, or other context ID |
 | `notes` | translator/reviewer notes |
 
 ## `.arcwloc` schema

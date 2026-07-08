@@ -104,7 +104,7 @@ pub struct Action {
 }
 
 /// Target family for semantic actions. This is intentionally not named
-/// `UiEvent`; UI, `TextBox`, Activity, and runtime handlers share the same data.
+/// `ViewEvent`; View, `TextBox`, Activity, and runtime handlers share the same data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ActionTarget {
     Runtime,

@@ -46,8 +46,9 @@ use arcweft_bundle::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
     resource_codec::{
-        UiInputResource, UiTextResource, UiThemeResource, ViewProgramResource, ViewStyleResource,
-        ui::{
+        ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource,
+        ViewThemeResource,
+        view::{
             RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax as ProductStyleSyntax, SystemColor, ViewElementKind, ViewElementState,
             ViewEnvironmentPredicate, ViewInteractionState, ViewStyleDeclaration, ViewStyleRule,
@@ -64,8 +65,8 @@ use arcweft_core::{
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::ast::{
     items::{
-        StyleItem, UiStyleAssignOpDecl, UiStyleEnvironmentPredicateDecl, UiStyleSelectorPartDecl,
-        UiStyleValueDecl,
+        StyleItem, ViewStyleAssignOpDecl, ViewStyleEnvironmentPredicateDecl,
+        ViewStyleSelectorPartDecl, ViewStyleValueDecl,
     },
     style::StyleSyntax,
 };
@@ -318,12 +319,12 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
     let mut image_objects = bundle_image_objects(&image_declarations)?;
-    let ui_sidecars = collect_bundle_ui_sidecars(selection.path())?.merged(
-        collect_bundle_dsl_ui_resources(&compiled.hir, &image_objects)?,
+    let view_sidecars = collect_bundle_view_sidecars(selection.path())?.merged(
+        collect_bundle_dsl_view_resources(&compiled.hir, &image_objects)?,
     );
-    image_objects.extend(ui_sidecars.image_objects.iter().cloned());
+    image_objects.extend(view_sidecars.image_objects.iter().cloned());
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
-    let bundle = attach_bundle_ui_sidecars(
+    let bundle = attach_bundle_view_sidecars(
         ArcweftBundle::new(
             bundle_manifest(
                 selection,
@@ -344,7 +345,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
         .with_virtual_files(virtual_files)
         .with_image_assets(image_assets)
         .with_image_objects(image_objects),
-        ui_sidecars,
+        view_sidecars,
     );
     Ok(CompiledBundleArtifact {
         bundle,
@@ -359,21 +360,21 @@ fn emit_bundle_verification_diagnostics(selection: &SourceSelection, report: &Ve
 }
 
 #[derive(Clone, Debug, Default)]
-struct BundleUiSidecars {
+struct BundleViewSidecars {
     program: Option<ViewProgramResource>,
     style: Option<ViewStyleResource>,
-    text: Option<UiTextResource>,
-    input: Option<UiInputResource>,
-    theme: Option<UiThemeResource>,
+    text: Option<ViewTextResource>,
+    input: Option<ViewInputResource>,
+    theme: Option<ViewThemeResource>,
     image_objects: Vec<BundleImageObject>,
 }
 
-impl BundleUiSidecars {
+impl BundleViewSidecars {
     fn merged(mut self, other: Self) -> Self {
-        self.program = merge_optional(self.program, other.program, merge_ui_programs);
-        self.text = merge_optional(self.text, other.text, merge_ui_text);
-        self.input = merge_optional(self.input, other.input, merge_ui_input);
-        self.style = merge_optional(self.style, other.style, merge_ui_style);
+        self.program = merge_optional(self.program, other.program, merge_view_programs);
+        self.text = merge_optional(self.text, other.text, merge_view_text);
+        self.input = merge_optional(self.input, other.input, merge_view_input);
+        self.style = merge_optional(self.style, other.style, merge_view_style);
         self.theme = self.theme.or(other.theme);
         self.image_objects.extend(other.image_objects);
         self
@@ -393,7 +394,7 @@ fn merge_optional<T>(
     }
 }
 
-fn merge_ui_programs(
+fn merge_view_programs(
     mut left: ViewProgramResource,
     right: ViewProgramResource,
 ) -> ViewProgramResource {
@@ -414,7 +415,7 @@ fn merge_ui_programs(
     left
 }
 
-fn merge_ui_text(mut left: UiTextResource, right: UiTextResource) -> UiTextResource {
+fn merge_view_text(mut left: ViewTextResource, right: ViewTextResource) -> ViewTextResource {
     left.sources.extend(right.sources);
     left.display_frame_refs.extend(right.display_frame_refs);
     left.source_ranges.extend(right.source_ranges);
@@ -424,13 +425,13 @@ fn merge_ui_text(mut left: UiTextResource, right: UiTextResource) -> UiTextResou
     left
 }
 
-fn merge_ui_input(mut left: UiInputResource, right: UiInputResource) -> UiInputResource {
+fn merge_view_input(mut left: ViewInputResource, right: ViewInputResource) -> ViewInputResource {
     left.options.extend(right.options);
     left.adapter_requirements.extend(right.adapter_requirements);
     left
 }
 
-fn merge_ui_style(mut left: ViewStyleResource, right: ViewStyleResource) -> ViewStyleResource {
+fn merge_view_style(mut left: ViewStyleResource, right: ViewStyleResource) -> ViewStyleResource {
     left.arcweft_sources.extend(right.arcweft_sources);
     left.css_sources.extend(right.css_sources);
     left.tokens.extend(right.tokens);
@@ -445,9 +446,9 @@ fn merge_ui_style(mut left: ViewStyleResource, right: ViewStyleResource) -> View
     left
 }
 
-fn collect_bundle_ui_sidecars(source_path: &Path) -> Result<BundleUiSidecars, ExitCode> {
+fn collect_bundle_view_sidecars(source_path: &Path) -> Result<BundleViewSidecars, ExitCode> {
     let Some(source_dir) = source_path.parent() else {
-        return Ok(BundleUiSidecars::default());
+        return Ok(BundleViewSidecars::default());
     };
     let roots = [
         source_dir.join(".arcweft").join("content"),
@@ -457,15 +458,15 @@ fn collect_bundle_ui_sidecars(source_path: &Path) -> Result<BundleUiSidecars, Ex
         ),
     ];
     let Some(root) = roots.iter().find(|candidate| candidate.exists()) else {
-        return Ok(BundleUiSidecars::default());
+        return Ok(BundleViewSidecars::default());
     };
 
-    Ok(BundleUiSidecars {
-        program: read_optional_json_sidecar(&root.join("ui.program.json"))?,
-        style: read_optional_json_sidecar(&root.join("ui.style.json"))?,
-        text: read_optional_json_sidecar(&root.join("ui.text.json"))?,
-        input: read_optional_json_sidecar(&root.join("ui.input.json"))?,
-        theme: read_optional_json_sidecar(&root.join("ui.theme.json"))?,
+    Ok(BundleViewSidecars {
+        program: read_optional_json_sidecar(&root.join("view.program.json"))?,
+        style: read_optional_json_sidecar(&root.join("view.style.json"))?,
+        text: read_optional_json_sidecar(&root.join("view.text.json"))?,
+        input: read_optional_json_sidecar(&root.join("view.input.json"))?,
+        theme: read_optional_json_sidecar(&root.join("view.theme.json"))?,
         image_objects: Vec::new(),
     })
 }
@@ -480,24 +481,24 @@ where
 
     let bytes = fs::read(path).map_err(|error| {
         eprintln!(
-            "error: failed to read UI resource sidecar {}: {error}",
+            "error: failed to read View resource sidecar {}: {error}",
             path.display()
         );
         ExitCode::FAILURE
     })?;
     serde_json::from_slice(&bytes).map(Some).map_err(|error| {
         eprintln!(
-            "error: failed to decode UI resource sidecar {}: {error}",
+            "error: failed to decode View resource sidecar {}: {error}",
             path.display()
         );
         ExitCode::FAILURE
     })
 }
 
-fn collect_bundle_dsl_ui_resources(
+fn collect_bundle_dsl_view_resources(
     module: &HirModule,
     image_objects: &[BundleImageObject],
-) -> Result<BundleUiSidecars, ExitCode> {
+) -> Result<BundleViewSidecars, ExitCode> {
     let styles = module
         .declarations()
         .iter()
@@ -520,16 +521,16 @@ fn collect_bundle_dsl_ui_resources(
             _ => None,
         })
         .collect::<Vec<_>>();
-    let style = dsl_ui_style_resource(&styles)?;
+    let style = dsl_view_style_resource(&styles)?;
     let view_sidecars = view_sidecars(&views, style.as_ref(), image_objects).map_err(|error| {
         eprintln!("{error}");
         ExitCode::FAILURE
     })?;
-    let mut sidecars = BundleUiSidecars {
+    let mut sidecars = BundleViewSidecars {
         style,
-        ..BundleUiSidecars::default()
+        ..BundleViewSidecars::default()
     };
-    sidecars = sidecars.merged(BundleUiSidecars {
+    sidecars = sidecars.merged(BundleViewSidecars {
         program: view_sidecars.program,
         style: view_sidecars.style,
         text: view_sidecars.text,
@@ -541,7 +542,7 @@ fn collect_bundle_dsl_ui_resources(
     Ok(sidecars)
 }
 
-fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<ViewStyleResource>, ExitCode> {
+fn dsl_view_style_resource(styles: &[&StyleItem]) -> Result<Option<ViewStyleResource>, ExitCode> {
     let mut style_program_id = None;
     let mut arcweft_sources = Vec::new();
     let mut css_sources = Vec::new();
@@ -559,16 +560,16 @@ fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<ViewStyleResour
             }
         }
         for token in style.tokens() {
-            tokens.push(dsl_ui_style_token(token)?);
+            tokens.push(dsl_view_style_token(token)?);
         }
         for rule in style.rules() {
-            rules.push(dsl_ui_style_rule(rule)?);
+            rules.push(dsl_view_style_rule(rule)?);
         }
         environment_predicates.extend(
             style
                 .environment_predicates()
                 .iter()
-                .map(dsl_ui_style_environment_predicate),
+                .map(dsl_view_style_environment_predicate),
         );
     }
     let Some(style_program_id) = style_program_id else {
@@ -737,77 +738,77 @@ fn dsl_style_source_identity(style: &StyleItem, source: &str) -> StyleSourceIden
     }
 }
 
-fn dsl_ui_style_token(
-    token: &arcweft_lang_syntax::ast::items::UiStyleTokenDecl,
+fn dsl_view_style_token(
+    token: &arcweft_lang_syntax::ast::items::ViewStyleTokenDecl,
 ) -> Result<ViewStyleToken, ExitCode> {
     Ok(ViewStyleToken {
         public_id: token.public_id().to_owned(),
-        value: dsl_ui_style_value(token.value())?,
+        value: dsl_view_style_value(token.value())?,
     })
 }
 
-fn dsl_ui_style_rule(
-    rule: &arcweft_lang_syntax::ast::items::UiStyleRuleDecl,
+fn dsl_view_style_rule(
+    rule: &arcweft_lang_syntax::ast::items::ViewStyleRuleDecl,
 ) -> Result<ViewStyleRule, ExitCode> {
     let parts = rule
         .selector()
         .iter()
-        .map(dsl_ui_style_selector_part)
+        .map(dsl_view_style_selector_part)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ViewStyleRule {
         selector: ViewStyleSelector { parts },
         declarations: rule
             .declarations()
             .iter()
-            .map(dsl_ui_style_declaration)
+            .map(dsl_view_style_declaration)
             .collect::<Result<Vec<_>, _>>()?,
         source: None,
     })
 }
 
-fn dsl_ui_style_selector_part(
-    part: &UiStyleSelectorPartDecl,
+fn dsl_view_style_selector_part(
+    part: &ViewStyleSelectorPartDecl,
 ) -> Result<ViewStyleSelectorPart, ExitCode> {
     Ok(match part {
-        UiStyleSelectorPartDecl::Element(value) => {
-            ViewStyleSelectorPart::Element(dsl_ui_element_kind(value)?)
+        ViewStyleSelectorPartDecl::Element(value) => {
+            ViewStyleSelectorPart::Element(dsl_view_element_kind(value)?)
         }
-        UiStyleSelectorPartDecl::Part(value) => ViewStyleSelectorPart::Part(value.clone()),
-        UiStyleSelectorPartDecl::State(value) => {
-            ViewStyleSelectorPart::State(dsl_ui_element_state(value)?)
+        ViewStyleSelectorPartDecl::Part(value) => ViewStyleSelectorPart::Part(value.clone()),
+        ViewStyleSelectorPartDecl::State(value) => {
+            ViewStyleSelectorPart::State(dsl_view_element_state(value)?)
         }
-        UiStyleSelectorPartDecl::Interaction(value) => {
-            ViewStyleSelectorPart::Interaction(dsl_ui_interaction_state(value)?)
+        ViewStyleSelectorPartDecl::Interaction(value) => {
+            ViewStyleSelectorPart::Interaction(dsl_view_interaction_state(value)?)
         }
-        UiStyleSelectorPartDecl::Descendant => ViewStyleSelectorPart::Descendant,
-        UiStyleSelectorPartDecl::Child => ViewStyleSelectorPart::Child,
+        ViewStyleSelectorPartDecl::Descendant => ViewStyleSelectorPart::Descendant,
+        ViewStyleSelectorPartDecl::Child => ViewStyleSelectorPart::Child,
     })
 }
 
-fn dsl_ui_style_declaration(
-    declaration: &arcweft_lang_syntax::ast::items::UiStyleDeclarationDecl,
+fn dsl_view_style_declaration(
+    declaration: &arcweft_lang_syntax::ast::items::ViewStyleDeclarationDecl,
 ) -> Result<ViewStyleDeclaration, ExitCode> {
     Ok(ViewStyleDeclaration {
         property: declaration.property().to_owned(),
-        value: dsl_ui_style_value(declaration.value())?,
-        op: dsl_ui_style_assign_op(declaration.op()),
+        value: dsl_view_style_value(declaration.value())?,
+        op: dsl_view_style_assign_op(declaration.op()),
     })
 }
 
-fn dsl_ui_style_assign_op(op: UiStyleAssignOpDecl) -> StyleAssignOp {
+fn dsl_view_style_assign_op(op: ViewStyleAssignOpDecl) -> StyleAssignOp {
     match op {
-        UiStyleAssignOpDecl::Replace => StyleAssignOp::Replace,
-        UiStyleAssignOpDecl::Append => StyleAssignOp::Append,
+        ViewStyleAssignOpDecl::Replace => StyleAssignOp::Replace,
+        ViewStyleAssignOpDecl::Append => StyleAssignOp::Append,
     }
 }
 
-fn dsl_ui_style_value(value: &UiStyleValueDecl) -> Result<ViewStyleValue, ExitCode> {
+fn dsl_view_style_value(value: &ViewStyleValueDecl) -> Result<ViewStyleValue, ExitCode> {
     Ok(match value {
-        UiStyleValueDecl::Token(value) => ViewStyleValue::Token(value.clone()),
-        UiStyleValueDecl::SystemColor(value) => {
-            ViewStyleValue::SystemColor(dsl_ui_system_color(value)?)
+        ViewStyleValueDecl::Token(value) => ViewStyleValue::Token(value.clone()),
+        ViewStyleValueDecl::SystemColor(value) => {
+            ViewStyleValue::SystemColor(dsl_view_system_color(value)?)
         }
-        UiStyleValueDecl::Rgba {
+        ViewStyleValueDecl::Rgba {
             red,
             green,
             blue,
@@ -818,29 +819,29 @@ fn dsl_ui_style_value(value: &UiStyleValueDecl) -> Result<ViewStyleValue, ExitCo
             blue: *blue,
             alpha: *alpha,
         }),
-        UiStyleValueDecl::Milli(value) => ViewStyleValue::Milli(*value),
-        UiStyleValueDecl::Text(value) => ViewStyleValue::Text(value.clone()),
-        UiStyleValueDecl::List(values) => ViewStyleValue::List(
+        ViewStyleValueDecl::Milli(value) => ViewStyleValue::Milli(*value),
+        ViewStyleValueDecl::Text(value) => ViewStyleValue::Text(value.clone()),
+        ViewStyleValueDecl::List(values) => ViewStyleValue::List(
             values
                 .iter()
-                .map(dsl_ui_style_value)
+                .map(dsl_view_style_value)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        UiStyleValueDecl::Resource(value) => ViewStyleValue::Resource(value.clone()),
+        ViewStyleValueDecl::Resource(value) => ViewStyleValue::Resource(value.clone()),
     })
 }
 
-fn dsl_ui_style_environment_predicate(
-    predicate: &UiStyleEnvironmentPredicateDecl,
+fn dsl_view_style_environment_predicate(
+    predicate: &ViewStyleEnvironmentPredicateDecl,
 ) -> ViewEnvironmentPredicate {
     match predicate {
-        UiStyleEnvironmentPredicateDecl::TextScaleAtLeastMilli(value) => {
+        ViewStyleEnvironmentPredicateDecl::TextScaleAtLeastMilli(value) => {
             ViewEnvironmentPredicate::TextScaleAtLeastMilli(*value)
         }
     }
 }
 
-fn dsl_ui_element_kind(value: &str) -> Result<ViewElementKind, ExitCode> {
+fn dsl_view_element_kind(value: &str) -> Result<ViewElementKind, ExitCode> {
     match value {
         "panel" => Ok(ViewElementKind::Panel),
         "box" => Ok(ViewElementKind::Box),
@@ -853,13 +854,13 @@ fn dsl_ui_element_kind(value: &str) -> Result<ViewElementKind, ExitCode> {
         "text_area" => Ok(ViewElementKind::TextArea),
         "secure_field" => Ok(ViewElementKind::SecureField),
         other => {
-            eprintln!("error: unknown UI style element selector `{other}`");
+            eprintln!("error: unknown View style element selector `{other}`");
             Err(ExitCode::FAILURE)
         }
     }
 }
 
-fn dsl_ui_element_state(value: &str) -> Result<ViewElementState, ExitCode> {
+fn dsl_view_element_state(value: &str) -> Result<ViewElementState, ExitCode> {
     match value {
         "focus_visible" => Ok(ViewElementState::FocusVisible),
         "read_only" => Ok(ViewElementState::ReadOnly),
@@ -867,25 +868,25 @@ fn dsl_ui_element_state(value: &str) -> Result<ViewElementState, ExitCode> {
         "composing" => Ok(ViewElementState::Composing),
         "placeholder_shown" => Ok(ViewElementState::PlaceholderShown),
         other => {
-            eprintln!("error: unknown UI style element state `{other}`");
+            eprintln!("error: unknown View style element state `{other}`");
             Err(ExitCode::FAILURE)
         }
     }
 }
 
-fn dsl_ui_interaction_state(value: &str) -> Result<ViewInteractionState, ExitCode> {
+fn dsl_view_interaction_state(value: &str) -> Result<ViewInteractionState, ExitCode> {
     match value {
         "hover" => Ok(ViewInteractionState::Hover),
         "active" => Ok(ViewInteractionState::Active),
         "disabled" => Ok(ViewInteractionState::Disabled),
         other => {
-            eprintln!("error: unknown UI style interaction state `{other}`");
+            eprintln!("error: unknown View style interaction state `{other}`");
             Err(ExitCode::FAILURE)
         }
     }
 }
 
-fn dsl_ui_system_color(value: &str) -> Result<SystemColor, ExitCode> {
+fn dsl_view_system_color(value: &str) -> Result<SystemColor, ExitCode> {
     match value {
         "canvas" => Ok(SystemColor::Canvas),
         "canvas_text" => Ok(SystemColor::CanvasText),
@@ -903,30 +904,30 @@ fn dsl_ui_system_color(value: &str) -> Result<SystemColor, ExitCode> {
         "warning" => Ok(SystemColor::Warning),
         "success" => Ok(SystemColor::Success),
         other => {
-            eprintln!("error: unknown UI style system color `{other}`");
+            eprintln!("error: unknown View style system color `{other}`");
             Err(ExitCode::FAILURE)
         }
     }
 }
 
-fn attach_bundle_ui_sidecars(
+fn attach_bundle_view_sidecars(
     mut bundle: ArcweftBundle,
-    sidecars: BundleUiSidecars,
+    sidecars: BundleViewSidecars,
 ) -> ArcweftBundle {
     if let Some(resource) = sidecars.program {
-        bundle = bundle.with_ui_program(resource);
+        bundle = bundle.with_view_program(resource);
     }
     if let Some(resource) = sidecars.style {
-        bundle = bundle.with_ui_style(resource);
+        bundle = bundle.with_view_style(resource);
     }
     if let Some(resource) = sidecars.text {
-        bundle = bundle.with_ui_text(resource);
+        bundle = bundle.with_view_text(resource);
     }
     if let Some(resource) = sidecars.input {
-        bundle = bundle.with_ui_input(resource);
+        bundle = bundle.with_view_input(resource);
     }
     if let Some(resource) = sidecars.theme {
-        bundle = bundle.with_ui_theme(resource);
+        bundle = bundle.with_view_theme(resource);
     }
     bundle
 }

@@ -387,7 +387,7 @@ mod tests {
     fn focus_lease_binds_text_sessions_to_current_generation() {
         let mut lease = FocusLease::default();
         lease.set_owner(FocusOwner::new(
-            layer("ui"),
+            layer("view"),
             target("field.name"),
             super::FocusScopeId(1),
             FocusGeneration(3),

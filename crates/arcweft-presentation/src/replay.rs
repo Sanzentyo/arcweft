@@ -186,7 +186,7 @@ fn hash_layer_content(hasher: &mut StableHasher, content: &LayerContent) {
             hasher.u32(2);
             hasher.public_id(id);
         }
-        LayerContent::NativeUi(id) => {
+        LayerContent::NativeView(id) => {
             hasher.u32(3);
             hasher.public_id(id);
         }
@@ -460,8 +460,8 @@ const fn layer_kind_code(kind: LayerKind) -> u32 {
         LayerKind::Character => 3,
         LayerKind::Effects => 4,
         LayerKind::TextBox => 5,
-        LayerKind::GameUi => 6,
-        LayerKind::HtmlUi => 7,
+        LayerKind::GameView => 6,
+        LayerKind::HtmlView => 7,
         LayerKind::Activity => 8,
         LayerKind::Modal => 9,
         LayerKind::Overlay => 10,
@@ -479,8 +479,8 @@ const fn render_phase_code(phase: RenderPhase) -> u32 {
         RenderPhase::Characters => 2,
         RenderPhase::Effects => 3,
         RenderPhase::Dialogue => 4,
-        RenderPhase::GameUi => 5,
-        RenderPhase::HtmlUi => 6,
+        RenderPhase::GameView => 5,
+        RenderPhase::HtmlView => 6,
         RenderPhase::Modal => 7,
         RenderPhase::Debug => 8,
         RenderPhase::AgentOverlay => 9,

@@ -101,7 +101,7 @@ manifests, 0 errors, 88 warnings. No changed production file crosses the
 1200-LOC warning threshold. New dependency direction is presentation/tooling
 facing: `arcweft-character` is Sans I/O; `arcweft-character-psd` depends on it
 plus `psd`/`png`; project-loader/CLI/LSP/sema/presentation consume
-`arcweft-character`; `arcweft-character-ui` consumes character and presentation/UI.
+`arcweft-character`; `arcweft-character-view` consumes character and presentation/View.
 
 Changed Rust file measurements:
 
@@ -114,7 +114,7 @@ Changed Rust file measurements:
 | `crates/arcweft-character/src/manifest.rs` | arcweft-character | 26684 | 792 | production |
 | `crates/arcweft-character-psd/src/lib.rs` | arcweft-character-psd | 24111 | 696 | facade |
 | `crates/arcweft-character-psd/tests/zundamon_fixture.rs` | arcweft-character-psd | 2889 | 85 | integration test |
-| `crates/arcweft-character-ui/src/lib.rs` | arcweft-character-ui | 16865 | 465 | facade |
+| `crates/arcweft-character-view/src/lib.rs` | arcweft-character-view | 16865 | 465 | facade |
 | `crates/arcweft-cli/src/app/commands.rs` | arcweft-cli | 3224 | 107 | production |
 | `crates/arcweft-cli/src/app/import.rs` | arcweft-cli | 6317 | 190 | production |
 | `crates/arcweft-cli/src/app/project.rs` | arcweft-cli | 16447 | 438 | production |

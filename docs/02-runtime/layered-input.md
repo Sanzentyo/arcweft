@@ -1,6 +1,6 @@
 # Layered Input
 
-Input は描画と同じ Layer Tree を基準に routing する。これにより、見えている UI、modal、HTML/Servo/DOM panel、Activity、Debug overlay、Agent 操作を同じ規則で扱える。
+Input は描画と同じ Layer Tree を基準に routing する。これにより、見えている View、modal、HTML/Servo/DOM panel、Activity、Debug overlay、Agent 操作を同じ規則で扱える。
 
 関連:
 
@@ -18,7 +18,7 @@ Input は描画と同じ Layer Tree を基準に routing する。これによ�
 RawInputEvent
   ↓
 InputRouter
-  ↓ uses LayerTree + UiTree + HitRegions
+  ↓ uses LayerTree + ViewTree + HitRegions
 RoutedInputEvent
   ↓
 Engine::step
@@ -140,12 +140,12 @@ pub enum HitTestPolicy {
     BBox,
     Polygon,
     Mask,
-    UiLayout,
+    ViewLayout,
     Custom(EntityId),
 }
 ```
 
-`Mask` は object-id pass または UI hit mask を使う。`Custom` は Activity や complex UI が提供する hit test 関数を使う。
+`Mask` は object-id pass または View hit mask を使う。`Custom` は Activity や complex View が提供する hit test 関数を使う。
 
 ## Routing order
 
@@ -177,7 +177,7 @@ pub struct RoutedInputEvent {
     pub phase: InputPhase,
     pub target_layer: Option<LayerId>,
     pub target_entity: Option<EntityId>,
-    pub target_ui_node: Option<UiNodeId>,
+    pub target_view_node: Option<ViewNodeId>,
     pub event: InputEventKind,
     pub local_position: Option<Vec2>,
     pub route: Vec<LayerId>,
@@ -217,7 +217,7 @@ pub enum InputDisposition {
 layer @layer.choices: Choice {
     z = 200
     input = hit_test
-    hit_test = ui_layout
+    hit_test = view_layout
 }
 
 layer @layer.modal.settings: Modal {
@@ -227,12 +227,12 @@ layer @layer.modal.settings: Modal {
 }
 ```
 
-UI view:
+View:
 
 ```arcw
 Button("閉じる")
     .layer(@layer.modal.settings)
-    .agent_target(@ui.settings.close)
+    .agent_target(@view.settings.close)
     .on_click {
         action.invoke(@action.settings.close)
     }
@@ -256,7 +256,7 @@ activity @activity.fps_arena FpsArena {
 pub struct FocusState {
     pub focused_layer: Option<LayerId>,
     pub focused_entity: Option<EntityId>,
-    pub focused_ui_node: Option<UiNodeId>,
+    pub focused_view_node: Option<ViewNodeId>,
     pub focus_scope: Option<FocusScopeId>,
 }
 ```
@@ -284,7 +284,7 @@ pub enum KeyboardPolicy {
 }
 ```
 
-TextInput/IME は `TextInput` role の UI node が focus している場合だけ送る。Agent からの `TypeText` も同じ経路を使う。
+TextInput/IME は `TextInput` role の View node が focus している場合だけ送る。Agent からの `TypeText` も同じ経路を使う。
 
 ## Semantic action
 
@@ -362,7 +362,7 @@ HTML layer は実 backend の hit test を使える場合は使う。
 
 ```text
 Native Servo:
-  Servo bridge / UI metadata / panel bounds
+  Servo bridge / View metadata / panel bounds
 
 Web DOM:
   DOM getBoundingClientRect / data-arcweft-entity / ARIA role
@@ -374,7 +374,7 @@ Headless approximate:
 Observation には source を入れる。
 
 ```rust
-bbox_source = UiLayoutExact | UiBridgeApprox | BackendUnavailable
+bbox_source = ViewLayoutExact | ViewBridgeApprox | BackendUnavailable
 ```
 
 ## Test
@@ -382,12 +382,12 @@ bbox_source = UiLayoutExact | UiBridgeApprox | BackendUnavailable
 ```arcw
 test @test.modal_blocks_choices scenario {
     goto @flow.opening
-    ui.open(@ui.settings)
+    view.open(@view.settings)
 
     input.click(@choice.opening.listen)
     expect.no_event(GameEvent::ChoiceSelected)
 
-    input.click(@ui.settings.close)
+    input.click(@view.settings.close)
     input.click(@choice.opening.listen)
     expect.event(GameEvent::ChoiceSelected, id=@choice.opening.listen)
 }
@@ -431,7 +431,7 @@ AfterInputRoute
 
 ```arcw
 hook @hook.modal_block_check
-on @layer.ui.modal
+on @layer.view.modal
 phase AfterInputRoute
 when input.kind == .PointerDown
 check on event
@@ -455,7 +455,7 @@ phase InputTarget
 check on input PointerMove
 when input.pointer.hovered
 {
-    event.emit(UiCommand::SetHover, target = @choice.opening.listen, value = true)
+    event.emit(ViewCommand::SetHover, target = @choice.opening.listen, value = true)
 }
 ```
 
@@ -480,7 +480,7 @@ RawInputEvent
 
 ```arcw
 hook @hook.choice.hit_trace
-on @layer.ui.choices
+on @layer.view.choices
 phase InputHitTest
 check on input PointerMove
 when object.entity == @choice.opening.listen
@@ -500,7 +500,7 @@ Layer は hook 対象である。描画・入力・layout・Agent 観測の各 p
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
-    hit_test = ui_layout
+    hit_test = view_layout
 }
 
 hook @hook.layer.choices.pointer_enter
@@ -588,11 +588,11 @@ USB/HID/Gamepad/Keyboard/Touch
   -> GameEvent / Activity input
 ```
 
-Virtual controller layers usually sit above scene/UI layers and consume touch input inside their hit regions before lower layers receive it.
+Virtual controller layers usually sit above scene/View layers and consume touch input inside their hit regions before lower layers receive it.
 
 ## Touch virtual controller input
 
-The touch virtual controller is a UI-owned input producer. It receives raw touch/pointer events through the layer tree, captures touches for its controls, and emits normalized `InputAction` and `InputAxis` events.
+The touch virtual controller is a View-owned input producer. It receives raw touch/pointer events through the layer tree, captures touches for its controls, and emits normalized `InputAction` and `InputAxis` events.
 
 ```text
 Touch event

@@ -12,8 +12,8 @@ use crate::resource_codec::{
     CompactDisplayCatalogSection, CompactSourceMapSection,
 };
 use crate::resource_codec::{
-    CompactUiInputResource, CompactUiTextResource, CompactUiThemeResource,
-    CompactViewProgramResource, CompactViewStyleResource,
+    CompactViewInputResource, CompactViewProgramResource, CompactViewStyleResource,
+    CompactViewTextResource, CompactViewThemeResource,
 };
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
@@ -101,11 +101,11 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     .into_iter()
     .chain(optional_asset_catalog_section(bundle)?)
     .chain(optional_audio_graph_section(bundle)?)
-    .chain(optional_ui_program_section(bundle)?)
-    .chain(optional_ui_style_section(bundle)?)
-    .chain(optional_ui_text_section(bundle)?)
-    .chain(optional_ui_input_section(bundle)?)
-    .chain(optional_ui_theme_section(bundle)?)
+    .chain(optional_view_program_section(bundle)?)
+    .chain(optional_view_style_section(bundle)?)
+    .chain(optional_view_text_section(bundle)?)
+    .chain(optional_view_input_section(bundle)?)
+    .chain(optional_view_theme_section(bundle)?)
     .collect::<Vec<_>>();
     encode_bundle(container_kind(bundle.bundle_kind), &manifest, sections).map_err(|error| {
         BundleCodecError::EncodeAwfb {
@@ -170,11 +170,11 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         |section| section.source,
     );
     let audio = optional_audio_graph(&view, external_sections)?.map(|section| section.graph);
-    let ui_program = optional_ui_program(&view, external_sections)?;
-    let ui_style = optional_ui_style(&view, external_sections)?;
-    let ui_text = optional_ui_text(&view, external_sections)?;
-    let ui_input = optional_ui_input(&view, external_sections)?;
-    let ui_theme = optional_ui_theme(&view, external_sections)?;
+    let view_program = optional_view_program(&view, external_sections)?;
+    let view_style = optional_view_style(&view, external_sections)?;
+    let view_text = optional_view_text(&view, external_sections)?;
+    let view_input = optional_view_input(&view, external_sections)?;
+    let view_theme = optional_view_theme(&view, external_sections)?;
 
     Ok(ArcweftBundle {
         schema_version: product_manifest.schema_version,
@@ -197,11 +197,11 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         character_packages: Vec::new(),
         audio,
         image_objects: display.image_objects,
-        ui_program,
-        ui_style,
-        ui_text,
-        ui_input,
-        ui_theme,
+        view_program,
+        view_style,
+        view_text,
+        view_input,
+        view_theme,
     })
 }
 
@@ -270,67 +270,67 @@ fn optional_audio_graph_section(
         .transpose()
 }
 
-fn optional_ui_program_section(
+fn optional_view_program_section(
     bundle: &ArcweftBundle,
 ) -> Result<Option<SectionInput>, BundleCodecError> {
-    optional_ui_section(
-        BundleSectionKind::UiProgram,
+    optional_view_section(
+        BundleSectionKind::ViewProgram,
         bundle
-            .ui_program
+            .view_program
             .as_ref()
             .map(CompactViewProgramResource::encode_canonical_section),
     )
 }
 
-fn optional_ui_style_section(
+fn optional_view_style_section(
     bundle: &ArcweftBundle,
 ) -> Result<Option<SectionInput>, BundleCodecError> {
-    optional_ui_section(
-        BundleSectionKind::UiStyle,
+    optional_view_section(
+        BundleSectionKind::ViewStyle,
         bundle
-            .ui_style
+            .view_style
             .as_ref()
             .map(CompactViewStyleResource::encode_canonical_section),
     )
 }
 
-fn optional_ui_text_section(
+fn optional_view_text_section(
     bundle: &ArcweftBundle,
 ) -> Result<Option<SectionInput>, BundleCodecError> {
-    optional_ui_section(
-        BundleSectionKind::UiText,
+    optional_view_section(
+        BundleSectionKind::ViewText,
         bundle
-            .ui_text
+            .view_text
             .as_ref()
-            .map(CompactUiTextResource::encode_canonical_section),
+            .map(CompactViewTextResource::encode_canonical_section),
     )
 }
 
-fn optional_ui_input_section(
+fn optional_view_input_section(
     bundle: &ArcweftBundle,
 ) -> Result<Option<SectionInput>, BundleCodecError> {
-    optional_ui_section(
-        BundleSectionKind::UiInput,
+    optional_view_section(
+        BundleSectionKind::ViewInput,
         bundle
-            .ui_input
+            .view_input
             .as_ref()
-            .map(CompactUiInputResource::encode_canonical_section),
+            .map(CompactViewInputResource::encode_canonical_section),
     )
 }
 
-fn optional_ui_theme_section(
+fn optional_view_theme_section(
     bundle: &ArcweftBundle,
 ) -> Result<Option<SectionInput>, BundleCodecError> {
-    optional_ui_section(
-        BundleSectionKind::UiTheme,
+    optional_view_section(
+        BundleSectionKind::ViewTheme,
         bundle
-            .ui_theme
+            .view_theme
             .as_ref()
-            .map(CompactUiThemeResource::encode_canonical_section),
+            .map(CompactViewThemeResource::encode_canonical_section),
     )
 }
 
-fn optional_ui_section(
+fn optional_view_section(
     kind: BundleSectionKind,
     encode: Option<Result<Vec<u8>, crate::resource_codec::SectionCodecError>>,
 ) -> Result<Option<SectionInput>, BundleCodecError> {
@@ -400,63 +400,63 @@ fn optional_audio_graph(
     )
 }
 
-fn optional_ui_program(
+fn optional_view_program(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
 ) -> Result<Option<CompactViewProgramResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
-        BundleSectionKind::UiProgram,
+        BundleSectionKind::ViewProgram,
         CompactViewProgramResource::decode_canonical_section,
     )
 }
 
-fn optional_ui_style(
+fn optional_view_style(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
 ) -> Result<Option<CompactViewStyleResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
-        BundleSectionKind::UiStyle,
+        BundleSectionKind::ViewStyle,
         CompactViewStyleResource::decode_canonical_section,
     )
 }
 
-fn optional_ui_text(
+fn optional_view_text(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactUiTextResource>, BundleCodecError> {
+) -> Result<Option<CompactViewTextResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
-        BundleSectionKind::UiText,
-        CompactUiTextResource::decode_canonical_section,
+        BundleSectionKind::ViewText,
+        CompactViewTextResource::decode_canonical_section,
     )
 }
 
-fn optional_ui_input(
+fn optional_view_input(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactUiInputResource>, BundleCodecError> {
+) -> Result<Option<CompactViewInputResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
-        BundleSectionKind::UiInput,
-        CompactUiInputResource::decode_canonical_section,
+        BundleSectionKind::ViewInput,
+        CompactViewInputResource::decode_canonical_section,
     )
 }
 
-fn optional_ui_theme(
+fn optional_view_theme(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactUiThemeResource>, BundleCodecError> {
+) -> Result<Option<CompactViewThemeResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
-        BundleSectionKind::UiTheme,
-        CompactUiThemeResource::decode_canonical_section,
+        BundleSectionKind::ViewTheme,
+        CompactViewThemeResource::decode_canonical_section,
     )
 }
 

@@ -23,7 +23,7 @@ pub struct HitRecord {
 
 /// Frame-local hit records keyed by stable `InteractionTarget` and `LayerId`.
 ///
-/// The records are pure data. Backends may derive them from native UI layout,
+/// The records are pure data. Backends may derive them from native View layout,
 /// text glyph geometry, object-id passes, or Activity semantic regions, but
 /// input routing consumes only this normalized form.
 #[derive(Clone, Debug, Default, PartialEq)]

@@ -727,7 +727,7 @@ fn router_sends_pointer_events_to_active_capture_owner() {
 fn router_maps_viewport_pointer_into_layer_local_hit_bounds() {
     let root = layer_id("root");
     let translated = layer_id("translated");
-    let target = interaction_target("ui.translated.button");
+    let target = interaction_target("view.translated.button");
     let mut tree = LayerTree::new(LayerNode::new(
         root.clone(),
         LayerKind::Root,
@@ -736,8 +736,8 @@ fn router_maps_viewport_pointer_into_layer_local_hit_bounds() {
     tree.insert(
         LayerNode::new(
             translated.clone(),
-            LayerKind::GameUi,
-            layer_order(RenderPhase::GameUi, 0, 10),
+            LayerKind::GameView,
+            layer_order(RenderPhase::GameView, 0, 10),
         )
         .with_parent(root)
         .with_transform(LayerTransform::translation_milli(100_000, 50_000))
@@ -1220,7 +1220,7 @@ fn semantic_tree_rejects_hidden_disabled_and_undeclared_actions() {
     let mut semantics = SemanticTree::default();
     semantics.push(
         SemanticNode::new(
-            layer_id("ui"),
+            layer_id("view"),
             hidden_target.clone(),
             SemanticRole::Button,
             HitRect::new(0.0, 0.0, 20.0, 20.0),
@@ -1230,7 +1230,7 @@ fn semantic_tree_rejects_hidden_disabled_and_undeclared_actions() {
     );
     semantics.push(
         SemanticNode::new(
-            layer_id("ui"),
+            layer_id("view"),
             disabled_target.clone(),
             SemanticRole::Button,
             HitRect::new(0.0, 0.0, 20.0, 20.0),
@@ -1240,7 +1240,7 @@ fn semantic_tree_rejects_hidden_disabled_and_undeclared_actions() {
     );
     semantics.push(
         SemanticNode::new(
-            layer_id("ui"),
+            layer_id("view"),
             visible_target.clone(),
             SemanticRole::Button,
             HitRect::new(0.0, 0.0, 20.0, 20.0),

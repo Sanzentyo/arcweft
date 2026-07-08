@@ -1,10 +1,10 @@
-//! Lowering from presentation image objects into retained UI image fragments.
+//! Lowering from presentation image objects into retained View image fragments.
 
 use crate::{
     DisplayList, FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize,
-    LayoutTree, NodeKey, SemanticSpecId, StyleId, UiError, UiImagePresentationMetadata,
-    UiImageSource, UiImageSourceTable, UiLayerOutput, UiSemanticFragmentBuilder, UiSemanticNode,
-    ViewFragmentBuilder,
+    LayoutTree, NodeKey, SemanticSpecId, StyleId, ViewError, ViewFragmentBuilder,
+    ViewImagePresentationMetadata, ViewImageSource, ViewImageSourceTable, ViewLayerOutput,
+    ViewSemanticFragmentBuilder, ViewSemanticNode,
 };
 use arcweft_image::DecodedImage;
 use arcweft_presentation::hit::HitRect;
@@ -15,26 +15,26 @@ use std::collections::BTreeMap;
 
 /// A decoded image bound to a first-class presentation image object.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiImagePresentationInput {
+pub struct ViewImagePresentationInput {
     object: ImagePresentationObject,
     image: DecodedImage,
 }
 
-/// UI outputs for presentation image objects, sharing one image source table.
+/// View outputs for presentation image objects, sharing one image source table.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiImagePresentationFrame {
-    layers: Vec<(LayerId, UiLayerOutput)>,
-    images: UiImageSourceTable,
+pub struct ViewImagePresentationFrame {
+    layers: Vec<(LayerId, ViewLayerOutput)>,
+    images: ViewImageSourceTable,
 }
 
 #[derive(Default)]
 struct LayerAssembly {
     fragment: ViewFragmentBuilder,
     layouts: Vec<(crate::NodeId, LayoutBox)>,
-    semantics: UiSemanticFragmentBuilder,
+    semantics: ViewSemanticFragmentBuilder,
 }
 
-impl UiImagePresentationInput {
+impl ViewImagePresentationInput {
     pub const fn new(object: ImagePresentationObject, image: DecodedImage) -> Self {
         Self { object, image }
     }
@@ -52,11 +52,11 @@ impl UiImagePresentationInput {
     }
 }
 
-impl UiImagePresentationFrame {
+impl ViewImagePresentationFrame {
     pub fn from_inputs(
-        inputs: impl IntoIterator<Item = UiImagePresentationInput>,
-    ) -> Result<Self, UiError> {
-        let mut images = UiImageSourceTable::default();
+        inputs: impl IntoIterator<Item = ViewImagePresentationInput>,
+    ) -> Result<Self, ViewError> {
+        let mut images = ViewImageSourceTable::default();
         let mut layers = BTreeMap::<LayerId, LayerAssembly>::new();
         for (index, input) in inputs.into_iter().enumerate() {
             let (object, image) = input.into_parts();
@@ -64,19 +64,19 @@ impl UiImagePresentationFrame {
                 continue;
             }
             let image_id = images.insert(
-                UiImageSource::new(image)
+                ViewImageSource::new(image)
                     .with_fit(object.fit().into())
                     .with_alignment(object.alignment().into())
                     .with_opacity_milli(object.opacity_milli())
                     .with_transform(object.transform())
                     .with_playback(object.playback().into())
-                    .with_presentation(ui_image_presentation_metadata(&object)),
+                    .with_presentation(view_image_presentation_metadata(&object)),
             )?;
             let layer = object.layer().clone();
             let assembly = layers.entry(layer).or_default();
             let key = image_object_node_key(&object, index);
             let semantic_id = SemanticSpecId(
-                u32::try_from(assembly.layouts.len()).map_err(|_| UiError::CapacityExceeded)?,
+                u32::try_from(assembly.layouts.len()).map_err(|_| ViewError::CapacityExceeded)?,
             );
             let node = assembly.fragment.push_node(
                 key,
@@ -87,7 +87,7 @@ impl UiImagePresentationFrame {
                 Some(semantic_id),
             )?;
             assembly.layouts.push((node, layout_box(object.bounds())));
-            let mut semantic = UiSemanticNode::new(
+            let mut semantic = ViewSemanticNode::new(
                 key,
                 object.layer().clone(),
                 object.target().clone(),
@@ -113,22 +113,22 @@ impl UiImagePresentationFrame {
                 let display = DisplayList::from_fragment(&fragment, &layouts)?;
                 Ok((
                     layer,
-                    UiLayerOutput::new(display, assembly.semantics.finish()),
+                    ViewLayerOutput::new(display, assembly.semantics.finish()),
                 ))
             })
-            .collect::<Result<Vec<_>, UiError>>()?;
+            .collect::<Result<Vec<_>, ViewError>>()?;
         Ok(Self { layers, images })
     }
 
-    pub fn layers(&self) -> &[(LayerId, UiLayerOutput)] {
+    pub fn layers(&self) -> &[(LayerId, ViewLayerOutput)] {
         &self.layers
     }
 
-    pub const fn images(&self) -> &UiImageSourceTable {
+    pub const fn images(&self) -> &ViewImageSourceTable {
         &self.images
     }
 
-    pub fn into_parts(self) -> (Vec<(LayerId, UiLayerOutput)>, UiImageSourceTable) {
+    pub fn into_parts(self) -> (Vec<(LayerId, ViewLayerOutput)>, ViewImageSourceTable) {
         (self.layers, self.images)
     }
 }
@@ -162,8 +162,10 @@ fn image_object_node_key(object: &ImagePresentationObject, fallback: usize) -> N
     }
 }
 
-fn ui_image_presentation_metadata(object: &ImagePresentationObject) -> UiImagePresentationMetadata {
-    UiImagePresentationMetadata::new(
+fn view_image_presentation_metadata(
+    object: &ImagePresentationObject,
+) -> ViewImagePresentationMetadata {
+    ViewImagePresentationMetadata::new(
         object.id().public_id().clone(),
         object.asset().public_id().clone(),
         object.target().id().clone(),
@@ -210,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn presentation_image_objects_lower_to_ui_sources_display_and_semantics() {
+    fn presentation_image_objects_lower_to_view_sources_display_and_semantics() {
         let layer = LayerId::new(public_id("layer.hud"));
         let target = InteractionTarget::new(public_id("target.logo"));
         let action = public_id("action.inspect.logo");
@@ -228,7 +230,7 @@ mod tests {
         .with_playback(ImageObjectPlayback::new(0).pinned_local_time(150))
         .with_action(action.clone());
 
-        let frame = UiImagePresentationFrame::from_inputs([UiImagePresentationInput::new(
+        let frame = ViewImagePresentationFrame::from_inputs([ViewImagePresentationInput::new(
             object,
             two_frame_image(),
         )])
@@ -261,7 +263,7 @@ mod tests {
         assert_eq!(resolved.transform().ty_milli, 7_000);
         let metadata = images
             .get(crate::ImageId(0))
-            .and_then(UiImageSource::presentation)
+            .and_then(ViewImageSource::presentation)
             .expect("presentation image metadata is preserved with source");
         assert_eq!(metadata.object().as_str(), "image.logo");
         assert_eq!(metadata.asset().as_str(), "asset.logo");

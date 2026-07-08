@@ -74,7 +74,7 @@ Please provide concrete answers for:
 2. Which crate owns fit transforms, inverse mapping, and hit-test conversion?
 3. How are `raw`, `contain`, `cover`, and `stretch` represented in Agent
    observation and capture metadata?
-4. How are layout units resolved across HIR, sema, runtime-plan, UI layout,
+4. How are layout units resolved across HIR, sema, runtime-plan, View layout,
    renderer, and Agent observe?
 5. Which units are supported in v1: `px`, `sp`, `%`, `vw`, `vh`, `cw`, `ch`,
    safe-area units, font-relative units, and content-relative units?
@@ -96,7 +96,7 @@ Please propose small compiling cuts in this order or justify a better order:
 2. Wire fit-transform metadata through Agent observe/capture outputs.
 3. Add layout unit resolution policy to HIR/sema/runtime-plan boundaries.
 4. Add Sans I/O text fitting result and diagnostics integration.
-5. Wire renderer/UI layout to shared layout contracts.
+5. Wire renderer/View layout to shared layout contracts.
 6. Add selected object/layer capture metadata parity.
 7. Add deterministic metadata tests.
 8. Add visual smoke/golden policy and fixtures.

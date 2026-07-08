@@ -8,7 +8,7 @@ motion, clip, mask, and blend at fixed timestamps.
 
 ## Scene recipe
 
-Build a retained UI scene with:
+Build a retained View scene with:
 
 1. Root solid background primitive.
 2. A compositing group at `x=96, y=48, width=240, height=160`.
@@ -40,7 +40,7 @@ Capture these logical timestamps from the player timeline:
 
 For each timestamp, record:
 
-- `UiMotionSample` packets for background color, opacity, and scale;
+- `ViewMotionSample` packets for background color, opacity, and scale;
 - `ViewCompositorPlan` pass counters;
 - clip plan kind and local/visual bounds;
 - mask tile origin, tile size, repeat flags, and channel;

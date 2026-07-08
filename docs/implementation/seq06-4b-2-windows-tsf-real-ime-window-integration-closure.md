@@ -22,7 +22,7 @@ for the focused Arcweft text control. Mutating TSF callbacks become existing
 before shared editor mutation.
 
 No Windows COM identity is stored in `arcweft-presentation`,
-`arcweft-runtime-host`, `arcweft-ui`, or replay/capture data.
+`arcweft-runtime-host`, `arcweft-view`, or replay/capture data.
 
 ## Integration adjustments
 

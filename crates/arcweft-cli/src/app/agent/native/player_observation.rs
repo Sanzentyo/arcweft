@@ -5,11 +5,12 @@ use super::{
     AgentImageFrameStore, AgentObservationState, AgentObserveImageKind, AgentObserveOptions,
     AgentStoredImagePlacement, ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState,
     NativeTaskBridge, agent_action_targets, agent_action_targets_for_runtime_status,
-    agent_capture_time_millis, agent_mcp_project_context_from_hir,
-    agent_native_capture_session_for_hir, agent_object_capture_refs_for_page,
-    agent_observe_capture_time_seconds, agent_observe_effective_steps,
-    agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
-    agent_observed_layers, agent_observed_views, agent_overlay_svg, agent_textbox_object, hash_hex,
+    agent_action_targets_for_semantics, agent_capture_time_millis,
+    agent_mcp_project_context_from_hir, agent_native_capture_session_for_hir,
+    agent_object_capture_refs_for_page, agent_observe_capture_time_seconds,
+    agent_observe_effective_steps, agent_observe_layout_scene_graph,
+    agent_observe_report_capture_time_millis, agent_observed_layers, agent_observed_views,
+    agent_overlay_svg, agent_textbox_object, dedupe_agent_action_targets, hash_hex,
     load_and_check_selection, native_host_policy_for_selection, report_path,
     resolve_source_selection,
 };
@@ -29,7 +30,7 @@ use arcweft_agent_protocol::{
     presentation::AgentPresentationTree,
     proxy::AgentPresentationObjectProxyRef,
     session::{AgentAssignment, AgentAudioState},
-    ui::AgentUiTree,
+    view::AgentViewTree,
 };
 use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjectProxy};
@@ -355,7 +356,11 @@ fn player_observation_report(
     let overlay_svg = agent_overlay_svg(&viewport, &object_refs);
     let render_hash = hash_hex(overlay_svg.as_bytes());
     let mut actions = agent_action_targets(&objects);
+    actions.extend(agent_action_targets_for_semantics(
+        &prepared.frame.semantics,
+    ));
     actions.extend(agent_action_targets_for_runtime_status(&step.fiber_status));
+    dedupe_agent_action_targets(&mut actions);
     let layers = agent_observed_layers("cli", step.index, &objects);
     let views = agent_observed_views("cli", step.index, &objects);
     push_missing_requested_scope_diagnostic(
@@ -397,8 +402,8 @@ fn player_observation_report(
         objects,
         presentation_tree,
         actions,
-        ui_tree: AgentUiTree {
-            root: "ui.root".to_owned(),
+        view_tree: AgentViewTree {
+            root: "view.root".to_owned(),
             children: layers.iter().map(|layer| layer.id.clone()).collect(),
         },
         scene_graph: vec![agent_observe_layout_scene_graph(&viewport)],
@@ -958,10 +963,11 @@ fn u32_to_f32(value: u32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_bundle::resource_codec::ui::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-        UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-        UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+    use arcweft_agent_protocol::action::{AgentActionDispatch, AgentActionKind};
+    use arcweft_bundle::resource_codec::view::{
+        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+        ViewInputPurpose, ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+        ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
     };
     use arcweft_bundle::resource_codec::{
         ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
@@ -976,7 +982,7 @@ mod tests {
     use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectTransform};
     use arcweft_presentation::input::InteractionTarget;
     use arcweft_presentation::layer::LayerId;
-    use arcweft_presentation::semantic::SemanticNode;
+    use arcweft_presentation::semantic::{SemanticNode, SemanticTree};
     use arcweft_render_wgpu::geometry::RenderImageFrame;
 
     #[test]
@@ -989,7 +995,7 @@ mod tests {
         let view_by_target = player_runtime_view_by_target(&presentation);
         let input_target = interaction_target("input.visitor_name");
         let input_node = SemanticNode::new(
-            layer_id("ui.text_input"),
+            layer_id("view.text_input"),
             input_target.clone(),
             SemanticRole::TextField,
             HitRect::new(48.0, 48.0, 420.0, 48.0),
@@ -1007,7 +1013,7 @@ mod tests {
             HitRect::new(48.0, 48.0, 420.0, 48.0),
         );
         let button_node = SemanticNode::new(
-            layer_id("ui.button"),
+            layer_id("view.button"),
             interaction_target("button.continue"),
             SemanticRole::Button,
             HitRect::new(484.0, 48.0, 180.0, 48.0),
@@ -1023,6 +1029,29 @@ mod tests {
             button.parent_id.as_deref(),
             Some("view.ModernFeedbackPanel")
         );
+    }
+
+    #[test]
+    fn player_semantic_actions_become_agent_action_targets() {
+        let mut semantics = SemanticTree::default();
+        semantics.push(
+            SemanticNode::new(
+                layer_id("view.button"),
+                interaction_target("button.continue"),
+                SemanticRole::Button,
+                HitRect::new(484.0, 48.0, 180.0, 48.0),
+            )
+            .with_action(PublicId::try_new("action.feedback.submit_name").unwrap()),
+        );
+
+        let actions = agent_action_targets_for_semantics(&semantics);
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, "action.feedback.submit_name");
+        assert_eq!(actions[0].target, "button.continue");
+        assert_eq!(actions[0].action, AgentActionKind::Invoke);
+        assert_eq!(actions[0].kind, AgentActionDispatch::Semantic);
+        assert!(actions[0].enabled);
     }
 
     #[test]
@@ -1230,20 +1259,20 @@ mod tests {
             value: String::new(),
             selection: ViewRuntimeTextSelection::new(0, 0),
             options: ViewRuntimeTextControlOptions {
-                purpose: UiInputPurpose::Text,
+                purpose: ViewInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
                 capitalization: TextCapitalization::None,
                 enter_key: EnterKeyHint::Default,
                 multiline: false,
-                selection_policy: UiTextSelectionPolicy::Enabled,
-                shortcut_policy: UiTextShortcutPolicy::Enabled,
-                tab_policy: UiTextTabPolicy::FocusNavigation,
-                vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-                secure_policy: UiSecureInputPolicy::Plain,
+                selection_policy: ViewTextSelectionPolicy::Enabled,
+                shortcut_policy: ViewTextShortcutPolicy::Enabled,
+                tab_policy: ViewTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+                secure_policy: ViewSecureInputPolicy::Plain,
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },
-            kind: UiInputKind::TextField,
+            kind: ViewInputKind::TextField,
             bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
             label: None,
             handlers: ViewRuntimeTextControlHandlers::default(),

@@ -220,7 +220,7 @@ impl CharacterRenderLayer {
                 CharacterRenderDiagnosticKind::UnsupportedClipping,
                 self,
                 format!(
-                    "character layer `{}.{}` uses clipping; metadata is preserved but retained UI clipping is not implemented",
+                    "character layer `{}.{}` uses clipping; metadata is preserved but retained View clipping is not implemented",
                     self.part, self.variant
                 ),
             ));

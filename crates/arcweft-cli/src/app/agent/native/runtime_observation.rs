@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeSet;
 
 pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serde_json::Value {
     let content_rect = agent_observe_content_rect(viewport);
@@ -110,6 +111,36 @@ pub(super) fn agent_action_targets(objects: &[AgentObservedObject]) -> Vec<Agent
         .iter()
         .flat_map(agent_action_targets_for_object)
         .collect()
+}
+
+pub(super) fn agent_action_targets_for_semantics(
+    semantics: &arcweft_presentation::semantic::SemanticTree,
+) -> Vec<AgentActionTarget> {
+    semantics
+        .as_slice()
+        .iter()
+        .flat_map(|node| {
+            node.actions().iter().map(move |action| AgentActionTarget {
+                id: action.as_str().to_owned(),
+                target: node.target().id().as_str().to_owned(),
+                action: AgentActionKind::Invoke,
+                kind: AgentActionDispatch::Semantic,
+                enabled: node.visible() && node.enabled(),
+            })
+        })
+        .collect()
+}
+
+pub(super) fn dedupe_agent_action_targets(actions: &mut Vec<AgentActionTarget>) {
+    let mut seen = BTreeSet::new();
+    actions.retain(|action| {
+        seen.insert((
+            action.id.clone(),
+            action.target.clone(),
+            action.action,
+            action.kind,
+        ))
+    });
 }
 
 pub(super) fn agent_action_targets_for_object(

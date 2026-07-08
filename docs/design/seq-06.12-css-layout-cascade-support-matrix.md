@@ -2,7 +2,7 @@
 
 Status definitions:
 
-- **Supported now**: accepted by the retained UI CSS path and expected to flow through Takumi layout/cascade into Arcweft-owned direct/composited `ViewScene` data.
+- **Supported now**: accepted by the retained View CSS path and expected to flow through Takumi layout/cascade into Arcweft-owned direct/composited `ViewScene` data.
 - **Product data only**: represented by Arcweft data structures or evidence, but not yet fully rendered through the player path.
 - **Structured diagnostic**: accepted at parse/coverage time, but emits a typed diagnostic rather than a silent approximation.
 - **Intentionally rejected**: excluded from this cut because supporting it would synthesize nodes, require an unsupported runtime query model, or belong to a later sequence.
@@ -16,7 +16,7 @@ Status definitions:
 | Selector | descendant combinator | Supported now | Takumi computes matching before Arcweft lowering. |
 | Selector | child combinator (`>`) | Supported now | Takumi computes matching before Arcweft lowering. |
 | Selector | `:hover`, `:focus`, `:active`, `:disabled` | Product data only | Maps to retained interaction state; final player-state feed is gated on seq06.11. |
-| Selector | pseudo-elements (`::before`, `::after`, `::part`) | Intentionally rejected | They synthesize or remap nodes outside this retained UI cut. |
+| Selector | pseudo-elements (`::before`, `::after`, `::part`) | Intentionally rejected | They synthesize or remap nodes outside this retained View cut. |
 | Selector | structural selectors (`:nth-child`, `:has`, `:not`, `:is`, `:where`) | Structured diagnostic | Not approximated; specificity/evidence emits `UnsupportedCssSelector`. |
 | Cascade | Arcweft base/component layers | Supported now | Ordered before CSS author layers. |
 | Cascade | CSS reset/base/component/inline layers | Supported now | Deterministic first-cut order: reset < base < component < inline after Arcweft layers. |
@@ -27,8 +27,8 @@ Status definitions:
 | Tokens | CSS custom property declarations (`--x`) | Product data only | Recorded in coverage data; not lowered to `StyleTokenBinding` in this cut. |
 | Tokens | `var(--x)` resolution | Supported now for coverage | Declared variable or fallback is accepted; missing variable emits `UnresolvedCssVariable`. |
 | Tokens | Arcweft style tokens + CSS variables | Product data only | Arcweft tokens remain authoritative product data; CSS variables do not override token registry entries yet. |
-| Layout | block / block-like retained UI | Supported now | Takumi layout result is the source; Arcweft lowers layout boxes into `ViewScene` evidence. |
-| Layout | inline retained UI | Supported now | Inline containers/text participate through Takumi and existing seq06.10/06.10a text substrate. |
+| Layout | block / block-like retained View | Supported now | Takumi layout result is the source; Arcweft lowers layout boxes into `ViewScene` evidence. |
+| Layout | inline retained View | Supported now | Inline containers/text participate through Takumi and existing seq06.10/06.10a text substrate. |
 | Layout | flexbox | Supported now | First cut supports flex container/item properties, gap, margin, padding, and size constraints. |
 | Layout | grid | Structured diagnostic | `display:grid` and `grid-*` declarations are not rendered in this cut. |
 | Layout | margin / padding / gap | Supported now | Classified as layout-scene invalidation. |

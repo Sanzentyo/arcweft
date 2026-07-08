@@ -62,11 +62,11 @@ pub enum BundleSectionKind {
     NormalizedSource,
     HotSwapMap,
     PatchPlan,
-    UiProgram,
-    UiStyle,
-    UiText,
-    UiInput,
-    UiTheme,
+    ViewProgram,
+    ViewStyle,
+    ViewText,
+    ViewInput,
+    ViewTheme,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -355,11 +355,11 @@ impl BundleSectionKind {
             Self::NormalizedSource => 13,
             Self::HotSwapMap => 14,
             Self::PatchPlan => 15,
-            Self::UiProgram => 16,
-            Self::UiStyle => 17,
-            Self::UiText => 18,
-            Self::UiInput => 19,
-            Self::UiTheme => 20,
+            Self::ViewProgram => 16,
+            Self::ViewStyle => 17,
+            Self::ViewText => 18,
+            Self::ViewInput => 19,
+            Self::ViewTheme => 20,
         }
     }
 
@@ -380,11 +380,11 @@ impl BundleSectionKind {
             13 => Some(Self::NormalizedSource),
             14 => Some(Self::HotSwapMap),
             15 => Some(Self::PatchPlan),
-            16 => Some(Self::UiProgram),
-            17 => Some(Self::UiStyle),
-            18 => Some(Self::UiText),
-            19 => Some(Self::UiInput),
-            20 => Some(Self::UiTheme),
+            16 => Some(Self::ViewProgram),
+            17 => Some(Self::ViewStyle),
+            18 => Some(Self::ViewText),
+            19 => Some(Self::ViewInput),
+            20 => Some(Self::ViewTheme),
             _ => None,
         }
     }
@@ -420,15 +420,15 @@ impl BundleSectionKind {
             | Self::LocaleCatalog
             | Self::HotSwapMap
             | Self::PatchPlan
-            | Self::UiProgram
-            | Self::UiStyle
-            | Self::UiInput
-            | Self::UiTheme => ContentResidency::Startup,
+            | Self::ViewProgram
+            | Self::ViewStyle
+            | Self::ViewInput
+            | Self::ViewTheme => ContentResidency::Startup,
             Self::AssetBlob
             | Self::SourceMap
             | Self::DebugSymbols
             | Self::NormalizedSource
-            | Self::UiText => ContentResidency::OnDemand,
+            | Self::ViewText => ContentResidency::OnDemand,
         }
     }
 
@@ -440,7 +440,7 @@ impl BundleSectionKind {
             | Self::Entrypoints
             | Self::AdapterRequirements
             | Self::PatchPlan
-            | Self::UiInput => crate::patch::PatchCompatibility::RestartRequired,
+            | Self::ViewInput => crate::patch::PatchCompatibility::RestartRequired,
             Self::ProgramBytecode => crate::patch::PatchCompatibility::CodeCompatible,
             Self::HotSwapMap => crate::patch::PatchCompatibility::CodeGenerational,
             Self::ContentCatalog
@@ -452,10 +452,10 @@ impl BundleSectionKind {
             | Self::SourceMap
             | Self::DebugSymbols
             | Self::NormalizedSource
-            | Self::UiProgram
-            | Self::UiStyle
-            | Self::UiText
-            | Self::UiTheme => crate::patch::PatchCompatibility::ContentOnly,
+            | Self::ViewProgram
+            | Self::ViewStyle
+            | Self::ViewText
+            | Self::ViewTheme => crate::patch::PatchCompatibility::ContentOnly,
         }
     }
 }

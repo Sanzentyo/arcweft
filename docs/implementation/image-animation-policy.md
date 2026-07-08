@@ -34,12 +34,12 @@ frames, normalizes zero or too-small animation delays, and exposes
 `frame_at_time_millis` for deterministic native rendering, Agent capture, and
 tests.
 
-`arcweft-ui` owns the first UI image source table. `ImageId` values now resolve
-to `UiImageSource` records containing decoded image data, fit/alignment policy,
+`arcweft-view` owns the first UI image source table. `ImageId` values now resolve
+to `ViewImageSource` records containing decoded image data, fit/alignment policy,
 and deterministic playback state. Static and animated images therefore cross
 the retained-fragment/display-list boundary through the same `ImageId` path.
-`UiImagePresentationFrame` lowers decoded `ImagePresentationObject` inputs into
-layered `UiLayerOutput` values and a single shared `UiImageSourceTable`, so
+`ViewImagePresentationFrame` lowers decoded `ImagePresentationObject` inputs into
+layered `ViewLayerOutput` values and a single shared `ViewImageSourceTable`, so
 image ids remain unique across layers and pinned animated frame selection is
 preserved.
 
@@ -53,7 +53,7 @@ so hit-test, Agent observation, action dispatch metadata, and native submission
 can consume one shared object model.
 
 `arcweft-runtime-host` exposes committed UI image display items as
-`UiFrameImageItem` values carrying render layer, frame-local node id, `ImageId`,
+`ViewFrameImageItem` values carrying render layer, frame-local node id, `ImageId`,
 and layout. This keeps Agent/renderer adapters from spelunking through generic
 display-list payloads when they need image-specific capture or observation
 metadata.
@@ -99,7 +99,7 @@ their capture refs without pretending to be rich text.
 
 `arcweft-cli` owns the first Agent adapter bridge from committed UI image
 display items to observed image objects and their capture pixels. Given a
-`UiFrameCommit`, `UiImageSourceTable`, and pinned visual time, the adapter
+`ViewFrameCommit`, `ViewImageSourceTable`, and pinned visual time, the adapter
 resolves the active decoded frame once, resolves the same native image quad
 geometry used for rendering, converts its transformed corners into an Agent
 polygon and viewport bbox, emits `content.kind = "image"` with source id, frame
@@ -140,7 +140,7 @@ Source-level runtime calls can now feed that same presentation-image path for
 the first background slot. During Agent observe, `bg(@asset:.bg.room)` and the
 quoted equivalent resolve to `samples/.arcweft/asset/bg/room.{png,jpg,jpeg,gif,webp}`
 beside the observed `.arcw` source, decode through `arcweft-image`, lower into
-an `ImagePresentationObject`, lower again through `UiImagePresentationFrame`,
+an `ImagePresentationObject`, lower again through `ViewImagePresentationFrame`,
 and populate typed Agent image objects plus object-id keyed native frame-store
 pixels. Multiple background calls use slot semantics: the last valid background
 call wins, avoiding duplicate background object ids. Missing image assets
@@ -221,14 +221,14 @@ to `ImageObjectAlignment` before native fit and transform resolution.
 `playback.start`, `playback.paused_at`, and `playback.local_time` accept
 non-negative durations (`150ms`, `0.15s`, or a bare seconds number).
 `playback.rate` accepts either a ratio (`0.5`) or milli value (`500`), and all
-four fields lower to `ImageObjectPlayback` before UI frame resolution. A pinned
+four fields lower to `ImageObjectPlayback` before View frame resolution. A pinned
 `playback.local_time` therefore overrides the observation `--capture-time` for
 that object while still using the same deterministic frame selection path as
 un-pinned animated images.
 `transform.tx` and `transform.ty` accept pixel lengths. `transform.m11`,
 `transform.m12`, `transform.m21`, and `transform.m22` accept fixed-point matrix
 components and default to the identity matrix.
-`visible = false` omits the image object from UI lowering and Agent
+`visible = false` omits the image object from View lowering and Agent
 observation. `enabled = false` keeps the observed object and hit-test geometry
 available, but emitted semantic actions for that object are marked disabled.
 `proxy.*` defines image-object proxy metadata on the same presentation object:
@@ -238,8 +238,8 @@ available, but emitted semantic actions for that object are marked disabled.
 actual transformed polygon. `proxy.param.*` is separate from image-level
 `param.*`; it is preserved under `content.proxies[]`, presentation-tree
 `object_proxies[]`, and hit-test `region.proxy_params`.
-The UI display list preserves the semantic spec id for image nodes, and
-`UiImageSource` preserves presentation metadata for source-table based frame
+The View display list preserves the semantic spec id for image nodes, and
+`ViewImageSource` preserves presentation metadata for source-table based frame
 resolution. Agent observation therefore emits the authored image object id,
 target, asset, action list, custom typed params, object layer, object opacity,
 object transform, object depth, object proxies, active frame index, local image
@@ -253,7 +253,7 @@ interaction target when present.
 renders them as textured quads into the same offscreen RGBA readback surface
 used by native captures. This is intentionally not a debug raster fallback; it
 is the native renderer's image submission primitive. `arcweft-render-native`
-also resolves `arcweft-ui` image display items through `UiImageSourceTable` into
+also resolves `arcweft-view` image display items through `ViewImageSourceTable` into
 native quads, applying deterministic visual-time frame selection and
 fit/alignment rectangle calculation plus affine image-object transform before
 GPU submission.
@@ -272,7 +272,7 @@ image capture.
   time. Agent capture must be able to pin it with `capture_time`.
 - Static and animated images share hit-test, object-id, mask, layer, depth, and
   metadata behavior.
-- Authored image object metadata must survive lowering through UI frame commit
+- Authored image object metadata must survive lowering through View frame commit
   and Agent observation; downstream debug tools should not infer it from object
   ids or coordinates.
 - Decode is adapter work over bytes. Filesystem reads, asset lookup, cache
@@ -329,6 +329,6 @@ pure-Rust path cannot cover required WebP animation behavior.
 Run `just test-image-animation-goal` before claiming the image-animation object
 goal complete. The recipe is indexed in
 `docs/implementation/image-animation-goal-audit.md` and covers decode,
-presentation model, UI lowering, native image quads, declared asset ids,
+presentation model, View lowering, native image quads, declared asset ids,
 bundle image metadata, Agent readback, MCP tool-result readback, hit-test,
 alignment, clipped object capture, and the checked-in sample.

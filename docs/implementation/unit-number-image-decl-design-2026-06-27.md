@@ -9,7 +9,7 @@ This cut closes two concrete spec/implementation gaps found during the grammar a
 2. typed syntax ownership for `image` declaration bodies instead of CLI-only raw
    string splitting.
 
-Macro/template/precompile and full Game Native UI component/AwaitView lowering
+Macro/template/precompile and full Game Native View component/AwaitView lowering
 remain Advanced or presentation-layer work and are not part of this cut.
 
 ## Layering
@@ -110,6 +110,6 @@ hotspots:
 - Advanced `macro` / `template` / `extern precompile mod` still need a separate
   design cut because they affect expansion, hygiene, source maps, build cache,
   and module item ownership.
-- Game Native UI `AwaitView` and full component body lowering still need a
+- Game Native View `AwaitView` and full component body lowering still need a
   presentation/HIR design cut. This patch only improves `image` declarations,
   which are already consumed by current CLI/native capture code.

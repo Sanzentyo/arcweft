@@ -1,45 +1,45 @@
-//! UI frame output produced after retained fragment layout and semantics.
+//! View frame output produced after retained fragment layout and semantics.
 
 use crate::{
-    DisplayList, LayoutResults, UiError, UiHandlerRouteTable, UiSemanticFragment, UiStyleTable,
-    ViewFragment,
+    DisplayList, LayoutResults, ViewError, ViewFragment, ViewHandlerRouteTable,
+    ViewSemanticFragment, ViewStyleTable,
 };
 
-/// Per-layer UI output ready for host-side frame commit validation.
+/// Per-layer View output ready for host-side frame commit validation.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiLayerOutput {
+pub struct ViewLayerOutput {
     display: DisplayList,
-    semantics: UiSemanticFragment,
-    handlers: UiHandlerRouteTable,
-    styles: UiStyleTable,
+    semantics: ViewSemanticFragment,
+    handlers: ViewHandlerRouteTable,
+    styles: ViewStyleTable,
 }
 
-impl UiLayerOutput {
-    pub fn new(display: DisplayList, semantics: UiSemanticFragment) -> Self {
+impl ViewLayerOutput {
+    pub fn new(display: DisplayList, semantics: ViewSemanticFragment) -> Self {
         Self {
             display,
             semantics,
-            handlers: UiHandlerRouteTable::default(),
-            styles: UiStyleTable::default(),
+            handlers: ViewHandlerRouteTable::default(),
+            styles: ViewStyleTable::default(),
         }
     }
 
     pub fn from_fragment(
         fragment: &ViewFragment,
         layouts: &LayoutResults,
-        semantics: UiSemanticFragment,
-    ) -> Result<Self, UiError> {
-        Self::from_fragment_with_styles(fragment, layouts, semantics, UiStyleTable::default())
+        semantics: ViewSemanticFragment,
+    ) -> Result<Self, ViewError> {
+        Self::from_fragment_with_styles(fragment, layouts, semantics, ViewStyleTable::default())
     }
 
     pub fn from_fragment_with_styles(
         fragment: &ViewFragment,
         layouts: &LayoutResults,
-        semantics: UiSemanticFragment,
-        styles: UiStyleTable,
-    ) -> Result<Self, UiError> {
+        semantics: ViewSemanticFragment,
+        styles: ViewStyleTable,
+    ) -> Result<Self, ViewError> {
         let display = DisplayList::from_fragment(fragment, layouts)?;
-        let handlers = UiHandlerRouteTable::from_fragment(fragment, &semantics)?;
+        let handlers = ViewHandlerRouteTable::from_fragment(fragment, &semantics)?;
         Ok(Self {
             display,
             semantics,
@@ -52,19 +52,19 @@ impl UiLayerOutput {
         &self.display
     }
 
-    pub const fn semantics(&self) -> &UiSemanticFragment {
+    pub const fn semantics(&self) -> &ViewSemanticFragment {
         &self.semantics
     }
 
-    pub const fn handlers(&self) -> &UiHandlerRouteTable {
+    pub const fn handlers(&self) -> &ViewHandlerRouteTable {
         &self.handlers
     }
 
-    pub const fn styles(&self) -> &UiStyleTable {
+    pub const fn styles(&self) -> &ViewStyleTable {
         &self.styles
     }
 
-    pub fn into_parts(self) -> (DisplayList, UiSemanticFragment) {
+    pub fn into_parts(self) -> (DisplayList, ViewSemanticFragment) {
         (self.display, self.semantics)
     }
 
@@ -72,9 +72,9 @@ impl UiLayerOutput {
         self,
     ) -> (
         DisplayList,
-        UiSemanticFragment,
-        UiHandlerRouteTable,
-        UiStyleTable,
+        ViewSemanticFragment,
+        ViewHandlerRouteTable,
+        ViewStyleTable,
     ) {
         (self.display, self.semantics, self.handlers, self.styles)
     }

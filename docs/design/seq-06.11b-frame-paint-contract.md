@@ -7,7 +7,7 @@ rectangle-only compatibility bridge.
 ## Producer pipeline
 
 ```text
-UiProgramResource / UiStyleResource resolved by seq06.11
+ViewProgramResource / ViewStyleResource resolved by seq06.11
     -> ViewFragment + authored CSS/Arcweft style layers
     -> TakumiAdapter::adapt
     -> Takumi computed render tree
@@ -115,12 +115,12 @@ Seq06.11b should:
    index;
 4. surface `direct_paint.diagnostics` through the existing player/runtime
    diagnostic channel;
-5. verify web output contains no DOM/HTML/CSS overlay for Arcweft UI content.
+5. verify web output contains no DOM/HTML/CSS overlay for Arcweft View content.
 
 Seq06.11b should not:
 
 - parse CSS again;
 - inspect Takumi computed style at render time;
-- build a private UI renderer;
+- build a private View renderer;
 - temporarily convert the catalog to rectangles outside `ViewScene`;
-- route any Arcweft UI visual through DOM, CSS, canvas 2D, or CPU-raster output.
+- route any Arcweft View visual through DOM, CSS, canvas 2D, or CPU-raster output.

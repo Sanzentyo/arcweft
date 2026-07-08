@@ -248,7 +248,7 @@ fn fixture_bundle() -> ArcweftBundle {
     .with_product_awbc(minimal_awbc_program())
     .with_virtual_files([image_file, audio_file])
     .with_image_assets([BundleImageAsset {
-        id: "asset.ui.logo".to_owned(),
+        id: "asset.view.logo".to_owned(),
         file: BundleVirtualFileRef {
             space: BundleVirtualFileSpace::Asset,
             path: "images/logo.webp".to_owned(),
@@ -281,7 +281,7 @@ fn fixture_bundle() -> ArcweftBundle {
 fn fixture_image_object() -> BundleImageObject {
     BundleImageObject {
         id: "image.hero.logo".to_owned(),
-        asset: "asset.ui.logo".to_owned(),
+        asset: "asset.view.logo".to_owned(),
         target: Some("target.hero.logo".to_owned()),
         layer: Some("layer.foreground".to_owned()),
         view: None,

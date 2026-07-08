@@ -1,6 +1,6 @@
-//! Reactive dependency metadata for retained UI property sources.
+//! Reactive dependency metadata for retained View property sources.
 
-use crate::{DirtyFlags, PropertyBindingTable, RawEntity, UiError, ValueSourceId};
+use crate::{DirtyFlags, PropertyBindingTable, RawEntity, ValueSourceId, ViewError};
 use std::collections::BTreeMap;
 
 /// Monotonic revision for a dynamic value source.
@@ -22,7 +22,7 @@ pub struct ReactiveInvalidation {
     entities: Vec<EntityInvalidation>,
 }
 
-/// Deterministic dependency graph from dynamic value sources to UI entities.
+/// Deterministic dependency graph from dynamic value sources to View entities.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ReactiveGraph {
     dependencies: BTreeMap<ValueSourceId, BTreeMap<RawEntity, DirtyFlags>>,
@@ -30,11 +30,11 @@ pub struct ReactiveGraph {
 }
 
 impl Revision {
-    pub fn next(self) -> Result<Self, UiError> {
+    pub fn next(self) -> Result<Self, ViewError> {
         self.0
             .checked_add(1)
             .map(Self)
-            .ok_or(UiError::CapacityExceeded)
+            .ok_or(ViewError::CapacityExceeded)
     }
 }
 
@@ -83,7 +83,7 @@ impl ReactiveGraph {
         }
     }
 
-    pub fn invalidate(&mut self, source: ValueSourceId) -> Result<ReactiveInvalidation, UiError> {
+    pub fn invalidate(&mut self, source: ValueSourceId) -> Result<ReactiveInvalidation, ViewError> {
         let revision = self
             .revisions
             .get(&source)

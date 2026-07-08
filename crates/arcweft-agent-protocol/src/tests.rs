@@ -25,7 +25,7 @@ use crate::rich_text::{
     AgentHitRegion, AgentHitRegionKind, AgentRichTextElementKind, AgentRichTextElementRef,
 };
 use crate::session::{AgentAssignment, AgentAudioState};
-use crate::ui::AgentUiTree;
+use crate::view::AgentViewTree;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_layout::{
     CaptureComposition, CaptureCropBounds, CaptureMaskMetadata, CaptureMetadata,
@@ -208,8 +208,8 @@ fn test_mcp_observation_report() -> AgentObservationReport {
         objects: Vec::new(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
-        ui_tree: AgentUiTree {
-            root: "ui.root".to_owned(),
+        view_tree: AgentViewTree {
+            root: "view.root".to_owned(),
             children: Vec::new(),
         },
         scene_graph: Vec::new(),
@@ -325,8 +325,8 @@ fn test_serialization_observation_report() -> AgentObservationReport {
             kind: AgentActionDispatch::Semantic,
             enabled: true,
         }],
-        ui_tree: AgentUiTree {
-            root: "ui.root".to_owned(),
+        view_tree: AgentViewTree {
+            root: "view.root".to_owned(),
             children: vec!["dialogue.layer".to_owned()],
         },
         scene_graph: Vec::new(),
@@ -398,28 +398,28 @@ fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
 #[test]
 fn view_scope_serializes_and_scrubs_source_identity() {
     let source = AgentCaptureSourceIdentity::View {
-        id: "ui.login_form".to_owned(),
-        parent_id: Some("ui.root".to_owned()),
+        id: "view.login_form".to_owned(),
+        parent_id: Some("view.root".to_owned()),
         object_count: 2,
         object_refs: vec!["field.email".to_owned(), "button.submit".to_owned()],
     };
 
     let json = serde_json::to_value(&source).expect("view source serializes");
     assert_eq!(json["kind"], "view");
-    assert_eq!(json["id"], "ui.login_form");
+    assert_eq!(json["id"], "view.login_form");
     assert_eq!(json["object_refs"].as_array().unwrap().len(), 2);
 
     let layout_scope = serde_json::to_value(CaptureScope::View {
-        id: "ui.login_form".to_owned(),
+        id: "view.login_form".to_owned(),
     })
     .expect("layout view capture scope serializes");
     assert_eq!(layout_scope["kind"], "view");
-    assert_eq!(layout_scope["id"], "ui.login_form");
+    assert_eq!(layout_scope["id"], "view.login_form");
 
     let mut metadata = AgentSelectedCaptureMetadata::from_layout(
         test_layout_capture_metadata(
             CaptureScope::View {
-                id: "ui.login_form".to_owned(),
+                id: "view.login_form".to_owned(),
             },
             CaptureComposition::FramebufferCrop,
         ),
@@ -640,13 +640,13 @@ fn hit_test_hit_serializes_capture_refs() {
             bbox: bbox.clone(),
             polygon: bbox.polygon(),
             capture_refs: test_capture_refs(),
-            object_layer: Some("ui".to_owned()),
+            object_layer: Some("view".to_owned()),
             object_depth: Some(4000),
             text: Some("Hit".to_owned()),
             rich_text_ref: None,
             image_ref: None,
         },
-        layer: "ui".to_owned(),
+        layer: "view".to_owned(),
         role: "rich_text_proxy".to_owned(),
         text: Some("Hit".to_owned()),
         bbox: bbox.clone(),
@@ -663,7 +663,7 @@ fn hit_test_hit_serializes_capture_refs() {
                 attribute: "text_proxy".to_owned(),
             }),
             proxy_role: Some("keyword".to_owned()),
-            proxy_layer: Some("ui".to_owned()),
+            proxy_layer: Some("view".to_owned()),
             depth: Some(4000),
             proxy_params: BTreeMap::new(),
         },
@@ -674,8 +674,8 @@ fn hit_test_hit_serializes_capture_refs() {
     let json = serde_json::to_value(&hit).expect("hit serializes");
 
     assert_eq!(json["object"]["layer"], "dialogue.rich_text");
-    assert_eq!(json["object"]["object_layer"], "ui");
-    assert_eq!(json["layer"], "ui");
+    assert_eq!(json["object"]["object_layer"], "view");
+    assert_eq!(json["layer"], "view");
     assert_eq!(json["polygon"].as_array().unwrap().len(), 4);
     assert_eq!(json["capture_refs"]["object_id_color"]["alpha"], 255);
     assert_eq!(json["capture_refs"]["captures"][0]["kind"], "mask");
@@ -692,7 +692,7 @@ fn image_resource_metadata_preserves_observed_object_ref() {
         height: 4,
     };
     let mut rich_text_ref = test_rich_text_ref(&bbox);
-    rich_text_ref.object_layer = Some("ui".to_owned());
+    rich_text_ref.object_layer = Some("view".to_owned());
     rich_text_ref.object_depth = Some(7000);
     let mut image = test_raw_mask_image_resource();
     image.object = Some(AgentImageObjectRef {
@@ -704,7 +704,7 @@ fn image_resource_metadata_preserves_observed_object_ref() {
         bbox: bbox.clone(),
         polygon: bbox.polygon(),
         capture_refs: test_capture_refs(),
-        object_layer: Some("ui".to_owned()),
+        object_layer: Some("view".to_owned()),
         object_depth: Some(7000),
         text: Some("Hello".to_owned()),
         rich_text_ref: Some(rich_text_ref.clone()),
@@ -743,7 +743,7 @@ fn image_resource_metadata_preserves_observed_object_ref() {
         json["image"]["object"]["capture_refs"]["captures"][0]["kind"],
         "mask"
     );
-    assert_eq!(json["image"]["object"]["object_layer"], "ui");
+    assert_eq!(json["image"]["object"]["object_layer"], "view");
     assert_eq!(json["image"]["object"]["object_depth"], 7000);
 }
 
@@ -782,7 +782,7 @@ fn generic_image_object_metadata_does_not_require_rich_text_ref() {
         .image_ref
         .as_ref()
         .expect("image object metadata preserves active image payload");
-    assert_eq!(image_ref.source, "ui.image.7");
+    assert_eq!(image_ref.source, "view.image.7");
     assert_eq!(image_ref.asset.as_deref(), Some("asset.logo.webp"));
     assert_eq!(image_ref.frame_index, Some(1));
     assert_eq!(image_ref.local_time_millis, Some(250));
@@ -847,7 +847,7 @@ fn generic_image_object_metadata_does_not_require_rich_text_ref() {
 
 fn test_observed_image_content() -> AgentObservedImageContent {
     AgentObservedImageContent {
-        source: "ui.image.7".to_owned(),
+        source: "view.image.7".to_owned(),
         object: Some("image.logo".to_owned()),
         target: Some("target.logo".to_owned()),
         asset: Some("asset.logo.webp".to_owned()),

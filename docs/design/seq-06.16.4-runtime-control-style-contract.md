@@ -2,21 +2,21 @@
 
 ## Decision
 
-This is implemented as a narrow, typed runtime-control visual style bridge that is intentionally replaceable by the broader seq06.11 retained UI style resolver. It does not create a DOM overlay, browser-CSS path, sample-specific geometry path, or a duplicate shadow renderer.
+This is implemented as a narrow, typed runtime-control visual style bridge that is intentionally replaceable by the broader seq06.11 retained View style resolver. It does not create a DOM overlay, browser-CSS path, sample-specific geometry path, or a duplicate shadow renderer.
 
-The bridge resolves already-decoded `UiStyleResource` data into player-owned runtime control payloads:
+The bridge resolves already-decoded `ViewStyleResource` data into player-owned runtime control payloads:
 
-- `UiRuntimeTextControl.style`
-- `UiRuntimeActionButton.style`
+- `ViewRuntimeTextControl.style`
+- `ViewRuntimeActionButton.style`
 
 `arcweft-bundle` remains Sans I/O and data-only. It performs deterministic value mapping and records structured diagnostics; it does not parse external CSS files, rasterize, allocate platform handles, or read assets.
 
 ## Data path
 
 ```text
-UiStyleResource
-  -> UiRuntimeControlStyle / UiRuntimeControlStyleDiagnostic
-  -> UiRuntimeTextControl / UiRuntimeActionButton
+ViewStyleResource
+  -> ViewRuntimeControlStyle / ViewRuntimeControlStyleDiagnostic
+  -> ViewRuntimeTextControl / ViewRuntimeActionButton
   -> RuntimeTextControlLowerer / RuntimeActionButtonLowerer
   -> RenderControlStyle on RenderTextInputControl / RenderActionButton
   -> SharedFramePlanner rectangles/text/focus ring/border/shadow plans
@@ -26,7 +26,7 @@ Native, web, and Agent observation stay on the same `BundlePresentationSnapshot`
 
 ## Typed payload
 
-`UiRuntimeControlStyle` has five deterministic slots:
+`ViewRuntimeControlStyle` has five deterministic slots:
 
 - `normal`
 - `hover`
@@ -63,7 +63,7 @@ For runtime controls, the bridge accepts:
 
 - element selectors for `Button`, `TextField`, `TextArea`, `SecureField`;
 - part/public-id selectors matching the control public id;
-- explicit action-button style ids stored on `UiActionButtonResource.style`;
+- explicit action-button style ids stored on `ViewActionButtonResource.style`;
 - state selectors: `:hover`, `:active`, `:disabled`, `:focus-visible`.
 
 Unsupported selector combinators (`Descendant`, `Child`) and environment predicates are not guessed. They produce structured diagnostics when they would otherwise apply to a runtime control.
@@ -103,7 +103,7 @@ Runtime session construction preserves these as display diagnostics so unsupport
 
 ## Non-goals
 
-- Restoring top-level `ui text_input`, `ui text_area`, or `ui secure_field` declarations.
+- Restoring removed top-level text-control declarations.
 - CSS parsing, external CSS loading, DOM overlays, canvas/image fallback, browser-native controls, or sample-specific geometry.
 - Duplicating Takumi or seq06.13e box-shadow rendering.
 - Full CSS specificity, cascade layers, inheritance, media queries, or pseudo-element support.

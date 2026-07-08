@@ -145,7 +145,7 @@ Implemented:
 - the project semantic graph records `entry_goto` edges separately from
   `entry_start`, `entry_run`, and `entry_route`.
 - symbol-use collection includes entry `goto` targets.
-- `samples/modern-feedback-ui` now uses canonical entry `goto` and compact
+- `samples/modern-feedback-view` now uses canonical entry `goto` and compact
   `image glass_bg` declaration spelling.
 - direct-source runtime profile builds now emit syntax lints through the same
   structured diagnostic renderer used by `check`, so any remaining valid hints
@@ -163,16 +163,16 @@ cargo test -p arcweft-lang-syntax --all-features lint::tests -- --nocapture
 cargo test -p arcweft-runtime-plan --all-features entry_goto_selects_runtime_flow_from_final_syntax -- --nocapture
 cargo test -p arcweft-lang-sema --all-features project_index_records_entry_and_flow_entity_relations -- --nocapture
 cargo check -p arcweft-cli --all-features
-cargo run -p arcweft-cli --all-features -- check --manifest-path samples\modern-feedback-ui\arcw.toml
-cargo run -p arcweft-cli --all-features -- run --runner web --manifest-path samples\modern-feedback-ui\arcw.toml
-cargo run -p arcweft-cli --all-features -- run --runner web .\samples\modern-feedback-ui\src\main.arcw
-cargo run -p arcweft-cli --all-features -- run --runner headless --mode drain --steps 16 --manifest-path samples\modern-feedback-ui\arcw.toml
+cargo run -p arcweft-cli --all-features -- check --manifest-path samples\modern-feedback-view\arcw.toml
+cargo run -p arcweft-cli --all-features -- run --runner web --manifest-path samples\modern-feedback-view\arcw.toml
+cargo run -p arcweft-cli --all-features -- run --runner web .\samples\modern-feedback-view\src\main.arcw
+cargo run -p arcweft-cli --all-features -- run --runner headless --mode drain --steps 16 --manifest-path samples\modern-feedback-view\arcw.toml
 cargo clippy -p arcweft-cli --all-targets --all-features
 cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
 Results: focused tests passed; `arcweft-cli` check and clippy passed with
-`--all-features`; the modern feedback UI sample checked with 0 warnings and ran
+`--all-features`; the modern feedback View sample checked with 0 warnings and ran
 headless with 0 diagnostics; manifest and direct-source web bundle builds
 succeeded without AWF0103 hints; structural audit reported 0 errors and 138
 warnings.
@@ -185,17 +185,17 @@ rollback integration. The save/load work is now split to
 
 ## 2026-07-06 follow-up slice: View-local input handle let binding
 
-The final UI syntax follow-up now covers the first View-local handle-binding
+The final View syntax follow-up now covers the first View-local handle-binding
 slice:
 
 - `let visitor_name = input.text(@input:.visitor_name, initial = "")` parses as
   `ViewExpr::Let` inside View bodies.
 - The syntax AST reports `input.text` / `input.secure` builder handles through
   `ViewBody::text_control_inputs()`.
-- Bundle UI program lowering emits `UiProgramInstruction::BindLocal` with
+- Bundle View program lowering emits `ViewProgramInstruction::BindLocal` with
   deterministic pattern and value schema digests.
 - `TextField(visitor_name)` resolves the local handle to
-  `UiInputOptions.public_id = "input.visitor_name"` and uses the builder
+  `ViewInputOptions.public_id = "input.visitor_name"` and uses the builder
   initial value for the value text source.
 
 Validation:

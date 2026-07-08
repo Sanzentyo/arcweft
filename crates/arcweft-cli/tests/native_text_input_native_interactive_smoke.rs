@@ -27,10 +27,10 @@ fn seq06_16_3_native_text_input_sample_is_view_authored() {
     let source = read(sample.join("src/main.arcw"));
 
     for removed in [
-        "ui text_input",
-        "ui text_area",
-        "ui secure_field",
-        "ui style",
+        "view text_input",
+        "view text_area",
+        "view secure_field",
+        "view style",
     ] {
         assert!(
             !source.contains(removed),
@@ -56,10 +56,10 @@ fn seq06_16_3_native_text_input_sample_is_view_authored() {
     }
     for obsolete_sidecar in [
         "scene-contract.json",
-        ".arcweft/content/ui.input.json",
-        ".arcweft/content/ui.program.json",
-        ".arcweft/content/ui.style.json",
-        ".arcweft/content/ui.text.json",
+        ".arcweft/content/view.input.json",
+        ".arcweft/content/view.program.json",
+        ".arcweft/content/view.style.json",
+        ".arcweft/content/view.text.json",
     ] {
         assert!(
             !sample.join(obsolete_sidecar).exists(),
@@ -90,7 +90,7 @@ fn seq06_16_3_submit_samples_share_player_backed_semantic_action_routes() {
         );
     }
 
-    let modern = read(root.join("samples/modern-feedback-ui/src/main.arcw"));
+    let modern = read(root.join("samples/modern-feedback-view/src/main.arcw"));
     for required in [
         "let panel = view(@view:.ModernFeedbackPanel",
         "pub action feedback.submit_name(value: String)",
@@ -108,12 +108,12 @@ fn seq06_16_3_submit_samples_share_player_backed_semantic_action_routes() {
     ] {
         assert!(
             modern.contains(required),
-            "modern-feedback-ui must retain shared submit route {required:?}"
+            "modern-feedback-view must retain shared submit route {required:?}"
         );
     }
     assert!(
         !modern.contains("panel.close()"),
-        "modern-feedback-ui must rely on scope-owned view cleanup rather than the removed close alias"
+        "modern-feedback-view must rely on scope-owned view cleanup rather than the removed close alias"
     );
 }
 
@@ -127,7 +127,7 @@ fn seq06_16_3_native_smoke_command_and_trace_gate_are_documented() {
     for required in [
         "samples/native-text-input",
         "samples/text-submit-flow",
-        "samples/modern-feedback-ui",
+        "samples/modern-feedback-view",
         "cargo run -p arcweft-cli --features native-player -- run",
         "--text-input-trace-out target/native-text-input-trace/seq06.16.3/native-player-ime.real.json",
         "SecureField does not expose `sekret-1234`",

@@ -2,23 +2,23 @@
 
 ## Implemented
 
-- Added `UiProgramResource::layout_bounds` as a dedicated typed bounds table.
-- Added `UiLayoutBoundsResource`, `UiLayoutBoundsKind`, and `UiLogicalRect`.
+- Added `ViewProgramResource::layout_bounds` as a dedicated typed bounds table.
+- Added `ViewLayoutBoundsResource`, `ViewLayoutBoundsKind`, and `ViewLogicalRect`.
 - Added inherent APIs on Arcweft-owned types:
-  - `UiProgramResource::text_control_bounds_for`;
-  - `UiProgramResource::semantic_target_bounds_for`;
-  - `UiLayoutBoundsResource::text_control`;
-  - `UiLayoutBoundsResource::semantic_target`;
-  - `UiInputKind::default_text_control_height_milli`.
-- Changed `UiInputResource::runtime_text_controls` to prefer program-authored
+  - `ViewProgramResource::text_control_bounds_for`;
+  - `ViewProgramResource::semantic_target_bounds_for`;
+  - `ViewLayoutBoundsResource::text_control`;
+  - `ViewLayoutBoundsResource::semantic_target`;
+  - `ViewInputKind::default_text_control_height_milli`.
+- Changed `ViewInputResource::runtime_text_controls` to prefer program-authored
   `TextControl` bounds and fall back to existing stacked slots only when no
   program layout record exists.
-- Extended UI resource codec budget, canonicalization, public-id collection,
+- Extended View resource codec budget, canonicalization, public-id collection,
   record count, duplicate checking, and zero-size validation for layout bounds.
-- Changed component/View lowering to derive deterministic layout bounds from
+- Changed View lowering to derive deterministic layout bounds from
   current `Column`, `Row`, `Stack`/`Panel`, `Fragment`,
   text, and button structure without new parser syntax.
-- Changed action-button submit bounds to derive from the same component text
+- Changed action-button submit bounds to derive from the same View text
   control bounds table before falling back to legacy stacked bounds.
 - Updated `tools/build-web-ime-player-rendered-fixture.rs` so the rendered IME
   fixture carries typed text-control layout records.
@@ -26,12 +26,12 @@
 ## Files Touched
 
 - `crates/arcweft-bundle/src/resource_codec.rs`
-- `crates/arcweft-bundle/src/resource_codec/ui/model.rs`
-- `crates/arcweft-bundle/src/resource_codec/ui/codec.rs`
-- `crates/arcweft-bundle/tests/ui_runtime_text_controls.rs`
-- `crates/arcweft-bundle/tests/ui_resource_codecs.rs`
-- `crates/arcweft-bundle/tests/ui_action_button_resources.rs`
-- `crates/arcweft-bundle/tests/ui_focus_navigation_resources.rs`
+- `crates/arcweft-bundle/src/resource_codec/view/model.rs`
+- `crates/arcweft-bundle/src/resource_codec/view/codec.rs`
+- `crates/arcweft-bundle/tests/view_runtime_text_controls.rs`
+- `crates/arcweft-bundle/tests/view_resource_codecs.rs`
+- `crates/arcweft-bundle/tests/view_action_button_resources.rs`
+- `crates/arcweft-bundle/tests/view_focus_navigation_resources.rs`
 - `crates/arcweft-cli/src/app/bundle.rs`
 - `crates/arcweft-cli/src/app/bundle_view.rs`
 - `tools/build-web-ime-player-rendered-fixture.rs`
@@ -41,11 +41,11 @@
 ## Runtime And Player Path
 
 No new player renderer shape is introduced. The existing player path already
-consumes `UiRuntimeTextControlBounds` and converts it into `HitRect`. This cut
+consumes `ViewRuntimeTextControlBounds` and converts it into `HitRect`. This cut
 changes the source of that runtime field from stacked defaults to the typed
-program layout table when component bounds exist.
+program layout table when View bounds exist.
 
-Action buttons still use the existing `UiRuntimeButtonBounds` and
+Action buttons still use the existing `ViewRuntimeButtonBounds` and
 `RenderActionButton` path. Their default submit placement now reads the target
 text-control bounds from the same layout table, then falls back to the legacy
 stacked bounds only for older resources.
@@ -54,7 +54,7 @@ stacked bounds only for older resources.
 
 - Component-only `TextField` deterministic runtime bounds.
 - `TextArea` and `SecureField` deterministic runtime bounds.
-- Compact UI resource round-trip preservation of layout bounds.
+- Compact View resource round-trip preservation of layout bounds.
 - Semantic target bounds agreement with text-control bounds.
 - Missing bounds fallback to existing stacked slots.
 - Invalid zero-size layout bounds rejection.
@@ -63,8 +63,7 @@ stacked bounds only for older resources.
 
 ## Non-Goals Retained
 
-- Top-level `ui text_input`, `ui text_area`, and `ui secure_field`
-  compatibility declarations remain removed.
+- Removed top-level text-control declarations are not reintroduced.
 - The submit action substrate from seq06.16/seq06.16.1 is not redesigned.
 - Platform widget, DOM, CSS screenshot, and source-string fallback behavior are
   not introduced.
@@ -73,15 +72,15 @@ stacked bounds only for older resources.
 
 ## Validation
 
-- `cargo test -p arcweft-bundle --test ui_runtime_text_controls -- --nocapture`
-- `cargo test -p arcweft-bundle --test ui_resource_codecs -- --nocapture`
-- `cargo test -p arcweft-bundle --test ui_action_button_resources -- --nocapture`
-- `cargo test -p arcweft-bundle --test ui_focus_navigation_resources -- --nocapture`
-- `cargo test -p arcweft-cli component_view_ -- --nocapture`
+- `cargo test -p arcweft-bundle --test view_runtime_text_controls -- --nocapture`
+- `cargo test -p arcweft-bundle --test view_resource_codecs -- --nocapture`
+- `cargo test -p arcweft-bundle --test view_action_button_resources -- --nocapture`
+- `cargo test -p arcweft-bundle --test view_focus_navigation_resources -- --nocapture`
+- `cargo test -p arcweft-cli view_ -- --nocapture`
 - `cargo test -p arcweft-runtime-driver text_submit -- --nocapture`
 - `cargo test -p arcweft-player-scene --test runtime_text_controls -- --nocapture`
 - `cargo fmt --all -- --check`
-- `cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui-layout-bounds.awfb`
+- `cargo run -p arcweft-cli -- bundle samples/modern-feedback-view/src/main.arcw --output target/arcweft/modern-feedback-view-layout-bounds.awfb`
 - `cargo +nightly -Zscript tools/build-web-ime-player-rendered-fixture.rs --out target/arcweft/web-ime-player-rendered-layout-bounds.awfb`
 - `cargo clippy -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-player-scene --all-targets -- -D warnings`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`

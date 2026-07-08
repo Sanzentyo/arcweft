@@ -7,7 +7,7 @@ A TextBox is the target object for dialogue output. If no target is specified, `
   "schema_version": 1,
   "textbox_id": "textbox.main",
   "public_id": "textbox.main",
-  "layer": "layer.ui.dialogue",
+  "layer": "layer.view.dialogue",
   "role": "DialogueTextBox",
   "layout": {
     "anchor": "bottom",
@@ -23,7 +23,7 @@ A TextBox is the target object for dialogue output. If no target is specified, `
   "agent": {
     "observable": true,
     "action_targets": ["advance_text", "skip_line"],
-    "bbox_source": "UiLayoutExact"
+    "bbox_source": "ViewLayoutExact"
   }
 }
 ```

@@ -41,4 +41,4 @@ capture member selection.
 
 ## Known follow-up
 
-The patch includes a conservative component table builder based on object grouping already visible in Agent observations. The renderer/UI lowering integration should replace or enrich that builder with authored component IDs from the prepared-frame component table once that typed table is available.
+The patch includes a conservative component table builder based on object grouping already visible in Agent observations. The renderer/View lowering integration should replace or enrich that builder with authored component IDs from the prepared-frame component table once that typed table is available.

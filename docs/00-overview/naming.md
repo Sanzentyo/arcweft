@@ -14,7 +14,7 @@ A layered, verified, agent-native narrative engine.
 意味づけ:
 
 - **Arc**: 物語の弧、graph edge、scene transition、render arc。
-- **Weft**: 織物の横糸。layer、hook、signal、UI、reference、shader、activity を織り込むこと。
+- **Weft**: 織物の横糸。layer、hook、signal、View、reference、shader、activity を織り込むこと。
 - 既存の有名 visual novel engine、ゲーム会社、一般的な graphics library と強く混ざりにくい方向を狙う。
 - crate、CLI、documentation、bundle metadata に展開しやすい。
 
@@ -59,7 +59,7 @@ arcweft.lock
 src/
   main.arcw
   routes/opening.arcw
-  ui/settings.arcw
+  view/settings.arcw
   shaders/post.arcw
 
 .arcweft/
@@ -142,7 +142,7 @@ arcweft/audioCuePreview
 
 ## HTML bridge 属性
 
-HTML/CSS UI backend は `data-arcweft-*` 属性を使う。
+HTML/CSS View backend は `data-arcweft-*` 属性を使う。
 
 ```html
 <button

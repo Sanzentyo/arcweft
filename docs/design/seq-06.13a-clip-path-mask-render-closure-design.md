@@ -124,7 +124,7 @@ The plan-level evidence expected for tests and capture packets:
 Pixel-level smoke/golden expectations:
 
 - run native and web through the same `ViewCompositor::render_scene` path;
-- capture the same motion timestamps used by `UiMotionSample` fixtures;
+- capture the same motion timestamps used by `ViewMotionSample` fixtures;
 - compare exact hash only on pinned adapters;
 - otherwise compare bounded drift with a documented per-channel tolerance.
 

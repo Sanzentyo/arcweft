@@ -545,7 +545,7 @@ facade file has 2458 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 
-## warning SIZE002 — `crates/arcweft-ui/src/lib.rs`
+## warning SIZE002 — `crates/arcweft-view/src/lib.rs`
 
 facade file has 1005 physical LOC; target is below 250 LOC
 

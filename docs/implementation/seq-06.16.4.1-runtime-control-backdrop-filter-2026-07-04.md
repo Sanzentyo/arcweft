@@ -12,12 +12,12 @@ tests, sample update gate, and native/web exact visual evidence requirements.
 
 ### `arcweft-bundle`
 
-- Extends `UiRuntimeControlVisualStyle` with optional foreground and backdrop
+- Extends `ViewRuntimeControlVisualStyle` with optional foreground and backdrop
   filter lists.
-- Adds `UiRuntimeControlFilterList` and
-  `UiRuntimeControlFilter::Blur { radius_milli }`.
+- Adds `ViewRuntimeControlFilterList` and
+  `ViewRuntimeControlFilter::Blur { radius_milli }`.
 - Resolves `backdrop-filter`, `-webkit-backdrop-filter`, and `filter` from
-  `UiStyleResource` declarations.
+  `ViewStyleResource` declarations.
 - Accepts `none` and whitespace-separated `blur(<non-negative px length>)`
   functions.
 - Emits `UnsupportedValue` for unsupported filter functions and invalid units.
@@ -61,7 +61,7 @@ tests, sample update gate, and native/web exact visual evidence requirements.
 - Adds an ignored GPU smoke that verifies a foreground `filter: blur(...)`
   changes the completed control-content pixels through the shared offscreen
   renderer path.
-- Updates `samples/modern-feedback-ui` so TextField, TextArea, and Button use
+- Updates `samples/modern-feedback-view` so TextField, TextArea, and Button use
   authored `backdrop-filter: blur(...)` now that the native/web shared renderer
   path executes runtime-control backdrops.
 
@@ -119,11 +119,11 @@ cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles foregro
 cargo test -p arcweft-render-wgpu --test runtime_control_backdrop_gpu_smoke -- --ignored
 cargo test -p arcweft-player-scene --test action_button_submit
 cargo test -p arcweft-player-scene --test runtime_text_controls
-cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/single-text-pass-aux.png --mode drain --steps 8 --max-ops 128
-cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/native-text-input/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/native-text-input-single-pass-aux.png --mode drain --steps 8 --max-ops 128
-cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-ui/arcw.toml
-cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui-backdrop-filter.awfb
-cargo run -p arcweft-cli --features native-capture -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --capture color --content-policy-mode local-dev --out target/modern-feedback-ui/backdrop-filter-observe.png --mode drain --steps 4 --max-ops 64
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-view/src/main.arcw --json --image png --out target/modern-feedback-view-debug/single-text-pass-aux.png --mode drain --steps 8 --max-ops 128
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/native-text-input/src/main.arcw --json --image png --out target/modern-feedback-view-debug/native-text-input-single-pass-aux.png --mode drain --steps 8 --max-ops 128
+cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-view/arcw.toml
+cargo run -p arcweft-cli -- bundle samples/modern-feedback-view/src/main.arcw --output target/arcweft/modern-feedback-view-backdrop-filter.awfb
+cargo run -p arcweft-cli --features native-capture -- agent observe samples/modern-feedback-view/src/main.arcw --json --image png --capture color --content-policy-mode local-dev --out target/modern-feedback-view/backdrop-filter-observe.png --mode drain --steps 4 --max-ops 64
 cargo test -p arcweft-render-wgpu
 cargo check -p arcweft-player-native
 cargo check -p arcweft-render-web
@@ -138,7 +138,7 @@ written.
 ## Non-goals and follow-up boundary
 
 - Checked-in PNG baselines are not updated by this package.
-- `samples/modern-feedback-ui` still needs pinned exact visual-golden evidence
+- `samples/modern-feedback-view` still needs pinned exact visual-golden evidence
   before any checked-in PNG baseline promotion.
 - Unsupported filter functions stay diagnosed until each function has a typed
   payload and renderer execution path.

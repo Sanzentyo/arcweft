@@ -182,7 +182,7 @@ Known-directory validation requires host policy to allow a directory family firs
 ## Remaining Platform Work
 
 - Live-validate the remaining owned window/cursor operations on Windows, macOS, Linux X11, and Linux Wayland.
-- Add direct windowed integration fixtures for owned-window/cursor host calls once the native test harness can drive a real event loop without requiring manual UI interaction.
+- Add direct windowed integration fixtures for owned-window/cursor host calls once the native test harness can drive a real event loop without requiring manual View interaction.
 - Add typed source functions and decoders for the remaining desktop file/grant
   host-call surfaces now that the generic desktop JSON request fallback is
   removed.

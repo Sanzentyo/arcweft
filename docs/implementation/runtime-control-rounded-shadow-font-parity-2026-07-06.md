@@ -2,7 +2,7 @@
 
 ## Scope
 
-This note records the fix for the modern feedback UI regression where runtime
+This note records the fix for the modern feedback View regression where runtime
 controls displayed broken rounded corners, coarse shifted shadows, and missing
 CSS-style font family propagation for Japanese input/display text.
 
@@ -13,7 +13,7 @@ CSS-style font family propagation for Japanese input/display text.
   mismatch was therefore not a separate observe-only layout path.
 - Runtime control style parsing accepted visual colors, radii, depth, filters,
   and shadows, but `font-family` was not part of
-  `UiRuntimeControlVisualStyle`. The authored sample token was ignored and did
+  `ViewRuntimeControlVisualStyle`. The authored sample token was ignored and did
   not reach renderer text blocks.
 - Runtime control borders and focus rings were drawn as four clipped filled
   rectangles. That did not match CSS border geometry for rounded corners and
@@ -53,31 +53,31 @@ CSS-style font family propagation for Japanese input/display text.
 
 ## Evidence
 
-- `target/modern-feedback-ui-debug/rounded-shadow-font-fixed-2048x1152.png`
+- `target/modern-feedback-view-debug/rounded-shadow-font-fixed-2048x1152.png`
   was captured through:
 
 ```bash
-cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/rounded-shadow-font-fixed-2048x1152.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-view/src/main.arcw --json --image png --out target/modern-feedback-view-debug/rounded-shadow-font-fixed-2048x1152.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
 ```
 
 The capture shows continuous rounded strokes and no duplicate shifted
 box-shadow rectangle. The observe JSON has empty runtime style diagnostics.
 
-- `target/modern-feedback-ui-debug/observe-native-font-unified.png` was
+- `target/modern-feedback-view-debug/observe-native-font-unified.png` was
   captured through:
 
 ```bash
-cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/observe-native-font-unified.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-view/src/main.arcw --json --image png --out target/modern-feedback-view-debug/observe-native-font-unified.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
 ```
 
 This verifies that player-backed observe registers the bundled player font set
 with both the planner and offscreen renderer before capture.
 
-- `target/modern-feedback-ui-debug/modern-feedback-ui-logical-extents.png` was
+- `target/modern-feedback-view-debug/modern-feedback-view-logical-extents.png` was
   captured through:
 
 ```bash
-cargo run -p arcweft-cli --features native-capture -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/modern-feedback-ui-logical-extents.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
+cargo run -p arcweft-cli --features native-capture -- agent observe samples/modern-feedback-view/src/main.arcw --json --image png --out target/modern-feedback-view-debug/modern-feedback-view-logical-extents.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
 ```
 
 This capture verifies that the 1280x720 design-space controls render into a

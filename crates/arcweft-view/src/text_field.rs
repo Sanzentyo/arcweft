@@ -1,6 +1,6 @@
 //! Retained TextField/TextArea state and style parts.
 
-use crate::text_source::{UiTextByteRange, UiTextSource};
+use crate::text_source::{ViewTextByteRange, ViewTextSource};
 use crate::{HandlerId, TextSourceId};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -53,7 +53,7 @@ pub struct TextFieldSpec {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TextEditState {
     document: String,
-    selection: UiTextByteRange,
+    selection: ViewTextByteRange,
     composition: Option<TextCompositionUpdate>,
     revision: TextRevision,
     session: Option<TextInputSessionId>,
@@ -75,11 +75,11 @@ pub enum TextEditError {
     },
     #[error("invalid text byte range {range:?} for document length {document_len}")]
     InvalidByteRange {
-        range: UiTextByteRange,
+        range: ViewTextByteRange,
         document_len: usize,
     },
     #[error("text byte range {range:?} does not align with UTF-8 boundaries")]
-    NonBoundaryRange { range: UiTextByteRange },
+    NonBoundaryRange { range: ViewTextByteRange },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,7 +100,7 @@ pub struct TextFieldMetrics {
 pub struct TextFieldPartRect {
     part: TextEditorPart,
     bounds: HitRect,
-    range: Option<UiTextByteRange>,
+    range: Option<ViewTextByteRange>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,7 +108,7 @@ pub struct TextFieldVisualBuffer {
     target: Option<InteractionTarget>,
     bounds: HitRect,
     display_text: String,
-    source: UiTextSource,
+    source: ViewTextSource,
     parts: Vec<TextFieldPartRect>,
     revision: TextRevision,
     secure: bool,
@@ -222,7 +222,7 @@ impl TextEditState {
     pub fn new(document: impl Into<String>) -> Self {
         Self {
             document: document.into(),
-            selection: UiTextByteRange::new(0, 0),
+            selection: ViewTextByteRange::new(0, 0),
             composition: None,
             revision: TextRevision::default(),
             session: None,
@@ -233,7 +233,7 @@ impl TextEditState {
         &self.document
     }
 
-    pub const fn selection(&self) -> UiTextByteRange {
+    pub const fn selection(&self) -> ViewTextByteRange {
         self.selection
     }
 
@@ -249,11 +249,11 @@ impl TextEditState {
         self.session
     }
 
-    pub fn visual_source(&self) -> UiTextSource {
+    pub fn visual_source(&self) -> ViewTextSource {
         if let Some(composition) = &self.composition {
             let mut visual = self.document.clone();
             let range = composition.replacement().map_or(self.selection, |range| {
-                UiTextByteRange::new(range.start().0, range.end().0)
+                ViewTextByteRange::new(range.start().0, range.end().0)
             });
             let start = usize::try_from(range.start())
                 .unwrap_or(visual.len())
@@ -264,9 +264,9 @@ impl TextEditState {
             if start <= end {
                 visual.replace_range(start..end, composition.preedit());
             }
-            UiTextSource::plain(visual)
+            ViewTextSource::plain(visual)
         } else {
-            UiTextSource::plain(self.document.clone())
+            ViewTextSource::plain(self.document.clone())
         }
     }
 
@@ -316,7 +316,7 @@ impl TextEditState {
                     changed |= next.delete_surrounding(*before, *after, *unit)?;
                 }
                 TextInputOperation::SetSelection(selection) => {
-                    next.selection = ui_range(selection.range());
+                    next.selection = view_range(selection.range());
                 }
                 TextInputOperation::Command(command) => {
                     let command_result = next.apply_command(*command)?;
@@ -342,11 +342,11 @@ impl TextEditState {
     ) -> TextFieldVisualBuffer {
         let source = self.visual_source();
         let display_text = match &source {
-            UiTextSource::Plain(text) if secure => mask_text(text),
-            UiTextSource::Plain(text) => text.clone(),
-            UiTextSource::Localized(_)
-            | UiTextSource::RichTextDocument(_)
-            | UiTextSource::DisplayFrame(_) => String::new(),
+            ViewTextSource::Plain(text) if secure => mask_text(text),
+            ViewTextSource::Plain(text) => text.clone(),
+            ViewTextSource::Localized(_)
+            | ViewTextSource::RichTextDocument(_)
+            | ViewTextSource::DisplayFrame(_) => String::new(),
         };
         let mut parts = vec![
             TextFieldPartRect::new(TextEditorPart::Root, bounds, None),
@@ -360,8 +360,8 @@ impl TextEditState {
             ));
         }
         if let Some(composition) = &self.composition {
-            let base = composition.replacement().map_or(self.selection, ui_range);
-            let composition_range = UiTextByteRange::new(
+            let base = composition.replacement().map_or(self.selection, view_range);
+            let composition_range = ViewTextByteRange::new(
                 base.start(),
                 base.start()
                     .saturating_add(u32::try_from(composition.preedit().len()).unwrap_or(u32::MAX)),
@@ -372,7 +372,7 @@ impl TextEditState {
                 Some(composition_range),
             ));
         }
-        let caret = UiTextByteRange::new(self.selection.end(), self.selection.end());
+        let caret = ViewTextByteRange::new(self.selection.end(), self.selection.end());
         parts.push(TextFieldPartRect::new(
             TextEditorPart::Caret,
             caret_rect(bounds, self.selection.end(), metrics),
@@ -395,15 +395,15 @@ impl TextEditState {
                 self.composition
                     .as_ref()
                     .and_then(TextCompositionUpdate::replacement)
-                    .map_or(self.selection, ui_range)
+                    .map_or(self.selection, view_range)
             },
-            ui_range,
+            view_range,
         );
         replace_range(&mut self.document, range, commit.text())?;
         let caret = range
             .start()
             .saturating_add(u32::try_from(commit.text().len()).unwrap_or(u32::MAX));
-        self.selection = UiTextByteRange::new(caret, caret);
+        self.selection = ViewTextByteRange::new(caret, caret);
         self.composition = None;
         Ok(true)
     }
@@ -413,12 +413,12 @@ impl TextEditState {
             return Ok(false);
         };
         if reason == CompositionEndReason::Committed {
-            let range = composition.replacement().map_or(self.selection, ui_range);
+            let range = composition.replacement().map_or(self.selection, view_range);
             replace_range(&mut self.document, range, composition.preedit())?;
             let caret = range
                 .start()
                 .saturating_add(u32::try_from(composition.preedit().len()).unwrap_or(u32::MAX));
-            self.selection = UiTextByteRange::new(caret, caret);
+            self.selection = ViewTextByteRange::new(caret, caret);
             Ok(true)
         } else {
             Ok(false)
@@ -437,9 +437,9 @@ impl TextEditState {
             .end()
             .saturating_add(after)
             .min(u32::try_from(self.document.len()).unwrap_or(u32::MAX));
-        let range = UiTextByteRange::new(start, end);
+        let range = ViewTextByteRange::new(start, end);
         replace_range(&mut self.document, range, "")?;
-        self.selection = UiTextByteRange::new(start, start);
+        self.selection = ViewTextByteRange::new(start, start);
         Ok(start != end)
     }
 
@@ -461,8 +461,10 @@ impl TextEditState {
                 self.revision,
             )),
             TextEditCommand::SelectAll => {
-                self.selection =
-                    UiTextByteRange::new(0, u32::try_from(self.document.len()).unwrap_or(u32::MAX));
+                self.selection = ViewTextByteRange::new(
+                    0,
+                    u32::try_from(self.document.len()).unwrap_or(u32::MAX),
+                );
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::Submit => Ok(TextEditOutcome::new(false, true, self.revision)),
@@ -476,7 +478,7 @@ impl TextEditState {
             | TextEditCommand::MoveLineStart { selecting: _ }
             | TextEditCommand::MoveDocumentStart { selecting: _ }
             | TextEditCommand::MovePageUp { selecting: _ } => {
-                self.selection = UiTextByteRange::new(0, 0);
+                self.selection = ViewTextByteRange::new(0, 0);
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::MoveRight { selecting: _ }
@@ -486,12 +488,12 @@ impl TextEditState {
             | TextEditCommand::MoveDocumentEnd { selecting: _ }
             | TextEditCommand::MovePageDown { selecting: _ } => {
                 let end = u32::try_from(self.document.len()).unwrap_or(u32::MAX);
-                self.selection = UiTextByteRange::new(end, end);
+                self.selection = ViewTextByteRange::new(end, end);
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::SelectWord | TextEditCommand::SelectLine => {
                 let end = u32::try_from(self.document.len()).unwrap_or(u32::MAX);
-                self.selection = UiTextByteRange::new(0, end);
+                self.selection = ViewTextByteRange::new(0, end);
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::Copy | TextEditCommand::Cut | TextEditCommand::Paste => {
@@ -505,7 +507,7 @@ impl TextFieldPartRect {
     pub const fn new(
         part: TextEditorPart,
         bounds: HitRect,
-        range: Option<UiTextByteRange>,
+        range: Option<ViewTextByteRange>,
     ) -> Self {
         Self {
             part,
@@ -522,7 +524,7 @@ impl TextFieldPartRect {
         self.bounds
     }
 
-    pub const fn range(&self) -> Option<UiTextByteRange> {
+    pub const fn range(&self) -> Option<ViewTextByteRange> {
         self.range
     }
 }
@@ -540,7 +542,7 @@ impl TextFieldVisualBuffer {
         &self.display_text
     }
 
-    pub const fn source(&self) -> &UiTextSource {
+    pub const fn source(&self) -> &ViewTextSource {
         &self.source
     }
 
@@ -557,13 +559,13 @@ impl TextFieldVisualBuffer {
     }
 }
 
-fn ui_range(range: TextRange<TextByteOffset>) -> UiTextByteRange {
-    UiTextByteRange::new(range.start().0, range.end().0)
+fn view_range(range: TextRange<TextByteOffset>) -> ViewTextByteRange {
+    ViewTextByteRange::new(range.start().0, range.end().0)
 }
 
 fn replace_range(
     document: &mut String,
-    range: UiTextByteRange,
+    range: ViewTextByteRange,
     value: &str,
 ) -> Result<(), TextEditError> {
     let start = usize::try_from(range.start()).unwrap_or(usize::MAX);
@@ -586,7 +588,7 @@ fn mask_text(value: &str) -> String {
     "•".repeat(value.chars().count())
 }
 
-fn range_rect(bounds: HitRect, range: UiTextByteRange, metrics: TextFieldMetrics) -> HitRect {
+fn range_rect(bounds: HitRect, range: ViewTextByteRange, metrics: TextFieldMetrics) -> HitRect {
     let start = range.start().min(range.end());
     let end = range.end().max(range.start());
     let x = bounds.x + byte_offset_px(start, metrics.advance_px);
@@ -600,7 +602,7 @@ fn range_rect(bounds: HitRect, range: UiTextByteRange, metrics: TextFieldMetrics
     )
 }
 
-fn underline_rect(bounds: HitRect, range: UiTextByteRange, metrics: TextFieldMetrics) -> HitRect {
+fn underline_rect(bounds: HitRect, range: ViewTextByteRange, metrics: TextFieldMetrics) -> HitRect {
     let mut rect = range_rect(bounds, range, metrics);
     rect.y = bounds.y + bounds.height - 2.0;
     rect.height = 2.0;
@@ -645,7 +647,7 @@ mod tests {
 
         assert_eq!(state.document(), "abc");
         assert_eq!(state.session(), Some(TextInputSessionId(4)));
-        assert_eq!(visual, crate::text_source::UiTextSource::plain("aかなc"));
+        assert_eq!(visual, crate::text_source::ViewTextSource::plain("aかなc"));
     }
 
     #[test]
@@ -885,7 +887,7 @@ impl TextEditState {
                     changed |= next.delete_surrounding_by_unit(*before, *after, *unit)?;
                 }
                 TextInputOperation::SetSelection(selection) => {
-                    next.selection = ui_range(selection.range());
+                    next.selection = view_range(selection.range());
                 }
                 TextInputOperation::Command(command) => {
                     let command_result = next.apply_command_with_policy(*command, policy)?;
@@ -963,8 +965,8 @@ impl TextEditState {
             self.composition
                 .as_ref()
                 .map_or_else(Vec::new, |composition| {
-                    let base = composition.replacement().map_or(self.selection, ui_range);
-                    let range = UiTextByteRange::new(
+                    let base = composition.replacement().map_or(self.selection, view_range);
+                    let range = ViewTextByteRange::new(
                         base.start(),
                         base.start().saturating_add(
                             u32::try_from(composition.preedit().len()).unwrap_or(u32::MAX),
@@ -996,7 +998,7 @@ impl TextEditState {
     ) -> Result<bool, TextEditError> {
         let range = surrounding_delete_range(&self.document, self.selection, before, after, unit)?;
         replace_range(&mut self.document, range, "")?;
-        self.selection = UiTextByteRange::new(range.start(), range.start());
+        self.selection = ViewTextByteRange::new(range.start(), range.start());
         Ok(range.start() != range.end())
     }
 
@@ -1052,11 +1054,11 @@ impl TextEditState {
 
 fn surrounding_delete_range(
     document: &str,
-    selection: UiTextByteRange,
+    selection: ViewTextByteRange,
     before: u32,
     after: u32,
     unit: TextDeleteUnit,
-) -> Result<UiTextByteRange, TextEditError> {
+) -> Result<ViewTextByteRange, TextEditError> {
     let start = checked_boundary(document, selection.start())?;
     let end = checked_boundary(document, selection.end())?;
     let start = match unit {
@@ -1071,14 +1073,14 @@ fn surrounding_delete_range(
         TextDeleteUnit::UnicodeScalar => offset_after_scalars(document, end, after),
         TextDeleteUnit::GraphemeCluster => offset_after_graphemes(document, end, after),
     };
-    Ok(UiTextByteRange::new(start, end))
+    Ok(ViewTextByteRange::new(start, end))
 }
 
 fn checked_boundary(document: &str, offset: u32) -> Result<usize, TextEditError> {
     let offset = usize::try_from(offset).unwrap_or(usize::MAX);
     if offset > document.len() {
         return Err(TextEditError::InvalidByteRange {
-            range: UiTextByteRange::new(
+            range: ViewTextByteRange::new(
                 u32::try_from(offset).unwrap_or(u32::MAX),
                 u32::try_from(offset).unwrap_or(u32::MAX),
             ),
@@ -1088,7 +1090,7 @@ fn checked_boundary(document: &str, offset: u32) -> Result<usize, TextEditError>
     if !document.is_char_boundary(offset) {
         let offset = u32::try_from(offset).unwrap_or(u32::MAX);
         return Err(TextEditError::NonBoundaryRange {
-            range: UiTextByteRange::new(offset, offset),
+            range: ViewTextByteRange::new(offset, offset),
         });
     }
     Ok(offset)
@@ -1193,18 +1195,18 @@ fn offset_after_graphemes(document: &str, byte: usize, count: u32) -> u32 {
 }
 
 fn character_bounds_for_visual_text(
-    source: &UiTextSource,
+    source: &ViewTextSource,
     bounds: HitRect,
     metrics: TextFieldMetrics,
     writing_mode: arcweft_presentation::text_input::TextWritingMode,
 ) -> Vec<arcweft_presentation::text_input::TextCharacterBounds> {
-    let UiTextSource::Plain(text) = source else {
+    let ViewTextSource::Plain(text) = source else {
         return Vec::new();
     };
     text.char_indices()
         .map(|(start, scalar)| {
             let end = start + scalar.len_utf8();
-            let range = UiTextByteRange::new(
+            let range = ViewTextByteRange::new(
                 u32::try_from(start).unwrap_or(u32::MAX),
                 u32::try_from(end).unwrap_or(u32::MAX),
             );
@@ -1217,7 +1219,7 @@ fn character_bounds_for_visual_text(
 }
 
 fn selection_rects_for_text_field(
-    range: UiTextByteRange,
+    range: ViewTextByteRange,
     bounds: HitRect,
     metrics: TextFieldMetrics,
     writing_mode: arcweft_presentation::text_input::TextWritingMode,
@@ -1233,7 +1235,7 @@ fn selection_rects_for_text_field(
 
 fn range_rect_for_writing_mode(
     bounds: HitRect,
-    range: UiTextByteRange,
+    range: ViewTextByteRange,
     metrics: TextFieldMetrics,
     writing_mode: arcweft_presentation::text_input::TextWritingMode,
 ) -> HitRect {
@@ -1278,7 +1280,7 @@ fn caret_rect_for_writing_mode(
 ) -> HitRect {
     range_rect_for_writing_mode(
         bounds,
-        UiTextByteRange::new(offset, offset),
+        ViewTextByteRange::new(offset, offset),
         metrics,
         writing_mode,
     )
@@ -1317,7 +1319,7 @@ mod seq06_3_tests {
 
         assert!(!outcome.should_commit_binding(TextFieldBindingCommitPolicy::OnCommittedEdit));
         assert_eq!(state.document(), "abc");
-        assert_eq!(state.visual_source(), UiTextSource::plain("にほんごabc"));
+        assert_eq!(state.visual_source(), ViewTextSource::plain("にほんごabc"));
     }
 
     #[test]

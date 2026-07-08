@@ -476,7 +476,7 @@ impl NativeSchedulerStatsSamples {
 
 fn median_task_class_counts(values: &mut [NativeTaskClassCounts]) -> NativeTaskClassCounts {
     NativeTaskClassCounts {
-        local_ui: median_task_class_field(values, |value| value.local_ui),
+        local_view: median_task_class_field(values, |value| value.local_view),
         io: median_task_class_field(values, |value| value.io),
         cpu: median_task_class_field(values, |value| value.cpu),
         gpu_prepare: median_task_class_field(values, |value| value.gpu_prepare),

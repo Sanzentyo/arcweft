@@ -278,7 +278,7 @@ reading the full observation payload.
           "id": "hotspot",
           "type_name": "KeywordHit",
           "role": "keyword",
-          "layer": "ui",
+          "layer": "view",
           "depth": 4000,
           "declaration": {
             "struct_name": "KeywordHit",
@@ -432,7 +432,7 @@ CLI examples:
 ```bash
 arcw agent observe game/routes/opening.arcw --json
 arcw agent observe game/routes/opening.arcw --image png --out viewport.png --json
-arcw agent observe game/routes/opening.arcw --image png --view ui.login_form --out view.png --json
+arcw agent observe game/routes/opening.arcw --image png --view.login_form --out view.png --json
 arcw agent observe game/routes/opening.arcw --image png --layer dialogue --out dialogue.png --json
 arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dialogue.0.0 --out object.rgba --json
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.png

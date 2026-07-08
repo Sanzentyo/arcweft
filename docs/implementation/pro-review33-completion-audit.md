@@ -23,13 +23,13 @@ The completed scope is the `pro_review33` implementation goal:
 6. Make the native product player default to `.awfb` bundle execution, with
    source execution and capture metadata behind developer features.
 7. Preserve the no-shim policy: do not introduce compatibility aliases,
-   removed parser branches, `ActivityViewport`, `TextBoxComponent`, `UiEvent`,
+   removed parser branches, `ActivityViewport`, `TextBoxComponent`, `ViewEvent`,
    or per-Activity input routers.
 8. Record tests and validation at reviewable cut points.
 
 The unified UI and Activity input design is not treated as fully implemented by
 this audit. It is adopted as the next boundary source of truth for future cuts:
-LayerTree routing, semantic observation, retained UI fragments, TextBox as a
+LayerTree routing, semantic observation, retained View fragments, TextBox as a
 domain object, Activity step borrowing, Agent routing, replay, gesture, and
 performance counters must continue to move toward that design.
 
@@ -118,12 +118,12 @@ Default product-player JSON reports do not expose debug capture metadata.
 - `ActivityHostRegistry`
 - `ActivityStepInputRef`
 - `ActivityStepOutputSink`
-- `UiFrameCommitBuilder`
+- `ViewFrameCommitBuilder`
 
 Presentation actions are partitioned and dispatched by host-owned handlers.
 Activity hosts receive borrowed, already routed `InputEvent` data and matching
 `HostEventSource::Activity` notifications. UI component output reaches the host
-as `UiLayerOutput`, which pairs renderer-facing display data with semantic
+as `ViewLayerOutput`, which pairs renderer-facing display data with semantic
 fragment data before validation against the committed `LayerTree`.
 
 ### Unified UI design constraints adopted
@@ -143,7 +143,7 @@ matter for this boundary:
   `window: Option<Ref<TextBox>>`.
 - Runtime aliases such as `@textbox.0` are not used as legacy fallbacks.
 - Public concepts such as `ActivityViewport`, `TextBoxComponent`,
-  `UiInputEvent`, and `UiEvent` are not introduced.
+  `ViewInputEvent`, and `ViewEvent` are not introduced.
 
 Initial Sans I/O boundaries already exist in:
 
@@ -157,14 +157,14 @@ crates/arcweft-presentation/src/hover.rs
 crates/arcweft-presentation/src/gesture.rs
 crates/arcweft-presentation/src/replay.rs
 crates/arcweft-presentation/src/semantic.rs
-crates/arcweft-ui/src/component.rs
-crates/arcweft-ui/src/entity.rs
-crates/arcweft-ui/src/fragment.rs
-crates/arcweft-ui/src/style.rs
-crates/arcweft-ui/src/reactive.rs
-crates/arcweft-ui/src/layout.rs
-crates/arcweft-ui/src/display.rs
-crates/arcweft-ui/src/frame.rs
+crates/arcweft-view/src/component.rs
+crates/arcweft-view/src/entity.rs
+crates/arcweft-view/src/fragment.rs
+crates/arcweft-view/src/style.rs
+crates/arcweft-view/src/reactive.rs
+crates/arcweft-view/src/layout.rs
+crates/arcweft-view/src/display.rs
+crates/arcweft-view/src/frame.rs
 ```
 
 ## Deferred Unified UI Work
@@ -177,7 +177,7 @@ The following work remains intentionally outside the completed
   pointer lock, keyboard, IME, gamepad, Agent, and replay routing behavior.
 - Full `TextBoxState`, `LineDisplayStore`, reveal-index, semantic TextBox
   handler, bbox/mask derivation, and anonymous TextBox Component integration.
-- Full Arcweft Component lowering to `UiProgram`, retained fragment diffing,
+- Full Arcweft Component lowering to `ViewProgram`, retained fragment diffing,
   renderer submission integration, hot reload, and versioned Rust ABI.
 - Activity layer content integration, semantic/hit metadata for trusted
   renderer Activity output, snapshot/restore, cancellation on unmount/reload,

@@ -23,7 +23,7 @@ pub trait ActivityHost {
 る。Activity は raw pointer/key/window event を解釈せず、Activity ごとの
 input router も持たない。出力は `ActivityStepOutputSink` へ
 `ActionBatch` / `HostEventBatch` として追加し、runtime-host が core
-step、TextBox、UI、他 Activity への配送順を決める。
+step、TextBox、View、他 Activity への配送順を決める。
 
 Activity snapshot は Sans I/O data。Activity は path を開かず、host
 adapter が snapshot bytes の serialize、compress、encrypt、file write、

@@ -32,11 +32,11 @@
 - ID materialization / rename
 - verifier and runtime report code actions
 
-## Phase 2.5: wgpu / UI / Agent
+## Phase 2.5: wgpu / View / Agent
 
 - headless wgpu renderer
 - screenshot / object-id pass / bbox
-- Game Native UI tree
+- Game Native View tree
 - Agent Debug Bus
 - CLI / MCP observe & action
 

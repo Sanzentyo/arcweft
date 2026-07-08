@@ -1092,7 +1092,7 @@ pub enum TextInputBlurPolicy {
     PlatformDefault,
 }
 
-/// Secure-field redaction policy shared by platform adapters, replay, and UI.
+/// Secure-field redaction policy shared by platform adapters, replay, and View.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum TextInputSecurityPolicy {
     #[default]

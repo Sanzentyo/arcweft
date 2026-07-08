@@ -1,8 +1,8 @@
-//! Sans I/O presentation appearance data shared by UI, text, renderer adapters, and replay.
+//! Sans I/O presentation appearance data shared by View, text, renderer adapters, and replay.
 //!
 //! This module intentionally contains no platform API calls. Native and Web hosts
 //! resolve OS/browser preferences into `PresentationEnvironment` and pass that
-//! pure data into Arcweft presentation and UI evaluation.
+//! pure data into Arcweft presentation and View evaluation.
 
 use arcweft_id::PublicId;
 

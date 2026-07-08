@@ -1,7 +1,7 @@
 # CSS layout/cascade coverage sample
 
 This sample is separate from `css-style-parity`. It exists to keep the seq06.12
-coverage fixture focused on retained UI layout/cascade decisions rather than text
+coverage fixture focused on retained View layout/cascade decisions rather than text
 raster parity.
 
 The paired CSS and evidence fixtures are under:

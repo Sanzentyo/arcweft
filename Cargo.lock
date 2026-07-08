@@ -261,7 +261,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-adt",
  "arcweft-character",
- "arcweft-character-ui",
+ "arcweft-character-view",
  "arcweft-core",
  "arcweft-dialogue",
  "arcweft-id",
@@ -497,7 +497,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "arcweft-character-ui"
+name = "arcweft-character-view"
 version = "0.1.0"
 dependencies = [
  "arcweft-character",
@@ -999,7 +999,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-bundle",
  "arcweft-character",
- "arcweft-character-ui",
+ "arcweft-character-view",
  "arcweft-id",
  "arcweft-image",
  "arcweft-layout",
@@ -1007,6 +1007,7 @@ dependencies = [
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
  "num-traits",
+ "oxifont-webfont",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -5143,6 +5144,60 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36820e9051aca1014ddc75770aab4d68bc1e9e632f0f5627c4086bc216fb583b"
 dependencies = [
  "ttf-parser",
+]
+
+[[package]]
+name = "oxiarc-brotli"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28650070409e9e6b34c05b3018cb4ecab87e5c75311881e08c9fd991489fd29b"
+dependencies = [
+ "oxiarc-core",
+]
+
+[[package]]
+name = "oxiarc-core"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "789e87ca465eb1c75efbbc758c18e41055be0033dcbf1d6048e10e073ab5cd7c"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "oxiarc-deflate"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f40802c3906f40ffc2f9e3ac2e2d17b4521b131b04588ce7c923cb5178d7a95c"
+dependencies = [
+ "oxiarc-core",
+]
+
+[[package]]
+name = "oxifont-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec9b90b9b985d9a5d6a7dd0362d748d94c3ff15a70d79ceb61735038779b3675"
+
+[[package]]
+name = "oxifont-parser"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a35255aa2f9564bf79b9c9fa49116b765c5bd96b1a500859db3d9655fa4c66a0"
+dependencies = [
+ "oxifont-core",
+ "ttf-parser",
+]
+
+[[package]]
+name = "oxifont-webfont"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31470e936cc2b2a4449a7f9a0fb4babab47dc0e3af7d4c4a327fb639fc6d0e4e"
+dependencies = [
+ "oxiarc-brotli",
+ "oxiarc-deflate",
+ "oxifont-parser",
 ]
 
 [[package]]

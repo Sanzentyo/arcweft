@@ -87,7 +87,7 @@ pub struct NativeSchedulerStats {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct NativeTaskClassCounts {
-    pub local_ui: usize,
+    pub local_view: usize,
     pub io: usize,
     pub cpu: usize,
     pub gpu_prepare: usize,
@@ -688,7 +688,7 @@ impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
 impl From<TaskClassCounts> for NativeTaskClassCounts {
     fn from(counts: TaskClassCounts) -> Self {
         Self {
-            local_ui: counts.local_ui,
+            local_view: counts.local_view,
             io: counts.io,
             cpu: counts.cpu,
             gpu_prepare: counts.gpu_prepare,

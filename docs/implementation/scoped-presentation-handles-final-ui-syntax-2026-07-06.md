@@ -1,4 +1,16 @@
-# Scoped Presentation Handles And Final UI Syntax - 2026-07-06
+# Scoped Presentation Handles And Final View Syntax - 2026-07-06
+
+## 2026-07-08 View Resource Rename Supersession
+
+The 2026-07-08 View resource rename supersedes earlier notes in this file that
+temporarily kept UI-prefixed catalog names. The active implementation now uses
+`ViewProgramResource`, `ViewStyleResource`, `ViewTextResource`,
+`ViewInputResource`, `ViewThemeResource`, `ViewStyleTable`, `resource_codec::view`,
+`view.*.json` sidecars, `view.action.await`, and View-named presentation
+families. No compatibility aliases or removed-syntax parser branches were added.
+
+See `docs/implementation/view-resource-rename-2026-07-08.md` for the current
+boundary and validation evidence.
 
 This cut implements the first production slice of scoped presentation resource
 handles and final View authoring syntax.
@@ -7,11 +19,11 @@ handles and final View authoring syntax.
 
 The current canonical authoring surface is `view`, not `component`.
 
-- Top-level retained UI declarations are authored as `pub view Name() { ... }`.
+- Top-level retained View declarations are authored as `pub view Name() { ... }`.
 - Flow-side mounting uses `view(@view:.Name, ...)`; `component(...)` and
   `@component` are not canonical in the current syntax stack.
 - Runtime UI ownership metadata now uses `view` fields and `root_view` in the
-  UI resource model. No serde compatibility alias is added for the removed
+  View resource model. No serde compatibility alias is added for the removed
   `component` field names in this internal refactor.
 - Text-control submission samples no longer use `text_submit`. They declare a
   typed `pub action ...`, emit it from `Button(...).on_click { action.invoke(...) }`
@@ -35,7 +47,7 @@ capture metadata all agree on `view` rather than carrying an internal
 The current parser/HIR/sema/bundle test surface now uses canonical `view_*`
 names rather than mechanically duplicated rename artifacts. Bundle View lowering
 now names the body lowering function `lower_view_body`, and inline View style
-sidecars use `ui.style.inline.view`.
+sidecars use `view.style.inline.view`.
 
 Implementation notes that referred to removed intermediate body API names now
 name the actual syntax type, `ViewBody`. This is a terminology cleanup only; it
@@ -79,7 +91,7 @@ scrolling. Authors can override it with `axis = .horizontal` directly or set an
 equivalent `axis` through the matched style contract. The default is applied at
 DSL lowering time, so runtime resources still carry an explicit typed axis.
 
-The typed UI resource and runtime display contracts require
+The typed View resource and runtime display contracts require
 `content_width_milli`, `content_height_milli`, and `axis` on scroll regions.
 Input snapshots require both `offset_x` and `offset_y` on each scroll offset
 entry. No old serialized-resource defaulting path is retained for missing
@@ -131,7 +143,7 @@ Current validation for this slice:
 - `cargo test -p arcweft-cli --all-features --lib view_scroll_contains_nested`
 - `cargo test -p arcweft-runtime-driver --all-features view_handle_lifecycle_filters_text_blocks -- --nocapture`
 - `cargo test -p arcweft-player-scene --all-features --test scroll_regions player_frame_offsets_and_clips_scroll_contained_text_blocks -- --nocapture`
-- `cargo test -p arcweft-bundle --all-features --test ui_resource_codecs ui_resource_ -- --nocapture`
+- `cargo test -p arcweft-bundle --all-features --test view_resource_codecs view_resource_ -- --nocapture`
 - `cargo check -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-player-scene --all-targets --all-features`
 - `cargo clippy -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-player-scene --all-targets --all-features`
 
@@ -159,16 +171,16 @@ The policy recorded from that review is:
   the leaf owns scrolling.
 
 The same request records the naming follow-up raised by the review: View-owned
-Rust boundary types currently named `Ui*` should be audited and renamed to
+Rust boundary types with legacy UI-prefixed names should be audited and renamed to
 `View*` unless they genuinely describe broader product-level UI catalogs such
 as style, theme, input, or text sources. This is intentionally separate from
-the already-recorded legacy `Component*` rename request, because the `Ui*`
+the already-recorded legacy `Component*` rename request, because the UI-prefix
 taxonomy needs a precise split rather than a blanket mechanical replacement.
 
 ## 2026-07-07 View-Owned Resource Type Rename
 
 The first View resource taxonomy slice now renames View-owned compact resource
-and runtime boundary types from generic `Ui*` names to `View*` names without
+and runtime boundary types from generic UI-prefixed names to `View*` names without
 adding aliases or serde compatibility shims.
 
 Renamed types include:
@@ -189,19 +201,17 @@ Renamed types include:
   `ViewFocusInitialPolicy`, `ViewFocusWrapPolicy`, and
   `ViewFocusSkipPolicy`.
 
-Catalog-level UI resources intentionally keep `Ui*` names in this slice:
-`UiStyleResource`, `UiThemeResource`, `UiTextResource`, and
-`UiInputResource` still describe product-level UI sidecar/catalog sections
-rather than a single retained View tree. Shared runtime text-control and
-control-style types also keep `Ui*` names until the input/style catalog boundary
-is redesigned.
+The subsequent 2026-07-08 View resource rename completed the catalog-level
+resource/table rename as well: `ViewStyleResource`, `ViewThemeResource`,
+`ViewTextResource`, `ViewInputResource`, and `ViewStyleTable` are now the active
+names for those product-level View sidecar/catalog sections.
 
 Current validation for this slice:
 
 - `cargo fmt --all`
 - `cargo check -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-player-scene --all-targets --all-features`
 - `cargo clippy -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-player-scene --all-targets --all-features`
-- `cargo test -p arcweft-bundle --all-features --test ui_resource_codecs ui_resource_ -- --nocapture`
+- `cargo test -p arcweft-bundle --all-features --test view_resource_codecs view_resource_ -- --nocapture`
 - `cargo test -p arcweft-cli --all-features --lib view_scroll_contains_nested -- --nocapture`
 - `cargo test -p arcweft-runtime-driver --all-features view_handle_lifecycle_filters_text_blocks -- --nocapture`
 - `cargo test -p arcweft-player-scene --all-features --test scroll_regions player_frame_offsets_and_clips_scroll_contained_text_blocks -- --nocapture`
@@ -227,7 +237,7 @@ Current validation for this slice:
 - `cargo fmt --all`
 - `cargo check -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-web -p arcweft-player-native --all-targets --all-features`
 - `cargo clippy -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-web -p arcweft-player-native --all-targets --all-features`
-- `cargo test -p arcweft-bundle --all-features --test ui_resource_codecs ui_resource_ -- --nocapture`
+- `cargo test -p arcweft-bundle --all-features --test view_resource_codecs view_resource_ -- --nocapture`
 - `cargo test -p arcweft-cli --all-features --lib view_scroll_contains_nested -- --nocapture`
 - `cargo test -p arcweft-player-scene --all-features --test scroll_regions player_frame_offsets_and_clips_scroll_contained_text_blocks -- --nocapture`
 - `cargo test -p arcweft-render-wgpu --all-features --test geometry scroll_region -- --nocapture`
@@ -247,9 +257,9 @@ that select or describe authored View elements:
   `ViewStyleValue`;
 - `ViewEnvironmentPredicate`.
 
-`UiStyleResource` remains the product-level style catalog. Its View-targeting
+`ViewStyleResource` remains the product-level style catalog. Its View-targeting
 rule payloads now use `View*` names, so the catalog boundary and retained View
-selector contract are no longer conflated. No `Ui*` compatibility aliases or
+selector contract are no longer conflated. No legacy UI-prefixed compatibility aliases or
 serde fallback names were added.
 
 Scroll CSS compatibility also moved from a silent best-effort path to an
@@ -279,23 +289,23 @@ The structure audit reported 0 errors and 147 warnings after this slice.
 
 The next View resource taxonomy slice renamed the retained `arcweft-view`
 program substrate that directly represents Arcweft View DSL lowering output.
-These names are not persisted compatibility surfaces, so the old `Ui*` Rust
+These names are not persisted compatibility surfaces, so the old UI-prefixed Rust
 symbols were removed rather than aliased:
 
-- `UiProgram`, `UiProgramBuilder`, `UiProgramId`, and `UiInstruction` became
+- `ViewProgram`, `ViewProgramBuilder`, `ViewProgramId`, and `ViewInstruction` became
   `ViewProgram`, `ViewProgramBuilder`, `ViewProgramId`, and
   `ViewInstruction`;
-- program payload records such as `UiElementSpec`, `UiTextSpec`,
-  `UiImageSpec`, `UiCustomSpec`, `UiViewCall`, `UiBranch`, `UiRepeat`, and
-  `UiInstructionRange` became the corresponding `View*` records;
-- `UiPartId`, `UiPartExport`, `UiStableKey`, `UiExpressionId`,
-  `UiStyleApply`, `UiStylePatchId`, `UiEventBindingSpec`,
-  `UiSemanticSpec`, and `UiHandlerProgram` became `View*` records;
+- program payload records such as `ViewElementSpec`, `ViewTextSpec`,
+  `ViewImageSpec`, `ViewCustomSpec`, `ViewViewCall`, `ViewBranch`, `ViewRepeat`, and
+  `ViewInstructionRange` became the corresponding `View*` records;
+- `ViewPartId`, `ViewPartExport`, `ViewStableKey`, `ViewExpressionId`,
+  `ViewStyleApply`, `ViewStylePatchId`, `ViewEventBindingSpec`,
+  `ViewSemanticSpec`, and `ViewHandlerProgram` became `View*` records;
 - Takumi adapter metadata now records `ViewProgramId` and `ViewPartId`, and
   its scene cache key uses `ViewProgramRevision`.
 
 This slice intentionally leaves broader product-level UI concepts such as
-`UiError`, `UiStyle`, `UiTextSource`, `UiImageSource`, retained semantic
+`ViewError`, `ViewStyle`, `ViewTextSource`, `ViewImageSource`, retained semantic
 fragments, and shared runtime-control style types for later taxonomy decisions.
 Those names are not a single authored View program boundary in the current
 crate split.
@@ -308,7 +318,7 @@ Current validation for this slice:
 - `cargo check -p arcweft-view -p arcweft-takumi-adapter --all-targets --all-features`
 - `cargo clippy -p arcweft-view -p arcweft-takumi-adapter --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
-- `rg -n "\\bUi(Program|ProgramBuilder|ProgramRevision|Instruction|InstructionRange|ElementSpec|TextSpec|ImageSpec|CustomSpec|ViewCall|Branch|Repeat|StyleApply|StylePatchId|EventBindingSpec|SemanticSpec|HandlerProgram|PartId|PartExport|StableKey|ExpressionId)\\b|\\bUiProgramId\\b" crates\\arcweft-view crates\\arcweft-takumi-adapter -g "*.rs"`
+- `rg -n "legacy View program/resource names" crates\\arcweft-view crates\\arcweft-takumi-adapter -g "*.rs"`
 
 The structure audit reported 0 errors and 147 warnings after this slice.
 
@@ -349,7 +359,7 @@ Current validation for this slice:
 - `cargo test -p arcweft-lang-sema --all-features overlay_handle_pop`
 - `cargo test -p arcweft-cli --all-features --test native_text_input_sample_sidecars`
 - `cargo test -p arcweft-cli --all-features --test native_text_input_native_interactive_smoke seq06_16_3_submit_samples_share_player_backed_semantic_action_routes`
-- `cargo run -p arcweft-cli --all-features -- check samples\modern-feedback-ui\src\main.arcw`
+- `cargo run -p arcweft-cli --all-features -- check samples\modern-feedback-view\src\main.arcw`
 
 ## 2026-07-07 Agent View Capture Contract
 
@@ -365,7 +375,7 @@ Agent observe/capture scope naming now follows the View terminology:
 No `--component`, `arguments.component`, `components.json`, or JSON
 `"kind": "component"` compatibility path is retained in the Agent protocol /
 CLI observe surface. The remaining `component` terms in this area are unrelated
-URI escaping helper names such as `agent_uri_component`, not scoped UI resource
+URI escaping helper names such as `agent_uri_component`, not scoped View resource
 names.
 
 Current validation for this slice:
@@ -406,7 +416,7 @@ changes applied:
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
 - `rg -n --glob "*.arcw" -- "->\s*View|\btext_submit\s*(?:@|\()|\bstart\s*\(|\brun\s*\(|\bcomponent\s+|@component|component\(" samples examples tests web`
 - `rg -n "component_view_|component_handle|runtime_component|explicit_component|typechecks_component|CaptureScope::Component|LayoutCaptureScope::Component|component scoped|component emit|Component action" crates tests -g "*.rs"`
-- `rg -n "component view|UI component|component-scoped|@component|component\(|->\s*View|text_submit" docs\00-overview docs\01-language docs\02-runtime docs\03-presentation docs\04-tooling docs\schemas docs\examples -g "*.md"`
+- `rg -n "component view|View component|component-scoped|@component|component\(|->\s*View|text_submit" docs\00-overview docs\01-language docs\02-runtime docs\03-presentation docs\04-tooling docs\schemas docs\examples -g "*.md"`
 
 The structural audit reports 0 errors and 146 warnings. The search gates above
 return no hits in the checked current-syntax, production/test code, and stable
@@ -519,7 +529,7 @@ The structure audit reported 0 errors and 146 warnings after this slice.
 Web parity now covers retained resources owned by an authored `view(...)`
 handle through the same Product AWBC runner path. The parity fixture parses a
 small source with `view(@view.WebPanel, lifetime = .manual)`, `panel.release()`,
-and default scoped `view(@view.WebPanel)` flows, attaches typed bundle UI
+and default scoped `view(@view.WebPanel)` flows, attaches typed bundle View
 resources for a text control, action button, and scroll region owned by
 `view.WebPanel`, then prepares the frame through `PlayerFramePlanner`, the same
 shared path used by native, web, and Agent observation.
@@ -584,7 +594,7 @@ instead of deriving every viewport from child content:
   values and lower through the existing logical milli-pixel resource model.
 - `overflow`, `overflow_y`, and `overflow-y` accept `.auto`, `.scroll`, or
   `.hidden`; `clip = false` maps to the same non-scrollable hidden policy.
-- The compact UI resource codec serializes non-default overflow values,
+- The compact View resource codec serializes non-default overflow values,
   runtime presentation snapshots carry the policy, and player-scene frame
   preparation maps it to `RenderScrollOverflow`.
 - Hidden overflow reports a zero scroll range, so native/web wheel routing keeps
@@ -601,8 +611,8 @@ Validation for this slice:
 - `cargo fmt`
 - `cargo check -p arcweft-bundle -p arcweft-lang-syntax -p arcweft-cli -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-web --all-targets --all-features`
 - `cargo test -p arcweft-lang-syntax --all-features view_box_and_scroll_parse_as_canonical_elements`
-- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_ui_resources`
-- `cargo test -p arcweft-bundle --all-features ui_resource_compact_sections_round_trip_with_deterministic_bytes`
+- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_view_resources`
+- `cargo test -p arcweft-bundle --all-features view_resource_compact_sections_round_trip_with_deterministic_bytes`
 - `cargo test -p arcweft-player-scene --all-features hidden_overflow_scroll_region_keeps_offset_at_zero`
 - `cargo test -p arcweft-render-wgpu --all-features hidden_scroll_region_reports_no_scroll_range`
 - `cargo clippy -p arcweft-bundle -p arcweft-lang-syntax -p arcweft-cli -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-web --all-targets --all-features`
@@ -613,7 +623,7 @@ The structure audit reported 0 errors and 146 warnings after this slice.
 ## 2026-07-07 Scroll Style Rule Layout Defaults
 
 Authored `Scroll` viewport bounds and overflow policy can now be supplied
-through the retained UI style resource as deterministic layout defaults.
+through the retained View style resource as deterministic layout defaults.
 
 - Simple `Scroll { ... }` style rules may set `width`, `height`, `overflow`,
   `overflow-y`, `overflow_y`, or `clip`.
@@ -632,7 +642,7 @@ through the retained UI style resource as deterministic layout defaults.
 Validation:
 
 - `cargo test -p arcweft-cli --all-features view_scroll_uses_style_rules_for_viewport_and_overflow_defaults -- --nocapture`
-- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_ui_resources -- --nocapture`
+- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_view_resources -- --nocapture`
 - `cargo check -p arcweft-cli --all-targets --all-features`
 - `cargo clippy -p arcweft-cli --all-targets --all-features`
 
@@ -664,11 +674,11 @@ Validation:
 - `cargo test -p arcweft-player-scene --all-features --test scroll_regions horizontal_scroll_region_tracks_x_offset_and_snapshot -- --nocapture`
 - `cargo test -p arcweft-render-wgpu --all-features --test geometry horizontal_scroll_region_offsets_and_clips_owned_text_controls -- --nocapture`
 - `cargo test -p arcweft-player-web --all-features --test input wheel_input_updates_horizontal_scroll_region_under_pointer -- --nocapture`
-- `cargo test -p arcweft-bundle --all-features --test ui_resource_codecs ui_resource_compact_sections_round_trip_with_deterministic_bytes -- --nocapture`
+- `cargo test -p arcweft-bundle --all-features --test view_resource_codecs view_resource_compact_sections_round_trip_with_deterministic_bytes -- --nocapture`
 - `cargo check -p arcweft-bundle -p arcweft-cli -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-web --all-targets --all-features`
 - `cargo clippy -p arcweft-bundle -p arcweft-cli -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-web --all-targets --all-features`
 
-## 2026-07-07 Retained UI View Boundary Rename
+## 2026-07-07 Retained View View Boundary Rename
 
 The retained `arcweft-view` substrate now uses View terminology for its owned
 boundary types instead of retaining Component names behind the final View
@@ -679,8 +689,8 @@ syntax:
   `ComponentImplementation`, `ComponentDescriptor`, and `ComponentRegistry`
   became `ViewId`, `ViewSchemaId`, `RustViewId`, `ViewImplementation`,
   `ViewDescriptor`, and `ViewRegistry`.
-- `UiInstruction::CallComponent(UiComponentCall)` became
-  `UiInstruction::CallView(UiViewCall)`.
+- `ViewInstruction::CallComponent(ViewComponentCall)` became
+  `ViewInstruction::CallView(ViewViewCall)`.
 - `FragmentKind::Component` became `FragmentKind::View`.
 - `EntityStore::component` became `EntityStore::view`.
 - `ComponentStyleOverride` became `ViewStyleOverride`.
@@ -695,16 +705,16 @@ Validation:
 
 - `cargo test -p arcweft-view --all-features`
 - `cargo test -p arcweft-takumi-adapter --all-features`
-- `cargo check -p arcweft-character-ui -p arcweft-render-wgpu -p arcweft-render-native -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
-- `cargo clippy -p arcweft-view -p arcweft-takumi-adapter -p arcweft-character-ui -p arcweft-render-wgpu -p arcweft-render-native -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
+- `cargo check -p arcweft-character-view -p arcweft-render-wgpu -p arcweft-render-native -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
+- `cargo clippy -p arcweft-view -p arcweft-takumi-adapter -p arcweft-character-view -p arcweft-render-wgpu -p arcweft-render-native -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
-- `rg -n "ComponentId|ComponentRegistry|ComponentDescriptor|ComponentImplementation|RustComponentId|ComponentSchemaId|UiComponentCall|CallComponent|FragmentKind::Component|ComponentStyleOverride|DuplicateComponentPublicId|with_component|\\.component\\(|component:|data-aw-component|aw-component" crates -g "*.rs"`
+- `rg -n "ComponentId|ComponentRegistry|ComponentDescriptor|ComponentImplementation|RustComponentId|ComponentSchemaId|ViewComponentCall|CallComponent|FragmentKind::Component|ComponentStyleOverride|DuplicateComponentPublicId|with_component|\\.component\\(|component:|data-aw-component|aw-component" crates -g "*.rs"`
 - `rg -n "\\bcomponent\\b|\\bcomponents\\b|\\bComponent\\b|\\bComponents\\b" crates\\arcweft-view crates\\arcweft-takumi-adapter -g "*.rs"`
 
 ## 2026-07-07 AwaitView Builder Instruction
 
 View builder syntax now preserves `AwaitView(expr) { ... }` as structured
-syntax and bundle UI program data rather than dropping it during lowering.
+syntax and bundle View program data rather than dropping it during lowering.
 
 - The View parser recognizes `pending`, `ready`, `error`, and `denied`
   branches with ordinary patterns and View expression bodies.
@@ -715,16 +725,16 @@ syntax and bundle UI program data rather than dropping it during lowering.
   per-branch pattern schemas and instruction spans for pending/ready/error/
   denied bodies.
 - Bundle View lowering emits the `Await` instruction and lowers each branch
-  body into the same UI program instruction stream used by `if`, `match`, and
+  body into the same View program instruction stream used by `if`, `match`, and
   `for`.
-- The compact UI program codec round-trips the new instruction through the
+- The compact View program codec round-trips the new instruction through the
   existing deterministic JSON transcript section.
 
 Validation:
 
 - `cargo test -p arcweft-lang-syntax --all-features view_await_parse_to_structured_branches -- --nocapture`
-- `cargo test -p arcweft-cli --all-features view_await_lowers_to_ui_program_branch_spans -- --nocapture`
-- `cargo test -p arcweft-bundle --all-features ui_resource_compact_sections_round_trip_with_deterministic_bytes -- --nocapture`
+- `cargo test -p arcweft-cli --all-features view_await_lowers_to_view_program_branch_spans -- --nocapture`
+- `cargo test -p arcweft-bundle --all-features view_resource_compact_sections_round_trip_with_deterministic_bytes -- --nocapture`
 
 ## 2026-07-07 Final View Syntax Source And Stable Docs Sweep
 
@@ -734,7 +744,7 @@ stable design/example documentation:
 - `web/ime-player-rendered.arcw` now uses entry `goto` dispatch instead of the
   removed `start(...)` form.
 - Stable UI documentation and examples under `docs/03-presentation/` and
-  `docs/examples/` now spell retained UI declarations as `view`, not
+  `docs/examples/` now spell retained View declarations as `view`, not
   `component`, and no longer show legacy View return annotations.
 - Current samples/examples/tests/web `.arcw` files have no remaining
   legacy component, text-submit, start/run entry dispatch, or View return
@@ -776,7 +786,7 @@ Current validation for this slice:
 
 - `cargo test -p arcweft-player-native --all-features native_player_session_save_pairs_runtime_and_input_snapshots`
 - `cargo test -p arcweft-cli --all-features --test native_text_input_trace_cli runtime_run_session_save_flags_are_native_player_only`
-- `cargo run -p arcweft-cli --all-features --quiet -- run --runner headless samples\modern-feedback-ui\src\main.arcw --session-save-out target\arcweft\session-smoke.awfs` (expected native-only rejection)
+- `cargo run -p arcweft-cli --all-features --quiet -- run --runner headless samples\modern-feedback-view\src\main.arcw --session-save-out target\arcweft\session-smoke.awfs` (expected native-only rejection)
 
 ## 2026-07-07 Button Submit Route Removal
 
@@ -790,9 +800,9 @@ Button activation now has a single final-syntax route:
 - Text control submit remains owned by the text control itself. Enter/IME
   submit writebacks resolve the authored submit handler, and `action.*`
   handlers resume the `receive action(...)` wait path.
-- The runtime-driver no longer captures `ui.text_input.await_submit` host calls
+- The runtime-driver no longer captures `view.text_input.await_submit` host calls
   or reports `WaitingTextSubmitCalls` save blockers. Typed action waits use
-  `ui.action.await`.
+  `view.action.await`.
 
 Current validation for this slice:
 
@@ -827,7 +837,7 @@ Focus resources now participate in scoped View lifecycle filtering:
 Current validation for this slice:
 
 - `cargo test -p arcweft-runtime-driver --all-features view_handle_lifecycle_filters_focus_resources`
-- `cargo test -p arcweft-bundle --all-features ui_focus_navigation_compact_round_trip_is_deterministic`
+- `cargo test -p arcweft-bundle --all-features view_focus_navigation_compact_round_trip_is_deterministic`
 - `cargo check -p arcweft-cli --all-targets --all-features`
 - `cargo clippy -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-cli --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
@@ -914,7 +924,7 @@ The structure audit reported 0 errors and 143 warnings.
 - `cargo test -p arcweft-lang-sema --all-features`
 - `cargo test -p arcweft-core --all-features fiber_checkpoint_and_serde_preserve_cleanup_stacks`
 - `cargo test -p arcweft-runtime-driver --all-features presentation`
-- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_ui_resources`
+- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_view_resources`
 - `cargo test -p arcweft-lang-syntax --all-features action_declaration_parses_as_typed_entity`
 - `cargo test -p arcweft-lang-sema --all-features action_entity`
 - `cargo test -p arcweft-lang-sema --all-features parses_entity_declarations_used_by_presentation_docs`
@@ -958,7 +968,7 @@ file sizes:
   semantic actions by queueing a deterministic `action.invoke` custom input
   targeted at the action id instead of rejecting anything except
   `action.choice.select`.
-- Action payloads are typed at the syntax and UI resource boundary. Literal
+- Action payloads are typed at the syntax and View resource boundary. Literal
   strings lower as `LiteralString`, while text-control projections such as
   `visitor_name.text` lower as `TextControlProjection` targeting the canonical
   `input.visitor_name` runtime text control.
@@ -982,8 +992,8 @@ warnings. Relevant changed production files:
 | --- | ---: | ---: | --- | --- |
 | `crates/arcweft-lang-syntax/src/parser/view.rs` | 35,170 | 967 | production | View element/modifier parsing and action callback normalization |
 | `crates/arcweft-lang-syntax/src/ast/view.rs` | 19,257 | 726 | production | Typed View AST, including button activation payloads |
-| `crates/arcweft-bundle/src/resource_codec/ui/model.rs` | 49,503 | 1,480 | production with embedded tests | UI resource/runtime model and runtime projection |
-| `crates/arcweft-bundle/src/resource_codec/ui/codec.rs` | 39,725 | 1,080 | production | UI resource codec reference accounting |
+| `crates/arcweft-bundle/src/resource_codec/view/model.rs` | 49,503 | 1,480 | production with embedded tests | View resource/runtime model and runtime projection |
+| `crates/arcweft-bundle/src/resource_codec/view/codec.rs` | 39,725 | 1,080 | production | View resource codec reference accounting |
 | `crates/arcweft-cli/src/app/bundle_view.rs` | 46,123 | 1,227 | production | View sidecar lowering into bundle resources |
 | `crates/arcweft-player-scene/src/action_buttons.rs` | 5,116 | 130 | production | Runtime action-button resource lowering |
 | `crates/arcweft-player-scene/src/input.rs` | 46,658 | 1,245 | production with embedded tests | Routed input, focus, text editing, and action-button activation |
@@ -994,7 +1004,7 @@ Relevant changed test files:
 
 | Path | Bytes | LOC |
 | --- | ---: | ---: |
-| `crates/arcweft-bundle/tests/ui_action_button_resources.rs` | 3,969 | 100 |
+| `crates/arcweft-bundle/tests/view_action_button_resources.rs` | 3,969 | 100 |
 | `crates/arcweft-cli/src/app/bundle/tests.rs` | 26,667 | 790 |
 | `crates/arcweft-lang-syntax/tests/style_view.rs` | 9,207 | 346 |
 | `crates/arcweft-player-scene/tests/action_button_submit.rs` | 7,493 | 183 |
@@ -1009,7 +1019,7 @@ Relevant changed test files:
   the result as the nominal `ActionEvent` type. `ActionEvent.action` projects as
   `Ref<Action>` and `ActionEvent.value` projects as `String`, matching the
   current runtime payload representation.
-- Runtime-plan lowering emits a suspending `ui.action.await` host call with the
+- Runtime-plan lowering emits a suspending `view.action.await` host call with the
   action target as a typed argument. The runtime driver captures those host
   calls, keeps pending action receives by action id, and resumes the fiber with
   a record payload when a queued semantic action with the matching id arrives.
@@ -1018,7 +1028,7 @@ Relevant changed test files:
 
 - `cargo test -p arcweft-lang-syntax --all-features flow_receive_action_statement_is_structured`
 - `cargo test -p arcweft-lang-sema --all-features typechecks_receive_action_event_value_projection`
-- `cargo test -p arcweft-runtime-plan --all-features receive_action_lowers_to_ui_action_host_call`
+- `cargo test -p arcweft-runtime-plan --all-features receive_action_lowers_to_view_action_host_call`
 - `cargo test -p arcweft-runtime-driver --all-features session_receive_action_host_call_resumes_with_event_value`
 - `cargo check --workspace --all-targets --all-features`
 - `cargo clippy --workspace --all-targets --all-features`
@@ -1057,7 +1067,7 @@ audit reported 0 errors and 138 warnings. Current changed Rust file metrics:
 
 ## Typed Action Payload Resource
 
-- Replaced the action-button UI resource payload string with
+- Replaced the action-button View resource payload string with
   `ViewActionPayloadResource`. `LiteralString` now represents authored string
   literals, and `TextControlProjection { input, field }` represents `.text` or
   `.value` projections from runtime text-control handles.
@@ -1067,7 +1077,7 @@ audit reported 0 errors and 138 warnings. Current changed Rust file metrics:
   preserved as payload source strings.
 - View sidecar lowering normalizes shorthand projections such as
   `visitor_name.text` to canonical `input.visitor_name` resource references.
-  The UI resource codec now includes the referenced input ID in the program
+  The View resource codec now includes the referenced input ID in the program
   section public-id table, so action payload dependencies are visible to
   tooling and patch compatibility.
 - Runtime action-button lowering resolves typed text-control projections while
@@ -1093,9 +1103,9 @@ The typed-payload cut kept the structure audit at 0 errors and 138 warnings.
 
 ## View Scoped Capture And Handle Visibility
 
-- UI resource metadata now carries the owning view id from View
-  lowering into `ViewSemanticTarget`, `UiInputOptions`, `ViewActionButtonResource`,
-  `UiRuntimeTextControl`, and `ViewRuntimeActionButton`. The field is optional so
+- View resource metadata now carries the owning view id from View
+  lowering into `ViewSemanticTarget`, `ViewInputOptions`, `ViewActionButtonResource`,
+  `ViewRuntimeTextControl`, and `ViewRuntimeActionButton`. The field is optional so
   non-view-owned resources keep the existing top-level behavior.
 - Runtime presentation-handle filtering now treats a live view handle id as
   an alias for its owned runtime text controls and action buttons. Hiding,
@@ -1125,10 +1135,10 @@ production files:
 
 | Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
 | --- | ---: | ---: | --- | --- | --- |
-| `crates/arcweft-bundle/src/resource_codec/ui/codec.rs` | 40,387 | 1,172 | production | false | UI codec public-id accounting |
-| `crates/arcweft-bundle/src/resource_codec/ui/model.rs` | 50,684 | 1,672 | production | true | UI resource/runtime model and runtime projection |
+| `crates/arcweft-bundle/src/resource_codec/view/codec.rs` | 40,387 | 1,172 | production | false | UI codec public-id accounting |
+| `crates/arcweft-bundle/src/resource_codec/view/model.rs` | 50,684 | 1,672 | production | true | View resource/runtime model and runtime projection |
 | `crates/arcweft-cli/src/app/agent/native/player_observation.rs` | 37,097 | 1,051 | production | true | Native Agent observe object/view capture mapping |
-| `crates/arcweft-cli/src/app/bundle.rs` | 77,725 | 2,159 | production | false | Legacy bundle/UI resource construction |
+| `crates/arcweft-cli/src/app/bundle.rs` | 77,725 | 2,159 | production | false | Legacy bundle/View resource construction |
 | `crates/arcweft-cli/src/app/bundle_view.rs` | 47,867 | 1,356 | production | false | View sidecar lowering |
 | `crates/arcweft-runtime-driver/src/display.rs` | 36,396 | 974 | production | true | Bundle presentation snapshots and handle filtering |
 | `crates/arcweft-runtime-driver/src/presentation_handles.rs` | 30,629 | 922 | production | true | Presentation handle state table and resource filters |
@@ -1386,7 +1396,7 @@ structure audit reported 0 errors and 138 warnings. Relevant changed Rust files:
   `pub action name(...)` declarations. Empty action declarations accept no
   payload; declared named payload parameters such as `value: String` or
   `name: String` are parsed through the existing function signature/type
-  reference parser and currently validate against the UI payload
+  reference parser and currently validate against the View payload
   representation, which is `String` for literal strings and text-control
   projections.
 - View action emits are checked against the declaration: undeclared action
@@ -1475,7 +1485,7 @@ changed Rust files:
   diagnostic.
 - View text-control input discovery now recurses through
   `if`/`match`/`for`/`await` View nodes, matching action-invoke traversal.
-- Bundle UI sidecar lowering now preserves `ViewIf` and `ViewMatch` as
+- Bundle View sidecar lowering now preserves `ViewIf` and `ViewMatch` as
   `ViewProgramInstruction::Branch` spans, and `ViewForEach` as
   `ViewProgramInstruction::RepeatKeyed` with deterministic digest references for
   condition/source/key schemas.
@@ -1483,7 +1493,7 @@ changed Rust files:
 ### Verification
 
 - `cargo test -p arcweft-lang-syntax --all-features view_reactive_if_match_for_parse_to_structured_view_exprs`
-- `cargo test -p arcweft-cli --all-features view_reactive_if_match_for_lower_to_ui_program_instructions`
+- `cargo test -p arcweft-cli --all-features view_reactive_if_match_for_lower_to_view_program_instructions`
 - `cargo test -p arcweft-lang-syntax --all-features`
 - `cargo check --workspace --all-targets --all-features`
 - `cargo clippy --workspace --all-targets --all-features`
@@ -1512,12 +1522,12 @@ files:
   View `text_control_inputs()` now reports these handles even when the
   following `TextField(name)` uses the local handle instead of spelling the
   input id inline.
-- Added `ViewProgramInstruction::BindLocal` so bundle UI programs preserve the
+- Added `ViewProgramInstruction::BindLocal` so bundle View programs preserve the
   authored local binding with deterministic pattern/value schema digests. This
   gives runtime-plan cleanup and later pending/await builder work a typed
   instruction to extend instead of a stringly custom element.
 - Bundle View lowering now resolves `TextField(local_name)` through
-  the preceding input-handle binding. The generated `UiInputOptions.public_id`
+  the preceding input-handle binding. The generated `ViewInputOptions.public_id`
   uses the authored input id, and the initial text source uses the builder's
   displayed initial value instead of the local variable name.
 
@@ -1543,14 +1553,14 @@ The structure audit reported 0 errors and 139 warnings after this slice.
   handle-first authoring can keep heads small: `TextField(name)` can now carry
   typed options through modifiers instead of head arguments.
 - Bundle View lowering now maps submit actions to
-  `UiInputOptions.submit_handler = "action.*"`. Existing default text-control
+  `ViewInputOptions.submit_handler = "action.*"`. Existing default text-control
   writeback handlers remain
   available for controls without an authored action route.
 - Runtime-driver text-control submit write-backs whose handler id is an
   `action.*` id now resume pending `receive action(...)` waits with the
   submitted text value. This makes Enter/IME submit and player-rendered button
   activation converge on the same flow-side action receive primitive.
-- Updated `samples/modern-feedback-ui`, `samples/text-submit-flow`,
+- Updated `samples/modern-feedback-view`, `samples/text-submit-flow`,
   `samples/native-text-input`, and `samples/focus-navigation-controller-dsl` to
   use `view`, handle-first text controls, typed actions, `action.invoke`, and
   `receive action` rather than `text_submit`.
@@ -1563,7 +1573,7 @@ The structure audit reported 0 errors and 139 warnings after this slice.
 - `cargo test -p arcweft-runtime-driver --all-features session_text_control_submit_handler_resumes_receive_action`
 - `cargo test -p arcweft-cli --all-features --test native_text_input_sample_sidecars`
 - `cargo test -p arcweft-cli --all-features --test native_text_input_native_interactive_smoke`
-- `cargo run -p arcweft-cli --all-features -- check samples\modern-feedback-ui\src\main.arcw`
+- `cargo run -p arcweft-cli --all-features -- check samples\modern-feedback-view\src\main.arcw`
 - `cargo run -p arcweft-cli --all-features -- check samples\text-submit-flow\src\main.arcw`
 - `cargo run -p arcweft-cli --all-features -- check samples\native-text-input\src\main.arcw`
 - `cargo run -p arcweft-cli --all-features -- check samples\focus-navigation-controller-dsl\src\main.arcw`
@@ -1574,7 +1584,7 @@ The structure audit reported 0 errors and 139 warnings after this slice.
   preserved those regions through `PreparedFrame` planning and viewport-fit
   mapping. This gives native, web, and Agent observation a common region list
   instead of each adapter inventing scroll hit boxes.
-- Added `ViewScrollRegionResource` and `ViewRuntimeScrollRegion` to the compact UI
+- Added `ViewScrollRegionResource` and `ViewRuntimeScrollRegion` to the compact View
   program contract. Authored View `Scroll { ... }` elements now lower into a
   deterministic scroll-region resource owned by the surrounding `view.*`
   handle, round-trip through compact resource encoding, flow through the bundle
@@ -1584,8 +1594,8 @@ The structure audit reported 0 errors and 139 warnings after this slice.
   `RenderScrollRegion` values using the current input controller offset. This
   connects authored `Scroll` views to prepared-frame hit testing without adding
   native/web adapter-specific geometry rules.
-- Scroll containment now flows through `UiInputOptions`,
-  `ViewActionButtonResource`, `UiRuntimeTextControl`, `ViewRuntimeActionButton`,
+- Scroll containment now flows through `ViewInputOptions`,
+  `ViewActionButtonResource`, `ViewRuntimeTextControl`, `ViewRuntimeActionButton`,
   image objects, retained text blocks, and the renderer-facing control/image
   structs as a typed `containing_scroll_region` reference. View lowering
   maintains a lexical scroll stack so leaves authored inside `Scroll` receive
@@ -1617,8 +1627,8 @@ The structure audit reported 0 errors and 139 warnings after this slice.
 - `cargo test -p arcweft-player-scene --all-features wheel_updates_scroll_region_under_pointer_and_clamps`
 - `cargo test -p arcweft-player-web --all-features wheel_input_updates_scroll_region_under_pointer`
 - `cargo test -p arcweft-render-wgpu --all-features scroll_regions_survive_frame_planning_and_viewport_mapping`
-- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_ui_resources`
-- `cargo test -p arcweft-bundle --all-features ui_resource_compact_sections_round_trip_with_deterministic_bytes`
+- `cargo test -p arcweft-cli --all-features view_box_and_scroll_lower_to_typed_view_resources`
+- `cargo test -p arcweft-bundle --all-features view_resource_compact_sections_round_trip_with_deterministic_bytes`
 - `cargo test -p arcweft-runtime-driver --all-features view_handle_lifecycle_filters_scroll_regions`
 - `cargo test -p arcweft-player-scene --all-features player_frame_plans_runtime_scroll_regions_and_applies_input_offset`
 - `cargo test -p arcweft-render-wgpu --all-features scroll_region_offsets_and_clips`
@@ -1711,7 +1721,7 @@ broader retained-content policy request.
   scroll-clipped object omission, and released view/object missing-scope
   diagnostics. Broader parity still needs pinned GPU PNG readback promotion
   where exact visual baselines are required.
-- `Scroll` now lowers from authored View syntax into compact UI scroll-region
+- `Scroll` now lowers from authored View syntax into compact View scroll-region
   resources, runtime presentation snapshots, prepared-frame scroll regions, and
   native/web wheel routing with clamped `InputController` state. Text controls
   and action buttons authored inside `Scroll` now receive typed scroll
@@ -1730,7 +1740,7 @@ broader retained-content policy request.
   concrete runtime/render paths. Remaining scroll work is virtualization,
   larger retained-content policies, and adapter-parity broadening; that scope remains split to
   `docs/reviews/requests/2026-07-07-seq-06.16.6.2-scroll-axis-virtualization-retained-content.md`.
-- The final UI syntax direction's await/pending builder integration no longer
+- The final View syntax direction's await/pending builder integration no longer
   remains as a syntax/lowering gap: `AwaitView` parses into structured
   pending/ready/error/denied branches and lowers to `ViewProgramInstruction::Await`
   with branch spans. View-local input handle `let` bindings and ordinary `if`,

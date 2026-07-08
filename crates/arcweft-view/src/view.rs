@@ -1,6 +1,6 @@
-//! Typed UI view descriptors and registry data.
+//! Typed View view descriptors and registry data.
 
-use crate::UiError;
+use crate::ViewError;
 use arcweft_id::PublicId;
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ pub struct ViewId(pub u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewSchemaId(pub u32);
 
-/// Stable identifier for an Arcweft-authored UI program.
+/// Stable identifier for an Arcweft-authored View program.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewProgramId(pub u32);
 
@@ -20,12 +20,12 @@ pub struct ViewProgramId(pub u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RustViewId(pub u32);
 
-/// Implementation family for a UI view descriptor.
+/// Implementation family for a View view descriptor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewImplementation {
     /// View implementation is registered by the host Rust embedding.
     Rust(RustViewId),
-    /// View implementation is an Arcweft UI program from the bundle.
+    /// View implementation is an Arcweft View program from the bundle.
     Arcweft(ViewProgramId),
 }
 
@@ -78,14 +78,15 @@ impl ViewDescriptor {
 }
 
 impl ViewRegistry {
-    pub fn register(&mut self, descriptor: ViewDescriptor) -> Result<ViewId, UiError> {
+    pub fn register(&mut self, descriptor: ViewDescriptor) -> Result<ViewId, ViewError> {
         if let Some(public_id) = descriptor.public_id()
             && self.public_ids.contains_key(public_id)
         {
-            return Err(UiError::DuplicateViewPublicId(public_id.clone()));
+            return Err(ViewError::DuplicateViewPublicId(public_id.clone()));
         }
 
-        let index = u32::try_from(self.descriptors.len()).map_err(|_| UiError::CapacityExceeded)?;
+        let index =
+            u32::try_from(self.descriptors.len()).map_err(|_| ViewError::CapacityExceeded)?;
         let id = ViewId(index);
         if let Some(public_id) = descriptor.public_id().cloned() {
             self.public_ids.insert(public_id, id);

@@ -104,7 +104,7 @@ paint-only buffer/texture changes do not force a layout rebuild.
 Unsupported-but-accepted CSS is reported through deterministic
 `TakumiDiagnosticCode::UnsupportedDirectCss` diagnostics. A separate
 `CpuRasterFallbackForbidden` diagnostic documents the invariant that this request
-must not call Takumi's raster renderer or upload full UI surfaces every frame.
+must not call Takumi's raster renderer or upload full View surfaces every frame.
 
 ## Capture and Agent metadata
 
@@ -116,7 +116,7 @@ Arcweft's normal systems.
 
 ## Integration boundary
 
-This request deliberately does not implement platform IME adapters, product UI
+This request deliberately does not implement platform IME adapters, product View
 resource serialization, HTML/Servo DOM support, or a Takumi fork. If Takumi later
 stabilizes layout/scene extraction, the adapter should move off the `unstable`
 feature without changing the Arcweft-facing crate API.

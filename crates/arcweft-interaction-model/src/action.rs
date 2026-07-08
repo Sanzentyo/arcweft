@@ -30,7 +30,7 @@ pub enum ActionTarget {
     Runtime,
     TextBox,
     Activity(Identifier),
-    UiEntity(Identifier),
+    ViewEntity(Identifier),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

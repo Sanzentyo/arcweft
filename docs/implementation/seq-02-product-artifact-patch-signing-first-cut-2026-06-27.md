@@ -59,7 +59,7 @@ safe implementation cut.
 ## Non-Goals For This Cut
 
 - No new concrete seq-02 section families were added.
-- No content/presentation, shader/UI, entity, runtime-types, entrypoints, or
+- No content/presentation, shader/View, entity, runtime-types, entrypoints, or
   adapter-requirements codecs were implemented.
 - No common resource wire codec was introduced.
 - No patch v2 format, AWFR release archive, external payload-carrier redesign,

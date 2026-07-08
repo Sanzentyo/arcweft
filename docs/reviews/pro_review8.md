@@ -87,7 +87,7 @@ Native Arcweft Player
        └─ tool/test/headless component
 ```
 
-Wasmtimeを **Arcweft全体の主ランタイム** にするのはおすすめしません。理由は、Arcweftはwgpu、Audio、UI、DOM/Servo、device、Agent Debug Busなど大量のhost機能を持つため、結局Wasmtimeの外側にArcweft hostを作ることになります。しかもブラウザではWasmtimeをそのまま使うのではなく、ブラウザ自身のWebAssembly engineとJS host adapterで動かす必要があります。Arcweft docsでもweb buildはBrowser DOM、canvas/WebGPU/WebGL、Engine::step、WebAudio、DOM UI backendとして整理されています。
+Wasmtimeを **Arcweft全体の主ランタイム** にするのはおすすめしません。理由は、Arcweftはwgpu、Audio、UI、DOM/Servo、device、Agent Debug Busなど大量のhost機能を持つため、結局Wasmtimeの外側にArcweft hostを作ることになります。しかもブラウザではWasmtimeをそのまま使うのではなく、ブラウザ自身のWebAssembly engineとJS host adapterで動かす必要があります。Arcweft docsでもweb buildはBrowser DOM、canvas/WebGPU/WebGL、Engine::step、WebAudio、DOM View backendとして整理されています。
 
 Wasmtimeは主にこの3用途です。
 
@@ -281,7 +281,7 @@ Arcweft Core
 Host Backend
   ├─ Native wgpu
   ├─ Native audio
-  ├─ Servo UI
+  ├─ Servo View
   ├─ Browser DOM/WebGPU/WebAudio
   ├─ Headless test backend
   └─ Wasmtime plugin host
@@ -370,7 +370,7 @@ arcw plugin wit
    Craneliftは強力ですが、runtime semantics、effect、save/load、host capabilityを全部自前で背負うことになります。まずVMとRust codegenを正にした方がよいです。
 
 3. **Wasmtimeをbrowserでもnativeでも共通の主runtimeにしようとすること**
-   native plugin hostとしては良いですが、browserは別経路です。web docsもBrowser DOM、canvas/WebGPU/WebGL、WebAudio、DOM UI backendとして分けています。
+   native plugin hostとしては良いですが、browserは別経路です。web docsもBrowser DOM、canvas/WebGPU/WebGL、WebAudio、DOM View backendとして分けています。
 
 ## 推奨ロードマップ
 

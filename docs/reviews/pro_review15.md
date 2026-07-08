@@ -13,21 +13,21 @@ MCP リソースとしても、`latest.json`、`color.png`、`overlay.png`、`ob
 
 ## UI / レイヤー / hit-test との接続も設計されています
 
-`Layer System / Input Routing` 側でも、レイヤーは「描画順だけでなく、入力、hit-test、focus、modal、Agent 観測、test、replay を束ねる中核概念」とされています。つまり、LLM が見ている画像、UI tree、hit region、入力 routing がバラバラではなく、同じ `LayerTree` に紐づく設計です。
+`Layer System / Input Routing` 側でも、レイヤーは「描画順だけでなく、入力、hit-test、focus、modal、Agent 観測、test、replay を束ねる中核概念」とされています。つまり、LLM が見ている画像、View tree、hit region、入力 routing がバラバラではなく、同じ `LayerTree` に紐づく設計です。
 
 `ObservedObject` には `id`、`entity`、`layer`、`bbox`、`polygon`、`mask` が入る想定です。これは「画面上のこのボタン/キャラ/領域を id で参照し、bbox/polygon/mask を見て、クリックやドラッグを行う」というユースケースにかなり近いです。
 
 別ドキュメントの `layers-and-input.md` では、`HitRegion` に `id`、`layer`、`target`、`role`、`enabled`、`visible`、`priority`、`bbox`、`polygon`、`mask`、`actions`、`source` を持たせる設計になっています。hit-test の流れも bbox → polygon → mask の順で定義されているため、LLM が `objects.json` を見て「この id の対象を押す」「この drag handle を動かす」といった操作に使いやすい構造です。
 
-UI component の `on_click` も、`UiNode → HitRegion → ActionTarget → LayerInputEvent → UiEvent` へ lowering される想定です。これは非常に重要で、LLM が「見た目の座標」ではなく「意味のある ActionTarget」を呼べるようにする設計です。
+UI component の `on_click` も、`ViewNode → HitRegion → ActionTarget → LayerInputEvent → ViewEvent` へ lowering される想定です。これは非常に重要で、LLM が「見た目の座標」ではなく「意味のある ActionTarget」を呼べるようにする設計です。
 
 ## ただし、現状実装としてはまだ未完成です
 
-ロードマップでは、`wgpu / UI / Agent` は Phase 2 に置かれており、その中に `headless wgpu renderer`、`screenshot / object-id pass / bbox`、`Game Native UI tree`、`Agent Debug Bus`、`CLI / MCP observe & action` が含まれています。さらに Phase 7 で `Agent debugging at scale` と product mode の auth / audit が置かれています。
+ロードマップでは、`wgpu / UI / Agent` は Phase 2 に置かれており、その中に `headless wgpu renderer`、`screenshot / object-id pass / bbox`、`Game Native View tree`、`Agent Debug Bus`、`CLI / MCP observe & action` が含まれています。さらに Phase 7 で `Agent debugging at scale` と product mode の auth / audit が置かれています。
 
 現在の workspace 実装を見ると、`Cargo.toml` の実装済み crates は `arcweft-core`、`arcweft-dialogue`、`arcweft-id`、`arcweft-lang-syntax`、`arcweft-need`、`arcweft-presentation`、`arcweft-source`、`arcweft-cli` だけです。`arcweft-agent-bus`、`arcweft-agent-observe`、`arcweft-agent-action`、`arcweft-agent-mcp`、`arcweft-agent-cli` などは workspace member にはまだ入っていません。
 
-実装ステータス文書でも、未実装として `wgpu renderer`、`Servo / DOM UI`、`audio backend`、`MCP / agent protocol runtime`、`full RuntimeStepInput/RuntimeStepOutput event envelopes`、`layered input routing` などが明示されています。
+実装ステータス文書でも、未実装として `wgpu renderer`、`Servo / DOM View`、`audio backend`、`MCP / agent protocol runtime`、`full RuntimeStepInput/RuntimeStepOutput event envelopes`、`layered input routing` などが明示されています。
 
 また、現在の `arcweft-cli` は実質 `arcw check <file.awft>` のみで、`arcw agent observe` や `arcw agent click` はまだ実装されていません。
 
@@ -43,7 +43,7 @@ UI component の `on_click` も、`UiNode → HitRegion → ActionTarget → Lay
 
 ```text
 entity_id        = 永続的な意味 ID。例: character.alice, choice.opening.listen
-ui_node_id       = UI tree 上の node ID
+ui_node_id       = View tree 上の node ID
 object_id        = frame 内の検出/描画 object ID
 hit_region_id    = click/drag/hit-test 対象の ID
 action_id        = 実行可能 action の ID

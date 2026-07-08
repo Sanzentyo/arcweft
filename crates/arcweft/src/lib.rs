@@ -12,8 +12,8 @@ pub mod character {
     pub use arcweft_character::*;
 }
 
-pub mod character_ui {
-    pub use arcweft_character_ui::*;
+pub mod character_view {
+    pub use arcweft_character_view::*;
 }
 
 pub mod core {

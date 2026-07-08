@@ -123,7 +123,7 @@ workspace hotspot total as `4 error(s), 125 warning(s)`.
 - The package patch file itself was malformed and could not be applied directly,
   so the changes were applied against the current source by ownership area.
 - The source already used `ViewAffine2D` after the UI affine rename; imports were
-  kept on that current type name rather than reintroducing `UiAffine2`.
+  kept on that current type name rather than reintroducing `ViewAffine2`.
 - The focused test now uses Takumi's typed builders for non-exhaustive
   `BoxShadow` and `TextShadow` values.
 

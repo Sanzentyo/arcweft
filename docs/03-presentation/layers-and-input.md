@@ -1,11 +1,11 @@
 # Layer System / Layer-based Input
 
-描画と入力は、同じ `LayerTree` を基準に扱う。レイヤーは単なる z-index ではなく、描画、hit-test、入力伝播、Agent 観測、mask 生成、テスト、accessibility、HTML/Servo/DOM UI の合成境界を表す一級の概念である。
+描画と入力は、同じ `LayerTree` を基準に扱う。レイヤーは単なる z-index ではなく、描画、hit-test、入力伝播、Agent 観測、mask 生成、テスト、accessibility、HTML/Servo/DOM View の合成境界を表す一級の概念である。
 
 関連章:
 
 - [wgpu renderer](wgpu-renderer.md)
-- [Game Native UI](ui-reactive.md)
+- [Game Native View](view-reactive.md)
 - [Agent Debug Bus](../04-tooling/agent-debug-mcp-cli.md)
 - [Core runtime](../02-runtime/core.md)
 - [WGSL shader](wgsl-shaders.md)
@@ -17,7 +17,7 @@ RuntimeStepOutput
   ├─ layer_tree: LayerTree
   ├─ render_graph: RenderGraph
   ├─ input_routing: InputRoutingTable
-  └─ observations: Object/Ui/Layer metadata
+  └─ observations: Object/View/Layer metadata
 ```
 
 入力は「前回 commit された `LayerTree`」を使って host 側で routing し、その結果を次 tick の `RuntimeStepInput` に入れる。これにより、headless / native / web / replay で同じ入力解決ができる。
@@ -33,7 +33,7 @@ tick N+1 input:
   LayerInputEvent / SemanticInputEvent
 ```
 
-raw input だけを記録すると UI layout 差で replay が壊れる可能性があるため、replay には原則として routed event を保存する。必要なら raw input と `routing_hash` も保存する。
+raw input だけを記録すると View layout 差で replay が壊れる可能性があるため、replay には原則として routed event を保存する。必要なら raw input と `routing_hash` も保存する。
 
 ## LayerTree
 
@@ -81,8 +81,8 @@ pub enum LayerKind {
     Character,
     Effects,
     TextBox,
-    GameUi,
-    HtmlUi,
+    GameView,
+    HtmlView,
     Activity,
     Modal,
     Overlay,
@@ -101,8 +101,8 @@ root
   characters
   effects
   textbox
-  game_ui
-  html_ui
+  game_view
+  html_view
   modal
   debug_overlay
   agent_overlay
@@ -128,7 +128,7 @@ pub enum LayerContent {
     Sprites(Vec<SpriteSpec>),
     Text(Vec<TextSpec>),
     Vector(Vec<VectorSpec>),
-    Ui(UiRenderSpec),
+    View(ViewRenderSpec),
     Html(HtmlPanelRenderSpec),
     Activity(ActivityRenderSpec),
     Group(Vec<LayerContent>),
@@ -151,7 +151,7 @@ pub enum RenderPhase {
     Background,
     World,
     Foreground,
-    Ui,
+    View,
     Modal,
     Debug,
     Agent,
@@ -197,10 +197,10 @@ Inherit:
 例:
 
 ```arcw
-layer @layer.ui.glass_modal: Modal {
-    order = ui.modal(100)
+layer @layer.view.glass_modal: Modal {
+    order = view.modal(100)
     render_target = offscreen(format = rgba16f) {
-        postprocess @shader.ui.glass_blur
+        postprocess @shader.view.glass_blur
     }
 }
 ```
@@ -265,8 +265,8 @@ background:     PassThrough
 world:          HitTest
 characters:     HitTest or PassThrough
 textbox:        CaptureOnHit
-choice/ui:      CaptureOnHit
-html_ui:        CaptureOnHit or Modal
+choice/view:    CaptureOnHit
+html_view:      CaptureOnHit or Modal
 modal:          Modal
 debug_overlay:  ObserveOnly
 agent_overlay:  ObserveOnly or CaptureOnHit
@@ -279,7 +279,7 @@ pub struct HitRegion {
     pub id: HitRegionId,
     pub layer: LayerId,
     pub target: EntityId,
-    pub role: UiRole,
+    pub role: ViewRole,
     pub enabled: bool,
     pub visible: bool,
     pub priority: i32,
@@ -291,7 +291,7 @@ pub struct HitRegion {
 }
 
 pub enum HitRegionSource {
-    UiLayout,
+    ViewLayout,
     TextLayout,
     SpriteBounds,
     VectorPath,
@@ -369,7 +369,7 @@ input_scope @input.opening on layer @layer.textbox {
     gamepad South => action AdvanceText
 }
 
-input_scope @input.choice on layer @layer.choice_ui {
+input_scope @input.choice on layer @layer.choice_view {
     pointer click target Ref<ChoiceOption> => action SelectChoice(target)
     key Up => action MoveChoice(-1)
     key Down => action MoveChoice(1)
@@ -393,12 +393,12 @@ layer @layer.characters: Character {
 }
 
 layer @layer.textbox: TextBox {
-    order = ui(10)
+    order = view(10)
     input = capture_on_hit
 }
 
-layer @layer.choice_ui: GameUi {
-    order = ui(20)
+layer @layer.choice_view: GameView {
+    order = view(20)
     input = capture_on_hit
 }
 
@@ -435,49 +435,49 @@ scope {
 
     layer @layer.textbox {
         TextBox(current_text())
-            .agent_target(@ui.textbox.main)
+            .agent_target(@view.textbox.main)
     }
 
-    layer @layer.choice_ui if choices_visible {
+    layer @layer.choice_view if choices_visible {
         ChoiceList(choices)
     }
 }
 ```
 
-### UI view での layer 指定
+### View での layer 指定
 
 ```arcw
 ChoiceList(choices)
-    .layer(@layer.choice_ui)
+    .layer(@layer.choice_view)
     .input_policy(capture_on_hit)
 ```
 
 ### modal
 
 ```arcw
-if state.ui.settings_open {
+if state.view.settings_open {
     layer @layer.modal {
         SettingsPanel(config = bind state.config)
-            .agent_target(@ui.settings)
+            .agent_target(@view.settings)
     }
 }
 ```
 
 ## Layer-based input lowering
 
-UI widget の `on_click` は、hit region と semantic action へ lowering される。
+View widget の `on_click` は、hit region と semantic action へ lowering される。
 
 ```arcw
 Button("閉じる")
-    .agent_target(@ui.settings.close)
+    .agent_target(@view.settings.close)
     .on_click { action.invoke(@action.settings.close) }
 ```
 
 lowering:
 
 ```text
-UiNode
-  → HitRegion(layer = layer.modal, target = ui.settings.close)
+ViewNode
+  → HitRegion(layer = layer.modal, target = view.settings.close)
   → ActionTarget(kind = invoke, action = close)
   → LayerInputEvent on click
   → SemanticAction::Invoke(@action.settings.close)
@@ -550,7 +550,7 @@ CLI:
 ```bash
 arcw agent layers --json
 arcw agent observe --layers --objects --image overlay
-arcw agent click --layer layer.choice_ui --target choice.opening.listen
+arcw agent click --layer layer.choice_view --target choice.opening.listen
 arcw agent hit-test --x 520 --y 540 --json
 arcw agent input-trace --since tick:120
 ```
@@ -571,12 +571,12 @@ headless でも layer は完全に機能する。
 ```text
 - RenderSpec から LayerTree を構築。
 - offscreen render で color/object-id を出す。
-- UiLayout / Vector / Text / ObjectIdPass から HitRegion を構築。
+- ViewLayout / Vector / Text / ObjectIdPass から HitRegion を構築。
 - raw input を仮想 viewport 座標で route。
 - semantic action は座標を使わず target/entity に直接配送。
 ```
 
-Servo/DOM layer は headless で実ピクセルが取れない場合でも、`HtmlPanelSpec` と bridge metadata から `UiTree` と hit region を返す。正確な pixel capture が必要な場合は browser-attached / Servo-offscreen mode を使う。
+Servo/DOM layer は headless で実ピクセルが取れない場合でも、`HtmlPanelSpec` と bridge metadata から `ViewTree` と hit region を返す。正確な pixel capture が必要な場合は browser-attached / Servo-offscreen mode を使う。
 
 ## Accessibility / focus
 
@@ -596,7 +596,7 @@ keyboard/gamepad は原則として focused layer に配送される。modal が
 FocusPolicy::TrapWithin(@layer.modal)
 ```
 
-screen reader 用には `UiNode` と `LayerTree` から accessibility tree を生成する。
+screen reader 用には `ViewNode` と `LayerTree` から accessibility tree を生成する。
 
 ## Security / product flags
 
@@ -632,10 +632,10 @@ test @test.choice_layer_receives_input scenario {
     wait.object(@choice.opening.listen, state=.visible)
 
     let hit = hit_test(x = 520, y = 540)
-    assert_eq hit.layer, @layer.choice_ui
+    assert_eq hit.layer, @layer.choice_view
     assert_eq hit.target, Some(@choice.opening.listen)
 
-    input.click(layer=@layer.choice_ui, target=@choice.opening.listen)
+    input.click(layer=@layer.choice_view, target=@choice.opening.listen)
     expect.event(GameEvent::ChoiceSelected, id=@choice.opening.listen)
 }
 ```
@@ -647,7 +647,7 @@ test @test.layer_order_opening visual {
     goto @flow.opening
     capture.image(.overlay, path="opening_layers.png")
     assert.layer_above(@layer.textbox, @layer.characters)
-    assert.layer_input_policy(@layer.choice_ui, .capture_on_hit)
+    assert.layer_input_policy(@layer.choice_view, .capture_on_hit)
 }
 ```
 
@@ -701,7 +701,7 @@ Layer は hook 対象である。描画・入力・layout・Agent 観測の各 p
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
-    hit_test = ui_layout
+    hit_test = view_layout
 
     hook @hook.layer.choices.pointer_enter
     on @layer.choices
@@ -728,8 +728,8 @@ layer @layer.choices: Choice {
 Layer は Hook target でもある。描画順・visibility・input policy・focus などの変化に対して hook を attach できる。
 
 ```arcw
-hook @hook.choice_ui_appeared
-on @layer.choice_ui
+hook @hook.choice_view_appeared
+on @layer.choice_view
 phase AfterLayout
 when visible(self)
 once per scene
@@ -752,9 +752,9 @@ effects { signal_write }
 ```arcw
 memo fn choice_hit_regions(tree: LayerTree) -> Vec<HitRegion>
 scope = frame
-depends layer_tree_hash(tree), ui_layout_hash(@layer.choice_ui)
+depends layer_tree_hash(tree), view_layout_hash(@layer.choice_view)
 {
-    collect_hit_regions(@layer.choice_ui, tree)
+    collect_hit_regions(@layer.choice_view, tree)
 }
 ```
 
@@ -778,6 +778,6 @@ USB/HID/Gamepad/Keyboard/Touch
   -> GameEvent / Activity input
 ```
 
-Virtual controller layers usually sit above scene/UI layers and consume touch input inside their hit regions before lower layers receive it.
+Virtual controller layers usually sit above scene/View layers and consume touch input inside their hit regions before lower layers receive it.
 
 

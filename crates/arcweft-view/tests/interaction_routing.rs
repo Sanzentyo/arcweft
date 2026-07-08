@@ -8,8 +8,8 @@ use arcweft_presentation::semantic::SemanticRole;
 use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
     LayoutResults, LayoutSize, LayoutTree, Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
-    StyleId, UiInteractionSelector, UiLayerOutput, UiPropertyKind, UiPropertyValue,
-    UiSemanticFragmentBuilder, UiSemanticNode, UiStyle, UiStyleTable, ViewFragmentBuilder,
+    StyleId, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput, ViewPropertyKind,
+    ViewPropertyValue, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewStyle, ViewStyleTable,
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -52,16 +52,16 @@ fn fragment_and_layout() -> (arcweft_view::ViewFragment, LayoutResults) {
 }
 
 fn semantic_fragment(
-    ui: &LayerId,
+    view: &LayerId,
     button: &InteractionTarget,
     enabled: bool,
-) -> arcweft_view::UiSemanticFragment {
-    let mut semantics = UiSemanticFragmentBuilder::default();
+) -> arcweft_view::ViewSemanticFragment {
+    let mut semantics = ViewSemanticFragmentBuilder::default();
     semantics
         .push(
-            UiSemanticNode::new(
+            ViewSemanticNode::new(
                 NodeKey(1),
-                ui.clone(),
+                view.clone(),
                 button.clone(),
                 SemanticRole::Button,
                 HitRect::new(20.0, 30.0, 160.0, 48.0),
@@ -74,75 +74,75 @@ fn semantic_fragment(
     semantics.finish()
 }
 
-fn interaction_styles() -> UiStyleTable {
+fn interaction_styles() -> ViewStyleTable {
     let idle = Rgba8::new(20, 30, 40, 255);
     let hovered = Rgba8::new(40, 80, 140, 255);
     let pressed = Rgba8::new(80, 120, 180, 255);
     let disabled = Rgba8::new(30, 30, 30, 180);
-    let mut style = UiStyle::default();
+    let mut style = ViewStyle::default();
     style
         .set_base(
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(idle),
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(idle),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Hovered,
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(hovered),
+            ViewInteractionSelector::Hovered,
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(hovered),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Focused,
-            UiPropertyKind::OutlineColor,
-            UiPropertyValue::Color(Rgba8::new(120, 210, 255, 255)),
+            ViewInteractionSelector::Focused,
+            ViewPropertyKind::OutlineColor,
+            ViewPropertyValue::Color(Rgba8::new(120, 210, 255, 255)),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Focused,
-            UiPropertyKind::OutlineWidth,
-            UiPropertyValue::Milli(Milli::new(3_000)),
+            ViewInteractionSelector::Focused,
+            ViewPropertyKind::OutlineWidth,
+            ViewPropertyValue::Milli(Milli::new(3_000)),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Pressed,
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(pressed),
+            ViewInteractionSelector::Pressed,
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(pressed),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Pressed,
-            UiPropertyKind::Scale,
-            UiPropertyValue::Milli(Milli::new(970)),
+            ViewInteractionSelector::Pressed,
+            ViewPropertyKind::Scale,
+            ViewPropertyValue::Milli(Milli::new(970)),
         )
         .unwrap();
     style
         .set_rule(
-            UiInteractionSelector::Disabled,
-            UiPropertyKind::BackgroundColor,
-            UiPropertyValue::Color(disabled),
+            ViewInteractionSelector::Disabled,
+            ViewPropertyKind::BackgroundColor,
+            ViewPropertyValue::Color(disabled),
         )
         .unwrap();
-    let mut styles = UiStyleTable::default();
+    let mut styles = ViewStyleTable::default();
     styles.insert(StyleId(7), style).unwrap();
     styles
 }
 
-fn output(enabled: bool) -> (UiLayerOutput, LayerId, InteractionTarget) {
-    let ui = layer("ui");
+fn output(enabled: bool) -> (ViewLayerOutput, LayerId, InteractionTarget) {
+    let view = layer("view");
     let button = target("button.confirm");
     let (fragment, layouts) = fragment_and_layout();
-    let semantics = semantic_fragment(&ui, &button, enabled);
+    let semantics = semantic_fragment(&view, &button, enabled);
     let styles = interaction_styles();
 
     (
-        UiLayerOutput::from_fragment_with_styles(&fragment, &layouts, semantics, styles).unwrap(),
-        ui,
+        ViewLayerOutput::from_fragment_with_styles(&fragment, &layouts, semantics, styles).unwrap(),
+        view,
         button,
     )
 }
@@ -162,11 +162,11 @@ fn routed_activate_selects_handler_by_stable_target() {
 
 #[test]
 fn interaction_cascade_resolves_hover_focus_and_pressed_without_backend_matching() {
-    let (output, ui, button) = output(true);
+    let (output, view, button) = output(true);
     let mut interaction = InteractionState::default();
     let _ = interaction.set_hover_path(HoverPath::new(PointerId(0), vec![button.clone()]));
-    interaction.set_focus(FocusState::new(ui.clone(), button.clone()));
-    interaction.press_pointer(PressedTarget::new(PointerId(0), ui, button));
+    interaction.set_focus(FocusState::new(view.clone(), button.clone()));
+    interaction.press_pointer(PressedTarget::new(PointerId(0), view, button));
 
     let resolved = output
         .display()
@@ -174,12 +174,12 @@ fn interaction_cascade_resolves_hover_focus_and_pressed_without_backend_matching
         .unwrap();
     let style = resolved.as_slice()[0].style();
     assert_eq!(
-        style.color(UiPropertyKind::BackgroundColor),
+        style.color(ViewPropertyKind::BackgroundColor),
         Some(Rgba8::new(80, 120, 180, 255))
     );
     assert_eq!(style.scale(), Milli::new(970));
     assert_eq!(
-        style.color(UiPropertyKind::OutlineColor),
+        style.color(ViewPropertyKind::OutlineColor),
         Some(Rgba8::new(120, 210, 255, 255))
     );
 }
@@ -198,7 +198,7 @@ fn disabled_rule_has_final_precedence() {
     assert_eq!(
         resolved.as_slice()[0]
             .style()
-            .color(UiPropertyKind::BackgroundColor),
+            .color(ViewPropertyKind::BackgroundColor),
         Some(Rgba8::new(30, 30, 30, 180))
     );
 }

@@ -1666,7 +1666,7 @@ fn run_bundle_rejects_image_asset_metadata_mismatch_before_execution() {
         .expect("image assets are an array");
     let logo = image_assets
         .iter_mut()
-        .find(|asset| asset["id"] == "asset.ui.logo")
+        .find(|asset| asset["id"] == "asset.view.logo")
         .expect("static webp image asset is present");
     logo["animation"] = serde_json::Value::String("animated".to_owned());
     fs::write(
@@ -1689,7 +1689,7 @@ fn run_bundle_rejects_image_asset_metadata_mismatch_before_execution() {
     );
     let stderr = String::from_utf8_lossy(&run_output.stderr);
     assert!(
-        stderr.contains("metadata mismatch for animation") && stderr.contains("asset.ui.logo"),
+        stderr.contains("metadata mismatch for animation") && stderr.contains("asset.view.logo"),
         "run-bundle error should report the image metadata mismatch: {stderr}"
     );
 }
@@ -1863,7 +1863,7 @@ fn bundle_native_file_fixture() -> BundleNativeFileFixture {
     let save_dir = dir.join(".arcweft").join("save");
     let bundle_path = dir.join("game.awfb");
     fs::create_dir_all(asset_dir.join("bg")).expect("create virtual asset bg root");
-    fs::create_dir_all(asset_dir.join("ui")).expect("create virtual asset ui root");
+    fs::create_dir_all(asset_dir.join("view")).expect("create virtual asset view root");
     fs::create_dir_all(&save_dir).expect("create virtual save root");
     fs::copy(
         sample_image_asset_path(Path::new("bg").join("room.png")),
@@ -1872,7 +1872,7 @@ fn bundle_native_file_fixture() -> BundleNativeFileFixture {
     .expect("seed png asset");
     fs::copy(
         sample_image_asset_path(Path::new("bg").join("poster.webp")),
-        asset_dir.join("ui").join("logo.webp"),
+        asset_dir.join("view").join("logo.webp"),
     )
     .expect("seed static webp asset");
     fs::write(save_dir.join("input.txt"), "bundle-ok").expect("seed virtual input");
@@ -1950,7 +1950,7 @@ fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout
             && bundle_json.contains("\"image_assets\"")
             && bundle_json.contains("\"id\": \"asset.bg.room\"")
             && bundle_json.contains("\"format\": \"png\"")
-            && bundle_json.contains("\"id\": \"asset.ui.logo\"")
+            && bundle_json.contains("\"id\": \"asset.view.logo\"")
             && bundle_json.contains("\"format\": \"webp\"")
             && bundle_json.contains("\"animation\": \"static\"")
             && bundle_json.contains("\"dimensions\""),

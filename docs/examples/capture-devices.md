@@ -36,7 +36,7 @@ watch signal @signal.microphone_level from capture.level(@capture.player_microph
 watch signal @signal.camera_frame from capture.latest_frame(@capture.face_camera)
 ```
 
-## Flow with required pending UI
+## Flow with required pending View
 
 ```arcw
 pub flow @flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit, FlowError> {
@@ -62,7 +62,7 @@ pub flow @flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit,
     CameraPreview(@capture.face_camera)
         .frame(width = 320, height = 180)
         .corner_radius(12)
-        .agent_target(@ui.camera_preview)
+        .agent_target(@view.camera_preview)
 
     Meter(value = signal(@signal.microphone_level))
         .label("Mic")

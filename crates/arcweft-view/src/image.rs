@@ -1,6 +1,6 @@
-//! UI image source table and deterministic animated-frame selection.
+//! View image source table and deterministic animated-frame selection.
 
-use crate::{ImageId, LayoutBox, UiError};
+use crate::{ImageId, LayoutBox, ViewError};
 use arcweft_id::PublicId;
 use arcweft_image::{DecodedImage, DecodedImageFrame};
 use arcweft_presentation::image::{
@@ -41,19 +41,19 @@ pub struct ImagePlayback {
 
 /// Image source registered outside the retained fragment.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiImageSource {
+pub struct ViewImageSource {
     image: DecodedImage,
     fit: ImageFit,
     alignment: ImageAlignment,
     opacity_milli: u16,
     transform: ImageObjectTransform,
     playback: ImagePlayback,
-    presentation: Option<UiImagePresentationMetadata>,
+    presentation: Option<ViewImagePresentationMetadata>,
 }
 
 /// Presentation-object metadata preserved with an image source for Agent/debug output.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiImagePresentationMetadata {
+pub struct ViewImagePresentationMetadata {
     object: PublicId,
     asset: PublicId,
     target: PublicId,
@@ -68,7 +68,7 @@ pub struct UiImagePresentationMetadata {
 
 /// Resolved image frame ready for renderer submission.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiResolvedImageFrame<'a> {
+pub struct ViewResolvedImageFrame<'a> {
     source: ImageId,
     frame: &'a DecodedImageFrame,
     fit: ImageFit,
@@ -78,10 +78,10 @@ pub struct UiResolvedImageFrame<'a> {
     layout: LayoutBox,
 }
 
-/// Dense UI image source registry keyed by `ImageId`.
+/// Dense View image source registry keyed by `ImageId`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct UiImageSourceTable {
-    sources: BTreeMap<ImageId, UiImageSource>,
+pub struct ViewImageSourceTable {
+    sources: BTreeMap<ImageId, ViewImageSource>,
     next: u32,
 }
 
@@ -200,7 +200,7 @@ impl From<ImageObjectPlayback> for ImagePlayback {
     }
 }
 
-impl UiImageSource {
+impl ViewImageSource {
     pub fn new(image: DecodedImage) -> Self {
         Self {
             image,
@@ -244,7 +244,7 @@ impl UiImageSource {
     }
 
     #[must_use]
-    pub fn with_presentation(mut self, presentation: UiImagePresentationMetadata) -> Self {
+    pub fn with_presentation(mut self, presentation: ViewImagePresentationMetadata) -> Self {
         self.presentation = Some(presentation);
         self
     }
@@ -273,7 +273,7 @@ impl UiImageSource {
         self.playback
     }
 
-    pub fn presentation(&self) -> Option<&UiImagePresentationMetadata> {
+    pub fn presentation(&self) -> Option<&ViewImagePresentationMetadata> {
         self.presentation.as_ref()
     }
 
@@ -283,7 +283,7 @@ impl UiImageSource {
     }
 }
 
-impl UiImagePresentationMetadata {
+impl ViewImagePresentationMetadata {
     pub fn new(
         object: PublicId,
         asset: PublicId,
@@ -366,7 +366,7 @@ impl UiImagePresentationMetadata {
     }
 }
 
-impl<'a> UiResolvedImageFrame<'a> {
+impl<'a> ViewResolvedImageFrame<'a> {
     pub const fn source(self) -> ImageId {
         self.source
     }
@@ -396,23 +396,30 @@ impl<'a> UiResolvedImageFrame<'a> {
     }
 }
 
-impl UiImageSourceTable {
-    pub fn insert(&mut self, source: UiImageSource) -> Result<ImageId, UiError> {
+impl ViewImageSourceTable {
+    pub fn insert(&mut self, source: ViewImageSource) -> Result<ImageId, ViewError> {
         let id = ImageId(self.next);
-        self.next = self.next.checked_add(1).ok_or(UiError::CapacityExceeded)?;
+        self.next = self
+            .next
+            .checked_add(1)
+            .ok_or(ViewError::CapacityExceeded)?;
         self.insert_with_id(id, source)?;
         Ok(id)
     }
 
-    pub fn insert_with_id(&mut self, id: ImageId, source: UiImageSource) -> Result<(), UiError> {
+    pub fn insert_with_id(
+        &mut self,
+        id: ImageId,
+        source: ViewImageSource,
+    ) -> Result<(), ViewError> {
         if self.sources.insert(id, source).is_some() {
-            return Err(UiError::DuplicateImageSource(id));
+            return Err(ViewError::DuplicateImageSource(id));
         }
         self.next = self.next.max(id.0.saturating_add(1));
         Ok(())
     }
 
-    pub fn get(&self, id: ImageId) -> Option<&UiImageSource> {
+    pub fn get(&self, id: ImageId) -> Option<&ViewImageSource> {
         self.sources.get(&id)
     }
 
@@ -421,12 +428,12 @@ impl UiImageSourceTable {
         id: ImageId,
         layout: LayoutBox,
         visual_time_millis: u64,
-    ) -> Result<UiResolvedImageFrame<'_>, UiError> {
-        let source = self.get(id).ok_or(UiError::UnknownImageSource(id))?;
+    ) -> Result<ViewResolvedImageFrame<'_>, ViewError> {
+        let source = self.get(id).ok_or(ViewError::UnknownImageSource(id))?;
         let frame = source
             .frame_at_time(visual_time_millis)
-            .ok_or(UiError::UnknownImageSource(id))?;
-        Ok(UiResolvedImageFrame {
+            .ok_or(ViewError::UnknownImageSource(id))?;
+        Ok(ViewResolvedImageFrame {
             source: id,
             frame,
             fit: source.fit,

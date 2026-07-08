@@ -222,7 +222,7 @@ Layer routing then decides which layer consumes the action.
 ```text
 Touch virtual controller layer
   -> gameplay layer
-  -> narrative UI layer
+  -> narrative View layer
   -> system menu layer
 ```
 

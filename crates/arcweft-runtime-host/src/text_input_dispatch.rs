@@ -504,7 +504,7 @@ mod tests {
         assert_eq!(editor.document(), "");
         assert_eq!(
             editor.visual_source(),
-            arcweft_view::UiTextSource::plain("にほんご")
+            arcweft_view::ViewTextSource::plain("にほんご")
         );
 
         let commit = PlatformTextInputEvent::Commit {

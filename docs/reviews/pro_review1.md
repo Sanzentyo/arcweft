@@ -173,7 +173,7 @@ Asset ref
 Audio cue
 ```
 
-Graph node の種類にはすでに `Flow`, `Say`, `Choice`, `ChoiceOption`, `Await`, `AssetRef`, `ShaderRef`, `UiPanel`, `AudioCue` などが含まれています。 したがって、Graph 用だけでなく build / reload の単位としても同じ entity を使うのが自然です。
+Graph node の種類にはすでに `Flow`, `Say`, `Choice`, `ChoiceOption`, `Await`, `AssetRef`, `ShaderRef`, `ViewPanel`, `AudioCue` などが含まれています。 したがって、Graph 用だけでなく build / reload の単位としても同じ entity を使うのが自然です。
 
 特に choice option は、ラベル文字列や option の出現順から ID を作らない方がよいです。
 
@@ -208,7 +208,7 @@ Safe hot reload:
   pure memo body
   hook body, effect set が同じ場合
   shader body, interface が同じ場合
-  UI layout, state schema が同じ場合
+  View layout, state schema が同じ場合
 
 Conditional hot reload:
   flow body

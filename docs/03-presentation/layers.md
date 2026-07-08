@@ -5,8 +5,8 @@
 関連:
 
 - [wgpu renderer](wgpu-renderer.md)
-- [Game Native UI](ui-reactive.md)
-- [HTML / Servo / DOM UI](html-servo-dom.md)
+- [Game Native View](view-reactive.md)
+- [HTML / Servo / DOM View](html-servo-dom.md)
 - [Agent Debug Bus / MCP / CLI](../04-tooling/agent-debug-mcp-cli.md)
 - [Object Hooks / Memoization](../01-language/hooks-and-memoization.md)
 - [Layer Manifest schema](../schemas/layer-manifest.md)
@@ -22,8 +22,8 @@ LayerTree
   ├─ world/characters
   ├─ world/effects
   ├─ activity/fps-arena
-  ├─ ui/game
-  ├─ ui/html-servo-or-dom
+  ├─ view/game
+  ├─ view/html-servo-or-dom
   ├─ overlay/loading
   ├─ overlay/modal
   ├─ debug/agent
@@ -80,8 +80,8 @@ pub enum LayerKind {
     Character,
     Effect,
     Activity,
-    NativeUi,
-    HtmlUi,
+    NativeView,
+    HtmlView,
     Overlay,
     Modal,
     Debug,
@@ -93,7 +93,7 @@ pub enum LayerContent {
     Sprites(Vec<SpriteSpec>),
     Vectors(Vec<VectorSpec>),
     Text(Vec<TextSpec>),
-    Ui(UiRenderSpec),
+    View(ViewRenderSpec),
     Html(HtmlPanelLayerSpec),
     Activity(ActivityRenderSpec),
     Group,
@@ -133,8 +133,8 @@ pub enum LayerTarget {
 z=-1000 background
 z=0     character / world
 z=100   effects
-z=1000  game ui
-z=2000  html ui
+z=1000  game view
+z=2000  html view
 z=3000  modal
 z=9000  debug overlay
 ```
@@ -162,7 +162,7 @@ pub enum HitTestPolicy {
     BBox,
     Polygon,
     Mask,
-    UiTree,
+    ViewTree,
     Custom(EntityId),
 }
 
@@ -218,7 +218,7 @@ pub struct FocusScope {
 }
 
 pub enum FocusTraversalPolicy {
-    UiTreeOrder,
+    ViewTreeOrder,
     Explicit(Vec<FocusTarget>),
     Spatial,
     None,
@@ -244,16 +244,16 @@ pub layer @layer.world.characters: Character {
     capture = color | object_id | mask
 }
 
-pub layer @layer.ui.game: NativeUi {
+pub layer @layer.view.game: NativeView {
     z = 1000
     input = block_below on_hit
-    hit_test = ui_tree
+    hit_test = view_tree
 }
 
-pub layer @layer.ui.modal: Modal {
+pub layer @layer.view.modal: Modal {
     z = 3000
     input = modal
-    hit_test = ui_tree
+    hit_test = view_tree
     focus = trap
 }
 
@@ -289,7 +289,7 @@ scope {
             .agent_target(@character.alice)
     }
 
-    layer @layer.ui.game {
+    layer @layer.view.game {
         TextBox(current_text())
         ChoiceList(choices)
     }
@@ -302,7 +302,7 @@ layer が省略された場合は default layer に入る。
 scene {
     bg(@asset:.bg.room)                            // writes @slot.background.default
     show(@character.alice, .normal)               // desugar: layer @layer.world.characters
-    choice { ... }                                // desugar: layer @layer.ui.game
+    choice { ... }                                // desugar: layer @layer.view.game
 }
 ```
 
@@ -334,17 +334,17 @@ format. The syntax/typecheck layer validates that background calls use
 
 ## HTML / Servo / DOM layer
 
-HTML/CSS UI は Game Native UI とは別の `HtmlUi` layer として扱う。
+HTML/CSS View は Game Native View とは別の `HtmlView` layer として扱う。
 
 ```arcw
-html panel @ui.settings_html from "ui/settings.html" {
-    layer = @layer.ui.html
+html panel @view.settings_html from "view/settings.html" {
+    layer = @layer.view.html
     bounds = rect(0, 0, 100vw, 100vh)
     input = modal
 }
 ```
 
-Native では Servo、Web では DOM へ渡す。Agent 観測では同じ `LayerNode` と `UiTree` に正規化する。
+Native では Servo、Web では DOM へ渡す。Agent 観測では同じ `LayerNode` と `ViewTree` に正規化する。
 
 ## Activity layer
 
@@ -415,8 +415,8 @@ CLI:
 ```bash
 arcw agent layers
 arcw agent observe --layers --objects --image overlay
-arcw agent click --layer layer.ui.game --target choice.opening.listen
-arcw agent click --x 520 --y 540 --layer layer.ui.modal
+arcw agent click --layer layer.view.game --target choice.opening.listen
+arcw agent click --x 520 --y 540 --layer layer.view.modal
 ```
 
 ## Testing
@@ -424,11 +424,11 @@ arcw agent click --x 520 --y 540 --layer layer.ui.modal
 ```arcw
 test @test.modal_blocks_world_input scenario {
     goto @flow.opening
-    ui.open(@ui.settings_html)
+    view.open(@view.settings_html)
 
     input.click(@character.alice)
 
-    expect.input(blocked_by=@layer.ui.modal)
+    expect.input(blocked_by=@layer.view.modal)
     expect.no_event(GameEvent.CharacterClicked)
 }
 ```
@@ -438,7 +438,7 @@ test #test_choice_layer_bbox visual {
     goto @flow.opening
     wait.object(@choice.opening.listen, state=.visible)
 
-    assert.layer(@choice.opening.listen, equals=@layer.ui.game)
+    assert.layer(@choice.opening.listen, equals=@layer.view.game)
     assert.bbox(@choice.opening.listen, within=rect(400, 500, 500, 80))
 }
 ```
@@ -448,21 +448,21 @@ test #test_choice_layer_bbox visual {
 layer には契約を付けられる。
 
 ```arcw
-pub layer @layer.ui.modal: Modal
+pub layer @layer.view.modal: Modal
 ensures input.route == modal
-ensures z > @layer.ui.game.z
+ensures z > @layer.view.game.z
 {
     z = 3000
     input = modal
 }
 ```
 
-UI view でも所属 layer を保証できる。
+View でも所属 layer を保証できる。
 
 ```arcw
 view ChoiceList(choices: Vec<ChoiceView>)
-ensures result.layer == @layer.ui.game
-ensures result.actions.all(_.layer == @layer.ui.game)
+ensures result.layer == @layer.view.game
+ensures result.actions.all(_.layer == @layer.view.game)
 {
     ...
 }
@@ -485,7 +485,7 @@ ensures result.actions.all(_.layer == @layer.ui.game)
 2. render order と input priority は別指定可能だが、デフォルトは z に従う。
 3. 入力は上位 layer から下位 layer へ hit-test し、Consumed / PassThrough / Blocked を返す。
 4. Modal layer は hit していない領域でも下位入力をブロックする。
-5. UI、HTML、Activity、Debug overlay はすべて layer に載る。
+5. View、HTML、Activity、Debug overlay はすべて layer に載る。
 6. object-id pass と mask は layer 情報を持つ。
 7. Headless と windowed で同じ LayerTree を使う。
 ```
@@ -496,12 +496,12 @@ ensures result.actions.all(_.layer == @layer.ui.game)
 Layer は hook target でもある。描画・layout・input routing の各 phase で hook を実行できる。
 
 ```arcw
-hook @hook.ui_layer_bbox
-on @layer.ui.game
+hook @hook.view_layer_bbox
+on @layer.view.game
 phase AfterLayout
 when layer.layout_hash.changed
 {
-    log.debug("ui layer bbox={bbox:?}", bbox = object.bbox)
+    log.debug("view layer bbox={bbox:?}", bbox = object.bbox)
 }
 ```
 
@@ -576,7 +576,7 @@ Input routing は以下の hook phase を持つ。
 InputPreRoute
   → hit-test
 InputHitTest
-  → deliver to layer/UI/activity
+  → deliver to layer/View/activity
 InputPostRoute
 ```
 
@@ -588,7 +588,7 @@ Layer は hook target になれる。これにより、描画・入力・Agent �
 
 ```arcw
 hook @hook.modal.blocks_lower_layers
-on layer @layer.ui.modal
+on layer @layer.view.modal
 at before_input
 when layer.visible
 priority 1000
@@ -621,7 +621,7 @@ USB/HID/Gamepad/Keyboard/Touch
   -> GameEvent / Activity input
 ```
 
-Virtual controller layers usually sit above scene/UI layers and consume touch input inside their hit regions before lower layers receive it.
+Virtual controller layers usually sit above scene/View layers and consume touch input inside their hit regions before lower layers receive it.
 
 ## Virtual controller layer
 
@@ -637,7 +637,7 @@ layer @layer.input.touch_controller {
 }
 ```
 
-Controls inside this layer consume only their own hit regions and emit normalized actions. Touches outside controls pass through to lower layers. This allows visual novel UI, minigame input, and mobile controls to coexist.
+Controls inside this layer consume only their own hit regions and emit normalized actions. Touches outside controls pass through to lower layers. This allows visual novel View, minigame input, and mobile controls to coexist.
 
 See [Touch Virtual Controller](touch-virtual-controller.md).
 

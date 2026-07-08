@@ -77,7 +77,7 @@ Example JSON:
   "bbox": { "space": "LogicalViewport", "x": 420, "y": 512, "w": 350, "h": 120 },
   "input": {
     "policy": "HitTest",
-    "hit_test": "UiLayout",
+    "hit_test": "ViewLayout",
     "focus": "FocusableChildren",
     "keyboard": "FocusedOnly",
     "accepts": ["PointerClick", "SemanticInvoke"],
@@ -112,7 +112,7 @@ pub struct RoutedInputRecord {
     pub phase: String,
     pub target_layer: Option<String>,
     pub target_entity: Option<String>,
-    pub target_ui_node: Option<String>,
+    pub target_view_node: Option<String>,
     pub route: Vec<String>,
     pub disposition: String,
 }

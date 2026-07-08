@@ -5,7 +5,7 @@
 Added an image-free Web/native parity sample for CSS-like Arcweft styling. The
 sample is intentionally renderer-only: visible text, colors, size changes,
 emphasis, ruby, textbox chrome, and canvas output come from Arcweft renderer
-state rather than DOM game UI or image assets.
+state rather than DOM game View or image assets.
 
 ## Added Files
 
@@ -66,7 +66,7 @@ currently implemented DSL styling surface directly from Arcweft source:
 - visible rich text now covers font, color, size, strong, emphasis, ruby source
   nodes, presentation opacity, transform offset, and wave effect declarations in
   one player-rendered paragraph;
-- `style css_style_parity` now authors typed CSS-like retained UI tokens and
+- `style css_style_parity` now authors typed CSS-like retained View tokens and
   selector rules for surface color, button hover/active/focus styling,
   text-field caret and selection colors, placeholder color, composition
   underline color, border radius, scale, opacity, and translate-y.
@@ -89,12 +89,12 @@ Observed evidence:
   `rich_text.presentation.opacity`, `rich_text.transform.offset`, and
   `rich_text.effect.wave` contributions from the DSL source.
 - `target/css-dsl-observe/css-style-parity.bundle.json` includes the
-  `ui_style` product resource with `style.css_style_parity`, `color.accent`,
+  `view_style` product resource with `style.css_style_parity`, `color.accent`,
   hover/active interaction rules, focus-visible rules, `caret-color`, and
   `composition-underline-color`.
 
 Known boundary: retained `style` sidecar data is bundled into the product
-`ui_style` resource, but the current `agent observe` route primarily visualizes
-the dialogue/rich-text renderer. Retained UI sidecar consumption is validated
-through bundle JSON and the interactive UI renderer sample path until the
-retained UI program is fully instantiated by the player scene.
+`view_style` resource, but the current `agent observe` route primarily visualizes
+the dialogue/rich-text renderer. Retained View sidecar consumption is validated
+through bundle JSON and the interactive View renderer sample path until the
+retained View program is fully instantiated by the player scene.

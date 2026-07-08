@@ -125,9 +125,9 @@ Executed on 2026-07-02 after the winit-only event-source convergence:
 - `cargo test -p arcweft-player-native scene_windowed::tests --lib` passed.
 - `cargo test -p arcweft-player-scene text_input --lib` passed.
 - `cargo test -p arcweft-runtime-host player_text_input_bridge --lib` passed.
-- `cargo test -p arcweft-ui text_field --lib` passed.
-- `cargo check -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-ui --all-targets` passed.
-- `cargo clippy -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-ui --all-targets -- -D warnings` passed.
+- `cargo test -p arcweft-view text_field --lib` passed.
+- `cargo check -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-view --all-targets` passed.
+- `cargo clippy -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-view --all-targets -- -D warnings` passed.
 - `cargo build -p arcweft-cli --features native-player` passed.
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 124 warning(s)` across 1,045 Rust files and 491,089 Rust physical LOC.
 - `git diff --check` passed.

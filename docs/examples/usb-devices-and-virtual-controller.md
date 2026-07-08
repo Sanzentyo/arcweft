@@ -47,7 +47,7 @@ pub device @device.serial_knob: Serial {
     parser line parse_knob_line: Parser<KnobEvent, ParseError>
 
     emits {
-        .Turn { delta } => InputEvent.AxisDelta(.UiScroll, delta)
+        .Turn { delta } => InputEvent.AxisDelta(.ViewScroll, delta)
         .Press => InputEvent.ButtonDown(.Confirm)
     }
 }
@@ -58,7 +58,7 @@ pub device @device.serial_knob: Serial {
 ## Virtual controller
 
 ```arcw
-mod game.ui.touch_controller
+mod game.view.touch_controller
 
 pub virtual_controller @controller.default_touch {
     visible when platform.touch_available || settings.force_touch_controls
@@ -124,7 +124,7 @@ pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, 
 
 ```arcw
 layer @layer.touch_controls {
-    kind = ui
+    kind = view
     input = capture_if_hit
     visible = platform.touch_available || settings.force_touch_controls
     render = overlay

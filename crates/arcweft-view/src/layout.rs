@@ -1,26 +1,26 @@
-//! UI layout input and result data for retained fragments.
+//! View layout input and result data for retained fragments.
 
-use crate::{FragmentKind, NodeId, UiError, ViewFragment};
+use crate::{FragmentKind, NodeId, ViewError, ViewFragment};
 
-/// Fixed-point UI length in milli-pixels.
+/// Fixed-point View length in milli-pixels.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LayoutLength(pub i32);
 
-/// Two-dimensional fixed-point UI size.
+/// Two-dimensional fixed-point View size.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LayoutSize {
     pub width: LayoutLength,
     pub height: LayoutLength,
 }
 
-/// Two-dimensional fixed-point UI point.
+/// Two-dimensional fixed-point View point.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LayoutPoint {
     pub x: LayoutLength,
     pub y: LayoutLength,
 }
 
-/// Axis-aligned layout box in local UI coordinates.
+/// Axis-aligned layout box in local View coordinates.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LayoutBox {
     pub origin: LayoutPoint,
@@ -127,25 +127,25 @@ impl LayoutNode {
 }
 
 impl LayoutTree {
-    pub fn from_fragment(fragment: &ViewFragment) -> Result<Self, UiError> {
+    pub fn from_fragment(fragment: &ViewFragment) -> Result<Self, ViewError> {
         let nodes = fragment
             .nodes()
             .iter()
             .enumerate()
             .map(|(index, node)| {
-                let id = NodeId(u32::try_from(index).map_err(|_| UiError::CapacityExceeded)?);
+                let id = NodeId(u32::try_from(index).map_err(|_| ViewError::CapacityExceeded)?);
                 let children = fragment
                     .node_children(id)
-                    .ok_or(UiError::InvalidFragmentNode(id))?;
+                    .ok_or(ViewError::InvalidFragmentNode(id))?;
                 let child_count =
-                    u32::try_from(children.len()).map_err(|_| UiError::CapacityExceeded)?;
+                    u32::try_from(children.len()).map_err(|_| ViewError::CapacityExceeded)?;
                 Ok(LayoutNode {
                     node: id,
                     kind: LayoutKind::from_fragment_kind(node.kind()),
                     child_count,
                 })
             })
-            .collect::<Result<Vec<_>, UiError>>()?;
+            .collect::<Result<Vec<_>, ViewError>>()?;
         Ok(Self { nodes })
     }
 
@@ -169,11 +169,11 @@ impl LayoutResults {
         }
     }
 
-    pub fn set(&mut self, node: NodeId, layout: LayoutBox) -> Result<(), UiError> {
+    pub fn set(&mut self, node: NodeId, layout: LayoutBox) -> Result<(), ViewError> {
         let slot = self
             .boxes
             .get_mut(node.0 as usize)
-            .ok_or(UiError::InvalidFragmentNode(node))?;
+            .ok_or(ViewError::InvalidFragmentNode(node))?;
         *slot = Some(layout);
         Ok(())
     }
@@ -182,8 +182,8 @@ impl LayoutResults {
         self.boxes.get(node.0 as usize).copied().flatten()
     }
 
-    pub fn require(&self, node: NodeId) -> Result<LayoutBox, UiError> {
-        self.get(node).ok_or(UiError::MissingLayout(node))
+    pub fn require(&self, node: NodeId) -> Result<LayoutBox, ViewError> {
+        self.get(node).ok_or(ViewError::MissingLayout(node))
     }
 
     pub fn as_slice(&self) -> &[Option<LayoutBox>] {

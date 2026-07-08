@@ -39,7 +39,7 @@ pub enum LayoutCoordinateSpace {
     Output,
     /// Device pixels after host scale factor / device-pixel-ratio conversion.
     Physical,
-    /// Host UI logical pixels, such as windowing-system logical coordinates.
+    /// Host window logical pixels, such as windowing-system logical coordinates.
     Logical,
     /// Object-local coordinates whose parent object id is carried by nearby metadata.
     ObjectLocal,
@@ -151,7 +151,7 @@ pub enum LayoutUnitResolutionPhase {
     Hir,
     Sema,
     RuntimePlan,
-    UiLayout,
+    ViewLayout,
     Renderer,
     AgentObserve,
 }
@@ -703,7 +703,7 @@ impl LayoutUnit {
     pub const fn earliest_resolution_phase(self) -> LayoutUnitResolutionPhase {
         match self {
             Self::Px => LayoutUnitResolutionPhase::RuntimePlan,
-            Self::Vw | Self::Vh => LayoutUnitResolutionPhase::UiLayout,
+            Self::Vw | Self::Vh => LayoutUnitResolutionPhase::ViewLayout,
             Self::Percent
             | Self::Cw
             | Self::Ch

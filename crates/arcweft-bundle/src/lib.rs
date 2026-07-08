@@ -10,7 +10,7 @@ pub mod resource_codec;
 
 use crate::character_package::BundleCharacterPackage;
 use crate::resource_codec::{
-    UiInputResource, UiTextResource, UiThemeResource, ViewProgramResource, ViewStyleResource,
+    ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
 };
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
@@ -63,15 +63,15 @@ pub struct ArcweftBundle {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_objects: Vec<BundleImageObject>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ui_program: Option<ViewProgramResource>,
+    pub view_program: Option<ViewProgramResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ui_style: Option<ViewStyleResource>,
+    pub view_style: Option<ViewStyleResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ui_text: Option<UiTextResource>,
+    pub view_text: Option<ViewTextResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ui_input: Option<UiInputResource>,
+    pub view_input: Option<ViewInputResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ui_theme: Option<UiThemeResource>,
+    pub view_theme: Option<ViewThemeResource>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -541,11 +541,11 @@ impl ArcweftBundle {
             character_packages: Vec::new(),
             audio: None,
             image_objects: Vec::new(),
-            ui_program: None,
-            ui_style: None,
-            ui_text: None,
-            ui_input: None,
-            ui_theme: None,
+            view_program: None,
+            view_style: None,
+            view_text: None,
+            view_input: None,
+            view_theme: None,
         }
     }
 
@@ -618,32 +618,32 @@ impl ArcweftBundle {
     }
 
     #[must_use]
-    pub fn with_ui_program(mut self, resource: ViewProgramResource) -> Self {
-        self.ui_program = Some(resource);
+    pub fn with_view_program(mut self, resource: ViewProgramResource) -> Self {
+        self.view_program = Some(resource);
         self
     }
 
     #[must_use]
-    pub fn with_ui_style(mut self, resource: ViewStyleResource) -> Self {
-        self.ui_style = Some(resource);
+    pub fn with_view_style(mut self, resource: ViewStyleResource) -> Self {
+        self.view_style = Some(resource);
         self
     }
 
     #[must_use]
-    pub fn with_ui_text(mut self, resource: UiTextResource) -> Self {
-        self.ui_text = Some(resource);
+    pub fn with_view_text(mut self, resource: ViewTextResource) -> Self {
+        self.view_text = Some(resource);
         self
     }
 
     #[must_use]
-    pub fn with_ui_input(mut self, resource: UiInputResource) -> Self {
-        self.ui_input = Some(resource);
+    pub fn with_view_input(mut self, resource: ViewInputResource) -> Self {
+        self.view_input = Some(resource);
         self
     }
 
     #[must_use]
-    pub fn with_ui_theme(mut self, resource: UiThemeResource) -> Self {
-        self.ui_theme = Some(resource);
+    pub fn with_view_theme(mut self, resource: ViewThemeResource) -> Self {
+        self.view_theme = Some(resource);
         self
     }
 
@@ -1474,7 +1474,7 @@ mod tests {
         let bundle = empty_test_bundle()
             .with_virtual_files([image_file.clone()])
             .with_image_assets([BundleImageAsset {
-                id: "asset.ui.logo".to_owned(),
+                id: "asset.view.logo".to_owned(),
                 file: image_file.file_ref(),
                 format: BundleImageFormat::WebP,
                 animation: BundleImageAnimation::Animated,
@@ -1488,18 +1488,18 @@ mod tests {
         let decoded = ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
 
         let asset = decoded
-            .image_asset("asset.ui.logo")
+            .image_asset("asset.view.logo")
             .expect("image asset is indexed");
         assert_eq!(asset.animation, BundleImageAnimation::Animated);
         assert_eq!(
             decoded
-                .image_asset_bytes("asset.ui.logo")
+                .image_asset_bytes("asset.view.logo")
                 .expect("image bytes resolve"),
             Some(b"webp-bytes".as_slice())
         );
         assert_eq!(
             decoded
-                .image_asset_bytes("asset.ui.missing")
+                .image_asset_bytes("asset.view.missing")
                 .expect("unknown asset is not an error"),
             None
         );
@@ -1513,7 +1513,7 @@ mod tests {
             bytes: b"webp-bytes".to_vec(),
         };
         let asset = BundleImageAsset {
-            id: "asset.ui.logo".to_owned(),
+            id: "asset.view.logo".to_owned(),
             file: image_file.file_ref(),
             format: BundleImageFormat::WebP,
             animation: BundleImageAnimation::Animated,
@@ -1528,7 +1528,7 @@ mod tests {
             .expect_err("duplicate image assets reject");
 
         assert!(
-            matches!(error, BundleCodecError::DuplicateImageAsset { id } if id == "asset.ui.logo")
+            matches!(error, BundleCodecError::DuplicateImageAsset { id } if id == "asset.view.logo")
         );
     }
 
@@ -1555,7 +1555,7 @@ mod tests {
     fn bundle_image_objects_round_trip_as_typed_metadata() {
         let expected = BundleImageObject {
             id: "image.hero.logo".to_owned(),
-            asset: "asset.ui.logo".to_owned(),
+            asset: "asset.view.logo".to_owned(),
             target: Some("target.hero.logo".to_owned()),
             layer: Some("layer.foreground".to_owned()),
             view: None,

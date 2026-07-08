@@ -189,7 +189,7 @@ with compiler/runtime/player adapters.
 | Source maps | Existing AWFB `SourceMap` kind. | JSON-temporary | seq-02.3 | Source ranges use common `SourceRangeRef`; normalized source remains inspection/debug oriented. |
 | Locale/text | Existing `LocaleCatalog` kind. | JSON-temporary | seq-02.3 | Must reuse common string/public-id tables while allowing family-specific text shaping records. |
 | Shader resources | No current AWFB kind. | Future | seq-02.4 | Needs section kind/carrier decision before compact payload is active. |
-| UI resources | No current AWFB kind. | Future | seq-02.4 | Needs split between native UI and HTML/DOM UI families. |
+| View resources | No current AWFB kind. | Future | seq-02.4 | Needs split between native View and HTML/DOM View families. |
 | Audio graph | Existing AWFB `AudioGraph`, typed JSON in content catalog today. | JSON-temporary | seq-02.4 | Bundle validates graph bytes; host validates backend capabilities/device policies. |
 | Debug symbols | Existing AWFB `DebugSymbols` kind. | JSON-temporary | seq-02.4 | Inspection/export heavy; may remain optional/on-demand. |
 | Contracts | No current AWFB kind. | Future | seq-02.4 | Restart-required/code identity interaction must be explicit. |

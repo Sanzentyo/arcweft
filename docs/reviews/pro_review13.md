@@ -44,7 +44,7 @@ Arcweft core の設計は Sans I/O で、core は副作用を実行せず、状�
 
 ## 判断
 
-今の arcweft は、設計としてはかなり野心的で、docs も広いです。Arcweft Engine は独自 DSL、WASM、Cranelift、LayerTree、Servo/DOM UI、音声、デバイス、RAG、LLM debug まで含む大きな構想として整理されています。
+今の arcweft は、設計としてはかなり野心的で、docs も広いです。Arcweft Engine は独自 DSL、WASM、Cranelift、LayerTree、Servo/DOM View、音声、デバイス、RAG、LLM debug まで含む大きな構想として整理されています。
 
 だからこそ次は、構想をさらに広げるより、**「`.awft` を1本入力したら、Arcweft が何を理解し、どんな runtime plan を生成したかが見える」状態**にするべきです。
 

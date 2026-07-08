@@ -85,13 +85,13 @@ Borrow: &'a T, &'a mut T
 - task event ordering を deterministic にする。
 - native multi-thread は後から adapter。
 
-## 5. Rendering / UI / Agent
+## 5. Rendering / View / Agent
 
 ### wgpu renderer
 
 - headless offscreen を先に作る。
 - object-id pass を早期実装。
-- sprite / text / simple UI / screenshot。
+- sprite / text / simple View / screenshot。
 
 ### Agent Debug Bus
 
@@ -148,6 +148,6 @@ Borrow: &'a T, &'a mut T
   → replay
 ```
 
-これが通れば、以後の WGSL、Audio、UI、JIT、RAG は同じ土台へ載せられる。
+これが通れば、以後の WGSL、Audio、View、JIT、RAG は同じ土台へ載せられる。
 
 

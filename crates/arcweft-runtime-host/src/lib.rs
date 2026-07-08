@@ -10,7 +10,7 @@ pub mod player_text_input_bridge;
 pub mod presentation_dispatch;
 pub mod stats;
 pub mod text_input_dispatch;
-pub mod ui_frame;
+pub mod view_frame;
 
 pub use activity_host::{
     ActivityHost, ActivityHostError, ActivityHostRegistrationError, ActivityHostRegistry,
@@ -56,7 +56,7 @@ pub use text_input_dispatch::{
     TextInputDispatchState, TextInputFocusTransaction, dispatch_event_suppresses_shortcuts,
     web_edit_context_capabilities,
 };
-pub use ui_frame::{
-    UiFrameCommit, UiFrameCommitBuilder, UiFrameCommitError, UiFrameImageItem, UiFrameLayer,
-    UiFrameResolvedLayer,
+pub use view_frame::{
+    ViewFrameCommit, ViewFrameCommitBuilder, ViewFrameCommitError, ViewFrameImageItem,
+    ViewFrameLayer, ViewFrameResolvedLayer,
 };

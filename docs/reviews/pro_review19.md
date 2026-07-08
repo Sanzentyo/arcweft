@@ -136,10 +136,10 @@ StableGraph<N, E>
 DependencyGraph<N>
 RouteGraph
 SceneGraph
-UiTree
+ViewTree
 ```
 
-必須級なのは `LayerTree` と `DependencyGraph` です。Arcweft は描画と入力の共通境界として `LayerTree` を使い、world、character、effect、Activity、native UI、HTML UI、modal、debug overlay を layer として扱う設計です。入力も同じ layer stack で hit-test されます。
+必須級なのは `LayerTree` と `DependencyGraph` です。Arcweft は描画と入力の共通境界として `LayerTree` を使い、world、character、effect、Activity、native View、HTML View、modal、debug overlay を layer として扱う設計です。入力も同じ layer stack で hit-test されます。
 
 `DependencyGraph` は memoization、asset、shader、typeset、hot reload、RAG、build graph に使えます。Memo runtime には dependency graph と scope mapping があるため、標準構造として早めに置く価値が高いです。
 

@@ -1,26 +1,26 @@
 //! Routed presentation input to retained view handler dispatch.
 
-use crate::{EventKind, HandlerId, NodeId, UiError, UiSemanticFragment, ViewFragment};
+use crate::{EventKind, HandlerId, NodeId, ViewError, ViewFragment, ViewSemanticFragment};
 use arcweft_presentation::input::{InputEpoch, InputEvent, InteractionTarget};
 
 /// One stable event route emitted from a retained fragment node.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiHandlerRoute {
+pub struct ViewHandlerRoute {
     node: NodeId,
     target: InteractionTarget,
     event: EventKind,
     handler: HandlerId,
 }
 
-/// Ordered handler routes for one UI layer output.
+/// Ordered handler routes for one View layer output.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct UiHandlerRouteTable {
-    routes: Vec<UiHandlerRoute>,
+pub struct ViewHandlerRouteTable {
+    routes: Vec<ViewHandlerRoute>,
 }
 
 /// One handler invocation accepted from an already routed presentation input.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiHandlerInvocation {
+pub struct ViewHandlerInvocation {
     raw_epoch: InputEpoch,
     node: NodeId,
     target: InteractionTarget,
@@ -28,7 +28,7 @@ pub struct UiHandlerInvocation {
     handler: HandlerId,
 }
 
-impl UiHandlerRoute {
+impl ViewHandlerRoute {
     pub const fn node(&self) -> NodeId {
         self.node
     }
@@ -50,32 +50,32 @@ impl UiHandlerRoute {
     }
 }
 
-impl UiHandlerRouteTable {
+impl ViewHandlerRouteTable {
     pub fn from_fragment(
         fragment: &ViewFragment,
-        semantics: &UiSemanticFragment,
-    ) -> Result<Self, UiError> {
+        semantics: &ViewSemanticFragment,
+    ) -> Result<Self, ViewError> {
         let mut routes = Vec::new();
         for (index, node) in fragment.nodes().iter().enumerate() {
-            let node_id = NodeId(u32::try_from(index).map_err(|_| UiError::CapacityExceeded)?);
+            let node_id = NodeId(u32::try_from(index).map_err(|_| ViewError::CapacityExceeded)?);
             let events = fragment
                 .node_events(node_id)
-                .ok_or(UiError::InvalidFragmentNode(node_id))?;
+                .ok_or(ViewError::InvalidFragmentNode(node_id))?;
             if events.is_empty() {
                 continue;
             }
             let semantic = node
                 .semantics()
-                .ok_or(UiError::HandlerNodeMissingSemantics(node_id))?;
+                .ok_or(ViewError::HandlerNodeMissingSemantics(node_id))?;
             let target = semantics
                 .get(semantic)
-                .ok_or(UiError::UnknownHandlerSemantic {
+                .ok_or(ViewError::UnknownHandlerSemantic {
                     node: node_id,
                     semantic,
                 })?
                 .target()
                 .clone();
-            routes.extend(events.iter().copied().map(|binding| UiHandlerRoute {
+            routes.extend(events.iter().copied().map(|binding| ViewHandlerRoute {
                 node: node_id,
                 target: target.clone(),
                 event: binding.kind(),
@@ -85,15 +85,15 @@ impl UiHandlerRouteTable {
         Ok(Self { routes })
     }
 
-    pub fn as_slice(&self) -> &[UiHandlerRoute] {
+    pub fn as_slice(&self) -> &[ViewHandlerRoute] {
         &self.routes
     }
 
-    pub fn dispatch_input(&self, input: &InputEvent) -> Vec<UiHandlerInvocation> {
+    pub fn dispatch_input(&self, input: &InputEvent) -> Vec<ViewHandlerInvocation> {
         self.routes
             .iter()
             .filter(|route| route.accepts(input))
-            .map(|route| UiHandlerInvocation {
+            .map(|route| ViewHandlerInvocation {
                 raw_epoch: input.raw_epoch(),
                 node: route.node(),
                 target: route.target().clone(),
@@ -108,7 +108,7 @@ impl UiHandlerRouteTable {
     }
 }
 
-impl UiHandlerInvocation {
+impl ViewHandlerInvocation {
     pub const fn raw_epoch(&self) -> InputEpoch {
         self.raw_epoch
     }

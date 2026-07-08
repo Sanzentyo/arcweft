@@ -1,10 +1,10 @@
 # Touch Virtual Controller
 
-Arcweft includes a Game Native UI virtual controller for touch screens. It is not a separate overlay hack: it is a first-class UI view, an input layer, and an Agent-observable action surface.
+Arcweft includes a Game Native View virtual controller for touch screens. It is not a separate overlay hack: it is a first-class View, an input layer, and an Agent-observable action surface.
 
 Related chapters:
 
-- [Game Native UI](ui-reactive.md)
+- [Game Native View](view-reactive.md)
 - [Layer System / Input Routing](layers.md)
 - [Layered input runtime](../02-runtime/layered-input.md)
 - [Device I/O / USB / HID](device-io-usb.md)
@@ -16,7 +16,7 @@ Related chapters:
 The virtual controller is implemented as:
 
 ```text
-Reactive UI view
+Reactive View
   + LayerTree input consumer/producer
   + InputAction mapper
   + Agent action target provider
@@ -25,9 +25,9 @@ Reactive UI view
 
 It is available on native, web, and headless builds.
 
-## Why UI-owned?
+## Why View-owned?
 
-A virtual controller must be visible, themeable, animatable, localizable, testable, and observable by LLM agents. Therefore it belongs to Game Native UI rather than raw input code.
+A virtual controller must be visible, themeable, animatable, localizable, testable, and observable by LLM agents. Therefore it belongs to Game Native View rather than raw input code.
 
 It still emits normalized input actions, so gameplay code does not care whether an action came from:
 
@@ -79,7 +79,7 @@ pub virtual_controller @controller.touch_default: TouchController {
 }
 ```
 
-## UI view form
+## View form
 
 A controller can also be authored as a view.
 
@@ -112,7 +112,7 @@ pub view TouchControllerView(
 
 ## Input layer behavior
 
-The controller layer consumes touch events for its controls and emits normalized actions to lower gameplay or UI layers.
+The controller layer consumes touch events for its controls and emits normalized actions to lower gameplay or View layers.
 
 ```text
 raw touch event
@@ -206,7 +206,7 @@ arcw agent drag control.left_stick --x 0.7 --y -0.2
 
 ## Rendering and masks
 
-Virtual controller controls are normal UI nodes. They produce:
+Virtual controller controls are normal View nodes. They produce:
 
 - bbox,
 - polygon,

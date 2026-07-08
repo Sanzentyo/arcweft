@@ -93,7 +93,7 @@ The repository already has the correct substrate:
   calling PSD flattening.
 - `arcweft-presentation::character::CharacterRenderSpec` resolves typed looks
   into deterministic layer stacks.
-- `arcweft-character-ui` lowers `CharacterRenderSpec` into retained UI layers.
+- `arcweft-character-view` lowers `CharacterRenderSpec` into retained View layers.
 - `docs/schemas/character-manifest.md` documents the `.awchar` format.
 
 The missing work is production integration: `.awchar` needs to become a normal

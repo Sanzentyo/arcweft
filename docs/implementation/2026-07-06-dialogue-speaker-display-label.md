@@ -27,7 +27,7 @@ from the runtime callee identifier.
 - `just test-fast`
 - `cargo clippy --workspace --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
-- `cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples\modern-feedback-ui\src\main.arcw --json --image png --out target\modern-feedback-ui-debug\speaker-display-label.png --mode drain --steps 8 --max-ops 128`
+- `cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples\modern-feedback-view\src\main.arcw --json --image png --out target\modern-feedback-view-debug\speaker-display-label.png --mode drain --steps 8 --max-ops 128`
 
 The modern feedback capture emitted `speaker_label: "Arcweft Concierge"` while
 leaving `callee: "concierge"` unchanged, and the rendered PNG shows

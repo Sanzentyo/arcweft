@@ -19,7 +19,7 @@ default = ["vm", "wgpu-render", "audio-basic"]
 native = ["native-st", "wgpu-render", "audio-native"]
 native-mt = ["tokio", "rayon"]
 native-jit = ["arcweft-lang-jit-cranelift"]
-web = ["web-st", "dom-ui", "audio-web"]
+web = ["web-st", "dom-view", "audio-web"]
 web-mt = ["web-workers", "wasm-bindgen-rayon"]
 
 agent-observe = []
@@ -27,8 +27,8 @@ agent-control = ["agent-observe"]
 agent-debug-mutate = ["agent-control"]
 agent-mcp = ["agent-observe"]
 
-servo-ui = []
-dom-ui = []
+servo-view = []
+dom-view = []
 ```
 
 ## Runtime flags
@@ -188,8 +188,8 @@ file for frame upload and playback, so bundle execution can use encoded payloads
 without re-reading or re-lowering source files.
 
 The CLI bundler derives image asset records for image files under
-`.arcweft/asset`: `bg/room.png` becomes `asset.bg.room`, `ui/logo.webp` becomes
-`asset.ui.logo`, and the record points at the matching asset virtual file.
+`.arcweft/asset`: `bg/room.png` becomes `asset.bg.room`, `view/logo.webp` becomes
+`asset.view.logo`, and the record points at the matching asset virtual file.
 PNG/JPEG are marked `static`; GIF/WebP are marked from decoded frame count, so
 static WebP remains a normal one-frame image while multi-frame GIF/WebP is
 marked `animated`.
@@ -209,7 +209,7 @@ structure error and fails before bytecode execution starts.
 Future product bundle slices can replace the remaining structured
 `BytecodeProgram` payload inside the `AWBC` envelope with compact deterministic
 opcode tables and can replace JSON resource payloads with compact graph
-indexes, entity tables, source maps, contracts, shaders, UI, audio, and text
+indexes, entity tables, source maps, contracts, shaders, View, audio, and text
 resources as typed AWFB v1 sections. Those are separate design tracks: the
 executable `AWBC` table is tracked by
 `docs/reviews/requests/2026-06-24-awbc-executable-compact-table-design.md`,
@@ -231,7 +231,7 @@ game.awfb
   entities
   assets
   shaders
-  ui
+  view
   audio
   text
   source_maps

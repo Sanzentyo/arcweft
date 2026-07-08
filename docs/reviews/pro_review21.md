@@ -225,7 +225,7 @@ pub use effect::{
     RuntimeField, RuntimeLog,
 };
 pub use engine::{Engine, FlowCursor, FlowExit, FlowFiber, FlowFiberStatus};
-pub use frame::{AudioEvent, RuntimeStepInput, RuntimeStepOutput, InputEvent, RuntimeDiagnostic, UiEvent};
+pub use frame::{AudioEvent, RuntimeStepInput, RuntimeStepOutput, InputEvent, RuntimeDiagnostic, ViewEvent};
 pub use line_task::{
     AudioCleanup, ChildCancelPolicy, ChildJoinPolicy, ChildTaskCleanup, LineAssertionRequest,
     LineBindingRequest, LineCancelRuleRequest, LineChildTask, LineCleanupPolicy,
@@ -285,7 +285,7 @@ mod tests;
 - `RuntimeStepOutput`
 - `RuntimeDiagnostic`
 - `RuntimeBinding` は `value.rs` でもよいが、frame input から使われるため `value.rs` に置くのが自然。
-- `InputEvent`, `UiEvent`, `AudioEvent`
+- `InputEvent`, `ViewEvent`, `AudioEvent`
 - `impl RuntimeStepOutput::merge`
 
 `RuntimeStepOutput::merge` は engine/line_task から使うだけなら `pub(crate)` にする。
@@ -1197,7 +1197,7 @@ pub struct RuntimeStepInputRef<'a> {
     pub dt: LogicalDuration,
     pub input_events: &'a [InputEvent],
     pub task_events: &'a [TaskEvent],
-    pub ui_events: &'a [UiEvent],
+    pub view_events: &'a [ViewEvent],
     pub audio_events: &'a [AudioEvent],
 }
 

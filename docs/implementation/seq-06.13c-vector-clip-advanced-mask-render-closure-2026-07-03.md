@@ -35,7 +35,7 @@ The overlay follows the repository rules in `AGENTS.md`: behavior is added to ow
 - `docs/implementation/seq-06.13c-vector-clip-advanced-mask-render-closure-2026-07-03.md`
 - `docs/implementation/seq-06.13c-css-mask-clip-support-matrix.md`
 - `docs/fixtures/css/seq06.13c-vector-clip-advanced-mask.css`
-- `docs/fixtures/retained-ui/seq06_13c_retained_ui_fixture.rs`
+- `docs/fixtures/retained-view/seq06_13c_retained_view_fixture.rs`
 
 ## Implementation summary
 
@@ -49,11 +49,11 @@ The path parser intentionally supports only `M/L/H/V/Q/C/Z` plus relative varian
 
 ### `clip-path: url(...)`
 
-The retained UI contract gains `ViewClipPath::Url(Box<str>)`. The renderer returns `UrlClipResourceUnsupported`. No reusable vector clip resource table is claimed in this package.
+The retained View contract gains `ViewClipPath::Url(Box<str>)`. The renderer returns `UrlClipResourceUnsupported`. No reusable vector clip resource table is claimed in this package.
 
 ### Gradient masks
 
-The retained UI contract gains `ViewMaskImage::Gradient(ViewMaskGradient)`.
+The retained View contract gains `ViewMaskImage::Gradient(ViewMaskGradient)`.
 
 `ViewMaskPassPlan` canonicalizes stop coverage and exposes `gradient_plan(tile_size_px)`. The compositor then runs a mask pass with generated gradient coverage instead of an external texture sample.
 

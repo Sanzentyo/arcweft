@@ -16,36 +16,34 @@ fn main() {
     assert_contains(
         &root,
         native_sample,
-        "pub component NativeTextInputPanel() -> View",
+        "pub view NativeTextInputPanel()",
         &mut errors,
     );
     for required in [
-        "TextField(id: @input:.jp_text_field",
-        "TextArea(id: @input:.jp_text_area",
-        "SecureField(id: @input:.secret_secure_field",
+        "let jp_text_field = input.text(@input:.jp_text_field",
+        "let jp_text_area = input.text(@input:.jp_text_area",
+        "let secret_secure_field = input.secure(@input:.secret_secure_field",
+        "TextField(jp_text_field)",
+        "TextArea(jp_text_area)",
+        "SecureField(secret_secure_field)",
         "jp_text_field, jp_text_area, and secret_secure_field",
     ] {
         assert_contains(&root, native_sample, required, &mut errors);
     }
-    for removed in [
-        "ui text_input",
-        "ui text_area",
-        "ui secure_field",
-        "planned native TextField/TextArea/SecureField controls",
-    ] {
+    for removed in ["text_input @input", "text_area @input", "secure_field @input"] {
         assert_not_contains(&root, native_sample, removed, &mut errors);
     }
-    for obsolete_sidecar in [
+    for generated_control_sidecar in [
         "samples/native-text-input/scene-contract.json",
-        "samples/native-text-input/.arcweft/content/ui.input.json",
-        "samples/native-text-input/.arcweft/content/ui.program.json",
-        "samples/native-text-input/.arcweft/content/ui.style.json",
-        "samples/native-text-input/.arcweft/content/ui.text.json",
+        "samples/native-text-input/.arcweft/content/view.input.json",
+        "samples/native-text-input/.arcweft/content/view.program.json",
+        "samples/native-text-input/.arcweft/content/view.style.json",
+        "samples/native-text-input/.arcweft/content/view.text.json",
     ] {
         assert_path_absent(
             &root,
-            obsolete_sidecar,
-            "component-authored controls must lower from source without top-level input sidecars",
+            generated_control_sidecar,
+            "view-authored controls must lower from source without checked-in input sidecars",
             &mut errors,
         );
     }
@@ -93,7 +91,7 @@ fn main() {
     );
 
     if errors.is_empty() {
-        println!("seq06.4j.1 source gates passed for component-authored native text controls");
+        println!("seq06.4j.1 source gates passed for view-authored native text controls");
     } else {
         for error in errors {
             eprintln!("error: {error}");

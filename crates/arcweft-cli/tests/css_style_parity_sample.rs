@@ -1,11 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-use arcweft_lang_syntax::ast::items::{Item, UiStyleSelectorPartDecl, UiStyleValueDecl};
+use arcweft_lang_syntax::ast::items::{Item, ViewStyleSelectorPartDecl, ViewStyleValueDecl};
 use arcweft_lang_syntax::parser::parse_source;
 
 #[test]
-fn css_style_parity_sample_authors_observable_and_ui_styles_in_dsl() {
+fn css_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("samples/css-style-parity/main.arcw"))
         .expect("css style parity sample source");
@@ -35,14 +35,14 @@ fn css_style_parity_sample_authors_observable_and_ui_styles_in_dsl() {
             .tokens()
             .iter()
             .any(|token| token.public_id() == "color.accent"
-                && matches!(token.value(), UiStyleValueDecl::Rgba { .. }))
+                && matches!(token.value(), ViewStyleValueDecl::Rgba { .. }))
     );
     assert!(
         style
             .rules()
             .iter()
             .any(|rule| rule.selector().iter().any(|part| {
-                matches!(part, UiStyleSelectorPartDecl::Interaction(value) if value == "hover")
+                matches!(part, ViewStyleSelectorPartDecl::Interaction(value) if value == "hover")
             }))
     );
     assert!(
@@ -50,13 +50,13 @@ fn css_style_parity_sample_authors_observable_and_ui_styles_in_dsl() {
             .rules()
             .iter()
             .any(|rule| rule.selector().iter().any(|part| {
-                matches!(part, UiStyleSelectorPartDecl::Interaction(value) if value == "active")
+                matches!(part, ViewStyleSelectorPartDecl::Interaction(value) if value == "active")
             }))
     );
     assert!(style.rules().iter().any(|rule| rule.selector().iter().any(
-        |part| matches!(part, UiStyleSelectorPartDecl::State(value) if value == "focus_visible")
+        |part| matches!(part, ViewStyleSelectorPartDecl::State(value) if value == "focus_visible")
     )));
     assert!(style.rules().iter().any(|rule| rule.selector().iter().any(
-        |part| matches!(part, UiStyleSelectorPartDecl::State(value) if value == "composing")
+        |part| matches!(part, ViewStyleSelectorPartDecl::State(value) if value == "composing")
     )));
 }

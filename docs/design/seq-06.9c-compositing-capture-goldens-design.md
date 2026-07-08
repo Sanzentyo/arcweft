@@ -9,7 +9,7 @@ filter, backdrop-filter, mask, clip-path, and blend behavior without relying on
 manual screenshots alone.
 
 The active repository baseline is the main-line cut that includes `Apply
-seq06.9b wgpu UI compositor effects` (`21476c5843845eed29e0376efb9aa4930c6abf02`).
+seq06.9b wgpu View compositor effects` (`21476c5843845eed29e0376efb9aa4930c6abf02`).
 The existing capture record only stores Arcweft metadata, primitive range,
 local bounds, transform, and clip. This design extends that layer rather than
 adding renderer, platform, or screenshot concepts to capture data.

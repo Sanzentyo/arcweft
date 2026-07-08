@@ -46,7 +46,7 @@ advance differently from wider glyphs such as `a`.
 - `cargo check -p arcweft-render-wgpu`
 - `cargo check -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-render-wgpu`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
-- `cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/text-caret-shaped-layout-2048x1152.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128`
+- `cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-view/src/main.arcw --json --image png --out target/modern-feedback-view-debug/text-caret-shaped-layout-2048x1152.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128`
 
 ## Remaining Notes
 

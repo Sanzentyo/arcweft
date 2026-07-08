@@ -8,9 +8,9 @@ fn native_text_input_sample_declares_required_controls_in_dsl() {
     let source =
         fs::read_to_string(sample.join("src/main.arcw")).expect("native text input source");
 
-    assert!(!source.contains("ui text_input"));
-    assert!(!source.contains("ui text_area"));
-    assert!(!source.contains("ui secure_field"));
+    assert!(!source.contains("view text_input"));
+    assert!(!source.contains("view text_area"));
+    assert!(!source.contains("view secure_field"));
     assert!(source.contains("pub view NativeTextInputPanel()"));
     assert!(source.contains("view(@view:.NativeTextInputPanel)"));
     assert!(source.contains("let jp_text_field = input.text(@input:.jp_text_field"));
@@ -20,13 +20,13 @@ fn native_text_input_sample_declares_required_controls_in_dsl() {
     assert!(source.contains("let secret_secure_field = input.secure(@input:.secret_secure_field"));
     assert!(source.contains("SecureField(secret_secure_field)"));
     assert!(source.contains("style native_text_input_sample"));
-    assert!(!source.contains("ui style"));
+    assert!(!source.contains("view style"));
     assert!(source.contains("font-family = token(font.jp_sans_stack)"));
     assert!(!sample.join("scene-contract.json").exists());
-    assert!(!sample.join(".arcweft/content/ui.input.json").exists());
-    assert!(!sample.join(".arcweft/content/ui.program.json").exists());
-    assert!(!sample.join(".arcweft/content/ui.style.json").exists());
-    assert!(!sample.join(".arcweft/content/ui.text.json").exists());
+    assert!(!sample.join(".arcweft/content/view.input.json").exists());
+    assert!(!sample.join(".arcweft/content/view.program.json").exists());
+    assert!(!sample.join(".arcweft/content/view.style.json").exists());
+    assert!(!sample.join(".arcweft/content/view.text.json").exists());
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn submit_flow_sample_declares_action_and_branches_by_length() {
     let source = fs::read_to_string(root.join("samples/text-submit-flow/src/main.arcw"))
         .expect("text submit flow source");
 
-    assert!(!source.contains("ui text_input"));
+    assert!(!source.contains("view text_input"));
     assert!(source.contains("view(@view:.FeedbackForm)"));
     assert!(source.contains("pub action feedback.submit(value: String)"));
     assert!(source.contains("let feedback = input.text(@input:.feedback"));
@@ -60,10 +60,10 @@ fn submit_flow_sample_declares_action_and_branches_by_length() {
 }
 
 #[test]
-fn modern_feedback_ui_sample_uses_view_style_and_flow_submit() {
+fn modern_feedback_view_sample_uses_view_style_and_flow_submit() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = fs::read_to_string(root.join("samples/modern-feedback-ui/src/main.arcw"))
-        .expect("modern feedback UI source");
+    let source = fs::read_to_string(root.join("samples/modern-feedback-view/src/main.arcw"))
+        .expect("modern feedback View source");
 
     assert!(source.contains("pub style modern_feedback_panel"));
     assert!(source.contains("pub view ModernFeedbackPanel()"));

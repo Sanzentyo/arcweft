@@ -5,7 +5,7 @@ Target: `Sanzentyo/arcweft` main, after seq06.16.1 component/View submit buttons
 
 ## Intent
 
-This package makes focus navigation an Arcweft-owned product UI contract instead of a DOM/native widget fallback. It keeps the existing player-rendered `TextField`, `TextArea`, `SecureField`, and `Button` activation substrate intact, and layers typed navigation metadata through the already shared runtime-driver → render-wgpu prepared frame → player-scene input path.
+This package makes focus navigation an Arcweft-owned product View contract instead of a DOM/native widget fallback. It keeps the existing player-rendered `TextField`, `TextArea`, `SecureField`, and `Button` activation substrate intact, and layers typed navigation metadata through the already shared runtime-driver → render-wgpu prepared frame → player-scene input path.
 
 ## Chosen DSL syntax
 
@@ -33,12 +33,12 @@ Container `nav:` declares a group axis and group defaults. `.nav(...)` declares 
 
 ## Data model
 
-The compact UI program resource gains two typed tables:
+The compact View program resource gains two typed tables:
 
-- `UiFocusGroupResource`: group id, parent group, axis, wrap policy, initial focus policy, disabled/hidden skip policy, and trap policy.
-- `UiFocusNavigationResource`: one focusable target id, optional group id, and typed edges.
+- `ViewFocusGroupResource`: group id, parent group, axis, wrap policy, initial focus policy, disabled/hidden skip policy, and trap policy.
+- `ViewFocusNavigationResource`: one focusable target id, optional group id, and typed edges.
 
-Edges are `UiFocusNavigationEdge { direction, target }` where direction is `up`, `down`, `left`, `right`, `next`, or `previous`, and target resolution is explicit target, `auto`, `none`, or `group_boundary`.
+Edges are `ViewFocusNavigationEdge { direction, target }` where direction is `up`, `down`, `left`, `right`, `next`, or `previous`, and target resolution is explicit target, `auto`, `none`, or `group_boundary`.
 
 The runtime snapshot carries normalized runtime forms, and the renderer converts them to `PreparedFocusGraph`. `PreparedFocusGraph` is intentionally platform-free and uses `InteractionTarget`/`HitRect` evidence already prepared for semantic focus.
 
@@ -54,7 +54,7 @@ Resolution order is deterministic:
 6. `auto` uses existing geometric scoring for spatial directions and deterministic linear order for `next`/`previous`.
 7. If no DSL edge exists, preserve existing automatic spatial navigation as the default fallback.
 
-Missing explicit target references are diagnosed during bundle lowering, before compact UI resources are emitted.
+Missing explicit target references are diagnosed during bundle lowering, before compact View resources are emitted.
 
 ## Controller normalization
 
@@ -77,7 +77,7 @@ The prepared frame exposes `focus_graph`, `focus_debug()`, and navigation candid
 
 - No DOM/native widget fallback.
 - No compatibility layers or removed syntax aliases.
-- No root-level broad re-export beyond deliberate facade exports already used by UI resources.
+- No root-level broad re-export beyond deliberate facade exports already used by View resources.
 - No redesign of text editor, IME, or action button activation behavior.
 
 ## Applied Checkout Notes - 2026-07-04
@@ -97,14 +97,14 @@ Implementation adjustments made during apply:
 - `arcw check [PATH]` is now accepted as a direct source check route so the package validation command works against the current CLI.
 - The sample gained `arcw.toml` plus a minimal public entrypoint/flow because current AWFB bundle validation requires a public entrypoint.
 - `arcweft-render-wgpu` now depends on workspace `serde` so `FocusNavigationDebug` can be serialized into Web observation reports.
-- The package's filename-style cargo test commands for `ui_focus_navigation_resources`, `controller_navigation`, and `focus_navigation_report` exit successfully but select zero tests in this checkout because Cargo treats those as test-name filters. The corresponding integration tests were also run explicitly with `--test`.
+- The package's filename-style cargo test commands for `view_focus_navigation_resources`, `controller_navigation`, and `focus_navigation_report` exit successfully but select zero tests in this checkout because Cargo treats those as test-name filters. The corresponding integration tests were also run explicitly with `--test`.
 
 Validation run in this checkout:
 
 ```bash
 cargo fmt --all -- --check
-cargo test -p arcweft-bundle ui_focus_navigation_resources -- --nocapture
-cargo test -p arcweft-bundle --test ui_focus_navigation_resources -- --nocapture
+cargo test -p arcweft-bundle view_focus_navigation_resources -- --nocapture
+cargo test -p arcweft-bundle --test view_focus_navigation_resources -- --nocapture
 cargo test -p arcweft-lang-syntax focus_navigation_view -- --nocapture
 cargo test -p arcweft-render-wgpu focus_navigation -- --nocapture
 cargo test -p arcweft-player-scene controller_navigation -- --nocapture
@@ -134,7 +134,7 @@ Result:
 - Reported 4 error-level and 127 warning-level structural findings.
 - Reports were written to `target/structure-audit-seq06.17`.
 - Error-level findings are existing large-file thresholds in `crates/arcweft-cli/src/app/bundle.rs`, `crates/arcweft-core/src/value.rs`, `crates/arcweft-lang-sema/src/checker/expr.rs`, and `crates/arcweft-runtime-plan/src/flow.rs`.
-- Changed files above the warning threshold remain review targets: `crates/arcweft-bundle/src/resource_codec/ui/model.rs`, `crates/arcweft-render-wgpu/src/geometry.rs`, and `crates/arcweft-runtime-driver/src/session.rs`.
+- Changed files above the warning threshold remain review targets: `crates/arcweft-bundle/src/resource_codec/view/model.rs`, `crates/arcweft-render-wgpu/src/geometry.rs`, and `crates/arcweft-runtime-driver/src/session.rs`.
 
 Remaining validation gaps:
 

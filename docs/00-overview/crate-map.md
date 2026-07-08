@@ -186,7 +186,7 @@ arcweft-launch
   envelope/key/payload contract を所有する。cache record filesystem layout、
   object storage、lock、watch policy、CLI explain output は
   `arcweft-project-loader` / CLI adapter 側に置く。
-- UI / shader / audio / Activity は `Command` / `TaskSpec` / `Need` / `EffectRequest` を介する。
+- View / shader / audio / Activity は `Command` / `TaskSpec` / `Need` / `EffectRequest` を介する。
 - Hook は phase ごとの構造化 action を返し、直接 host API を呼ばない。
 - Memoization は pure computation または TaskKey deduplication に限定し、cache は決定性に影響してはならない。
 - unsafe は `arcweft-memory`、`arcweft-plugin-*`、`arcweft-render`、`arcweft-audio-*` の境界に閉じ込める。
@@ -239,7 +239,7 @@ arcweft-launch
   bytecode bundle input とする。
 - View は最初から細かい public crate family に分割せず、当面は
   `arcweft-view` が View registry、generational Entity、retained
-  fragment、reactivity、style/layout integration、semantic UI nodes を所有する。
+  fragment、reactivity、style/layout integration、semantic View nodes を所有する。
   Raw input routing、LayerTree、HitTree、focus、modal、pointer capture は
   `arcweft-presentation` 側の Sans I/O data/model とする。
 - `arcweft-launch` は `arcw.toml` launch profiles を typed data と TOML codec
@@ -252,11 +252,11 @@ arcweft-launch
 
 - Capture devices are permissioned live sources; scripts and Activities consume granted ports, not raw device APIs.
 - USB/HID/Serial/Gamepad are also permissioned DevicePorts and expose typed Source streams.
-- Touch virtual controllers are Game Native UI layers that emit logical input events and Agent action targets.
+- Touch virtual controllers are Game Native View layers that emit logical input events and Agent action targets.
 
 - USB / HID devices are permissioned DeviceProfiles; scripts consume typed ports and signals, not raw handles.
 - The Device Profile Generator emits parsers, writers, signal bindings, test fixtures, and backend stubs from `.arcw` manifests.
-- Touch virtual controllers are Game Native UI views attached to input layers and emit logical `ControllerEvent`s.
+- Touch virtual controllers are Game Native Views attached to input layers and emit logical `ControllerEvent`s.
 
 - Device streams are `Source<T, E>` values with explicit backpressure, replay, privacy, and cancellation policy; do not expose backend callbacks directly to DSL code.
 - USB/HID/Gamepad/VirtualController input emits normalized `InputAction` values into the layer-based input router.

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Render `ViewBoxShadowKind::Inset` values in the Arcweft-owned direct wgpu UI
+Render `ViewBoxShadowKind::Inset` values in the Arcweft-owned direct wgpu View
 compositor path. The input is already typed by Takumi and the Takumi adapter;
 this package does not add CSS parsing, source-string scanning, DOM rendering,
 canvas/SVG filters, CPU rasterization, or bitmap snapshot fallbacks.
@@ -49,7 +49,7 @@ meaning because box shadows already require a group offscreen surface.
 ## Plan API decision
 
 `ViewBoxShadowPassPlan` grows a unified ordered pass list instead of introducing a
-separate `UiInsetBoxShadowPassPlan`.
+separate `ViewInsetBoxShadowPassPlan`.
 
 Rationale:
 

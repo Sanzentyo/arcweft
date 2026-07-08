@@ -51,7 +51,7 @@ pub device @device.rhythm_pad: UsbHid {
 ## Virtual controller
 
 ```arcw
-mod game.ui.mobile_controls
+mod game.view.mobile_controls
 
 pub controller @controller.mobile_default: VirtualTouchController {
     layer = @layer.controls

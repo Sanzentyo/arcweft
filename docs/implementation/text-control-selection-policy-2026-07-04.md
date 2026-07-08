@@ -9,7 +9,7 @@ for `TextField`, `TextArea`, and `SecureField`.
   selection is enabled by default, shortcuts are enabled by default, and Tab
   keeps the existing focus-navigation behavior unless explicitly configured to
   insert a tab character.
-- `UiInputOptions` and `UiRuntimeTextControlOptions` carry the same policies
+- `ViewInputOptions` and `ViewRuntimeTextControlOptions` carry the same policies
   with serde defaults so existing resources keep their previous behavior.
 - Component/View text controls can author these policies through arguments such
   as `selection: disabled`, `shortcuts: disabled`, and `tab: insert`.
@@ -52,14 +52,14 @@ for `TextField`, `TextArea`, and `SecureField`.
 - `cargo fmt`
 - `cargo fmt --all -- --check`
 - `cargo check -p arcweft-bundle`
-- `cargo check -p arcweft-presentation -p arcweft-ui -p arcweft-bundle -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-runtime-host -p arcweft-runtime-driver -p arcweft-player-native -p arcweft-player-web -p arcweft-cli`
+- `cargo check -p arcweft-presentation -p arcweft-view -p arcweft-bundle -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-runtime-host -p arcweft-runtime-driver -p arcweft-player-native -p arcweft-player-web -p arcweft-cli`
 - `cargo test -p arcweft-presentation --test text_editor_behavior`
 - `cargo test -p arcweft-player-scene --test runtime_text_controls --test runtime_control_style_lowering`
-- `cargo test -p arcweft-bundle --test runtime_control_style_resolution --test ui_runtime_text_controls --test ui_resource_codecs`
+- `cargo test -p arcweft-bundle --test runtime_control_style_resolution --test view_runtime_text_controls --test view_resource_codecs`
 - `cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles`
 - `cargo test -p arcweft-player-native --lib`
 - `cargo test -p arcweft-player-web --lib`
-- `cargo test -p arcweft-ui --lib`
+- `cargo test -p arcweft-view --lib`
 - `cargo test -p arcweft-runtime-host --lib`
 - `cargo clippy --workspace --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`

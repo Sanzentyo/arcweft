@@ -263,7 +263,7 @@ pub struct KeywordHit {
     channel: String
 }
 
-#[text_proxy(kind="hover", default_hit=true, depth=7, layer=ui)]
+#[text_proxy(kind="hover", default_hit=true, depth=7, layer=view)]
 pub struct HoverHit {
     layer: String
 }
@@ -296,10 +296,10 @@ flow @flow.main main {
     let observe_json: serde_json::Value =
         serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
     let hover = find_rich_text_proxy_object(&observe_json, "hover", "Hit");
-    assert_eq!(hover["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(hover["rich_text_ref"]["object_layer"], "view");
     assert_eq!(
         hover["rich_text_ref"]["presentation"]["object_proxies"][0]["layer"],
-        "ui"
+        "view"
     );
     assert_rich_text_page_and_line_aggregate_proxy_metadata(&observe_json);
     let x = agent_json_bbox_x(&hover["bbox"]) + agent_json_bbox_width(&hover["bbox"]) / 2;
@@ -378,10 +378,10 @@ fn assert_top_hover_rich_text_proxy_hit(top: &serde_json::Value, hover: &serde_j
     assert_eq!(top["region"]["proxy_type"], "HoverHit");
     assert_text_proxy_declaration(&top["region"]["proxy_declaration"], "HoverHit");
     assert_eq!(top["region"]["proxy_role"], "hover");
-    assert_eq!(top["region"]["proxy_layer"], "ui");
-    assert_eq!(top["layer"], "ui");
+    assert_eq!(top["region"]["proxy_layer"], "view");
+    assert_eq!(top["layer"], "view");
     assert_agent_hit_capture_refs_match(top, hover);
-    assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(top["rich_text_ref"]["object_layer"], "view");
     assert_eq!(top["depth"], 7000);
 }
 
@@ -437,7 +437,7 @@ fn agent_observe_infers_text_proxy_struct_shorthand() {
         &hit_json["hits"][0]["region"]["proxy_declaration"],
         "HoverHit",
     );
-    assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "ui");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "view");
     assert_eq!(
         hit_json["hits"][0]["region"]["proxy_params"]["tone"]["value"],
         "alert"
@@ -842,7 +842,7 @@ pub struct KeywordHit {
     channel: String
 }
 
-#[text_proxy(kind="hover", default_hit=true, depth=7, layer=ui)]
+#[text_proxy(kind="hover", default_hit=true, depth=7, layer=view)]
 pub struct HoverHit {
     layer: String
 }
@@ -878,7 +878,7 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         && proxy["declaration"]["struct_name"] == "HoverHit"
         && proxy["declaration"]["attribute"] == "text_proxy"
         && proxy["role"] == "hover"
-        && proxy["layer"] == "ui"
+        && proxy["layer"] == "view"
         && proxy["depth"] == 7000
         && proxy["hit_test"] == true
         && proxy["params"]["tone"]["value"] == "alert",));
@@ -889,7 +889,7 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
     let hover = find_rich_text_proxy_object(observe_json, "HoverHit", "Hit");
     assert_eq!(hover["role"], "rich_text_proxy");
     assert_eq!(hover["rich_text_ref"]["kind"], "text_object_proxy");
-    assert_eq!(hover["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(hover["rich_text_ref"]["object_layer"], "view");
     assert_eq!(hover["rich_text_ref"]["object_depth"], 7000);
     let hover_uri = rich_text_object_capture_uri(hover, "object_id", "application/octet-stream");
     let hover_width = hover["bbox"]["width"]
@@ -1042,7 +1042,7 @@ pub struct KeywordHit {
     channel: String
 }
 
-#[text_proxy(kind="hover", default_hit=true, depth=7, layer=ui)]
+#[text_proxy(kind="hover", default_hit=true, depth=7, layer=view)]
 pub struct HoverHit {
     layer: String
 }
@@ -1119,10 +1119,10 @@ flow @flow.main main {
     assert_eq!(top["region"]["proxy_id"], "hover");
     assert_eq!(top["region"]["proxy_type"], "HoverHit");
     assert_text_proxy_declaration(&top["region"]["proxy_declaration"], "HoverHit");
-    assert_eq!(top["region"]["proxy_layer"], "ui");
-    assert_eq!(top["layer"], "ui");
+    assert_eq!(top["region"]["proxy_layer"], "view");
+    assert_eq!(top["layer"], "view");
     assert_agent_hit_capture_refs_match(top, hover);
-    assert_eq!(top["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(top["rich_text_ref"]["object_layer"], "view");
     assert_eq!(top["depth"], 7000);
     let keyword_hit = hit_json["hits"]
         .as_array()
@@ -1374,19 +1374,19 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
         .iter()
         .find(|object| object["id"] == "object.dialogue.0.0.page.0")
         .expect("proxy text page object is observed");
-    assert_eq!(page["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(page["rich_text_ref"]["object_layer"], "view");
     assert_eq!(page["rich_text_ref"]["object_depth"], 7000);
     let page_hover_hit = rich_text_proxy_hit_region(page, "hover", 0, 3);
     assert_eq!(page_hover_hit["proxy_type"], "HoverHit");
     assert_text_proxy_declaration(&page_hover_hit["proxy_declaration"], "HoverHit");
-    assert_eq!(page_hover_hit["proxy_layer"], "ui");
+    assert_eq!(page_hover_hit["proxy_layer"], "view");
     assert_eq!(page_hover_hit["depth"], 7000);
 
     let line = objects
         .iter()
         .find(|object| object["id"] == "object.dialogue.0.0.line.0")
         .expect("proxy text line object is observed");
-    assert_eq!(line["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(line["rich_text_ref"]["object_layer"], "view");
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
     let line_keyword_hit = rich_text_proxy_hit_region(line, "hotspot", 0, 3);
     assert_eq!(line_keyword_hit["proxy_type"], "KeywordHit");

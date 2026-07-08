@@ -8,14 +8,14 @@
 
 - [wgpu renderer](wgpu-renderer.md)
 - [Layered Input](../02-runtime/layered-input.md)
-- [Reactive UI](ui-reactive.md)
+- [Reactive View](view-reactive.md)
 - [Agent Debug Bus](../04-tooling/agent-debug-mcp-cli.md)
 - [Layer Tree schema](../schemas/layer-tree.md)
 
 ## 基本方針
 
 ```text
-Scene / View / Activity / HTML UI
+Scene / View / Activity / HTML View
   ↓
 LayerTree
   ↓
@@ -53,7 +53,7 @@ pub struct LayerNode {
 }
 ```
 
-`LayerId` は frame 内だけの一時 ID ではなく、可能なら `EntityId` に紐づく安定 ID を持つ。`say` や `choice`、UI view、Activity、HTML panel はすべて layer へ投影できる。
+`LayerId` は frame 内だけの一時 ID ではなく、可能なら `EntityId` に紐づく安定 ID を持つ。`say` や `choice`、View、Activity、HTML panel はすべて layer へ投影できる。
 
 ## LayerKind
 
@@ -67,8 +67,8 @@ pub enum LayerKind {
     Video,
     TextBox,
     Choice,
-    NativeUi,
-    HtmlUi,
+    NativeView,
+    HtmlView,
     Activity,
     Modal,
     DebugOverlay,
@@ -91,7 +91,7 @@ root
   dialogue
     textbox
     choices
-  ui
+  view
     hud
     menus
     modal
@@ -125,7 +125,7 @@ pub enum LayerRenderSpec {
     RichText(RichTextSpec),
     Typeset(TypesetSpec),
     Vector(VectorSpec),
-    Ui(UiRenderSpec),
+    View(ViewRenderSpec),
     Html(HtmlPanelRenderSpec),
     Activity(ActivityRenderSpec),
     CustomShader(CustomMaterialSpec),
@@ -197,14 +197,14 @@ headless:
   → Observation
 ```
 
-HTML/Servo/DOM layer が完全に描画できない環境では、`HtmlPanelSpec` と UI bridge metadata から `UiLayoutApprox` を作る。Observation には信頼度を入れる。
+HTML/Servo/DOM layer が完全に描画できない環境では、`HtmlPanelSpec` と View bridge metadata から `ViewLayoutApprox` を作る。Observation には信頼度を入れる。
 
 ```rust
 pub enum ObservationSource {
     EngineExact,
     RenderObjectIdPass,
-    UiLayoutExact,
-    UiBridgeApprox,
+    ViewLayoutExact,
+    ViewBridgeApprox,
     PixelDerived,
     BackendUnavailable,
 }
@@ -268,13 +268,13 @@ scope {
         fit = "cover"
     )
     character layer @layer.characters sprite(@asset:.char.alice.default).at(center)
-    ui layer @layer.dialogue TextBox(current_text())
+    view layer @layer.dialogue TextBox(current_text())
 }
 ```
 
-## UI view との関係
+## View との関係
 
-Game Native UI view は内部的に layer subtree を生成する。
+Game Native View は内部的に layer subtree を生成する。
 
 ```arcw
 view ChoiceList(choices: Vec<ChoiceView>) {
@@ -288,7 +288,7 @@ view ChoiceList(choices: Vec<ChoiceView>) {
 }
 ```
 
-UI view の `.layer(...)` は描画先 layer と入力 policy を決める。指定しない場合は親 view の layer を継承する。
+View の `.layer(...)` は描画先 layer と入力 policy を決める。指定しない場合は親 view の layer を継承する。
 
 ## Activity layer
 
@@ -308,17 +308,17 @@ Activity が portable render command を返す場合、その command は該当 
 
 ## HTML/Servo/DOM layer
 
-HTML UI は `HtmlUi` layer として扱う。
+HTML View は `HtmlView` layer として扱う。
 
 ```arcw
-html panel @ui.settings_html from "ui/settings.html" {
+html panel @view.settings_html from "view/settings.html" {
     layer @layer.html.settings
     bounds = rect(0, 0, 100vw, 100vh)
     input = modal
 }
 ```
 
-Native では Servo、Web では DOM に差し替えるが、Layer Tree 上では同じ `HtmlUi` layer になる。
+Native では Servo、Web では DOM に差し替えるが、Layer Tree 上では同じ `HtmlView` layer になる。
 
 ## Shader と layer
 
@@ -328,7 +328,7 @@ layer 単位で shader を適用できる。
 layer @layer.dialogue {
     TextBox(current_text())
 }
-.shader(@shader.ui.glass_panel) {
+.shader(@shader.view.glass_panel) {
     blur_amount = 12.0
 }
 ```
@@ -348,7 +348,7 @@ ensures z > layer(@layer.dialogue).z
 }
 ```
 
-UI view の contract と組み合わせる。
+View の contract と組み合わせる。
 
 ```arcw
 view ChoiceButton(choice: ChoiceView)
@@ -380,7 +380,7 @@ Layer は hook 対象である。描画・入力・layout・Agent 観測の各 p
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
-    hit_test = ui_layout
+    hit_test = view_layout
 }
 
 hook @hook.layer.choices.pointer_enter

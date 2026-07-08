@@ -9,7 +9,7 @@ use crate::resource::{
     AgentResourceKind,
 };
 use crate::session::{AgentAssignment, AgentAudioState};
-use crate::ui::AgentUiTree;
+use crate::view::AgentViewTree;
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,7 @@ pub struct AgentObservationReport {
     pub objects: Vec<AgentObservedObject>,
     pub presentation_tree: AgentPresentationTree,
     pub actions: Vec<AgentActionTarget>,
-    pub ui_tree: AgentUiTree,
+    pub view_tree: AgentViewTree,
     pub scene_graph: Vec<serde_json::Value>,
     pub audio_state: AgentAudioState,
     pub logs: Vec<RuntimeLog>,

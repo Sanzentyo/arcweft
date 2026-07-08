@@ -789,7 +789,7 @@ Layer DSL も一本化します。
 canonical:
 
 ```awft
-pub layer #layer.choice_ui: GameUi {
+pub layer #layer.choice_ui: GameView {
     order = ui(20)
     input = capture_on_hit
     hit_test = ui_layout
@@ -1552,7 +1552,7 @@ effects { emit_event, log, input_disposition }
 layer:
 
 ```awft
-pub layer #layer.choice_ui: GameUi {
+pub layer #layer.choice_ui: GameView {
     order = ui(20)
     input = capture_on_hit
     hit_test = ui_layout

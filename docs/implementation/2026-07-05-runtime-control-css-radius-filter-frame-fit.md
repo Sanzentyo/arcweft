@@ -2,7 +2,7 @@
 
 ## Scope
 
-This note records the runtime-control style and modern feedback UI rendering
+This note records the runtime-control style and modern feedback View rendering
 slice. It intentionally excludes checked-in PNG baseline promotion and web exact
 readback baseline work.
 
@@ -72,9 +72,9 @@ cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles
 cargo check -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-cli --features native-player,native-capture --all-targets
 cargo clippy -p arcweft-presentation -p arcweft-bundle -p arcweft-render-wgpu -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-cli --features native-player,native-capture --all-targets
 cargo +nightly -Zscript tools/structure-audit.rs --root .
-cargo run -p arcweft-cli --quiet -- check samples\modern-feedback-ui\src\main.arcw
-cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples\modern-feedback-ui\src\main.arcw --json --image png --out target\modern-feedback-ui-debug\modern-feedback-ui-final.png --mode drain --steps 8 --max-ops 128
-cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-ui\arcw.toml --profile main
+cargo run -p arcweft-cli --quiet -- check samples\modern-feedback-view\src\main.arcw
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples\modern-feedback-view\src\main.arcw --json --image png --out target\modern-feedback-view-debug\modern-feedback-view-final.png --mode drain --steps 8 --max-ops 128
+cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-view\arcw.toml --profile main
 cargo check -p arcweft-launch -p arcweft-lang-sema -p arcweft-runtime-driver -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-native -p arcweft-player-web -p arcweft-cli
 cargo test -p arcweft-launch --quiet
 cargo test -p arcweft-runtime-driver viewport_effect_sets_and_clears_runtime_fit --quiet
@@ -93,7 +93,7 @@ physical LOC. It reported 0 errors and 132 warnings, with no report files
 written.
 
 The final modern feedback capture was written to
-`target/modern-feedback-ui-debug/modern-feedback-ui-final.png`.
+`target/modern-feedback-view-debug/modern-feedback-view-final.png`.
 
 The 2026-07-06 structure audit scanned 2361 files, 1129 Rust files, and
 532670 Rust physical LOC. It reported 0 errors and 132 warnings, with no

@@ -2,7 +2,7 @@
 
 ## Decision summary
 
-Dialogue body text must be a renderer-owned styled paragraph. The renderer-facing model keeps `RenderTextBlock` for single-style UI surfaces and adds `RenderStyledParagraph` for dialogue body text.
+Dialogue body text must be a renderer-owned styled paragraph. The renderer-facing model keeps `RenderTextBlock` for single-style View surfaces and adds `RenderStyledParagraph` for dialogue body text.
 
 This avoids blurring two responsibilities:
 

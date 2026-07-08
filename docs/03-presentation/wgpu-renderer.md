@@ -14,7 +14,7 @@ pub enum LayerSpec {
     Sprite(SpriteSpec),
     Text(TextSpec),
     Vector(VectorSpec),
-    Ui(UiRenderSpec),
+    View(ViewRenderSpec),
     Group(GroupSpec),
     Video(VideoSpec),
     CustomShader(CustomMaterialSpec),
@@ -48,7 +48,7 @@ pub struct RenderCaptureOptions {
     pub overlay: bool,
     pub object_id: bool,
     pub masks: MaskCaptureMode,
-    pub include_ui: bool,
+    pub include_view: bool,
 }
 ```
 
@@ -63,4 +63,3 @@ textbox           → object id 300
 ```
 
 これにより bbox / polygon / segmentation mask をエンジン情報から生成できる。
-

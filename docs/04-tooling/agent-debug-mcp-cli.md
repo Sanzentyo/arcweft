@@ -167,7 +167,7 @@ pub struct Observation {
     pub layers: Vec<ObservedLayer>,
     pub objects: Vec<ObservedObject>,
     pub actions: Vec<ActionTarget>,
-    pub ui_tree: Option<UiTree>,
+    pub view_tree: Option<ViewTree>,
     pub scene_graph: Option<SceneGraphSlice>,
     pub audio_state: Option<AudioObservation>,
     pub logs: Vec<DecodedLog>,

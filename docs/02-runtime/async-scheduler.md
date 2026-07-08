@@ -83,7 +83,7 @@ Rust's runtime parallelism limit for the current process.
 
 ```rust
 pub enum TaskClass {
-    LocalUi,
+    LocalView,
     Io,
     Cpu,
     GpuPrepare,
@@ -173,7 +173,7 @@ let data = try await load() with {
 }
 ```
 
-UI:
+View:
 
 ```arcw
 AwaitView(load_avatar(user)) {
@@ -213,7 +213,7 @@ TaskEventKind::Err(error)      -> mark the fiber failed
 TaskEventKind::Cancelled       -> mark the fiber failed
 ```
 
-Actual asset loading, worker execution, clocks, renderer progress UI, and audio
+Actual asset loading, worker execution, clocks, renderer progress View, and audio
 work remain outside `arcweft-core`. Core only produces deterministic task
 requests and consumes deterministic task events.
 The native CLI adapter completes read-only dispatch batches on a worker pool and

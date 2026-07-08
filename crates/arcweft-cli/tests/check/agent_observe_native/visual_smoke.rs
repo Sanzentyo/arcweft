@@ -181,7 +181,7 @@ fn visual_smoke_text_overflow_wraps_without_exact_pixels() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [font "Segoe UI"]AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[/font][p]
+    alice: [font "Segoe View"]AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[/font][p]
 }
 "#,
     );

@@ -8,7 +8,7 @@ entry game @entry.native_text_input_sample {
 }
 
 style native_text_input_sample {
-  token font.jp_sans_stack = ["Yu Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]
+  token font.jp_sans_stack = ["Yu Gothic", "Hiragino Sans", "Noto Sans JP", "system-view"]
   token font.jp_serif_stack = ["Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", "serif"]
   token style.focus_ring_width = milli(2000)
 
@@ -23,7 +23,7 @@ style native_text_input_sample {
   }
 
   SecureField {
-    font-family = text("system-ui")
+    font-family = text("system-view")
     secure-mask = text("asterisk")
   }
 

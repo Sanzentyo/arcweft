@@ -629,7 +629,7 @@ mod tests {
             object_id: Some("object.dialogue.0.0".to_owned()),
             role: Some("rich_text_run".to_owned()),
             rich_text_kind: Some(AgentRichTextElementKind::TextRun),
-            object_layer: Some("ui".to_owned()),
+            object_layer: Some("view".to_owned()),
             object_depth: Some(4000),
             effects: vec![AgentPresentationEffectRef {
                 id: "motion".to_owned(),
@@ -691,7 +691,7 @@ mod tests {
             object_id: Some("object.dialogue.0.1".to_owned()),
             role: Some("rich_text_run".to_owned()),
             rich_text_kind: Some(AgentRichTextElementKind::TextRun),
-            object_layer: Some("ui".to_owned()),
+            object_layer: Some("view".to_owned()),
             ..base_node("object.dialogue.0.1", AgentPresentationTreeNodeKind::Object)
         }
     }

@@ -133,8 +133,8 @@ const AGENT_ROLE_DIALOGUE_TEXTBOX: &str = "dialogue_textbox";
 fn agent_is_dialogue_textbox(object: &AgentObservedObject) -> bool {
     object.role == AGENT_ROLE_DIALOGUE_TEXTBOX
 }
-use arcweft_runtime_host::{UiFrameCommit, UiFrameImageItem};
-use arcweft_view::UiImageSourceTable;
+use arcweft_runtime_host::{ViewFrameCommit, ViewFrameImageItem};
+use arcweft_view::ViewImageSourceTable;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clap::ValueEnum;
 use std::collections::{BTreeMap, BTreeSet};
@@ -243,7 +243,7 @@ mod tests;
 
 use capture::{
     AgentCaptureReadRequest, AgentCaptureScope, AgentImageFrameStore, AgentStoredImageFrame,
-    AgentStoredImagePlacement, AgentUiImageObservation, agent_capture_request_from_uri,
+    AgentStoredImagePlacement, AgentViewImageObservation, agent_capture_request_from_uri,
     agent_image_object_for_capture_scope, agent_image_view_for_capture_scope,
     agent_native_capture_image, agent_native_capture_image_with_frame_store,
     agent_native_capture_resource_with_session_and_frame_store, agent_observe_capture_resource,
@@ -313,8 +313,9 @@ use player_observation::{
 use repl::agent_repl_command;
 use runtime_observation::{
     AgentImageOutput, AgentRasterCapture, agent_action_targets,
-    agent_action_targets_for_runtime_status, agent_image_kind, agent_image_scope_for_capture_scope,
-    agent_native_visual_diagnostics, agent_observe_image_output, agent_observe_layout_scene_graph,
+    agent_action_targets_for_runtime_status, agent_action_targets_for_semantics, agent_image_kind,
+    agent_image_scope_for_capture_scope, agent_native_visual_diagnostics,
+    agent_observe_image_output, agent_observe_layout_scene_graph, dedupe_agent_action_targets,
 };
 
 pub(super) fn agent_command(

@@ -5,17 +5,17 @@
 Seq-06.16 is applied as resource/runtime/player substrate, not as a final
 authoring syntax cut.
 
-The initial package suggested adding a top-level `ui action_button` item next
-to `ui text_input` and `ui style`. That surface is intentionally not kept,
-because the final UI language direction is component/View authoring with root
-`style` declarations. The follow-up request is:
+The initial package suggested adding a top-level action-button item next to the
+early top-level text-control and style declarations. That surface is
+intentionally not kept, because the final language direction is View authoring
+with root `style` declarations. The follow-up request is:
 
 - `docs/reviews/requests/2026-07-03-seq-06.16.1-component-view-text-submit-button-lowering.md`
 
 ## Applied Substrate
 
-- `UiProgramResource` now carries action button records.
-- Compact UI resource codec canonicalization, budgets, deterministic public ID
+- `ViewProgramResource` now carries action button records.
+- Compact View resource codec canonicalization, budgets, deterministic public ID
   collection, and record counts include action buttons.
 - Runtime presentation snapshots carry resolved action buttons.
 - Player-scene lowers runtime action buttons into WGPU render scene button
@@ -27,22 +27,22 @@ because the final UI language direction is component/View authoring with root
 
 ## Intentionally Not Applied
 
-- No top-level `ui action_button` parser branch.
-- No `UiActionButtonItem` AST/HIR/sema/project-index item.
-- No `ui action_button` sample syntax.
+- No top-level action-button parser branch.
+- No `ViewActionButtonItem` AST/HIR/sema/project-index item.
+- No separate action-button sample syntax outside View `Button`.
 - No DOM/native platform button fallback.
 
 ## Follow-Up Boundary
 
-Seq-06.16.1 must design and implement the authored component/View surface that
+Seq-06.16.1 must design and implement the authored View surface that
 lowers to this substrate. The expected shape is a `Button` View element with a
 typed click action such as text submit, styled through the root `style`
-direction rather than another resource-side `ui` declaration.
+direction rather than another resource-side declaration family.
 
 ## Validation
 
 - `cargo fmt --all`
-- `cargo test -p arcweft-bundle --test ui_action_button_resources -- --nocapture`
+- `cargo test -p arcweft-bundle --test view_action_button_resources -- --nocapture`
 - `cargo test -p arcweft-player-scene --test action_button_submit -- --nocapture`
 - `cargo test -p arcweft-render-wgpu --test geometry -- --nocapture`
 - `cargo run -p arcweft-cli -- compile --emit check samples/text-submit-flow/src/main.arcw`

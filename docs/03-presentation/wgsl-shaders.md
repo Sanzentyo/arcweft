@@ -9,7 +9,7 @@ pub enum ShaderKind {
     Transition,
     PostProcess,
     SpriteMaterial,
-    UiMaterial,
+    ViewMaterial,
     VectorFill,
     TextEffect,
     ActivityRender,

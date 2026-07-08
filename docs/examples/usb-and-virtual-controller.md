@@ -75,7 +75,7 @@ input_map @input.lightgun_map {
 ```arcw
 layer @layer.touch_controls {
     z = 900
-    kind = ui_overlay
+    kind = view_overlay
     visibility = env.touch_available
     input { accepts = touch | pointer; capture = handled; pass_through = true }
 }

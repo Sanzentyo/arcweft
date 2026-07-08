@@ -12,23 +12,23 @@ GitHub connector on 2026-07-03:
 - current compositor execution already applies filters and mask passes but does
   not yet apply clip geometry as a final pixel constraint and does not resolve
   mask size/position/repeat in shader sampling;
-- current `arcweft-ui::style` owns retained UI property kinds and values but has
+- current `arcweft-view::style` owns retained View property kinds and values but has
   no motion model.
 
 ## Overlay changed files
 
 ### New source files
 
-- `crates/arcweft-ui/src/motion.rs`
-- `crates/arcweft-ui/tests/motion_transitions.rs`
+- `crates/arcweft-view/src/motion.rs`
+- `crates/arcweft-view/tests/motion_transitions.rs`
 - `crates/arcweft-render-wgpu/tests/ui_clip_mask_render_closure.rs`
 - `crates/arcweft-render-wgpu/tests/view_blend_hsl_modes.rs`
 - `crates/arcweft-render-wgpu/tests/view_compositor_gpu_smoke_timestamps.rs`
 
 ### Patched source files
 
-- `crates/arcweft-ui/src/lib.rs`
-- `crates/arcweft-ui/src/style.rs`
+- `crates/arcweft-view/src/lib.rs`
+- `crates/arcweft-view/src/style.rs`
 - `crates/arcweft-render-wgpu/src/view_clip_path.rs`
 - `crates/arcweft-render-wgpu/src/view_mask.rs`
 - `crates/arcweft-render-wgpu/src/view_compositor.rs`
@@ -44,7 +44,7 @@ GitHub connector on 2026-07-03:
 
 The overlay follows Arcweft's owned-boundary rule:
 
-- `UiPropertyKind` owns the transitionable-property decision and value
+- `ViewPropertyKind` owns the transitionable-property decision and value
   interpolation dispatch.
 - `Milli` and `Rgba8` own scalar/color interpolation.
 - `ViewMaskPassPlan` owns mask sampling-plan resolution.
@@ -56,7 +56,7 @@ for these boundary behaviors.
 
 ### Sans I/O boundaries
 
-`arcweft-ui::motion` is pure data and deterministic sampling. It does not read
+`arcweft-view::motion` is pure data and deterministic sampling. It does not read
 wall-clock time, GPU state, files, or network resources.
 
 `arcweft-render-wgpu` receives prepared mask texture views and extents from the
@@ -80,8 +80,8 @@ blend composition.
 
 ### Motion
 
-`UiTransition` and `UiKeyframeTrack` sample explicit timestamps. The returned
-`UiMotionSample` is designed to be copied into visual drift packets or golden
+`ViewTransition` and `ViewKeyframeTrack` sample explicit timestamps. The returned
+`ViewMotionSample` is designed to be copied into visual drift packets or golden
 metadata.
 
 Reduced motion is applied during sampling instead of mutating author specs. This
@@ -137,12 +137,12 @@ review threshold.
 
 ```bash
 cargo fmt --all -- --check
-cargo test -p arcweft-ui --test motion_transitions --all-features -- --nocapture
+cargo test -p arcweft-view --test motion_transitions --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test ui_clip_mask_render_closure --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test view_blend_hsl_modes --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test view_compositor_plan --all-features -- --nocapture
-cargo check -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features
-cargo clippy -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
+cargo check -p arcweft-view -p arcweft-render-wgpu --all-targets --all-features
+cargo clippy -p arcweft-view -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root .
 git diff --check
 ```
@@ -151,12 +151,12 @@ Validated during application:
 
 ```bash
 cargo fmt --all
-cargo test -p arcweft-ui --test motion_transitions --all-features -- --nocapture
+cargo test -p arcweft-view --test motion_transitions --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test ui_clip_mask_render_closure --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test view_blend_hsl_modes --all-features -- --nocapture
 cargo test -p arcweft-render-wgpu --test view_compositor_plan --all-features -- --nocapture
-cargo check -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features
-cargo clippy -p arcweft-ui -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
+cargo check -p arcweft-view -p arcweft-render-wgpu --all-targets --all-features
+cargo clippy -p arcweft-view -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write target/seq06_13_structure_audit_final
 git diff --check
 ```

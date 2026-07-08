@@ -374,7 +374,7 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
     assert_eq!(hover["type_name"], "HoverHit");
     assert_text_proxy_declaration(&hover["declaration"], "HoverHit");
     assert_eq!(hover["role"], "hover");
-    assert_eq!(hover["layer"], "ui");
+    assert_eq!(hover["layer"], "view");
     assert_eq!(hover["depth"], 7000);
     assert_eq!(hover["hit_test"], true);
     assert_eq!(hover["params"]["tone"]["value"], "alert");
@@ -395,7 +395,7 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
     assert_eq!(hover_hit["proxy_type"], "HoverHit");
     assert_text_proxy_declaration(&hover_hit["proxy_declaration"], "HoverHit");
     assert_eq!(hover_hit["proxy_role"], "hover");
-    assert_eq!(hover_hit["proxy_layer"], "ui");
+    assert_eq!(hover_hit["proxy_layer"], "view");
     assert_eq!(hover_hit["depth"], 7000);
 
     assert_full_grammar_nested_proxy_observed_object(
@@ -445,11 +445,11 @@ fn assert_full_grammar_nested_proxy_observed_object(
     assert_text_proxy_declaration(&proxy["declaration"], proxy_type);
     assert_eq!(proxy["role"], proxy_role);
     if proxy_id == "hover" {
-        assert_eq!(proxy["layer"], "ui");
-        assert_eq!(proxy_object["rich_text_ref"]["object_layer"], "ui");
+        assert_eq!(proxy["layer"], "view");
+        assert_eq!(proxy_object["rich_text_ref"]["object_layer"], "view");
         assert_eq!(
             proxy_object["rich_text_ref"]["hit_regions"][0]["proxy_layer"],
-            "ui"
+            "view"
         );
     } else {
         assert!(proxy["layer"].is_null());
@@ -590,7 +590,7 @@ fn assert_full_grammar_text_page_object_readback(source_path: &Path, json: &serd
         page_object["rich_text_ref"]["presentation"]["params"]["role"]["value"],
         "caption"
     );
-    assert_eq!(page_object["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(page_object["rich_text_ref"]["object_layer"], "view");
     assert_eq!(page_object["rich_text_ref"]["object_depth"], 7000);
     assert!(
         page_object["text"]
@@ -650,7 +650,7 @@ fn assert_full_grammar_text_line_object_readback(source_path: &Path, json: &serd
         line_object["rich_text_ref"]["presentation"]["params"]["role"]["value"],
         "caption"
     );
-    assert_eq!(line_object["rich_text_ref"]["object_layer"], "ui");
+    assert_eq!(line_object["rich_text_ref"]["object_layer"], "view");
     assert_eq!(line_object["rich_text_ref"]["object_depth"], 7000);
     assert!(
         line_object["text"]

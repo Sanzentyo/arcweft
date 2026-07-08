@@ -3,7 +3,7 @@
 //! This is the retained, Sans I/O execution substrate for Arcweft-authored
 //! Views. It intentionally does not evaluate expressions or allocate GPU
 //! resources. View evaluators consume `ViewProgram`, props, local state, and
-//! environment snapshots, then emit `ViewFragment`, `UiFrameResources`,
+//! environment snapshots, then emit `ViewFragment`, `ViewFrameResources`,
 //! handlers, semantics, and style overlays.
 
 use crate::{

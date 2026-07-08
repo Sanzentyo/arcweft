@@ -1,6 +1,6 @@
-//! Style property bindings and interaction-aware retained UI style data.
+//! Style property bindings and interaction-aware retained View style data.
 
-use crate::{DirtyFlags, StyleId, UiError};
+use crate::{DirtyFlags, StyleId, ViewError};
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironment, SystemColor, SystemPaletteSet,
 };
@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Stable identifier for a style property slot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UiPropertyId(pub u32);
+pub struct ViewPropertyId(pub u32);
 
 /// Stable identifier for a dynamic value source.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -31,7 +31,7 @@ pub struct Rgba8 {
 
 /// Property family used by style/property binding and invalidation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum UiPropertyKind {
+pub enum ViewPropertyKind {
     Opacity,
     TranslateX,
     TranslateY,
@@ -58,7 +58,7 @@ pub enum UiPropertyKind {
 
 /// Typed property value used by style evaluation output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiPropertyValue {
+pub enum ViewPropertyValue {
     Bool(bool),
     Milli(Milli),
     Color(Rgba8),
@@ -68,14 +68,14 @@ pub enum UiPropertyValue {
 
 /// Pseudo-state selector evaluated from the shared presentation interaction state.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum UiInteractionSelector {
+pub enum ViewInteractionSelector {
     Hovered,
     Focused,
     Pressed,
     Disabled,
 }
 
-/// The minimum retained UI work required after a property source changes.
+/// The minimum retained View work required after a property source changes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Invalidation {
     None,
@@ -88,8 +88,8 @@ pub enum Invalidation {
 /// Dynamic property binding emitted by Rust or Arcweft view rendering.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PropertyBinding {
-    property: UiPropertyId,
-    kind: UiPropertyKind,
+    property: ViewPropertyId,
+    kind: ViewPropertyKind,
     source: ValueSourceId,
     invalidation: Invalidation,
 }
@@ -104,40 +104,40 @@ pub struct PropertyBindingTable {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PropertyBindingTableBuilder {
     bindings: Vec<PropertyBinding>,
-    properties: BTreeSet<UiPropertyId>,
+    properties: BTreeSet<ViewPropertyId>,
 }
 
-/// One concrete UI property after static and interaction rules are merged.
+/// One concrete View property after static and interaction rules are merged.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ResolvedUiProperty {
-    kind: UiPropertyKind,
-    value: UiPropertyValue,
+pub struct ResolvedViewProperty {
+    kind: ViewPropertyKind,
+    value: ViewPropertyValue,
 }
 
 /// One interaction-specific style override.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ViewStyleRule {
-    selector: UiInteractionSelector,
-    property: ResolvedUiProperty,
+    selector: ViewInteractionSelector,
+    property: ResolvedViewProperty,
 }
 
 /// Retained base style plus interaction-specific overrides.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct UiStyle {
-    base: Vec<ResolvedUiProperty>,
+pub struct ViewStyle {
+    base: Vec<ResolvedViewProperty>,
     rules: Vec<ViewStyleRule>,
 }
 
 /// Style registry keyed by the `StyleId` stored in each fragment node.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct UiStyleTable {
-    styles: BTreeMap<StyleId, UiStyle>,
+pub struct ViewStyleTable {
+    styles: BTreeMap<StyleId, ViewStyle>,
 }
 
 /// Fully resolved property list for one display item in one interaction state.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ResolvedUiStyle {
-    properties: Vec<ResolvedUiProperty>,
+pub struct ResolvedViewStyle {
+    properties: Vec<ResolvedViewProperty>,
 }
 
 impl Milli {
@@ -201,7 +201,7 @@ impl Rgba8 {
     }
 }
 
-impl UiPropertyKind {
+impl ViewPropertyKind {
     pub const fn is_transitionable(self) -> bool {
         matches!(
             self,
@@ -224,34 +224,34 @@ impl UiPropertyKind {
 
     pub fn interpolate_value(
         self,
-        source: UiPropertyValue,
-        target: UiPropertyValue,
+        source: ViewPropertyValue,
+        target: ViewPropertyValue,
         progress: Milli,
-    ) -> Option<UiPropertyValue> {
+    ) -> Option<ViewPropertyValue> {
         if !self.is_transitionable() || !self.accepts(source) || !self.accepts(target) {
             return None;
         }
         match (source, target) {
-            (UiPropertyValue::Milli(source), UiPropertyValue::Milli(target)) => {
-                Some(UiPropertyValue::Milli(source.lerp(target, progress)))
+            (ViewPropertyValue::Milli(source), ViewPropertyValue::Milli(target)) => {
+                Some(ViewPropertyValue::Milli(source.lerp(target, progress)))
             }
-            (UiPropertyValue::Color(source), UiPropertyValue::Color(target)) => {
-                Some(UiPropertyValue::Color(source.lerp(target, progress)))
+            (ViewPropertyValue::Color(source), ViewPropertyValue::Color(target)) => {
+                Some(ViewPropertyValue::Color(source.lerp(target, progress)))
             }
             (
-                UiPropertyValue::Bool(_)
-                | UiPropertyValue::SystemColor(_)
-                | UiPropertyValue::Resource(_),
+                ViewPropertyValue::Bool(_)
+                | ViewPropertyValue::SystemColor(_)
+                | ViewPropertyValue::Resource(_),
                 _,
             )
             | (
                 _,
-                UiPropertyValue::Bool(_)
-                | UiPropertyValue::SystemColor(_)
-                | UiPropertyValue::Resource(_),
+                ViewPropertyValue::Bool(_)
+                | ViewPropertyValue::SystemColor(_)
+                | ViewPropertyValue::Resource(_),
             )
-            | (UiPropertyValue::Milli(_), UiPropertyValue::Color(_))
-            | (UiPropertyValue::Color(_), UiPropertyValue::Milli(_)) => None,
+            | (ViewPropertyValue::Milli(_), ViewPropertyValue::Color(_))
+            | (ViewPropertyValue::Color(_), ViewPropertyValue::Milli(_)) => None,
         }
     }
 
@@ -279,7 +279,7 @@ impl UiPropertyKind {
         }
     }
 
-    pub const fn accepts(self, value: UiPropertyValue) -> bool {
+    pub const fn accepts(self, value: ViewPropertyValue) -> bool {
         match self {
             Self::Opacity
             | Self::TranslateX
@@ -290,7 +290,7 @@ impl UiPropertyKind {
             | Self::BorderRadius
             | Self::FontSize
             | Self::Width
-            | Self::Height => matches!(value, UiPropertyValue::Milli(_)),
+            | Self::Height => matches!(value, ViewPropertyValue::Milli(_)),
             Self::Color
             | Self::BackgroundColor
             | Self::PlaceholderColor
@@ -299,18 +299,18 @@ impl UiPropertyKind {
             | Self::CompositionUnderlineColor
             | Self::OutlineColor => matches!(
                 value,
-                UiPropertyValue::Color(_) | UiPropertyValue::SystemColor(_)
+                ViewPropertyValue::Color(_) | ViewPropertyValue::SystemColor(_)
             ),
             Self::Visibility | Self::Display | Self::StructuralCondition => {
-                matches!(value, UiPropertyValue::Bool(_))
+                matches!(value, ViewPropertyValue::Bool(_))
             }
-            Self::SemanticLabel => matches!(value, UiPropertyValue::Resource(_)),
+            Self::SemanticLabel => matches!(value, ViewPropertyValue::Resource(_)),
             Self::Custom(_) => true,
         }
     }
 }
 
-impl UiPropertyValue {
+impl ViewPropertyValue {
     pub const fn as_bool(self) -> Option<bool> {
         match self {
             Self::Bool(value) => Some(value),
@@ -359,7 +359,7 @@ impl UiPropertyValue {
     }
 }
 
-impl UiInteractionSelector {
+impl ViewInteractionSelector {
     pub const fn cascade() -> [Self; 4] {
         [Self::Hovered, Self::Focused, Self::Pressed, Self::Disabled]
     }
@@ -392,7 +392,11 @@ impl Invalidation {
 }
 
 impl PropertyBinding {
-    pub const fn new(property: UiPropertyId, kind: UiPropertyKind, source: ValueSourceId) -> Self {
+    pub const fn new(
+        property: ViewPropertyId,
+        kind: ViewPropertyKind,
+        source: ValueSourceId,
+    ) -> Self {
         Self {
             property,
             kind,
@@ -407,11 +411,11 @@ impl PropertyBinding {
         self
     }
 
-    pub const fn property(self) -> UiPropertyId {
+    pub const fn property(self) -> ViewPropertyId {
         self.property
     }
 
-    pub const fn kind(self) -> UiPropertyKind {
+    pub const fn kind(self) -> ViewPropertyKind {
         self.kind
     }
 
@@ -445,9 +449,9 @@ impl PropertyBindingTable {
 }
 
 impl PropertyBindingTableBuilder {
-    pub fn push(&mut self, binding: PropertyBinding) -> Result<(), UiError> {
+    pub fn push(&mut self, binding: PropertyBinding) -> Result<(), ViewError> {
         if !self.properties.insert(binding.property()) {
-            return Err(UiError::DuplicatePropertyBinding(binding.property()));
+            return Err(ViewError::DuplicatePropertyBinding(binding.property()));
         }
         self.bindings.push(binding);
         Ok(())
@@ -460,75 +464,75 @@ impl PropertyBindingTableBuilder {
     }
 }
 
-impl ResolvedUiProperty {
-    pub fn new(kind: UiPropertyKind, value: UiPropertyValue) -> Result<Self, UiError> {
+impl ResolvedViewProperty {
+    pub fn new(kind: ViewPropertyKind, value: ViewPropertyValue) -> Result<Self, ViewError> {
         if !kind.accepts(value) {
-            return Err(UiError::InvalidUiPropertyValue { kind, value });
+            return Err(ViewError::InvalidViewPropertyValue { kind, value });
         }
         Ok(Self { kind, value })
     }
 
-    pub const fn kind(self) -> UiPropertyKind {
+    pub const fn kind(self) -> ViewPropertyKind {
         self.kind
     }
 
-    pub const fn value(self) -> UiPropertyValue {
+    pub const fn value(self) -> ViewPropertyValue {
         self.value
     }
 }
 
 impl ViewStyleRule {
     pub fn new(
-        selector: UiInteractionSelector,
-        kind: UiPropertyKind,
-        value: UiPropertyValue,
-    ) -> Result<Self, UiError> {
+        selector: ViewInteractionSelector,
+        kind: ViewPropertyKind,
+        value: ViewPropertyValue,
+    ) -> Result<Self, ViewError> {
         Ok(Self {
             selector,
-            property: ResolvedUiProperty::new(kind, value)?,
+            property: ResolvedViewProperty::new(kind, value)?,
         })
     }
 
-    pub const fn selector(self) -> UiInteractionSelector {
+    pub const fn selector(self) -> ViewInteractionSelector {
         self.selector
     }
 
-    pub const fn property(self) -> ResolvedUiProperty {
+    pub const fn property(self) -> ResolvedViewProperty {
         self.property
     }
 }
 
-impl UiStyle {
+impl ViewStyle {
     pub fn set_base(
         &mut self,
-        kind: UiPropertyKind,
-        value: UiPropertyValue,
-    ) -> Result<(), UiError> {
+        kind: ViewPropertyKind,
+        value: ViewPropertyValue,
+    ) -> Result<(), ViewError> {
         if self.base.iter().any(|property| property.kind() == kind) {
-            return Err(UiError::DuplicateStyleProperty(kind));
+            return Err(ViewError::DuplicateStyleProperty(kind));
         }
-        self.base.push(ResolvedUiProperty::new(kind, value)?);
+        self.base.push(ResolvedViewProperty::new(kind, value)?);
         Ok(())
     }
 
     pub fn set_rule(
         &mut self,
-        selector: UiInteractionSelector,
-        kind: UiPropertyKind,
-        value: UiPropertyValue,
-    ) -> Result<(), UiError> {
+        selector: ViewInteractionSelector,
+        kind: ViewPropertyKind,
+        value: ViewPropertyValue,
+    ) -> Result<(), ViewError> {
         if self
             .rules
             .iter()
             .any(|rule| rule.selector() == selector && rule.property().kind() == kind)
         {
-            return Err(UiError::DuplicateStyleRule { selector, kind });
+            return Err(ViewError::DuplicateStyleRule { selector, kind });
         }
         self.rules.push(ViewStyleRule::new(selector, kind, value)?);
         Ok(())
     }
 
-    pub fn base(&self) -> &[ResolvedUiProperty] {
+    pub fn base(&self) -> &[ResolvedViewProperty] {
         &self.base
     }
 
@@ -541,11 +545,11 @@ impl UiStyle {
         target: Option<&InteractionTarget>,
         enabled: bool,
         interaction: &InteractionState,
-    ) -> ResolvedUiStyle {
-        let mut resolved = ResolvedUiStyle {
+    ) -> ResolvedViewStyle {
+        let mut resolved = ResolvedViewStyle {
             properties: self.base.clone(),
         };
-        for selector in UiInteractionSelector::cascade() {
+        for selector in ViewInteractionSelector::cascade() {
             if selector.matches(target, enabled, interaction) {
                 for rule in self
                     .rules
@@ -561,16 +565,16 @@ impl UiStyle {
     }
 }
 
-impl UiStyleTable {
-    pub fn insert(&mut self, id: StyleId, style: UiStyle) -> Result<(), UiError> {
+impl ViewStyleTable {
+    pub fn insert(&mut self, id: StyleId, style: ViewStyle) -> Result<(), ViewError> {
         if self.styles.contains_key(&id) {
-            return Err(UiError::DuplicateStyle(id));
+            return Err(ViewError::DuplicateStyle(id));
         }
         self.styles.insert(id, style);
         Ok(())
     }
 
-    pub fn get(&self, id: StyleId) -> Option<&UiStyle> {
+    pub fn get(&self, id: StyleId) -> Option<&ViewStyle> {
         self.styles.get(&id)
     }
 
@@ -580,13 +584,13 @@ impl UiStyleTable {
         target: Option<&InteractionTarget>,
         enabled: bool,
         interaction: &InteractionState,
-    ) -> Result<ResolvedUiStyle, UiError> {
+    ) -> Result<ResolvedViewStyle, ViewError> {
         if self.is_empty() {
-            return Ok(ResolvedUiStyle::default());
+            return Ok(ResolvedViewStyle::default());
         }
         self.get(id)
             .map(|style| style.resolve(target, enabled, interaction))
-            .ok_or(UiError::UnknownStyle(id))
+            .ok_or(ViewError::UnknownStyle(id))
     }
 
     pub fn contains(&self, id: StyleId) -> bool {
@@ -598,8 +602,8 @@ impl UiStyleTable {
     }
 }
 
-impl ResolvedUiStyle {
-    fn set(&mut self, property: ResolvedUiProperty) {
+impl ResolvedViewStyle {
+    fn set(&mut self, property: ResolvedViewProperty) {
         if let Some(existing) = self
             .properties
             .iter_mut()
@@ -611,32 +615,32 @@ impl ResolvedUiStyle {
         }
     }
 
-    pub fn as_slice(&self) -> &[ResolvedUiProperty] {
+    pub fn as_slice(&self) -> &[ResolvedViewProperty] {
         &self.properties
     }
 
-    pub fn value(&self, kind: UiPropertyKind) -> Option<UiPropertyValue> {
+    pub fn value(&self, kind: ViewPropertyKind) -> Option<ViewPropertyValue> {
         self.properties
             .iter()
             .find(|property| property.kind() == kind)
             .map(|property| property.value())
     }
 
-    pub fn bool(&self, kind: UiPropertyKind) -> Option<bool> {
-        self.value(kind).and_then(UiPropertyValue::as_bool)
+    pub fn bool(&self, kind: ViewPropertyKind) -> Option<bool> {
+        self.value(kind).and_then(ViewPropertyValue::as_bool)
     }
 
-    pub fn milli(&self, kind: UiPropertyKind) -> Option<Milli> {
-        self.value(kind).and_then(UiPropertyValue::as_milli)
+    pub fn milli(&self, kind: ViewPropertyKind) -> Option<Milli> {
+        self.value(kind).and_then(ViewPropertyValue::as_milli)
     }
 
-    pub fn color(&self, kind: UiPropertyKind) -> Option<Rgba8> {
-        self.value(kind).and_then(UiPropertyValue::as_color)
+    pub fn color(&self, kind: ViewPropertyKind) -> Option<Rgba8> {
+        self.value(kind).and_then(ViewPropertyValue::as_color)
     }
 
     pub fn resolved_color(
         &self,
-        kind: UiPropertyKind,
+        kind: ViewPropertyKind,
         environment: &PresentationEnvironment,
     ) -> Option<Rgba8> {
         self.value(kind)
@@ -644,16 +648,16 @@ impl ResolvedUiStyle {
     }
 
     pub fn is_visible(&self) -> bool {
-        self.bool(UiPropertyKind::Visibility).unwrap_or(true)
-            && self.bool(UiPropertyKind::Display).unwrap_or(true)
+        self.bool(ViewPropertyKind::Visibility).unwrap_or(true)
+            && self.bool(ViewPropertyKind::Display).unwrap_or(true)
     }
 
     pub fn opacity(&self) -> Milli {
-        self.milli(UiPropertyKind::Opacity).unwrap_or(Milli::ONE)
+        self.milli(ViewPropertyKind::Opacity).unwrap_or(Milli::ONE)
     }
 
     pub fn scale(&self) -> Milli {
-        self.milli(UiPropertyKind::Scale).unwrap_or(Milli::ONE)
+        self.milli(ViewPropertyKind::Scale).unwrap_or(Milli::ONE)
     }
 }
 

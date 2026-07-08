@@ -25,7 +25,7 @@ pub struct HookManifest {
 pub enum HookTarget {
     Entity(EntityId),
     Layer(LayerId),
-    UiNode(EntityId),
+    ViewNode(EntityId),
     Signal(EntityId),
     StatePath(StatePathId),
     Pattern(TargetPattern),
@@ -70,7 +70,7 @@ pub enum HookMemoKind {
   "condition": "state.affection[@character.alice] >= 3",
   "priority": 10,
   "purity": "Command",
-  "effects": ["ui.enable", "log.debug"],
+  "effects": ["view.enable", "log.debug"],
   "memo": {
     "kind": "ConditionOnly",
     "scope": "StateHash",

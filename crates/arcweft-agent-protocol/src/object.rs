@@ -35,7 +35,7 @@ pub struct AgentObservedView {
     pub capture_refs: AgentViewCaptureRefs,
 }
 
-/// Visible object or UI element known to the Agent observer.
+/// Visible object or View element known to the Agent observer.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentObservedObject {
     pub id: String,

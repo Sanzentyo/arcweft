@@ -66,7 +66,7 @@ events as `RawInputKind::Text(TextInput)` batches.
   rejection, secure redaction, clipboard blocking, blur policy, Web EditContext
   gating, and platform fixture traces.
 
-### `arcweft-ui`
+### `arcweft-view`
 
 - Adds `unicode-segmentation` to implement grapheme-aware delete-surrounding.
 - Adds `TextFieldEditPolicy`, `TextFieldBindingCommitPolicy`,
@@ -95,10 +95,10 @@ and seq06.2, resolved current-context patch drift in `text_field.rs` and
 
 Validation run:
 
-- `cargo test -p arcweft-presentation -p arcweft-ui -p arcweft-runtime-host -p arcweft-player-scene --all-features -- --nocapture`
-- `cargo check -p arcweft-presentation -p arcweft-ui -p arcweft-runtime-host -p arcweft-player-scene --all-targets --all-features`
+- `cargo test -p arcweft-presentation -p arcweft-view -p arcweft-runtime-host -p arcweft-player-scene --all-features -- --nocapture`
+- `cargo check -p arcweft-presentation -p arcweft-view -p arcweft-runtime-host -p arcweft-player-scene --all-targets --all-features`
 - `cargo fmt --all -- --check`
-- `cargo clippy -p arcweft-presentation -p arcweft-ui -p arcweft-runtime-host -p arcweft-player-scene --all-targets --all-features -- -D warnings`
+- `cargo clippy -p arcweft-presentation -p arcweft-view -p arcweft-runtime-host -p arcweft-player-scene --all-targets --all-features -- -D warnings`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
 - `git diff --check`
 - `just test-workspace`
@@ -106,7 +106,7 @@ Validation run:
 ## Structural audit note
 
 The change adds one runtime-host responsibility module and extends existing
-presentation/UI text-input modules. No OS handles are introduced to Sans I/O
+presentation/View text-input modules. No OS handles are introduced to Sans I/O
 crates. The largest new production file is `text_input_dispatch.rs`; it owns one
 cohesive validation/dispatch responsibility and is below the AGENTS.md 1,200 LOC
 warning threshold for production Rust files.
@@ -118,7 +118,7 @@ contracts in this slice. Real Windows TSF, AppKit, Wayland, Android, iOS, and
 browser bindings should be implemented in the concrete adapter/player crates by
 creating `PlatformTextInputEvent` values and feeding them through
 `TextInputDispatchState`. Those bindings must not store native handles in
-presentation/UI/runtime-host state.
+presentation/View/runtime-host state.
 
 ## Request coverage
 

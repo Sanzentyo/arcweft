@@ -1,4 +1,4 @@
-//! Sans I/O UI view, entity, and fragment data for Arcweft presentation.
+//! Sans I/O View entity and fragment data for Arcweft presentation.
 
 pub mod display;
 pub mod entity;
@@ -30,21 +30,22 @@ pub use fragment::{
     ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, StyleId, TextSourceId, ViewFragment,
     ViewFragmentBuilder,
 };
-pub use frame::UiLayerOutput;
-pub use handler::{UiHandlerInvocation, UiHandlerRoute, UiHandlerRouteTable};
+pub use frame::ViewLayerOutput;
+pub use handler::{ViewHandlerInvocation, ViewHandlerRoute, ViewHandlerRouteTable};
 pub use image::{
-    ImageAlignment, ImageFit, ImagePlayback, UiImagePresentationMetadata, UiImageSource,
-    UiImageSourceTable, UiResolvedImageFrame,
+    ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,
+    ViewImageSourceTable, ViewResolvedImageFrame,
 };
 pub use layout::{
     LayoutBox, LayoutKind, LayoutLength, LayoutNode, LayoutPoint, LayoutResults, LayoutSize,
     LayoutTree,
 };
 pub use motion::{
-    UiCubicBezier, UiEasingFunction, UiKeyframe, UiKeyframeTrack, UiMotionError, UiMotionSample,
-    UiReducedMotionPolicy, UiStepPosition, UiTimelineMillis, UiTransition, UiTransitionSpec,
+    ViewCubicBezier, ViewEasingFunction, ViewKeyframe, ViewKeyframeTrack, ViewMotionError,
+    ViewMotionSample, ViewReducedMotionPolicy, ViewStepPosition, ViewTimelineMillis,
+    ViewTransition, ViewTransitionSpec,
 };
-pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput};
+pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{
     ViewBranch, ViewCall, ViewCustomSpec, ViewElementKind, ViewElementSpec, ViewEventBindingSpec,
     ViewExpressionId, ViewHandlerProgram, ViewImageSpec, ViewInstruction, ViewInstructionRange,
@@ -52,11 +53,13 @@ pub use program::{
     ViewStableKey, ViewStyleApply, ViewStylePatchId, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
-pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
+pub use semantics::{
+    ViewNodeId, ViewSemanticFragment, ViewSemanticFragmentBuilder, ViewSemanticNode,
+};
 pub use style::{
     Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder,
-    ResolvedUiProperty, ResolvedUiStyle, Rgba8, UiInteractionSelector, UiPropertyId,
-    UiPropertyKind, UiPropertyValue, UiStyle, UiStyleTable, ValueSourceId, ViewStyleRule,
+    ResolvedViewProperty, ResolvedViewStyle, Rgba8, ValueSourceId, ViewInteractionSelector,
+    ViewPropertyId, ViewPropertyKind, ViewPropertyValue, ViewStyle, ViewStyleRule, ViewStyleTable,
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,
@@ -64,66 +67,66 @@ pub use text_field::{
     TextFieldId, TextFieldMetrics, TextFieldPartId, TextFieldPartRect, TextFieldPolicyEditError,
     TextFieldSpec, TextFieldVisualBuffer,
 };
-pub use text_source::{UiRichTextHandle, UiTextByteRange, UiTextSource, UiTextSourceTable};
+pub use text_source::{ViewRichTextHandle, ViewTextByteRange, ViewTextSource, ViewTextSourceTable};
 pub use view::{
     RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewProgramId, ViewRegistry,
     ViewSchemaId,
 };
 
-/// Stable key for one retained UI fragment node.
+/// Stable key for one retained View fragment node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeKey(pub u64);
 
-/// Error while building or updating UI state.
+/// Error while building or updating View state.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum UiError {
-    #[error("duplicate UI node key {0:?}")]
+pub enum ViewError {
+    #[error("duplicate View node key {0:?}")]
     DuplicateNodeKey(NodeKey),
     #[error("duplicate view public id {0}")]
     DuplicateViewPublicId(arcweft_id::PublicId),
-    #[error("stale UI entity {0:?}")]
+    #[error("stale View entity {0:?}")]
     StaleEntity(RawEntity),
-    #[error("UI entity has a different state type: {0:?}")]
+    #[error("View entity has a different state type: {0:?}")]
     EntityTypeMismatch(RawEntity),
-    #[error("invalid UI fragment node {0:?}")]
+    #[error("invalid View fragment node {0:?}")]
     InvalidFragmentNode(NodeId),
-    #[error("missing layout for UI fragment node {0:?}")]
+    #[error("missing layout for View fragment node {0:?}")]
     MissingLayout(NodeId),
-    #[error("duplicate UI property binding {0:?}")]
-    DuplicatePropertyBinding(UiPropertyId),
-    #[error("duplicate UI image source {0:?}")]
+    #[error("duplicate View property binding {0:?}")]
+    DuplicatePropertyBinding(ViewPropertyId),
+    #[error("duplicate View image source {0:?}")]
     DuplicateImageSource(ImageId),
-    #[error("unknown UI image source {0:?}")]
+    #[error("unknown View image source {0:?}")]
     UnknownImageSource(ImageId),
-    #[error("UI node {0:?} binds an event without semantic target metadata")]
+    #[error("View node {0:?} binds an event without semantic target metadata")]
     HandlerNodeMissingSemantics(NodeId),
-    #[error("UI node {node:?} references unknown handler semantic {semantic:?}")]
+    #[error("View node {node:?} references unknown handler semantic {semantic:?}")]
     UnknownHandlerSemantic {
         node: NodeId,
         semantic: SemanticSpecId,
     },
-    #[error("UI node {node:?} references unknown display semantic {semantic:?}")]
+    #[error("View node {node:?} references unknown display semantic {semantic:?}")]
     UnknownDisplaySemantic {
         node: NodeId,
         semantic: SemanticSpecId,
     },
-    #[error("duplicate UI style {0:?}")]
+    #[error("duplicate View style {0:?}")]
     DuplicateStyle(StyleId),
-    #[error("unknown UI style {0:?}")]
+    #[error("unknown View style {0:?}")]
     UnknownStyle(StyleId),
-    #[error("duplicate base UI style property {0:?}")]
-    DuplicateStyleProperty(UiPropertyKind),
-    #[error("duplicate UI style rule {selector:?} for {kind:?}")]
+    #[error("duplicate base View style property {0:?}")]
+    DuplicateStyleProperty(ViewPropertyKind),
+    #[error("duplicate View style rule {selector:?} for {kind:?}")]
     DuplicateStyleRule {
-        selector: UiInteractionSelector,
-        kind: UiPropertyKind,
+        selector: ViewInteractionSelector,
+        kind: ViewPropertyKind,
     },
-    #[error("UI property {kind:?} rejects value {value:?}")]
-    InvalidUiPropertyValue {
-        kind: UiPropertyKind,
-        value: UiPropertyValue,
+    #[error("View property {kind:?} rejects value {value:?}")]
+    InvalidViewPropertyValue {
+        kind: ViewPropertyKind,
+        value: ViewPropertyValue,
     },
-    #[error("too many UI items")]
+    #[error("too many View items")]
     CapacityExceeded,
 }
 
@@ -282,7 +285,7 @@ mod tests {
                 &[],
                 None
             ),
-            Err(UiError::DuplicateNodeKey(NodeKey(1)))
+            Err(ViewError::DuplicateNodeKey(NodeKey(1)))
         );
         assert_eq!(
             builder.push_node(
@@ -293,7 +296,7 @@ mod tests {
                 &[],
                 None
             ),
-            Err(UiError::InvalidFragmentNode(NodeId(99)))
+            Err(ViewError::InvalidFragmentNode(NodeId(99)))
         );
     }
 
@@ -358,7 +361,7 @@ mod tests {
         let tree = LayoutTree::from_fragment(&builder.finish()).unwrap();
         let mut results = LayoutResults::new(&tree);
 
-        assert_eq!(results.require(text), Err(UiError::MissingLayout(text)));
+        assert_eq!(results.require(text), Err(ViewError::MissingLayout(text)));
         let layout = LayoutBox::new(
             LayoutPoint::new(LayoutLength::px(4), LayoutLength::px(8)),
             LayoutSize::new(LayoutLength::px(120), LayoutLength::px(24)),
@@ -367,7 +370,7 @@ mod tests {
         assert_eq!(results.require(text), Ok(layout));
         assert_eq!(
             results.set(NodeId(99), layout),
-            Err(UiError::InvalidFragmentNode(NodeId(99)))
+            Err(ViewError::InvalidFragmentNode(NodeId(99)))
         );
     }
 
@@ -500,11 +503,11 @@ mod tests {
             LayoutSize::new(LayoutLength::px(100), LayoutLength::px(100)),
         );
 
-        let mut table = UiImageSourceTable::default();
-        let static_id = table.insert(UiImageSource::new(static_image)).unwrap();
+        let mut table = ViewImageSourceTable::default();
+        let static_id = table.insert(ViewImageSource::new(static_image)).unwrap();
         let animated_id = table
             .insert(
-                UiImageSource::new(animated_image)
+                ViewImageSource::new(animated_image)
                     .with_fit(ImageFit::Cover)
                     .with_alignment(ImageAlignment::top_left())
                     .with_playback(ImagePlayback::new(1_000)),
@@ -541,16 +544,16 @@ mod tests {
             LayoutPoint::new(LayoutLength::px(0), LayoutLength::px(0)),
             LayoutSize::new(LayoutLength::px(1), LayoutLength::px(1)),
         );
-        let mut table = UiImageSourceTable::default();
+        let mut table = ViewImageSourceTable::default();
         let paused = table
             .insert(
-                UiImageSource::new(animated_image.clone())
+                ViewImageSource::new(animated_image.clone())
                     .with_playback(ImagePlayback::new(0).paused_at(150)),
             )
             .unwrap();
         let slow = table
             .insert(
-                UiImageSource::new(animated_image)
+                ViewImageSource::new(animated_image)
                     .with_playback(ImagePlayback::new(0).with_rate_milli(500)),
             )
             .unwrap();
@@ -627,14 +630,14 @@ mod tests {
 
         assert_eq!(
             DisplayList::from_fragment(&fragment, &layouts),
-            Err(UiError::MissingLayout(text))
+            Err(ViewError::MissingLayout(text))
         );
     }
 
     #[test]
-    fn ui_layer_output_pairs_display_list_and_semantics_for_frame_commit() {
-        let ui_layer = layer_id("ui");
-        let button = target("ui.confirm");
+    fn view_layer_output_pairs_display_list_and_semantics_for_frame_commit() {
+        let view_layer = layer_id("view");
+        let button = target("view.confirm");
         let action = public_id("action.confirm");
         let mut fragment_builder = ViewFragmentBuilder::default();
         let rich_text = fragment_builder
@@ -672,12 +675,12 @@ mod tests {
                 .unwrap();
         }
 
-        let mut semantic_builder = UiSemanticFragmentBuilder::default();
+        let mut semantic_builder = ViewSemanticFragmentBuilder::default();
         semantic_builder
             .push(
-                UiSemanticNode::new(
+                ViewSemanticNode::new(
                     NodeKey(1),
-                    ui_layer,
+                    view_layer,
                     button.clone(),
                     SemanticRole::Button,
                     HitRect::new(0.0, 0.0, 120.0, 24.0),
@@ -688,7 +691,7 @@ mod tests {
             .unwrap();
 
         let output =
-            UiLayerOutput::from_fragment(&fragment, &layouts, semantic_builder.finish()).unwrap();
+            ViewLayerOutput::from_fragment(&fragment, &layouts, semantic_builder.finish()).unwrap();
         assert_eq!(output.display().as_slice().len(), 1);
         assert_eq!(
             output.display().as_slice()[0].kind(),
@@ -702,7 +705,7 @@ mod tests {
     #[test]
     fn view_registry_resolves_dense_view_ids() {
         let mut registry = ViewRegistry::default();
-        let public_id = public_id("ui.dialogue.standard");
+        let public_id = public_id("view.dialogue.standard");
         let descriptor = ViewDescriptor::new(
             Some(public_id.clone()),
             ViewSchemaId(7),
@@ -721,29 +724,29 @@ mod tests {
         let mut builder = PropertyBindingTableBuilder::default();
         builder
             .push(PropertyBinding::new(
-                UiPropertyId(1),
-                UiPropertyKind::Opacity,
+                ViewPropertyId(1),
+                ViewPropertyKind::Opacity,
                 ValueSourceId(10),
             ))
             .unwrap();
         builder
             .push(PropertyBinding::new(
-                UiPropertyId(2),
-                UiPropertyKind::Rotate,
+                ViewPropertyId(2),
+                ViewPropertyKind::Rotate,
                 ValueSourceId(10),
             ))
             .unwrap();
         builder
             .push(PropertyBinding::new(
-                UiPropertyId(3),
-                UiPropertyKind::Width,
+                ViewPropertyId(3),
+                ViewPropertyKind::Width,
                 ValueSourceId(11),
             ))
             .unwrap();
         builder
             .push(PropertyBinding::new(
-                UiPropertyId(4),
-                UiPropertyKind::SemanticLabel,
+                ViewPropertyId(4),
+                ViewPropertyKind::SemanticLabel,
                 ValueSourceId(12),
             ))
             .unwrap();
@@ -768,19 +771,19 @@ mod tests {
         let mut builder = PropertyBindingTableBuilder::default();
         builder
             .push(PropertyBinding::new(
-                UiPropertyId(1),
-                UiPropertyKind::Color,
+                ViewPropertyId(1),
+                ViewPropertyKind::Color,
                 ValueSourceId(1),
             ))
             .unwrap();
 
         assert_eq!(
             builder.push(PropertyBinding::new(
-                UiPropertyId(1),
-                UiPropertyKind::BackgroundColor,
+                ViewPropertyId(1),
+                ViewPropertyKind::BackgroundColor,
                 ValueSourceId(2)
             )),
-            Err(UiError::DuplicatePropertyBinding(UiPropertyId(1)))
+            Err(ViewError::DuplicatePropertyBinding(ViewPropertyId(1)))
         );
     }
 
@@ -798,22 +801,22 @@ mod tests {
         let mut bindings = PropertyBindingTableBuilder::default();
         bindings
             .push(PropertyBinding::new(
-                UiPropertyId(1),
-                UiPropertyKind::Opacity,
+                ViewPropertyId(1),
+                ViewPropertyKind::Opacity,
                 ValueSourceId(1),
             ))
             .unwrap();
         bindings
             .push(PropertyBinding::new(
-                UiPropertyId(2),
-                UiPropertyKind::Rotate,
+                ViewPropertyId(2),
+                ViewPropertyKind::Rotate,
                 ValueSourceId(1),
             ))
             .unwrap();
         bindings
             .push(PropertyBinding::new(
-                UiPropertyId(3),
-                UiPropertyKind::Width,
+                ViewPropertyId(3),
+                ViewPropertyKind::Width,
                 ValueSourceId(2),
             ))
             .unwrap();
@@ -854,7 +857,7 @@ mod tests {
     #[test]
     fn view_registry_rejects_duplicate_public_ids() {
         let mut registry = ViewRegistry::default();
-        let public_id = public_id("ui.dialogue.standard");
+        let public_id = public_id("view.dialogue.standard");
         let descriptor = || {
             ViewDescriptor::new(
                 Some(public_id.clone()),
@@ -867,7 +870,7 @@ mod tests {
 
         assert_eq!(
             registry.register(descriptor()),
-            Err(UiError::DuplicateViewPublicId(public_id))
+            Err(ViewError::DuplicateViewPublicId(public_id))
         );
     }
 
@@ -901,7 +904,7 @@ mod tests {
         assert!(store.get(first).is_none());
         assert_eq!(
             store.mark_dirty(first, DirtyFlags::LAYOUT),
-            Err(UiError::StaleEntity(first.raw()))
+            Err(ViewError::StaleEntity(first.raw()))
         );
         assert_eq!(
             store.get(second),
@@ -919,22 +922,22 @@ mod tests {
 
         assert_eq!(
             store.remove(wrong_type),
-            Err(UiError::EntityTypeMismatch(state.raw()))
+            Err(ViewError::EntityTypeMismatch(state.raw()))
         );
         assert_eq!(store.get(state), Some(&InventoryState { selected_slot: 1 }));
     }
 
     #[test]
-    fn ui_semantic_fragment_lowers_to_presentation_semantic_tree() {
-        let ui_layer = layer_id("ui");
-        let button_target = target("ui.confirm");
+    fn view_semantic_fragment_lowers_to_presentation_semantic_tree() {
+        let view_layer = layer_id("view");
+        let button_target = target("view.confirm");
         let action = public_id("action.confirm");
-        let mut builder = UiSemanticFragmentBuilder::default();
+        let mut builder = ViewSemanticFragmentBuilder::default();
         let id = builder
             .push(
-                UiSemanticNode::new(
+                ViewSemanticNode::new(
                     NodeKey(10),
-                    ui_layer,
+                    view_layer,
                     button_target.clone(),
                     SemanticRole::Button,
                     HitRect::new(0.0, 0.0, 80.0, 24.0),
@@ -943,47 +946,47 @@ mod tests {
                 .with_action(action.clone()),
             )
             .unwrap();
-        assert_eq!(id, UiNodeId(0));
+        assert_eq!(id, ViewNodeId(0));
 
         let tree = builder.finish().to_semantic_tree();
         let lowered = tree
             .lower_action(&button_target, &action)
-            .expect("UI action lowers through presentation semantics");
+            .expect("View action lowers through presentation semantics");
         assert_eq!(lowered.target(), &ActionTarget::Entity(button_target));
         assert_eq!(lowered.kind(), &action);
     }
 
     #[test]
-    fn ui_semantic_fragment_rejects_duplicate_node_keys() {
-        let ui_layer = layer_id("ui");
-        let mut builder = UiSemanticFragmentBuilder::default();
+    fn view_semantic_fragment_rejects_duplicate_node_keys() {
+        let view_layer = layer_id("view");
+        let mut builder = ViewSemanticFragmentBuilder::default();
         builder
-            .push(UiSemanticNode::new(
+            .push(ViewSemanticNode::new(
                 NodeKey(1),
-                ui_layer.clone(),
-                target("ui.first"),
+                view_layer.clone(),
+                target("view.first"),
                 SemanticRole::Button,
                 HitRect::new(0.0, 0.0, 10.0, 10.0),
             ))
             .unwrap();
 
         assert_eq!(
-            builder.push(UiSemanticNode::new(
+            builder.push(ViewSemanticNode::new(
                 NodeKey(1),
-                ui_layer,
-                target("ui.second"),
+                view_layer,
+                target("view.second"),
                 SemanticRole::Button,
                 HitRect::new(10.0, 0.0, 10.0, 10.0),
             )),
-            Err(UiError::DuplicateNodeKey(NodeKey(1)))
+            Err(ViewError::DuplicateNodeKey(NodeKey(1)))
         );
     }
 
     #[test]
-    fn ui_semantic_tree_routes_agent_invoke_through_layer_policy() {
+    fn view_semantic_tree_routes_agent_invoke_through_layer_policy() {
         let root = layer_id("root");
-        let ui = layer_id("ui");
-        let button = target("ui.confirm");
+        let view = layer_id("view");
+        let button = target("view.confirm");
         let action = public_id("action.confirm");
         let mut layers = LayerTree::new(LayerNode::new(
             root.clone(),
@@ -992,18 +995,22 @@ mod tests {
         ));
         layers
             .insert(
-                LayerNode::new(ui.clone(), LayerKind::GameUi, order(RenderPhase::GameUi, 0))
-                    .with_parent(root)
-                    .with_input_policy(LayerInputPolicy::HitTest),
+                LayerNode::new(
+                    view.clone(),
+                    LayerKind::GameView,
+                    order(RenderPhase::GameView, 0),
+                )
+                .with_parent(root)
+                .with_input_policy(LayerInputPolicy::HitTest),
             )
             .unwrap();
 
-        let mut builder = UiSemanticFragmentBuilder::default();
+        let mut builder = ViewSemanticFragmentBuilder::default();
         builder
             .push(
-                UiSemanticNode::new(
+                ViewSemanticNode::new(
                     NodeKey(2),
-                    ui,
+                    view,
                     button.clone(),
                     SemanticRole::Button,
                     HitRect::new(0.0, 0.0, 80.0, 24.0),

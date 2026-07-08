@@ -462,7 +462,7 @@ Syntax parser:
 Not implemented in this milestone:
 
 - wgpu renderer
-- Servo / DOM UI
+- Servo / DOM View
 - audio backend
 - camera / capture devices
 - USB / HID / gamepad backends

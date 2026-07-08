@@ -169,7 +169,7 @@ Authors should not need to add line/file data manually. Context helpers are for 
 
 ## Product mode
 
-Product builds should still preserve trace data internally for crash bundles, but UI display may be reduced.
+Product builds should still preserve trace data internally for crash bundles, but View display may be reduced.
 
 ```toml
 [error.display.dev]

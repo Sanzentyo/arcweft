@@ -13,9 +13,9 @@
 | precompile |  | ✅ | build |
 | wgpu headless screenshot | ✅ |  | dev/test/product observe |
 | object-id mask | ✅ |  | dev/test/product observe |
-| Game Native UI | ✅ |  | always |
-| Servo HTML UI |  | ✅ | native feature |
-| DOM HTML UI |  | ✅ | web feature |
+| Game Native View | ✅ |  | always |
+| Servo HTML View |  | ✅ | native feature |
+| DOM HTML View |  | ✅ | web feature |
 | Vector IR | ✅ |  | always |
 | SVG import |  | ✅ | build |
 | RichText | ✅ |  | always |
@@ -58,7 +58,7 @@
 |---|---:|---:|---:|---|
 | USB/HID device profiles | yes | WebUSB-limited | fixture | `nusb` preferred, `rusb` compatibility, `hidapi` for HID |
 | Device profile generator | yes | yes | yes | Generates typed parsers, writers, signals, tests, Agent metadata |
-| Virtual touch controller | yes | yes | yes | Native UI view on `@layer.controls` |
+| Virtual touch controller | yes | yes | yes | Native View on `@layer.controls` |
 | Physical/virtual controller map | yes | yes | yes | Merges touch, keyboard, gamepad, USB/HID |
 
 ## Device I/O / USB / Touch Controller
@@ -68,7 +68,7 @@
 | Raw USB | `nusb` default, `rusb` optional | WebUSB via `web-sys` | Permissioned, product-disabled by default. |
 | HID | `hidapi` optional | WebHID via `web-sys` | Use narrow filters and typed parsers. |
 | Standard gamepad | `gilrs` | Gamepad API via `web-sys` | Maps into `InputAction` / axes. |
-| Touch virtual controller | Game Native UI | Game Native UI / browser touch | Emits same `InputAction`s as physical controllers. |
+| Touch virtual controller | Game Native View | Game Native View / browser touch | Emits same `InputAction`s as physical controllers. |
 | Stream/generator sugar | yes | yes | Generators transform granted streams; they do not open devices. |
 
 ## Device I/O / Touch Controllers
@@ -79,7 +79,7 @@
 | HID | hidapi | WebHID | For special controllers and input reports. |
 | Serial | native serial backend | Web Serial | USB CDC and microcontroller-style devices. |
 | Gamepad | native gamepad abstraction | Gamepad API | Prefer high-level controller route when possible. |
-| Touch virtual controller | Game Native UI | Game Native UI / DOM pointer input | Agent-visible and replayable as logical events. |
+| Touch virtual controller | Game Native View | Game Native View / DOM pointer input | Agent-visible and replayable as logical events. |
 | stream fn / source block | yes | yes | `stream fn -> Stream<T,E>` transforms; `source @id: Source<T,E>` declares live policy-backed inputs. |
 
 
@@ -90,7 +90,7 @@
 | USB raw devices | nusb / rusb | WebUSB via web-sys | virtual fixtures | permissioned, declared profiles only |
 | HID devices | hidapi / optional async-hid | WebHID via web-sys | virtual fixtures | game controllers, pedals, custom panels |
 | Serial / USB serial | serialport | Web Serial via web-sys | fixture streams | parser required |
-| Virtual touch controller | Game Native UI | Game Native UI / DOM bridge optional | semantic action | attached to input layers |
+| Virtual touch controller | Game Native View | Game Native View / DOM bridge optional | semantic action | attached to input layers |
 | Device generator | yes | emits web descriptors | emits fixtures | deterministic precompile output |
 
 
@@ -101,5 +101,5 @@
 | Raw USB | `nusb` preferred, `rusb` optional | WebUSB through `web-sys` | Custom devices only; product mode is capability-gated. |
 | HID | `hidapi`/native HID backend optional | WebHID through `web-sys` | Prefer `gilrs`/Gamepad API for standard controllers. |
 | Gamepad | `gilrs` | browser Gamepad API / `web-sys` | Normalized to `InputAction`. |
-| Virtual touch controller | Game Native UI | Game Native UI / DOM overlay metadata | Emits same `InputAction` as physical input. |
+| Virtual touch controller | Game Native View | Game Native View / DOM overlay metadata | Emits same `InputAction` as physical input. |
 | Source streams | yes | yes | Explicit backpressure and replay policy. |

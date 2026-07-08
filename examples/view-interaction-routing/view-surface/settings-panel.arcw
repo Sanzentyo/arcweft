@@ -1,0 +1,24 @@
+pub view @view.sample.settings SettingsPanel(config: Binding<Config>) {
+    Column(spacing = 16) {
+        Text("Settings")
+            .style {
+                font-size = milli(24000)
+            }
+        Button(@button:.audio)
+            .label("Audio")
+            .agent_target(@view.sample.settings.audio)
+            .style {
+                background-color = rgba(48, 64, 84, 255)
+                focus-ring-width = milli(3000)
+            }
+            .on_click(|| action.invoke(@action.settings.audio))
+        Button(@button:.close)
+            .label("Close")
+            .agent_target(@view.sample.settings.close)
+            .style {
+                background-color = rgba(48, 64, 84, 255)
+                focus-ring-width = milli(3000)
+            }
+            .on_click(|| action.invoke(@action.settings.close))
+    }
+}

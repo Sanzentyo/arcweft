@@ -1,7 +1,7 @@
 # CSS Style Parity Sample
 
 This sample is a renderer-only Web/native parity fixture for CSS-like Arcweft
-styling. It intentionally uses no image assets and no DOM-rendered game UI. The
+styling. It intentionally uses no image assets and no DOM-rendered game View. The
 visible content should come from the shared Arcweft renderer on both native
 offscreen capture and the WebGPU player.
 
@@ -9,14 +9,14 @@ The `.arcw` source exercises two styling layers:
 
 - visible dialogue rich text for `font`, `color`, `size`, `strong`, `em`, ruby,
   opacity, transform offset, and wave motion;
-- product UI style rules for typed `style` tokens, `Button` hover/active
+- product View style rules for typed `style` tokens, `Button` hover/active
   rules, focus-visible outlines, text-field caret/selection colors, and
   composition underline color.
 
-The retained `style` declaration is bundled into the product `UiStyleResource`
+The retained `style` declaration is bundled into the product `ViewStyleResource`
 as CSS-like typed style data. The current `agent observe` path primarily validates the
-player-rendered dialogue layer; retained UI sidecar consumption is covered by
-bundle checks and the interactive UI renderer samples.
+player-rendered dialogue layer; retained View sidecar consumption is covered by
+bundle checks and the interactive View renderer samples.
 
 Run the parity route from the repository root:
 

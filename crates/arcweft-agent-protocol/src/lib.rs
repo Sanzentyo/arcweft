@@ -21,9 +21,9 @@ pub mod resource;
 pub mod rich_text;
 pub mod session;
 pub mod trace;
-pub mod ui;
 pub mod value;
 pub mod verified_effects;
+pub mod view;
 
 mod serde_helpers;
 

@@ -1,10 +1,10 @@
-//! Author-facing UI style declarations and view-local style overrides.
+//! Author-facing View style declarations and view-local style overrides.
 //!
-//! The renderer consumes resolved `UiStyle`/paint data, not this authoring model.
+//! The renderer consumes resolved `ViewStyle`/paint data, not this authoring model.
 //! Both Arcweft native style syntax and CSS lower into this representation before
 //! being interned into frame-local `StyleId` values.
 
-use crate::{Invalidation, UiInteractionSelector, UiPropertyKind, UiPropertyValue};
+use crate::{Invalidation, ViewInteractionSelector, ViewPropertyKind, ViewPropertyValue};
 use arcweft_id::PublicId;
 use std::collections::BTreeMap;
 
@@ -43,8 +43,8 @@ pub struct StylePatch {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StylePropertyAssignment {
-    kind: UiPropertyKind,
-    value: UiPropertyValue,
+    kind: ViewPropertyKind,
+    value: ViewPropertyValue,
     op: StyleAssignOp,
     invalidation: Invalidation,
 }
@@ -64,7 +64,7 @@ pub struct StyleTokenBinding {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StyleTokenValue {
-    Property(UiPropertyValue),
+    Property(ViewPropertyValue),
     SystemColor(arcweft_presentation::appearance::SystemColor),
     Resource(PublicId),
 }
@@ -87,14 +87,14 @@ pub struct StylePartId(PublicId);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StyleCondition {
-    Interaction(UiInteractionSelector),
-    ElementState(UiElementStateSelector),
+    Interaction(ViewInteractionSelector),
+    ElementState(ViewElementStateSelector),
     Environment(EnvironmentStylePredicate),
     Expression(StyleExpressionId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum UiElementStateSelector {
+pub enum ViewElementStateSelector {
     FocusVisible,
     ReadOnly,
     Invalid,
@@ -168,7 +168,7 @@ impl StyleFileRef {
 }
 
 impl StylePatch {
-    pub fn push_property(&mut self, kind: UiPropertyKind, value: UiPropertyValue) {
+    pub fn push_property(&mut self, kind: ViewPropertyKind, value: ViewPropertyValue) {
         self.properties
             .push(StylePropertyAssignment::replace(kind, value));
     }
@@ -203,7 +203,7 @@ impl StylePatch {
 }
 
 impl StylePropertyAssignment {
-    pub fn replace(kind: UiPropertyKind, value: UiPropertyValue) -> Self {
+    pub fn replace(kind: ViewPropertyKind, value: ViewPropertyValue) -> Self {
         Self {
             kind,
             value,
@@ -212,7 +212,7 @@ impl StylePropertyAssignment {
         }
     }
 
-    pub fn append(kind: UiPropertyKind, value: UiPropertyValue) -> Self {
+    pub fn append(kind: ViewPropertyKind, value: ViewPropertyValue) -> Self {
         Self {
             kind,
             value,
@@ -221,11 +221,11 @@ impl StylePropertyAssignment {
         }
     }
 
-    pub const fn kind(&self) -> UiPropertyKind {
+    pub const fn kind(&self) -> ViewPropertyKind {
         self.kind
     }
 
-    pub const fn value(&self) -> UiPropertyValue {
+    pub const fn value(&self) -> ViewPropertyValue {
         self.value
     }
 
@@ -326,32 +326,35 @@ mod tests {
         StyleFileMode, StyleFileRef, StyleOverrideLayer, StylePatch, StyleSource, StyleSyntax,
         ViewStyleOverride,
     };
-    use crate::{Milli, UiPropertyKind, UiPropertyValue};
+    use crate::{Milli, ViewPropertyKind, ViewPropertyValue};
     use arcweft_id::PublicId;
 
     #[test]
     fn style_file_refs_preserve_file_vs_embed_identity() {
-        let file = StyleFileRef::file("ui/dialogue.css");
-        let embed = StyleFileRef::embed("ui/default.css");
+        let file = StyleFileRef::file("view/dialogue.css");
+        let embed = StyleFileRef::embed("view/default.css");
 
         assert_eq!(file.mode(), StyleFileMode::File);
-        assert_eq!(file.path(), "ui/dialogue.css");
+        assert_eq!(file.path(), "view/dialogue.css");
         assert_eq!(embed.mode(), StyleFileMode::Embed);
-        assert_eq!(embed.path(), "ui/default.css");
+        assert_eq!(embed.path(), "view/default.css");
     }
 
     #[test]
     fn view_style_overrides_keep_ordered_layers_and_exported_parts() {
         let mut patch = StylePatch::default();
-        patch.push_property(UiPropertyKind::Opacity, UiPropertyValue::Milli(Milli(900)));
+        patch.push_property(
+            ViewPropertyKind::Opacity,
+            ViewPropertyValue::Milli(Milli(900)),
+        );
         let mut overrides = ViewStyleOverride::default();
         overrides.push_layer(StyleOverrideLayer::arcweft_inline("opacity: 0.9", patch));
         overrides.push_layer(StyleOverrideLayer::css_file(
-            "ui/dialogue.css",
+            "view/dialogue.css",
             StylePatch::default(),
         ));
         let part = super::StylePartId::new(public_id("part.label"));
-        let target = public_id("ui.dialogue.label");
+        let target = public_id("view.dialogue.label");
         overrides.export_part(part.clone(), target.clone());
 
         assert_eq!(overrides.layers().len(), 2);
@@ -359,7 +362,7 @@ mod tests {
         assert_eq!(overrides.layers()[1].syntax(), StyleSyntax::Css);
         assert_eq!(
             overrides.layers()[1].source(),
-            &StyleSource::from_file("ui/dialogue.css")
+            &StyleSource::from_file("view/dialogue.css")
         );
         assert_eq!(overrides.exported_parts().get(&part), Some(&target));
     }

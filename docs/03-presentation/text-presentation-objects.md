@@ -2,7 +2,7 @@
 
 Arcweft text is a typed presentation object tree, not only a string submitted to
 a renderer. `character.say` and `narrator.say` are high-level facades that create
-the same kind of presentation objects as image, sprite, model, and UI layers.
+the same kind of presentation objects as image, sprite, model, and View layers.
 The default dialogue facade chooses sensible text-box, line, run, glyph-cluster,
 ruby, glyph, object-id, hit-test, depth, and capture behavior, while still
 preserving the authored rich-text surface.
@@ -129,7 +129,7 @@ debug/input metadata to the ordinary text object without making it a proxy:
 proxy is proxy object metadata. Proxy layer does not replace the parent
 render-layer group, but it is exposed as first-class object metadata so hit
 testing, object-id capture, and headless debuggers can distinguish semantic
-layers such as UI, dialogue, hotspot, or depth proxy. When both
+layers such as View, dialogue, hotspot, or depth proxy. When both
 `RichTextPresentation.z_index` and proxy depth are present, renderers sort by
 the resolved render layer, then presentation `z_index`, then proxy depth, then
 source order. Proxy params remain local to the proxy object and are reported in

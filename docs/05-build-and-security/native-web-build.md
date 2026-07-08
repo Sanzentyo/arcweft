@@ -14,7 +14,7 @@ Arcweft runtime target strategy:
 ```text
 winit main thread
 wgpu RenderOwner
-ServoUiHost optional
+ServoViewHost optional
 Audio backend
 Engine::step
 Scheduler
@@ -27,7 +27,7 @@ Feature:
 native = ["native-st", "wgpu-render", "audio-native"]
 native-mt = ["tokio", "rayon"]
 native-jit = ["arcweft-lang-jit-cranelift"]
-servo-ui = ["servo"]
+servo-view = ["servo"]
 ```
 
 The native player reads bundles and assets through platform adapters. Core/runtime data structures only receive decoded bytes, manifests, bytecode, task results, and input events.
@@ -39,7 +39,7 @@ Browser DOM
 canvas / wgpu WebGPU/WebGL
 Engine::step
 WebAudio
-DOM UI backend
+DOM View backend
 cooperative jobs
 optional worker pool
 ```
@@ -73,7 +73,7 @@ dist/web/
 
 The browser player does not use runtime JIT or Wasmtime. It runs the same
 bytecode VM compiled to Wasm, with browser adapters for fetch/cache/storage,
-WebAudio, DOM UI, and WebGPU/WebGL. Future build-time AOT Wasm helpers may be
+WebAudio, DOM View, and WebGPU/WebGL. Future build-time AOT Wasm helpers may be
 emitted for pure functions, but flow/dialogue/choice/Need semantics remain
 VM-defined.
 
@@ -132,7 +132,7 @@ math accelerator availability; WebGPU math remains an async adapter capability.
 
 WebUSB, WebHID, and Web Serial are exposed through `web-sys` in `arcweft-device-web`.
 
-Some `web-sys` device APIs are unstable and require `--cfg=web_sys_unstable_apis`; generated build reports must state this explicitly. Web device access is not assumed to be available in all browsers, so projects must define fallback UI and virtual-device test paths.
+Some `web-sys` device APIs are unstable and require `--cfg=web_sys_unstable_apis`; generated build reports must state this explicitly. Web device access is not assumed to be available in all browsers, so projects must define fallback View and virtual-device test paths.
 
 Required feature hints are generated from device profiles, for example:
 

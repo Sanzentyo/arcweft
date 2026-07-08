@@ -1,6 +1,6 @@
-# HTML / Servo / DOM UI
+# HTML / Servo / DOM View
 
-Game Native UI とは別に、HTML/CSS UI を提供する。
+Game Native View とは別に、HTML/CSS View を提供する。
 
 ```text
 Native:
@@ -10,21 +10,21 @@ Web:
   Browser DOM backend
 ```
 
-## HtmlUiHost
+## HtmlViewHost
 
 ```rust
-pub trait HtmlUiHost {
+pub trait HtmlViewHost {
     fn create_panel(&mut self, spec: HtmlPanelSpec) -> Result<HtmlPanelId>;
     fn destroy_panel(&mut self, id: HtmlPanelId);
     fn set_props(&mut self, id: HtmlPanelId, props: serde_json::Value);
-    fn poll_events(&mut self) -> Vec<HtmlUiEvent>;
+    fn poll_events(&mut self) -> Vec<HtmlViewEvent>;
 }
 ```
 
 ## DSL
 
 ```arcw
-html panel @ui.settings_html from "ui/settings.html" {
+html panel @view.settings_html from "view/settings.html" {
     mount = overlay
     z = 100
 
@@ -33,9 +33,9 @@ html panel @ui.settings_html from "ui/settings.html" {
         master_volume: f32
     }
 
-    on "close" => GameEvent.Ui(.SettingsClosed)
+    on "close" => GameEvent.View(.SettingsClosed)
     on "set-master-volume" payload { value: f32 } =>
-        GameEvent.Ui(.SetMasterVolume { value })
+        GameEvent.View(.SetMasterVolume { value })
 }
 ```
 
@@ -57,7 +57,7 @@ html panel @ui.settings_html from "ui/settings.html" {
 </div>
 ```
 
-DOM 版は `data-arcweft-entity` / `data-arcweft-action` を使い、Agent 観測に UI tree / bbox / actions を返す。
+DOM 版は `data-arcweft-entity` / `data-arcweft-action` を使い、Agent 観測に View tree / bbox / actions を返す。
 
 ```html
 <button data-arcweft-entity="choice.opening.listen" data-arcweft-action="select">
@@ -67,6 +67,6 @@ DOM 版は `data-arcweft-entity` / `data-arcweft-action` を使い、Agent 観�
 
 ## Headless
 
-headless では実 Servo/DOM がなくても、`HtmlPanelSpec` と UI metadata から仮想 UI tree を返す。
+headless では実 Servo/DOM がなくても、`HtmlPanelSpec` と View metadata から仮想 View tree を返す。
 
 

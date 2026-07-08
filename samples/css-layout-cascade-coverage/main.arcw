@@ -32,7 +32,7 @@ entry game @entry.css_layout_cascade_coverage {
 
 flow css_layout_cascade_coverage {
     layout_agent(id=@say.css_layout_cascade_coverage.main, voice=auto):
-        CSS layout/cascade coverage uses a retained UI fixture separate from text raster parity.[p]
+        CSS layout/cascade coverage uses a retained View fixture separate from text raster parity.[p]
         Supported selector, flex, gap, padding, size, overflow, and z-index paths are represented together with explicit diagnostics for grid, container queries, pseudo-elements, and structural selectors.[p]
 
     return "css_layout_cascade_coverage_done"

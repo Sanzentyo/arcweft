@@ -4,7 +4,7 @@ Text は二階層に分ける。
 
 ```text
 RichText:
-  会話、UI、HUD、毎frame利用。
+  会話、View、HUD、毎frame利用。
 
 TypesetBlock:
   Typst級の文書、数式、図鑑、クレジット。
@@ -44,7 +44,7 @@ alice.say()[
 ### RichText style defaults
 
 RichText typography is configured as structured style data, not as a flat list
-of dialogue-only knobs. Dialogue, choices, UI labels, logs, and HUD text can all
+of dialogue-only knobs. Dialogue, choices, View labels, logs, and HUD text can all
 consume the same model.
 
 ```arcw

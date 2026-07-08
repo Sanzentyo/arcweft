@@ -16,7 +16,7 @@ pub mod product_catalog;
 pub mod runtime;
 pub mod table;
 pub mod types;
-pub mod ui;
+pub mod view;
 pub mod wire;
 
 pub use budget::SectionCodecBudget;
@@ -44,28 +44,29 @@ pub use runtime::{
 };
 pub use table::{EnumRegistry, EnumSymbol, PublicIdRef, PublicIdTable, StringId, StringTable};
 pub use types::{CrossSectionRef, DigestRef, SourceRangeRef, StableId};
-pub use ui::{
-    CompactUiInputResource, CompactUiTextResource, CompactUiThemeResource,
-    CompactViewProgramResource, CompactViewStyleResource, UiInputResource, UiLogicalRect,
-    UiResourceBudget, UiResourceCompatibility, UiTextResource, UiThemeResource,
-    ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
-    ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewFocusDirection,
-    ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy, ViewFocusNavigationEdge,
-    ViewFocusNavigationResource, ViewFocusSkipPolicy, ViewFocusTargetResolution,
-    ViewFocusWrapPolicy, ViewLayoutBoundsKind, ViewLayoutBoundsResource, ViewPartStyleRule,
-    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
-    ViewRuntimeButtonBounds, ViewRuntimeControlBorderStyle, ViewRuntimeControlCornerFrameStyle,
-    ViewRuntimeControlFocusRingStyle, ViewRuntimeControlState, ViewRuntimeControlStyle,
-    ViewRuntimeControlStyleDiagnostic, ViewRuntimeControlStyleDiagnosticReason,
-    ViewRuntimeControlStyleDiagnostics, ViewRuntimeControlStyleResolution,
-    ViewRuntimeControlVisualStyle, ViewRuntimeElementStyle, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeFocusNavigationEdge, ViewRuntimeScrollRegion,
-    ViewRuntimeScrollRegionBounds, ViewRuntimeShadow, ViewRuntimeShadowKind,
-    ViewRuntimeStyledControls, ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewRuntimeTextBlock,
-    ViewRuntimeTextBlockBounds, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
-    ViewRuntimeTextControlHandler, ViewRuntimeTextControlHandlerRuntime,
-    ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
-    ViewScrollAxis, ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewStyleResource,
-    ViewSurfaceResource, ViewTextBlockResource, migrated_ui_section_compatibility,
+pub use view::{
+    CompactViewInputResource, CompactViewProgramResource, CompactViewStyleResource,
+    CompactViewTextResource, CompactViewThemeResource, ViewActionButtonActionResource,
+    ViewActionButtonResource, ViewActionPayloadResource, ViewActionTextControlPayloadField,
+    ViewAwaitBranchSpan, ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource,
+    ViewFocusInitialPolicy, ViewFocusNavigationEdge, ViewFocusNavigationResource,
+    ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewInputResource,
+    ViewLayoutBoundsKind, ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule,
+    ViewProgramResource, ViewResourceBudget, ViewResourceCompatibility, ViewRuntimeActionButton,
+    ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlBorderStyle,
+    ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlFocusRingStyle, ViewRuntimeControlState,
+    ViewRuntimeControlStyle, ViewRuntimeControlStyleDiagnostic,
+    ViewRuntimeControlStyleDiagnosticReason, ViewRuntimeControlStyleDiagnostics,
+    ViewRuntimeControlStyleResolution, ViewRuntimeControlVisualStyle, ViewRuntimeElementStyle,
+    ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeFocusNavigationEdge,
+    ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds, ViewRuntimeShadow,
+    ViewRuntimeShadowKind, ViewRuntimeStyledControls, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
+    ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds, ViewRuntimeTextControl,
+    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandler,
+    ViewRuntimeTextControlHandlerRuntime, ViewRuntimeTextControlHandlers,
+    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection, ViewScrollAxis,
+    ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource,
+    ViewTextBlockResource, ViewTextResource, ViewThemeResource,
+    migrated_view_section_compatibility,
 };
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};

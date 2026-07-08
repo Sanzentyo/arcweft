@@ -12,7 +12,7 @@ cargo run -p arcweft-cli --features native-player -- run \
   --text-input-trace-out target/native-text-input-trace/native-player-ime.real.json
 ```
 
-The sample runs through the normal native player path, uses product/runtime UI
+The sample runs through the normal native player path, uses product/runtime View
 text-control resources, and publishes focused text targets through renderer
 geometry.
 
@@ -20,7 +20,7 @@ geometry.
 
 - Replaces the narrative native sample with deterministic player-rendered
   `TextField`, `TextArea`, and `SecureField` resources.
-- Adds generic `.arcweft/content/ui.*.json` sidecar loading for bundle UI
+- Adds generic `.arcweft/content/view.*.json` sidecar loading for bundle View
   resources.
 - Adds keyboard traversal over text-control semantic targets.
 - Adds selected-backend and runtime-write-back trace records.

@@ -16,8 +16,8 @@ text-control lowering error variant, and it was ported manually.
 
 ## Applied Scope
 
-- Added runtime text-control emission to the typed UI resource model.
-- Added `UiRuntimeTextControl`, bounds, selection, and runtime-facing options.
+- Added runtime text-control emission to the typed View resource model.
+- Added `ViewRuntimeTextControl`, bounds, selection, and runtime-facing options.
 - Added deterministic text-input session identity from authored public ids.
 - Extended `BundlePresentationSnapshot` with `text_inputs`.
 - Populated runtime text controls when a `BundleSession` is built or
@@ -54,7 +54,7 @@ Passed:
 
 ```bash
 cargo fmt --all -- --check
-cargo test -p arcweft-bundle --test ui_runtime_text_controls
+cargo test -p arcweft-bundle --test view_runtime_text_controls
 cargo test -p arcweft-player-scene --test runtime_text_controls
 cargo clippy -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web --all-targets --all-features -- -D warnings
 ```

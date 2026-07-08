@@ -2,7 +2,7 @@
 
 Date: 2026-07-07
 
-This cut implements the concrete repair shape for the native IME glyph-range overlap crash observed while converting Japanese IME input in `samples/modern-feedback-ui`.
+This cut implements the concrete repair shape for the native IME glyph-range overlap crash observed while converting Japanese IME input in `samples/modern-feedback-view`.
 
 ## Root-cause ranking
 
@@ -83,7 +83,7 @@ cargo fmt --all -- --check
 cargo clippy -p arcweft-render-wgpu --all-targets --all-features -- -D warnings
 ```
 
-Manual native validation remains the real-machine MS IME reproduction from the review request, using `samples/modern-feedback-ui` with `--text-input-trace-out` and converting `kaomoji` to `( ﾟДﾟ)`.
+Manual native validation remains the real-machine MS IME reproduction from the review request, using `samples/modern-feedback-view` with `--text-input-trace-out` and converting `kaomoji` to `( ﾟДﾟ)`.
 
 ## Structure audit
 

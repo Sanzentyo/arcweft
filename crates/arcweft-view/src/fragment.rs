@@ -1,6 +1,6 @@
-//! Flat retained UI fragments emitted by Rust and Arcweft views.
+//! Flat retained View fragments emitted by Rust and Arcweft views.
 
-use crate::{NodeKey, RawEntity, UiError};
+use crate::{NodeKey, RawEntity, ViewError};
 use arcweft_presentation::input::{InputEventKind, PointerPhase};
 use std::collections::BTreeSet;
 
@@ -15,7 +15,7 @@ pub struct Span32 {
     pub len: u32,
 }
 
-/// Stable identifier for resolved UI style data.
+/// Stable identifier for resolved View style data.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StyleId(pub u32);
 
@@ -51,7 +51,7 @@ pub enum ContainerKind {
     Stack,
 }
 
-/// Event kinds that a fragment can bind without introducing a public `UiEvent`.
+/// Event kinds that a fragment can bind without introducing a public `ViewEvent`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EventKind {
     Activate,
@@ -62,7 +62,7 @@ pub enum EventKind {
     Blur,
 }
 
-/// A retained UI node payload.
+/// A retained View node payload.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FragmentKind {
     Container(ContainerKind),
@@ -117,10 +117,10 @@ impl Span32 {
         self.start.checked_add(self.len)
     }
 
-    fn from_len(start: usize, len: usize) -> Result<Self, UiError> {
+    fn from_len(start: usize, len: usize) -> Result<Self, ViewError> {
         Ok(Self {
-            start: u32::try_from(start).map_err(|_| UiError::CapacityExceeded)?,
-            len: u32::try_from(len).map_err(|_| UiError::CapacityExceeded)?,
+            start: u32::try_from(start).map_err(|_| ViewError::CapacityExceeded)?,
+            len: u32::try_from(len).map_err(|_| ViewError::CapacityExceeded)?,
         })
     }
 }
@@ -216,16 +216,16 @@ impl ViewFragmentBuilder {
         children: &[NodeId],
         events: &[EventBinding],
         semantics: Option<SemanticSpecId>,
-    ) -> Result<NodeId, UiError> {
+    ) -> Result<NodeId, ViewError> {
         if !self.keys.insert(key) {
-            return Err(UiError::DuplicateNodeKey(key));
+            return Err(ViewError::DuplicateNodeKey(key));
         }
         if let Some(invalid) = children
             .iter()
             .copied()
             .find(|child| self.get(*child).is_none())
         {
-            return Err(UiError::InvalidFragmentNode(invalid));
+            return Err(ViewError::InvalidFragmentNode(invalid));
         }
 
         let child_span = Span32::from_len(self.child_indices.len(), children.len())?;
@@ -234,7 +234,7 @@ impl ViewFragmentBuilder {
         self.events.extend_from_slice(events);
 
         let node_id =
-            NodeId(u32::try_from(self.nodes.len()).map_err(|_| UiError::CapacityExceeded)?);
+            NodeId(u32::try_from(self.nodes.len()).map_err(|_| ViewError::CapacityExceeded)?);
         self.nodes.push(FragmentNode {
             key,
             kind,

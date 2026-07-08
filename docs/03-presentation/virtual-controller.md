@@ -13,7 +13,7 @@ The canonical design is now:
 Summary:
 
 ```text
-Game Native UI virtual controller
+Game Native View virtual controller
   -> LayerTree hit-test
   -> touch/mouse capture
   -> virtual button/joystick/gesture state

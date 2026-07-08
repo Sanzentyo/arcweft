@@ -139,7 +139,7 @@ WebUSB constraints:
 - user prompt is required,
 - browser support is not universal,
 - request filters must be explicit,
-- product builds must never request arbitrary USB access without clear UI,
+- product builds must never request arbitrary USB access without clear View,
 - raw data must not be exposed to Agent tools unless capability permits it.
 
 ## Device profile DSL
@@ -241,7 +241,7 @@ test @test.rhythm_pad_report_parse fixture {
 
 ## Runtime use
 
-Opening a device is `Need<Result<DevicePort, DeviceError>, TaskError>` and must show pending/denied UI in player-visible flows.
+Opening a device is `Need<Result<DevicePort, DeviceError>, TaskError>` and must show pending/denied View in player-visible flows.
 
 ```arcw
 let pad =

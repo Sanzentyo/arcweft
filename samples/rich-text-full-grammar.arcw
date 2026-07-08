@@ -45,7 +45,7 @@ pub struct KeywordHit {
     channel: String
 }
 
-#[text_proxy(kind="hover", default_hit=false, depth=2, layer=ui)]
+#[text_proxy(kind="hover", default_hit=false, depth=2, layer=view)]
 pub struct HoverHit {
     layer: String
 }

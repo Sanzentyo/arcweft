@@ -21,19 +21,19 @@ input = "pass_through"
 hit_test = "bbox"
 capture = ["color", "object_id", "mask"]
 
-[layer."layer.ui.game"]
-kind = "NativeUi"
+[layer."layer.view.game"]
+kind = "NativeView"
 z = 1000
 input = "block_below_on_hit"
-hit_test = "ui_tree"
-focus = "ui_tree_order"
+hit_test = "view_tree"
+focus = "view_tree_order"
 capture = ["color", "object_id", "mask", "actions"]
 
-[layer."layer.ui.modal"]
+[layer."layer.view.modal"]
 kind = "Modal"
 z = 3000
 input = "modal"
-hit_test = "ui_tree"
+hit_test = "view_tree"
 focus = "trap"
 capture = ["color", "object_id", "mask", "actions"]
 
@@ -51,15 +51,15 @@ capture = ["overlay"]
 {
   "layers": [
     {
-      "id": "layer.ui.game",
-      "kind": "NativeUi",
+      "id": "layer.view.game",
+      "kind": "NativeView",
       "z": 1000,
       "input": {
         "enabled": true,
         "priority": 1000,
         "route": "BlockBelowOnHit",
-        "hit_test": "UiTree",
-        "focus": "UiTreeOrder"
+        "hit_test": "ViewTree",
+        "focus": "ViewTreeOrder"
       },
       "render": {
         "visible": true,
@@ -81,6 +81,6 @@ capture = ["overlay"]
 
 - `Modal` layer は `input.route = Modal` を推奨。
 - `Debug` layer は product mode では capability 必須。
-- `HtmlUi` layer は Native Servo / Web DOM のどちらでも同じ `PublicId` を使う。
+- `HtmlView` layer は Native Servo / Web DOM のどちらでも同じ `PublicId` を使う。
 - `ObjectIdPass` を有効にする layer は object id namespace を持つ。
 - 同じ `z` の sibling は tree order で安定化する。

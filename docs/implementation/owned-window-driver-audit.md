@@ -82,7 +82,7 @@ Known validation caveats:
   Linux Wayland with a fuller interactive windowed fixture. The current Windows
   live smoke covers bundle execution through owned-window `RequestClose`.
 - Add a direct automated windowed integration fixture once the native test
-  harness can drive a real event loop without manual UI interaction.
+  harness can drive a real event loop without manual View interaction.
 - Add typed source functions and payload decoders for the remaining desktop
   file/grant host-call surfaces; the desktop adapter no longer accepts generic
   JSON request strings for those calls.

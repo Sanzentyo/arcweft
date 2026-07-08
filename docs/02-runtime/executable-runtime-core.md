@@ -367,7 +367,7 @@ struct AwbcEffectPlan {
 }
 ```
 
-Task classes preserve the current LocalUi/Io/Cpu/GPU/shader/Wasm/asset/audio/TTS/
+Task classes preserve the current LocalView/Io/Cpu/GPU/shader/Wasm/asset/audio/TTS/
 BGM/LSP/background set. Effect kinds preserve register/drop handle, wait, audio,
 call, log, signal/metric/event/out, return/goto, panic/fail/bail, ensure/assert,
 close/select, and loop control. Resource access stores resource ID, access mode,

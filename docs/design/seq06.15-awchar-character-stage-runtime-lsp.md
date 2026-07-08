@@ -7,7 +7,7 @@ Arcweft already has the right substrate for this sequence:
 - `arcweft-character` owns the Sans I/O typed manifest, identifiers, validation, catalog, and deterministic look resolution.
 - `arcweft-character-psd` accepts PSD bytes and returns a manifest plus package-relative PNG payloads without filesystem I/O.
 - `arcweft-presentation::character::CharacterRenderSpec` is the renderer-independent truth for a selected look.
-- `arcweft-character-ui` lowers a resolved character to retained UI image nodes, layouts, image sources, and UI layer output with no browser DOM dependency.
+- `arcweft-character-view` lowers a resolved character to retained View image nodes, layouts, image sources, and View layer output with no browser DOM dependency.
 - launch profiles already declare `character_manifests`, and LSP profile loading builds a `CharacterCatalog` from those entries.
 
 The production cut therefore wires those pieces together instead of introducing a flat-PNG compatibility path.
@@ -69,7 +69,7 @@ The `look` argument is a per-character enum type registered from loaded manifest
 
 This makes expression or pose switching stable: the stage-space bbox comes from the source canvas and anchor, not from the cropped layer extents.  Cropped PNG dimensions still match each layer source rectangle exactly.
 
-Unsupported blend and clipping behavior is never silently approximated.  Importers preserve metadata, `CharacterRenderSpec::diagnostics()` reports baseline renderer support gaps, and retained-UI lowering can run in either strict or metadata-preserving mode.
+Unsupported blend and clipping behavior is never silently approximated.  Importers preserve metadata, `CharacterRenderSpec::diagnostics()` reports baseline renderer support gaps, and retained-View lowering can run in either strict or metadata-preserving mode.
 
 ## Renderer path
 
@@ -79,11 +79,11 @@ Native and web players use the same prepared-frame path:
 CharacterPackage bytes
   -> CharacterManifest + package-relative PNG payloads
   -> CharacterRenderSpec
-  -> CharacterUiView / layer frames
+  -> CharacterViewView / layer frames
   -> shared wgpu image submission
 ```
 
-The retained UI path is the first production lowering because it already shares layout, image decode, animation frame resolution, and UI layer output across platforms.  Browser DOM is not involved.  There is no runtime fallback that pre-flattens `normal.png` or `smile.png`.
+The retained View path is the first production lowering because it already shares layout, image decode, animation frame resolution, and View layer output across platforms.  Browser DOM is not involved.  There is no runtime fallback that pre-flattens `normal.png` or `smile.png`.
 
 Seq06.14 placement is used at the stage-object boundary: the whole character bbox is placed as one object, and the layer rectangles remain in source-canvas coordinates below that stable root.
 
@@ -143,7 +143,7 @@ Loose legacy group inference is retained only as importer compatibility diagnost
 Deferred features are explicit diagnostics or preserved metadata, not silent approximations:
 
 - blend modes beyond pass-through/normal/multiply/screen in baseline renderer;
-- clipping masks in retained UI;
+- clipping masks in retained View;
 - full Photoshop group compositing semantics;
 - live PSD editing;
 - runtime PSD parsing.

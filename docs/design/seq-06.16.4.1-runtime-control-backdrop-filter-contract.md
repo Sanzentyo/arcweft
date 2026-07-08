@@ -9,16 +9,16 @@ The runtime-control path owns text editing, selection, caret, platform IME
 geometry, shortcut policy, tab policy, focus state, action-button hit-testing,
 and text-input submit activation. `backdrop-filter` therefore becomes a typed
 runtime-control visual effect payload plus a dedicated renderer/effect-plan
-record. A later retained-UI unification may consume the same typed effect list,
+record. A later retained-View unification may consume the same typed effect list,
 but this request does not require a second editing host or DOM/browser CSS
 overlay.
 
 ## Data path
 
 ```text
-UiStyleResource
-  -> UiRuntimeControlStyle / UiRuntimeControlVisualStyle
-  -> UiRuntimeTextControl / UiRuntimeActionButton
+ViewStyleResource
+  -> ViewRuntimeControlStyle / ViewRuntimeControlVisualStyle
+  -> ViewRuntimeTextControl / ViewRuntimeActionButton
   -> RuntimeTextControlLowerer / RuntimeActionButtonLowerer
   -> RenderControlStyle / RenderControlVisualStyle
   -> SharedFramePlanner runtime-control effect plans
@@ -31,11 +31,11 @@ resources, read files, capture screenshots, or invoke platform APIs.
 
 ## Typed style payload
 
-`UiRuntimeControlVisualStyle` has two optional filter-list slots:
+`ViewRuntimeControlVisualStyle` has two optional filter-list slots:
 
 ```rust
-pub filters: Option<UiRuntimeControlFilterList>,
-pub backdrop_filters: Option<UiRuntimeControlFilterList>,
+pub filters: Option<ViewRuntimeControlFilterList>,
+pub backdrop_filters: Option<ViewRuntimeControlFilterList>,
 ```
 
 `None` means the state did not declare the property. `Some(empty)` means the
@@ -44,11 +44,11 @@ different from the existing `shadows: Vec<_>` bridge, where an empty vector
 cannot distinguish unspecified from authored `none`.
 
 ```rust
-pub struct UiRuntimeControlFilterList {
-    pub filters: Vec<UiRuntimeControlFilter>,
+pub struct ViewRuntimeControlFilterList {
+    pub filters: Vec<ViewRuntimeControlFilter>,
 }
 
-pub enum UiRuntimeControlFilter {
+pub enum ViewRuntimeControlFilter {
     Blur { radius_milli: u32 },
 }
 ```
@@ -89,7 +89,7 @@ Storage units:
 - renderer payload: logical pixels
 
 Unsupported values produce
-`UiRuntimeControlStyleDiagnosticReason::UnsupportedValue`. Unsupported property
+`ViewRuntimeControlStyleDiagnosticReason::UnsupportedValue`. Unsupported property
 names continue to produce `UnsupportedProperty`.
 
 ## State resolution
@@ -160,6 +160,5 @@ Before promoting PNG baselines:
 - Making `arcweft-bundle` or data-format crates depend on GPU, platform,
   filesystem, or browser APIs.
 - Full CSS filter support beyond `blur(...)`.
-- A retained-UI editing host or replacement of current text-input /
+- A retained-View editing host or replacement of current text-input /
   action-button semantics.
-

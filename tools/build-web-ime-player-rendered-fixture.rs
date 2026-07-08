@@ -6,11 +6,12 @@ arcweft-core = { path = "../crates/arcweft-core" }
 arcweft-render-text = { path = "../crates/arcweft-render-text" }
 ---
 
-use arcweft_bundle::resource_codec::ui::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
-    UiProgramResource, UiSecureInputPolicy, UiSemanticTarget, UiTextResource, UiTextSourceKind,
-    UiTextSourceRecord,
+use arcweft_bundle::resource_codec::view::{
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
+    ViewLogicalRect, ViewProgramResource, ViewSecureInputPolicy, ViewSemanticTarget,
+    ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
+    ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -63,9 +64,9 @@ fn output_path() -> Result<PathBuf, String> {
 fn web_ime_player_rendered_bundle() -> ArcweftBundle {
     minimal_bundle()
         .with_product_awbc(minimal_awbc_program())
-        .with_ui_text(ui_text())
-        .with_ui_input(ui_input())
-        .with_ui_program(ui_program())
+        .with_view_text(view_text())
+        .with_view_input(view_input())
+        .with_view_program(view_program())
 }
 
 fn minimal_bundle() -> ArcweftBundle {
@@ -96,10 +97,10 @@ fn minimal_bundle() -> ArcweftBundle {
     )
 }
 
-fn ui_program() -> UiProgramResource {
-    UiProgramResource {
-        program_id: "ui.program.web_ime_player_rendered".to_owned(),
-        root_component: "ui.root.web_ime_player_rendered".to_owned(),
+fn view_program() -> ViewProgramResource {
+    ViewProgramResource {
+        program_id: "view.program.web_ime_player_rendered".to_owned(),
+        root_view: "view.root.web_ime_player_rendered".to_owned(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),
@@ -118,6 +119,9 @@ fn ui_program() -> UiProgramResource {
             text_control_layout("input.secret_secure_field", 48, 264, 420, 48),
             semantic_layout("target.secret_secure_field", 48, 264, 420, 48),
         ],
+        scroll_regions: Vec::new(),
+        surfaces: Vec::new(),
+        text_blocks: Vec::new(),
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),
@@ -131,8 +135,8 @@ fn text_control_layout(
     y: i32,
     width: u32,
     height: u32,
-) -> UiLayoutBoundsResource {
-    UiLayoutBoundsResource::text_control(public_id, UiLogicalRect::from_px(x, y, width, height))
+) -> ViewLayoutBoundsResource {
+    ViewLayoutBoundsResource::text_control(public_id, ViewLogicalRect::from_px(x, y, width, height))
 }
 
 fn semantic_layout(
@@ -141,21 +145,22 @@ fn semantic_layout(
     y: i32,
     width: u32,
     height: u32,
-) -> UiLayoutBoundsResource {
-    UiLayoutBoundsResource::semantic_target(public_id, UiLogicalRect::from_px(x, y, width, height))
+) -> ViewLayoutBoundsResource {
+    ViewLayoutBoundsResource::semantic_target(public_id, ViewLogicalRect::from_px(x, y, width, height))
 }
 
-fn semantic(public_id: &str, target: &str, label_text_source: &str) -> UiSemanticTarget {
-    UiSemanticTarget {
+fn semantic(public_id: &str, target: &str, label_text_source: &str) -> ViewSemanticTarget {
+    ViewSemanticTarget {
         public_id: public_id.to_owned(),
         target: target.to_owned(),
+        view: None,
         label_text_source: Some(label_text_source.to_owned()),
         source: None,
     }
 }
 
-fn ui_text() -> UiTextResource {
-    UiTextResource {
+fn view_text() -> ViewTextResource {
+    ViewTextResource {
         sources: vec![
             literal("text.value.jp_text_field", "かな入力 sample"),
             literal("text.placeholder.jp_text_field", "ここに日本語 IME で入力"),
@@ -178,46 +183,46 @@ fn ui_text() -> UiTextResource {
     }
 }
 
-fn literal(public_id: &str, value: &str) -> UiTextSourceRecord {
-    UiTextSourceRecord {
+fn literal(public_id: &str, value: &str) -> ViewTextSourceRecord {
+    ViewTextSourceRecord {
         public_id: public_id.to_owned(),
-        kind: UiTextSourceKind::Literal {
+        kind: ViewTextSourceKind::Literal {
             value: value.to_owned(),
         },
         source: None,
     }
 }
 
-fn ui_input() -> UiInputResource {
-    UiInputResource {
+fn view_input() -> ViewInputResource {
+    ViewInputResource {
         options: vec![
             input_option(
                 "input.jp_text_field",
-                UiInputKind::TextField,
+                ViewInputKind::TextField,
                 "text.value.jp_text_field",
                 Some("text.placeholder.jp_text_field"),
-                UiInputPurpose::Text,
-                UiSecureInputPolicy::Plain,
+                ViewInputPurpose::Text,
+                ViewSecureInputPolicy::Plain,
                 Some("handler.jp_text_field.change"),
                 Some("handler.jp_text_field.submit"),
             ),
             input_option(
                 "input.long_latin_area",
-                UiInputKind::TextArea,
+                ViewInputKind::TextArea,
                 "text.value.long_latin_area",
                 Some("text.placeholder.long_latin_area"),
-                UiInputPurpose::Text,
-                UiSecureInputPolicy::Plain,
+                ViewInputPurpose::Text,
+                ViewSecureInputPolicy::Plain,
                 Some("handler.long_latin_area.change"),
                 None,
             ),
             input_option(
                 "input.secret_secure_field",
-                UiInputKind::SecureField,
+                ViewInputKind::SecureField,
                 "text.value.secret_secure_field",
                 Some("text.placeholder.secret_secure_field"),
-                UiInputPurpose::Password,
-                UiSecureInputPolicy::Password,
+                ViewInputPurpose::Password,
+                ViewSecureInputPolicy::Password,
                 Some("handler.secret_secure_field.change"),
                 Some("handler.secret_secure_field.submit"),
             ),
@@ -228,16 +233,18 @@ fn ui_input() -> UiInputResource {
 
 fn input_option(
     public_id: &str,
-    kind: UiInputKind,
+    kind: ViewInputKind,
     value_text_source: &str,
     placeholder_text_source: Option<&str>,
-    purpose: UiInputPurpose,
-    secure_policy: UiSecureInputPolicy,
+    purpose: ViewInputPurpose,
+    secure_policy: ViewSecureInputPolicy,
     change_handler: Option<&str>,
     submit_handler: Option<&str>,
-) -> UiInputOptions {
-    UiInputOptions {
+) -> ViewInputOptions {
+    ViewInputOptions {
         public_id: public_id.to_owned(),
+        view: None,
+        containing_scroll_region: None,
         kind,
         value_text_source: value_text_source.to_owned(),
         placeholder_text_source: placeholder_text_source.map(ToOwned::to_owned),
@@ -247,6 +254,10 @@ fn input_option(
         capitalization: TextCapitalization::None,
         enter_key: if kind.is_multiline() { EnterKeyHint::Enter } else { EnterKeyHint::Done },
         multiline: kind.is_multiline(),
+        selection_policy: ViewTextSelectionPolicy::Enabled,
+        shortcut_policy: ViewTextShortcutPolicy::Enabled,
+        tab_policy: ViewTextTabPolicy::FocusNavigation,
+        vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
         secure_policy,
         composition_on_blur: CompositionOnBlurPolicy::Commit,
         submit_handler: submit_handler.map(ToOwned::to_owned),

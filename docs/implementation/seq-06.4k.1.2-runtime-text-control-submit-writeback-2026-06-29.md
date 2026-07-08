@@ -12,8 +12,8 @@ after seq06.4k.1.1.
 - Makes `InputController` emit change/submit write-backs from committed
   text-input operations.
 - Keeps IME preedit/composition frame-local until commit.
-- Extends `UiRuntimeTextControl` with typed change/submit handler metadata
-  derived from existing authored `UiInputOptions::{change_handler,submit_handler}`.
+- Extends `ViewRuntimeTextControl` with typed change/submit handler metadata
+  derived from existing authored `ViewInputOptions::{change_handler,submit_handler}`.
 - Adds `arcweft-runtime-driver::text_control_writeback` as the runtime-facing
   event type.
 - Makes `BundleSession` the owner of the runtime text-control value overlay and

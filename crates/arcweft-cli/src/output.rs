@@ -135,7 +135,7 @@ impl RuntimePlanReport {
                 .stream_plans
                 .iter()
                 .map(|stream| RuntimeStreamPlanSummary {
-                    id: stream.id.0.clone(),
+                    id: stream.id.public_label().into_string(),
                     item_ty: stream.item_ty.clone(),
                     error_ty: stream.error_ty.clone(),
                     ops: stream.ops.len(),
@@ -1223,7 +1223,7 @@ impl RuntimeStepRunSummary {
                 .stream_states
                 .values()
                 .map(|state| RuntimeQueueStateSummary {
-                    id: state.id.0.clone(),
+                    id: state.id.public_label().into_string(),
                     queue_depth: state.queue.len(),
                     closed: state.closed,
                     overflow_count: 0,
@@ -1320,7 +1320,11 @@ fn source_event_label(event: &RuntimeSourceEvent) -> String {
 }
 
 fn stream_event_label(event: &RuntimeStreamEvent) -> String {
-    format!("{} {}", event.stream.0, event_kind_label(&event.kind))
+    format!(
+        "{} {}",
+        event.stream.public_label(),
+        event_kind_label(&event.kind)
+    )
 }
 
 fn event_kind_label(kind: &SourceEventKind<RuntimePayload, RuntimePayload>) -> String {

@@ -23,9 +23,9 @@ run with `arcw`.
 - [css-style-parity](css-style-parity/README.md) - image-free Web/native
   renderer parity sample for CSS-like text and choice styling.
 - [css-layout-cascade-coverage](css-layout-cascade-coverage/README.md) -
-  retained UI CSS layout/cascade coverage sample and fixture entry for seq06.12.
+  retained View CSS layout/cascade coverage sample and fixture entry for seq06.12.
 - [native-text-input](native-text-input/README.md) - native player IME sample
-  with text controls declared in Arcweft DSL and styled by retained UI style
+  with text controls declared in Arcweft DSL and styled by retained View style
   resources.
 - [text-submit-flow](text-submit-flow/README.md) - DSL-authored text input
   submit sample that waits for Enter/IME send and branches on submitted text

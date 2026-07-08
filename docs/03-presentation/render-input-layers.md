@@ -2,15 +2,15 @@
 
 描画システムには、単なる描画順ではなく、**入力ルーティング・hit-test・focus・modal・Agent観測・mask生成・デバッグ**まで含む `LayerTree` を導入する。
 
-これにより、`bg`、立ち絵、テキストボックス、選択肢、Game Native UI、HTML/Servo/DOM UI、modal、debug overlay、Agent overlay を同じ概念で扱える。
+これにより、`bg`、立ち絵、テキストボックス、選択肢、Game Native View、HTML/Servo/DOM View、modal、debug overlay、Agent overlay を同じ概念で扱える。
 
 関連:
 
 - [Object Hooks and Memoization](../01-language/hooks-and-memoization.md)
 
 - [wgpu renderer](wgpu-renderer.md)
-- [Game Native UI](ui-reactive.md)
-- [HTML / Servo / DOM UI](html-servo-dom.md)
+- [Game Native View](view-reactive.md)
+- [HTML / Servo / DOM View](html-servo-dom.md)
 - [Agent Debug Bus](../04-tooling/agent-debug-mcp-cli.md)
 - [grammar](../01-language/grammar.md)
 
@@ -43,7 +43,7 @@ pub struct RenderSpec {
 4. modal / focus / pointer capture / keyboard scope を持つ
 5. Agent Debug Bus へ bbox / polygon / mask / z-order を出す
 6. headless でも同じ routing ができる
-7. Servo/DOM HTML UI も tree 上の layer として扱う
+7. Servo/DOM HTML View も tree 上の layer として扱う
 ```
 
 ---
@@ -99,8 +99,8 @@ pub enum RenderPhase {
     Characters,
     Effects,
     Dialogue,
-    GameUi,
-    HtmlUi,
+    GameView,
+    HtmlView,
     Modal,
     Debug,
     AgentOverlay,
@@ -127,8 +127,8 @@ pub enum LayerKind {
     Effect,
     Dialogue,
     Choice,
-    NativeUi,
-    HtmlUi,
+    NativeView,
+    HtmlView,
     Activity,
     DebugOverlay,
     AgentOverlay,
@@ -145,10 +145,10 @@ z=200  Character       立ち絵
 z=300  Effect          パーティクル、前景演出
 z=500  Dialogue        textbox
 z=550  Choice          選択肢
-z=700  NativeUi        HUD、設定ショートカット
-z=800  HtmlUi          Servo/DOM panel
+z=700  NativeView        HUD、設定ショートカット
+z=800  HtmlView          Servo/DOM panel
 z=900  Modal           confirmation dialog
-z=950  DebugOverlay    debug UI
+z=950  DebugOverlay    debug View
 z=990  AgentOverlay    bbox/label overlay
 ```
 
@@ -274,7 +274,7 @@ pub enum HitTestSource {
 推奨:
 
 ```text
-Native UI:
+Native View:
   LayoutBoxes / Polygon
 
 TextBox:
@@ -289,7 +289,7 @@ Sprite:
 Vector/SVG:
   Polygon or Mask
 
-HTML UI:
+HTML View:
   DOM/Servo bridge bbox
 
 Agent overlay:
@@ -378,7 +378,7 @@ layer @layer.confirm_dialog phase Modal z 900 {
         block_below = true
     }
 
-    ui ConfirmDialog(...)
+    view ConfirmDialog(...)
 }
 ```
 
@@ -406,7 +406,7 @@ scope {
     layer @layer.dialog phase Dialogue z 500 {
         input hit_test
         TextBox(current_text())
-            .agent_target(@ui.textbox.main)
+            .agent_target(@view.textbox.main)
     }
 
     layer @layer.choices phase Dialogue z 550 {
@@ -425,7 +425,7 @@ requires visible => input.policy == .Modal
     render {
         target = offscreen(cache = until_invalidated)
         blend = alpha
-        postprocess @shader.ui.glass_panel
+        postprocess @shader.view.glass_panel
     }
 
     input {
@@ -438,7 +438,7 @@ requires visible => input.policy == .Modal
 
     hit_test layout_boxes
 
-    ui SettingsPanel(config = bind state.config)
+    view SettingsPanel(config = bind state.config)
 }
 ```
 
@@ -475,7 +475,7 @@ input = "passthrough"
 hit_test = "bbox"
 
 [layers.defaults.dialogue]
-order = "ui(500)"
+order = "view(500)"
 z = 500
 input = "hit_test"
 hit_test = "layout_boxes"
@@ -489,16 +489,16 @@ hit_test = "layout_boxes"
 
 ---
 
-## 11. UI viewとの接続
+## 11. Viewとの接続
 
-Game Native UI view は暗黙に `NativeUi` layer を生成してもよい。
+Game Native View は暗黙に `NativeView` layer を生成してもよい。
 
 ```arcw
 view Hud(state: GameState) {
     Row {
-        Button("設定").agent_target(@ui.settings.open)
+        Button("設定").agent_target(@view.settings.open)
     }
-    .layer(@layer.hud, order = ui(700))
+    .layer(@layer.hud, order = view(700))
 }
 ```
 
@@ -506,19 +506,19 @@ view Hud(state: GameState) {
 
 ```arcw
 layer @layer.hud {
-    order = ui(700)
+    order = view(700)
     input = hit_test
-    ui Hud(state)
+    view Hud(state)
 }
 ```
 
-UI tree の node は所属layerを持つ。
+View tree の node は所属layerを持つ。
 
 ```rust
-pub struct UiNode {
+pub struct ViewNode {
     pub layer: LayerId,
     pub entity: Option<EntityId>,
-    pub role: UiRole,
+    pub role: ViewRole,
     pub bbox: BBox,
     pub actions: Vec<ActionTarget>,
 }
@@ -528,12 +528,12 @@ pub struct UiNode {
 
 ## 12. HTML / Servo / DOM layer
 
-HTML/CSS UI は `HtmlUi` phase の layer として扱う。
+HTML/CSS View は `HtmlView` phase の layer として扱う。
 
 ```arcw
-layer @layer.html_settings phase HtmlUi z 800 {
+layer @layer.html_settings phase HtmlView z 800 {
     input modal
-    html_panel @ui.settings_html
+    html_panel @view.settings_html
 }
 ```
 
@@ -541,7 +541,7 @@ Native:
 
 ```text
 LayerTree
-  → ServoUiHost
+  → ServoViewHost
   → WebView bbox/action metadata
   → InputRouter
 ```
@@ -662,7 +662,7 @@ visual test:
 ```arcw
 test @test.settings_blocks_choice visual {
     goto @flow.opening
-    invoke(@ui.settings.open)
+    invoke(@view.settings.open)
 
     expect.layer(@layer.settings, state=.modal_visible)
     expect.layer(@layer.choices, blocked_by=@layer.settings)
@@ -735,7 +735,7 @@ arcweft-layer-lsp
 
 1. `LayerTree` / `LayerNode` / `LayerSpec` を `RenderSpec` に入れる。
 2. `InputRouter` を作り、semantic action と pointer hit-test を layer top-down に統一する。
-3. Game Native UI node に所属layerを持たせる。
+3. Game Native View node に所属layerを持たせる。
 4. Object ID pass を layer/object ID と結びつける。
 5. Agent Observation に `layers` を追加する。
 6. Modal/focus/capture を導入する。
@@ -753,7 +753,7 @@ arcweft-layer-lsp
 3. 入力は top-most layer から routing する。
 4. modal/focus/capture は layer state として管理する。
 5. Agent bbox/mask/action target は layer 情報を必ず持つ。
-6. HTML/Servo/DOM UI も LayerTree 上の HtmlUi layer として扱う。
+6. HTML/Servo/DOM View も LayerTree 上の HtmlView layer として扱う。
 7. Activity も layer content として扱う。
 8. headless と windowed で同じ InputRouter を使う。
 9. `#<...>.method` のように境界が必要な参照は従来通り `#<...>` を使う。
@@ -769,7 +769,7 @@ Layer は hook 対象である。描画・入力・layout・Agent 観測の各 p
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
-    hit_test = ui_layout
+    hit_test = view_layout
 }
 
 hook @hook.layer.choices.pointer_enter

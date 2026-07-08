@@ -2,17 +2,17 @@
 
 | Area | Status | Evidence in package | Notes |
 | --- | --- | --- | --- |
-| Transitionable property set | Implemented | `arcweft-ui/src/motion.rs`, `style.rs` patch | Paint-only properties. Layout properties are excluded. |
+| Transitionable property set | Implemented | `arcweft-view/src/motion.rs`, `style.rs` patch | Paint-only properties. Layout properties are excluded. |
 | Background color interpolation | Implemented | `motion_transitions.rs` | Channel interpolation through `Rgba8::lerp`. |
 | Opacity interpolation | Implemented | `motion_transitions.rs` | `Milli` interpolation. |
-| Transform scale interpolation | Implemented | `motion_transitions.rs` | `UiPropertyKind::Scale`. Translate/rotate use same `Milli` path. |
+| Transform scale interpolation | Implemented | `motion_transitions.rs` | `ViewPropertyKind::Scale`. Translate/rotate use same `Milli` path. |
 | Outline width interpolation | Implemented | `motion_transitions.rs` | Included because it is paint invalidation in current style model. |
-| Easing functions | Implemented | `UiEasingFunction` | Linear, CSS ease aliases, cubic-bezier, steps. |
-| Keyframes | Implemented | `UiKeyframeTrack` | Per-property track with ordered offsets. |
-| Interruption/reversal | Implemented | `UiTransition::interrupt`, tests | New transition starts from sampled current value. |
-| Reduced motion | Implemented | `UiReducedMotionPolicy`, tests | Full, Shorten, Disable. |
-| Animation evidence | Implemented | `UiMotionSample` | Timestamp, source/target/sampled value, progress fields. |
-| Renderer ownership separation | Implemented by design | design docs | Motion is in `arcweft-ui`; GPU effects are in `arcweft-render-wgpu`. |
+| Easing functions | Implemented | `ViewEasingFunction` | Linear, CSS ease aliases, cubic-bezier, steps. |
+| Keyframes | Implemented | `ViewKeyframeTrack` | Per-property track with ordered offsets. |
+| Interruption/reversal | Implemented | `ViewTransition::interrupt`, tests | New transition starts from sampled current value. |
+| Reduced motion | Implemented | `ViewReducedMotionPolicy`, tests | Full, Shorten, Disable. |
+| Animation evidence | Implemented | `ViewMotionSample` | Timestamp, source/target/sampled value, progress fields. |
+| Renderer ownership separation | Implemented by design | design docs | Motion is in `arcweft-view`; GPU effects are in `arcweft-render-wgpu`. |
 | `clip-path: inset(...)` pixels | Implemented | `apply_clip_plan`, WGSL, tests | Analytic shader pass. |
 | Circle/ellipse clip pixels | Implemented | `apply_clip_plan`, WGSL, tests | Circle lowered through ellipse plan. |
 | Polygon clip pixels | Implemented | `apply_clip_plan`, WGSL, tests | Up to 16 vertices; nonzero/evenodd fill. |

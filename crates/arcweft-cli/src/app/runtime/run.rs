@@ -1180,7 +1180,7 @@ name = "watch_virtual_addition_test"
             path: source,
         };
         let before = watch_inputs(&selection).expect("initial watch inputs");
-        let asset_dir = source_root.join(".arcweft").join("asset").join("ui");
+        let asset_dir = source_root.join(".arcweft").join("asset").join("view");
         fs::create_dir_all(&asset_dir).expect("asset dir");
         fs::write(asset_dir.join("logo.png"), [0_u8, 1, 2, 3]).expect("asset writes");
 

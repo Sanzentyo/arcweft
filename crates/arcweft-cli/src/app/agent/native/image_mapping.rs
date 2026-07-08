@@ -203,18 +203,18 @@ pub(super) fn agent_observed_rich_text(object: &AgentObservedObject) -> &LineDis
     not(test),
     expect(
         dead_code,
-        reason = "wired into live Agent observe once runtime UI commits are exposed to the CLI adapter"
+        reason = "wired into live Agent observe once runtime View commits are exposed to the CLI adapter"
     )
 )]
-pub(crate) fn agent_image_objects_from_ui_frame(
+pub(crate) fn agent_image_objects_from_view_frame(
     session_id: &str,
     step: usize,
     viewport: &AgentViewport,
-    frame: &UiFrameCommit,
-    images: &UiImageSourceTable,
+    frame: &ViewFrameCommit,
+    images: &ViewImageSourceTable,
     visual_time_millis: u64,
 ) -> Vec<AgentObservedObject> {
-    agent_image_observation_from_ui_frame(
+    agent_image_observation_from_view_frame(
         session_id,
         step,
         viewport,
@@ -225,20 +225,20 @@ pub(crate) fn agent_image_objects_from_ui_frame(
     .objects
 }
 
-pub(super) fn agent_image_observation_from_ui_frame(
+pub(super) fn agent_image_observation_from_view_frame(
     session_id: &str,
     step: usize,
     viewport: &AgentViewport,
-    frame: &UiFrameCommit,
-    images: &UiImageSourceTable,
+    frame: &ViewFrameCommit,
+    images: &ViewImageSourceTable,
     visual_time_millis: u64,
-) -> AgentUiImageObservation {
-    let mut observation = AgentUiImageObservation::default();
+) -> AgentViewImageObservation {
+    let mut observation = AgentViewImageObservation::default();
     frame
         .image_items()
         .into_iter()
         .filter_map(|item| {
-            agent_image_observation_from_ui_item(
+            agent_image_observation_from_view_item(
                 session_id,
                 step,
                 viewport,
@@ -257,12 +257,12 @@ pub(super) fn agent_image_observation_from_ui_frame(
     observation
 }
 
-pub(super) fn agent_image_observation_from_ui_item(
+pub(super) fn agent_image_observation_from_view_item(
     session_id: &str,
     step: usize,
     viewport: &AgentViewport,
-    item: &UiFrameImageItem,
-    images: &UiImageSourceTable,
+    item: &ViewFrameImageItem,
+    images: &ViewImageSourceTable,
     visual_time_millis: u64,
 ) -> Option<(AgentObservedObject, AgentStoredImageFrame)> {
     let source = images.get(item.image())?;
@@ -284,7 +284,7 @@ pub(super) fn agent_image_observation_from_ui_item(
         item.node().0,
         item.image().0
     );
-    let source_id = format!("ui.image.{}", item.image().0);
+    let source_id = format!("view.image.{}", item.image().0);
     let metadata = agent_image_observation_metadata(item, &source_id, presentation, semantic);
     let opacity_milli = source.opacity_milli();
     let fit = source.fit();
@@ -299,8 +299,8 @@ pub(super) fn agent_image_observation_from_ui_item(
             entity: Some(metadata.entity.clone()),
             layer: item.layer().public_id().as_str().to_owned(),
             role: "image".to_owned(),
-            visible: semantic.is_none_or(arcweft_view::UiSemanticNode::visible),
-            enabled: semantic.is_none_or(arcweft_view::UiSemanticNode::enabled),
+            visible: semantic.is_none_or(arcweft_view::ViewSemanticNode::visible),
+            enabled: semantic.is_none_or(arcweft_view::ViewSemanticNode::enabled),
             bbox: bbox.clone(),
             polygon,
             capture_refs: agent_object_capture_refs_with_source(
@@ -368,10 +368,10 @@ pub(super) struct AgentImageObservationMetadata {
 }
 
 pub(super) fn agent_image_observation_metadata(
-    item: &UiFrameImageItem,
+    item: &ViewFrameImageItem,
     source_id: &str,
-    presentation: Option<&arcweft_view::UiImagePresentationMetadata>,
-    semantic: Option<&arcweft_view::UiSemanticNode>,
+    presentation: Option<&arcweft_view::ViewImagePresentationMetadata>,
+    semantic: Option<&arcweft_view::ViewSemanticNode>,
 ) -> AgentImageObservationMetadata {
     AgentImageObservationMetadata {
         entity: presentation.map_or_else(
@@ -382,7 +382,7 @@ pub(super) fn agent_image_observation_metadata(
             || item.layer().public_id().as_str().to_owned(),
             |presentation| presentation.layer().as_str().to_owned(),
         ),
-        object_depth: presentation.map(arcweft_view::UiImagePresentationMetadata::depth_milli),
+        object_depth: presentation.map(arcweft_view::ViewImagePresentationMetadata::depth_milli),
         target: presentation
             .map(|presentation| presentation.target().as_str().to_owned())
             .or_else(|| semantic.map(|semantic| semantic.target().id().as_str().to_owned())),
@@ -414,8 +414,8 @@ pub(super) fn agent_image_observation_metadata(
 }
 
 pub(super) fn agent_image_observation_actions(
-    presentation: Option<&arcweft_view::UiImagePresentationMetadata>,
-    semantic: Option<&arcweft_view::UiSemanticNode>,
+    presentation: Option<&arcweft_view::ViewImagePresentationMetadata>,
+    semantic: Option<&arcweft_view::ViewSemanticNode>,
 ) -> Vec<String> {
     presentation.map_or_else(
         || {

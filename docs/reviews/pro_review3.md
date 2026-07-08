@@ -1006,11 +1006,11 @@ pub struct ChoiceOptionPlan<R> {
     enabled: Bool
     order: i32
 
-    ui: ChoiceOptionUiState
+    ui: ChoiceOptionViewState
     select: ChoiceSelectBlock<R>
 }
 
-pub struct ChoiceOptionUiState {
+pub struct ChoiceOptionViewState {
     disabled_reason: Option<RichText>
     tooltip: Option<RichText>
     badge: Option<RichText>

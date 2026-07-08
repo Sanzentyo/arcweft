@@ -1,6 +1,6 @@
 # Virtual Controller Manifest Schema
 
-Virtual controller manifests describe touch UI controls that emit Arcweft `InputAction` values.
+Virtual controller manifests describe touch View controls that emit Arcweft `InputAction` values.
 
 Related chapters:
 

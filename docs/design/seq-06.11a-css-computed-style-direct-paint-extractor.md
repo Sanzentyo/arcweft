@@ -33,8 +33,8 @@ The module owns:
 
 It does not own:
 
-- product UI resource codecs;
-- retained UI program/style resolution;
+- product View resource codecs;
+- retained View program/style resolution;
 - native/web player frame attachment;
 - renderer pass allocation;
 - filesystem or network image loading.

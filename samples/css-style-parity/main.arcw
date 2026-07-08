@@ -31,7 +31,7 @@ pub dialogue defaults @dialogue.defaults {
 }
 
 style css_style_parity {
-  token font.display_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
+  token font.display_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-view")
   token color.panel = rgba(15, 21, 31, 238)
   token color.panel_hover = rgba(30, 44, 59, 242)
   token color.accent = rgba(100, 210, 200, 255)

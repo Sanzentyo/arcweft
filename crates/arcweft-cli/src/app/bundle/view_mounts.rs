@@ -27,7 +27,7 @@ fn view_ids_equivalent(left: &str, right: &str) -> bool {
 fn view_id_suffix(value: &str) -> &str {
     value
         .strip_prefix("view.")
-        .or_else(|| value.strip_prefix("ui."))
+        .or_else(|| value.strip_prefix("view."))
         .unwrap_or(value)
 }
 
@@ -114,15 +114,18 @@ fn collect_mounted_view_ids(items: &[HirFlowItem], ids: &mut BTreeSet<String>) {
 fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
     match stmt {
         Stmt::Let { expr, .. }
-        | Stmt::Return(expr)
-        | Stmt::Goto(expr)
-        | Stmt::Yield(expr)
-        | Stmt::Close(expr)
-        | Stmt::Select(expr)
-        | Stmt::Expr(expr)
-        | Stmt::Defer { expr, .. }
+        | Stmt::Return { expr, .. }
+        | Stmt::Expr { expr, .. }
         | Stmt::Out { expr, .. } => collect_mounted_view_ids_from_expr(expr, ids),
-        Stmt::Assign { target, expr } | Stmt::LifetimeSet { target, expr } => {
+        Stmt::Defer { expr, .. } => collect_mounted_view_ids_from_expr(expr.expr(), ids),
+        Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+            collect_mounted_view_ids_from_expr(expr.expr(), ids);
+        }
+        Stmt::Assign { target, expr } => {
+            collect_mounted_view_ids_from_expr(target.expr(), ids);
+            collect_mounted_view_ids_from_expr(expr.expr(), ids);
+        }
+        Stmt::LifetimeSet { target, expr } => {
             collect_mounted_view_ids_from_expr(target, ids);
             collect_mounted_view_ids_from_expr(expr, ids);
         }
@@ -139,7 +142,7 @@ fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
             }
         }
         Stmt::LetActionReceive { action, .. } => {
-            collect_mounted_view_ids_from_expr(action, ids);
+            collect_mounted_view_ids_from_expr(action.expr(), ids);
         }
         Stmt::Thread(thread) => {
             collect_mounted_view_ids_from_syntax_flow_items(thread.body(), ids);
@@ -164,29 +167,29 @@ fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
             body,
             else_body,
         } => {
-            collect_mounted_view_ids_from_expr(condition, ids);
+            collect_mounted_view_ids_from_expr(condition.expr(), ids);
             collect_mounted_view_ids_from_stmts(body, ids);
             collect_mounted_view_ids_from_stmts(else_body, ids);
         }
         Stmt::While { condition, body } => {
-            collect_mounted_view_ids_from_expr(condition, ids);
+            collect_mounted_view_ids_from_expr(condition.expr(), ids);
             collect_mounted_view_ids_from_stmts(body, ids);
         }
         Stmt::WhileLet {
             expr, guard, body, ..
         } => {
-            collect_mounted_view_ids_from_expr(expr, ids);
+            collect_mounted_view_ids_from_expr(expr.expr(), ids);
             if let Some(guard) = guard {
-                collect_mounted_view_ids_from_expr(guard, ids);
+                collect_mounted_view_ids_from_expr(guard.expr(), ids);
             }
             collect_mounted_view_ids_from_stmts(body, ids);
         }
         Stmt::For { source, body, .. } => {
-            collect_mounted_view_ids_from_expr(source, ids);
+            collect_mounted_view_ids_from_expr(source.expr(), ids);
             collect_mounted_view_ids_from_stmts(body, ids);
         }
         Stmt::Match { expr, arms } => {
-            collect_mounted_view_ids_from_expr(expr, ids);
+            collect_mounted_view_ids_from_expr(expr.expr(), ids);
             for arm in arms {
                 if let Some(guard) = arm.guard() {
                     collect_mounted_view_ids_from_expr(guard, ids);
