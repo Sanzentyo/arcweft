@@ -32,6 +32,9 @@ use arcweft_lang_hir::syntax::{
 };
 use std::{cell::Cell, collections::BTreeMap};
 
+mod enum_constructor;
+use enum_constructor::{lower_constructor_call, lower_expected_enum_record_constructor};
+
 #[derive(Clone, Copy)]
 pub(crate) struct RuntimePureHelperLookup<'helpers, 'locals> {
     ids: &'helpers BTreeMap<String, RuntimePureHelperId>,
@@ -295,6 +298,9 @@ pub(crate) fn lower_runtime_expr_strict_with_expected_type(
     {
         helpers.next_expression_id();
         lower_partial_placeholder_function_expr(expr, Some(helpers))
+    } else if let Some(lowered) = lower_expected_enum_record_constructor(expr, expected_ty, helpers)
+    {
+        lowered
     } else {
         lower_runtime_expr_strict_with_helpers(expr, Some(helpers))
     }
@@ -2076,33 +2082,6 @@ fn lower_strict_match_expr(
                 })
             })
             .collect::<Result<Vec<_>, String>>()?,
-    })
-}
-
-fn lower_constructor_call(
-    callee: &Expr,
-    args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
-) -> Option<RuntimeExpr> {
-    let callee = callee.dotted_selector_label()?;
-    let (path, name) = constructor_path(&callee)?;
-    if args.len() > 1 {
-        return None;
-    }
-    let payload = args
-        .first()
-        .and_then(|arg| match arg {
-            CallArg::Positional(value) => Some(value),
-            CallArg::Named { .. } | CallArg::Spread { .. } => None,
-        })
-        .map(|payload| lower_runtime_expr_strict_with_helpers(payload, helpers))
-        .transpose()
-        .ok()?
-        .map(Box::new);
-    Some(RuntimeExpr::Variant {
-        path,
-        name,
-        payload,
     })
 }
 

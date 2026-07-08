@@ -40,7 +40,7 @@ explicit requirements remain in request/design space.
 | Canonical primitive spellings without compatibility aliases or formatter shims | Status index records accepted canonical primitive labels and rejected non-canonical spellings. | Implemented |
 | Keep `Unit` / `Never` consistent | Status index records canonical `Unit` / `Never` behavior as part of primitive spelling. | Implemented |
 | Keep relative IDs consistent | Runtime ID path/public-label split and AWBC typed flow lookup are implemented; atom-table storage is deferred until profiling evidence. | Implemented except atom-table non-goal |
-| Keep enum shorthand behavior consistent | Enum shorthand behavior is included in the broad status/request contract, but this audit does not add new evidence beyond existing sema/runtime-plan tests. | Needs stronger audit if goal completion is claimed |
+| Keep enum shorthand behavior consistent | Sema coverage now verifies user-defined unit, tuple-payload, and record-payload enum short constructors through expected-type resolution. Runtime-plan coverage verifies the same unit, tuple-payload, and record-payload short constructors lower to `RuntimeExpr::Variant` instead of a `DataFormat.Json`-only path or plain record payload. | Implemented |
 | Update docs, samples, diagnostics, and tests across parser/HIR/sema/runtime-plan/LSP | Implementation logs and status index list parser, sema, runtime-plan, AWBC, LSP, sample, diagnostic, and source-range evidence. | Broadly implemented; final claim requires full test audit |
 | Split underspecified or larger future work into requests | Spread partials, AWBC resumable apply/persisted closures, non-helper callable allocation, closure effect-row finalization, and runtime-ID atom-table storage all have request/design boundaries. | Implemented |
 
@@ -57,8 +57,6 @@ The goal is not complete because these explicit areas remain unresolved:
    `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
 4. Full closure effect-row final contract:
    `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
-5. Stronger completion evidence for enum shorthand consistency before the
-   overall goal can be marked complete.
 
 Runtime ID atom-table storage remains deliberately deferred until profiling
 evidence justifies carrying table context through runtime-plan/data-format
@@ -74,4 +72,9 @@ goal audit. They must not be folded into function-stack completion evidence.
 
 ```bash
 git diff --check -- docs/implementation docs/reviews/requests
+cargo test -p arcweft-lang-sema --all-features expected_type_resolves_user_enum_short_variant -- --nocapture
+cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_user_enum_shorthand_payloads_to_variants -- --nocapture
+cargo check -p arcweft-lang-sema -p arcweft-runtime-plan --all-targets --all-features
+cargo clippy -p arcweft-lang-sema -p arcweft-runtime-plan --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-enum-shorthand-2026-07-08
 ```

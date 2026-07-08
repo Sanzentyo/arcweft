@@ -18,8 +18,9 @@ Related slices are:
 
 ## Current Repository State
 
-- At the start of this refresh, `main` and `origin/main` were aligned at
-  `e03702f5 Split remaining function stack design requests`.
+- At the start of the enum-shorthand evidence refresh, `main` and
+  `origin/main` were aligned at
+  `396a6831 Audit function stack goal completion evidence`.
 - The last completed implementation slices were the source-range follow-up for
   thread expression body statement ranges, the authored-payload conversion for
   `Stmt::Signal` / `Stmt::LifetimeSet`, and the expression source-range
@@ -52,6 +53,10 @@ still desired.
   primitives are the accepted surface.
 - Non-canonical spellings such as `Bool`, `Char`, `string`, `int`, `uint`,
   `float`, and `Number` are rejected rather than normalized.
+- Expected-type enum shorthand is verified for user-defined unit variants,
+  tuple payload constructors, and record payload constructors. The runtime-plan
+  evidence confirms those short constructors lower to `RuntimeExpr::Variant`
+  rather than through a `DataFormat`-only special case or a plain record.
 
 ### Curried Calls and Function Values
 
@@ -162,9 +167,11 @@ still desired.
 ## Implementation-Ready Remaining Work
 
 The previously identified AWBC flow-target runtime-ID cleanup is implemented.
-No additional concrete implementation-ready function-stack item is currently
-identified from the status index without either finding another typed-key
-cleanup site in code or receiving more design for the items below.
+The enum-shorthand evidence gap is also implemented with focused sema and
+runtime-plan coverage. No additional concrete implementation-ready
+function-stack item is currently identified from the status index without
+either finding another typed-key cleanup site in code or receiving more design
+for the items below.
 
 Continue runtime-ID cleanup only for concrete lookup/index maps that still use
 public strings where an owned typed key exists. Do not redesign AWBC/schema
@@ -213,8 +220,9 @@ being marked complete.
 
 ## Recommended Next Slice
 
-The source-range/inlay audit is represented by the coverage matrix, and the
-known AWBC flow-target runtime-ID cleanup has been implemented. The larger
+The source-range/inlay audit is represented by the coverage matrix, the known
+AWBC flow-target runtime-ID cleanup has been implemented, and the enum
+shorthand evidence gap now has focused sema/runtime-plan coverage. The larger
 remaining goal items now have request/design files and should stay in
 request/design space until those contracts are returned, unless another
 specific typed-key cleanup site is found by code audit.

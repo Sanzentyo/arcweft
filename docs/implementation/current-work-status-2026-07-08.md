@@ -7,8 +7,8 @@ or design work.
 
 ## Repository Baseline
 
-- Current checked-in head before this completion audit:
-  `e03702f5 Split remaining function stack design requests`.
+- Current checked-in head before this enum-shorthand evidence cut:
+  `396a6831 Audit function stack goal completion evidence`.
 - `main` and `origin/main` are aligned at that head.
 - The dirty files at this audit point are unrelated View rendering, font,
   sample, Web IME/player, and runtime-driver text-input files:
@@ -79,6 +79,9 @@ The following is implemented and evidenced by tests or implementation logs:
 - Data-last method fallback exists after inherent/trait/env method resolution,
   with deterministic runtime argument order and ambiguity diagnostics for the
   implemented fixed-argument cases.
+- Expected-type enum shorthand is verified for user-defined unit variants,
+  tuple payload constructors, and record payload constructors through sema and
+  runtime-plan lowering.
 - Closure capture inventory, borrowed-capture suspension diagnostics, closure
   effect composition on invocation, numeric fallback lints, function-valued let
   inlays, and opt-in expression type inlays are implemented.

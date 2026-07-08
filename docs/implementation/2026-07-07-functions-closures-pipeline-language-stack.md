@@ -744,9 +744,24 @@ coverage fixes canonical function type labels as right-associated
 primitive name.
 The enum shorthand evidence cut has passing sema coverage that user-defined
 unit enum variants such as `.Calm` / `.Alert` resolve from expected types in
-`let` ascriptions, function arguments, and nested value expressions. This locks
-the expected-type enum catalog path rather than relying on a `DataFormat.Json`
-special case.
+`let` ascriptions, function arguments, and nested value expressions. The
+follow-up coverage extends the same user-defined enum fixture to tuple payload
+and record payload constructors such as `.WithScore(7i64)` and
+`WithMeta { label = "ready" }`, and runtime-plan coverage now verifies that
+unit, tuple-payload, and record-payload short constructors lower to
+`RuntimeExpr::Variant`. This locks the expected-type enum catalog path rather
+than relying on a `DataFormat.Json` special case.
+Focused validation for the follow-up passed with
+`cargo test -p arcweft-lang-sema --all-features expected_type_resolves_user_enum_short_variant -- --nocapture`,
+`cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_user_enum_shorthand_payloads_to_variants -- --nocapture`,
+`cargo check -p arcweft-lang-sema -p arcweft-runtime-plan --all-targets --all-features`,
+and
+`cargo clippy -p arcweft-lang-sema -p arcweft-runtime-plan --all-targets --all-features`.
+The structure audit was recorded under
+`docs/implementation/structure-audits/function-enum-shorthand-2026-07-08`;
+after moving enum-constructor lowering into its own responsibility module, the
+audit returned to the existing single production-size error in
+`crates/arcweft-cli/src/app/bundle_view.rs`.
 
 The closure capture and pattern-parameter cuts have passing sema coverage for
 borrowed closure captures crossing `await`, `yield`, thread, and defer

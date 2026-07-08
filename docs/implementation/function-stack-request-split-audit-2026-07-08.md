@@ -23,6 +23,13 @@ from the status index without either:
   owned typed key exists; or
 - receiving a design contract for one of the remaining broad items.
 
+Follow-up: the later requirement-by-requirement completion audit identified
+one evidence-level implementation item rather than a new design request:
+expected-type enum shorthand for user-defined tuple and record payload
+constructors needed focused sema/runtime-plan coverage. That gap is closed in
+the enum-shorthand evidence cut and does not change the request/design split
+for the broader items below.
+
 ## Request Coverage
 
 Remaining broad items now map to request/design files:

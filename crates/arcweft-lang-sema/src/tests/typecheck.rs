@@ -830,10 +830,12 @@ flow @flow.expected_values expected_values {
 #[test]
 fn expected_type_resolves_user_enum_short_variant() {
     let tree = parse_ok(
-        r"
+        r#"
 enum Mood {
     Calm,
     Alert,
+    WithScore(i64),
+    WithMeta { label: String },
 }
 
 fn echo_mood(mood: Mood) -> Mood {
@@ -844,9 +846,11 @@ flow @flow.enum_shorthand enum_shorthand {
     let mood: Mood = .Alert
     let echoed: Mood = echo_mood(.Calm)
     let nested: Mood = { .Alert }
-    let _ = (mood, echoed, nested)
+    let scored: Mood = .WithScore(7i64)
+    let meta: Mood = WithMeta { label = "ready" }
+    let _ = (mood, echoed, nested, scored, meta)
 }
-",
+"#,
     );
     let hir = lower_to_hir(&tree).expect("user enum shorthand fixture lowers");
     validate_typecheck_ready(&hir).expect("user enum shorthand fixture is typecheck-ready");

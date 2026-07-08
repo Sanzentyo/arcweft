@@ -1497,6 +1497,78 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_user_enum_shorthand_payloads_to_variants() {
+    let tree = parse_ok(
+        r#"
+enum Mood {
+    Alert,
+    WithScore(i64),
+    WithMeta { label: String },
+}
+
+flow @flow.main main {
+    let mood: Mood = .Alert
+    let scored: Mood = .WithScore(7i64)
+    let meta: Mood = WithMeta { label = "ready" }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("user enum shorthand fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("user enum shorthand runtime plan lowers");
+
+    let [
+        FlowOp::Let { expr: mood, .. },
+        FlowOp::Let { expr: scored, .. },
+        FlowOp::Let { expr: meta, .. },
+    ] = plan.flows[0].ops.as_slice()
+    else {
+        panic!(
+            "expected three enum constructor bindings, got {:?}",
+            plan.flows[0].ops
+        );
+    };
+    assert!(matches!(
+        mood,
+        RuntimeExpr::Variant {
+            path: None,
+            name,
+            payload: None
+        } if name == "Alert"
+    ));
+    assert!(matches!(
+        scored,
+        RuntimeExpr::Variant {
+            path: None,
+            name,
+            payload: Some(payload)
+        } if name == "WithScore"
+            && matches!(
+                payload.as_ref(),
+                RuntimeExpr::Value(RuntimeValue::Int(value)) if value.exact_i64() == Some(7)
+            )
+    ));
+    assert!(matches!(
+        meta,
+        RuntimeExpr::Variant {
+            path: None,
+            name,
+            payload: Some(payload)
+        } if name == "WithMeta"
+            && matches!(
+                payload.as_ref(),
+                RuntimeExpr::Record(fields)
+                    if fields.len() == 1
+                        && fields[0].name == "label"
+                        && matches!(
+                            &fields[0].value,
+                            RuntimeExpr::Value(RuntimeValue::String(value)) if value == "ready"
+                        )
+            )
+    ));
+}
+
+#[test]
 fn runtime_plan_fuses_unused_map_binding_into_following_sum() {
     let tree = parse_ok(
         r"
