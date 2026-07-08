@@ -693,6 +693,22 @@ is recorded. The shadowed-fallback warning cut covers real env-method and trait
 method priority with `method_chain_prefers_real_method_over_data_last_callable_fallback`
 and `method_chain_prefers_trait_method_over_data_last_callable_fallback`.
 
+The spread partial rejection coverage now also fixes the plain fixed-signature
+spread shape requested by
+`2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`:
+`rejects_fixed_signature_partial_call_with_spread` verifies that
+`let f = add(values...)` reports the structured
+`sema.typecheck.unsupported_signature_partial_call` diagnostic, does not
+degrade into generic non-rest spread or missing-argument diagnostics, and does
+not record `SignaturePartialCall` lowering evidence.
+`curried_function_rejects_first_group_spread_partial_with_structured_diagnostic`
+adds the same guarantee for the first call group of a curried top-level
+function, complementing the existing later-group function-value rejection.
+Ambiguous spread fallback is also fixed by
+`method_chain_reports_ambiguous_spread_data_last_fallback_candidates`, which
+reports every viable data-last fallback candidate and records no selected
+fallback lowering evidence.
+
 The unsupported function-value argument diagnostic cut has passing sema
 coverage for rejected spread arguments on a later curried call group
 (`curried_function_value_rejects_later_spread_group_with_structured_diagnostic`)

@@ -312,6 +312,55 @@ flow @flow.curried_spread_later_group curried_spread_later_group {
 }
 
 #[test]
+fn curried_function_rejects_first_group_spread_partial_with_structured_diagnostic() {
+    let tree = parse_ok(
+        r"
+fn add(a: i64)(b: i64) -> i64 {
+    return a + b
+}
+
+flow @flow.curried_spread_first_group curried_spread_first_group {
+    let values = [1i64]
+    let add_values = add(values...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried first-group spread fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried first-group spread fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason }
+                    if function == "add" && reason.contains("missing-input partial")
+            )
+        }),
+        "expected structured curried first-group spread diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("does not accept spread")
+                && !diagnostic.message().contains("missing required argument")
+        }),
+        "curried first-group spread should not degrade into generic call errors: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { callee, .. }
+                    if callee == "add"
+            )
+        }),
+        "rejected curried first-group spread must not record partial lowering evidence"
+    );
+}
+
+#[test]
 fn function_value_rejects_named_arguments_with_structured_diagnostic() {
     let tree = parse_ok(
         r"
@@ -2783,6 +2832,55 @@ flow @flow.partial_call_spread_placeholder partial_call_spread_placeholder {
 }
 
 #[test]
+fn rejects_fixed_signature_partial_call_with_spread() {
+    let tree = parse_ok(
+        r"
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call_spread_only partial_call_spread_only {
+    let values = [1i64]
+    let add_later = add(values...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("spread-only partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("spread-only partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason }
+                    if function == "add" && reason.contains("missing-input partial")
+            )
+        }),
+        "expected structured spread-only partial diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("does not accept spread")
+                && !diagnostic.message().contains("missing required argument")
+        }),
+        "spread-only partial diagnostic should not degrade into generic call errors: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { callee, .. }
+                    if callee == "add"
+            )
+        }),
+        "rejected spread-only partial must not record signature partial lowering evidence"
+    );
+}
+
+#[test]
 fn rejects_named_missing_input_partial_call_mixed_with_spread() {
     let tree = parse_ok(
         r"
@@ -3105,6 +3203,78 @@ flow @flow.method_fallback_ambiguous method_fallback_ambiguous {
             )
         }),
         "ambiguous fallback must not record a selected lowering"
+    );
+}
+
+#[test]
+fn method_chain_reports_ambiguous_spread_data_last_fallback_candidates() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn above(min: i64, value: i64) -> bool {
+    return value > min
+}
+
+flow @flow.method_fallback_spread_ambiguous method_fallback_spread_ambiguous {
+    let thresholds = [80i64]
+    let wrong = score.above(thresholds...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("ambiguous spread fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("ambiguous spread fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::String,
+                [
+                    FunctionParam::required("threshold", TypeKind::I64),
+                    FunctionParam::required("subject", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::AmbiguousDataLastMethodFallback {
+                    method,
+                    receiver: TypeKind::I64,
+                    candidates
+                } if method == "above"
+                    && candidates.len() == 2
+                    && candidates.iter().any(|candidate| candidate.contains("module fn `above`"))
+                    && candidates
+                        .iter()
+                        .any(|candidate| candidate.contains("environment fn `above`"))
+            )
+        }),
+        "expected ambiguous spread fallback diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic
+                .message()
+                .contains("unsupported data-last fallback")
+                && !diagnostic.message().contains("unknown method `above`")
+        }),
+        "ambiguous spread fallback should report candidate ambiguity first: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback { method, .. }
+                    if method == "above"
+            )
+        }),
+        "ambiguous spread fallback must not record a selected lowering"
     );
 }
 
