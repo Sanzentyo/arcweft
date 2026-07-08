@@ -1830,3 +1830,12 @@ that the callback body composes when the returned function is invoked; the new
 that forbidden-effect bounds are enforced at that returned function call.
 Details are recorded in
 `docs/implementation/function-stack-effect-row-returned-closure-no-effect-2026-07-09.md`.
+
+The LSP performed-effect trace follow-up adds
+`diagnostics_surface_performed_effect_trace`, proving that
+`Diagnostic.relatedInformation` includes a direct performed-effect step for an
+`await`-recorded `control.suspend` diagnostic. This complements the existing
+returned-closure LSP trace test that covers function-value calls, returned
+function values, callback edges, and external effect calls. Details are
+recorded in
+`docs/implementation/function-stack-lsp-performed-effect-trace-2026-07-09.md`.

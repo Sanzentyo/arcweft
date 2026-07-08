@@ -108,10 +108,12 @@ not be treated as the final effect-row representation:
 - unsupported non-helper/effectful/suspending callable allocation diagnostics
   from the 07.7 boundary.
 
-The LSP-facing trace currently verifies that a returned-closure path can surface
-steps such as `flow -> returned closure -> higher-order argument -> fs.read`.
-That display is valuable, but the underlying trace should eventually be derived
-from the final row evidence rather than the temporary graph wiring.
+The LSP-facing trace currently verifies that a returned-closure path can
+surface steps such as `flow -> returned closure -> higher-order argument ->
+fs.read`, and that a direct `await` static effect surfaces as a performed
+`control.suspend` step. That display is valuable, but the underlying trace
+should eventually be derived from the final row evidence rather than the
+temporary graph wiring.
 
 ## Remaining Final-Contract Work
 

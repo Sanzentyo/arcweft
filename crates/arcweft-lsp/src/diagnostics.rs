@@ -649,6 +649,55 @@ effects { }
     }
 
     #[test]
+    fn diagnostics_surface_performed_effect_trace() {
+        let source = r"
+extern capability assets {
+    fn load_avatar() -> Need<String, AssetError>
+}
+
+flow @flow.await_avatar await_avatar
+effects { }
+{
+    let avatar = await assets.load_avatar()
+}
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == Some(NumberOrString::String("AWF-EFX-001".to_owned()))
+                    && diagnostic.message.contains("control.suspend")
+            })
+            .expect("performed await effect error is surfaced");
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
+
+        let related = diagnostic
+            .related_information
+            .as_ref()
+            .expect("performed effect trace is surfaced as related information");
+        let rendered = related
+            .iter()
+            .map(|item| item.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains("effect trace for `control.suspend`"),
+            "trace related information was:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("`flow.await_avatar` performs `control.suspend`"),
+            "trace related information was:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("via await"),
+            "trace related information was:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn diagnostics_include_machine_applicable_suggestions_in_lsp_data() {
         let source = r"
 flow @flow.opening {
