@@ -3013,6 +3013,154 @@ flow @flow.partial_call_named_spread partial_call_named_spread {
 }
 
 #[test]
+fn rejects_partial_call_spread_before_positional_fixed_arg() {
+    let tree = parse_ok(
+        r"
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call_spread_then_positional partial_call_spread_then_positional {
+    let values = [1i64]
+    let add_later = add(values..., 2i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("spread-before-positional partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("spread-before-positional partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason }
+                    if function == "add" && reason.contains("followed by fixed partial-call arguments")
+            )
+        }),
+        "expected structured spread-before-positional diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("does not accept spread")
+                && !diagnostic.message().contains("missing required argument")
+        }),
+        "spread-before-positional diagnostic should not degrade into generic call errors: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { callee, .. }
+                    if callee == "add"
+            )
+        }),
+        "rejected spread-before-positional partial must not record signature partial evidence"
+    );
+}
+
+#[test]
+fn rejects_partial_call_spread_before_named_fixed_arg() {
+    let tree = parse_ok(
+        r"
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call_spread_then_named partial_call_spread_then_named {
+    let values = [1i64]
+    let add_later = add(values..., right = 2i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("spread-before-named partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("spread-before-named partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason }
+                    if function == "add" && reason.contains("followed by fixed partial-call arguments")
+            )
+        }),
+        "expected structured spread-before-named diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("does not accept spread")
+                && !diagnostic.message().contains("missing required argument")
+        }),
+        "spread-before-named diagnostic should not degrade into generic call errors: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { callee, .. }
+                    if callee == "add"
+            )
+        }),
+        "rejected spread-before-named partial must not record signature partial evidence"
+    );
+}
+
+#[test]
+fn rejects_partial_call_multiple_spreads_with_structured_diagnostic() {
+    let tree = parse_ok(
+        r"
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call_multiple_spreads partial_call_multiple_spreads {
+    let lefts = [1i64]
+    let rights = [2i64]
+    let add_later = add(lefts..., rights...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("multiple-spread partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("multiple-spread partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason }
+                    if function == "add" && reason.contains("multiple spread arguments")
+            )
+        }),
+        "expected structured multiple-spread partial diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("does not accept spread")
+                && !diagnostic.message().contains("missing required argument")
+        }),
+        "multiple-spread partial diagnostic should not degrade into generic call errors: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { callee, .. }
+                    if callee == "add"
+            )
+        }),
+        "rejected multiple-spread partial must not record signature partial evidence"
+    );
+}
+
+#[test]
 fn non_annotated_function_named_missing_input_typechecks_as_partial_application() {
     let tree = parse_ok(
         r"
@@ -3225,6 +3373,110 @@ flow @flow.method_fallback_spread method_fallback_spread {
             .all(|diagnostic| !diagnostic.message().contains("unknown method `above`")),
         "fallback candidate should not degrade to unknown method: {:?}",
         report.diagnostics
+    );
+}
+
+#[test]
+fn method_chain_reports_spread_then_named_data_last_fallback_as_unsupported() {
+    let tree = parse_ok(
+        r"
+flow @flow.method_fallback_spread_then_named method_fallback_spread_then_named {
+    let thresholds = [80i64]
+    let wrong = score.between(thresholds..., max = 99i64)
+    log.info(wrong)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("spread then named fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("spread then named fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "between",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("max", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason }
+                    if method == "between"
+                        && reason.contains("followed by fixed data-last fallback arguments")
+            )
+        }),
+        "expected spread-then-named fallback diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback { method, .. }
+                    if method == "between"
+            )
+        }),
+        "unsupported spread-then-named fallback must not record selected evidence"
+    );
+}
+
+#[test]
+fn method_chain_reports_multiple_spread_data_last_fallback_as_unsupported() {
+    let tree = parse_ok(
+        r"
+flow @flow.method_fallback_multiple_spreads method_fallback_multiple_spreads {
+    let lows = [60i64]
+    let highs = [90i64]
+    let wrong = score.between(lows..., highs...)
+    log.info(wrong)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("multiple-spread fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("multiple-spread fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "between",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("max", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason }
+                    if method == "between" && reason.contains("multiple spread arguments")
+            )
+        }),
+        "expected multiple-spread fallback diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback { method, .. }
+                    if method == "between"
+            )
+        }),
+        "unsupported multiple-spread fallback must not record selected evidence"
     );
 }
 

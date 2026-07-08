@@ -9,7 +9,7 @@ historical note. For the current active-goal entry point, see
 ## Repository Baseline
 
 - Current pushed function-stack baseline:
-  `486738b31 Handle pipe control-expression RHS placeholders`.
+  the status refresh commit titled `Harden spread rejection diagnostics`.
 - At the start of this cleanup, `main` and `origin/main` were aligned at that
   head.
 - The working copy still has unrelated View/Web/text-input changes. They are
@@ -56,8 +56,10 @@ The active function/closure/currying/pipeline language-stack goal remains
 open. The implemented surface is broad: the narrow 07.7 exact pure-helper call
 gap inside accepted source-local function bodies is implemented, and the latest
 pipe RHS hardening slice now carries `^` substitution through value-position
-`if`, `if let`, and `match` expressions. Remaining completion still depends on
-explicit request/design areas:
+`if`, `if let`, and `match` expressions. The spread rejection boundary now has
+more precise structured diagnostics for spread-before-fixed and multiple-spread
+partial/fallback shapes. Remaining completion still depends on explicit
+request/design areas:
 
 1. Spread partial application and spread data-last fallback semantics.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.

@@ -396,8 +396,10 @@ Current status index:
   top-level function signatures that lower through the annotated or inferred
   helper path. Spread mixed with fixed signature partial-call forms now reports
   `sema.typecheck.unsupported_signature_partial_call` instead of degrading to
-  generic spread or missing-argument errors, and rejected spread partials do not
-  record `SignaturePartialCall` lowering evidence. Executable spread
+  generic spread or missing-argument errors. Spread-before-fixed and
+  multiple-spread partial-call construction now receive specific structured
+  rejection reasons, and rejected spread partials do not record
+  `SignaturePartialCall` lowering evidence. Executable spread
   partial-call inference remains split to
   `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
   because runtime spread expansion, rest parameters, and fixed missing-input
@@ -737,10 +739,20 @@ not record `SignaturePartialCall` lowering evidence.
 `curried_function_rejects_first_group_spread_partial_with_structured_diagnostic`
 adds the same guarantee for the first call group of a curried top-level
 function, complementing the existing later-group function-value rejection.
+`rejects_partial_call_spread_before_positional_fixed_arg`,
+`rejects_partial_call_spread_before_named_fixed_arg`, and
+`rejects_partial_call_multiple_spreads_with_structured_diagnostic` add
+structured rejection coverage for spread-before-fixed and multiple-spread
+partial-call construction, preserving the rule that unsupported spread
+partials do not record selected partial lowering evidence.
 Ambiguous spread fallback is also fixed by
 `method_chain_reports_ambiguous_spread_data_last_fallback_candidates`, which
 reports every viable data-last fallback candidate and records no selected
 fallback lowering evidence.
+`method_chain_reports_spread_then_named_data_last_fallback_as_unsupported` and
+`method_chain_reports_multiple_spread_data_last_fallback_as_unsupported` add
+the matching structured unsupported fallback diagnostics for
+spread-before-fixed and multiple-spread data-last fallback shapes.
 
 The unsupported function-value argument diagnostic cut has passing sema
 coverage for rejected spread arguments on a later curried call group

@@ -10,11 +10,11 @@ For the current entry point and reading order, see
 ## Repository Baseline
 
 - Current pushed function-stack baseline:
-  `486738b31 Handle pipe control-expression RHS placeholders`.
+  the status refresh commit titled `Harden spread rejection diagnostics`.
 - `main` and `origin/main` were aligned at that commit when this gap map was
   refreshed.
-- The previous baseline before the pipe RHS hardening slice was
-  `3455474e9 Materialize source function control expressions`.
+- The previous baseline before the spread rejection hardening slice was
+  `486738b31 Handle pipe control-expression RHS placeholders`.
 - The working copy still contains View/Web/text-input changes. They are not
   function-stack evidence and should be validated as a separate slice before
   being staged or pushed.
@@ -64,6 +64,7 @@ The detailed evidence remains in:
 - `docs/implementation/function-stack-status-rollup-2026-07-09.md`
 - `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`
 - `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
+- `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 
 ## Design-Blocked Remaining Work

@@ -26,7 +26,7 @@ Related slices are:
 ## Current Repository State
 
 - Current pushed function-stack baseline after the latest refresh is
-  `486738b31 Handle pipe control-expression RHS placeholders`.
+  the status refresh commit titled `Harden spread rejection diagnostics`.
 - At the start of the enum-shorthand evidence refresh, `main` and
   `origin/main` were aligned at
   `396a6831 Audit function stack goal completion evidence`.

@@ -266,12 +266,29 @@ impl DataLastMethodFallbackCandidate {
 }
 
 fn unsupported_fallback_arg_reason(args: &[CallArg]) -> Option<&'static str> {
-    let has_spread = args.iter().any(CallArg::is_spread);
-    if has_spread {
-        Some("spread arguments are not supported; use positional arguments")
-    } else {
-        None
+    if !args.iter().any(CallArg::is_spread) {
+        return None;
     }
+    if args.iter().filter(|arg| arg.is_spread()).count() > 1 {
+        return Some(
+            "multiple spread arguments are not supported in data-last fallback; runtime expansion ranges are not specified",
+        );
+    }
+    if spread_is_followed_by_fixed_fallback_arg(args) {
+        return Some(
+            "spread arguments cannot be followed by fixed data-last fallback arguments; runtime argument order is not specified",
+        );
+    }
+    Some("spread arguments are not supported; use positional arguments")
+}
+
+fn spread_is_followed_by_fixed_fallback_arg(args: &[CallArg]) -> bool {
+    let Some(spread_index) = args.iter().position(CallArg::is_spread) else {
+        return false;
+    };
+    args.iter()
+        .skip(spread_index + 1)
+        .any(|arg| !arg.is_spread())
 }
 
 fn function_signature_label(signature: &FunctionSignature) -> String {

@@ -385,10 +385,29 @@ fn unsupported_signature_partial_spread_reason(
     {
         return Some("spread arguments cannot be mixed with `_` placeholder partial calls");
     }
+    if args.iter().filter(|arg| arg.is_spread()).count() > 1 {
+        return Some(
+            "multiple spread arguments cannot be used in partial-call construction; runtime expansion ranges are not specified",
+        );
+    }
+    if spread_is_followed_by_fixed_call_arg(args) {
+        return Some(
+            "spread arguments cannot be followed by fixed partial-call arguments; runtime expansion order is not specified",
+        );
+    }
     let missing_fixed = fixed_signature_missing_inputs_ignoring_spread(params, args)?;
     missing_fixed.then_some(
         "spread arguments cannot be mixed with missing-input partial calls; supply fixed arguments explicitly or define a rest-parameter contract",
     )
+}
+
+fn spread_is_followed_by_fixed_call_arg(args: &[CallArg]) -> bool {
+    let Some(spread_index) = args.iter().position(CallArg::is_spread) else {
+        return false;
+    };
+    args.iter()
+        .skip(spread_index + 1)
+        .any(|arg| !arg.is_spread())
 }
 
 fn fixed_signature_missing_inputs_ignoring_spread(

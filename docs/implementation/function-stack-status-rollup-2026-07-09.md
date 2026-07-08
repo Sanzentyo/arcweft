@@ -32,16 +32,17 @@ Current supporting audits:
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
+- `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/current-work-status-2026-07-09.md`
 
 Current pushed baseline:
 
+- the status refresh commit titled `Harden spread rejection diagnostics`
+
+Previous baseline before the spread rejection hardening slice:
+
 - `486738b31 Handle pipe control-expression RHS placeholders`
-
-Previous baseline before the pipe RHS hardening slice:
-
-- `3455474e9 Materialize source function control expressions`
 
 ## Implemented And Pushed
 

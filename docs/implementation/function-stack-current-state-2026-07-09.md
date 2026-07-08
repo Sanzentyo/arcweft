@@ -11,7 +11,7 @@ complete.
 ## Executive Summary
 
 - The latest pushed function-stack baseline is
-  `486738b31 Handle pipe control-expression RHS placeholders`.
+  the status refresh commit titled `Harden spread rejection diagnostics`.
 - The function-stack worktree is clean at that baseline. The remaining dirty
   files are the separate View/Web/text-input track.
 - Implemented language/runtime surface now covers formal function types,
@@ -28,9 +28,9 @@ complete.
 ## Baseline
 
 - Current pushed function-stack baseline:
-  `486738b31 Handle pipe control-expression RHS placeholders`.
-- The previous function-stack baseline before the pipe RHS hardening slice was
-  `3455474e9 Materialize source function control expressions`.
+  the status refresh commit titled `Harden spread rejection diagnostics`.
+- The previous function-stack baseline before the spread rejection hardening
+  slice was `486738b31 Handle pipe control-expression RHS placeholders`.
 - Earlier status-cleanup and pure-helper source-function commits were
   `7841f2613 Document current function stack gaps` and
   `d8254a253 Allow pure helper calls in source function values`.
@@ -57,6 +57,7 @@ Read these files in this order:
 Supporting focused notes:
 
 - `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
+- `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
