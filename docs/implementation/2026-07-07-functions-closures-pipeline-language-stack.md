@@ -1331,3 +1331,18 @@ descended into the final block value. The collector now splits the authored
 so judgments for `scope=scene` and `key=score + 1i64` point to the visible memo
 head expressions. Focused validation passed with
 `cargo test -p arcweft-lang-sema --all-features memo_block_option_expression_judgments_carry_source_ranges -- --nocapture`.
+
+The dialogue-call line-plan expression source-range follow-up closes a separate
+07.4.1 gap for same-line `with { ... }` attachments on `let` dialogue calls.
+`parse_let_dialogue_call` already attached the parsed plan to
+`Expr::DialogueCall`, but its statement `expr_source` ended at the dialogue
+content bracket, so line-plan-only expression judgments such as `out score +
+1i64` had no authored range. The parser now extends the `Stmt::Let` expression
+source/range through same-line inline plans, and the syntax expression source
+collector descends into `LinePlanItem::Out`, option, let, timed cue, assert,
+plain expression, and simple grouped plan items from the authored dialogue-call
+source. Focused validation passed with
+`cargo test -p arcweft-lang-syntax --all-features --test parser_dialogue_syntax_and_defaults let_dialogue_call_expr_source_includes_same_line_plan -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features dialogue_call_line_plan_expression_judgments_carry_source_ranges -- --nocapture`,
+and
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`.

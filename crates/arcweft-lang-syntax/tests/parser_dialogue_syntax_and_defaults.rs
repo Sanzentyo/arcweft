@@ -1,5 +1,9 @@
 use arcweft_lang_syntax::{
-    ast::{dialogue::DialogueToken, flow::FlowItem, items::Item},
+    ast::{
+        dialogue::DialogueToken,
+        flow::{FlowItem, Stmt},
+        items::Item,
+    },
     expr::Expr,
 };
 
@@ -28,6 +32,43 @@ flow @flow.opening opening {
         same_line.errors()
     );
     assert_eq!(same_line.syntax_stats().block_owned_bytes, 0);
+}
+
+#[test]
+fn let_dialogue_call_expr_source_includes_same_line_plan() {
+    let source = r"
+flow @flow.opening opening {
+    let result = alice.say()[Pick one.] with { out score + 1i64 }
+}
+";
+    let tree = parse_ok(source);
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::Stmt(Stmt::Let {
+        expr: Expr::DialogueCall {
+            plan: Some(plan), ..
+        },
+        expr_source: Some(expr_source),
+        expr_range: Some(expr_range),
+        ..
+    }) = &flow.body()[0]
+    else {
+        panic!("expected dialogue call let binding with source");
+    };
+
+    assert_eq!(
+        expr_source,
+        "alice.say()[Pick one.] with { out score + 1i64 }"
+    );
+    assert_eq!(
+        &source[expr_range.as_range()],
+        "alice.say()[Pick one.] with { out score + 1i64 }"
+    );
+    assert_eq!(
+        &source[plan.range().as_range()],
+        "with { out score + 1i64 }"
+    );
 }
 
 #[test]

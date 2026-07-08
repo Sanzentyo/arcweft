@@ -1963,6 +1963,44 @@ flow @flow.dialogue_source_ranges dialogue_source_ranges {
 }
 
 #[test]
+fn dialogue_call_line_plan_expression_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.dialogue_call_plan_source_ranges dialogue_call_plan_source_ranges {
+    let result = alice.say()[Pick one.] with { out score + 1i64 }
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("dialogue call line-plan source range fixture lowers");
+    let report = analyze_types(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I64),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "score + 1i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "dialogue call line-plan out expression should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "1i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "dialogue call line-plan child literal should carry its own authored range",
+    );
+}
+
+#[test]
 fn container_and_control_expression_judgments_carry_source_ranges() {
     let source = r#"
 struct Choice {

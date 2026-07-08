@@ -112,6 +112,7 @@ impl Parser<'_> {
         let line_leading = start.text.len() - start.text.trim_start().len();
         let trailing_start = start.start + line_leading + close + 1 + trailing_leading;
         let inline_plan = self.take_trailing_line_plan(trailing, trailing_start, &mut cursor);
+        let inline_plan_end = inline_plan.as_ref().map(|plan| plan.range().end());
 
         self.index = cursor + 1;
         let plan = inline_plan.or_else(|| self.take_optional_line_plan());
@@ -128,12 +129,29 @@ impl Parser<'_> {
 
         let (pattern, ty) = parse_binding_pattern(pattern);
         let expr_start = start.start + line_leading + expr_offset + expr_leading;
+        let (expr_source, expr_range) = inline_plan_end
+            .and_then(|end| {
+                let text_base = start.start + line_leading;
+                let source_start = expr_offset + expr_leading;
+                let source_end = end.checked_sub(text_base)?;
+                let source = text.get(source_start..source_end)?.trim_end();
+                Some((
+                    source.to_owned(),
+                    TextRange::new(expr_start, expr_start + source.len()),
+                ))
+            })
+            .unwrap_or_else(|| {
+                (
+                    expr_source.to_owned(),
+                    TextRange::new(expr_start, expr_start + expr_source.len()),
+                )
+            });
         Some(Stmt::Let {
             pattern,
             ty,
             expr,
-            expr_source: Some(expr_source.to_owned()),
-            expr_range: Some(TextRange::new(expr_start, expr_start + expr_source.len())),
+            expr_source: Some(expr_source),
+            expr_range: Some(expr_range),
         })
     }
 

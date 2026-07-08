@@ -1,6 +1,7 @@
 use super::{BinaryOp, CallArg, Expr, ExprOp, MatchExprArm, is_ident_continue};
 use crate::ast::common::TextRange;
 use crate::ast::flow::{FlowItem, Stmt};
+use crate::ast::line_plan::{LinePlan, LinePlanItem};
 
 /// Source range for one parsed expression node.
 ///
@@ -111,9 +112,14 @@ fn collect_container_expr_source_ranges<'a>(
             }
             true
         }
-        Expr::DialogueCall { callee, .. } => {
-            if let Some((open, _close)) = postfix_delimiter_bounds(source, '(', ')') {
-                collect_expr_source_ranges_inner(callee, &source[..open], base, ranges);
+        Expr::DialogueCall { callee, plan, .. } => {
+            if let Some((callee_source, callee_base, plan_body)) =
+                dialogue_call_source_parts(source, base)
+            {
+                collect_expr_source_ranges_inner(callee, callee_source, callee_base, ranges);
+                if let (Some(plan), Some((body_source, body_base))) = (plan, plan_body) {
+                    collect_line_plan_source_ranges(plan, body_source, body_base, ranges);
+                }
             }
             true
         }
@@ -140,6 +146,164 @@ fn collect_container_expr_source_ranges<'a>(
             true
         }
         _ => false,
+    }
+}
+
+type DialogueCallSourceParts<'a> = (&'a str, usize, Option<(&'a str, usize)>);
+
+fn dialogue_call_source_parts(source: &str, base: usize) -> Option<DialogueCallSourceParts<'_>> {
+    let (source, base) = trim_source_with_base(source, base);
+    let content_open = find_top_level_char(source, '[')?;
+    let content_close = matching_delimiter_end(source, content_open, '[', ']')?;
+    let plan_source = source
+        .get(content_close..)
+        .and_then(|source| line_plan_body_source(source, base + content_close));
+    Some((&source[..content_open], base, plan_source))
+}
+
+fn line_plan_body_source(source: &str, base: usize) -> Option<(&str, usize)> {
+    let (source, base) = trim_source_with_base(source, base);
+    let rest = source.strip_prefix("with")?;
+    let (rest, rest_base) = trim_source_with_base(rest, base + "with".len());
+    if let Some(open) = find_top_level_char(rest, '{') {
+        let close = matching_delimiter_end(rest, open, '{', '}')?;
+        return Some((
+            &rest[open + '{'.len_utf8()..close - '}'.len_utf8()],
+            rest_base + open + '{'.len_utf8(),
+        ));
+    }
+    let colon = find_top_level_char(rest, ':')?;
+    Some(trim_source_with_base(
+        &rest[colon + ':'.len_utf8()..],
+        rest_base + colon + ':'.len_utf8(),
+    ))
+}
+
+fn collect_line_plan_source_ranges<'a>(
+    plan: &'a LinePlan,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    for (item, (item_source, item_base)) in
+        plan.items().iter().zip(split_top_level_lines(source, base))
+    {
+        collect_line_plan_item_source_ranges(item, item_source, item_base, ranges);
+    }
+}
+
+fn collect_line_plan_item_source_ranges<'a>(
+    item: &'a LinePlanItem,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    match item {
+        LinePlanItem::Option { value, .. } => {
+            collect_after_top_level_char(value, source, base, '=', ranges);
+        }
+        LinePlanItem::Let { expr, .. } => {
+            collect_after_top_level_char(expr, source, base, '=', ranges);
+        }
+        LinePlanItem::Out(expr) => {
+            if let Some((expr_source, expr_base)) = strip_line_plan_prefix(source, base, "out") {
+                collect_expr_source_ranges_inner(expr, expr_source, expr_base, ranges);
+            }
+        }
+        LinePlanItem::TimedCue { anchor, body } => {
+            collect_timed_cue_source_ranges(anchor, body, source, base, ranges);
+        }
+        LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+            collect_line_plan_group_source_ranges(items, source, base, ranges);
+        }
+        LinePlanItem::Assert { expr, .. } => {
+            collect_assert_condition_source_ranges(expr, source, base, ranges);
+        }
+        LinePlanItem::Expr(expr) => {
+            collect_expr_source_ranges_inner(expr, source, base, ranges);
+        }
+        _ => {}
+    }
+}
+
+fn collect_after_top_level_char<'a>(
+    expr: &'a Expr,
+    source: &str,
+    base: usize,
+    delimiter: char,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    if let Some(split) = find_top_level_char(source, delimiter) {
+        collect_expr_source_ranges_inner(
+            expr,
+            &source[split + delimiter.len_utf8()..],
+            base + split + delimiter.len_utf8(),
+            ranges,
+        );
+    }
+}
+
+fn strip_line_plan_prefix<'a>(
+    source: &'a str,
+    base: usize,
+    prefix: &str,
+) -> Option<(&'a str, usize)> {
+    let (source, base) = trim_source_with_base(source, base);
+    let rest = source.strip_prefix(prefix)?;
+    Some(trim_source_with_base(rest, base + prefix.len()))
+}
+
+fn collect_timed_cue_source_ranges<'a>(
+    anchor: &'a Expr,
+    body: &'a Expr,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    let Some(open) = find_top_level_char(source, '(') else {
+        return;
+    };
+    let Some(close) = matching_delimiter_end(source, open, '(', ')') else {
+        return;
+    };
+    collect_expr_source_ranges_inner(
+        anchor,
+        &source[open + '('.len_utf8()..close - ')'.len_utf8()],
+        base + open + '('.len_utf8(),
+        ranges,
+    );
+    collect_expr_source_ranges_inner(body, &source[close..], base + close, ranges);
+}
+
+fn collect_line_plan_group_source_ranges<'a>(
+    items: &'a [LinePlanItem],
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    let Some(open) = find_top_level_char(source, '{') else {
+        return;
+    };
+    let Some(close) = matching_delimiter_end(source, open, '{', '}') else {
+        return;
+    };
+    let inner = &source[open + '{'.len_utf8()..close - '}'.len_utf8()];
+    let inner_base = base + open + '{'.len_utf8();
+    for (item, (item_source, item_base)) in
+        items.iter().zip(split_top_level_lines(inner, inner_base))
+    {
+        collect_line_plan_item_source_ranges(item, item_source, item_base, ranges);
+    }
+}
+
+fn collect_assert_condition_source_ranges<'a>(
+    expr: &'a Expr,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    if let Some((open, close)) = postfix_delimiter_bounds(source, '(', ')') {
+        collect_expr_source_ranges_inner(expr, &source[open + 1..close], base + open + 1, ranges);
     }
 }
 
