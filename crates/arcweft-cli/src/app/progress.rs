@@ -1,6 +1,10 @@
+use anstyle::{AnsiColor, Style};
 use std::fmt;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
+
+const CARGO_STATUS_STYLE: Style = AnsiColor::Green.on_default().bold();
+const CARGO_FAILURE_STATUS_STYLE: Style = AnsiColor::Red.on_default().bold();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::app) enum CliProgressStatus {
@@ -30,18 +34,44 @@ impl CliProgress {
     ) -> Result<T, ExitCode> {
         let message = message.to_string();
         if self.enabled {
-            eprintln!("{:>12} {message}", status.as_str());
+            emit_progress_line(status.as_str(), CARGO_STATUS_STYLE, &message);
         }
         let started = Instant::now();
         let result = run();
         if self.enabled {
-            let final_status = if result.is_ok() { "Finished" } else { "Failed" };
-            eprintln!(
-                "{final_status:>12} {message} in {}",
-                format_elapsed(started.elapsed())
+            let (final_status, style) = if result.is_ok() {
+                ("Finished", CARGO_STATUS_STYLE)
+            } else {
+                ("Failed", CARGO_FAILURE_STATUS_STYLE)
+            };
+            emit_progress_line(
+                final_status,
+                style,
+                format_args!("{message} in {}", format_elapsed(started.elapsed())),
             );
         }
         result
+    }
+}
+
+fn emit_progress_line(status: &'static str, style: Style, message: impl fmt::Display) {
+    anstream::eprintln!("{} {message}", ProgressStatusLabel { status, style });
+}
+
+struct ProgressStatusLabel {
+    status: &'static str,
+    style: Style,
+}
+
+impl fmt::Display for ProgressStatusLabel {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{}{:>12}{}",
+            self.style,
+            self.status,
+            self.style.render_reset()
+        )
     }
 }
 
@@ -71,7 +101,9 @@ pub(in crate::app) fn format_elapsed(elapsed: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_elapsed;
+    use super::{
+        CARGO_FAILURE_STATUS_STYLE, CARGO_STATUS_STYLE, ProgressStatusLabel, format_elapsed,
+    };
     use std::time::Duration;
 
     #[test]
@@ -79,5 +111,26 @@ mod tests {
         assert_eq!(format_elapsed(Duration::from_nanos(1)), "<1ms");
         assert_eq!(format_elapsed(Duration::from_millis(42)), "42ms");
         assert_eq!(format_elapsed(Duration::from_millis(1_250)), "1.25s");
+    }
+
+    #[test]
+    fn progress_status_label_uses_cargo_style() {
+        let compiling = ProgressStatusLabel {
+            status: "Compiling",
+            style: CARGO_STATUS_STYLE,
+        };
+        let failed = ProgressStatusLabel {
+            status: "Failed",
+            style: CARGO_FAILURE_STATUS_STYLE,
+        };
+
+        assert_eq!(
+            compiling.to_string(),
+            "\u{1b}[1m\u{1b}[32m   Compiling\u{1b}[0m"
+        );
+        assert_eq!(
+            failed.to_string(),
+            "\u{1b}[1m\u{1b}[31m      Failed\u{1b}[0m"
+        );
     }
 }

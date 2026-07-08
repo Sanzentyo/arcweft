@@ -512,6 +512,8 @@ name = "arcweft-cli"
 version = "0.1.0"
 dependencies = [
  "annotate-snippets 0.12.16",
+ "anstream",
+ "anstyle",
  "arcweft-adapter-context",
  "arcweft-adapter-desktop",
  "arcweft-agent-mcp",
