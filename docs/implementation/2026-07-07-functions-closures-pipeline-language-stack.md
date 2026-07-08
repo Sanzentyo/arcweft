@@ -1760,6 +1760,15 @@ runtime-plan lowering from silently treating an unsupported callable as an
 ordinary `RuntimeExpr::Local`. Details are recorded in
 `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`.
 
+The non-helper callable kind rejection follow-up extends that evidence to
+top-level callable kinds that are deliberately outside the accepted runtime
+function-value subset. Focused compiler tests now verify that bare `task fn`,
+`dialogue fn`, and `stream fn` value references all reject with
+`source_function_value_without_runtime_candidate` when no accepted runtime
+function candidate exists, rather than lowering as ordinary locals. Details are
+recorded in
+`docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`.
+
 The data-last unsupported source partial follow-up applies the same rejection
 boundary to `lhs |> function_name` partials. Pipe type checking now records
 `SignaturePartialCall` evidence on the authored pipe expression when the

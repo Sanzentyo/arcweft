@@ -2411,6 +2411,131 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_rejects_bare_task_function_value() {
+    let parsed = parse_source_text(
+        r#"
+task fn load_label(name: String) -> String {
+    return name
+}
+
+flow @flow.main main {
+    let loader = load_label
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects unsupported bare task function values");
+
+    assert!(
+        errors.iter().any(|error| {
+            error.message().contains(
+                "unsupported callable family `source_function_value_without_runtime_candidate`",
+            ) && error
+                .message()
+                .contains("function `load_label` cannot be referenced as a runtime function value")
+        }),
+        "expected unsupported bare task function value diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_rejects_bare_dialogue_function_value() {
+    let parsed = parse_source_text(
+        r#"
+dialogue fn format_line(name: String) -> String {
+    return name
+}
+
+flow @flow.main main {
+    let formatter = format_line
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects unsupported bare dialogue function values");
+
+    assert!(
+        errors.iter().any(|error| {
+            error.message().contains(
+                "unsupported callable family `source_function_value_without_runtime_candidate`",
+            ) && error
+                .message()
+                .contains("function `format_line` cannot be referenced as a runtime function value")
+        }),
+        "expected unsupported bare dialogue function value diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_rejects_bare_stream_function_value() {
+    let parsed = parse_source_text(
+        r#"
+stream fn passthrough(frames: Stream<i64, String>) -> Stream<i64, String> {
+    for frame in frames {
+        yield frame
+    }
+}
+
+flow @flow.main main {
+    let transform = passthrough
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects unsupported bare stream function values");
+
+    assert!(
+        errors.iter().any(|error| {
+            error.message().contains(
+                "unsupported callable family `source_function_value_without_runtime_candidate`",
+            ) && error
+                .message()
+                .contains("function `passthrough` cannot be referenced as a runtime function value")
+        }),
+        "expected unsupported bare stream function value diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls() {
     let parsed = parse_source_text(
         r#"

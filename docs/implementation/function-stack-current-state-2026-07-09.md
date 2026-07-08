@@ -67,6 +67,7 @@ Supporting focused notes:
 - `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
+- `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
@@ -129,6 +130,10 @@ The following are implemented in pushed commits:
 - Checked runtime-plan lowering rejects data-last pipe partials through
   unsupported source functions with the same `signature_partial_without_helper`
   family used by direct partial calls.
+- Checked runtime-plan lowering rejects bare `task fn`, `dialogue fn`, and
+  `stream fn` value references with
+  `source_function_value_without_runtime_candidate` instead of treating those
+  callable kinds as ordinary locals.
 - A first non-helper source-local `fn` runtime-function subset:
   ordinary source `fn` declarations with fixed identifier declaration
   parameters and simple expression/final-return bodies, including multiple
@@ -147,7 +152,7 @@ These items keep the active goal open:
 | --- | --- | --- |
 | AWBC suspension-aware dynamic apply | Non-suspending dynamic apply works. Applying a function that suspends or budget-yields is explicitly rejected as a runtime trap in the synchronous expression-apply path, but there is still no resumable safe-point contract for accepting that behavior. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load now rejects function values explicitly. Serializable closure state, captured environment versioning, and restore semantics are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
-| Broad non-helper callable allocation | The first source-local `fn` subset is implemented, including pure value control expressions and fixed-point exact calls to already-accepted source-local candidates. Effectful/suspending bodies, host/adapter call-bearing bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persisted callable values remain outside the accepted contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
+| Broad non-helper callable allocation | The first source-local `fn` subset is implemented, including pure value control expressions and fixed-point exact calls to already-accepted source-local candidates. Bare task/dialogue/stream function values now have focused structured rejection coverage. Effectful/suspending bodies, host/adapter call-bearing bodies, accepted task/dialogue/stream values, trait/impl methods, adapter thunks, and persisted callable values remain outside the accepted contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md` |
 | Final closure effect-row model | Current effect composition, captured-function-alias preservation, and closed-row projection are useful, but source row syntax, open-row inference/substitution, row-bearing callable values, and final runtime-plan/verifier/LSP consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows ID comparison,
