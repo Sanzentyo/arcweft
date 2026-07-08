@@ -2,9 +2,10 @@ use super::{
     CallArg, EntityKind, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
-use crate::checker::CurriedSignatureCallValue;
 use crate::checker::helpers::{first_arg_type, type_kind_label};
+use crate::checker::{CurriedSignatureCallValue, PendingCurriedHigherOrderArg};
 use crate::effect_model::CallableId;
+use crate::env::FunctionParam;
 
 impl TypeChecker<'_> {
     pub(super) fn check_path_call_expr(
@@ -93,13 +94,7 @@ impl TypeChecker<'_> {
             .iter()
             .filter(|arg| matches!(arg, CallArg::Positional(_)))
             .count();
-        let curried_group_params = curried_signature_call.and_then(|curried| {
-            self.function_signature(&curried.function_name)
-                .and_then(|signature| {
-                    signature.remaining_param_group(curried.remaining_group_index - 1)
-                })
-                .map(<[_]>::to_vec)
-        });
+        let curried_group_params = self.remaining_curried_group_params(curried_signature_call);
         let all_positional_args = args.iter().all(|arg| matches!(arg, CallArg::Positional(_)));
         let curried_group_arg_offset = curried_signature_call
             .map(|curried| curried.group_arg_offset)
@@ -110,14 +105,24 @@ impl TypeChecker<'_> {
             && curried_group_params
                 .as_ref()
                 .is_some_and(|group| curried_group_arg_offset + params.len() == group.len());
-        let (result_ty, supplied_higher_order_args) = self.check_function_value_call(
+        let FunctionValueCallCheck {
+            result_ty,
+            supplied_higher_order_args,
+            unsupported_arg_syntax,
+        } = self.check_function_value_call(FunctionValueCallInput {
+            callee,
             args,
             params,
             return_type,
             curried_signature_call,
-            curried_group_params.as_deref(),
+            curried_group_params: curried_group_params.as_deref(),
             curried_group_arg_offset,
-        );
+        });
+        if unsupported_arg_syntax {
+            self.last_checked_closure_effect_callable = None;
+            self.last_checked_curried_signature_call = None;
+            return TypeKind::Named("_".to_owned());
+        }
         self.record_function_value_effect_call(
             callee,
             effect_callable,
@@ -176,27 +181,53 @@ impl TypeChecker<'_> {
         result_ty
     }
 
-    pub(super) fn check_function_value_call(
-        &mut self,
-        args: &[CallArg],
-        params: &[TypeKind],
-        return_type: &TypeKind,
+    fn remaining_curried_group_params(
+        &self,
         curried_signature_call: Option<&CurriedSignatureCallValue>,
-        curried_group_params: Option<&[crate::env::FunctionParam]>,
-        curried_group_arg_offset: usize,
-    ) -> (TypeKind, Vec<crate::checker::PendingCurriedHigherOrderArg>) {
+    ) -> Option<Vec<FunctionParam>> {
+        curried_signature_call.and_then(|curried| {
+            self.function_signature(&curried.function_name)
+                .and_then(|signature| {
+                    signature.remaining_param_group(curried.remaining_group_index - 1)
+                })
+                .map(<[_]>::to_vec)
+        })
+    }
+
+    fn check_function_value_call(
+        &mut self,
+        input: FunctionValueCallInput<'_>,
+    ) -> FunctionValueCallCheck {
+        let FunctionValueCallInput {
+            callee,
+            args,
+            params,
+            return_type,
+            curried_signature_call,
+            curried_group_params,
+            curried_group_arg_offset,
+        } = input;
         let mut supplied_higher_order_args = Vec::new();
+        let mut unsupported_arg_syntax = false;
         for arg in args {
             if let CallArg::Named { name, value } = arg {
-                self.errors.push(TypeCheckError::new(format!(
-                    "function value calls do not accept named argument `{name}`"
-                )));
+                unsupported_arg_syntax = true;
+                self.errors
+                    .push(TypeCheckError::unsupported_function_value_call(
+                        callee,
+                        format!(
+                            "named argument `{name}` is not supported; use positional arguments"
+                        ),
+                    ));
                 self.check_expr(value);
             }
             if let CallArg::Spread { value } = arg {
-                self.errors.push(TypeCheckError::new(
-                    "function value calls do not accept spread arguments".to_owned(),
-                ));
+                unsupported_arg_syntax = true;
+                self.errors
+                    .push(TypeCheckError::unsupported_function_value_call(
+                        callee,
+                        "spread arguments are not supported; use positional arguments",
+                    ));
                 self.check_expr(value);
             }
         }
@@ -247,6 +278,27 @@ impl TypeChecker<'_> {
                 return_type: Box::new(return_type.clone()),
             }
         };
-        (result_ty, supplied_higher_order_args)
+        FunctionValueCallCheck {
+            result_ty,
+            supplied_higher_order_args,
+            unsupported_arg_syntax,
+        }
     }
+}
+
+#[derive(Clone, Copy)]
+struct FunctionValueCallInput<'a> {
+    callee: Option<&'a str>,
+    args: &'a [CallArg],
+    params: &'a [TypeKind],
+    return_type: &'a TypeKind,
+    curried_signature_call: Option<&'a CurriedSignatureCallValue>,
+    curried_group_params: Option<&'a [FunctionParam]>,
+    curried_group_arg_offset: usize,
+}
+
+struct FunctionValueCallCheck {
+    result_ty: TypeKind,
+    supplied_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
+    unsupported_arg_syntax: bool,
 }

@@ -35,6 +35,12 @@ pub enum TypeCheckErrorKind {
     /// A signature-backed partial call used argument syntax that is not
     /// representable by the fixed partial-call lowering contract.
     UnsupportedSignaturePartialCall { function: String, reason: String },
+    /// A function-value call used argument syntax that is not representable by
+    /// the runtime function-value apply contract.
+    UnsupportedFunctionValueCall {
+        callee: Option<String>,
+        reason: String,
+    },
     /// A method-call expression has more than one viable data-last callable
     /// fallback candidate, so lowering would depend on source ordering or
     /// environment merge order instead of a typed rule.
@@ -305,6 +311,22 @@ impl TypeCheckError {
         }
     }
 
+    pub(crate) fn unsupported_function_value_call(
+        callee: Option<&str>,
+        reason: impl Into<String>,
+    ) -> Self {
+        let callee = callee.map(str::to_owned);
+        let reason = reason.into();
+        let target = callee.as_deref().map_or_else(
+            || "function value".to_owned(),
+            |callee| format!("`{callee}`"),
+        );
+        Self {
+            message: format!("function value call for {target} is not available: {reason}"),
+            kind: TypeCheckErrorKind::UnsupportedFunctionValueCall { callee, reason },
+        }
+    }
+
     pub(crate) fn ambiguous_data_last_method_fallback(
         method: impl Into<String>,
         receiver: TypeKind,
@@ -475,6 +497,7 @@ impl TypeCheckError {
             | TypeCheckErrorKind::UnsupportedAssignmentTarget { .. }
             | TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. }
             | TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. }
+            | TypeCheckErrorKind::UnsupportedFunctionValueCall { .. }
             | TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. }
             | TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. }
             | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
@@ -962,6 +985,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. } => {
             "sema.typecheck.unsupported_signature_partial_call".to_owned()
+        }
+        TypeCheckErrorKind::UnsupportedFunctionValueCall { .. } => {
+            "sema.typecheck.unsupported_function_value_call".to_owned()
         }
         TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. } => {
             "sema.typecheck.ambiguous_data_last_method_fallback".to_owned()

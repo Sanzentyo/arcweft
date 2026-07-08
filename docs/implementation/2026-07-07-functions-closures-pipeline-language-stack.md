@@ -381,8 +381,13 @@ Source briefs:
   effectful or suspending top-level callable runtime allocation remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
   callable application and sema trait/impl method calls. AWBC closure/apply now
-  covers non-suspending expression closures; suspension-aware dynamic function
-  calls and persisted closure state remain open.
+  covers non-suspending expression closures. Function-value calls, including
+  later curried call groups, now report
+  `sema.typecheck.unsupported_function_value_call` for spread/named argument
+  syntax that cannot be represented by the runtime apply contract, and rejected
+  calls do not record `FunctionValueCall` lowering evidence.
+  Suspension-aware dynamic function calls and persisted closure state remain
+  open.
 - Runtime identifiers no longer use `FlowRuntimeId(String)`,
   `EntryRuntimeId(String)`, `RuntimeLineId(String)`, or
   `StreamRuntimeId(String)` tuple string newtypes in the migrated

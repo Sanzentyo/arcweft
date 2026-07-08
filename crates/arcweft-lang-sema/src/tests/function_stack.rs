@@ -259,6 +259,59 @@ flow @flow.curried curried {
 }
 
 #[test]
+fn curried_function_value_rejects_later_spread_group_with_structured_diagnostic() {
+    let tree = parse_ok(
+        r"
+fn add(a: i64)(b: i64) -> i64 {
+    return a + b
+}
+
+flow @flow.curried_spread_later_group curried_spread_later_group {
+    let values = [2i64]
+    let add_one = add(1i64)
+    let bad = add_one(values...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried later spread fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried later spread fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedFunctionValueCall {
+                    callee: Some(callee),
+                    reason
+                } if callee == "add_one" && reason.contains("spread arguments")
+            )
+        }),
+        "expected structured function-value spread diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| !diagnostic
+            .message()
+            .contains("do not accept spread arguments")),
+        "function-value spread should not degrade into a generic call error: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: Some(callee),
+                    ..
+                } if callee == "add_one"
+            )
+        }),
+        "rejected function-value spread must not record apply lowering evidence"
+    );
+}
+
+#[test]
 fn pure_function_prefix_call_typechecks_as_partial_application() {
     let tree = parse_ok(
         r"
