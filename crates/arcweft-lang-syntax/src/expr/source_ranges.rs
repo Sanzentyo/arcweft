@@ -226,14 +226,12 @@ fn collect_control_expr_source_ranges<'a>(
     match expr {
         Expr::Block { value, .. }
         | Expr::ComputationBlock { value, .. }
-        | Expr::MemoBlock { value, .. }
         | Expr::NamedBlock { value, .. } => {
-            if let Some(value) = value
-                && let Some((inner, inner_base)) = delimited_inner(source, base, '{', '}')
-                && let Some((value_source, value_base)) = last_block_value_source(inner, inner_base)
-            {
-                collect_expr_source_ranges_inner(value, value_source, value_base, ranges);
-            }
+            collect_block_value_source_ranges(value.as_deref(), source, base, ranges);
+        }
+        Expr::MemoBlock { options, value, .. } => {
+            collect_memo_option_source_ranges(options, source, base, ranges);
+            collect_block_value_source_ranges(value.as_deref(), source, base, ranges);
         }
         Expr::If {
             condition,
@@ -293,6 +291,58 @@ fn collect_control_expr_source_ranges<'a>(
     }
 }
 
+fn collect_block_value_source_ranges<'a>(
+    value: Option<&'a Expr>,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    if let Some(value) = value
+        && let Some((inner, inner_base)) = delimited_inner(source, base, '{', '}')
+        && let Some((value_source, value_base)) = last_block_value_source(inner, inner_base)
+    {
+        collect_expr_source_ranges_inner(value, value_source, value_base, ranges);
+    }
+}
+
+fn collect_memo_option_source_ranges<'a>(
+    options: &'a [(String, Expr)],
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    let Some((args, args_base)) = memo_option_args_source(source, base) else {
+        return;
+    };
+    for ((_, option), (value_source, value_base)) in options
+        .iter()
+        .zip(memo_option_value_sources(args, args_base))
+    {
+        collect_expr_source_ranges_inner(option, value_source, value_base, ranges);
+    }
+}
+
+fn memo_option_args_source(source: &str, base: usize) -> Option<(&str, usize)> {
+    let (source, base) = trim_source_with_base(source, base);
+    let rest = source.strip_prefix("memo")?;
+    let (rest, rest_base) = trim_source_with_base(rest, base + "memo".len());
+    let args_end = matching_delimiter_end(rest, 0, '(', ')')?;
+    Some((
+        &rest['('.len_utf8()..args_end - ')'.len_utf8()],
+        rest_base + '('.len_utf8(),
+    ))
+}
+
+fn memo_option_value_sources(source: &str, base: usize) -> Vec<(&str, usize)> {
+    split_top_level_segments(source, base, ',')
+        .into_iter()
+        .filter_map(|(segment, segment_base)| {
+            let split = find_top_level_char(segment, '=')?;
+            Some((&segment[split + '='.len_utf8()..], segment_base + split + 1))
+        })
+        .collect()
+}
+
 fn collect_thread_expr_source_ranges<'a>(
     body: &'a [FlowItem],
     source: &str,
@@ -312,10 +362,9 @@ fn collect_thread_expr_source_ranges<'a>(
     }
 }
 
-fn if_let_condition_sources(
-    source: &str,
-    base: usize,
-) -> Option<(&str, usize, Option<(&str, usize)>)> {
+type IfLetConditionSources<'a> = (&'a str, usize, Option<(&'a str, usize)>);
+
+fn if_let_condition_sources(source: &str, base: usize) -> Option<IfLetConditionSources<'_>> {
     let (source, base) = trim_source_with_base(source, base);
     let source = source.strip_prefix("let")?;
     let base = base + "let".len();

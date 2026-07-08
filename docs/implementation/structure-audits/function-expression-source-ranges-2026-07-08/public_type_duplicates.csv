@@ -144,12 +144,12 @@ ViewElementKind,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,125,
 ViewElementKind,enum,crates/arcweft-view/src/program.rs,68,2
 ViewStyleRule,struct,crates/arcweft-bundle/src/resource_codec/view/model.rs,650,2
 ViewStyleRule,struct,crates/arcweft-view/src/style.rs,119,2
-Visibility,enum,crates/arcweft-lang-sema/src/effect_model.rs,32,2
+Visibility,enum,crates/arcweft-lang-sema/src/effect_model.rs,31,2
 Visibility,enum,crates/arcweft-lang-syntax/src/ast/common.rs,43,2
 _compatibility_checks,type,crates/arcweft-cli/src/output.rs,472,2
 _compatibility_checks,type,crates/arcweft-lang-sema/src/checker.rs,109,2
 _id,trait,crates/arcweft-core/src/plan.rs,268,2
-_id,trait,crates/arcweft-lang-sema/src/traits.rs,220,2
+_id,trait,crates/arcweft-lang-sema/src/traits.rs,219,2
 _json,type,crates/arcweft-debug-model/src/graph.rs,13,2
 _json,type,crates/arcweft-debug-sqlite/src/store/raw.rs,66,2
 _methods,trait,crates/arcweft-core/src/awbc/codec.rs,45,2
@@ -159,7 +159,7 @@ _methods,trait,crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs,89,2
 _name,type,crates/arcweft-agent-protocol/src/proxy.rs,27,7
 _name,type,crates/arcweft-bundle/src/lib.rs,249,7
 _name,trait,crates/arcweft-core/src/plan.rs,270,7
-_name,trait,crates/arcweft-lang-sema/src/traits.rs,221,7
+_name,trait,crates/arcweft-lang-sema/src/traits.rs,220,7
 _name,trait,crates/arcweft-lang-syntax/src/ast/items.rs,892,7
 _name,type,crates/arcweft-render-text/src/rich_effects.rs,305,7
 _name,struct,crates/arcweft-render-text/src/rich_effects.rs,321,7

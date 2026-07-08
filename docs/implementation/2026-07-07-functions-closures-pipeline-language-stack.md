@@ -1322,3 +1322,12 @@ passed with
 `cargo test -p arcweft-lang-sema --all-features numeric_bracket_sequence_judgments_carry_source_ranges -- --nocapture`,
 and
 `cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`.
+
+The memo-block option expression source-range follow-up closes another
+source-identity gap in the same 07.4.1 request. `Expr::MemoBlock` option values
+are type-checked before the memo body, but the previous source collector only
+descended into the final block value. The collector now splits the authored
+`memo(...)` head at top-level commas and records each named option value range,
+so judgments for `scope=scene` and `key=score + 1i64` point to the visible memo
+head expressions. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features memo_block_option_expression_judgments_carry_source_ranges -- --nocapture`.
