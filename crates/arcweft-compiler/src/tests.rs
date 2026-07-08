@@ -2622,6 +2622,135 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_rejects_data_last_task_function_partial() {
+    let parsed = parse_source_text(
+        r#"
+task fn load_label(prefix: String, name: String) -> String {
+    return name
+}
+
+flow @flow.main main {
+    let load_named: String -> String = "Ada" |> load_label
+    let value: String = load_named("prefix")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects unsupported data-last task partials");
+
+    assert!(
+        errors.iter().any(|error| {
+            error
+                .message()
+                .contains("unsupported callable family `signature_partial_without_helper`")
+                && error.message().contains(
+                    "function `load_label` partial application requires executable helper lowering",
+                )
+        }),
+        "expected non-helper task data-last partial diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_rejects_data_last_dialogue_function_partial() {
+    let parsed = parse_source_text(
+        r#"
+dialogue fn format_line(prefix: String, name: String) -> String {
+    return name
+}
+
+flow @flow.main main {
+    let format_named: String -> String = "Ada" |> format_line
+    let value: String = format_named("prefix")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects unsupported data-last dialogue partials");
+
+    assert!(
+        errors.iter().any(|error| {
+            error
+                .message()
+                .contains("unsupported callable family `signature_partial_without_helper`")
+                && error.message().contains(
+                    "function `format_line` partial application requires executable helper lowering",
+                )
+        }),
+        "expected non-helper dialogue data-last partial diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_rejects_data_last_stream_function_partial() {
+    let parsed = parse_source_text(
+        r#"
+stream fn tag_frame(prefix: String, name: String) -> Stream<String, String> {
+    yield name
+}
+
+flow @flow.main main {
+    let tag_named: String -> Stream<String, String> = "Ada" |> tag_frame
+    let values: Stream<String, String> = tag_named("prefix")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects unsupported data-last stream partials");
+
+    assert!(
+        errors.iter().any(|error| {
+            error
+                .message()
+                .contains("unsupported callable family `signature_partial_without_helper`")
+                && error.message().contains(
+                    "function `tag_frame` partial application requires executable helper lowering",
+                )
+        }),
+        "expected non-helper stream data-last partial diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
 fn runtime_plan_lowers_local_function_data_last_pipe_to_apply() {
     let parsed = parse_source_text(
         r#"

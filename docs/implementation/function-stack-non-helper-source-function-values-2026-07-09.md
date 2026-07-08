@@ -161,6 +161,8 @@ Bare top-level source-function value references outside the same executable
 families fail as `source_function_value_without_runtime_candidate`.
 Data-last pipe partials through source functions outside those executable
 families fail as `signature_partial_without_helper`.
+Task/dialogue/stream data-last partial rejection is recorded separately in
+`docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`.
 
 ## Validation
 
