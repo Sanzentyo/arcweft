@@ -12,14 +12,16 @@ Related slices are:
 - `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`
 - `docs/implementation/view-resource-rename-2026-07-08.md`
 - `docs/implementation/current-work-status-2026-07-08.md`
+- `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
 
 ## Current Repository State
 
 - At the start of this refresh, `main` and `origin/main` were aligned at
-  `8b77f6dd9 Fix thread body source ranges`.
+  `d614c8f4 Track authored lifetime statement sources`.
 - The last completed implementation slices were the source-range follow-up for
-  thread expression body statement ranges and the authored-payload conversion
-  for `Stmt::Signal` / `Stmt::LifetimeSet`.
+  thread expression body statement ranges, the authored-payload conversion for
+  `Stmt::Signal` / `Stmt::LifetimeSet`, and the expression source-range
+  coverage matrix with typed statement branch source fixes.
 - The only dirty files outside that slice were unrelated Web IME/player files
   under `web/`.
 
@@ -130,7 +132,12 @@ their own slice if they are still desired.
   transfer statements, container child expressions, computation blocks, braced
   closures, guarded `if let`, effect/prefix expressions, `wait(...)`,
   dialogue-call line-plan colon blocks such as `let cue = at(...):`, thread
-  expression body statement sources, and lifetime registry write values.
+  expression body statement sources, lifetime registry write values, and typed
+  statement branch payloads such as `let-else`, statement `while let` guards,
+  and statement `match` arm guards/bodies.
+- `TypeCheckStats` records source-backed and source-missing expression
+  judgment counts for report-level auditing of expression source/inlay
+  coverage.
 
 ### Runtime ID Boundary
 
@@ -146,13 +153,7 @@ their own slice if they are still desired.
 
 These items can be advanced without redesigning the goal:
 
-1. Audit the remaining expression source-range families against
-   `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
-   Many families are already implemented; the remaining useful slice is now a
-   matrix-style audit that lists still-untested families, closes any discovered
-   local gaps, and adds internal diagnostics or stats for judgments that should
-   have a source range but do not.
-2. Continue typed-runtime-ID cleanup at AWBC/report boundaries where internal
+1. Continue typed-runtime-ID cleanup at AWBC/report boundaries where internal
    maps still use public strings, but only where the AWBC schema/data-format
    boundary allows typed keys without a larger format change.
 
@@ -191,13 +192,8 @@ These should stay as request or design work before implementation:
 
 ## Recommended Next Slice
 
-Finish the expression source-range/inlay audit as the next implementation
-slice. It is local to syntax/sema/LSP evidence, does not require a new runtime
-contract, and directly reduces the largest remaining implementation-ready
-ambiguity in the active goal.
-
-After that slice, either:
-
-- keep implementing source-range coverage until 07.4.1 can be closed; or
-- stop and design the spread-partial or AWBC resumable-apply contracts before
-  touching those runtime surfaces.
+The source-range/inlay audit is now represented by the coverage matrix. The
+next implementation-ready slice is small typed runtime-ID cleanup at
+AWBC/report boundaries, but the larger remaining goal items should stay in
+request/design space until spread partials or resumable AWBC apply receive a
+more concrete contract.

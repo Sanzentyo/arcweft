@@ -14,6 +14,7 @@ use crate::cst::{
     ArcweftPunctuation, CstBlockEvent, CstPunctuationScan, SyntaxParseStats,
     split_top_level_arcweft_punctuation_once,
 };
+use crate::{ast::pattern::Pattern, types::TypeRef};
 
 impl Parser<'_> {
     pub(super) fn parse_let_scope(&mut self) -> Option<Stmt> {
@@ -274,6 +275,16 @@ fn parse_let_stmt(
     if let Some((pattern, expr)) = split_top_level_binding(rest) {
         let (pattern, ty) = parse_binding_pattern(pattern);
         let expr = expr.trim();
+        if let Some(stmt) = parse_inline_let_else_stmt(
+            trimmed,
+            pattern.clone(),
+            ty.clone(),
+            expr,
+            stats.as_deref_mut(),
+            base,
+        ) {
+            return stmt;
+        }
         if ty.is_none()
             && let Some(action) = receive_action_target(expr)
         {
@@ -301,6 +312,38 @@ fn parse_let_stmt(
     } else {
         raw_stmt(trimmed)
     }
+}
+
+fn parse_inline_let_else_stmt(
+    stmt_source: &str,
+    pattern: Pattern,
+    ty: Option<TypeRef>,
+    expr: &str,
+    mut stats: Option<&mut SyntaxParseStats>,
+    base: Option<usize>,
+) -> Option<Stmt> {
+    let (expr_source, else_tail) = split_top_level_keyword_once(expr, "else");
+    let else_tail = else_tail?.trim();
+    let expr_source = expr_source.trim();
+    if expr_source.is_empty() || else_tail.is_empty() {
+        return None;
+    }
+    let else_tail_start = statement_value_start(stmt_source, else_tail, base);
+    let (head, body, body_base) = split_brace_item_with_body_base(else_tail, else_tail_start)?;
+    if !head.is_empty() {
+        return None;
+    }
+    let expr_start = statement_value_start(stmt_source, expr_source, base);
+    Some(Stmt::LetElse {
+        pattern,
+        ty,
+        expr: AuthoredExpr::with_source(
+            parse_expr_lossy_with_stats(expr_source, stats.as_deref_mut()),
+            expr_source.to_owned(),
+            expr_start.map(|start| TextRange::new(start, start + expr_source.len())),
+        ),
+        else_body: parse_stmt_lines_with_optional_base(body, stats, body_base),
+    })
 }
 
 fn receive_action_target(expr: &str) -> Option<&str> {
@@ -486,7 +529,7 @@ fn parse_braced_stmt(
             body: parse_stmt_lines_with_optional_base(body, stats.as_deref_mut(), body_base),
         });
     }
-    if let Some(stmt) = parse_braced_while_let_stmt(head, body) {
+    if let Some(stmt) = parse_braced_while_let_stmt(trimmed, head, body, base, body_base) {
         return Some(stmt);
     }
     if let Some(condition) = head.strip_prefix("while ") {
@@ -511,7 +554,7 @@ fn parse_braced_stmt(
         let expr = expr.trim();
         Stmt::Match {
             expr: authored_expr_in_stmt(trimmed, expr, base, stats),
-            arms: parse_stmt_match_arms(body),
+            arms: parse_stmt_match_arms(body, body_base),
         }
     })
 }

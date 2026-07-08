@@ -1378,7 +1378,7 @@ fn collect_stmt_action_invokes(
         Stmt::LetElse {
             expr, else_body, ..
         } => {
-            collect_expr_action_invokes(expr, range, invokes);
+            collect_expr_action_invokes(expr.expr(), range, invokes);
             collect_stmt_list_action_invokes(else_body, range, invokes);
         }
         Stmt::Wait(target) => match target {

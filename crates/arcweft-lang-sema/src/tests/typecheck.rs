@@ -1590,6 +1590,33 @@ fn assert_expr_source_judgment(
     );
 }
 
+fn assert_expression_source_stats_match_report(report: &TypeCheckReport) {
+    let source_backed = report
+        .judgments
+        .iter()
+        .filter(|judgment| {
+            matches!(judgment.subject, TypeJudgmentSubject::Expr { .. })
+                && judgment.source_range.is_some()
+        })
+        .count();
+    let source_missing = report
+        .judgments
+        .iter()
+        .filter(|judgment| {
+            matches!(judgment.subject, TypeJudgmentSubject::Expr { .. })
+                && judgment.source_range.is_none()
+        })
+        .count();
+    assert_eq!(
+        report.stats.source_backed_expr_judgments, source_backed,
+        "source-backed expression judgment stats should match the report"
+    );
+    assert_eq!(
+        report.stats.source_missing_expr_judgments, source_missing,
+        "source-missing expression judgment stats should match the report"
+    );
+}
+
 #[test]
 fn assignment_statement_rhs_judgments_carry_source_ranges() {
     let source = r"
@@ -1625,6 +1652,66 @@ flow @flow.assignment_source_ranges assignment_source_ranges {
         "2i64",
         |ty| matches!(ty, TypeKind::I64),
         "assignment RHS literal should carry its own authored range",
+    );
+}
+
+#[test]
+fn typed_branch_statement_judgments_carry_source_ranges() {
+    let source = r"
+fn branch_source_ranges(maybe: Option<i64>, ready: bool) -> i64 {
+    let .Some(value) = maybe else {
+        return 0i64
+    }
+    while let .Some(item) = maybe when item > 0i64 {
+        break
+    }
+    match ready {
+        true when ready && false => { let first = value + 1i64 }
+        false => { let second = value + 2i64 }
+    }
+    return value
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("typed branch source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expression_source_stats_match_report(&report);
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "path",
+        "maybe",
+        |ty| matches!(ty, TypeKind::Option(item) if item.as_ref() == &TypeKind::I64),
+        "let-else RHS should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "item > 0i64",
+        |ty| matches!(ty, TypeKind::Bool),
+        "statement while-let guard should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "ready && false",
+        |ty| matches!(ty, TypeKind::Bool),
+        "statement match arm guard should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "value + 2i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "statement match arm body should carry its nested statement range",
     );
 }
 

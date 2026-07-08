@@ -647,7 +647,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::LetElse {
             expr, else_body, ..
         } => {
-            collect_expr(expr, uses);
+            collect_expr(expr.expr(), uses);
             collect_stmt_block(else_body, uses);
         }
         Stmt::LetActionReceive { pattern, action } => {

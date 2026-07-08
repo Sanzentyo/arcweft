@@ -196,8 +196,13 @@ fn collect_stmt_source_ranges<'a>(
         | Stmt::Break { .. } => {
             collect_branching_stmt_source_ranges(stmt, fallback_source, fallback_base, ranges);
         }
-        Stmt::LetElse { .. }
-        | Stmt::LetChoice { .. }
+        Stmt::LetElse {
+            expr, else_body, ..
+        } => {
+            collect_authored_expr_source_ranges(expr, ranges);
+            collect_stmt_list_source_ranges(else_body, fallback_source, fallback_base, ranges);
+        }
+        Stmt::LetChoice { .. }
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
         | Stmt::LetAwait { .. }
@@ -242,6 +247,9 @@ fn collect_branching_stmt_source_ranges<'a>(
         Stmt::Match { expr, arms } => {
             collect_authored_expr_source_ranges(expr, ranges);
             for arm in arms {
+                if let Some(guard) = arm.guard_authored() {
+                    collect_authored_expr_source_ranges(guard, ranges);
+                }
                 collect_stmt_list_source_ranges(arm.body(), fallback_source, fallback_base, ranges);
             }
         }

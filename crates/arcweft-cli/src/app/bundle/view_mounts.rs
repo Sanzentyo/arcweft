@@ -136,7 +136,7 @@ fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
         Stmt::LetElse {
             expr, else_body, ..
         } => {
-            collect_mounted_view_ids_from_expr(expr, ids);
+            collect_mounted_view_ids_from_expr(expr.expr(), ids);
             collect_mounted_view_ids_from_stmts(else_body, ids);
         }
         Stmt::LetScope { scope, .. } => {

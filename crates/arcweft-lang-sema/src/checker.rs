@@ -104,6 +104,8 @@ pub struct TypeCheckStats {
     pub judgments: usize,
     pub expr_judgments: usize,
     pub expected_judgments: usize,
+    pub source_backed_expr_judgments: usize,
+    pub source_missing_expr_judgments: usize,
     pub let_binding_judgments: usize,
     pub return_judgments: usize,
     pub type_compatibility_checks: usize,
@@ -801,6 +803,7 @@ impl TypeChecker<'_> {
                 TypeJudgmentExpected::Other(expected.clone())
             }
         });
+        let is_expr_subject = matches!(subject, TypeJudgmentSubject::Expr { .. });
         self.judgments.push(TypeJudgment {
             id,
             subject,
@@ -810,6 +813,13 @@ impl TypeChecker<'_> {
             source_range,
         });
         self.stats.judgments += 1;
+        if is_expr_subject {
+            if source_range.is_some() {
+                self.stats.source_backed_expr_judgments += 1;
+            } else {
+                self.stats.source_missing_expr_judgments += 1;
+            }
+        }
         match rule {
             TypeJudgmentRule::Expr => self.stats.expr_judgments += 1,
             TypeJudgmentRule::Expected => self.stats.expected_judgments += 1,

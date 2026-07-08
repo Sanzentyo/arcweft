@@ -225,7 +225,7 @@ flow @flow.title title {
         panic!("expected structured let-else");
     };
     assert!(variant_tuple_binding(pattern, "Some", "route"));
-    assert!(expr_path_eq(expr, "state.route_override"));
+    assert!(expr_path_eq(expr.expr(), "state.route_override"));
     assert!(matches!(else_body.as_slice(), [Stmt::Goto(_)]));
 
     let hir = lower_to_hir(&tree).expect("let-else fixture lowers");

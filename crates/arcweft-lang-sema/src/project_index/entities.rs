@@ -168,7 +168,7 @@ fn index_stmt_agent_actions(
         Stmt::LetElse {
             expr, else_body, ..
         } => {
-            index = index_expr_agent_actions(expr, index, source_name)?;
+            index = index_expr_agent_actions(expr.expr(), index, source_name)?;
             index = index_stmt_body_agent_actions(else_body, index, source_name)?;
         }
         Stmt::LetActionReceive { action, .. } => {

@@ -1902,7 +1902,7 @@ impl FlowRuntimeLowerer<'_> {
                 else_body,
             } => vec![FlowOp::LetElse {
                 pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr_with_expected_type(ty.as_ref(), expr),
+                expr: self.lower_runtime_expr_with_expected_type(ty.as_ref(), expr.expr()),
                 else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
             }],
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr.expr()))],

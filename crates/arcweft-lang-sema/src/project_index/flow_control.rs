@@ -156,7 +156,7 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
             expr, else_body, ..
         } => {
             summary.record_branch();
-            summary.merge(summarize_expr_control(expr));
+            summary.merge(summarize_expr_control(expr.expr()));
             summary.merge(summarize_stmt_body_control(else_body));
         }
         Stmt::LetActionReceive { action, .. } => {

@@ -1521,3 +1521,33 @@ while runtime-plan, verifier, project-index, tooling, and View scanners project
 those authored payloads back to plain expressions only where source identity is
 irrelevant. Focused validation passed with
 `cargo test -p arcweft-lang-sema --all-features lifetime_set_statement_value_judgments_carry_source_ranges -- --nocapture`.
+
+The expression source-range coverage slice closes the next local 07.4.1 audit
+gap. The new coverage matrix lives in
+`docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`.
+The audit found that typed statement `let-else` RHS expressions, statement
+`while let` guards, and statement `match` arm guards/bodies could still be
+checked without authored source identity. `Stmt::LetElse.expr` now stores
+`AuthoredExpr`, `StmtMatchArm.guard` now stores `Option<AuthoredExpr>`, and the
+typed statement parser preserves base ranges for inline `let-else` and
+statement match arm bodies. `TypeCheckStats` now records source-backed and
+source-missing expression judgment counts so the report can be audited without
+traversal-order fallbacks. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features typed_branch_statement_judgments_carry_source_ranges -- --nocapture`
+and
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`.
+The broader validation slice passed with
+`cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture`,
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`,
+`cargo fmt --all --check`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-tooling -p arcweft-verify -p arcweft-cli -p arcweft-lsp --all-targets --all-features`,
+and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-tooling -p arcweft-verify -p arcweft-cli -p arcweft-lsp --all-targets --all-features`.
+Focused clippy exits successfully with existing unrelated warnings from large
+syntax enum variants, `runtime-plan/src/line_task.rs`, sema line-count lints,
+runtime-host/player-native clipboard helpers, and render-wgpu font docs.
+Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the dirty worktree reports 2450 scanned files, 1172 Rust files, 577326 Rust
+physical LOC, and the existing unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 150 warnings.

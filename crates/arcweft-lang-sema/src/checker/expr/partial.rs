@@ -412,11 +412,11 @@ fn stmt_contains_partial_placeholder(stmt: &arcweft_lang_syntax::ast::flow::Stmt
     use arcweft_lang_syntax::ast::flow::Stmt;
 
     match stmt {
-        Stmt::Let { expr, .. }
-        | Stmt::LetElse { expr, .. }
-        | Stmt::Expr { expr, .. }
-        | Stmt::Return { expr, .. } => expr_contains_partial_placeholder(expr),
-        Stmt::Out { expr, .. }
+        Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } | Stmt::Return { expr, .. } => {
+            expr_contains_partial_placeholder(expr)
+        }
+        Stmt::LetElse { expr, .. }
+        | Stmt::Out { expr, .. }
         | Stmt::Break {
             expr: Some(expr), ..
         }

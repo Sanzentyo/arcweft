@@ -75,11 +75,11 @@ fn flow_item_contains_unchecked_promotion(item: &FlowItem) -> bool {
 
 fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Let { expr, .. }
-        | Stmt::LetElse { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::Expr { expr, .. } => expr_contains_unchecked_promotion(expr),
-        Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr))
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
+            expr_contains_unchecked_promotion(expr)
+        }
+        Stmt::LetElse { expr, .. }
+        | Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr))
         | Stmt::Out { expr, .. }
         | Stmt::Break {
             expr: Some(expr), ..

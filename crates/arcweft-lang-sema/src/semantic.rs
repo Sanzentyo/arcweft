@@ -707,7 +707,7 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::LetElse {
                 expr, else_body, ..
             } => {
-                self.collect_expr(expr, &mut facts);
+                self.collect_expr(expr.expr(), &mut facts);
                 let mut flow = BlockFlow::from_fallthrough(facts.clone());
                 flow.exits
                     .extend(self.analyze_stmts(else_body, vec![facts], context).exits);
@@ -893,7 +893,7 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::LetElse {
                 expr, else_body, ..
             } => {
-                self.collect_expr(expr, state);
+                self.collect_expr(expr.expr(), state);
                 let mut else_state = state.clone();
                 self.collect_stmts(else_body, &mut else_state);
                 state.live_must_drop.extend(else_state.live_must_drop);

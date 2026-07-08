@@ -230,7 +230,7 @@ fn index_stmt_symbol_dependency_relations(
         Stmt::LetElse {
             expr, else_body, ..
         } => {
-            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+            index = index_expr_symbol_dependency_relations(parent, expr.expr(), index)?;
             index = index_stmt_body_symbol_dependency_relations(parent, else_body, index)?;
         }
         Stmt::LetActionReceive { action, .. } => {
@@ -734,7 +734,7 @@ fn index_stmt_relations(
         Stmt::LetElse {
             expr, else_body, ..
         } => {
-            index = index_expr_dependency_relations(parent, expr, index)?;
+            index = index_expr_dependency_relations(parent, expr.expr(), index)?;
             index = index_stmt_body_relations(parent, else_body, index)?;
         }
         Stmt::LetActionReceive { action, .. } => {

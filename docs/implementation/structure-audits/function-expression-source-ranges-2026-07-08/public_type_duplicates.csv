@@ -147,7 +147,7 @@ ViewStyleRule,struct,crates/arcweft-view/src/style.rs,119,2
 Visibility,enum,crates/arcweft-lang-sema/src/effect_model.rs,31,2
 Visibility,enum,crates/arcweft-lang-syntax/src/ast/common.rs,43,2
 _compatibility_checks,type,crates/arcweft-cli/src/output.rs,472,2
-_compatibility_checks,type,crates/arcweft-lang-sema/src/checker.rs,109,2
+_compatibility_checks,type,crates/arcweft-lang-sema/src/checker.rs,111,2
 _id,trait,crates/arcweft-core/src/plan.rs,268,2
 _id,trait,crates/arcweft-lang-sema/src/traits.rs,219,2
 _json,type,crates/arcweft-debug-model/src/graph.rs,13,2

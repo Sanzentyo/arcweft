@@ -255,7 +255,7 @@ pub enum SelectBranchHead {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StmtMatchArm {
     pattern: Pattern,
-    guard: Option<Expr>,
+    guard: Option<AuthoredExpr>,
     body: Vec<Stmt>,
 }
 
@@ -297,7 +297,7 @@ pub enum Stmt {
     LetElse {
         pattern: Pattern,
         ty: Option<TypeRef>,
-        expr: Expr,
+        expr: AuthoredExpr,
         else_body: Vec<Stmt>,
     },
     /// `let PAT = choice ... { ... }` choice expression binding.
@@ -934,7 +934,11 @@ impl SelectBranch {
 }
 
 impl StmtMatchArm {
-    pub(crate) const fn new(pattern: Pattern, guard: Option<Expr>, body: Vec<Stmt>) -> Self {
+    pub(crate) const fn new(
+        pattern: Pattern,
+        guard: Option<AuthoredExpr>,
+        body: Vec<Stmt>,
+    ) -> Self {
         Self {
             pattern,
             guard,
@@ -946,7 +950,11 @@ impl StmtMatchArm {
         &self.pattern
     }
 
-    pub const fn guard(&self) -> Option<&Expr> {
+    pub fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref().map(AuthoredExpr::expr)
+    }
+
+    pub const fn guard_authored(&self) -> Option<&AuthoredExpr> {
         self.guard.as_ref()
     }
 

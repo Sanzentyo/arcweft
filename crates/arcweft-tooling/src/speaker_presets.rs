@@ -344,7 +344,7 @@ fn collect_speaker_presets_from_stmt(
             else_body,
             ..
         } => {
-            collect_speaker_preset_binding(pattern, expr, character_aliases, presets);
+            collect_speaker_preset_binding(pattern, expr.expr(), character_aliases, presets);
             collect_speaker_presets_from_stmts(else_body, character_aliases, presets);
         }
         Stmt::LetChoice { pattern: _, choice } => {

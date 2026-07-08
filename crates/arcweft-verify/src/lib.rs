@@ -1127,7 +1127,7 @@ impl ObligationCollector {
             Stmt::LetElse {
                 expr, else_body, ..
             } => {
-                self.collect_expr(expr);
+                self.collect_expr(expr.expr());
                 self.collect_stmts(else_body);
             }
             Stmt::LetChoice { choice, .. } => self.collect_choice_syntax(choice),

@@ -527,11 +527,11 @@ impl TypeChecker<'_> {
         &mut self,
         pattern: &Pattern,
         annotation: Option<&TypeRef>,
-        expr: &Expr,
+        expr: &AuthoredExpr,
         else_body: &[Stmt],
     ) {
         let expr_type = self
-            .check_expr(expr)
+            .check_authored_expr(expr)
             .or_else(|| annotation.map(type_ref_kind));
         for stmt in else_body {
             self.check_stmt(stmt);
@@ -638,8 +638,8 @@ impl TypeChecker<'_> {
             self.restore_borrow_state(base_borrow_checkpoint);
             let local_snapshot =
                 self.insert_scoped_locals(let_else_bindings(arm.pattern(), expr_type.as_ref()));
-            if let Some(guard) = arm.guard() {
-                self.expect_expr_type(guard, &TypeKind::Bool, "match guard");
+            if let Some(guard) = arm.guard_authored() {
+                self.expect_authored_expr_type(guard, &TypeKind::Bool, "match guard");
             }
             for stmt in arm.body() {
                 self.check_stmt(stmt);

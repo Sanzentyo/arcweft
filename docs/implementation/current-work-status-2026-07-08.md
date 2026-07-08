@@ -7,7 +7,7 @@ or design work.
 
 ## Repository Baseline
 
-- Current checked-in head: `8b77f6dd9`.
+- Current checked-in head before this slice: `d614c8f4`.
 - `main` and `origin/main` are aligned at that head.
 - The only dirty files at this audit point are unrelated Web IME/player files:
   - `web/ime-player-rendered.awfb`
@@ -62,6 +62,12 @@ The following is implemented and evidenced by tests or implementation logs:
   `AuthoredExpr` payloads. `LifetimeSet` parser output carries authored ranges
   through sema so lifetime write values can produce source-backed type
   judgments.
+- Typed statement branch expressions now also carry authored source identity:
+  `Stmt::LetElse.expr`, statement `while let` guards, and statement `match`
+  arm guards/bodies are covered by focused source-range tests.
+- `TypeCheckStats` reports source-backed and source-missing expression
+  judgment counts, so expression inlay/source-range coverage can be audited
+  from the type-check report.
 
 ## Completed Adjacent Cleanup
 
@@ -79,18 +85,7 @@ new concrete defect appears:
 
 These can be implemented without a new design package:
 
-1. Finish the remaining expression source-range closure pass for request
-   `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
-   The `Stmt::Signal` / `Stmt::LifetimeSet` authored-payload conversion is now
-   complete; the next useful work is the coverage matrix and any remaining
-   discovered local gaps.
-2. Add a small source-range coverage matrix. The point is
-   to list expression families that are covered, intentionally generated with
-   no source, or still missing source-backed judgments.
-3. Add internal diagnostics or stats for sema judgments that should carry a
-   source range but do not. This should be a checker/reporting aid, not a
-   traversal-order compatibility fallback.
-4. Continue typed runtime-ID cleanup only at boundaries where the current AWBC
+1. Continue typed runtime-ID cleanup only at boundaries where the current AWBC
    or report schema can accept typed keys without a data-format redesign.
 
 ## Request/Design Remaining Work
@@ -127,10 +122,8 @@ function-stack goal:
 
 ## Recommended Next Order
 
-1. Add the source-range coverage matrix and any missing local tests found by
-   that matrix.
-2. Commit and push that source-range closure slice.
-3. Decide whether to take the next implementation-ready runtime-ID cleanup or
+1. Commit and push the source-range closure slice.
+2. Decide whether to take the next implementation-ready runtime-ID cleanup or
    pause for a design package on spread partials / AWBC resumable apply.
 
 ## Current Structural Risk
