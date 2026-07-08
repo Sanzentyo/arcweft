@@ -4,6 +4,32 @@
 
 Core が扱う program、bytecode、manifest reference、save snapshot、diagnostic、trace はすべて pure data。Core は path を開かず、filesystem、network、wall-clock、GPU/audio/device handle、Wasm runtime、Cranelift runtime を保持しない。外部 adapter は bytes/string へ serialize された bundle や task result を `RuntimeStepInput` / `TaskEvent` として渡す。
 
+## Runtime ID domains
+
+Runtime lookup IDs are typed canonical paths, not raw public strings. A
+`FlowRuntimeId`, `EntryRuntimeId`, `RuntimeLineId`, or `StreamRuntimeId` owns a
+runtime path whose Rust type supplies the family. The path itself therefore
+does not store source-family prefixes such as `flow`, `entry`, `say`, or
+`stream`.
+
+Arcweft keeps three ID domains separate:
+
+- Source references live in parser/HIR/lowering while relative syntax is still
+  meaningful. They may contain family-qualified source spelling such as
+  `@flow.main` or current/parent-relative addressing.
+- Canonical runtime IDs are execution lookup keys. Source `@flow.main` lowers
+  to a `FlowRuntimeId` whose canonical path is `main`; `flow.main` is not the
+  runtime lookup key.
+- Public/debug labels are deliberate strings used in AWBC reports, manifests,
+  logs, diagnostics, and user-facing output. Runtime code must not recover a
+  lookup ID by splitting one of these labels.
+
+If runtime-ID equality, hashing, or storage later becomes a measured hot path,
+the canonical path representation may be interned behind the typed ID API. That
+optimization must preserve the same source/runtime/public domain split and must
+not make atom numbers part of save files, bundles, diagnostics, or authored
+source.
+
 ```rust
 pub struct Engine {
     plan: RuntimePlan,
