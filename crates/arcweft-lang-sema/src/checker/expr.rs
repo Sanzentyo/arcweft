@@ -1895,7 +1895,7 @@ impl TypeChecker<'_> {
         {
             return Some(field_type);
         }
-        match receiver_type {
+        let field_type = match receiver_type.as_ref() {
             Some(TypeKind::Observation) => agent_observation_field_type(field),
             Some(TypeKind::ObservedObject) => agent_observed_object_field_type(field),
             Some(TypeKind::AgentBBox) => agent_bbox_field_type(field),
@@ -1918,12 +1918,70 @@ impl TypeChecker<'_> {
             Some(TypeKind::Ref(_)) => {
                 agent_entity_ref_field_type(field).or_else(|| well_known_field_type(field))
             }
-            Some(TypeKind::Map { value, .. }) => Some(*value),
+            Some(TypeKind::Map { value, .. }) => Some(value.as_ref().clone()),
             Some(TypeKind::Named(name)) if name == "HttpRequestContext" => match field {
                 "method" | "path" | "body" => Some(TypeKind::String),
                 _ => None,
             },
             _ => well_known_field_type(field),
+        };
+        if field_type.is_some() {
+            return field_type;
+        }
+        let method_name = field.split_once('<').map_or(field, |(name, _)| name);
+        if let Some(receiver_type) = receiver_type.as_ref()
+            && self.reject_method_value_reference(receiver_type, method_name)
+        {
+            return Some(TypeKind::Named("_".to_owned()));
+        }
+        None
+    }
+
+    fn reject_method_value_reference(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+    ) -> bool {
+        if self
+            .env
+            .method_signature(receiver_type, method_name)
+            .is_some()
+        {
+            self.errors
+                .push(TypeCheckError::unsupported_method_value_reference(
+                    receiver_type.clone(),
+                    method_name,
+                    "environment method values need an explicit receiver-binding contract; call the method directly or wrap it in an explicit closure",
+                ));
+            return true;
+        }
+        match self.trait_catalog.resolve_method(
+            receiver_type,
+            method_name,
+            &self.active_trait_predicates(),
+        ) {
+            TraitMethodResolution::Missing => false,
+            TraitMethodResolution::Inherent(_) | TraitMethodResolution::Unique { .. } => {
+                self.errors
+                    .push(TypeCheckError::unsupported_method_value_reference(
+                        receiver_type.clone(),
+                        method_name,
+                        "trait/impl method values need an explicit receiver-binding contract; call the method directly or wrap it in an explicit closure",
+                    ));
+                true
+            }
+            TraitMethodResolution::Ambiguous(candidates) => {
+                self.errors.push(TypeCheckError::trait_diagnostic(
+                    TraitDiagnostic::ambiguous_method(
+                        method_name,
+                        candidates
+                            .iter()
+                            .map(|candidate| candidate.trait_name.as_str())
+                            .collect::<Vec<_>>(),
+                    ),
+                ));
+                true
+            }
         }
     }
 

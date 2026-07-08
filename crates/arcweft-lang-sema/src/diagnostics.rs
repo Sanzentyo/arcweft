@@ -41,6 +41,13 @@ pub enum TypeCheckErrorKind {
         callee: Option<String>,
         reason: String,
     },
+    /// A selected method was referenced as a value before Arcweft has a stable
+    /// receiver-binding contract for method values.
+    UnsupportedMethodValueReference {
+        receiver: TypeKind,
+        method: String,
+        reason: String,
+    },
     /// A function-value call supplied more positional arguments than the
     /// function value can accept.
     FunctionValueArityMismatch {
@@ -334,6 +341,26 @@ impl TypeCheckError {
         }
     }
 
+    pub(crate) fn unsupported_method_value_reference(
+        receiver: TypeKind,
+        method: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        let method = method.into();
+        let reason = reason.into();
+        Self {
+            message: format!(
+                "method value reference `{}.{method}` is not available: {reason}",
+                receiver.source_label()
+            ),
+            kind: TypeCheckErrorKind::UnsupportedMethodValueReference {
+                receiver,
+                method,
+                reason,
+            },
+        }
+    }
+
     pub(crate) fn function_value_arity_mismatch(
         callee: Option<&str>,
         expected: usize,
@@ -527,6 +554,7 @@ impl TypeCheckError {
             | TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. }
             | TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. }
             | TypeCheckErrorKind::UnsupportedFunctionValueCall { .. }
+            | TypeCheckErrorKind::UnsupportedMethodValueReference { .. }
             | TypeCheckErrorKind::FunctionValueArityMismatch { .. }
             | TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. }
             | TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. }
@@ -1018,6 +1046,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedFunctionValueCall { .. } => {
             "sema.typecheck.unsupported_function_value_call".to_owned()
+        }
+        TypeCheckErrorKind::UnsupportedMethodValueReference { .. } => {
+            "sema.typecheck.unsupported_method_value_reference".to_owned()
         }
         TypeCheckErrorKind::FunctionValueArityMismatch { .. } => {
             "sema.typecheck.function_value_arity_mismatch".to_owned()

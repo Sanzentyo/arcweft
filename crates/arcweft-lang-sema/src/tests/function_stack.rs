@@ -4083,3 +4083,94 @@ flow @flow.method_trait_priority method_trait_priority {
         "trait method calls must not record data-last fallback evidence"
     );
 }
+
+#[test]
+fn trait_method_value_reference_reports_unsupported_method_value() {
+    let tree = parse_ok(
+        r#"
+struct Score {}
+
+trait Threshold {
+    fn above(self, min: i64) -> String
+}
+
+impl Threshold for Score {
+    fn above(self, min: i64) -> String {
+        return "trait"
+    }
+}
+
+flow @flow.method_trait_value method_trait_value {
+    let method = score.above
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("trait method value fixture lowers");
+    validate_typecheck_ready(&hir).expect("trait method value fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol("score", TypeKind::Named("Score".to_owned()));
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedMethodValueReference {
+                    receiver: TypeKind::Named(receiver),
+                    method,
+                    reason
+                } if receiver == "Score"
+                    && method == "above"
+                    && reason.contains("receiver-binding contract")
+            ) && diagnostic.stable_code() == "sema.typecheck.unsupported_method_value_reference"
+        }),
+        "expected unsupported method-value diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("unknown method `above`")
+                && !diagnostic.message().contains("unknown field `above`")
+        }),
+        "method value references should not fall through to unknown-field/method diagnostics: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn environment_method_value_reference_reports_unsupported_method_value() {
+    let tree = parse_ok(
+        r"
+flow @flow.env_method_value env_method_value {
+    let method = score.above
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("environment method value fixture lowers");
+    validate_typecheck_ready(&hir).expect("environment method value fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_method_signature(
+            TypeKind::I64,
+            "above",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("min", TypeKind::I64)],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedMethodValueReference {
+                    receiver: TypeKind::I64,
+                    method,
+                    reason
+                } if method == "above" && reason.contains("receiver-binding contract")
+            ) && diagnostic.stable_code() == "sema.typecheck.unsupported_method_value_reference"
+        }),
+        "expected unsupported method-value diagnostic, got {:?}",
+        report.diagnostics
+    );
+}

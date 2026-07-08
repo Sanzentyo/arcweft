@@ -1778,3 +1778,13 @@ helper-less source function outside the accepted candidate set fails with
 `signature_partial_without_helper` instead of lowering as an incomplete
 `RuntimeExpr::Call`. Details are recorded in
 `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`.
+
+The method-value rejection follow-up tightens the 07.7 receiver-binding
+boundary. Sema now distinguishes value-position method references such as
+`score.above` from ordinary field selection when the selected member resolves
+to an environment method, inherent method, or trait/impl method. Those
+references reject with `sema.typecheck.unsupported_method_value_reference`
+until first-class method values have a stable receiver-binding, AWBC, and
+persistence contract. Normal method calls and data-last fallback resolution are
+unchanged. Details are recorded in
+`docs/implementation/function-stack-method-value-rejection-2026-07-09.md`.
