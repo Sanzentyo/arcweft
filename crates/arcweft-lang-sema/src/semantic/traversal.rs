@@ -78,18 +78,17 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         Stmt::Let { expr, .. }
         | Stmt::LetElse { expr, .. }
         | Stmt::Return { expr, .. }
-        | Stmt::Expr { expr, .. }
-        | Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
-            expr_contains_unchecked_promotion(expr)
-        }
-        Stmt::Out { expr, .. }
+        | Stmt::Expr { expr, .. } => expr_contains_unchecked_promotion(expr),
+        Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr))
+        | Stmt::Out { expr, .. }
         | Stmt::Break {
             expr: Some(expr), ..
         }
-        | Stmt::Defer { expr, .. } => expr_contains_unchecked_promotion(expr.expr()),
-        Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
-            expr_contains_unchecked_promotion(expr.expr())
-        }
+        | Stmt::Defer { expr, .. }
+        | Stmt::Goto(expr)
+        | Stmt::Yield(expr)
+        | Stmt::Close(expr)
+        | Stmt::Select(expr) => expr_contains_unchecked_promotion(expr.expr()),
         Stmt::Assign { target, expr } => {
             expr_contains_unchecked_promotion(target.expr())
                 || expr_contains_unchecked_promotion(expr.expr())

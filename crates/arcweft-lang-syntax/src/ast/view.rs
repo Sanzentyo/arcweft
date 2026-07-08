@@ -1387,7 +1387,7 @@ fn collect_stmt_action_invokes(
         Stmt::Wait(target) => match target {
             crate::ast::flow::WaitTarget::Duration(expr)
             | crate::ast::flow::WaitTarget::Expr(expr) => {
-                collect_expr_action_invokes(expr, range, invokes);
+                collect_expr_action_invokes(expr.expr(), range, invokes);
             }
         },
         Stmt::DeferBlock { statements, .. }

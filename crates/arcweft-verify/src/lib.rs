@@ -1615,7 +1615,7 @@ impl ObligationCollector {
 
     fn collect_wait(&mut self, target: &WaitTarget) {
         match target {
-            WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => self.collect_expr(expr),
+            WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => self.collect_expr(expr.expr()),
         }
     }
 

@@ -214,9 +214,10 @@ fn parse_stmt_inner(
                 expr: parse_expr_lossy_with_stats(expr.trim(), stats.as_deref_mut()),
             }
         }
-        CstStmtKind::Wait => {
-            wait_stmt_source(trimmed).map_or_else(|| raw_stmt(trimmed), parse_wait_stmt)
-        }
+        CstStmtKind::Wait => wait_stmt_source(trimmed).map_or_else(
+            || raw_stmt(trimmed),
+            |(source, offset)| parse_wait_stmt(source, base.map(|base| base + offset), stats),
+        ),
         CstStmtKind::Let => parse_let_stmt(trimmed, stats, base),
         CstStmtKind::DeferBlock | CstStmtKind::Braced | CstStmtKind::UnsafeLifetime => {
             parse_braced_stmt(trimmed, stats, base).unwrap_or_else(|| raw_stmt(trimmed))
@@ -421,21 +422,30 @@ fn parse_on_stmt(trimmed: &str) -> Stmt {
     }
 }
 
-fn parse_wait_stmt(rest: &str) -> Stmt {
-    let expr = parse_expr_lossy(rest);
-    match expr {
+fn parse_wait_stmt(
+    source: &str,
+    start: Option<usize>,
+    stats: Option<&mut SyntaxParseStats>,
+) -> Stmt {
+    let expr = parse_expr_lossy_with_stats(source, stats);
+    let value = AuthoredExpr::with_source(
+        expr,
+        source.to_owned(),
+        start.map(|start| TextRange::new(start, start + source.len())),
+    );
+    match value.expr() {
         Expr::Literal(crate::expr::Literal::Duration { .. }) => {
-            Stmt::Wait(WaitTarget::Duration(expr))
+            Stmt::Wait(WaitTarget::Duration(value))
         }
-        _ => Stmt::Wait(WaitTarget::Expr(expr)),
+        _ => Stmt::Wait(WaitTarget::Expr(value)),
     }
 }
 
-fn wait_stmt_source(trimmed: &str) -> Option<&str> {
-    trimmed
-        .strip_prefix("wait(")
-        .and_then(|rest| rest.strip_suffix(')'))
-        .map(str::trim)
+fn wait_stmt_source(trimmed: &str) -> Option<(&str, usize)> {
+    let rest = trimmed.strip_prefix("wait(")?.strip_suffix(')')?;
+    let start_trim = rest.len() - rest.trim_start().len();
+    let source = rest.trim();
+    Some((source, "wait(".len() + start_trim))
 }
 
 fn parse_braced_stmt(

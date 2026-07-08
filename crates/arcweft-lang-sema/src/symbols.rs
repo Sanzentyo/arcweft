@@ -852,7 +852,7 @@ fn collect_dialogue_content(tokens: &[DialogueToken], uses: &mut Vec<SymbolUse>)
 fn collect_wait_target(target: &WaitTarget, uses: &mut Vec<SymbolUse>) {
     match target {
         WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => {
-            collect_expr(expr, uses);
+            collect_expr(expr.expr(), uses);
         }
     }
 }

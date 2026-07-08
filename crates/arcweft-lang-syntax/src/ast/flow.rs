@@ -447,8 +447,8 @@ pub enum ThreadModifier {
 /// Target accepted by a structured `wait` statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WaitTarget {
-    Duration(Expr),
-    Expr(Expr),
+    Duration(AuthoredExpr),
+    Expr(AuthoredExpr),
 }
 
 impl AuthoredExpr {

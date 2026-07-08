@@ -16,10 +16,10 @@ use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
 
 use super::headers::simple_error;
+use super::helpers::LogicalBlockItem;
 use super::{
-    ParseError, collect_logical_block_items_with_base, indentation, parse_expr_lossy,
-    parse_named_block_expr, parse_stmt, parse_stmt_lines, parse_stmt_with_base, split_brace_item,
-    split_top_level_binding,
+    ParseError, collect_logical_block_items_with_base, parse_expr_lossy, parse_named_block_expr,
+    parse_stmt, parse_stmt_lines, parse_stmt_with_base, split_brace_item, split_top_level_binding,
 };
 
 pub(super) fn parse_trigger_pattern(source: &str) -> TriggerPattern {
@@ -132,14 +132,17 @@ fn parse_line_plan_body_inner(
             continue;
         }
         if is_multiline_timed_cue_header(trimmed) {
-            let cue_indent = indentation(line_source);
+            let cue_indent =
+                logical_item_indentation(normalized_body.as_ref(), body_line_base, line);
             let mut body_lines = Vec::new();
             index += 1;
             while index < lines.len() {
                 let child = &lines[index];
                 let child_source = child.source.as_ref();
                 let child_trimmed = child_source.trim();
-                if !child_trimmed.is_empty() && indentation(child_source) <= cue_indent {
+                let child_indent =
+                    logical_item_indentation(normalized_body.as_ref(), body_line_base, child);
+                if !child_trimmed.is_empty() && child_indent <= cue_indent {
                     break;
                 }
                 if !child_trimmed.is_empty() {
@@ -152,18 +155,25 @@ fn parse_line_plan_body_inner(
             continue;
         }
         if let Some((pattern, head)) = line_plan_let_colon_head(trimmed) {
-            let cue_indent = indentation(line_source);
+            let cue_indent =
+                logical_item_indentation(normalized_body.as_ref(), body_line_base, line);
             let mut body_lines = Vec::new();
             index += 1;
             while index < lines.len() {
                 let child = &lines[index];
                 let child_source = child.source.as_ref();
                 let child_trimmed = child_source.trim();
-                if !child_trimmed.is_empty() && indentation(child_source) <= cue_indent {
+                let child_indent =
+                    logical_item_indentation(normalized_body.as_ref(), body_line_base, child);
+                if !child_trimmed.is_empty() && child_indent <= cue_indent {
                     break;
                 }
                 if !child_trimmed.is_empty() {
-                    body_lines.push(child_source);
+                    body_lines.push(logical_item_source_with_indent(
+                        normalized_body.as_ref(),
+                        body_line_base,
+                        child,
+                    ));
                 }
                 index += 1;
             }
@@ -174,18 +184,25 @@ fn parse_line_plan_body_inner(
             continue;
         }
         if let Some(head) = line_plan_colon_head(trimmed) {
-            let cue_indent = indentation(line_source);
+            let cue_indent =
+                logical_item_indentation(normalized_body.as_ref(), body_line_base, line);
             let mut body_lines = Vec::new();
             index += 1;
             while index < lines.len() {
                 let child = &lines[index];
                 let child_source = child.source.as_ref();
                 let child_trimmed = child_source.trim();
-                if !child_trimmed.is_empty() && indentation(child_source) <= cue_indent {
+                let child_indent =
+                    logical_item_indentation(normalized_body.as_ref(), body_line_base, child);
+                if !child_trimmed.is_empty() && child_indent <= cue_indent {
                     break;
                 }
                 if !child_trimmed.is_empty() {
-                    body_lines.push(child_source);
+                    body_lines.push(logical_item_source_with_indent(
+                        normalized_body.as_ref(),
+                        body_line_base,
+                        child,
+                    ));
                 }
                 index += 1;
             }
@@ -196,6 +213,23 @@ fn parse_line_plan_body_inner(
         index += 1;
     }
     LinePlan::new(style, items, range)
+}
+
+fn logical_item_indentation(body: &str, body_base: usize, item: &LogicalBlockItem<'_>) -> usize {
+    let relative = item.base.saturating_sub(body_base).min(body.len());
+    let line_start = body[..relative]
+        .rfind('\n')
+        .map_or(0, |index| index + '\n'.len_utf8());
+    item.base.saturating_sub(body_base + line_start)
+}
+
+fn logical_item_source_with_indent(
+    body: &str,
+    body_base: usize,
+    item: &LogicalBlockItem<'_>,
+) -> String {
+    let indent = logical_item_indentation(body, body_base, item);
+    format!("{}{}", " ".repeat(indent), item.source.as_ref())
 }
 
 fn normalize_line_plan_flat_blocks<'a>(

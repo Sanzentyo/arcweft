@@ -1422,3 +1422,35 @@ Structure audit was rerun with
 the dirty worktree reports 2446 scanned files, 1171 Rust files, 576472 Rust
 physical LOC, and the existing unrelated
 `crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The wait-statement authored expression follow-up extends the same statement
+source-identity path to `wait(...)` payloads. `WaitTarget::Duration` and
+`WaitTarget::Expr` now carry `AuthoredExpr`, so sema can type-check duration
+waits through the expected-type authored expression path and attach the range
+of the expression inside `wait(...)` rather than the whole statement.
+Runtime-plan, verify,
+symbol collection, view action scanning, and view-mount collection explicitly
+project the authored payload back to `Expr` where source identity is not
+needed. While validating this cut, line-plan colon block parsing also received
+an indentation restoration fix: logical line items are stored trimmed, so the
+line-plan parser now reconstructs relative indentation from each item's
+absolute source base before deciding whether an item belongs to `init:`,
+`on:`, `thread:`, `defer:`, `start:`, or nested groups. Focused validation
+passed with
+`cargo test -p arcweft-lang-sema --all-features control_transfer_statement_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features line_plan -- --nocapture`,
+and
+`cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture`.
+The broader validation slice passed with
+`cargo fmt --all --check`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-tooling -p arcweft-verify -p arcweft-cli -p arcweft-lsp --all-targets --all-features`, and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-tooling -p arcweft-verify -p arcweft-cli -p arcweft-lsp --all-targets --all-features`.
+Focused clippy exits successfully with existing unrelated warnings from large
+syntax enum variants, `runtime-plan/src/line_task.rs`, sema function/test
+length, runtime-host/player-native clipboard helpers, and render-wgpu font
+docs. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the dirty worktree reports 2446 scanned files, 1171 Rust files, 576526 Rust
+physical LOC, and the existing unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.

@@ -298,10 +298,10 @@ impl TypeChecker<'_> {
     pub(super) fn check_wait_stmt(&mut self, target: &WaitTarget) {
         match target {
             WaitTarget::Duration(expr) => {
-                self.expect_expr_type(expr, &TypeKind::Duration, "wait duration");
+                self.expect_authored_expr_type(expr, &TypeKind::Duration, "wait duration");
             }
             WaitTarget::Expr(expr) => {
-                if let Some(name) = wait_mark_name(expr) {
+                if let Some(name) = wait_mark_name(expr.expr()) {
                     if !self
                         .line_mark_stack
                         .last()
@@ -313,7 +313,7 @@ impl TypeChecker<'_> {
                     }
                     return;
                 }
-                self.check_expr(expr);
+                self.check_authored_expr(expr);
             }
         }
     }

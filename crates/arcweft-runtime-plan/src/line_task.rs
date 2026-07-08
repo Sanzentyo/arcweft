@@ -429,20 +429,20 @@ impl LinePlanGraphLowerer {
                 handle: expr_label(expr),
             }],
             Stmt::Wait(WaitTarget::Duration(expr)) => {
-                if let Some(duration) = duration_expr(expr) {
+                if let Some(duration) = duration_expr(expr.expr()) {
                     vec![LineEffectRequest::Wait(RuntimeWaitTarget::Duration(
                         duration,
                     ))]
                 } else {
                     self.errors.push(LinePlanLowerError::new(format!(
                         "wait duration must be a literal duration, found {}",
-                        expr_label(expr)
+                        expr_label(expr.expr())
                     )));
                     Vec::new()
                 }
             }
             Stmt::Wait(WaitTarget::Expr(expr)) => {
-                vec![LineEffectRequest::Wait(lower_wait_target_expr(expr))]
+                vec![LineEffectRequest::Wait(lower_wait_target_expr(expr.expr()))]
             }
             Stmt::Signal { target, value } => {
                 vec![LineEffectRequest::SignalWrite(RuntimeAssignment {

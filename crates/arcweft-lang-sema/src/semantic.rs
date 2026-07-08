@@ -1657,7 +1657,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn collect_wait(&mut self, target: &WaitTarget, state: &mut FlowState) {
         match target {
-            WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => self.collect_expr(expr, state),
+            WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => {
+                self.collect_expr(expr.expr(), state);
+            }
         }
     }
 

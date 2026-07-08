@@ -159,7 +159,7 @@ fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
         }
         Stmt::Wait(target) => match target {
             WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => {
-                collect_mounted_view_ids_from_expr(expr, ids);
+                collect_mounted_view_ids_from_expr(expr.expr(), ids);
             }
         },
         Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {

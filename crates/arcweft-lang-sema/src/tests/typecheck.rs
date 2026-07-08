@@ -1753,6 +1753,7 @@ flow @flow.control_source_ranges control_source_ranges {
     }
     let _line = alice.say()[Pick one.] with {
         select @choice.primary
+        wait(0.35s)
     }
 }
 
@@ -1810,6 +1811,14 @@ stream fn sample_stream(frames: Stream<i64, String>) -> Stream<i64, String> {
         "8i64 + 9i64",
         |ty| matches!(ty, TypeKind::I64),
         "break value expression should retain its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "0.35s",
+        |ty| matches!(ty, TypeKind::Duration),
+        "wait duration should retain its authored range inside wait(...)",
     );
     assert!(
         report.judgments.iter().any(|judgment| {
