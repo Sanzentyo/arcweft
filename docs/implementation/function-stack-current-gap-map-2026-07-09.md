@@ -4,11 +4,13 @@ This note is the short current-state map for the active
 function/closure/currying/pipeline goal. It is intentionally smaller than the
 main implementation log and the status rollup: use it to decide what is done,
 what remains implementation-ready, and what is still blocked on design.
+For the current entry point and reading order, see
+`docs/implementation/function-stack-current-state-2026-07-09.md`.
 
 ## Repository Baseline
 
-- Current pushed function-stack baseline: `29d19a21e Lower AWBC control
-  expressions lazily`.
+- Current pushed function-stack baseline:
+  `d8254a253 Allow pure helper calls in source function values`.
 - `main` and `origin/main` were aligned at that commit when this gap map was
   written.
 - The working copy still contains View/Web/text-input changes. They are not

@@ -3,13 +3,13 @@
 This note is the current repository map after the latest pushed function-stack
 slice and the current status cleanup. It supersedes the operational pointers in
 `docs/implementation/current-work-status-2026-07-08.md` without rewriting that
-historical note. For the shortest active-goal gap map, see
-`docs/implementation/function-stack-current-gap-map-2026-07-09.md`.
+historical note. For the current active-goal entry point, see
+`docs/implementation/function-stack-current-state-2026-07-09.md`.
 
 ## Repository Baseline
 
 - Current pushed function-stack baseline:
-  `29d19a21e Lower AWBC control expressions lazily`.
+  `d8254a253 Allow pure helper calls in source function values`.
 - At the start of this cleanup, `main` and `origin/main` were aligned at that
   head.
 - The working copy still has unrelated View/Web/text-input changes. They are
@@ -63,8 +63,9 @@ completion still depends on explicit request/design areas:
 4. General non-helper/effectful/suspending callable allocation and the final
    closure effect-row contract.
 
-The current short summary is:
+The current status entry points are:
 
+- `docs/implementation/function-stack-current-state-2026-07-09.md`
 - `docs/implementation/function-stack-current-gap-map-2026-07-09.md`
 - `docs/implementation/function-stack-status-rollup-2026-07-09.md`
 

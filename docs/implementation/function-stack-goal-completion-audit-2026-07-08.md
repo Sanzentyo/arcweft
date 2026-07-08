@@ -1,6 +1,8 @@
 # Function Stack Goal Completion Audit - 2026-07-08
 
 Current pointer: see
+`docs/implementation/function-stack-current-state-2026-07-09.md` for the latest
+entry point and
 `docs/implementation/function-stack-status-rollup-2026-07-09.md` for the latest
 one-page status. This file remains the 2026-07-08 requirement-by-requirement
 audit.
@@ -17,6 +19,7 @@ explicit requirements remain in request/design space.
 ## Evidence Sources
 
 - `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`
+- `docs/implementation/function-stack-current-state-2026-07-09.md`
 - `docs/implementation/function-stack-current-status-2026-07-08.md`
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`

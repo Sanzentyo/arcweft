@@ -4,6 +4,8 @@ This is the current one-page map for the active function/closure/currying/
 pipeline language-stack goal. It supersedes the "where are we now" role of
 `docs/implementation/function-stack-current-status-2026-07-08.md` while keeping
 that file as the detailed 2026-07-08 status index.
+For the current entry point and reading order, see
+`docs/implementation/function-stack-current-state-2026-07-09.md`.
 
 Status: **open**. The implemented surface is substantial, but the goal is not
 complete because several requested end-to-end behaviors remain behind explicit
@@ -13,6 +15,7 @@ request/design boundaries.
 
 Short current gap map:
 
+- `docs/implementation/function-stack-current-state-2026-07-09.md`
 - `docs/implementation/function-stack-current-gap-map-2026-07-09.md`
 
 Primary implementation log:
@@ -33,7 +36,7 @@ Current supporting audits:
 
 Current pushed baseline for this status refresh:
 
-- `29d19a21e Lower AWBC control expressions lazily`
+- `d8254a253 Allow pure helper calls in source function values`
 
 ## Implemented And Pushed
 
