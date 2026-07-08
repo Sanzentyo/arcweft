@@ -1690,6 +1690,39 @@ effects { }
 }
 
 #[test]
+fn no_effect_rejects_partial_closure_alias_effect_when_called() {
+    let tree = parse_ok(
+        r#"
+flow @flow.no_effect_partial_closure_call no_effect_partial_closure_call
+effects { fs.read }
+ensures no_effect fs.read
+{
+    let later = |path: String, suffix: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let suffixer = later("story.arcw")
+    let body = suffixer(".bak")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("no-effect partial closure fixture lowers");
+    validate_typecheck_ready(&hir).expect("no-effect partial closure fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("no_effect must reject partial closure body effects when called");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.no_effect_partial_closure_call")
+                && error.message().contains("forbids effect `fs.read`")
+        }),
+        "expected no_effect partial closure call diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn partial_immediate_closure_alias_composes_body_effects_when_called() {
     let tree = parse_ok(
         r#"

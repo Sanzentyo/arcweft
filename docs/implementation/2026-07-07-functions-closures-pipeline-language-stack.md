@@ -1804,3 +1804,11 @@ until first-class method values have a stable receiver-binding, AWBC, and
 persistence contract. Normal method calls and data-last fallback resolution are
 unchanged. Details are recorded in
 `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`.
+
+The partial closure effect-row timing follow-up strengthens 07.8's delayed
+effect evidence. Existing regressions already prove that partial closure
+application is effect-free until the partial value is called; the new
+`no_effect_rejects_partial_closure_alias_effect_when_called` regression proves
+that forbidden-effect bounds are enforced at the eventual partial alias call.
+Details are recorded in
+`docs/implementation/function-stack-effect-row-partial-closure-timing-2026-07-09.md`.

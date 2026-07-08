@@ -47,7 +47,7 @@ effect-row model is introduced:
 | Behavior | Current evidence |
 | --- | --- |
 | Creating a closure value is effect-free. | `closure_body_effects_do_not_leak_on_function_value_creation` |
-| Partially applying a closure value is effect-free until the resulting value is called. | `partial_local_closure_application_does_not_compose_until_called`; `partial_immediate_closure_application_does_not_compose_until_called` |
+| Partially applying a closure value is effect-free until the resulting value is called. | `partial_local_closure_application_does_not_compose_until_called`; `partial_immediate_closure_application_does_not_compose_until_called`; `no_effect_rejects_partial_closure_alias_effect_when_called` |
 | Exact invocation of a local or immediate closure composes the closure body effects into the caller. | `local_closure_call_composes_body_effects_into_caller`; `immediate_closure_call_composes_body_effects_into_caller` |
 | Calling a partial closure alias composes the original closure body effects. | `partial_local_closure_alias_composes_body_effects_when_called`; `partial_immediate_closure_alias_composes_body_effects_when_called` |
 | `map` and `filter` compose callback effects only because they invoke the callback. | `map_closure_argument_composes_body_effects_into_caller`; `map_local_closure_alias_composes_body_effects_into_caller`; `map_partial_closure_alias_composes_body_effects_into_caller`; `filter_closure_argument_composes_body_effects_into_caller` |
@@ -60,9 +60,11 @@ effect-row model is introduced:
 | The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence` |
 | Agent verified-effects manifests are built from the closed row projection rather than from graph summaries directly. | `compile_agent_bundle_with_project_builds_agent_controller_bundle`; `compile_agent_bundle_lowers_inferred_effects_not_unused_source_upper_bound` |
 
-The new `no_effect_rejects_local_closure_effect_when_called` regression fixes
+The `no_effect_rejects_local_closure_effect_when_called` and
+`no_effect_rejects_partial_closure_alias_effect_when_called` regressions fix
 the 07.8 test requirement that forbidden-effect bounds apply to closure values
-whose inferred effects exceed the bound after invocation.
+whose inferred effects exceed the bound after invocation, including partial
+closure aliases.
 
 ## Temporary Evidence-Based Composition
 
@@ -133,6 +135,7 @@ The following 07.8 decisions remain open:
 
 ```bash
 cargo test -p arcweft-lang-sema --all-features no_effect_rejects_local_closure_effect_when_called -- --nocapture
+cargo test -p arcweft-lang-sema --all-features no_effect_rejects_partial_closure_alias_effect_when_called -- --nocapture
 cargo test -p arcweft-lang-sema --all-features closure_effect_rows_project_closed_report_evidence -- --nocapture
 cargo test -p arcweft-lang-sema --all-features borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary -- --nocapture
 cargo test -p arcweft-lang-sema --all-features returned_closure_captured_function_alias -- --nocapture

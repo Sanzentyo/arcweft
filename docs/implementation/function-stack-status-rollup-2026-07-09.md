@@ -44,6 +44,7 @@ Current supporting audits:
 - `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md`
+- `docs/implementation/function-stack-effect-row-partial-closure-timing-2026-07-09.md`
 - `docs/implementation/current-work-status-2026-07-09.md`
 
 Current pushed baseline:
@@ -165,6 +166,9 @@ Previous named baseline before the spread rejection hardening slice:
 - Closure body effects compose when the function value is invoked for the
   broad set of currently implemented closure, alias, callback, higher-order,
   curried, destructuring, and returned-closure paths.
+- Partial closure application is covered as effect-free until the partial value
+  is invoked, including a `no_effect` regression for the eventual partial alias
+  call.
 - Captured function values preserve effect rows through local aliases,
   including aliases captured by returned closures.
 - Numeric fallback lints exist for inferred closure bodies.
@@ -229,7 +233,7 @@ These are the pieces that keep the active goal open:
 | AWBC suspension-aware dynamic apply | Non-suspending `MakeFunction` / `ApplyFunction` works, including lazy AWBC branch lowering for value-position `if` / `if let` / `match` bodies. Apply that suspends or budget-yields now has focused runtime-trap regression coverage, but accepting that behavior still needs a resumable safe-point contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`; `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects function values. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Non-helper/effectful/suspending callable allocation | Callable families are inventoried. The first non-helper source-local `fn` expansion is implemented for expression bodies with no host/effect/suspension syntax, including multiple curried `ParamGroup`s, returned simple closure literals, direct calls to function-typed parameters, local callback aliases/partials, destructuring closure literals in function-valued local bindings, exact calls to already-lowered pure helpers, pure value control expressions, and fixed-point exact calls to already-accepted source-local candidates. Bare task/dialogue/stream function values have focused structured rejection coverage. Data-last task/dialogue/stream partials have focused structured rejection coverage. Value-position environment, inherent, and trait/impl method references have focused structured rejection coverage. Effectful/suspending bodies, host/adapter call-bearing bodies, accepted task/dialogue/stream values, accepted method values, adapter thunks, and persistence remain unaccepted. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`; `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`; `docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`; `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`; `docs/implementation/function-stack-current-gap-map-2026-07-09.md` |
-| Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, `no_effect` now has focused closure-invocation coverage, captured function aliases preserve rows through returned closures, borrowed captures crossing `await` preserve closed row evidence while reporting the lifetime diagnostic, closed row report projection exists, and Agent artifact verified-effects lowering consumes that projection. Source row syntax, open-row inference, row-bearing callable values, and runtime-plan/verifier/LSP consumers beyond artifact proofs are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md` |
+| Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, `no_effect` now has focused closure-invocation and partial-closure-invocation coverage, captured function aliases preserve rows through returned closures, borrowed captures crossing `await` preserve closed row evidence while reporting the lifetime diagnostic, closed row report projection exists, and Agent artifact verified-effects lowering consumes that projection. Source row syntax, open-row inference, row-bearing callable values, and runtime-plan/verifier/LSP consumers beyond artifact proofs are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`; `docs/implementation/function-stack-effect-row-partial-closure-timing-2026-07-09.md` |
 
 ## Deferred Non-Blocker
 
