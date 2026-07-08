@@ -48,6 +48,9 @@ includes:
   closures, direct calls to function-typed parameters, local callback
   aliases/partials, and destructuring closure literals in local function-valued
   bindings;
+- exact calls to already-lowered pure helpers from inside that accepted
+  source-local function subset, with named helper arguments lowered in helper
+  input order;
 - product AWBC save/load rejection of escaped function values through the
   structured unsupported-runtime-value path.
 
@@ -56,21 +59,6 @@ The detailed evidence remains in:
 - `docs/implementation/function-stack-status-rollup-2026-07-09.md`
 - `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
-
-## Implementation-Ready Remaining Work
-
-One narrow implementation-ready gap remains inside the already accepted 07.7
-source-local function subset:
-
-- exact calls to already-lowered pure helpers inside accepted source-local
-  runtime function bodies are still rejected by the current "no top-level
-  calls" guard. This does not require a new broad callable-allocation design if
-  it is kept to exact pure-helper calls resolved through the existing
-  `RuntimePureHelperLookup`. Unknown calls, host/adapter calls, effectful
-  calls, suspending calls, pipes, `await`, and `try` should remain rejected.
-
-This should be implemented as a focused slice before taking on any broader
-callable-allocation work.
 
 ## Design-Blocked Remaining Work
 
@@ -81,7 +69,7 @@ These keep the active goal open:
 | Spread partial application and spread data-last fallback | Fixed partial/fallback paths are implemented; spread expansion semantics are not yet designed. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md` |
 | AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding dynamic apply still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects runtime functions. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
-| Broad non-helper callable allocation | The first source-local `fn` family is implemented. Task/dialogue/stream functions, trait/impl methods, adapter thunks, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
+| Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers. Task/dialogue/stream functions, trait/impl methods, adapter thunks, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
 | Final closure effect-row model | Current composition is useful and broadly covered, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows it is needed.
@@ -104,11 +92,9 @@ used as evidence for the function-stack goal.
 ## Recommended Order
 
 1. Keep function-stack commits separate from the dirty View/Web worktree.
-2. Implement the narrow exact pure-helper call support inside accepted
-   source-local runtime function values.
-3. Then choose one design-blocked request boundary and answer it before
+2. Choose one design-blocked request boundary and answer it before
    changing broader language/runtime behavior.
-4. Audit and commit the View/Web/text-input dirty slice separately.
+3. Audit and commit the View/Web/text-input dirty slice separately.
 
 ## Validation For This Map
 

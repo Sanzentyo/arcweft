@@ -1413,6 +1413,109 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_materializes_source_function_pure_helper_call_body() {
+    let parsed = parse_source_text(
+        r"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    left + right
+}
+
+fn finish_with_tail(value: i64, id: i64 -> i64) -> i64 {
+    let finish = |item: i64| add(right = 5i64, left = item)
+    return finish(value)
+}
+
+flow @flow.main main {
+    let id = |item: i64| item
+    let value: i64 = finish_with_tail(7i64, id)
+    return value
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function containing pure helper call");
+
+    assert_eq!(report.plan.pure_helpers.len(), 1);
+    assert_eq!(report.plan.pure_helpers[0].name, "add");
+
+    let [
+        FlowOp::Let { expr: id, .. },
+        FlowOp::Let { expr: value, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected id and value lets");
+    };
+    assert!(matches!(
+        id,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["item"]
+                && matches!(body.as_ref(), RuntimeExpr::Local(name) if name == "item")
+    ));
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["value", "id"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Let { name, expr, body }
+                                    if name == "finish"
+                                        && matches!(
+                                            expr.as_ref(),
+                                            RuntimeExpr::Function { params, body }
+                                                if params.as_slice() == ["item"]
+                                                    && matches!(
+                                                        body.as_ref(),
+                                                        RuntimeExpr::PureCall { args, .. }
+                                                            if matches!(
+                                                                args.as_slice(),
+                                                                [
+                                                                    RuntimeExpr::Local(left),
+                                                                    RuntimeExpr::Value(right),
+                                                                ] if left == "item" && right == &RuntimeValue::i64(5)
+                                                            )
+                                                    )
+                                        )
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Apply { callee, args }
+                                                if matches!(
+                                                    callee.as_ref(),
+                                                    RuntimeExpr::Local(name) if name == "finish"
+                                                ) && matches!(
+                                                    args.as_slice(),
+                                                    [RuntimeExpr::Local(name)] if name == "value"
+                                                )
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value), RuntimeExpr::Local(id)]
+                        if value == &RuntimeValue::i64(7) && id == "id"
+                )
+        ),
+        "expected value to apply source function containing exact pure-helper call, got {value:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_materializes_source_function_callback_param_call() {
     let parsed = parse_source_text(
         r#"

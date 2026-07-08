@@ -1,11 +1,15 @@
 //! Flow-runtime lowering.
 
 mod closure_metadata;
+mod pure_helpers;
 mod record_projection;
 
 pub use closure_metadata::{RuntimeClosureCapture, RuntimeClosureCaptureInventory};
 
-use self::record_projection::rewrite_known_record_projections_in_op;
+use self::{
+    pure_helpers::runtime_pure_helper_inventory,
+    record_projection::rewrite_known_record_projections_in_op,
+};
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{
     RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_expected_type,
@@ -16,7 +20,7 @@ use crate::host_request::{lower_agent_host_task_request, lower_host_task_request
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
-use crate::pure::{PureHelperCandidate, lower_pure_helper_candidates};
+use crate::pure::lower_pure_helper_candidates;
 use crate::render_text::{
     DialogueDisplayDefaults, DialogueSpeakerPreset, lower_dialogue_display_with_speaker_presets,
     speaker_preset_from_let,
@@ -30,8 +34,8 @@ use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeFlow, RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeLineId,
-    RuntimeMatchArm, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding,
-    RuntimeRouteBindingSource, RuntimeRouteSpec, RuntimeTraitMethod,
+    RuntimeMatchArm, RuntimePlan, RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRouteSpec,
+    RuntimeTraitMethod,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{
@@ -246,14 +250,15 @@ pub fn lower_runtime_plan_with_stats_and_options(
         pure_expr_lowered_nodes: pure_candidate_report.stats.expr_lowered_nodes,
         ..RuntimePlanLowerStats::default()
     };
-    let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
-    let pure_map = pure_helper_map(&pure_helpers);
-    let function_value_candidates = lower_runtime_function_value_candidates(module);
+    let (pure_helpers, pure_map) =
+        runtime_pure_helper_inventory(&pure_candidate_report.candidates, &mut stats);
+    let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
+    let function_value_candidates = lower_runtime_function_value_candidates(module, pure_lookup);
     let function_values = runtime_function_value_map(&function_value_candidates);
     let entries = lower_runtime_entries(module);
     let (flows, line_task_groups, line_display_catalog, stream_plans, source_plans) = {
         let typed_expression_cursor = Cell::new(0);
-        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers)
+        let pure_lookup = pure_lookup
             .with_runtime_function_values(&function_values)
             .with_typed_lowering_evidence(
                 options.typed_lowering_evidence(),
@@ -342,13 +347,14 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
         pure_expr_lowered_nodes: pure_candidate_report.stats.expr_lowered_nodes,
         ..RuntimePlanLowerStats::default()
     };
-    let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
-    let pure_map = pure_helper_map(&pure_helpers);
-    let function_value_candidates = lower_runtime_function_value_candidates(module);
+    let (pure_helpers, pure_map) =
+        runtime_pure_helper_inventory(&pure_candidate_report.candidates, &mut stats);
+    let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
+    let function_value_candidates = lower_runtime_function_value_candidates(module, pure_lookup);
     let function_values = runtime_function_value_map(&function_value_candidates);
     let lowered = {
         let typed_expression_cursor = Cell::new(0);
-        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers)
+        let pure_lookup = pure_lookup
             .with_runtime_function_values(&function_values)
             .with_typed_lowering_evidence(
                 options.typed_lowering_evidence(),
@@ -379,27 +385,6 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
             }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
-}
-
-fn runtime_pure_helpers(
-    candidates: &[PureHelperCandidate],
-    stats: &mut RuntimePlanLowerStats,
-) -> Vec<RuntimePureHelper> {
-    candidates
-        .iter()
-        .enumerate()
-        .map(|(index, candidate)| {
-            stats.pure_expr_cloned_nodes += candidate.shape().expr_weight;
-            candidate.to_runtime_helper(RuntimePureHelperId(index))
-        })
-        .collect()
-}
-
-fn pure_helper_map(helpers: &[RuntimePureHelper]) -> BTreeMap<String, RuntimePureHelperId> {
-    helpers
-        .iter()
-        .map(|helper| (helper.name.clone(), helper.id))
-        .collect()
 }
 
 fn finalize_runtime_plan(mut plan: RuntimePlan, stats: &mut RuntimePlanLowerStats) -> RuntimePlan {

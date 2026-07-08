@@ -81,8 +81,10 @@ Current pushed baseline for this status refresh:
   and callback partials are tracked inside the accepted body, closure literals
   bound by those `let` aliases may use destructuring parameter patterns through
   the shared synthetic-argument plus `RuntimeExpr::Match` lowering path, and
-  named missing-input partial calls synthesize wrapper functions that preserve
-  declaration argument order.
+  exact calls to already-lowered pure helpers lower as `RuntimeExpr::PureCall`.
+  Named missing-input partial calls synthesize wrapper functions that preserve
+  declaration argument order, and exact named pure-helper calls preserve helper
+  input order.
 - AWBC has a non-suspending closure/apply cut using `MakeFunction` and
   `ApplyFunction`, including partial and chained apply.
 - AWBC value-position `if`, `if let`, and `match` expressions now lower to
@@ -158,15 +160,6 @@ Current pushed baseline for this status refresh:
 - Runtime function values in product AWBC save/load are rejected with structured
   unsupported-runtime-value errors.
 
-## Implementation-Ready Gap
-
-One small 07.7 follow-up is implementation-ready and does not need a new broad
-design answer if kept tightly scoped: accepted source-local runtime function
-bodies should be able to make exact calls to already-lowered pure helpers
-through the existing pure-helper lookup. Unknown calls, host/adapter calls,
-effectful or suspending calls, pipes, `await`, and `try` should remain outside
-the accepted source-local subset.
-
 ## Remaining Blocking Work
 
 These are the pieces that keep the active goal open:
@@ -176,7 +169,7 @@ These are the pieces that keep the active goal open:
 | Spread partial application and spread data-last fallback | Fixed partial/fallback paths are implemented; spread shapes are rejected with diagnostics. Accepted spread execution semantics are not designed. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md` |
 | AWBC suspension-aware dynamic apply | Non-suspending `MakeFunction` / `ApplyFunction` works, including lazy AWBC branch lowering for value-position `if` / `if let` / `match` bodies. Apply that suspends or budget-yields still has no resumable safe-point contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects function values. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
-| Non-helper/effectful/suspending callable allocation | Callable families are inventoried. The first non-helper source-local `fn` expansion is implemented for simple expression bodies with no host/effect/suspension syntax, including multiple curried `ParamGroup`s, returned simple closure literals, direct calls to function-typed parameters, local callback aliases/partials, and destructuring closure literals in function-valued local bindings. Exact pure-helper calls inside that accepted subset are the next implementation-ready gap. Effectful/suspending bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persistence remain unaccepted. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`; `docs/implementation/function-stack-current-gap-map-2026-07-09.md` |
+| Non-helper/effectful/suspending callable allocation | Callable families are inventoried. The first non-helper source-local `fn` expansion is implemented for simple expression bodies with no host/effect/suspension syntax, including multiple curried `ParamGroup`s, returned simple closure literals, direct calls to function-typed parameters, local callback aliases/partials, destructuring closure literals in function-valued local bindings, and exact calls to already-lowered pure helpers. Effectful/suspending bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persistence remain unaccepted. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`; `docs/implementation/function-stack-current-gap-map-2026-07-09.md` |
 | Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, `no_effect` now has focused closure-invocation coverage, closed row report projection exists, and Agent artifact verified-effects lowering consumes that projection. Source row syntax, open-row inference, row-bearing callable values, and runtime-plan/verifier/LSP consumers beyond artifact proofs are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md` |
 
 ## Deferred Non-Blocker

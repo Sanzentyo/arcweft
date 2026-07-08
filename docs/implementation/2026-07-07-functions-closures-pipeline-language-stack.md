@@ -1110,7 +1110,11 @@ Function-valued closure `let` aliases in that accepted family may now use
 destructuring parameter patterns. Runtime-plan support uses the same synthetic
 closure argument plus `RuntimeExpr::Match` body shape as ordinary destructured
 closure lowering, so runtime function parameter names remain stable while the
-source closure pattern is still executable.
+source closure pattern is still executable. Exact calls to already-lowered
+pure helpers are now accepted inside that same source-local family. The
+candidate pass receives the existing `RuntimePureHelperLookup`, and strict
+body lowering emits `RuntimeExpr::PureCall`; named helper arguments keep helper
+input order rather than source order.
 Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_curried_source_function_value -- --nocapture` and
@@ -1118,6 +1122,7 @@ Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_param_call -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture` and
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture`.
 
 The named data-last pipe preservation cut has passing focused coverage for

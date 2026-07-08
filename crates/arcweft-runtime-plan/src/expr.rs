@@ -128,6 +128,11 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
         self.helper(name).map(|helper| helper.input_names.len())
     }
 
+    pub(crate) fn pure_helper_input_names(self, name: &str) -> Option<&'helpers [String]> {
+        self.helper(name)
+            .map(|helper| helper.input_names.as_slice())
+    }
+
     fn function_value(self, name: &str) -> Option<RuntimeExpr> {
         self.helper(name)
             .map(|helper| RuntimeExpr::Function {
@@ -315,18 +320,14 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
     lower_runtime_expr_strict_with_helpers(expr, None)
 }
 
-pub(crate) fn lower_runtime_expr_strict_with_function_locals(
+pub(crate) fn lower_runtime_expr_strict_with_function_locals_and_pure(
     expr: &Expr,
     function_locals: &BTreeMap<String, usize>,
+    helpers: RuntimePureHelperLookup<'_, '_>,
 ) -> Result<RuntimeExpr, String> {
-    let helper_ids = BTreeMap::new();
-    let helpers = [];
     lower_runtime_expr_strict_with_helpers(
         expr,
-        Some(
-            RuntimePureHelperLookup::new(&helper_ids, &helpers)
-                .with_function_locals(function_locals),
-        ),
+        Some(helpers.with_function_locals(function_locals)),
     )
 }
 

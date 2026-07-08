@@ -21,7 +21,10 @@ The fifth follow-up allows those function-valued closure literals to use
 destructuring parameter patterns. The lowered closure keeps the stable runtime
 function parameter list by using a synthetic runtime argument name and a
 single-arm `RuntimeExpr::Match` body, matching the shared closure-parameter
-lowering path.
+lowering path. The sixth follow-up threads the existing pure-helper lookup
+through this accepted source-function candidate pass, so exact calls to
+already-lowered pure helpers are accepted inside those bodies and lower as
+`RuntimeExpr::PureCall`.
 
 ## Accepted Contract
 
@@ -34,9 +37,13 @@ The accepted family is intentionally small:
   bindings.
 - Body must be a final expression or final `return` expression, optionally
   preceded by simple `let` statements.
-- Body expressions must lower through strict runtime expression lowering and
-  must not contain host/top-level calls, pipes, `await`, `try`, threads,
-  dialogue calls, placeholders, raw syntax, or lifetime paths.
+- Body expressions must lower through strict runtime expression lowering.
+  Calls are accepted only when they are local function-value calls or exact
+  calls to already-lowered pure helpers resolved through
+  `RuntimePureHelperLookup`. Host/top-level non-helper calls, adapter calls,
+  effectful calls, suspending calls, pipes, `await`, `try`, threads, dialogue
+  calls, placeholders, raw syntax, and lifetime paths remain outside this
+  subset.
 - Closure literal expressions are accepted when their parameter patterns do not
   bind names that shadow known function-valued locals and their body
   recursively satisfies this accepted contract. Simple identifier parameters
@@ -64,7 +71,9 @@ Direct calls to function-typed parameters lower as `RuntimeExpr::Apply` with a
 local callee, preserving higher-order source functions without pretending the
 call is an adapter or top-level runtime call. Function-valued `let` bindings
 lower as ordinary `RuntimeExpr::Let` values, and later calls to those locals
-also lower as local `RuntimeExpr::Apply`.
+also lower as local `RuntimeExpr::Apply`. Exact pure-helper calls lower through
+the same strict named-call lowering as flow expressions, so named helper
+arguments are emitted in helper input order rather than source order.
 
 Pure helpers keep priority when a function is also accepted by the pure-helper
 candidate pass. Local function-valued bindings keep priority over both
@@ -75,9 +84,11 @@ top-level families.
 Function-value creation is effect-free. The accepted subset does not contain
 host/effect/suspension syntax outside recursively accepted closure literals,
 direct calls to supplied function values, and local aliases/partials of those
-function values, so creating the value cannot perform hidden host, adapter, or
-suspension work in this cut. Calling a supplied function value composes that
-value's behavior at invocation time through the existing runtime `Apply` path.
+function values, plus exact pure-helper calls whose helper bodies were already
+accepted by the pure-helper pass, so creating the value cannot perform hidden
+host, adapter, or suspension work in this cut. Calling a supplied function
+value composes that value's behavior at invocation time through the existing
+runtime `Apply` path.
 Returning a closure only allocates another `RuntimeExpr::Function`; its body is
 still constrained by the same accepted subset.
 Destructuring closure parameters do not widen the callable family by
@@ -92,9 +103,9 @@ unsupported-runtime-value path.
 
 These are still not accepted:
 
-- source function values whose bodies contain host/top-level calls, effects,
-  pipes, closure bodies with host/effect calls, `await`, `try`, or other
-  suspension-capable constructs;
+- source function values whose bodies contain host/top-level non-helper calls,
+  effects, adapter calls, pipes, closure bodies with host/effect calls,
+  `await`, `try`, or other suspension-capable constructs;
 - `task fn`, `dialogue fn`, and `stream fn` values;
 - trait/impl method values and receiver binding extraction;
 - adapter/host-call-backed callable thunks;
@@ -113,6 +124,7 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_param_call -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck -- --nocapture
 ```
@@ -153,3 +165,34 @@ slice:
 | `crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs` | 243053 | 6285 | integration test |
 | `crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_class_mix.rs` | 222475 | 5760 | integration test |
 | `crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs` | 222425 | 5659 | integration test |
+
+2026-07-09 exact pure-helper call validation:
+
+```bash
+rustfmt --edition 2024 --check crates\arcweft-runtime-plan\src\expr.rs crates\arcweft-runtime-plan\src\function_values.rs crates\arcweft-runtime-plan\src\flow.rs crates\arcweft-runtime-plan\src\flow\pure_helpers.rs crates\arcweft-compiler\src\tests.rs
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
+cargo check -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo clippy -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+git diff --check -- crates\arcweft-runtime-plan\src\expr.rs crates\arcweft-runtime-plan\src\function_values.rs crates\arcweft-runtime-plan\src\flow.rs crates\arcweft-runtime-plan\src\flow\pure_helpers.rs crates\arcweft-compiler\src\tests.rs docs\implementation\2026-07-07-functions-closures-pipeline-language-stack.md docs\implementation\current-work-status-2026-07-09.md docs\implementation\function-stack-current-gap-map-2026-07-09.md docs\implementation\function-stack-goal-completion-audit-2026-07-08.md docs\implementation\function-stack-non-helper-source-function-values-2026-07-09.md docs\implementation\function-stack-status-rollup-2026-07-09.md docs\reviews\requests\2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md
+```
+
+All commands passed. Clippy still reports only the existing large-enum warnings
+in `arcweft-lang-syntax` and the existing `too_many_lines` warning in
+`arcweft-lang-sema::semantic::analyze_stmt`. The structure audit scanned 2467
+files / 1177 Rust files / 581600 Rust physical LOC and reported 0 errors /
+151 warnings. During this cut, `flow.rs` briefly crossed the production-file
+error threshold; pure-helper inventory construction was split into
+`flow/pure_helpers.rs`, bringing `flow.rs` back below the 2,500 LOC error
+threshold.
+
+Structural measurement after the exact pure-helper call cut:
+
+| Path | Crate | Bytes | Physical LOC | Classification | Embedded test LOC | Responsibilities |
+| --- | --- | ---: | ---: | --- | ---: | --- |
+| `crates/arcweft-runtime-plan/src/expr.rs` | `arcweft-runtime-plan` | 88235 | 2483 | production | 0 | strict runtime expression lowering, helper lookup, function/partial/call expression lowering |
+| `crates/arcweft-runtime-plan/src/flow.rs` | `arcweft-runtime-plan` | 91315 | 2485 | production | 0 | runtime-plan flow lowering, optimization, entry lowering, agent-controller lowering |
+| `crates/arcweft-runtime-plan/src/flow/pure_helpers.rs` | `arcweft-runtime-plan` | 751 | 23 | production | 0 | runtime pure-helper inventory and lookup-id construction for flow lowering |
+| `crates/arcweft-runtime-plan/src/function_values.rs` | `arcweft-runtime-plan` | 19768 | 604 | production | 0 | accepted runtime function-value family classification, source-local function materialization, pure-helper exact-call admission |
+| `crates/arcweft-compiler/src/tests.rs` | `arcweft-compiler` | 113891 | 3622 | unit-test module | 3622 | compiler/runtime-plan regression fixtures |

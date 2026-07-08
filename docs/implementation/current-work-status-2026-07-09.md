@@ -53,14 +53,9 @@ The non-function-stack dirty files at this audit point are:
 ## Active Goal Status
 
 The active function/closure/currying/pipeline language-stack goal remains
-open. The implemented surface is broad. One narrow implementation-ready gap is
-still visible inside the already accepted 07.7 source-local function subset:
-exact calls to already-lowered pure helpers from accepted runtime function
-bodies should be allowed through the existing pure-helper lookup while unknown,
-host/effect/suspension, pipe, `await`, and `try` calls remain rejected.
-
-Completion after that focused slice still depends on explicit request/design
-areas:
+open. The implemented surface is broad, and the narrow 07.7 exact pure-helper
+call gap inside accepted source-local function bodies is implemented. Remaining
+completion still depends on explicit request/design areas:
 
 1. Spread partial application and spread data-last fallback semantics.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.
@@ -140,6 +135,10 @@ The detailed evidence trail remains:
   synthetic closure argument plus `RuntimeExpr::Match` body shape as ordinary
   destructured closures, so the public closure pattern surface does not leak
   into runtime function parameter names.
+- Exact pure-helper calls inside the accepted source-function subset:
+  source-local runtime function candidates receive the existing pure-helper
+  lookup, exact helper calls are accepted, and named helper arguments lower in
+  helper input order.
 
 ## Remaining Function-Stack Work
 
@@ -155,9 +154,10 @@ implementation:
   `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
   The accepted source-local `fn` subset now covers curried groups, returned
   simple closures, direct function-typed parameter calls, callback aliases and
-  partials, and destructuring closure literals in local function bindings. It
-  still excludes effectful/suspending/top-level-call-bearing bodies and
-  non-`fn` callable families.
+  partials, destructuring closure literals in local function bindings, and
+  exact calls to already-lowered pure helpers. It still excludes
+  effectful/suspending/top-level non-helper call-bearing bodies and non-`fn`
+  callable families.
 - Closure effect-row final contract:
   `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
 
