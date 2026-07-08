@@ -39,7 +39,7 @@ explicit requirements remain in request/design space.
 | Closure expressions `|x| expr` / `|| expr` with typed/pattern parameters | Closure typing, typed parameters, parameter patterns, braced return annotations, and closure-local `return` are recorded in the status index. | Implemented |
 | Capture analysis hooks and lifetime diagnostics at suspension boundaries | Capture inventory, checked runtime-plan capture metadata, and borrowed-capture suspension diagnostics are recorded in 07.4 and the status index. | Implemented for current policy |
 | Expression `_` placeholder abstraction distinct from pattern wildcard | Expected-function `_`, inferred binary `_`, known-callable partial-call abstraction, and pattern `_` distinction are recorded in the status index. | Implemented for fixed accepted shapes |
-| Partial-application desugaring | Helper-backed prefix partials, named/fixed missing-input partials, local aliases, runtime apply, and the first simple non-helper source-local `fn` materialization are implemented, including curried groups, returned simple closure literals, and direct calls to function-typed parameters in that accepted family. Helper-less signature partials still fail as unsupported callable family `signature_partial_without_helper` when no pure helper or accepted source-function candidate exists; spread partials remain request/design work. | Partially implemented; spread split to 07.2.1 and broader non-helper expansion remains in 07.7 |
+| Partial-application desugaring | Helper-backed prefix partials, named/fixed missing-input partials, local aliases, runtime apply, and the first simple non-helper source-local `fn` materialization are implemented, including curried groups, returned simple closure literals, direct calls to function-typed parameters, and local callback aliases/partials in that accepted family. Helper-less signature partials still fail as unsupported callable family `signature_partial_without_helper` when no pure helper or accepted source-function candidate exists; spread partials remain request/design work. | Partially implemented; spread split to 07.2.1 and broader non-helper expansion remains in 07.7 |
 | `^` pipe-left placeholder scoped only inside pipe RHS | Status index records scoped RHS behavior and substitution. | Implemented |
 | Left-associative `|>` with `^` substitution or data-last application when no `^` appears | Status index records explicit `^` substitution, no-`^` data-last application, helper-aware pipes, and local function-valued aliases. | Implemented for fixed accepted shapes |
 | Method-chain sugar with inherent/trait first and data-last fallback with ambiguity diagnostics | Status index records resolution order, deterministic runtime argument order, ambiguity diagnostics, real-method priority, and shadowed fallback warnings. Spread fallback remains request/design work. | Partially implemented; spread fallback split to 07.2.1 |
@@ -64,8 +64,9 @@ The goal is not complete because these explicit areas remain unresolved:
    `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
    The callable-family inventory step is complete. A narrow source-local
    `fn` family is accepted, including curried groups and returned simple
-   closure literals plus direct calls to function-typed parameters, but
-   host/top-level call-bearing, effectful, suspending callable values,
+   closure literals plus direct calls to function-typed parameters and local
+   callback aliases/partials, but host/top-level call-bearing, effectful,
+   suspending callable values,
    task/dialogue/stream functions, trait/impl methods, adapter thunks, and
    persistence remain outside the accepted contract.
 4. Full closure effect-row final contract:
@@ -94,5 +95,6 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_curried_source_function_value -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_returned_closure -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_param_call -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
 ```

@@ -203,7 +203,8 @@ These should stay as request or design work before implementation:
    first-class runtime function values. Helper-backed and local-function paths
    are implemented. The first narrow non-helper source-local `fn` expansion,
    including curried groups and returned simple closure literals in that
-   accepted family plus direct calls to function-typed parameters, is recorded in
+   accepted family plus direct calls to function-typed parameters and local
+   callback aliases/partials, is recorded in
    `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`.
    Broader call-bearing/effectful/suspending callable allocation remains split
    to

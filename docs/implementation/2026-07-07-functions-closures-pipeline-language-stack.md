@@ -1068,12 +1068,16 @@ literals in that family now recursively lower to nested runtime functions when
 the closure body stays inside the same no-call/no-suspension accepted subset.
 Direct calls to function-typed parameters in that family now lower as local
 `RuntimeExpr::Apply`, preserving higher-order source functions without
-pretending the callback invocation is a host or adapter call.
+pretending the callback invocation is a host or adapter call. Function-valued
+`let` aliases and callback partial calls are now tracked inside the same
+accepted source function body, so a partially applied callback can be invoked
+later without leaving the runtime-function substrate.
 Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_curried_source_function_value -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_returned_closure -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_param_call -- --nocapture` and
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture`.
 
 The runtime-plan closure capture metadata cut adds

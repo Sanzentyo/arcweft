@@ -10,7 +10,7 @@ use arcweft_lang_hir::{
             items::FunctionKind,
             pattern::{Pattern, VariantPatternPayload},
         },
-        expr::{CallArg, Expr, MatchExprArm},
+        expr::{CallArg, ClosureParam, Expr, MatchExprArm},
         types::TypeRef,
     },
 };
@@ -56,16 +56,39 @@ pub(crate) fn runtime_function_value_map(
 
 #[derive(Clone, Debug, Default)]
 struct RuntimeFunctionValueContext {
-    function_locals: BTreeMap<String, usize>,
+    function_locals: BTreeMap<String, FunctionLocalSignature>,
+}
+
+#[derive(Clone, Debug)]
+struct FunctionLocalSignature {
+    arity: usize,
+    return_type: Option<TypeRef>,
 }
 
 impl RuntimeFunctionValueContext {
     fn function_local_arity(&self, name: &str) -> Option<usize> {
-        self.function_locals.get(name).copied()
+        self.function_locals
+            .get(name)
+            .map(|signature| signature.arity)
+    }
+
+    fn function_local_signature(&self, name: &str) -> Option<&FunctionLocalSignature> {
+        self.function_locals.get(name)
     }
 
     fn shadows_function_local(&self, name: &str) -> bool {
         self.function_locals.contains_key(name)
+    }
+
+    fn insert_function_local(&mut self, name: String, signature: FunctionLocalSignature) {
+        self.function_locals.insert(name, signature);
+    }
+
+    fn function_local_arities(&self) -> BTreeMap<String, usize> {
+        self.function_locals
+            .iter()
+            .map(|(name, signature)| (name.clone(), signature.arity))
+            .collect()
     }
 }
 
@@ -79,13 +102,7 @@ fn lower_runtime_function_value_candidate(
     let context = runtime_function_value_context(function);
     let input_names = param_groups.first()?.clone();
     let (statements, value) = runtime_function_value_body_parts(function)?;
-    if !statements
-        .iter()
-        .all(|stmt| runtime_function_value_statement_supported(stmt, &context))
-        || !runtime_function_value_expr_supported(value, &context)
-    {
-        return None;
-    }
+    let context = runtime_function_value_supported_context(context, statements, value)?;
     let body = lower_runtime_function_value_body(statements, value, &context)?;
     let value = param_groups
         .into_iter()
@@ -132,19 +149,74 @@ fn runtime_function_value_context(function: &HirFunction) -> RuntimeFunctionValu
         .iter()
         .flat_map(|group| group.params().iter())
         .filter_map(|param| {
-            let arity = function_type_arity(param.ty())?;
+            let signature = function_local_signature_from_type(param.ty())?;
             let name = binding_pattern_name(param.pattern())?;
-            Some((name, arity))
+            Some((name, signature))
         })
         .collect();
     RuntimeFunctionValueContext { function_locals }
 }
 
-fn function_type_arity(ty: &TypeRef) -> Option<usize> {
+fn function_local_signature_from_type(ty: &TypeRef) -> Option<FunctionLocalSignature> {
     match ty {
-        TypeRef::Function { params, .. } => Some(params.len()),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => Some(FunctionLocalSignature {
+            arity: params.len(),
+            return_type: Some((**return_type).clone()),
+        }),
         _ => None,
     }
+}
+
+fn function_local_signature_from_closure(
+    params: &[ClosureParam],
+    return_type: Option<&TypeRef>,
+) -> FunctionLocalSignature {
+    FunctionLocalSignature {
+        arity: params.len(),
+        return_type: return_type.cloned(),
+    }
+}
+
+fn function_local_result_signature(
+    signature: &FunctionLocalSignature,
+    arg_count: usize,
+) -> Option<FunctionLocalSignature> {
+    if arg_count < signature.arity {
+        return Some(FunctionLocalSignature {
+            arity: signature.arity - arg_count,
+            return_type: signature.return_type.clone(),
+        });
+    }
+    if arg_count == signature.arity {
+        return signature
+            .return_type
+            .as_ref()
+            .and_then(function_local_signature_from_type);
+    }
+    None
+}
+
+fn runtime_function_value_supported_context(
+    mut context: RuntimeFunctionValueContext,
+    statements: &[Stmt],
+    value: &Expr,
+) -> Option<RuntimeFunctionValueContext> {
+    for stmt in statements {
+        if !runtime_function_value_statement_supported(stmt, &context) {
+            return None;
+        }
+        let Stmt::Let { pattern, expr, .. } = stmt else {
+            return None;
+        };
+        let name = binding_pattern_name(pattern)?;
+        if let Some(signature) = runtime_function_value_expr_function_signature(expr, &context) {
+            context.insert_function_local(name, signature);
+        }
+    }
+    runtime_function_value_expr_supported(value, &context).then_some(context)
 }
 
 fn runtime_function_value_body_parts(function: &HirFunction) -> Option<(&[Stmt], &Expr)> {
@@ -163,15 +235,16 @@ fn lower_runtime_function_value_body(
     value: &Expr,
     context: &RuntimeFunctionValueContext,
 ) -> Option<RuntimeExpr> {
+    let function_local_arities = context.function_local_arities();
     let body =
-        lower_runtime_expr_strict_with_function_locals(value, &context.function_locals).ok()?;
+        lower_runtime_expr_strict_with_function_locals(value, &function_local_arities).ok()?;
     statements.iter().rev().try_fold(body, |body, stmt| {
         let Stmt::Let { pattern, expr, .. } = stmt else {
             return None;
         };
         let name = binding_pattern_name(pattern)?;
         let expr =
-            lower_runtime_expr_strict_with_function_locals(expr, &context.function_locals).ok()?;
+            lower_runtime_expr_strict_with_function_locals(expr, &function_local_arities).ok()?;
         Some(RuntimeExpr::Let {
             name,
             expr: Box::new(expr),
@@ -359,6 +432,38 @@ fn runtime_function_value_local_function_call_supported(
                 && arg.name().is_none()
                 && runtime_function_value_expr_supported(arg.value(), context)
         })
+}
+
+fn runtime_function_value_expr_function_signature(
+    expr: &Expr,
+    context: &RuntimeFunctionValueContext,
+) -> Option<FunctionLocalSignature> {
+    match expr {
+        Expr::Path(path) => context.function_local_signature(path.as_label()).cloned(),
+        Expr::Closure {
+            params,
+            return_type,
+            body,
+        } => (params.iter().all(|param| param.simple_ident().is_some())
+            && params.iter().all(|param| {
+                param
+                    .simple_ident()
+                    .is_some_and(|name| !context.shadows_function_local(name))
+            })
+            && runtime_function_value_expr_supported(body, context))
+        .then(|| function_local_signature_from_closure(params, return_type.as_ref())),
+        Expr::Call { callee, args }
+            if runtime_function_value_local_function_call_supported(callee, args, context) =>
+        {
+            let Expr::Path(path) = callee.as_ref() else {
+                return None;
+            };
+            context
+                .function_local_signature(path.as_label())
+                .and_then(|signature| function_local_result_signature(signature, args.len()))
+        }
+        _ => None,
+    }
 }
 
 fn runtime_function_value_block_supported(

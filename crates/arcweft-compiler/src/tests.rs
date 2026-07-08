@@ -1252,6 +1252,101 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_materializes_source_function_callback_partial_let() {
+    let parsed = parse_source_text(
+        r#"
+fn apply_suffix(prefix: String, combine: String -> String -> String, suffix: String) -> String {
+    let with_prefix = combine(prefix)
+    return with_prefix(suffix)
+}
+
+flow @flow.main main {
+    let combine = |left: String| -> String -> String {
+        return |right: String| left
+    }
+    let body: String = apply_suffix("story.arcw", combine, "tail")
+    return body
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes callback partial let");
+
+    let [
+        FlowOp::Let { expr: combine, .. },
+        FlowOp::Let { expr: body, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected combine and body lets");
+    };
+    assert!(matches!(
+        combine,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["left"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["right"]
+                            && matches!(body.as_ref(), RuntimeExpr::Local(name) if name == "left")
+                )
+    ));
+    assert!(
+        matches!(
+            body,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["prefix", "combine", "suffix"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Let { name, expr, body }
+                                    if name == "with_prefix"
+                                        && matches!(
+                                            expr.as_ref(),
+                                            RuntimeExpr::Apply { callee, args }
+                                                if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "combine")
+                                                    && matches!(
+                                                        args.as_slice(),
+                                                        [RuntimeExpr::Local(name)] if name == "prefix"
+                                                    )
+                                        )
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Apply { callee, args }
+                                                if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "with_prefix")
+                                                    && matches!(
+                                                        args.as_slice(),
+                                                        [RuntimeExpr::Local(name)] if name == "suffix"
+                                                    )
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value), RuntimeExpr::Local(name), RuntimeExpr::Value(suffix)]
+                        if value == &RuntimeValue::String("story.arcw".to_owned())
+                            && name == "combine"
+                            && suffix == &RuntimeValue::String("tail".to_owned())
+                )
+        ),
+        "expected body to apply source function with callback partial let, got {body:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_rejects_source_function_partial_when_body_calls() {
     let parsed = parse_source_text(
         r#"

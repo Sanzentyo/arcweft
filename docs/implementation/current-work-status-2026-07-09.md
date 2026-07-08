@@ -8,7 +8,7 @@ historical note.
 ## Repository Baseline
 
 - Baseline before the latest function-stack status refresh:
-  `1c8855731 Materialize returned source closures`.
+  `097f694a5 Apply source callback parameters`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
@@ -112,7 +112,8 @@ The detailed evidence trail remains:
   `RuntimeExpr::Function` values, including named missing-input wrapper
   partials, multiple curried `ParamGroup`s lowered to nested functions, and
   returned simple closure literals lowered to nested runtime functions. Direct
-  calls to function-typed parameters lower as local `RuntimeExpr::Apply`.
+  calls to function-typed parameters lower as local `RuntimeExpr::Apply`, and
+  function-valued `let` aliases/partials are tracked inside that accepted body.
 
 ## Remaining Function-Stack Work
 
