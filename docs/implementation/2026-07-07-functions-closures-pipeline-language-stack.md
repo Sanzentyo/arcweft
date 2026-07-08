@@ -680,8 +680,11 @@ closure lower through `RuntimeExpr::Apply`.
 The Unit/Never canonical type cut has passing parser coverage that both `!`
 and `Never` parse to `TypeRef::Never`, and sema coverage that
 `TypeKind::primitive_name("Never")` returns `TypeKind::Never` while source
-labels continue to display the canonical `Never` spelling. `!` remains syntax
-only and is not registered as a primitive name.
+labels continue to display the canonical `Never` spelling. The same sema
+coverage fixes canonical function type labels as right-associated
+`i64 -> String -> bool` and distinct tuple call-group labels such as
+`(i64, String) -> bool`. `!` remains syntax only and is not registered as a
+primitive name.
 The enum shorthand evidence cut has passing sema coverage that user-defined
 unit enum variants such as `.Calm` / `.Alert` resolve from expected types in
 `let` ascriptions, function arguments, and nested value expressions. This locks

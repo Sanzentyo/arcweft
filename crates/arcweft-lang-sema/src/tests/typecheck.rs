@@ -1072,6 +1072,25 @@ fn numeric_primitive_types_keep_explicit_widths() {
         .source_label(),
         "() -> Unit"
     );
+    assert_eq!(
+        TypeKind::Function {
+            params: vec![TypeKind::I64],
+            return_type: Box::new(TypeKind::Function {
+                params: vec![TypeKind::String],
+                return_type: Box::new(TypeKind::Bool),
+            }),
+        }
+        .source_label(),
+        "i64 -> String -> bool"
+    );
+    assert_eq!(
+        TypeKind::Function {
+            params: vec![TypeKind::I64, TypeKind::String],
+            return_type: Box::new(TypeKind::Bool),
+        }
+        .source_label(),
+        "(i64, String) -> bool"
+    );
     assert_eq!(TypeKind::primitive_name("()"), None);
     assert_eq!(TypeKind::primitive_name("!"), None);
     assert_eq!(TypeKind::primitive_name("Bool"), None);
