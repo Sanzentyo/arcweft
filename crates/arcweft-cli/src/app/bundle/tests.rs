@@ -12,6 +12,7 @@ use arcweft_core::task::{
 use arcweft_layout::stage_placement::{StagePlacement, StageRect};
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use std::path::Path;
 
 fn image_await(id: &str) -> FlowOp {
     FlowOp::Await {
@@ -550,6 +551,80 @@ flow test {
     assert_eq!(
         text.literal_text(&block.text_source),
         Some("Arcweft Concierge")
+    );
+}
+
+#[test]
+fn view_static_text_bounds_account_for_wrapped_lines() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view StatusPanel() {
+  Column {
+    Text("aaaaaaaaaaa")
+      .style {
+        width = 100px
+        font-size = 20000milli
+      }
+    Text("After")
+  }
+}
+
+flow test {
+  view(@view:.StatusPanel)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program lowers");
+
+    assert_eq!(program.text_blocks.len(), 2);
+    let wrapped = &program.text_blocks[0].bounds;
+    assert_eq!(wrapped.width_milli, 100_000);
+    assert_eq!(wrapped.height_milli, 48_000);
+    let after = &program.text_blocks[1].bounds;
+    assert_eq!(after.y_milli, 112_000);
+}
+
+#[test]
+fn modern_feedback_view_subtitle_text_block_reserves_wrapped_height() {
+    let source = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("samples/modern-feedback-view/src/main.arcw"),
+    )
+    .expect("modern feedback view sample source");
+    let parsed = arcweft_lang_syntax::parser::parse_source(&source);
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program lowers");
+    let text = sidecars.text.expect("text resource lowers");
+
+    let subtitle = program
+        .text_blocks
+        .iter()
+        .find(|block| {
+            text.literal_text(&block.text_source)
+                .is_some_and(|value| value.contains("flow-backed submit actions"))
+        })
+        .expect("subtitle text block");
+    assert!(
+        subtitle.bounds.height_milli >= 48_000,
+        "subtitle must reserve multiple visual lines: {subtitle:?}"
+    );
+    let name_field = program
+        .text_control_bounds_for("input.visitor_name")
+        .expect("name field bounds");
+    assert!(
+        name_field.y_milli
+            >= subtitle
+                .bounds
+                .y_milli
+                .saturating_add(i32::try_from(subtitle.bounds.height_milli).unwrap_or(i32::MAX))
+                .saturating_add(16_000),
+        "name field must be placed after the wrapped subtitle: subtitle={subtitle:?}, name={name_field:?}"
     );
 }
 

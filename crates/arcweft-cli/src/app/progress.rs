@@ -12,6 +12,7 @@ pub(in crate::app) enum CliProgressStatus {
     Checking,
     Compiling,
     Encoding,
+    Running,
     Verifying,
     Writing,
 }
@@ -52,6 +53,12 @@ impl CliProgress {
         }
         result
     }
+
+    pub(in crate::app) fn emit_status(self, status: &'static str, message: impl fmt::Display) {
+        if self.enabled {
+            emit_progress_line(status, CARGO_STATUS_STYLE, message);
+        }
+    }
 }
 
 fn emit_progress_line(status: &'static str, style: Style, message: impl fmt::Display) {
@@ -82,6 +89,7 @@ impl CliProgressStatus {
             Self::Checking => "Checking",
             Self::Compiling => "Compiling",
             Self::Encoding => "Encoding",
+            Self::Running => "Running",
             Self::Verifying => "Verifying",
             Self::Writing => "Writing",
         }

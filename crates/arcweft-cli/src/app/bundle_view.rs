@@ -36,10 +36,16 @@ use arcweft_lang_syntax::{
             ViewText, ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
         },
     },
-    expr::{CallArg, Expr, Literal, UnitNumberSuffix},
+    expr::{CallArg, Expr, Literal},
 };
 use thiserror::Error;
 
+use super::bundle_view_layout::{
+    VIEW_LAYOUT_GAP_MILLI, VIEW_LAYOUT_SCROLL_VIEWPORT_HEIGHT_MILLI,
+    VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI, ViewLayoutCursor, ViewLayoutFrame, button_bounds,
+    modifier_layout_length_u32, named_arg, named_layout_length_u32, parse_px_milli,
+    text_block_frame, u32_to_i32_saturating,
+};
 use super::bundle_view_overflow::validate_interactive_overflow_modifiers;
 
 #[derive(Clone, Debug, Default)]
@@ -118,79 +124,6 @@ struct InputHandleBinding {
     name: String,
     public_id: String,
     initial_value: String,
-}
-
-const VIEW_LAYOUT_ROOT_X_MILLI: i32 = 48_000;
-const VIEW_LAYOUT_ROOT_Y_MILLI: i32 = 48_000;
-const VIEW_LAYOUT_GAP_MILLI: i32 = 16_000;
-const VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI: u32 = 420_000;
-const VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI: u32 = 24_000;
-const VIEW_LAYOUT_BUTTON_WIDTH_MILLI: u32 = 180_000;
-const VIEW_LAYOUT_BUTTON_HEIGHT_MILLI: u32 = 44_000;
-const VIEW_LAYOUT_SCROLL_VIEWPORT_HEIGHT_MILLI: u32 = 180_000;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ViewLayoutCursor {
-    x_milli: i32,
-    y_milli: i32,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct ViewLayoutFrame {
-    width_milli: u32,
-    height_milli: u32,
-}
-
-impl ViewLayoutCursor {
-    const fn root() -> Self {
-        Self {
-            x_milli: VIEW_LAYOUT_ROOT_X_MILLI,
-            y_milli: VIEW_LAYOUT_ROOT_Y_MILLI,
-        }
-    }
-
-    const fn text_control_rect(self, kind: ViewInputKind) -> ViewLogicalRect {
-        ViewLogicalRect::new(
-            self.x_milli,
-            self.y_milli,
-            VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
-            kind.default_text_control_height_milli(),
-        )
-    }
-}
-
-impl ViewLayoutFrame {
-    const fn zero() -> Self {
-        Self {
-            width_milli: 0,
-            height_milli: 0,
-        }
-    }
-
-    const fn new(width_milli: u32, height_milli: u32) -> Self {
-        Self {
-            width_milli,
-            height_milli,
-        }
-    }
-
-    const fn text_control(kind: ViewInputKind) -> Self {
-        Self::new(
-            VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
-            kind.default_text_control_height_milli(),
-        )
-    }
-
-    const fn action_button() -> Self {
-        Self::new(
-            VIEW_LAYOUT_BUTTON_WIDTH_MILLI,
-            VIEW_LAYOUT_BUTTON_HEIGHT_MILLI,
-        )
-    }
-
-    const fn is_empty(self) -> bool {
-        self.width_milli == 0 || self.height_milli == 0
-    }
 }
 
 pub(in crate::app) fn view_sidecars(
@@ -1105,7 +1038,7 @@ pub(in crate::app) fn inline_style_properties(
     })
 }
 
-fn style_layout_length_u32(value: &str) -> Option<u32> {
+pub(in crate::app) fn style_layout_length_u32(value: &str) -> Option<u32> {
     let value = value.trim().trim_matches('"');
     let milli = value
         .strip_suffix("px")
@@ -1223,10 +1156,11 @@ fn lower_text(
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     validate_interactive_overflow_modifiers("Text", text.modifiers(), false)?;
     let id = next_text_source_id(view_id, state);
+    let text_value = expr_source(text.source());
     state.text_sources.push(ViewTextSourceRecord {
         public_id: id.clone(),
         kind: ViewTextSourceKind::Literal {
-            value: expr_source(text.source()),
+            value: text_value.clone(),
         },
         source: None,
     });
@@ -1237,7 +1171,7 @@ fn lower_text(
         source: None,
     });
     lower_modifiers(view_id, text.modifiers(), state);
-    let frame = text_line_frame(text.modifiers());
+    let frame = text_block_frame(&text_value, text.modifiers());
     let text_block_id = next_text_block_id(view_id, state);
     let view = Some(view_resource_id(view_id));
     let scroll_region = state.scroll_stack.last().cloned();
@@ -2106,79 +2040,6 @@ fn button_enabled(enabled: Option<&Expr>) -> bool {
     }
 }
 
-fn button_bounds(button: &ViewButton, layout: ViewLayoutCursor) -> ViewRuntimeButtonBounds {
-    ViewRuntimeButtonBounds::new(
-        named_layout_length_i32(button.args(), &["x"]).unwrap_or(layout.x_milli),
-        named_layout_length_i32(button.args(), &["y"]).unwrap_or(layout.y_milli),
-        named_layout_length_u32(button.args(), &["width", "w"])
-            .unwrap_or(VIEW_LAYOUT_BUTTON_WIDTH_MILLI),
-        named_layout_length_u32(button.args(), &["height", "h"])
-            .unwrap_or(VIEW_LAYOUT_BUTTON_HEIGHT_MILLI),
-    )
-}
-
-fn named_layout_length_i32(args: &[ViewArg], names: &[&str]) -> Option<i32> {
-    names
-        .iter()
-        .find_map(|name| named_arg(args, name))
-        .and_then(expr_px_milli)
-}
-
-fn named_arg<'a>(args: &'a [ViewArg], name: &str) -> Option<&'a Expr> {
-    args.iter().find_map(|arg| match arg {
-        ViewArg::Named {
-            name: actual,
-            value,
-        } if actual == name => Some(value),
-        _ => None,
-    })
-}
-
-fn named_layout_length_u32(args: &[ViewArg], names: &[&str]) -> Option<u32> {
-    named_layout_length_i32(args, names).and_then(|value| u32::try_from(value.max(0)).ok())
-}
-
-fn modifier_layout_length_u32(modifiers: &[ViewModifier], names: &[&str]) -> Option<u32> {
-    modifiers.iter().find_map(|modifier| match modifier {
-        ViewModifier::Property { name, value }
-            if names.iter().any(|candidate| name == candidate) =>
-        {
-            expr_px_milli(value).and_then(|value| u32::try_from(value.max(0)).ok())
-        }
-        _ => None,
-    })
-}
-
-fn text_line_frame(modifiers: &[ViewModifier]) -> ViewLayoutFrame {
-    let font_size_milli =
-        modifier_inline_style_length_u32(modifiers, &["font-size"]).unwrap_or(20_000);
-    let fallback_line_height = font_size_milli.saturating_mul(6).saturating_add(4) / 5;
-    let line_height_milli =
-        modifier_inline_style_length_u32(modifiers, &["line-height", "line-height-milli"])
-            .unwrap_or(fallback_line_height)
-            .max(VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI);
-    ViewLayoutFrame::new(VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI, line_height_milli)
-}
-
-fn modifier_inline_style_length_u32(modifiers: &[ViewModifier], names: &[&str]) -> Option<u32> {
-    modifiers.iter().find_map(|modifier| {
-        let ViewModifier::Style(
-            ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
-        ) = modifier
-        else {
-            return None;
-        };
-        inline_style_properties(source).find_map(|(name, value)| {
-            let name = normalize_property_name(&name);
-            names
-                .iter()
-                .any(|candidate| name == normalize_property_name(candidate))
-                .then(|| style_layout_length_u32(&value))
-                .flatten()
-        })
-    })
-}
-
 fn text_block_selection_policy(modifiers: &[ViewModifier]) -> ViewTextSelectionPolicy {
     modifiers
         .iter()
@@ -2209,88 +2070,6 @@ fn text_block_selection_policy(modifiers: &[ViewModifier]) -> ViewTextSelectionP
         .unwrap_or(ViewTextSelectionPolicy::Disabled)
 }
 
-fn expr_px_milli(expr: &Expr) -> Option<i32> {
-    match expr {
-        Expr::Literal(Literal::UnitNumber {
-            raw,
-            suffix: UnitNumberSuffix::Px,
-        }) => {
-            let raw = raw.trim();
-            let raw = raw.strip_suffix("px").map_or(raw, str::trim);
-            parse_px_milli(raw)
-        }
-        Expr::Literal(Literal::UnitNumber {
-            raw,
-            suffix: UnitNumberSuffix::Milli,
-        }) => {
-            let raw = raw.trim();
-            raw.strip_suffix("milli")
-                .map(str::trim)
-                .and_then(|raw| raw.parse::<i32>().ok())
-        }
-        Expr::Literal(Literal::Int { value, .. }) => {
-            i32::try_from(value.saturating_mul(1_000)).ok()
-        }
-        Expr::Raw(value) => value
-            .trim()
-            .strip_suffix("px")
-            .map(str::trim)
-            .and_then(parse_px_milli),
-        Expr::Path(value) => value
-            .as_label()
-            .trim()
-            .strip_suffix("px")
-            .map(str::trim)
-            .and_then(parse_px_milli),
-        _ => None,
-    }
-}
-
-fn parse_px_milli(raw: &str) -> Option<i32> {
-    let source = raw.trim().replace('_', "");
-    let (negative, unsigned) = source
-        .strip_prefix('-')
-        .map_or((false, source.as_str()), |rest| (true, rest));
-    let unsigned = unsigned.strip_prefix('+').unwrap_or(unsigned);
-    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
-    if whole.is_empty() && fraction.is_empty() {
-        return None;
-    }
-    if !whole.chars().all(|ch| ch.is_ascii_digit())
-        || !fraction.chars().all(|ch| ch.is_ascii_digit())
-    {
-        return None;
-    }
-
-    let whole_milli = if whole.is_empty() {
-        0
-    } else {
-        whole.parse::<i64>().ok()?.checked_mul(1_000)?
-    };
-    let (fraction_milli, round_up) = fractional_px_milli(fraction)?;
-    let magnitude = whole_milli
-        .checked_add(fraction_milli)?
-        .checked_add(i64::from(round_up))?;
-    let signed = if negative { -magnitude } else { magnitude };
-    i32::try_from(signed).ok()
-}
-
-fn fractional_px_milli(fraction: &str) -> Option<(i64, bool)> {
-    let mut milli = 0_i64;
-    let mut scale = 100_i64;
-    for digit in fraction.chars().take(3) {
-        let value = i64::from(digit.to_digit(10)?);
-        milli = milli.checked_add(value.checked_mul(scale)?)?;
-        scale /= 10;
-    }
-    let round_up = fraction
-        .chars()
-        .nth(3)
-        .and_then(|digit| digit.to_digit(10))
-        .is_some_and(|digit| digit >= 5);
-    Some((milli, round_up))
-}
-
 fn assign_action_button_bounds(state: &mut ViewLoweringState) {
     if state.action_buttons.is_empty() {
         return;
@@ -2300,10 +2079,6 @@ fn assign_action_button_bounds(state: &mut ViewLoweringState) {
             button.bounds = ViewRuntimeButtonBounds::default_slot(fallback_index);
         }
     }
-}
-
-fn u32_to_i32_saturating(value: u32) -> i32 {
-    i32::try_from(value).unwrap_or(i32::MAX)
 }
 
 fn register_input_handle_binding(view_let: &ViewLet, state: &mut ViewLoweringState) {

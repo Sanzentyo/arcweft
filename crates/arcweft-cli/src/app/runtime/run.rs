@@ -3,6 +3,7 @@ use super::options::{
     CliRuntimeExecutorTier, CliRuntimeRunner, CliRuntimeStepMode, RuntimeRunOptions,
     ScriptBenchOptions,
 };
+use super::profile::report_path;
 use super::script_bench::script_bench_selection;
 use super::script_test::script_test_selection;
 use super::serve::{RuntimeServeSelectionConfig, runtime_serve_selection};
@@ -12,7 +13,7 @@ use crate::app::bundle::{
     write_bundle_artifact, write_patch_bundle_artifact,
 };
 use crate::app::diagnostics::emit_diagnostics_for_path;
-use crate::app::progress::format_elapsed;
+use crate::app::progress::{CliProgress, CliProgressStatus};
 use crate::app::project::ProfileOptions;
 use crate::app::project::{
     CheckedModule, SourceSelection, load_and_check_selection, native_host_policy_for_selection,
@@ -42,7 +43,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 const RUN_BUNDLE_DIR: &str = "target/arcweft/run";
 const WEB_LOCAL_BUNDLE_DIR: &str = "web/local";
@@ -320,10 +321,19 @@ fn run_game_target(
         );
         return Err(ExitCode::from(2));
     }
-    let build_started = Instant::now();
     let mut phases = Vec::new();
-    let compiled =
-        compile_bundle_for_selection(selection, vec![BundleVirtualFileSpace::Asset], &mut phases)?;
+    let progress = CliProgress::new(!options.json);
+    let compiled = progress.run(
+        CliProgressStatus::Compiling,
+        format!("bundle {}", report_path(selection.path())),
+        || {
+            compile_bundle_for_selection(
+                selection,
+                vec![BundleVirtualFileSpace::Asset],
+                &mut phases,
+            )
+        },
+    )?;
     let is_game = source_selection_is_game(selection)
         || compiled
             .entry_kinds
@@ -359,42 +369,47 @@ fn run_game_target(
     match runner {
         CliRuntimeRunner::Native => {
             let output = run_bundle_output_path(selection, RUN_BUNDLE_DIR);
-            write_run_bundle(&output, &bundle, &mut phases)?;
-            println!(
-                "Built {} in {}",
-                output.display(),
-                format_elapsed(build_started.elapsed())
-            );
-            let native_started = Instant::now();
-            println!("Starting native player...");
-            run_native_bundle(bundle, options.steps, options, selection)?;
-            println!(
-                "Native player exited after {} (total {})",
-                format_elapsed(native_started.elapsed()),
-                format_elapsed(build_started.elapsed())
-            );
+            write_run_bundle_with_progress(progress, &output, &bundle, &mut phases)?;
+            progress.run(CliProgressStatus::Running, "native player", || {
+                run_native_bundle(bundle, options.steps, options, selection)
+            })?;
             Ok(RunTargetOutcome::Handled)
         }
         CliRuntimeRunner::Web => {
             let output = run_bundle_output_path(selection, WEB_LOCAL_BUNDLE_DIR);
-            write_run_bundle(&output, &bundle, &mut phases)?;
-            println!(
-                "Built {} in {}",
-                output.display(),
-                format_elapsed(build_started.elapsed())
-            );
-            println!(
-                "Open web/index.html?bundle=./local/{}{} after building web/pkg.",
-                output
-                    .file_name()
-                    .and_then(std::ffi::OsStr::to_str)
-                    .unwrap_or("game.awfb"),
-                web_player_frame_fit_query(selection)
+            write_run_bundle_with_progress(progress, &output, &bundle, &mut phases)?;
+            progress.emit_status(
+                "Open",
+                format_args!(
+                    "web/index.html?bundle=./local/{}{} after building web/pkg.",
+                    output
+                        .file_name()
+                        .and_then(std::ffi::OsStr::to_str)
+                        .unwrap_or("game.awfb"),
+                    web_player_frame_fit_query(selection)
+                ),
             );
             Ok(RunTargetOutcome::Handled)
         }
         CliRuntimeRunner::Auto | CliRuntimeRunner::Headless => Ok(RunTargetOutcome::UseHeadless),
     }
+}
+
+fn write_run_bundle_with_progress(
+    progress: CliProgress,
+    output: &Path,
+    bundle: &ArcweftBundle,
+    phases: &mut Vec<crate::output::RuntimeProfilePhase>,
+) -> Result<(), ExitCode> {
+    let bytes = progress.run(CliProgressStatus::Encoding, "run bundle", || {
+        bundle.to_format_bytes(BundleFormat::Awfb).map_err(|error| {
+            eprintln!("error: failed to encode run bundle: {error}");
+            ExitCode::FAILURE
+        })
+    })?;
+    progress.run(CliProgressStatus::Writing, output.display(), || {
+        write_bundle_artifact(output, bytes, phases)
+    })
 }
 
 fn run_watch_target(
@@ -876,20 +891,6 @@ fn watch_file_state(path: &Path) -> Result<WatchFileState, ExitCode> {
         len: metadata.len(),
         modified: metadata.modified().ok(),
     })
-}
-
-fn write_run_bundle(
-    output: &Path,
-    bundle: &ArcweftBundle,
-    phases: &mut Vec<crate::output::RuntimeProfilePhase>,
-) -> Result<(), ExitCode> {
-    let bytes = bundle
-        .to_format_bytes(BundleFormat::Awfb)
-        .map_err(|error| {
-            eprintln!("error: failed to encode run bundle: {error}");
-            ExitCode::FAILURE
-        })?;
-    write_bundle_artifact(output, bytes, phases)
 }
 
 fn source_selection_is_game(selection: &SourceSelection) -> bool {
