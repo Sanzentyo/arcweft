@@ -1481,7 +1481,7 @@ fn lower_strict_call_expr(
         })
     {
         return Err(format!(
-            "function `{callee}` partial application requires executable helper lowering; effectful or suspending top-level callable allocation is not implemented"
+            "unsupported callable family `signature_partial_without_helper`: function `{callee}` partial application requires executable helper lowering; effectful, suspending, ABI-backed, or otherwise non-helper top-level callable allocation is not implemented"
         ));
     }
     if let Some(callee) = path_callee

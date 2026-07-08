@@ -82,6 +82,10 @@ The following is implemented and evidenced by tests or implementation logs:
 - Expected-type enum shorthand is verified for user-defined unit variants,
   tuple payload constructors, and record payload constructors through sema and
   runtime-plan lowering.
+- Non-helper callable families are inventoried in
+  `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`;
+  helper-less signature partials fail with unsupported family marker
+  `signature_partial_without_helper`.
 - Closure capture inventory, borrowed-capture suspension diagnostics, closure
   effect composition on invocation, numeric fallback lints, function-valued let
   inlays, and opt-in expression type inlays are implemented.
@@ -143,6 +147,8 @@ another request/design cut:
 4. General non-helper/effectful/suspending top-level callable allocation as
    first-class runtime function values:
    `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
+   The callable-family inventory step is complete; accepted executable
+   expansion beyond helper-backed callables remains design work.
 5. Full closure effect-row contract:
    `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
    The current implementation composes broad effect cases, but the stable

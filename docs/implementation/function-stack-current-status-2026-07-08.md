@@ -15,6 +15,7 @@ Related slices are:
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
 - `docs/implementation/function-stack-goal-completion-audit-2026-07-08.md`
+- `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`
 
 ## Current Repository State
 
@@ -74,7 +75,9 @@ still desired.
 - Prefix partial calls to checked top-level function signatures are accepted
   when an executable helper path exists.
 - Checked runtime-plan lowering rejects unsupported non-helper partial
-  callables instead of emitting incomplete adapter calls.
+  callables instead of emitting incomplete adapter calls. The current
+  helper-less signature partial rejection is marked as unsupported callable
+  family `signature_partial_without_helper`.
 
 ### Closures and Runtime Apply
 
@@ -194,7 +197,9 @@ These should stay as request or design work before implementation:
    Product AWBC save/load behavior is explicit structured rejection.
 4. General non-helper/effectful/suspending top-level callable allocation as
    first-class runtime function values. Helper-backed and local-function paths
-   are implemented; broader callable allocation is split to
+   are implemented, and the callable-family inventory is recorded in
+   `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`.
+   The first accepted expansion beyond helper-backed callables is still split to
    `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`.
 5. Full closure effect-row integration. The implemented effect composition is
    broad, but the stable effect-row contract for closure captures remains a

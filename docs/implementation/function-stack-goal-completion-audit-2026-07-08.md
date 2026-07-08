@@ -15,6 +15,7 @@ explicit requirements remain in request/design space.
 - `docs/implementation/function-stack-current-status-2026-07-08.md`
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
+- `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`
 - `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`
 - `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
 - `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
@@ -32,7 +33,7 @@ explicit requirements remain in request/design space.
 | Closure expressions `|x| expr` / `|| expr` with typed/pattern parameters | Closure typing, typed parameters, parameter patterns, braced return annotations, and closure-local `return` are recorded in the status index. | Implemented |
 | Capture analysis hooks and lifetime diagnostics at suspension boundaries | Capture inventory, checked runtime-plan capture metadata, and borrowed-capture suspension diagnostics are recorded in 07.4 and the status index. | Implemented for current policy |
 | Expression `_` placeholder abstraction distinct from pattern wildcard | Expected-function `_`, inferred binary `_`, known-callable partial-call abstraction, and pattern `_` distinction are recorded in the status index. | Implemented for fixed accepted shapes |
-| Partial-application desugaring | Helper-backed prefix partials, named/fixed missing-input partials, local aliases, and runtime apply are implemented; spread partials remain request/design work. | Partially implemented; spread split to 07.2.1 |
+| Partial-application desugaring | Helper-backed prefix partials, named/fixed missing-input partials, local aliases, and runtime apply are implemented. Helper-less signature partials now fail as unsupported callable family `signature_partial_without_helper`; spread partials remain request/design work. | Partially implemented; spread split to 07.2.1 and non-helper expansion split to 07.7 |
 | `^` pipe-left placeholder scoped only inside pipe RHS | Status index records scoped RHS behavior and substitution. | Implemented |
 | Left-associative `|>` with `^` substitution or data-last application when no `^` appears | Status index records explicit `^` substitution, no-`^` data-last application, helper-aware pipes, and local function-valued aliases. | Implemented for fixed accepted shapes |
 | Method-chain sugar with inherent/trait first and data-last fallback with ambiguity diagnostics | Status index records resolution order, deterministic runtime argument order, ambiguity diagnostics, real-method priority, and shadowed fallback warnings. Spread fallback remains request/design work. | Partially implemented; spread fallback split to 07.2.1 |
@@ -55,6 +56,8 @@ The goal is not complete because these explicit areas remain unresolved:
    `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
 3. General non-helper/effectful/suspending callable allocation:
    `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
+   The callable-family inventory step is complete, but the first accepted
+   expansion beyond helper-backed callables is still not designed.
 4. Full closure effect-row final contract:
    `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
 
@@ -77,4 +80,5 @@ cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_user_enum_
 cargo check -p arcweft-lang-sema -p arcweft-runtime-plan --all-targets --all-features
 cargo clippy -p arcweft-lang-sema -p arcweft-runtime-plan --all-targets --all-features
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-enum-shorthand-2026-07-08
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_non_helper_signature_partial_call -- --nocapture
 ```

@@ -1047,6 +1047,20 @@ bytes / 2,341 LOC, `compiler/src/lower.rs` 11,798 bytes / 278 LOC,
 `compiler/src/tests.rs` 82,443 bytes / 2,611 LOC; none crosses a new error
 threshold in this slice.
 
+The non-helper callable inventory cut closes the first implementation-order
+step of request 07.7. The inventory lives in
+`docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`
+and classifies expression closures, local aliases, helper-backed top-level
+functions, data-last helper/local paths, non-suspending AWBC generated
+closures, helper-less signature partials, effectful/suspending callables,
+task/dialogue/stream functions, trait/impl methods, adapter-backed callables,
+and persisted function values. Runtime-plan diagnostics for helper-less
+signature partials now carry the unsupported-family marker
+`signature_partial_without_helper`, so the current rejection boundary is
+auditable without pretending the broader non-helper allocation contract is
+implemented. Focused validation passed with
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_non_helper_signature_partial_call -- --nocapture`.
+
 The runtime-plan closure capture metadata cut adds
 `RuntimeClosureCaptureInventory` / `RuntimeClosureCapture` under the
 runtime-plan flow API and threads sema `TypeCheckReport::closure_captures`

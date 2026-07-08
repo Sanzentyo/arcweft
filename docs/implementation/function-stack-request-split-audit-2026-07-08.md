@@ -30,6 +30,11 @@ constructors needed focused sema/runtime-plan coverage. That gap is closed in
 the enum-shorthand evidence cut and does not change the request/design split
 for the broader items below.
 
+Follow-up: request 07.7's callable-family inventory step is complete in
+`docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`.
+The first accepted executable expansion beyond helper-backed callables remains
+request/design work.
+
 ## Request Coverage
 
 Remaining broad items now map to request/design files:

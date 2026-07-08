@@ -966,9 +966,12 @@ flow @flow.main main {
 
     assert!(
         errors.iter().any(|error| {
-            error.message().contains(
-                "function `choose` partial application requires executable helper lowering",
-            )
+            error
+                .message()
+                .contains("unsupported callable family `signature_partial_without_helper`")
+                && error.message().contains(
+                    "function `choose` partial application requires executable helper lowering",
+                )
         }),
         "expected non-helper partial diagnostic, got {errors:#?}"
     );
