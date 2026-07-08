@@ -160,6 +160,12 @@ impl Parser<'_> {
             || rest.starts_with("hot checkpoint{")
     }
 
+    fn top_level_item_has_removed_fragment_decl(trimmed: &str) -> bool {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        let rest = rest.trim_start();
+        rest == "fragment" || rest.starts_with("fragment ") || rest.starts_with("fragment{")
+    }
+
     fn parse_top_level_item_line(
         &mut self,
         kind: CstTopLevelItemKind,
@@ -174,6 +180,10 @@ impl Parser<'_> {
         }
         if Self::top_level_item_has_removed_hot_checkpoint(trimmed) {
             self.reject_removed_hot_checkpoint_decl(range);
+            return;
+        }
+        if Self::top_level_item_has_removed_fragment_decl(trimmed) {
+            self.reject_removed_fragment_decl(range);
             return;
         }
         if trimmed.starts_with('@') {
@@ -191,6 +201,24 @@ impl Parser<'_> {
             );
         }
         self.parse_top_level_item(kind, trimmed, range, sinks.items);
+    }
+
+    fn reject_removed_fragment_decl(&mut self, range: TextRange) {
+        let line = self.current().clone();
+        self.push_error(
+            range,
+            "`fragment` was removed from Arcweft source grammar",
+            ["flow intro { ... }"],
+            Some(line.text.trim()),
+            ["use an ordinary `flow` declaration and reference it with `include @flow.intro`"],
+        );
+        self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
+        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
+        } else {
+            self.index += 1;
+        }
     }
 
     fn reject_removed_asset_set_decl(&mut self, range: TextRange) {

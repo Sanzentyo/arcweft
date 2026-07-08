@@ -21,7 +21,8 @@ pub(super) use arcweft_lang_syntax::{
         common::Visibility,
         dialogue::DialogueToken,
         flow::{
-            AwaitBranchKind, ContractClause, FlowItem, FlowKind, SelectBranchHead, Stmt, WaitTarget,
+            AuthoredExpr, AwaitBranchKind, ContractClause, FlowItem, SelectBranchHead, Stmt,
+            WaitTarget,
         },
         items::{
             CallableKind, EntityDeclKind, ExternModMember, FunctionKind, ImplMember, Item,

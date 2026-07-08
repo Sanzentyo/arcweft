@@ -6,15 +6,15 @@
 
 The package requested sample DSL updates from generated-style explicit
 declaration identities to compact canonical declaration names while preserving
-public references such as `@flow.opening` and `@frag.intro`.
+public references such as `@flow.opening`.
 
 ## Applied scope
 
 - Rewrote affected sample `flow` declarations from `flow @flow.* name` to
   `flow name`.
-- Rewrote `pub fragment @frag.intro intro: FlowFragment` to
-  `pub fragment intro: FlowFragment`.
-- Preserved existing reference sites such as `include @frag.intro`,
+- Rewrote the reusable intro snippet from `pub fragment ...: FlowFragment` to
+  ordinary `pub flow intro`.
+- Preserved existing reference sites such as `include @flow.intro`,
   `goto @flow.opening`, and `signal.set(@signal.current_flow, ...)`.
 - Followed `arcw check` hints by compacting sample `signal` and `metric`
   declarations in the touched sample family.
@@ -22,14 +22,14 @@ public references such as `@flow.opening` and `@frag.intro`.
 ## Implementation finding
 
 Running `arcw check samples/agent-script/native-project-graph-relations.arcw`
-after the package overlay exposed an implementation bug: compact fragment
-declarations normalized to `fragment.intro`, while references and existing
-public contracts use the canonical public ID family `frag`.
+after the package overlay exposed a design problem rather than a desirable
+implementation special case: reusable scenario snippets did not need a separate
+`fragment` declaration, `FlowFragment` surface type, or `@frag` ID family.
 
-The fix makes `FlowKind::Fragment` own the rule that the declaration keyword
-`fragment` emits public IDs in the `frag` family. Parser validation and HIR
-lowering now share that rule, and HIR flow slug extraction strips both `frag.`
-and the legacy `fragment.` prefix.
+The follow-up fix removes that flow-fragment surface. Reusable snippets are
+ordinary `flow` declarations, `include` accepts flow references, and HIR,
+semantic indexing, runtime IDs, and docs no longer treat `frag.*` as a flow
+alias.
 
 ## Validation notes
 
@@ -56,7 +56,7 @@ validation route for that sample.
 Focused Rust validation:
 
 ```bash
-cargo test -p arcweft-lang-sema --lib fragment -- --nocapture
+cargo test -p arcweft-lang-sema --lib rejects_removed_fragment_declarations -- --nocapture
 cargo test -p arcweft-lang-sema --lib flow_relative_decl_ids_normalize_like_implicit_names -- --nocapture
 cargo test -p arcweft-lang-sema --lib project_index_records_entry_and_flow_entity_relations -- --nocapture
 cargo fmt -p arcweft-lang-syntax -p arcweft-lang-hir -p arcweft-lang-sema -- --check

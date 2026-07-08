@@ -1,6 +1,6 @@
 use super::headers::{
-    flow_decl_family, implicit_flow_name_from_id, parse_contract_clause, parse_contract_clauses,
-    parse_flow_kind, parse_flow_signature, parse_name_and_tail, parse_optional_decl_id_ref,
+    implicit_flow_name_from_id, parse_contract_clause, parse_contract_clauses, parse_flow_head,
+    parse_flow_signature, parse_name_and_tail, parse_optional_decl_id_ref,
     parse_required_entity_ref_syntax, parse_visibility_prefix, slice_offset,
 };
 use super::{
@@ -42,14 +42,10 @@ impl<'a> Parser<'a> {
             .collect::<Vec<_>>();
         let first = header_lines.first().copied()?;
         let (visibility, after_visibility) = parse_visibility_prefix(first);
-        let (kind, after_flow) = parse_flow_kind(after_visibility.trim_start())?;
+        let after_flow = parse_flow_head(after_visibility.trim_start())?;
         let after_flow_base = start_line.start + slice_offset(first, after_flow);
-        let (id, after_id) = parse_optional_decl_id_ref(
-            after_flow,
-            flow_decl_family(kind),
-            after_flow_base,
-            &mut self.errors,
-        );
+        let (id, after_id) =
+            parse_optional_decl_id_ref(after_flow, "flow", after_flow_base, &mut self.errors);
         let (explicit_name, signature_tail) = parse_name_and_tail(after_id.trim());
         let has_explicit_name = explicit_name.is_some();
         let name = explicit_name.or_else(|| implicit_flow_name_from_id(id.as_ref()));
@@ -75,7 +71,6 @@ impl<'a> Parser<'a> {
         Some(Flow::new(FlowInit {
             attrs,
             doc,
-            kind,
             visibility,
             id,
             name,

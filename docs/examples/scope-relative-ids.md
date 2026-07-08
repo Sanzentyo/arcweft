@@ -87,7 +87,7 @@ alice(id=@.greeting):        // relative ID context
 use self.characters.alice // module path context
 goto @flow.opening.next     // ordinary entity reference
 goto @flow:.next            // family-relative entity reference
-include @frag:.alice_enters // family-relative fragment reference
+include @flow:.alice_enters // family-relative flow reference
 ```
 
 `parent.` is reserved as an alias for `super.`, but canonical tooling should

@@ -17,7 +17,6 @@ use thiserror::Error;
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeIdFamily {
     Flow,
-    Fragment,
     Entry,
     Line,
     Stream,
@@ -105,7 +104,6 @@ impl RuntimeIdFamily {
     pub const fn namespace(self) -> &'static str {
         match self {
             Self::Flow => "flow",
-            Self::Fragment => "fragment",
             Self::Entry => "entry",
             Self::Line => "say",
             Self::Stream => "stream",
@@ -119,7 +117,6 @@ impl RuntimeIdFamily {
     pub fn source_families(self) -> &'static [&'static str] {
         match self {
             Self::Flow => &["flow"],
-            Self::Fragment => &["fragment", "frag"],
             Self::Entry => &["entry"],
             Self::Line => &["say", "line"],
             Self::Stream => &["stream"],
@@ -131,7 +128,7 @@ impl RuntimeIdFamily {
 
     #[must_use]
     pub fn flow_source_families() -> &'static [&'static str] {
-        &["flow", "fragment", "frag"]
+        &["flow"]
     }
 }
 

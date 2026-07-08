@@ -15,15 +15,6 @@ fn source_flow_entity_lowers_to_canonical_runtime_id_without_family_payload() {
 }
 
 #[test]
-fn fragment_alias_lowers_to_same_flow_runtime_domain() {
-    let fragment =
-        FlowRuntimeId::from_source_entity_body("frag.intro").expect("fragment source ID lowers");
-
-    assert_eq!(fragment.canonical_label(), "intro");
-    assert_eq!(fragment.public_label().as_str(), "flow.intro");
-}
-
-#[test]
 fn public_label_dot_is_not_a_runtime_namespace_selector() {
     let label = RuntimePublicLabel::new("flow.chapter.one.main");
 

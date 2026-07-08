@@ -999,7 +999,7 @@ impl ObligationCollector {
     fn collect_function(&mut self, function: &HirFunction) {
         self.collect_stmts(function.statements());
         if let Some(value) = function.value() {
-            self.collect_expr(value);
+            self.collect_expr(value.expr());
         }
     }
 

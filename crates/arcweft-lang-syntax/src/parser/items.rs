@@ -27,8 +27,9 @@ use super::headers::{
 use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
-    parse_scope_expr_body, parse_scope_expr_body_for_dialect, parse_scope_expr_body_with_base,
-    parse_scope_expr_body_with_base_for_dialect, split_brace_item, split_top_level_binding,
+    parse_scope_authored_expr_body, parse_scope_authored_expr_body_for_dialect,
+    parse_scope_authored_expr_body_with_base, parse_scope_authored_expr_body_with_base_for_dialect,
+    parse_scope_expr_body, split_top_level_binding,
 };
 
 impl Parser<'_> {
@@ -174,8 +175,8 @@ impl Parser<'_> {
         };
         let contracts = parse_contract_clauses(&contract_lines);
         let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
-            || parse_scope_expr_body(body),
-            |range| parse_scope_expr_body_with_base(body, range.start),
+            || parse_scope_authored_expr_body(body),
+            |range| parse_scope_authored_expr_body_with_base(body, range.start),
         );
 
         Some(FunctionItem::new(FunctionInit {
@@ -251,9 +252,13 @@ impl Parser<'_> {
         };
         let contracts = parse_contract_clauses(&contract_lines);
         let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
-            || parse_scope_expr_body_for_dialect(body, SourceDialect::Agent),
+            || parse_scope_authored_expr_body_for_dialect(body, SourceDialect::Agent),
             |range| {
-                parse_scope_expr_body_with_base_for_dialect(body, range.start, SourceDialect::Agent)
+                parse_scope_authored_expr_body_with_base_for_dialect(
+                    body,
+                    range.start,
+                    SourceDialect::Agent,
+                )
             },
         );
 
@@ -330,7 +335,7 @@ impl Parser<'_> {
             name: name.unwrap_or_default(),
             signature_tail: signature_tail.clone(),
             contracts,
-            body: body.into_owned(),
+            body: body.clone().into_owned(),
             body_statements,
             body_value,
             range: TextRange::new(start_line.start, end),
@@ -366,8 +371,8 @@ impl Parser<'_> {
     pub(super) fn parse_trait_item(&mut self) -> Option<TraitItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing trait",
@@ -377,6 +382,8 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
+        let body = &block.body;
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let rest = rest.trim_start().strip_prefix("trait")?.trim();
         let (name, supertraits) = split_top_level_punctuation_once(rest, ':')
@@ -386,15 +393,18 @@ impl Parser<'_> {
             visibility,
             name.to_owned(),
             split_supertraits(supertraits),
-            parse_trait_members(&body),
-            TextRange::new(start_line.start, end),
+            parse_trait_members(
+                body,
+                block.body_range.as_ref().map_or(0, |range| range.start),
+            ),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
     pub(super) fn parse_impl_item(&mut self) -> Option<ImplItem> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing impl",
@@ -404,6 +414,8 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
+        let body = &block.body;
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let rest = rest.trim_start().strip_prefix("impl")?.trim();
         let (generics, rest) = parse_optional_angle_head(rest);
@@ -422,9 +434,12 @@ impl Parser<'_> {
             trait_name,
             target: target.to_owned(),
             where_clauses,
-            members: parse_impl_members(&body),
-            body: body.into_owned(),
-            range: TextRange::new(start_line.start, end),
+            members: parse_impl_members(
+                body,
+                block.body_range.as_ref().map_or(0, |range| range.start),
+            ),
+            body: body.to_string(),
+            range: TextRange::new(start_line.start, block.end),
         }))
     }
 
@@ -1228,16 +1243,15 @@ fn parse_extern_mod_member(item: &str) -> ExternModMember {
     ExternModMember::Raw(item.to_owned())
 }
 
-pub(super) fn parse_trait_members(body: &str) -> Vec<TraitMember> {
-    collect_logical_block_items(body)
+pub(super) fn parse_trait_members(body: &str, body_base: usize) -> Vec<TraitMember> {
+    super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
-        .map(|item| item.trim().to_owned())
-        .filter(|item| !item.is_empty())
-        .map(|item| parse_trait_member(&item))
+        .filter(|item| !item.source.trim().is_empty())
+        .map(|item| parse_trait_member(item.source.trim(), item.base))
         .collect()
 }
 
-fn parse_trait_member(item: &str) -> TraitMember {
+fn parse_trait_member(item: &str, item_base: usize) -> TraitMember {
     let item = item.trim_end_matches(';').trim();
     if let Some(rest) = item.strip_prefix("type ") {
         let (name, value) = split_top_level_binding(rest).map_or((rest, None), |(name, value)| {
@@ -1251,15 +1265,18 @@ fn parse_trait_member(item: &str) -> TraitMember {
         };
     }
     if item.starts_with("fn ") {
-        let (signature_source, body) =
-            split_brace_item(item).map_or((item, None), |(head, body)| (head, Some(body)));
+        let (signature_source, body) = split_brace_item_with_body_base(item, item_base)
+            .map_or((item, None), |(head, body, body_base)| {
+                (head, Some((body, body_base)))
+            });
         return parse_fn_signature(signature_source).map_or_else(
             |_| TraitMember::Raw(item.to_owned()),
             |signature| {
                 let (body, body_statements, body_value) = body.map_or_else(
                     || (None, Vec::new(), None),
-                    |body| {
-                        let (body_statements, body_value) = parse_scope_expr_body(body);
+                    |(body, body_base)| {
+                        let (body_statements, body_value) =
+                            parse_scope_authored_expr_body_with_base(body, body_base);
                         (Some(body.to_owned()), body_statements, body_value)
                     },
                 );
@@ -1275,14 +1292,14 @@ fn parse_trait_member(item: &str) -> TraitMember {
     TraitMember::Raw(item.to_owned())
 }
 
-pub(super) fn parse_impl_members(body: &str) -> Vec<ImplMember> {
-    collect_logical_block_items(body)
+pub(super) fn parse_impl_members(body: &str, body_base: usize) -> Vec<ImplMember> {
+    super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
-        .map(|item| parse_impl_member(item.trim()))
+        .map(|item| parse_impl_member(item.source.trim(), item.base))
         .collect()
 }
 
-fn parse_impl_member(item: &str) -> ImplMember {
+fn parse_impl_member(item: &str, item_base: usize) -> ImplMember {
     let item = item.trim_end_matches(';').trim();
     if let Some(rest) = item.strip_prefix("type ") {
         if let Some((name, value)) = split_top_level_binding(rest)
@@ -1301,13 +1318,14 @@ fn parse_impl_member(item: &str) -> ImplMember {
     // Impl function bodies are kept as source text for later expression
     // lowering, but their signatures are parsed now so type/HIR passes do not
     // need to rediscover the member boundary.
-    if let Some((head, body)) = split_brace_item(item)
+    if let Some((head, body, body_base)) = split_brace_item_with_body_base(item, item_base)
         && head.starts_with("fn ")
     {
         return parse_fn_signature(head).map_or_else(
             |_| ImplMember::Raw(item.to_owned()),
             |signature| {
-                let (body_statements, body_value) = parse_scope_expr_body(body);
+                let (body_statements, body_value) =
+                    parse_scope_authored_expr_body_with_base(body, body_base);
                 ImplMember::Function {
                     signature,
                     body: body.to_owned(),
@@ -1329,6 +1347,19 @@ fn parse_impl_member(item: &str) -> ImplMember {
         );
     }
     ImplMember::Raw(item.to_owned())
+}
+
+fn split_brace_item_with_body_base(
+    source: &str,
+    source_base: usize,
+) -> Option<(&str, &str, usize)> {
+    let open = find_top_level_punctuation(source, '{')?;
+    let close = find_matching_punctuation(source, open, '{', '}')?;
+    Some((
+        source[..open].trim_end(),
+        &source[open + '{'.len_utf8()..close],
+        source_base + open + '{'.len_utf8(),
+    ))
 }
 
 fn parse_associated_type_head(source: &str) -> (String, Vec<String>) {

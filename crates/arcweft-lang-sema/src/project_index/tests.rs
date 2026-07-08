@@ -47,14 +47,14 @@ signal @signal.current_flow: Watch<Ref<Flow>>
 flow @flow.opening opening {
     narrator.say(id=@say.opening)[hello]
     let current = @signal.current_flow
-    include @frag.intro
+    include @flow.intro
     choice @choice.opening {
         @choice.opening.listen "Listen" -> @flow.listen
     }
     goto @flow.listen
 }
 
-pub fragment intro: FlowFragment {
+pub flow intro {
     return "intro"
 }
 
@@ -94,7 +94,7 @@ flow @flow.listen listen {
         "contains_choice_option"
     )));
     assert!(relations.contains(&("choice.opening.listen", "flow.listen", "choice_option_goto")));
-    assert!(relations.contains(&("flow.opening", "frag.intro", "flow_include")));
+    assert!(relations.contains(&("flow.opening", "flow.intro", "flow_include")));
     assert!(relations.contains(&("flow.opening", "flow.listen", "flow_goto")));
     assert!(relations.contains(&("flow.opening", "signal.current_flow", "references_entity")));
 }

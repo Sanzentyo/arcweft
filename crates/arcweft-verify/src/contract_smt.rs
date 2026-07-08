@@ -218,7 +218,7 @@ impl FunctionContractLowerer {
         }
         symbols.push(SmtSymbol::new(result_id.clone(), result_sort).with_source_label("result"));
 
-        let body = ProofExpr::from_arcweft(body, &sorts)?;
+        let body = ProofExpr::from_arcweft(body.expr(), &sorts)?;
         require_sort("function body", body.sort, result_sort)?;
         let body_relation = ProofExpr::equal(ProofExpr::var(result_id), body.expr);
 

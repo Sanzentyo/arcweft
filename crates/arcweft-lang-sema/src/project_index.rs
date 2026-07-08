@@ -15,7 +15,7 @@ use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
     ast::{
         choice::ChoiceAction,
-        flow::{FlowKind, Stmt, StmtMatchArm},
+        flow::{Stmt, StmtMatchArm},
         ids::EntityRef,
         items::{CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EntryItem, StyleItem},
         pattern::Pattern,
@@ -870,13 +870,9 @@ pub fn project_semantic_index_from_hir(
     let mut index = ProjectSemanticIndex::new(program_hash);
     for flow in module.flows() {
         if let Some(id) = flow.id() {
-            let kind = match flow.kind() {
-                FlowKind::Flow => EntityKind::Flow,
-                FlowKind::Fragment => EntityKind::Fragment,
-            };
             index = index.with_entity(entities::entity_symbol(
                 id,
-                kind,
+                EntityKind::Flow,
                 None,
                 source_name.clone(),
                 "flow",

@@ -42,7 +42,7 @@ an explicit ID use the same implicit ID as `@.name`. It is
 not a general entity reference; write `goto @flow.opening.next` or the
 recommended family-relative `goto @flow:.next`, not `goto .next`. In general
 entity-reference contexts, relative references must include an entity family:
-`@flow:.next`, `@frag:.intro`, `@asset:.room`, `@textbox:.side`.
+`@flow:.next`, `@asset:.room`, `@textbox:.side`.
 `@.suffix` resolves in the current ID scope. Each extra dot walks one parent ID
 scope outward: `@..suffix` is one parent, `@...suffix` is two parents, and so
 on. The explicit spelling `@super.suffix` / `@super.super.suffix` is accepted
@@ -134,7 +134,6 @@ ModulePath   := ('crate' '.' | 'self' '.' | 'super' '.' | 'parent' '.')? IdentPa
 Item         := OuterAttr* ItemDecl
 ItemDecl     :=
     FlowDecl
-  | FragmentDecl
   | FunctionDecl
   | SourceDecl
   | StateDecl
@@ -192,11 +191,10 @@ records encoded files and decoded metadata.
 path as an inline bounded `image(...)` call; it is not a renderer adapter or
 compatibility surface.
 
-## Flow and fragments
+## Flow
 
 ```text
 FlowDecl     := Visibility? 'flow' DeclIdentity GenericParams? ParamGroup? ReturnType? Contract* FlowBody
-FragmentDecl := Visibility? 'fragment' DeclIdentity (':' Type)? Contract* FlowBody
 DeclIdentity := Ident | EntityRef | EntityRef Ident
 FlowBody     := '{' FlowItem* '}'
 

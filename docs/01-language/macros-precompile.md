@@ -31,7 +31,7 @@ template route_gate(
     character: Ref<Character>,
     required: i32,
     target: Ref<Flow>,
-) -> FlowFragment {
+) -> Flow {
     if state |> has_affection_at_least(character, required) {
         goto target
     } else {

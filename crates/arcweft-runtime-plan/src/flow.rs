@@ -1364,10 +1364,10 @@ fn lower_agent_controller_flow(
     );
     let mut ops = lowerer.lower_flow_stmt_list(&id, 0, agent.item().body_statements());
     if let Some(value) = agent.item().body_value() {
-        if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value) {
+        if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value.expr()) {
             ops.append(&mut host_ops);
         } else {
-            ops.push(FlowOp::ReturnExpr(lowerer.lower_runtime_expr(value)));
+            ops.push(FlowOp::ReturnExpr(lowerer.lower_runtime_expr(value.expr())));
         }
     }
     if lowerer.errors.is_empty() {

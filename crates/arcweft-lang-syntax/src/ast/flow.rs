@@ -13,7 +13,6 @@ use super::pattern::Pattern;
 pub struct Flow {
     attrs: Vec<Attribute>,
     doc: Option<DocBlock>,
-    kind: FlowKind,
     visibility: Option<Visibility>,
     id: Option<IdRef>,
     name: Option<String>,
@@ -30,7 +29,6 @@ pub struct Flow {
 pub(crate) struct FlowInit {
     pub(crate) attrs: Vec<Attribute>,
     pub(crate) doc: Option<DocBlock>,
-    pub(crate) kind: FlowKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) id: Option<IdRef>,
     pub(crate) name: Option<String>,
@@ -104,31 +102,6 @@ impl ContractClause {
 
     fn mode_requests_proof(mode: Option<&str>) -> bool {
         matches!(mode, None | Some("prove"))
-    }
-}
-
-/// Top-level flow-like item kind.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FlowKind {
-    Flow,
-    Fragment,
-}
-
-impl FlowKind {
-    /// Canonical public ID family produced by this flow-like declaration.
-    pub const fn declaration_family(self) -> &'static str {
-        match self {
-            Self::Flow => "flow",
-            Self::Fragment => "frag",
-        }
-    }
-
-    /// Returns whether a family-relative declaration spelling targets this item kind.
-    pub fn accepts_declaration_family(self, family: &str) -> bool {
-        match self {
-            Self::Flow => family == "flow",
-            Self::Fragment => matches!(family, "frag" | "fragment"),
-        }
     }
 }
 
@@ -592,7 +565,6 @@ impl Flow {
         Self {
             attrs: init.attrs,
             doc: init.doc,
-            kind: init.kind,
             visibility: init.visibility,
             id: init.id,
             name: init.name,
@@ -603,10 +575,6 @@ impl Flow {
             body: init.body,
             range: init.range,
         }
-    }
-
-    pub const fn kind(&self) -> FlowKind {
-        self.kind
     }
 
     pub fn attrs(&self) -> &[Attribute] {

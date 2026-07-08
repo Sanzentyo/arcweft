@@ -34,7 +34,7 @@ task fn load_bg_result() -> Result<Image, AssetError> {
     );
     let hir = lower_to_hir(&tree).expect("task function lowers");
     assert!(matches!(
-        hir.functions()[0].value(),
+        hir.functions()[0].value().map(AuthoredExpr::expr),
         Some(Expr::Await {
             applies_try: false,
             ..

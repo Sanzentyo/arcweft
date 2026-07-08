@@ -690,7 +690,7 @@ pub fn current_scene(state: GameState) -> bool {
     assert_eq!(function.signature().name(), "current_scene");
     assert!(function.body_statements().is_empty());
     assert!(matches!(
-        function.body_value(),
+        function.body_value().map(AuthoredExpr::expr),
         Some(Expr::Literal(Literal::Bool(true)))
     ));
 
@@ -798,7 +798,10 @@ pub impl<T> Mappable for Option<T> {
                     .is_some_and(|param| ident_pattern(param.pattern(), "self"))
                 && body.contains("match self")
                 && body_statements.is_empty()
-                && matches!(body_value, Some(Expr::Match { .. }))
+                && matches!(
+                    body_value.as_ref().map(AuthoredExpr::expr),
+                    Some(Expr::Match { .. })
+                )
     ));
     assert!(impl_item.body().contains("Some(x)"));
 
@@ -929,7 +932,7 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
         }
     ));
     assert!(matches!(
-        function.body_value(),
+        function.body_value().map(AuthoredExpr::expr),
         Some(Expr::Call { callee, .. }) if matches!(callee.as_ref(), Expr::Path(path) if path == "Ok")
     ));
 

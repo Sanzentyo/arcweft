@@ -54,7 +54,7 @@ fn collect_speaker_presets_from_item(
                 presets,
             );
             if let Some(value) = function.body_value() {
-                collect_speaker_presets_from_expr(value, character_aliases, presets);
+                collect_speaker_presets_from_expr(value.expr(), character_aliases, presets);
             }
         }
         Item::MemoFn(memo) => {

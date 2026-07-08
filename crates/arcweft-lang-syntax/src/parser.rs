@@ -43,10 +43,10 @@ pub mod top_level;
 pub mod view;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
-    parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr, parse_scope_expr_body,
-    parse_scope_expr_body_for_dialect, parse_scope_expr_body_with_base,
-    parse_scope_expr_body_with_base_for_dialect, parse_stmt_lines, parse_stmt_match_arms,
-    split_pattern_guard,
+    parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr,
+    parse_scope_authored_expr_body, parse_scope_authored_expr_body_for_dialect,
+    parse_scope_authored_expr_body_with_base, parse_scope_authored_expr_body_with_base_for_dialect,
+    parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms, split_pattern_guard,
 };
 pub use fragment::{
     ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,

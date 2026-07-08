@@ -1,8 +1,5 @@
 use crate::{
-    ast::{
-        flow::{AwaitBranchKind, FlowKind},
-        items::FunctionKind,
-    },
+    ast::{flow::AwaitBranchKind, items::FunctionKind},
     cst::SyntaxKind,
 };
 
@@ -23,16 +20,6 @@ impl SyntaxKind {
             Self::EntityRef => "entity_ref",
             Self::Punctuation => "punctuation",
             Self::Text => "text",
-        }
-    }
-}
-
-impl FlowKind {
-    /// Stable compiler-cache spelling used by HIR body fact evidence.
-    pub const fn cache_fact_tag(self) -> &'static str {
-        match self {
-            Self::Flow => "flow",
-            Self::Fragment => "fragment",
         }
     }
 }

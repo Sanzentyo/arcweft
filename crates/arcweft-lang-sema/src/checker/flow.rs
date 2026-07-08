@@ -77,9 +77,9 @@ impl TypeChecker<'_> {
             }
             HirFlowItem::Include(entity) => {
                 let kind = entity_kind(entity);
-                if !matches!(kind, Some(EntityKind::Fragment | EntityKind::Flow)) {
+                if !matches!(kind, Some(EntityKind::Flow)) {
                     self.errors.push(TypeCheckError::new(format!(
-                        "include target `{}` must be a flow or fragment reference",
+                        "include target `{}` must be a flow reference",
                         entity.body()
                     )));
                 }

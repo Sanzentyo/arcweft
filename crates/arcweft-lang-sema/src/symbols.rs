@@ -54,7 +54,7 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
             collect_stmt(stmt, &mut uses);
         }
         if let Some(value) = function.value() {
-            collect_expr(value, &mut uses);
+            collect_expr(value.expr(), &mut uses);
         }
     }
     for agent in module.agents() {
@@ -69,7 +69,7 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
             collect_stmt(stmt, &mut uses);
         }
         if let Some(value) = item.body_value() {
-            collect_expr(value, &mut uses);
+            collect_expr(value.expr(), &mut uses);
         }
     }
     for declaration in module.declarations() {
@@ -105,7 +105,7 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                             collect_stmt(stmt, uses);
                         }
                         if let Some(value) = body_value {
-                            collect_expr(value, uses);
+                            collect_expr(value.expr(), uses);
                         }
                     }
                     ImplMember::Raw(raw) => {

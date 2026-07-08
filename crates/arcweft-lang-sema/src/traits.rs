@@ -10,9 +10,8 @@ mod standard_iter;
 use crate::diagnostics::{TraitDiagnostic, TypeCheckError};
 use crate::types::TypeKind;
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::ast::flow::Stmt;
+use arcweft_lang_syntax::ast::flow::{AuthoredExpr, Stmt};
 use arcweft_lang_syntax::ast::items::{ImplItem, ImplMember, TraitItem, TraitMember};
-use arcweft_lang_syntax::expr::Expr;
 use arcweft_lang_syntax::types::{
     AssocTypeBinding, FnParam, FnSignature, GenericParam, TypeRef, parse_type_ref,
 };
@@ -76,7 +75,7 @@ impl TraitWitnessId {
 }
 
 impl TraitMethodBody {
-    pub fn new(statements: &[Stmt], value: Option<&Expr>) -> Option<Self> {
+    pub fn new(statements: &[Stmt], value: Option<&AuthoredExpr>) -> Option<Self> {
         (!statements.is_empty() || value.is_some()).then(|| Self {
             statements: statements.to_vec(),
             value: value.cloned(),
@@ -87,7 +86,7 @@ impl TraitMethodBody {
         &self.statements
     }
 
-    pub const fn value(&self) -> Option<&Expr> {
+    pub const fn value(&self) -> Option<&AuthoredExpr> {
         self.value.as_ref()
     }
 
@@ -179,7 +178,7 @@ pub struct TraitMethodImpl {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraitMethodBody {
     statements: Vec<Stmt>,
-    value: Option<Expr>,
+    value: Option<AuthoredExpr>,
 }
 
 /// Typed conformance witness.

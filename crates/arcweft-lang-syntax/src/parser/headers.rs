@@ -1,5 +1,5 @@
 use crate::ast::common::{TextRange, Visibility};
-use crate::ast::flow::{ContractClause, FlowKind};
+use crate::ast::flow::ContractClause;
 use crate::ast::ids::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling,
 };
@@ -268,17 +268,8 @@ pub(super) fn parse_callable_kind(input: &str) -> Option<(CallableKind, &str)> {
     None
 }
 
-pub(super) fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {
-    if let Some(rest) = input.strip_prefix("flow") {
-        return Some((FlowKind::Flow, rest.trim_start()));
-    }
-    input
-        .strip_prefix("fragment")
-        .map(|rest| (FlowKind::Fragment, rest.trim_start()))
-}
-
-pub(super) fn flow_decl_family(kind: FlowKind) -> &'static str {
-    kind.declaration_family()
+pub(super) fn parse_flow_head(input: &str) -> Option<&str> {
+    input.strip_prefix("flow").map(str::trim_start)
 }
 
 pub(super) fn find_header_value(lines: &[&str], prefix: &str) -> String {
@@ -554,10 +545,6 @@ pub(super) fn normalize_decl_id_ref(
 
 pub(super) fn decl_family_matches(expected: &str, actual: &str) -> bool {
     expected == actual
-        || matches!(
-            (expected, actual),
-            ("frag" | "fragment", "frag" | "fragment")
-        )
 }
 
 pub(super) fn split_empty_decl_relative_marker(

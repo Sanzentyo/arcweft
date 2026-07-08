@@ -10,7 +10,7 @@ use crate::cst::{
     split_top_level_punctuation_sequence_once, take_doc_comment_prefix,
 };
 use crate::{
-    ast::flow::{ContractClause, Stmt},
+    ast::flow::{AuthoredExpr, ContractClause, Stmt},
     ast::ids::EntityRef,
     ast::items::Item,
     expr::Expr,
@@ -51,7 +51,10 @@ effects { agent.observe }
     assert_eq!(agent.id().map(EntityRef::body), Some("agent.opening_smoke"));
     assert!(agent.signature().is_some());
     assert_eq!(agent.contracts().len(), 1);
-    assert!(matches!(agent.body_value(), Some(Expr::Call { .. })));
+    assert!(matches!(
+        agent.body_value().map(AuthoredExpr::expr),
+        Some(Expr::Call { .. })
+    ));
 }
 
 #[test]
@@ -89,7 +92,10 @@ effects {
     assert_eq!(effects.len(), 2);
     assert!(effects.iter().all(|effect| !matches!(effect, Expr::Raw(_))));
     assert_eq!(agent.body_statements().len(), 1);
-    assert!(matches!(agent.body_value(), Some(Expr::Call { .. })));
+    assert!(matches!(
+        agent.body_value().map(AuthoredExpr::expr),
+        Some(Expr::Call { .. })
+    ));
 }
 
 #[test]

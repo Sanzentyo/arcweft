@@ -5,7 +5,6 @@ pub(crate) fn entity_kind_label(kind: &EntityKind) -> &str {
         EntityKind::Agent => "agent",
         EntityKind::Entry => "entry",
         EntityKind::Flow => "flow",
-        EntityKind::Fragment => "fragment",
         EntityKind::Choice => "choice",
         EntityKind::ChoiceOption => "choice_option",
         EntityKind::Character => "character",

@@ -126,7 +126,10 @@ effects { asset.read }
     ));
     assert!(function.body().contains("xs[0]"));
     assert!(function.body_statements().is_empty());
-    assert!(matches!(function.body_value(), Some(Expr::Index { .. })));
+    assert!(matches!(
+        function.body_value().map(AuthoredExpr::expr),
+        Some(Expr::Index { .. })
+    ));
 }
 
 #[test]

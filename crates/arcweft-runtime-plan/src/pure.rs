@@ -403,7 +403,7 @@ fn pure_helper_body_parts(
     function: &HirFunction,
 ) -> Result<(&[Stmt], &Expr), PureHelperLowerError> {
     if let Some(value) = function.value() {
-        return Ok((function.statements(), value));
+        return Ok((function.statements(), value.expr()));
     }
     let Some((last, statements)) = function.statements().split_last() else {
         return Err(PureHelperLowerError::UnsupportedBody {

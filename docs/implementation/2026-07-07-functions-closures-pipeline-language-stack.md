@@ -145,6 +145,12 @@ Source briefs:
 - Let-binding type judgments now retain the same RHS source range, and LSP
   function-type inlays match `let` sites against sema evidence by pattern and
   RHS range instead of pattern/traversal order alone.
+- Function-like final body values now keep authored source ranges through
+  syntax, HIR, and sema instead of collapsing to bare `Expr` values. This
+  covers top-level `fn`/`task fn`/`dialogue fn`/`stream fn`, Agent function
+  bodies, and trait/impl member function bodies. Runtime-plan and verifier
+  paths explicitly project those authored values back to `Expr` when they do
+  not need source identity.
 - Sema now accepts calls through function-valued symbols and locals instead of
   treating those path callees as unknown named functions.
 - Function value calls in sema now support partial application by returning a
@@ -528,6 +534,7 @@ cargo test -p arcweft-lang-sema --all-features infers_partial_placeholder_functi
 cargo test -p arcweft-lang-sema --all-features infers_parenthesized_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_partial_call_abstraction_without_expected_type
 cargo test -p arcweft-lang-sema --all-features let_rhs_type_judgments_carry_source_ranges
+cargo test -p arcweft-lang-sema --all-features function_like_body_value_judgments_carry_source_ranges
 cargo test -p arcweft-lang-sema --all-features method_chain
 cargo test -p arcweft-lang-sema --all-features data_last_pipe_through_local_function_value_records_call_evidence
 cargo test -p arcweft-lang-sema --all-features curried_function_declaration
@@ -588,6 +595,15 @@ alias final call composition, and immediate final call composition. Full
 `arcweft-lang-sema` tests, workspace check, workspace clippy, and structure
 audit passed for this cut; clippy still only reports the existing large enum
 warnings and structure audit still reports 0 errors and 148 warnings.
+
+The function-like body value source-identity cut has focused passing coverage
+for authored source ranges on top-level function final values and impl method
+final values (`function_like_body_value_judgments_carry_source_ranges`), plus
+the existing let RHS range regression. Focused syntax/HIR/sema/runtime-plan/
+compiler check and `cargo fmt --all --check` passed. The current structure
+audit run reports the existing `crates/arcweft-cli/src/app/bundle_view.rs`
+SIZE001 error at 2622 physical LOC and 148 warnings; this slice did not touch
+that CLI bundle view file.
 
 The runtime function/apply cut has focused passing coverage for captured
 function application, partial application, curried application, closure strict

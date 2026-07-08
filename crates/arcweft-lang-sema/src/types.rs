@@ -6,7 +6,6 @@ pub enum EntityKind {
     Agent,
     Entry,
     Flow,
-    Fragment,
     Choice,
     ChoiceOption,
     Character,

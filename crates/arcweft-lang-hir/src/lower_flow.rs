@@ -25,7 +25,6 @@ pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         .collect::<Result<Vec<_>, _>>()?;
     Ok(HirFlow {
         attributes: flow.attrs().to_vec(),
-        kind: flow.kind(),
         id,
         name: flow.name().map(str::to_owned),
         signature: flow.signature().cloned(),

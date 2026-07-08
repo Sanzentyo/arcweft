@@ -3,7 +3,7 @@ use crate::types::{FnSignature, TypeRef, WhereClause};
 
 use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
 use super::dialogue::DialogueDefaultsItem;
-use super::flow::{ContractClause, Flow, FlowItem, Stmt};
+use super::flow::{AuthoredExpr, ContractClause, Flow, FlowItem, Stmt};
 use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
 use super::source::SourceItem;
@@ -478,7 +478,7 @@ pub struct FunctionItem {
     contracts: Vec<ContractClause>,
     body: String,
     body_statements: Vec<Stmt>,
-    body_value: Option<Expr>,
+    body_value: Option<AuthoredExpr>,
     range: TextRange,
 }
 
@@ -495,7 +495,7 @@ pub struct AgentItem {
     contracts: Vec<ContractClause>,
     body: String,
     body_statements: Vec<Stmt>,
-    body_value: Option<Expr>,
+    body_value: Option<AuthoredExpr>,
     range: TextRange,
 }
 
@@ -512,7 +512,7 @@ pub(crate) struct AgentItemInit {
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) body: String,
     pub(crate) body_statements: Vec<Stmt>,
-    pub(crate) body_value: Option<Expr>,
+    pub(crate) body_value: Option<AuthoredExpr>,
     pub(crate) range: TextRange,
 }
 
@@ -769,7 +769,7 @@ pub(crate) struct FunctionInit {
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) body: String,
     pub(crate) body_statements: Vec<Stmt>,
-    pub(crate) body_value: Option<Expr>,
+    pub(crate) body_value: Option<AuthoredExpr>,
     pub(crate) range: TextRange,
 }
 
@@ -849,7 +849,7 @@ pub enum TraitMember {
         signature: FnSignature,
         body: Option<String>,
         body_statements: Vec<Stmt>,
-        body_value: Option<Expr>,
+        body_value: Option<AuthoredExpr>,
     },
     Raw(String),
 }
@@ -866,7 +866,7 @@ pub enum ImplMember {
         signature: FnSignature,
         body: String,
         body_statements: Vec<Stmt>,
-        body_value: Option<Expr>,
+        body_value: Option<AuthoredExpr>,
     },
     Raw(String),
 }
@@ -1053,7 +1053,7 @@ impl FunctionItem {
         &self.body_statements
     }
 
-    pub const fn body_value(&self) -> Option<&Expr> {
+    pub const fn body_value(&self) -> Option<&AuthoredExpr> {
         self.body_value.as_ref()
     }
 
@@ -1120,7 +1120,7 @@ impl AgentItem {
         &self.body_statements
     }
 
-    pub const fn body_value(&self) -> Option<&Expr> {
+    pub const fn body_value(&self) -> Option<&AuthoredExpr> {
         self.body_value.as_ref()
     }
 

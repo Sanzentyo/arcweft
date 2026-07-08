@@ -29,7 +29,7 @@ use arcweft_lang_syntax::{
         choice::ChoiceAction,
         common::TextRange,
         dialogue::DialogueToken,
-        flow::{AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
+        flow::{AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax, IdRef},
         items::{EntityDeclKind, FunctionKind},
         line_plan::{CancelRuleSyntax, LinePlanItem, TriggerPattern},

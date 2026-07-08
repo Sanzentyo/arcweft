@@ -40,7 +40,7 @@ fn parses_impl_assignment_tail_if_without_raw_fallback() {
         then_branch,
         else_branch: Some(_),
         ..
-    } = value
+    } = value.expr()
     else {
         panic!("expected tail if expression, got {value:?}");
     };

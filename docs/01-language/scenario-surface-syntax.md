@@ -437,21 +437,22 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 ```
 
-Reusable scenario snippets use `fragment`:
+Reusable scenario snippets are ordinary `flow` declarations:
 
 ```arcw
-pub fragment @frag.alice_enters: FlowFragment {
+pub flow @flow.alice_enters alice_enters {
     show(@character.alice, .normal, at = .right, fade = 220ms)
     move(@character.alice, to = .center, time = 300ms, ease = cubic.out)
 }
 
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    include @frag.alice_enters
+    include @flow.alice_enters
     alice: おはよう。[p]
 }
 ```
 
-`fragment` is typed flow content, not a second script language.
+`include` targets a flow reference; there is no separate `FlowFragment` surface
+type or `fragment` declaration keyword.
 
 ---
 

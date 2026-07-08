@@ -19,7 +19,7 @@ mod game.routes.opening
 use game.prelude.*
  pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
-    include @frag.alice_enters
+    include @flow.alice_enters
 }
 ",
     );
@@ -30,7 +30,6 @@ use game.prelude.*
         panic!("expected flow item");
     };
     assert_eq!(flow.visibility(), Some(Visibility::Public));
-    assert_eq!(flow.kind(), FlowKind::Flow);
     assert_eq!(
         flow.id()
             .expect("flow id")
@@ -73,10 +72,10 @@ flow named {
     alice(id=@.hello): おはよう。[p]
 }
 
-fragment @frag:.intro {
+flow @flow:.intro {
 }
 
-fragment @frag:. shared {
+flow @flow:. shared {
 }
 ",
     );
@@ -100,16 +99,10 @@ fragment @frag:. shared {
         hir.flows()[3].id().expect("implicit flow id").body(),
         "flow.named"
     );
+    assert_eq!(hir.flows()[4].id().expect("flow id").body(), "flow.intro");
     assert_eq!(
-        hir.flows()[4].id().expect("fragment id").body(),
-        "frag.intro"
-    );
-    assert_eq!(
-        hir.flows()[5]
-            .id()
-            .expect("empty marker fragment id")
-            .body(),
-        "frag.shared"
+        hir.flows()[5].id().expect("empty marker flow id").body(),
+        "flow.shared"
     );
     let HirFlowItem::Dialogue(line) = &hir.flows()[0].body()[0] else {
         panic!("expected dialogue");
@@ -117,6 +110,24 @@ fragment @frag:. shared {
     assert_eq!(
         line.id().expect("line id").body(),
         "say.opening.alice.hello"
+    );
+}
+
+#[test]
+fn rejects_removed_fragment_declarations() {
+    let errors = parse_errors(
+        r#"
+pub fragment intro: FlowFragment {
+    return "intro"
+}
+"#,
+    );
+
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("`fragment` was removed")),
+        "expected removed fragment diagnostic, got {errors:?}"
     );
 }
 
@@ -174,7 +185,7 @@ fn parses_delimited_entity_refs_with_semantic_hashes() {
     let tree = parse_ok(
         r"
 flow @<flow.alice_intro@sem:b3_9f2a1c> opening {
-    include @<frag.alice_enters@sem:f0_00aa>
+    include @<flow.alice_enters@sem:f0_00aa>
 }
 ",
     );
@@ -189,11 +200,11 @@ flow @<flow.alice_intro@sem:b3_9f2a1c> opening {
         .expect("absolute flow id");
     assert!(id.is_delimited());
     assert_eq!(id.body(), "flow.alice_intro@sem:b3_9f2a1c");
-    let FlowItem::Include(fragment) = &flow.body()[0] else {
+    let FlowItem::Include(included_flow) = &flow.body()[0] else {
         panic!("expected include");
     };
-    assert!(fragment.is_delimited());
-    assert_eq!(fragment.body(), "frag.alice_enters@sem:f0_00aa");
+    assert!(included_flow.is_delimited());
+    assert_eq!(included_flow.body(), "flow.alice_enters@sem:f0_00aa");
 }
 
 #[test]
@@ -202,7 +213,7 @@ fn lowers_family_relative_entity_refs_in_general_reference_contexts() {
         r"
 flow @flow.opening opening {
     scope prologue {
-        include @frag:.alice_enters
+        include @flow:.alice_enters
     }
 }
 ",
@@ -215,7 +226,7 @@ flow @flow.opening opening {
     let HirFlowItem::Include(include) = &scope.body()[0] else {
         panic!("expected include");
     };
-    assert_eq!(include.body(), "frag.opening.prologue.alice_enters");
+    assert_eq!(include.body(), "flow.alice_enters");
 }
 
 #[test]

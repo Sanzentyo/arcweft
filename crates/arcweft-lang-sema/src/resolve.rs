@@ -3,7 +3,6 @@ use crate::project_index::ProjectSemanticIndex;
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::{EntityKind, TypeKind};
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::ast::flow::FlowKind;
 use arcweft_lang_syntax::ast::items::EntityDeclKind;
 use arcweft_source::{Diagnostic, DiagnosticSeverity};
 use std::collections::HashMap;
@@ -35,13 +34,7 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
     let mut registry = NameRegistry::new();
     for flow in module.flows() {
         if let Some(id) = flow.id() {
-            registry = registry.with_entity(
-                id.body(),
-                match flow.kind() {
-                    FlowKind::Flow => EntityKind::Flow,
-                    FlowKind::Fragment => EntityKind::Fragment,
-                },
-            );
+            registry = registry.with_entity(id.body(), EntityKind::Flow);
         }
         for item in flow.body() {
             register_flow_item(item, &mut registry);

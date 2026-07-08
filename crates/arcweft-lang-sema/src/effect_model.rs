@@ -16,7 +16,6 @@ pub struct CallableId(String);
 pub enum CallableKind {
     Function,
     Flow,
-    Fragment,
     Agent,
     Hook,
     Entry,

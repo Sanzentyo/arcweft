@@ -1276,6 +1276,46 @@ flow @flow.source_ranges source_ranges {
 }
 
 #[test]
+fn function_like_body_value_judgments_carry_source_ranges() {
+    let source = r"
+fn add(lhs: i64, rhs: i64) -> i64 {
+    lhs + rhs
+}
+
+impl i64 {
+    fn plus(self, delta: i64) -> i64 {
+        self + delta
+    }
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("function-like body source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "lhs + rhs",
+        |ty| matches!(ty, TypeKind::I64),
+        "top-level function body value should retain its source range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "self + delta",
+        |ty| matches!(ty, TypeKind::I64),
+        "impl method body value should retain its source range",
+    );
+}
+
+#[test]
 fn nested_let_rhs_expression_judgments_carry_source_ranges() {
     let source = r"
 fn add(lhs: i64, rhs: i64) -> i64 {
@@ -2870,23 +2910,22 @@ fn named_iter_item_type_extracts_sequence_items() {
 }
 
 #[test]
-fn typechecks_fragment_hir_and_include_target() {
+fn typechecks_included_flow_target() {
     let tree = parse_ok(
         r"
-pub fragment alice_enters: FlowFragment {
+pub flow alice_enters {
     alice: おはよう。[p]
 }
 
 flow @flow.opening opening {
-    include @frag.alice_enters
+    include @flow.alice_enters
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("fragment include fixture lowers");
+    let hir = lower_to_hir(&tree).expect("flow include fixture lowers");
     let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
 
-    assert_eq!(hir.flows()[0].kind(), FlowKind::Fragment);
-    typecheck_hir(&hir, &env).expect("fragment include fixture typechecks");
+    typecheck_hir(&hir, &env).expect("flow include fixture typechecks");
 }
 
 #[test]

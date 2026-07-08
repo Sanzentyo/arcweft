@@ -1,32 +1,28 @@
 use super::support::*;
 
 #[test]
-fn parses_fragment_as_flow_like_body() {
+fn parses_reusable_flow_body() {
     let tree = parse_ok(
         r"
-pub fragment @frag.alice_enters alice_enters: FlowFragment {
+pub flow @flow.alice_enters alice_enters {
     show(@character.alice, .normal, at = .right, fade = 220ms)
     alice: おはよう。[p]
 }
 ",
     );
 
-    let Item::Flow(fragment) = &tree.items()[0] else {
-        panic!("expected fragment as flow-like item");
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow item");
     };
-    assert_eq!(fragment.kind(), FlowKind::Fragment);
-    assert_eq!(
-        fragment.id().expect("fragment id").body(),
-        "frag.alice_enters"
-    );
+    assert_eq!(flow.id().expect("flow id").body(), "flow.alice_enters");
     assert!(matches!(
-        &fragment.body()[0],
+        &flow.body()[0],
         FlowItem::Stmt(Stmt::Expr {
             expr: Expr::Call { .. },
             ..
         })
     ));
-    assert!(matches!(&fragment.body()[1], FlowItem::SpeakerLine(_)));
+    assert!(matches!(&flow.body()[1], FlowItem::SpeakerLine(_)));
 }
 
 #[test]

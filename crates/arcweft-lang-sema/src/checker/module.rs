@@ -1,8 +1,8 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
 use super::{
-    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FlowKind,
-    FunctionKind, FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
+    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FunctionKind,
+    FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
     NominalTypeContext, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
     choice_output_type, entity_kind_for_decl, entity_syntax_kind, function_param_local_type,
     function_param_local_type_with_generics, function_signature_type,
@@ -17,6 +17,7 @@ use crate::effect_model::{
 use crate::effects::EffectSet;
 use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
+use arcweft_lang_syntax::ast::flow::AuthoredExpr;
 use arcweft_lang_syntax::ast::items::{
     EntityDeclItem, EntityDeclKind, EntryItem, EntryRouteBinding, EntryRouteBindingSource,
     EnumItem, EnumVariant, ExternModItem, ExternModMember, ImplItem, ImplMember, StructItem,
@@ -147,12 +148,7 @@ impl TypeChecker<'_> {
                 .and_then(|signature| signature.return_type())
                 .map(type_ref_kind);
             if let Some(id) = flow.id() {
-                match flow.kind() {
-                    FlowKind::Flow => self.expect_entity_kind(id, &EntityKind::Flow, "flow id"),
-                    FlowKind::Fragment => {
-                        self.expect_entity_kind(id, &EntityKind::Fragment, "fragment id");
-                    }
-                }
+                self.expect_entity_kind(id, &EntityKind::Flow, "flow id");
             }
             for contract in flow.contracts() {
                 self.check_contract_clause(contract);
@@ -269,11 +265,11 @@ impl TypeChecker<'_> {
     fn check_function_body_expr(
         &mut self,
         statements: &[Stmt],
-        value: Option<&Expr>,
+        value: Option<&arcweft_lang_syntax::ast::flow::AuthoredExpr>,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         if value.is_some() {
-            return self.check_block_expr_with_expected(statements, value, expected);
+            return self.check_authored_block_expr_with_expected(statements, value, expected);
         }
         match statements.split_last() {
             Some((
@@ -290,7 +286,7 @@ impl TypeChecker<'_> {
                 *expr_range,
                 expected,
             ),
-            _ => self.check_block_expr(statements, None),
+            _ => self.check_authored_block_expr(statements, None),
         }
     }
 
@@ -482,10 +478,7 @@ impl TypeChecker<'_> {
                 self.register_effect_callable(
                     name,
                     flow_callable_id(name),
-                    match flow.kind() {
-                        FlowKind::Flow => CallableKind::Flow,
-                        FlowKind::Fragment => CallableKind::Fragment,
-                    },
+                    CallableKind::Flow,
                     if entry_boundary {
                         EffectVisibility::Boundary
                     } else {
@@ -933,7 +926,7 @@ impl TypeChecker<'_> {
                 "`stream fn {}` must declare `-> Stream<T, E>`",
                 function.name()
             )));
-            self.check_block_expr(function.statements(), function.value());
+            self.check_authored_block_expr(function.statements(), function.value());
             return;
         };
         self.yield_stack.push(YieldContext::Stream {
@@ -943,14 +936,14 @@ impl TypeChecker<'_> {
         });
         self.check_block_expr(function.statements(), None);
         let value_is_stream_block = matches!(
-            function.value(),
+            function.value().map(AuthoredExpr::expr),
             Some(Expr::ComputationBlock {
                 kind: ComputationBlockKind::Stream,
                 ..
             })
         );
         if let Some(value) = function.value() {
-            self.check_expr(value);
+            self.check_authored_expr(value);
         }
         let Some(YieldContext::Stream { yield_count, .. }) = self.yield_stack.pop() else {
             return;

@@ -7,6 +7,7 @@ use arcweft_core::plan::{
 };
 use arcweft_lang_sema::check::{ForIterationEvidence, ForIterationEvidenceFamily};
 use arcweft_lang_sema::traits::{TraitCatalog, TraitMethodForWitness, TraitWitnessId};
+use arcweft_lang_syntax::ast::flow::AuthoredExpr;
 use arcweft_lang_syntax::ast::pattern::Pattern;
 use arcweft_lang_syntax::types::{FnParam, FnReceiverKind, FnSignature};
 use arcweft_runtime_plan::trait_methods::{
@@ -67,7 +68,7 @@ fn trait_method_input<'a>(
         input_types,
         output_type: RuntimePureOutputType::Value,
         statements: body.statements(),
-        value: body.value(),
+        value: body.value().map(AuthoredExpr::expr),
     })
 }
 

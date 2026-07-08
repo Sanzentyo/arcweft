@@ -14,34 +14,32 @@ use arcweft_lang_syntax::ast::{
 // project hierarchy.
 
 pub(crate) fn normalize_flow_decl_id(flow: &Flow) -> Result<Option<EntityRef>, HirLowerError> {
-    let family = flow.kind().declaration_family();
     match flow.id() {
         Some(IdRef::Absolute(id)) => Ok(Some(id.clone())),
         Some(IdRef::Relative(relative)) => Ok(Some(EntityRef::new(
-            format!("{family}.{}", relative.suffix()),
+            format!("flow.{}", relative.suffix()),
             false,
             *relative.range(),
         ))),
         Some(IdRef::FamilyRelative(relative)) => {
-            if !flow.kind().accepts_declaration_family(relative.family()) {
+            if relative.family() != "flow" {
                 return Err(HirLowerError::new(
                     format!(
-                        "{} declaration cannot use `{}` family-relative id",
-                        flow.kind().declaration_family(),
+                        "flow declaration cannot use `{}` family-relative id",
                         relative.family()
                     ),
                     Some(*relative.range()),
                 ));
             }
             Ok(Some(EntityRef::new(
-                format!("{family}.{}", relative.relative().suffix()),
+                format!("flow.{}", relative.relative().suffix()),
                 false,
                 *relative.range(),
             )))
         }
         None => Ok(flow
             .name()
-            .map(|name| EntityRef::new(format!("{family}.{name}"), false, *flow.range()))),
+            .map(|name| EntityRef::new(format!("flow.{name}"), false, *flow.range()))),
     }
 }
 
@@ -80,7 +78,7 @@ pub(crate) fn normalize_entity_ref_syntax(
                 ));
             };
             // Family-relative refs are the recommended spelling for reference
-            // positions (`@flow:.next`, `@frag:.intro`) because the family keeps
+            // positions (`@flow:.next`, `@asset:.room`) because the family keeps
             // lookup separate from ID-bearing `@.suffix` declaration contexts.
             let mut parts = vec![relative.family().to_owned(), flow_slug.clone()];
             parts.extend(relative_scopes(context, relative.relative())?);
@@ -263,8 +261,6 @@ pub(crate) fn content_callee_slug(callee: &str) -> String {
 pub(crate) fn flow_slug_from_entity(id: &EntityRef) -> String {
     id.body()
         .strip_prefix("flow.")
-        .or_else(|| id.body().strip_prefix("frag."))
-        .or_else(|| id.body().strip_prefix("fragment."))
         .unwrap_or(id.body())
         .to_owned()
 }

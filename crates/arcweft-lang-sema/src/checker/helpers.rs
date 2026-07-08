@@ -11,7 +11,6 @@ pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "agent" => EntityKind::Agent,
         "entry" => EntityKind::Entry,
         "flow" => EntityKind::Flow,
-        "frag" | "fragment" => EntityKind::Fragment,
         "choice" => EntityKind::Choice,
         "character" => EntityKind::Character,
         "view" => EntityKind::View,

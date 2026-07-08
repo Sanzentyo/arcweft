@@ -181,7 +181,7 @@ suffix として使い、`flow @. opening { ... }`、`flow @flow:. opening { ...
 `flow opening { ... }` と書いた場合も同じ暗黙 ID `flow.opening` を持つ。
 
 一般の entity reference 文脈で相対参照したい場合は family を明示する。
-同じ flow / fragment / asset family の中を相対参照する場合や、default
+同じ flow / asset family の中を相対参照する場合や、default
 public-id prefix を持つ family を参照する場合は、absolute ID を手で連結する
 より `@flow:.next` や `@asset:.room` のような family-relative form を
 推奨する。family が明示されるので、ID を宣言する `@.suffix` と値として
@@ -189,7 +189,7 @@ public-id prefix を持つ family を参照する場合は、absolute ID を手�
 
 ```arcw
 goto @flow:.next
-include @frag:.intro
+include @flow:.intro
 window = @textbox:.side
 asset.load(@asset:.room)
 ```
@@ -336,7 +336,7 @@ However, projects may choose a policy that requires module paths and entity IDs
 to line up, such as `mod game.routes.opening` containing `@flow.opening`.
 
 Planned lint policy: add an ID policy lint pass that can compare module path,
-flow or fragment ID, named scopes, and generated relative IDs. It should report
+flow ID, named scopes, and generated relative IDs. It should report
 IDs that do not follow a configured hierarchy, while keeping the core parser/HIR
 Sans I/O and policy-neutral.
 

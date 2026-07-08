@@ -14,7 +14,7 @@ use super::{
 };
 use crate::diagnostics::TraitDiagnostic;
 use crate::traits::TraitMethodResolution;
-use arcweft_lang_syntax::ast::flow::ThreadBlock;
+use arcweft_lang_syntax::ast::flow::{AuthoredExpr, ThreadBlock};
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
     BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder, SelectExpr,
@@ -1982,6 +1982,14 @@ impl TypeChecker<'_> {
         self.check_block_expr_with_expected(statements, value, None)
     }
 
+    pub(super) fn check_authored_block_expr(
+        &mut self,
+        statements: &[Stmt],
+        value: Option<&AuthoredExpr>,
+    ) -> Option<TypeKind> {
+        self.check_authored_block_expr_with_expected(statements, value, None)
+    }
+
     pub(super) fn check_block_expr_with_expected(
         &mut self,
         statements: &[Stmt],
@@ -1994,6 +2002,38 @@ impl TypeChecker<'_> {
             }
             value.map_or(Some(TypeKind::Unit), |value| {
                 this.check_expr_with_expected(value, expected)
+            })
+        });
+        let ty = if value.is_none() && stmts_diverge(statements) {
+            Some(TypeKind::Never)
+        } else {
+            ty
+        };
+        if let (Some(expected), Some(actual)) = (expected, ty.as_ref())
+            && !self.types_compatible(expected, actual)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "block final value must have type {}, found {}",
+                type_kind_label(expected),
+                type_kind_label(actual)
+            )));
+        }
+        self.reject_borrow_escape(ty.as_ref(), "block final value");
+        ty
+    }
+
+    pub(super) fn check_authored_block_expr_with_expected(
+        &mut self,
+        statements: &[Stmt],
+        value: Option<&AuthoredExpr>,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
+        let ty = self.with_local_mutation_scope(|this| {
+            for stmt in statements {
+                this.check_stmt(stmt);
+            }
+            value.map_or(Some(TypeKind::Unit), |value| {
+                this.check_authored_expr_with_expected(value, expected)
             })
         });
         let ty = if value.is_none() && stmts_diverge(statements) {

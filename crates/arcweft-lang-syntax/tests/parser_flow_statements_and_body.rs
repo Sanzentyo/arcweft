@@ -1,6 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{
-        flow::{FlowItem, Stmt},
+        flow::{AuthoredExpr, FlowItem, Stmt},
         items::Item,
     },
     expr::Expr,
@@ -156,7 +156,7 @@ fn label(i: i32) -> string {
     let Some(Expr::If {
         else_branch: Some(else_branch),
         ..
-    }) = function.body_value()
+    }) = function.body_value().map(AuthoredExpr::expr)
     else {
         panic!("expected final if expression");
     };

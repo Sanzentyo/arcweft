@@ -453,7 +453,7 @@ impl<'a> SemanticAnalyzer<'a> {
         );
         if let Some(value) = function.value() {
             for facts in &mut flow.fallthrough {
-                self.collect_expr(value, facts);
+                self.collect_expr(value.expr(), facts);
             }
         }
         self.effect_stack.pop();

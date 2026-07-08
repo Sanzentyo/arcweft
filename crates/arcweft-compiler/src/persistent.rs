@@ -632,7 +632,7 @@ fn hir_body_facts(
 
     for flow in hir.flows() {
         put_str(&mut symbols, "flow")?;
-        put_str(&mut symbols, flow.kind().cache_fact_tag())?;
+        put_str(&mut symbols, "flow")?;
         put_option_str(&mut symbols, flow.name())?;
         put_len(&mut shape, "flow body", flow.body().len())?;
         counts.flows += 1;

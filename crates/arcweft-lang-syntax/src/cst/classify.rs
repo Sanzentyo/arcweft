@@ -170,7 +170,7 @@ fn looks_like_use_line(trimmed: &str) -> bool {
 
 fn looks_like_flow(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
-    rest.starts_with("flow ") || rest.starts_with("fragment ")
+    rest.starts_with("flow ")
 }
 
 pub(super) fn looks_like_function_item(trimmed: &str) -> bool {

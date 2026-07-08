@@ -3,7 +3,7 @@ use arcweft_lang_syntax::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
         common::{TextRange, Visibility},
         dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
-        flow::{AuthoredExpr, AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
+        flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
             AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
@@ -44,7 +44,6 @@ pub struct HirModule {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFlow {
     pub(crate) attributes: Vec<Attribute>,
-    pub(crate) kind: FlowKind,
     pub(crate) id: Option<EntityRef>,
     pub(crate) name: Option<String>,
     pub(crate) signature: Option<FnSignature>,
@@ -62,7 +61,7 @@ pub struct HirFunction {
     pub(crate) signature: FnSignature,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) statements: Vec<Stmt>,
-    pub(crate) value: Option<Expr>,
+    pub(crate) value: Option<AuthoredExpr>,
     pub(crate) range: TextRange,
 }
 
@@ -388,10 +387,6 @@ impl HirFlow {
             .any(|attribute| attribute.name() == name)
     }
 
-    pub const fn kind(&self) -> FlowKind {
-        self.kind
-    }
-
     pub const fn id(&self) -> Option<&EntityRef> {
         self.id.as_ref()
     }
@@ -452,7 +447,7 @@ impl HirFunction {
         &self.statements
     }
 
-    pub const fn value(&self) -> Option<&Expr> {
+    pub const fn value(&self) -> Option<&AuthoredExpr> {
         self.value.as_ref()
     }
 

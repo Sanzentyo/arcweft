@@ -773,7 +773,6 @@ fn entity_kind_from_type_name(name: &str) -> Option<EntityKind> {
         "Agent" => EntityKind::Agent,
         "Entry" => EntityKind::Entry,
         "Flow" => EntityKind::Flow,
-        "Fragment" => EntityKind::Fragment,
         "Choice" => EntityKind::Choice,
         "ChoiceOption" => EntityKind::ChoiceOption,
         "Character" => EntityKind::Character,
