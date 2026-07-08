@@ -752,7 +752,7 @@ crates/arcweft-lang-sema/src/tests/resolve_symbols.rs,3752,139,123,test,true,tru
 crates/arcweft-lang-sema/src/tests/script_tests.rs,2340,99,88,test,true,true,false,false
 crates/arcweft-lang-sema/src/tests/semantic.rs,16350,556,505,test,true,true,false,false
 crates/arcweft-lang-sema/src/tests/support.rs,4092,115,108,test,true,true,false,false
-crates/arcweft-lang-sema/src/tests/typecheck.rs,116522,3845,3635,test,true,true,false,false
+crates/arcweft-lang-sema/src/tests/typecheck.rs,117253,3871,3661,test,true,true,false,false
 crates/arcweft-lang-sema/src/traits/format.rs,463,17,14,production,true,false,false,false
 crates/arcweft-lang-sema/src/traits/standard_iter.rs,8050,286,267,production,true,false,false,false
 crates/arcweft-lang-sema/src/traits.rs,63900,1922,1745,production,true,false,false,false
@@ -786,7 +786,7 @@ crates/arcweft-lang-syntax/src/cst.rs,11936,422,318,production,true,false,false,
 crates/arcweft-lang-syntax/src/expr/char_literal.rs,1785,49,46,production,true,false,false,false
 crates/arcweft-lang-syntax/src/expr/closure_parse.rs,10393,266,250,production,true,false,false,false
 crates/arcweft-lang-syntax/src/expr/closure_source.rs,2013,60,57,production,true,false,false,false
-crates/arcweft-lang-syntax/src/expr/source_ranges.rs,38482,1143,1072,production,true,false,false,true
+crates/arcweft-lang-syntax/src/expr/source_ranges.rs,45792,1355,1271,production,true,false,false,true
 crates/arcweft-lang-syntax/src/expr.rs,70179,2315,2077,production,true,false,false,true
 crates/arcweft-lang-syntax/src/lib.rs,427,19,12,production,true,false,false,false
 crates/arcweft-lang-syntax/src/lint.rs,26476,897,803,production,true,false,false,true
@@ -1480,10 +1480,10 @@ docs/implementation/2026-07-04-text-control-visual-navigation-and-component-capt
 docs/implementation/2026-07-05-runtime-control-css-radius-filter-frame-fit.md,6304,100,88,text,false,false,false,false
 docs/implementation/2026-07-06-dialogue-speaker-display-label.md,1555,38,27,text,false,false,false,false
 docs/implementation/2026-07-07-call-select-unification-refactor.md,2368,31,23,text,false,false,false,false
-docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,99173,1443,1379,text,false,false,false,false
+docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,101369,1474,1407,text,false,false,false,false
 docs/implementation/2026-07-08-samples-dsl-canonical-decl-identity.md,3509,74,58,text,false,false,false,false
 docs/implementation/2026-07-08-selectable-static-view-text-blocks.md,2344,40,26,text,false,false,false,false
-docs/implementation/README.md,129902,1853,1833,text,false,false,false,false
+docs/implementation/README.md,130165,1858,1837,text,false,false,false,false
 docs/implementation/agent-repl-cell-transaction-2026-06-28.md,3455,63,44,text,false,false,false,false
 docs/implementation/agent-script-final-completion-audit.md,6039,73,61,text,false,false,false,false
 docs/implementation/agent-script-implementation.md,110903,507,495,text,false,false,false,false
@@ -1508,6 +1508,7 @@ docs/implementation/effect-system.md,3353,59,52,text,false,false,false,false
 docs/implementation/executable-runtime-core-2026-06-24.md,6208,138,115,text,false,false,false,false
 docs/implementation/first-order-effect-lowering.md,2787,57,48,text,false,false,false,false
 docs/implementation/fixture-regeneration.md,6629,133,104,text,false,false,false,false
+docs/implementation/function-stack-current-status-2026-07-08.md,10092,200,169,text,false,false,false,false
 docs/implementation/image-animation-goal-audit.md,7151,80,65,text,false,false,false,false
 docs/implementation/image-animation-policy.md,18855,334,304,text,false,false,false,false
 docs/implementation/incremental-hot-swap-bundle-2026-06-23.md,59499,839,810,text,false,false,false,false
@@ -1953,12 +1954,12 @@ docs/reviews/requests/2026-07-07-seq-06.16.6.2-scroll-axis-virtualization-retain
 docs/reviews/requests/2026-07-07-seq-06.16.6.3-legacy-ui-crate-view-rename.md,4348,92,73,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-06.16.6.4-view-resource-naming-taxonomy-and-css-scroll-policy.md,8146,156,133,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-06.16.7.2-native-ime-glyph-range-overlap-root-cause-review.md,8383,199,155,text,false,false,false,false
-docs/reviews/requests/2026-07-07-seq-07-function-closure-runtime-apply-capture-and-method-sugar.md,9844,181,157,text,false,false,false,false
-docs/reviews/requests/2026-07-07-seq-07.1-function-stack-typed-expression-lowering-evidence.md,5212,104,87,text,false,false,false,false
-docs/reviews/requests/2026-07-07-seq-07.2-function-stack-placeholder-inference-and-method-fallback.md,7628,143,128,text,false,false,false,false
+docs/reviews/requests/2026-07-07-seq-07-function-closure-runtime-apply-capture-and-method-sugar.md,10883,198,173,text,false,false,false,false
+docs/reviews/requests/2026-07-07-seq-07.1-function-stack-typed-expression-lowering-evidence.md,5414,108,91,text,false,false,false,false
+docs/reviews/requests/2026-07-07-seq-07.2-function-stack-placeholder-inference-and-method-fallback.md,7718,143,128,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md,5839,114,98,text,false,false,false,false
-docs/reviews/requests/2026-07-07-seq-07.4-function-stack-capture-effect-lsp.md,9569,155,143,text,false,false,false,false
-docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md,5320,109,93,text,false,false,false,false
+docs/reviews/requests/2026-07-07-seq-07.4-function-stack-capture-effect-lsp.md,10111,164,151,text,false,false,false,false
+docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md,6232,126,107,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md,4609,95,80,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-07.6-relative-runtime-id-boundaries.md,2777,64,50,text,false,false,false,false
 docs/reviews/requests/2026-07-08-seq-06.16.8-cross-platform-clipboard-text-control-capability.md,8627,175,148,text,false,false,false,false

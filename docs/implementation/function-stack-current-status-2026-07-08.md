@@ -14,10 +14,12 @@ Related slices are:
 
 ## Current Repository State
 
-- `main` and `origin/main` are aligned at `6c84b2005 Track wait source ranges`.
-- The active function-stack implementation work is committed and pushed.
-- The only current dirty files observed before this documentation slice were
-  unrelated Web IME/player files under `web/`.
+- At the start of this audit, `main` and `origin/main` were aligned at
+  `1db72d00c Document function stack status`.
+- The current implementation slice is a focused source-range follow-up for
+  line-plan colon blocks inside dialogue-call `with:` plans.
+- The only dirty files outside that slice were unrelated Web IME/player files
+  under `web/`.
 
 Those `web/` changes are not part of this status note and should be handled as
 their own slice if they are still desired.
@@ -124,7 +126,8 @@ their own slice if they are still desired.
   value-producing blocks, pipe/desugared expressions, selector expressions,
   dialogue interpolation/call expressions, action/defer/assignment/control
   transfer statements, container child expressions, computation blocks, braced
-  closures, guarded `if let`, effect/prefix expressions, and `wait(...)`.
+  closures, guarded `if let`, effect/prefix expressions, `wait(...)`, and
+  dialogue-call line-plan colon blocks such as `let cue = at(...):`.
 
 ### Runtime ID Boundary
 
@@ -142,10 +145,10 @@ These items can be advanced without redesigning the goal:
 
 1. Audit the remaining expression source-range families against
    `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
-   Many families are already implemented; the remaining useful slice is to
-   list untested/missing families, add focused coverage, and add internal
-   diagnostics or stats for judgments that should have a source range but do
-   not.
+   Many families are already implemented; the remaining useful slice is now a
+   matrix-style audit that lists still-untested families, closes any discovered
+   local gaps, and adds internal diagnostics or stats for judgments that should
+   have a source range but do not.
 2. Continue typed-runtime-ID cleanup at AWBC/report boundaries where internal
    maps still use public strings, but only where the AWBC schema/data-format
    boundary allows typed keys without a larger format change.
@@ -185,10 +188,10 @@ These should stay as request or design work before implementation:
 
 ## Recommended Next Slice
 
-Use the expression source-range/inlay audit as the next implementation slice.
-It is local to syntax/sema/LSP tests, does not require a new runtime contract,
-and directly reduces the largest remaining implementation-ready ambiguity in
-the active goal.
+Finish the expression source-range/inlay audit as the next implementation
+slice. It is local to syntax/sema/LSP tests, does not require a new runtime
+contract, and directly reduces the largest remaining implementation-ready
+ambiguity in the active goal.
 
 After that slice, either:
 

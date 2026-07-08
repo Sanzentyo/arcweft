@@ -1989,6 +1989,8 @@ flow @flow.dialogue_call_plan_source_ranges dialogue_call_plan_source_ranges {
     let result = alice.say()[Pick one.] with { out score + 1i64 }
     let second = alice.say()[Choose again.]
     with:
+        let cue = at(0.42s):
+            score + 3i64
         out score + 2i64
 }
 ";
@@ -2036,6 +2038,30 @@ flow @flow.dialogue_call_plan_source_ranges dialogue_call_plan_source_ranges {
         "2i64",
         |ty| matches!(ty, TypeKind::I64),
         "following-line dialogue call line-plan child literal should carry its own range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "score + 3i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "line-plan named cue body root should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "path",
+        "score",
+        |ty| matches!(ty, TypeKind::I64),
+        "line-plan named cue body path should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "3i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "line-plan named cue body literal should carry its authored range",
     );
 }
 

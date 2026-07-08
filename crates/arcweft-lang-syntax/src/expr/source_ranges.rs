@@ -185,8 +185,10 @@ fn collect_line_plan_source_ranges<'a>(
     base: usize,
     ranges: &mut Vec<ExprSourceRange<'a>>,
 ) {
-    for (item, (item_source, item_base)) in
-        plan.items().iter().zip(split_top_level_lines(source, base))
+    for (item, (item_source, item_base)) in plan
+        .items()
+        .iter()
+        .zip(split_line_plan_item_sources(source, base))
     {
         collect_line_plan_item_source_ranges(item, item_source, item_base, ranges);
     }
@@ -709,6 +711,12 @@ fn braced_block_inner(source: &str, base: usize) -> Option<(&str, usize)> {
             base + open + '{'.len_utf8(),
         ));
     }
+    if let Some(colon) = find_top_level_char(source, ':') {
+        return Some((
+            &source[colon + ':'.len_utf8()..],
+            base + colon + ':'.len_utf8(),
+        ));
+    }
     None
 }
 
@@ -765,6 +773,162 @@ fn split_top_level_lines(source: &str, base: usize) -> Vec<(&str, usize)> {
         push_trimmed_segment(source, base, line_start, source.len(), &mut segments);
     }
     segments
+}
+
+fn split_line_plan_item_sources(source: &str, base: usize) -> Vec<(&str, usize)> {
+    let lines = source_lines(source);
+    let first_non_empty = lines
+        .iter()
+        .position(|line| !line.trimmed(source).is_empty());
+    let first_indent_override = first_non_empty.and_then(|first| {
+        let first_indent = lines[first].indent(source);
+        (first_indent == 0)
+            .then(|| {
+                lines
+                    .iter()
+                    .enumerate()
+                    .skip(first + 1)
+                    .filter(|(_, line)| !line.trimmed(source).is_empty())
+                    .map(|(_, line)| line.indent(source))
+                    .min()
+                    .unwrap_or(0)
+            })
+            .filter(|indent| *indent > 0)
+    });
+    let mut segments = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed = line.trimmed(source);
+        if trimmed.is_empty() {
+            index += 1;
+            continue;
+        }
+        if line_plan_colon_block_head(trimmed) {
+            let parent_indent =
+                line.effective_indent(source, index, first_non_empty, first_indent_override);
+            let start = line.trimmed_start(source);
+            let mut end = line.trimmed_end(source);
+            index += 1;
+            while index < lines.len() {
+                let child = lines[index];
+                let child_trimmed = child.trimmed(source);
+                if !child_trimmed.is_empty()
+                    && child.effective_indent(source, index, first_non_empty, first_indent_override)
+                        <= parent_indent
+                {
+                    break;
+                }
+                if !child_trimmed.is_empty() {
+                    end = child.trimmed_end(source);
+                }
+                index += 1;
+            }
+            push_trimmed_segment(source, base, start, end, &mut segments);
+        } else {
+            push_trimmed_segment(
+                source,
+                base,
+                line.start,
+                line.end_without_newline,
+                &mut segments,
+            );
+            index += 1;
+        }
+    }
+    segments
+}
+
+#[derive(Clone, Copy)]
+struct SourceLine {
+    start: usize,
+    end_without_newline: usize,
+}
+
+impl SourceLine {
+    fn text(self, source: &str) -> &str {
+        &source[self.start..self.end_without_newline]
+    }
+
+    fn trimmed(self, source: &str) -> &str {
+        self.text(source).trim()
+    }
+
+    fn trimmed_start(self, source: &str) -> usize {
+        self.start + self.text(source).len() - self.text(source).trim_start().len()
+    }
+
+    fn trimmed_end(self, source: &str) -> usize {
+        self.start + self.text(source).trim_end().len()
+    }
+
+    fn indent(self, source: &str) -> usize {
+        self.trimmed_start(source) - self.start
+    }
+
+    fn effective_indent(
+        self,
+        source: &str,
+        index: usize,
+        first_non_empty: Option<usize>,
+        first_indent_override: Option<usize>,
+    ) -> usize {
+        if Some(index) == first_non_empty
+            && let Some(indent) = first_indent_override
+        {
+            return indent;
+        }
+        self.indent(source)
+    }
+}
+
+fn source_lines(source: &str) -> Vec<SourceLine> {
+    let mut lines = Vec::new();
+    let mut line_start = 0;
+    for line in source.split_inclusive('\n') {
+        let line_without_newline = line.strip_suffix('\n').unwrap_or(line);
+        lines.push(SourceLine {
+            start: line_start,
+            end_without_newline: line_start + line_without_newline.len(),
+        });
+        line_start += line.len();
+    }
+    if line_start < source.len() {
+        lines.push(SourceLine {
+            start: line_start,
+            end_without_newline: source.len(),
+        });
+    }
+    lines
+}
+
+fn line_plan_colon_block_head(line: &str) -> bool {
+    if line_plan_let_colon_head(line).is_some() {
+        return true;
+    }
+    let Some(head) = line.strip_suffix(':').map(str::trim) else {
+        return false;
+    };
+    head.starts_with("at(")
+        || head == "init"
+        || head.starts_with("thread")
+        || head.starts_with("on ")
+        || head.starts_with("cancel on ")
+        || head.starts_with("defer")
+        || head == "start"
+        || head == "together"
+        || head.starts_with("scope")
+}
+
+fn line_plan_let_colon_head(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix("let ")?;
+    let (pattern, expr) = split_top_level_binding(rest)?;
+    let head = expr.trim().strip_suffix(':')?.trim();
+    (head.starts_with("at(") || head.starts_with("scope")).then_some((pattern, head))
+}
+
+fn split_top_level_binding(source: &str) -> Option<(&str, &str)> {
+    find_top_level_char(source, '=').map(|split| (&source[..split], &source[split + 1..]))
 }
 
 fn push_trimmed_segment<'a>(
@@ -1139,5 +1303,53 @@ mod tests {
             "labels: {labels:?}"
         );
         assert!(labels.contains(&("path", "load_bg")), "labels: {labels:?}");
+    }
+
+    #[test]
+    fn line_plan_colon_let_block_does_not_absorb_following_items() {
+        let source = "alice.say()[Choose again.]\n    with:\n        let cue = at(0.42s):\n            score + 3i64\n        out score + 2i64";
+        let expr = Expr::DialogueCall {
+            callee: Box::new(Expr::Call {
+                callee: Box::new(Expr::Path(DottedPath::from("alice.say"))),
+                args: Vec::new(),
+            }),
+            content: "Choose again.".to_owned(),
+            plan: Some(crate::ast::line_plan::LinePlan::new(
+                crate::ast::line_plan::BlockStyle::Indent,
+                vec![
+                    crate::ast::line_plan::LinePlanItem::Let {
+                        pattern: Pattern::Ident("cue".to_owned()),
+                        expr: Expr::NamedBlock {
+                            name: "at(0.42s)".to_owned(),
+                            statements: Vec::new(),
+                            value: Some(Box::new(Expr::Binary {
+                                lhs: Box::new(Expr::Path(DottedPath::single("score"))),
+                                op: BinaryOp::Add,
+                                rhs: Box::new(int_literal("3i64", 3)),
+                            })),
+                        },
+                    },
+                    crate::ast::line_plan::LinePlanItem::Out(Expr::Binary {
+                        lhs: Box::new(Expr::Path(DottedPath::single("score"))),
+                        op: BinaryOp::Add,
+                        rhs: Box::new(int_literal("2i64", 2)),
+                    }),
+                ],
+                TextRange::new(0, source.len()),
+            )),
+        };
+        let ranges = collect_expr_source_ranges(&expr, source, TextRange::new(0, source.len()));
+        let labels = ranges
+            .into_iter()
+            .map(|range| &source[range.range().start()..range.range().end()])
+            .collect::<Vec<_>>();
+        assert!(
+            labels.contains(&"score + 2i64"),
+            "following line-plan out value should remain a separate segment: {labels:?}"
+        );
+        assert!(
+            labels.contains(&"3i64"),
+            "line-plan named cue body should keep child expression ranges: {labels:?}"
+        );
     }
 }

@@ -1458,3 +1458,29 @@ docs. Structure audit was rerun with
 the dirty worktree reports 2446 scanned files, 1171 Rust files, 576526 Rust
 physical LOC, and the existing unrelated
 `crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The dialogue-call line-plan colon-block source-range follow-up fixes a smaller
+gap discovered while organizing the current status. The `with:` plan source is
+trimmed before expression source collection, so a first item such as
+`let cue = at(0.42s):` could previously lose its parent indentation and absorb a
+following sibling `out` item. The syntax collector now splits line-plan item
+sources with colon-block grouping and descends into top-level colon bodies, so
+named cue body expressions and later sibling line-plan items both keep their
+authored ranges. Focused validation passed with
+`cargo test -p arcweft-lang-syntax --all-features line_plan_colon_let_block_does_not_absorb_following_items -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features dialogue_call_line_plan_expression_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`,
+and
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`.
+The broader validation slice passed with
+`cargo fmt --all --check`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`,
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`,
+and `git diff --check`. Focused clippy exits successfully with existing
+unrelated warnings from large syntax enum variants,
+`runtime-plan/src/line_task.rs`, sema function/test length, and runtime-host
+clipboard lifetime names. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the dirty worktree reports 2447 scanned files, 1171 Rust files, 576764 Rust
+physical LOC, and the existing unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 150 warnings.

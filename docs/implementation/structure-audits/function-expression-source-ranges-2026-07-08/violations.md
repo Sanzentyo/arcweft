@@ -482,7 +482,7 @@ facade file has 2153 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/tests/typecheck.rs`
 
-3845 physical LOC exceeds the 2500 LOC review threshold
+3871 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -511,6 +511,18 @@ facade file has 2153 physical LOC; target is below 250 LOC
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning TEST001 — `crates/arcweft-lang-syntax/src/expr.rs`
+
+large production file contains an embedded #[cfg(test)] module
+
+**Fix:** move tests to domain-specific child test modules or integration tests
+
+## warning SIZE001 — `crates/arcweft-lang-syntax/src/expr/source_ranges.rs`
+
+1355 physical LOC exceeds the 1200 LOC review threshold
+
+**Fix:** review responsibility boundaries before adding more code
+
+## warning TEST001 — `crates/arcweft-lang-syntax/src/expr/source_ranges.rs`
 
 large production file contains an embedded #[cfg(test)] module
 
