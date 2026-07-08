@@ -405,15 +405,20 @@ fn runtime_function_value_expr_supported(
         | Expr::Thread { .. }
         | Expr::Raw(_) => false,
         Expr::Closure { params, body, .. } => {
-            params.iter().all(|param| param.simple_ident().is_some())
-                && params.iter().all(|param| {
-                    param
-                        .simple_ident()
-                        .is_some_and(|name| !context.shadows_function_local(name))
-                })
-                && runtime_function_value_expr_supported(body, context)
+            runtime_function_value_closure_supported(params, body, context)
         }
     }
+}
+
+fn runtime_function_value_closure_supported(
+    params: &[ClosureParam],
+    body: &Expr,
+    context: &RuntimeFunctionValueContext,
+) -> bool {
+    params
+        .iter()
+        .all(|param| !pattern_binds_function_local(param.pattern(), context))
+        && runtime_function_value_expr_supported(body, context)
 }
 
 fn runtime_function_value_local_function_call_supported(
@@ -444,14 +449,8 @@ fn runtime_function_value_expr_function_signature(
             params,
             return_type,
             body,
-        } => (params.iter().all(|param| param.simple_ident().is_some())
-            && params.iter().all(|param| {
-                param
-                    .simple_ident()
-                    .is_some_and(|name| !context.shadows_function_local(name))
-            })
-            && runtime_function_value_expr_supported(body, context))
-        .then(|| function_local_signature_from_closure(params, return_type.as_ref())),
+        } => runtime_function_value_closure_supported(params, body, context)
+            .then(|| function_local_signature_from_closure(params, return_type.as_ref())),
         Expr::Call { callee, args }
             if runtime_function_value_local_function_call_supported(callee, args, context) =>
         {

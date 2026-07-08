@@ -1,20 +1,22 @@
 # Current Work Status - 2026-07-09
 
 This note is the current repository map after the latest pushed function-stack
-slice. It supersedes the operational pointers in
+slice and the current status cleanup. It supersedes the operational pointers in
 `docs/implementation/current-work-status-2026-07-08.md` without rewriting that
 historical note.
 
 ## Repository Baseline
 
-- Baseline before the latest function-stack status refresh:
-  `097f694a5 Apply source callback parameters`.
-- `main` and `origin/main` are aligned at that head.
-- The working copy still has unrelated View/Web/text-input changes. They are
-  not part of the function/closure/currying/pipeline goal and should not be
-  staged with function-stack documentation or language changes.
+- Baseline before this status cleanup:
+  `a19fe72e3 Execute destructured closure parameters`.
+- At the start of this cleanup, `main` and `origin/main` were aligned at that
+  head.
+- The working copy still has unrelated View/Web/text-input/AWBC-lowering
+  changes. They are not part of the function/closure/currying/pipeline status
+  cleanup and should not be staged with function-stack documentation or
+  language changes unless they are intentionally validated as their own slice.
 
-The unrelated dirty files at this audit point are:
+The non-function-stack dirty files at this audit point are:
 
 - `crates/arcweft-cli/src/app/bundle/tests.rs`
 - `crates/arcweft-cli/src/app/bundle_view.rs`
@@ -35,6 +37,12 @@ The unrelated dirty files at this audit point are:
 - `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
 - `crates/arcweft-runtime-driver/src/session.rs`
 - `crates/arcweft-runtime-driver/tests/session.rs`
+- `crates/arcweft-runtime-plan/src/awbc_lower/expr.rs`
+- `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs`
+- `crates/arcweft-runtime-plan/src/awbc_lower/frame.rs`
+- `crates/arcweft-runtime-plan/src/awbc_lower/pattern.rs`
+- `crates/arcweft-runtime-plan/src/line_task.rs`
+- `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs`
 - `samples/modern-feedback-view/README.md`
 - `samples/modern-feedback-view/src/main.arcw`
 - `web/assets/README.md`
@@ -71,6 +79,8 @@ The detailed evidence trail remains:
 - `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
+- `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
+- `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 
 ## Completed And Pushed Function-Stack Slices
 
@@ -117,6 +127,12 @@ The detailed evidence trail remains:
   returned simple closure literals lowered to nested runtime functions. Direct
   calls to function-typed parameters lower as local `RuntimeExpr::Apply`, and
   function-valued `let` aliases/partials are tracked inside that accepted body.
+- Destructuring closure locals inside the accepted source-function subset:
+  closure literals assigned to function-valued `let` aliases may use
+  destructuring parameter patterns. Runtime-plan lowering uses the same
+  synthetic closure argument plus `RuntimeExpr::Match` body shape as ordinary
+  destructured closures, so the public closure pattern surface does not leak
+  into runtime function parameter names.
 
 ## Remaining Function-Stack Work
 
@@ -130,6 +146,11 @@ implementation:
   `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
 - Non-helper/effectful/suspending callable allocation:
   `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
+  The accepted source-local `fn` subset now covers curried groups, returned
+  simple closures, direct function-typed parameter calls, callback aliases and
+  partials, and destructuring closure literals in local function bindings. It
+  still excludes effectful/suspending/top-level-call-bearing bodies and
+  non-`fn` callable families.
 - Closure effect-row final contract:
   `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
 
@@ -146,6 +167,7 @@ separately from the function-stack goal:
   feedback View visuals.
 - Text-control editing, selection, IME handling, and focus-loss behavior.
 - Web player/EditContext glue and generated `.awfb` samples.
+- AWBC product-lowering parity changes currently present in the working copy.
 - Scoped presentation handle save/load and rollback follow-ups.
 - Parser file/module naming cleanup.
 - Pinned exact visual PNG baseline promotion and Web exact readback.

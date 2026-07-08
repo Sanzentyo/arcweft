@@ -17,6 +17,11 @@ value instead of adapter-style `RuntimeExpr::Call`. The fourth follow-up tracks
 function-valued `let` bindings derived from aliases, closure literals, and
 partial calls to function-typed parameters, so a source function can bind a
 partially applied callback and invoke it later in the same accepted body.
+The fifth follow-up allows those function-valued closure literals to use
+destructuring parameter patterns. The lowered closure keeps the stable runtime
+function parameter list by using a synthetic runtime argument name and a
+single-arm `RuntimeExpr::Match` body, matching the shared closure-parameter
+lowering path.
 
 ## Accepted Contract
 
@@ -25,21 +30,25 @@ The accepted family is intentionally small:
 - `FunctionKind::Function` only.
 - One or more parameter groups.
 - Fixed parameters only; no rest/default/receiver parameters.
-- Parameter patterns must be simple identifier bindings.
+- Source function declaration parameter patterns must be simple identifier
+  bindings.
 - Body must be a final expression or final `return` expression, optionally
   preceded by simple `let` statements.
 - Body expressions must lower through strict runtime expression lowering and
   must not contain host/top-level calls, pipes, `await`, `try`, threads,
   dialogue calls, placeholders, raw syntax, or lifetime paths.
-- Closure literal expressions are accepted when their parameters are simple
-  identifiers and their body recursively satisfies this accepted contract.
+- Closure literal expressions are accepted when their parameter patterns do not
+  bind names that shadow known function-valued locals and their body
+  recursively satisfies this accepted contract. Simple identifier parameters
+  lower directly; destructuring parameters lower through synthetic runtime
+  arguments plus `RuntimeExpr::Match`.
 - Direct calls to parameters whose declared type is a function type are
   accepted when all provided arguments are positional accepted expressions and
   the call does not exceed the declared function arity.
 - Simple `let` bindings become local function values inside the accepted body
   when their expression is a function-typed parameter alias, a simple closure
-  literal, or a partial call to an existing local function value whose result
-  type is still a function.
+  literal, a destructuring closure literal, or a partial call to an existing
+  local function value whose result type is still a function.
 - `let`, `if let`, `match`, and closure parameter patterns that would shadow a
   function-typed parameter name keep the source function outside this accepted
   subset.
@@ -71,6 +80,9 @@ suspension work in this cut. Calling a supplied function value composes that
 value's behavior at invocation time through the existing runtime `Apply` path.
 Returning a closure only allocates another `RuntimeExpr::Function`; its body is
 still constrained by the same accepted subset.
+Destructuring closure parameters do not widen the callable family by
+themselves; they are a runtime-local destructuring step over the value supplied
+to the closure, and unsupported body syntax remains unsupported.
 
 Product AWBC save/load behavior is unchanged: any escaped runtime
 `RuntimeValue::Function` is still rejected by the existing structured
@@ -100,6 +112,44 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_returned_closure -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_param_call -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck -- --nocapture
 ```
+
+2026-07-09 status-cleanup validation for the destructured closure local-alias
+follow-up:
+
+```bash
+rustfmt --edition 2024 --check crates\arcweft-runtime-plan\src\function_values.rs crates\arcweft-compiler\src\tests.rs
+git diff --check -- crates\arcweft-runtime-plan\src\function_values.rs crates\arcweft-compiler\src\tests.rs docs\implementation\2026-07-07-functions-closures-pipeline-language-stack.md docs\implementation\current-work-status-2026-07-09.md docs\implementation\function-stack-goal-completion-audit-2026-07-08.md docs\implementation\function-stack-non-helper-source-function-values-2026-07-09.md docs\implementation\function-stack-status-rollup-2026-07-09.md docs\reviews\requests\2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_partial_let -- --nocapture
+cargo check -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo clippy -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+```
+
+All commands passed. Clippy still reports the existing large-enum warnings in
+`arcweft-lang-syntax` and the existing `too_many_lines` warning in
+`arcweft-lang-sema::semantic::analyze_stmt`; no new warning is attributed to
+this slice. The structure audit scanned 2464 files / 1176 Rust files /
+581407 Rust physical LOC and reported 0 errors / 151 warnings.
+
+Structural measurement at revision `a19fe72e3` before this cleanup commit:
+
+| Path | Crate | Bytes | Physical LOC | Classification | Embedded test LOC | Responsibilities |
+| --- | --- | ---: | ---: | --- | ---: | --- |
+| `crates/arcweft-runtime-plan/src/function_values.rs` | `arcweft-runtime-plan` | 17269 | 491 | production | 0 | accepted runtime function-value family classification and source-local function materialization support |
+| `crates/arcweft-compiler/src/tests.rs` | `arcweft-compiler` | 109501 | 3283 | unit-test module | 3283 | compiler/runtime-plan regression fixtures |
+
+Largest workspace Rust files measured at the same checkout, unchanged by this
+slice:
+
+| Path | Bytes | Physical LOC | Classification |
+| --- | ---: | ---: | --- |
+| `crates/arcweft-text-layout/src/vertical_orientation.rs` | 357456 | 12394 | production generated/lookup-heavy vertical text data |
+| `crates/arcweft-cli/tests/check/cli_runtime_bench.rs` | 255354 | 7443 | integration test |
+| `crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs` | 243053 | 6285 | integration test |
+| `crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_class_mix.rs` | 222475 | 5760 | integration test |
+| `crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs` | 222425 | 5659 | integration test |

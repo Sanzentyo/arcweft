@@ -2,6 +2,7 @@ use arcweft_agent_protocol::artifact::EffectCapability as AgentEffectCapability;
 use arcweft_bundle::BundleKind;
 use arcweft_core::{
     engine::{Engine, FlowExit, FlowFiberStatus},
+    pattern::RuntimePattern,
     plan::{
         FlowOp, RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence,
         RuntimeIteratorWitnessExecutable,
@@ -1313,6 +1314,102 @@ flow @flow.main main {
                     [RuntimeExpr::Value(value)] if value == &RuntimeValue::String("right".to_owned())
                 )
     ));
+}
+
+#[test]
+fn checked_runtime_plan_materializes_source_function_destructured_closure_let() {
+    let parsed = parse_source_text(
+        r#"
+fn choose_right(pair: (String, String)) -> String {
+    let choose = |(left, right): (String, String)| right
+    return choose(pair)
+}
+
+flow @flow.main main {
+    let value: String = choose_right(("head", "tail"))
+    return value
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function destructured closure let");
+
+    let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected value let");
+    };
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["pair"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Let { name, expr, body }
+                                    if name == "choose"
+                                        && matches!(
+                                            expr.as_ref(),
+                                            RuntimeExpr::Function { params, body }
+                                                if params.as_slice() == ["$arcweft.closure.arg.0"]
+                                                    && matches!(
+                                                        body.as_ref(),
+                                                        RuntimeExpr::Match { scrutinee, arms }
+                                                            if matches!(
+                                                                scrutinee.as_ref(),
+                                                                RuntimeExpr::Local(name)
+                                                                    if name == "$arcweft.closure.arg.0"
+                                                            ) && matches!(
+                                                                arms.as_slice(),
+                                                                [arcweft_core::value::RuntimeExprMatchArm {
+                                                                    pattern: RuntimePattern::Tuple(items),
+                                                                    guard: None,
+                                                                    value,
+                                                                }] if matches!(
+                                                                    items.as_slice(),
+                                                                    [
+                                                                        RuntimePattern::Ident(left),
+                                                                        RuntimePattern::Ident(right),
+                                                                    ] if left == "left" && right == "right"
+                                                                ) && matches!(
+                                                                    value,
+                                                                    RuntimeExpr::Local(name) if name == "right"
+                                                                )
+                                                            )
+                                                    )
+                                        )
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Apply { callee, args }
+                                                if matches!(
+                                                    callee.as_ref(),
+                                                    RuntimeExpr::Local(name) if name == "choose"
+                                                ) && matches!(
+                                                    args.as_slice(),
+                                                    [RuntimeExpr::Local(name)] if name == "pair"
+                                                )
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Tuple(items)] if items.len() == 2
+                )
+        ),
+        "expected value to apply source function containing destructured closure let, got {value:#?}"
+    );
 }
 
 #[test]
