@@ -5,6 +5,10 @@ Source briefs:
 - `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f3559f\pasted-text.txt`
 - `C:\Users\sanze\.codex\attachments\232a9edf-275f-4c4a-86b9-c447fe38e452\pasted-text.txt`
 
+Current status index:
+
+- `docs/implementation/function-stack-current-status-2026-07-08.md`
+
 ## Implemented in the current sequence
 
 - Function type syntax and semantic type substrate:

@@ -52,6 +52,14 @@ This request covers the remaining work needed to finish the revised Arcweft
 function/closure/currying/pipeline specification without adding compatibility
 shims or preserving removed syntax.
 
+As of 2026-07-08, the broad request is mostly implemented. The current status
+index is
+`docs/implementation/function-stack-current-status-2026-07-08.md`. Remaining
+work is no longer the whole function stack; it is concentrated in expression
+source-range/inlay closure, spread partial/fallback design, resumable AWBC
+dynamic apply, persisted closure snapshots, broader non-helper callable
+allocation, and full closure effect-row integration.
+
 ## Required decisions
 
 1. Complete first-class function value integration beyond the implemented
@@ -114,14 +122,23 @@ shims or preserving removed syntax.
    pure helper bare paths, non-exact helper calls, top-level `#[pure]` prefix
    partial calls, and local function-valued path callees through typed lowering
    evidence. Non-pure callable allocation remains tied to AWBC/runtime design.
-2. Add AWBC closure allocation / apply semantics or explicitly split that work
-   into an AWBC-focused request with instruction/table design.
+2. Add AWBC closure allocation / apply semantics. Done for non-suspending
+   expression closures and split to 07.5 for resumable dynamic apply and
+   persisted closure snapshots.
 3. Extend expected-type `_` runtime lowering beyond explicit syntax-level
    annotations by adding expression-level typed lowering evidence from sema.
-4. Add inference for `_` without an expected function type.
-5. Add method-chain fallback sugar and ambiguity diagnostics.
-6. Add capture/effect/lifetime diagnostics.
-7. Add LSP/inlay/lint evidence.
+   Done for the checked runtime-plan paths.
+4. Add inference for `_` without an expected function type. Done for the
+   implemented unambiguous binary and known callable-signature cases.
+5. Add method-chain fallback sugar and ambiguity diagnostics. Done for fixed
+   data-last callables; spread fallback remains split to 07.2.1.
+6. Add capture/effect/lifetime diagnostics. Done for the implemented callable
+   paths and borrowed-capture suspension diagnostics; full effect-row
+   integration remains open.
+7. Add LSP/inlay/lint evidence. Done for inferred function-valued `let`
+   bindings, numeric fallback lints, closure effect related information, and
+   opt-in source-backed expression inlays; expression source-range closure
+   remains split to 07.4.1.
 
 ## Tests to specify
 

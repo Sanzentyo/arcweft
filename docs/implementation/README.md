@@ -4,6 +4,11 @@ This directory records the current implementation state of Arcweft Engine.
 
 Design specifications remain in the numbered `docs/` chapters. Files here describe what exists in the Rust workspace today, what has been verified, and what is intentionally deferred.
 
+The active function/closure/currying/pipeline goal status is summarized in
+`docs/implementation/function-stack-current-status-2026-07-08.md`; the detailed
+implementation log remains
+`docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`.
+
 Latest executable-runtime-core implementation notes are tracked in
 `docs/implementation/executable-runtime-core-2026-06-24.md`; the corresponding
 structure audit report is under
