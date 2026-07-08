@@ -1,7 +1,9 @@
 //! Runtime function-value extraction for source-local top-level `fn` bodies.
 
 use crate::expr::{
-    RuntimePureHelperLookup, lower_runtime_expr_strict_with_function_locals_and_pure,
+    RuntimePureHelperLookup,
+    desugar::{expr_contains_pipe_left, substitute_pipe_left},
+    lower_runtime_expr_strict_with_function_locals_and_pure,
 };
 use arcweft_core::value::RuntimeExpr;
 use arcweft_lang_hir::{
@@ -461,10 +463,10 @@ fn runtime_function_value_expr_supported(
                 || runtime_function_value_pure_helper_call_supported(callee, args, context)
                 || runtime_function_value_source_function_call_supported(callee, args, context)
         }
+        Expr::Pipe { lhs, rhs } => runtime_function_value_pipe_supported(lhs, rhs, context),
         Expr::LifetimePath { .. }
         | Expr::Placeholder(_)
         | Expr::DialogueCall { .. }
-        | Expr::Pipe { .. }
         | Expr::Try { .. }
         | Expr::Await { .. }
         | Expr::Thread { .. }
@@ -540,9 +542,81 @@ fn runtime_function_value_source_function_call_supported(
         })
 }
 
+fn runtime_function_value_pipe_supported(
+    lhs: &Expr,
+    rhs: &Expr,
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> bool {
+    if expr_contains_pipe_left(rhs) {
+        return runtime_function_value_expr_supported(&substitute_pipe_left(rhs, lhs), context);
+    }
+    runtime_function_value_expr_supported(lhs, context)
+        && runtime_function_value_data_last_pipe_rhs_supported(lhs, rhs, context)
+}
+
+fn runtime_function_value_data_last_pipe_rhs_supported(
+    lhs: &Expr,
+    rhs: &Expr,
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> bool {
+    match rhs {
+        Expr::Path(path) => runtime_function_value_data_last_callable_supported(
+            path.as_label(),
+            &[CallArg::Positional(lhs.clone())],
+            context,
+        ),
+        Expr::Call { callee, args } => {
+            let Expr::Path(path) = callee.as_ref() else {
+                return false;
+            };
+            let mut pipe_args = args.clone();
+            pipe_args.push(CallArg::Positional(lhs.clone()));
+            runtime_function_value_data_last_callable_supported(
+                path.as_label(),
+                &pipe_args,
+                context,
+            )
+        }
+        _ => false,
+    }
+}
+
+fn runtime_function_value_data_last_callable_supported(
+    callee: &str,
+    args: &[CallArg],
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> bool {
+    if context.function_local_arity(callee).is_some() {
+        return runtime_function_value_local_callable_args_supported(callee, args, context);
+    }
+    if let Some(input_names) = context.pure_helpers.pure_helper_input_names(callee) {
+        return runtime_function_value_callable_args_supported(args, input_names, false, context);
+    }
+    context
+        .pure_helpers
+        .function_value_candidate(callee)
+        .is_some_and(|candidate| {
+            runtime_function_value_callable_args_supported(
+                args,
+                candidate.input_names(),
+                false,
+                context,
+            )
+        })
+}
+
 fn runtime_function_value_exact_callable_args_supported(
     args: &[CallArg],
     input_names: &[String],
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> bool {
+    runtime_function_value_callable_args_supported(args, input_names, true, context)
+}
+
+fn runtime_function_value_callable_args_supported(
+    args: &[CallArg],
+    input_names: &[String],
+    require_exact: bool,
     context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     let mut filled = vec![false; input_names.len()];
@@ -576,7 +650,22 @@ fn runtime_function_value_exact_callable_args_supported(
         }
     }
 
-    filled.into_iter().all(std::convert::identity)
+    !require_exact || filled.into_iter().all(std::convert::identity)
+}
+
+fn runtime_function_value_local_callable_args_supported(
+    callee: &str,
+    args: &[CallArg],
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> bool {
+    context
+        .function_local_arity(callee)
+        .is_some_and(|arity| arity >= args.len())
+        && args.iter().all(|arg| {
+            !arg.is_spread()
+                && arg.name().is_none()
+                && runtime_function_value_expr_supported(arg.value(), context)
+        })
 }
 
 fn runtime_function_value_expr_function_signature(
@@ -604,8 +693,118 @@ fn runtime_function_value_expr_function_signature(
                 .function_local_signature(path.as_label())
                 .and_then(|signature| function_local_result_signature(signature, args.len()))
         }
+        Expr::Pipe { lhs, rhs } => {
+            runtime_function_value_pipe_function_signature(lhs, rhs, context)
+        }
         _ => None,
     }
+}
+
+fn runtime_function_value_pipe_function_signature(
+    lhs: &Expr,
+    rhs: &Expr,
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> Option<FunctionLocalSignature> {
+    if expr_contains_pipe_left(rhs) {
+        return runtime_function_value_expr_function_signature(
+            &substitute_pipe_left(rhs, lhs),
+            context,
+        );
+    }
+    if !runtime_function_value_expr_supported(lhs, context) {
+        return None;
+    }
+    match rhs {
+        Expr::Path(path) => runtime_function_value_data_last_signature(
+            path.as_label(),
+            &[CallArg::Positional(lhs.clone())],
+            context,
+        ),
+        Expr::Call { callee, args } => {
+            let Expr::Path(path) = callee.as_ref() else {
+                return None;
+            };
+            let mut pipe_args = args.clone();
+            pipe_args.push(CallArg::Positional(lhs.clone()));
+            runtime_function_value_data_last_signature(path.as_label(), &pipe_args, context)
+        }
+        _ => None,
+    }
+}
+
+fn runtime_function_value_data_last_signature(
+    callee: &str,
+    args: &[CallArg],
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> Option<FunctionLocalSignature> {
+    if let Some(signature) = context.function_local_signature(callee) {
+        return runtime_function_value_local_callable_args_supported(callee, args, context)
+            .then(|| function_local_result_signature(signature, args.len()))
+            .flatten();
+    }
+    if let Some(input_names) = context.pure_helpers.pure_helper_input_names(callee) {
+        return runtime_function_value_partial_signature(args, input_names, context);
+    }
+    context
+        .pure_helpers
+        .function_value_candidate(callee)
+        .and_then(|candidate| {
+            runtime_function_value_partial_signature(args, candidate.input_names(), context)
+        })
+}
+
+fn runtime_function_value_partial_signature(
+    args: &[CallArg],
+    input_names: &[String],
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> Option<FunctionLocalSignature> {
+    let missing = runtime_function_value_missing_callable_inputs(args, input_names, context)?;
+    (!missing.is_empty()).then_some(FunctionLocalSignature {
+        arity: missing.len(),
+        return_type: None,
+    })
+}
+
+fn runtime_function_value_missing_callable_inputs(
+    args: &[CallArg],
+    input_names: &[String],
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> Option<Vec<String>> {
+    let mut filled = vec![false; input_names.len()];
+    let mut positional_index = 0usize;
+
+    for arg in args {
+        match arg {
+            CallArg::Positional(value) => {
+                while positional_index < filled.len() && filled[positional_index] {
+                    positional_index += 1;
+                }
+                let slot = filled.get_mut(positional_index)?;
+                if !runtime_function_value_expr_supported(value, context) {
+                    return None;
+                }
+                *slot = true;
+                positional_index += 1;
+            }
+            CallArg::Named { name, value } => {
+                let index = input_names.iter().position(|input| input == name)?;
+                if filled[index] || !runtime_function_value_expr_supported(value, context) {
+                    return None;
+                }
+                filled[index] = true;
+            }
+            CallArg::Spread { .. } => return None,
+        }
+    }
+
+    Some(
+        input_names
+            .iter()
+            .zip(filled)
+            .filter(|(_, filled)| !filled)
+            .map(|(name, _)| name.clone())
+            .collect(),
+    )
 }
 
 fn runtime_function_value_block_supported(

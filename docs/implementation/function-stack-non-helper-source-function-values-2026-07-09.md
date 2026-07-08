@@ -61,6 +61,12 @@ top-level function values inside accepted source-function bodies. A `let`
 binding such as `let op = add` now registers `op` with the arity of `add` when
 `add` is an already-lowered pure helper or already-accepted source-local
 candidate, and later `op(...)` calls lower as local `RuntimeExpr::Apply`.
+The thirteenth follow-up admits pure `Expr::Pipe` bodies inside the same
+accepted subset when the pipe lowers only through local function values,
+already-lowered pure helpers, or already-accepted source-local candidates.
+This covers both data-last pipe partials and exact `^` substitution paths,
+while unknown adapter calls, collection method pipes, effectful calls, and
+suspension-capable syntax remain outside the candidate family.
 
 ## Accepted Contract
 
@@ -78,8 +84,11 @@ The accepted family is intentionally small:
   Calls are accepted only when they are local function-value calls, exact calls
   to already-lowered pure helpers resolved through `RuntimePureHelperLookup`,
   or exact calls to source-local `fn` candidates that were already accepted by
-  the fixed-point candidate pass. Host/adapter calls,
-  effectful calls, suspending calls, pipes, `await`, `try`, threads, dialogue
+  the fixed-point candidate pass. Pipe expressions are accepted only when
+  their target is a local function value, an already-lowered pure helper, or
+  an already-accepted source-local candidate, including `^` substitution paths
+  whose substituted expression remains in this accepted subset. Host/adapter calls,
+  effectful calls, suspending calls, `await`, `try`, threads, dialogue
   calls, placeholders, raw syntax, and lifetime paths remain outside this
   subset. Pure value control expressions are accepted when their child
   expressions are accepted: `if`, `if let`, and `match` lower to
@@ -124,6 +133,9 @@ Simple aliases to already executable top-level pure-helper and source-function
 candidate paths are arity-tracked as local function values, so later calls
 through the alias lower with the same local `RuntimeExpr::Apply` path used for
 function-typed parameters and closure aliases.
+Pipe partials that produce function values are also arity-tracked when bound
+to local names, so a local such as `let add_tail = value |> add` can be invoked
+later in the accepted body.
 Value-producing control expressions inside the accepted body preserve their
 runtime shape. Guarded `if let` and `match` expressions bind pattern locals
 before checking guards, matching statement control-flow semantics.
@@ -195,6 +207,8 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_destructured_closure_let -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_exact_source_alias_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_pipe_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_named_source_pipe_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_exact_source_call_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_control_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture

@@ -1858,3 +1858,14 @@ target input arity. Later calls through that alias lower as local
 source-function body no longer falls out of the runtime function-value
 candidate family when `add` is already executable. Details are recorded in
 `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`.
+
+The source-function pipe-body follow-up moves the pipeline surface further
+into the accepted source-local function-value subset. Candidate admission now
+accepts `Expr::Pipe` only when it lowers through local function values,
+already-lowered pure helpers, or already-accepted source-function candidates.
+Pipe-left `^` substitution reuses the shared runtime-plan desugaring and the
+substituted expression must still satisfy the accepted subset. Data-last pipe
+partials that produce function values are arity-tracked when assigned to
+locals, so those local values can be invoked later in the same accepted body.
+Details are recorded in
+`docs/implementation/function-stack-source-function-pipe-bodies-2026-07-09.md`.

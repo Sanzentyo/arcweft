@@ -30,7 +30,7 @@ use arcweft_lang_hir::syntax::{
 };
 use std::{cell::Cell, collections::BTreeMap};
 
-mod desugar;
+pub(crate) mod desugar;
 mod enum_constructor;
 mod named_callable;
 use desugar::{

@@ -2154,6 +2154,179 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_materializes_source_function_pure_helper_pipe_body() {
+    let parsed = parse_source_text(
+        r#"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    left + right
+}
+
+fn finish_with_pipe(label: String, value: i64) -> (String, i64, i64) {
+    let add_label = value |> add
+    let exact = value |> add(^, 5i64)
+    return (label, add_label(5i64), exact)
+}
+
+flow @flow.main main {
+    let value: (String, i64, i64) = finish_with_pipe("score", 7i64)
+    return value
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(typecheck.diagnostics.is_empty());
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function containing pure-helper pipes");
+
+    let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected value let");
+    };
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["label", "value"]
+                            && runtime_pipe_body_has_partial_and_exact_helper_apply(body)
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(label), RuntimeExpr::Value(value)]
+                        if label == &RuntimeValue::String("score".to_owned())
+                            && value == &RuntimeValue::i64(7)
+                )
+        ),
+        "expected source function body to preserve pure-helper pipe applies, got {value:#?}"
+    );
+}
+
+fn runtime_pipe_body_has_partial_and_exact_helper_apply(expr: &RuntimeExpr) -> bool {
+    let RuntimeExpr::Let { name, expr, body } = expr else {
+        return false;
+    };
+    name == "add_label"
+        && matches!(
+            expr.as_ref(),
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Local(name)] if name == "value"
+                )
+        )
+        && matches!(
+            body.as_ref(),
+            RuntimeExpr::Let { name, expr, body }
+                if name == "exact"
+                    && matches!(
+                        expr.as_ref(),
+                        RuntimeExpr::PureCall { args, .. }
+                            if matches!(
+                                args.as_slice(),
+                                [RuntimeExpr::Local(left), RuntimeExpr::Value(right)]
+                                    if left == "value" && right == &RuntimeValue::i64(5)
+                            )
+                    )
+                    && matches!(
+                        body.as_ref(),
+                        RuntimeExpr::Tuple(items)
+                            if matches!(
+                                items.as_slice(),
+                                [
+                                    RuntimeExpr::Local(label),
+                                    RuntimeExpr::Apply { callee, args },
+                                    RuntimeExpr::Local(exact),
+                                ] if label == "label"
+                                    && exact == "exact"
+                                    && matches!(
+                                        callee.as_ref(),
+                                        RuntimeExpr::Local(name) if name == "add_label"
+                                    )
+                                    && matches!(
+                                        args.as_slice(),
+                                        [RuntimeExpr::Value(value)]
+                                            if value == &RuntimeValue::i64(5)
+                                    )
+                            )
+                    )
+        )
+}
+
+#[test]
+fn checked_runtime_plan_materializes_source_function_named_source_pipe_body() {
+    let parsed = parse_source_text(
+        r#"
+fn pair(left: String, right: String) -> (String, String) {
+    return (left, right)
+}
+
+fn tail_pair(tail: String) -> (String, String) {
+    return tail |> pair(left = "head")
+}
+
+flow @flow.main main {
+    let value: (String, String) = tail_pair("tail")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(typecheck.diagnostics.is_empty());
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function containing source-function pipe");
+
+    let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected value let");
+    };
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["tail"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Apply { callee, args }
+                                    if matches!(
+                                        callee.as_ref(),
+                                        RuntimeExpr::Function { params, .. }
+                                            if params.as_slice() == ["left", "right"]
+                                    ) && matches!(
+                                        args.as_slice(),
+                                        [RuntimeExpr::Value(left), RuntimeExpr::Local(right)]
+                                            if left == &RuntimeValue::String("head".to_owned())
+                                                && right == "tail"
+                                    )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value)]
+                        if value == &RuntimeValue::String("tail".to_owned())
+                )
+        ),
+        "expected source function body to preserve named source pipe, got {value:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_materializes_source_function_control_expression_body() {
     let parsed = parse_source_text(
         r"

@@ -10,11 +10,12 @@ complete.
 
 ## Executive Summary
 
-- The latest function-stack baseline accepts local aliases to already
-  executable top-level pure-helper and accepted source-function values inside
-  accepted source-function bodies, while continuing to reject unsupported bare
-  source-function value references and unsupported data-last source-function
-  partials instead of lowering them as ordinary calls/locals.
+- The latest function-stack baseline accepts pure pipe expressions inside
+  accepted source-function bodies when they lower through local function
+  values, pure helpers, or accepted source-function candidates, while
+  continuing to reject unsupported bare source-function value references and
+  unsupported data-last source-function partials instead of lowering them as
+  ordinary calls/locals.
 - The function-stack worktree is clean at that baseline.
 - Implemented language/runtime surface now covers formal function types,
   curried call groups, closures, runtime apply, non-suspending AWBC apply,
@@ -32,9 +33,9 @@ complete.
 
 - Current pushed function-stack baseline:
   the function-stack baseline that accepts top-level pure-helper/source-
-  function aliases inside accepted source-function bodies and rejects
-  unsupported bare source-function values and data-last source-function
-  partials without executable runtime candidates.
+  function aliases and pure pipe expressions inside accepted source-function
+  bodies and rejects unsupported bare source-function values and data-last
+  source-function partials without executable runtime candidates.
 - The previous function-stack baseline before the spread rejection hardening
   slice was `486738b31 Handle pipe control-expression RHS placeholders`.
 - Earlier status-cleanup and pure-helper source-function commits were
@@ -73,6 +74,7 @@ Supporting focused notes:
 - `docs/implementation/function-stack-prefix-source-partial-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`
+- `docs/implementation/function-stack-source-function-pipe-bodies-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-method-value-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
@@ -170,8 +172,9 @@ The following are implemented in pushed commits:
   destructuring closure literals in those local aliases, exact calls to
   already-lowered pure helpers, fixed-point exact calls to already-accepted
   source-local candidates, simple local aliases to those already executable
-  top-level function values, and pure value-position `if` / `if let` /
-  `match` expressions.
+  top-level function values, pipe expressions that lower only through local
+  function values, pure helpers, or accepted source-function candidates, and
+  pure value-position `if` / `if let` / `match` expressions.
 
 ## Remaining Blocking Work
 
@@ -181,7 +184,7 @@ These items keep the active goal open:
 | --- | --- | --- |
 | AWBC suspension-aware dynamic apply | Non-suspending dynamic apply works. Applying a function that suspends or budget-yields is explicitly rejected as a runtime trap in the synchronous expression-apply path, but there is still no resumable safe-point contract for accepting that behavior. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load now rejects function values explicitly. Serializable closure state, captured environment versioning, and restore semantics are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
-| Broad non-helper callable allocation | The first source-local `fn` subset is implemented, including pure value control expressions, fixed-point exact calls to already-accepted source-local candidates, and local aliases to already executable pure-helper/source-function values inside accepted source-function bodies. Bare task/dialogue/stream function values now have focused structured rejection coverage. Data-last task/dialogue/stream partials now have focused structured rejection coverage. Source-local wrappers that exact-call unaccepted source-local functions now have focused structured rejection coverage for missing-input partial, data-last partial, and bare-value surfaces. Value-position environment, inherent, and trait/impl method references now have focused structured rejection coverage. Effectful/suspending bodies, host/adapter call-bearing bodies, accepted task/dialogue/stream values, accepted method values, adapter thunks, and persisted callable values remain outside the accepted contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`; `docs/implementation/function-stack-source-function-unaccepted-source-call-rejection-2026-07-09.md`; `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`; `docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`; `docs/implementation/function-stack-method-value-rejection-2026-07-09.md` |
+| Broad non-helper callable allocation | The first source-local `fn` subset is implemented, including pure value control expressions, fixed-point exact calls to already-accepted source-local candidates, local aliases to already executable pure-helper/source-function values, and pure pipe expressions through those executable callable paths inside accepted source-function bodies. Bare task/dialogue/stream function values now have focused structured rejection coverage. Data-last task/dialogue/stream partials now have focused structured rejection coverage. Source-local wrappers that exact-call unaccepted source-local functions now have focused structured rejection coverage for missing-input partial, data-last partial, and bare-value surfaces. Value-position environment, inherent, and trait/impl method references now have focused structured rejection coverage. Effectful/suspending bodies, host/adapter call-bearing bodies, accepted task/dialogue/stream values, accepted method values, adapter thunks, and persisted callable values remain outside the accepted contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`; `docs/implementation/function-stack-source-function-pipe-bodies-2026-07-09.md`; `docs/implementation/function-stack-source-function-unaccepted-source-call-rejection-2026-07-09.md`; `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`; `docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`; `docs/implementation/function-stack-method-value-rejection-2026-07-09.md` |
 | Final closure effect-row model | Current effect composition, captured-function-alias preservation, partial-closure delayed timing evidence, returned-closure callback timing evidence, curried higher-order delayed timing evidence, LSP trace related-information evidence, and closed-row projection are useful, but source row syntax, open-row inference/substitution, row-bearing callable values, and final runtime-plan/verifier/LSP consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-effect-row-partial-closure-timing-2026-07-09.md`; `docs/implementation/function-stack-effect-row-returned-closure-no-effect-2026-07-09.md`; `docs/implementation/function-stack-lsp-performed-effect-trace-2026-07-09.md`; `docs/implementation/function-stack-effect-row-curried-higher-order-timing-2026-07-09.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows ID comparison,

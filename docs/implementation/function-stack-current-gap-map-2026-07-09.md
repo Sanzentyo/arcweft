@@ -11,9 +11,9 @@ For the current entry point and reading order, see
 
 - Current pushed function-stack baseline:
   the function-stack baseline that accepts top-level pure-helper/source-
-  function aliases inside accepted source-function bodies and rejects
-  unsupported bare source-function values and data-last source-function
-  partials without executable runtime candidates.
+  function aliases and pure pipe expressions inside accepted source-function
+  bodies and rejects unsupported bare source-function values and data-last
+  source-function partials without executable runtime candidates.
 - `main` and `origin/main` were aligned at that baseline when this gap map was
   refreshed.
 - The previous baseline before the spread rejection hardening slice was
@@ -65,6 +65,10 @@ includes:
 - local aliases to already executable pure-helper and accepted source-function
   values inside accepted source-function bodies, with later calls through
   those aliases lowering as local `RuntimeExpr::Apply`;
+- pure pipe expressions inside accepted source-function bodies when they lower
+  through local function values, pure helpers, or accepted source-function
+  candidates, including `^` substitution paths that remain in the accepted
+  subset;
 - product AWBC save/load rejection of escaped function values through the
   structured unsupported-runtime-value path.
 - AWBC expression-level `ApplyFunction` rejects applied functions that suspend
@@ -123,6 +127,7 @@ The detailed evidence remains in:
 - `docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-prefix-source-partial-rejection-2026-07-09.md`
 - `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`
+- `docs/implementation/function-stack-source-function-pipe-bodies-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md`
 
@@ -134,7 +139,7 @@ These keep the active goal open:
 | --- | --- | --- |
 | AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding expression apply is explicitly rejected as a runtime trap, but accepting it still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects runtime functions. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
-| Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers, pure value control expressions, exact calls to already-accepted source-local candidates, and local aliases to those already executable top-level function values inside accepted source-function bodies. Bare task/dialogue/stream values have structured rejection coverage. Data-last task/dialogue/stream partials have structured rejection coverage. Source-local wrappers that exact-call unaccepted source-local functions have structured rejection coverage for missing-input partial, data-last partial, and bare-value surfaces. Value-position environment, inherent, and trait/impl method references have structured rejection coverage. Accepted task/dialogue/stream values, accepted method values, adapter thunks, host/adapter call-bearing bodies, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`; `docs/implementation/function-stack-source-function-unaccepted-source-call-rejection-2026-07-09.md`; `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`; `docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`; `docs/implementation/function-stack-method-value-rejection-2026-07-09.md` |
+| Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers, pure value control expressions, exact calls to already-accepted source-local candidates, local aliases to those already executable top-level function values, and pure pipe expressions through those executable callable paths inside accepted source-function bodies. Bare task/dialogue/stream values have structured rejection coverage. Data-last task/dialogue/stream partials have structured rejection coverage. Source-local wrappers that exact-call unaccepted source-local functions have structured rejection coverage for missing-input partial, data-last partial, and bare-value surfaces. Value-position environment, inherent, and trait/impl method references have structured rejection coverage. Accepted task/dialogue/stream values, accepted method values, adapter thunks, host/adapter call-bearing bodies, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-source-function-top-level-aliases-2026-07-09.md`; `docs/implementation/function-stack-source-function-pipe-bodies-2026-07-09.md`; `docs/implementation/function-stack-source-function-unaccepted-source-call-rejection-2026-07-09.md`; `docs/implementation/function-stack-non-helper-callable-kind-rejection-2026-07-09.md`; `docs/implementation/function-stack-data-last-callable-kind-partial-rejection-2026-07-09.md`; `docs/implementation/function-stack-method-value-rejection-2026-07-09.md` |
 | Final closure effect-row model | Current composition is useful and broadly covered, including returned-closure `no_effect` timing, LSP trace related-information evidence, captured function aliases through returned closures, and borrowed-capture row evidence at an `await` boundary, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows it is needed.

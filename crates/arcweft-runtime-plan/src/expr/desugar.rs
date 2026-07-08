@@ -1,6 +1,6 @@
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr, MatchExprArm, Placeholder};
 
-pub(super) fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
+pub(crate) fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
     match expr {
         Expr::Placeholder(Placeholder::PipeLeft) => lhs.clone(),
         Expr::Tuple(items) => Expr::Tuple(
@@ -146,7 +146,7 @@ fn substitute_pipe_left_arg(arg: &CallArg, lhs: &Expr) -> CallArg {
     }
 }
 
-pub(super) fn expr_contains_pipe_left(expr: &Expr) -> bool {
+pub(crate) fn expr_contains_pipe_left(expr: &Expr) -> bool {
     match expr {
         Expr::Placeholder(Placeholder::PipeLeft) => true,
         Expr::Tuple(items) | Expr::BracketSeq(items) => items.iter().any(expr_contains_pipe_left),
