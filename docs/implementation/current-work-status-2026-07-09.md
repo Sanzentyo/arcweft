@@ -8,7 +8,7 @@ historical note.
 ## Repository Baseline
 
 - Baseline before the latest function-stack status refresh:
-  `0a64dc474 Audit closure effect row boundary`.
+  `a1cf4a9fe Project closed closure effect rows`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
