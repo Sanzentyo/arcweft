@@ -114,6 +114,9 @@ Baseline before this status refresh:
 - The closure-effect row audit classifies implemented effect composition paths
   into stable timing behavior, temporary evidence graph wiring, and
   diagnostics-only coverage.
+- `EffectAnalysisReport::closed_effect_rows()` now projects closed inferred,
+  upper-bound, and forbidden rows for every callable without exposing sema's
+  temporary effect graph internals.
 
 ### Explicit Rejection Boundaries
 
@@ -134,7 +137,7 @@ These are the pieces that keep the active goal open:
 | AWBC suspension-aware dynamic apply | Non-suspending `MakeFunction` / `ApplyFunction` works. Apply that suspends or budget-yields has no resumable safe-point contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects function values. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Non-helper/effectful/suspending callable allocation | Callable families are inventoried; helper-backed/local closure paths work. The first accepted expansion beyond helper-backed callables is still undefined. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
-| Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, and `no_effect` now has focused closure-invocation coverage. Stable row syntax, sema model, report shape, and verifier/LSP boundary are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md` |
+| Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, `no_effect` now has focused closure-invocation coverage, and closed row report projection exists. Source row syntax, open-row inference, row-bearing callable values, and runtime-plan/verifier/LSP consumers are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md` |
 
 ## Deferred Non-Blocker
 

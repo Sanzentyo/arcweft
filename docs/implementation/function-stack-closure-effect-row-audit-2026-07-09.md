@@ -9,6 +9,12 @@ coverage.
 Status: audit complete; the final closure/function effect-row contract is
 still open.
 
+Follow-up implementation in this slice also connects the existing
+`effect_row` data model to the current analyzer through
+`EffectAnalysisReport::closed_effect_rows()`. That report projection exposes
+closed inferred, upper-bound, and forbidden rows for every callable without
+making downstream consumers inspect the temporary effect graph.
+
 ## Current Implementation Shape
 
 The current checker does not yet have a source-level effect-row type model.
@@ -27,6 +33,9 @@ Instead, it collects an effect graph in `arcweft-lang-sema`:
   that graph.
 
 This is intentionally an evidence graph, not the final row representation.
+The row report projection is a stable boundary over that graph: it gives
+tooling and future runtime-plan/verifier code closed rows today, while keeping
+the path-specific graph wiring private to sema.
 
 ## Stable Behavior To Preserve
 
@@ -44,6 +53,7 @@ effect-row model is introduced:
 | Returned closures delay captured callback effects until the returned closure is called. | `returned_closure_callback_does_not_compose_until_closure_is_called`; `returned_closure_callback_composes_when_returned_closure_is_called`; `stored_returned_closure_callback_composes_when_returned_closure_is_called` |
 | Later curried callback groups compose only when the reached call group invokes the callback. | `curried_higher_order_function_argument_composes_when_later_group_param_is_called`; `partial_curried_higher_order_callback_does_not_compose_until_final_call`; `partial_curried_higher_order_callback_composes_on_final_call`; `partial_curried_higher_order_callback_composes_on_immediate_final_call` |
 | `no_effect` rejects closure body effects when a closure value is actually called, not when it is merely created. | `no_effect_rejects_local_closure_effect_when_called` |
+| The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence` |
 
 The new `no_effect_rejects_local_closure_effect_when_called` regression fixes
 the 07.8 test requirement that forbidden-effect bounds apply to closure values
@@ -96,19 +106,23 @@ The following 07.8 decisions remain open:
 
 1. Source-level effect-row syntax for function values, including explicit rows,
    inferred rows, row bounds, and no-effect constraints.
-2. Sema representation for open/closed rows, row variables, synthetic closures,
-   returned function values, curried groups, and higher-order parameters.
-3. A typed runtime-plan/verifier/LSP boundary that carries row evidence without
-   exposing sema graph internals to lower-level crates.
-4. Replacement of path-specific closure/higher-order graph edges with final row
+2. Open-row inference and substitution for function values. The closed-row
+   report projection is implemented, but source-level row variables are not
+   yet inferred from function signatures.
+3. Sema representation for synthetic closures, returned function values,
+   curried groups, and higher-order parameters as first-class row-bearing
+   callable values rather than temporary graph side channels.
+4. Runtime-plan/verifier/LSP consumers for the closed-row report projection.
+5. Replacement of path-specific closure/higher-order graph edges with final row
    evidence.
-5. LSP rendering policy for inferred rows, row origins, callback edges, and
+6. LSP rendering policy for inferred rows, row origins, callback edges, and
    performed effects.
-6. Interaction with 07.7 non-helper callable values and 07.5 suspending dynamic
+7. Interaction with 07.7 non-helper callable values and 07.5 suspending dynamic
    apply.
 
 ## Validation
 
 ```bash
 cargo test -p arcweft-lang-sema --all-features no_effect_rejects_local_closure_effect_when_called -- --nocapture
+cargo test -p arcweft-lang-sema --all-features closure_effect_rows_project_closed_report_evidence -- --nocapture
 ```

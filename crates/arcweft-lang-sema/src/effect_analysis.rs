@@ -6,6 +6,7 @@ use crate::{
         EffectTraceStep,
     },
     effect_model::{CallTarget, CallableId, EffectProgram},
+    effect_row::{EffectRowReport, EffectRowSummary},
     effects::{EffectId, EffectSet},
 };
 
@@ -91,6 +92,17 @@ impl EffectAnalysisReport {
 
     pub const fn fixed_point_iterations(&self) -> usize {
         self.fixed_point_iterations
+    }
+
+    pub fn closed_effect_rows(&self) -> EffectRowReport {
+        EffectRowReport::new(self.summaries.values().map(|summary| {
+            EffectRowSummary::closed(
+                summary.callable().clone(),
+                summary.inferred().clone(),
+                summary.declared().cloned(),
+                summary.forbidden().clone(),
+            )
+        }))
     }
 }
 

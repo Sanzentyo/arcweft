@@ -1281,6 +1281,59 @@ effects { }
 }
 
 #[test]
+fn closure_effect_rows_project_closed_report_evidence() {
+    let tree = parse_ok(
+        r#"
+flow @flow.closure_row_projection closure_row_projection
+effects { }
+{
+    let later = || -> String {
+        adapter.read_text(path = "story.arcw")
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("closure row fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure row fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "closure creation should stay effect-free for the caller: {:?}",
+        report.diagnostics
+    );
+    let rows = report.effects.closed_effect_rows();
+    let empty_substitution = crate::effect_row::EffectSubstitution::new();
+    let flow_row = rows
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.closure_row_projection",
+        ))
+        .expect("flow row is projected");
+    assert!(
+        flow_row
+            .inferred()
+            .resolve(&empty_substitution)
+            .expect("closed flow row resolves")
+            .is_empty(),
+        "closure creation must not add body effects to caller row: {flow_row:?}"
+    );
+    let closure_row = rows
+        .summaries()
+        .find(|(callable, _)| callable.as_str().starts_with("closure.expr."))
+        .map(|(_, row)| row)
+        .expect("closure synthetic row is projected");
+    assert_eq!(
+        closure_row
+            .inferred()
+            .resolve(&empty_substitution)
+            .expect("closed closure row resolves")
+            .to_labels(),
+        vec!["fs.read"],
+        "closure body effects should live on the closure row"
+    );
+}
+
+#[test]
 fn local_closure_call_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"

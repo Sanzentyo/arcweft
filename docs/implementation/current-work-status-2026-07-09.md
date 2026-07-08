@@ -7,8 +7,8 @@ historical note.
 
 ## Repository Baseline
 
-- Baseline before this status refresh:
-  `9dbf73bd5 Document current function stack status`.
+- Baseline before the latest function-stack status refresh:
+  `0a64dc474 Audit closure effect row boundary`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
@@ -34,6 +34,7 @@ The unrelated dirty files at this audit point are:
 - `web/assets/README.md`
 - `web/assets/noto-emoji-regular.ttf`
 - `web/ime-player-rendered.awfb`
+- `web/index.html`
 - `web/modern-feedback-view.awfb`
 - `web/player-editcontext.js`
 - `web/player.js`

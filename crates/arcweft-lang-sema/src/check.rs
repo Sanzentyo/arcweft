@@ -12,4 +12,5 @@ pub use crate::{
         typecheck_hir, validate_typecheck_ready,
     },
     diagnostics::TypeCheckWarning,
+    effect_row::{EffectRow, EffectRowReport, EffectRowSummary, EffectRowTail},
 };

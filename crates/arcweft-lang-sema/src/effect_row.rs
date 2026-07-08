@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
-use crate::effects::EffectSet;
+use crate::{effect_model::CallableId, effects::EffectSet};
 
 /// Type-inference variable used as the open tail of an effect row.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -28,6 +28,21 @@ pub struct EffectRow {
 /// Exact substitutions produced when a polymorphic callable is instantiated.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EffectSubstitution(BTreeMap<EffectVar, EffectSet>);
+
+/// Closed or bounded effect-row evidence for one callable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectRowSummary {
+    callable: CallableId,
+    inferred: EffectRow,
+    upper_bound: Option<EffectRow>,
+    forbidden: EffectRow,
+}
+
+/// Stable report projection of callable effect rows.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EffectRowReport {
+    summaries: BTreeMap<CallableId, EffectRowSummary>,
+}
 
 /// Deterministic fresh effect-variable allocator scoped to one type check.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -104,6 +119,56 @@ impl EffectRow {
                 }),
             EffectRowTail::Unknown => Err(EffectRowError::UnknownRow),
         }
+    }
+}
+
+impl EffectRowSummary {
+    pub fn closed(
+        callable: CallableId,
+        inferred: EffectSet,
+        upper_bound: Option<EffectSet>,
+        forbidden: EffectSet,
+    ) -> Self {
+        Self {
+            callable,
+            inferred: EffectRow::closed(inferred),
+            upper_bound: upper_bound.map(EffectRow::closed),
+            forbidden: EffectRow::closed(forbidden),
+        }
+    }
+
+    pub const fn callable(&self) -> &CallableId {
+        &self.callable
+    }
+
+    pub const fn inferred(&self) -> &EffectRow {
+        &self.inferred
+    }
+
+    pub const fn upper_bound(&self) -> Option<&EffectRow> {
+        self.upper_bound.as_ref()
+    }
+
+    pub const fn forbidden(&self) -> &EffectRow {
+        &self.forbidden
+    }
+}
+
+impl EffectRowReport {
+    pub fn new(summaries: impl IntoIterator<Item = EffectRowSummary>) -> Self {
+        let summaries = summaries
+            .into_iter()
+            .map(|summary| (summary.callable.clone(), summary))
+            .collect();
+        Self { summaries }
+    }
+
+    pub fn summary(&self, callable: &CallableId) -> Option<&EffectRowSummary> {
+        self.summaries.get(callable)
+    }
+
+    pub fn summaries(&self) -> impl ExactSizeIterator<Item = (&CallableId, &EffectRowSummary)> {
+        self.summaries.iter()
     }
 }
 
