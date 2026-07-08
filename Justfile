@@ -237,11 +237,11 @@ web-player-refresh:
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown --all-features
     @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
     @cargo run -p arcweft-cli --all-features -- bundle web\demo.arcw --output web\demo.awfb
-    @cargo run -p arcweft-cli --all-features -- bundle samples\modern-feedback-ui\src\main.arcw --output web\modern-feedback-ui.awfb
+    @cargo run -p arcweft-cli --all-features -- bundle samples\modern-feedback-view\src\main.arcw --output web\modern-feedback-view.awfb
 
 web-player-serve port="4173":
     @Write-Host "Serving Arcweft web player at http://127.0.0.1:{{port}}/"
-    @Write-Host "Modern feedback: http://127.0.0.1:{{port}}/?bundle=./modern-feedback-ui.awfb"
+    @Write-Host "Modern feedback: http://127.0.0.1:{{port}}/?bundle=./modern-feedback-view.awfb"
     @python -m http.server {{port}} --bind 127.0.0.1 --directory web
 
 ime-sample-web port="8786":
@@ -262,10 +262,10 @@ component-text-input-native-smoke-check:
     @cargo test -p arcweft-cli --test native_text_input_native_interactive_smoke --quiet
     @cargo run -p arcweft-cli -- check --manifest-path samples\native-text-input\arcw.toml
     @cargo run -p arcweft-cli -- check --manifest-path samples\text-submit-flow\arcw.toml
-    @cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-ui\arcw.toml
+    @cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-view\arcw.toml
     @cargo run -p arcweft-cli -- bundle samples\native-text-input\src\main.arcw --output target\arcweft\native-text-input-seq06.16.3.awfb
     @cargo run -p arcweft-cli -- bundle samples\text-submit-flow\src\main.arcw --output target\arcweft\text-submit-flow-seq06.16.3.awfb
-    @cargo run -p arcweft-cli -- bundle samples\modern-feedback-ui\src\main.arcw --output target\arcweft\modern-feedback-ui-seq06.16.3.awfb
+    @cargo run -p arcweft-cli -- bundle samples\modern-feedback-view\src\main.arcw --output target\arcweft\modern-feedback-view-seq06.16.3.awfb
     @cargo +nightly -Zscript tools\source-gates\seq06_4j1_native_ime_player_rendered_gates.rs --root .
 
 component-text-input-native-smoke out="target\\native-text-input-trace\\seq06.16.3":
