@@ -430,6 +430,7 @@ struct TypeChecker<'a> {
     function_return_effect_callables: HashMap<String, CallableId>,
     local_curried_signature_calls: HashMap<String, CurriedSignatureCallValue>,
     last_checked_curried_signature_call: Option<CurriedSignatureCallValue>,
+    local_higher_order_param_aliases: HashMap<String, String>,
     higher_order_param_scope_stack: Vec<HigherOrderParamScope>,
     higher_order_param_invocations: BTreeMap<String, BTreeSet<String>>,
     higher_order_param_closure_invocations:
@@ -536,6 +537,7 @@ struct LocalBindingSnapshotEntry {
     previous_ty: Option<TypeKind>,
     previous_function_effect: Option<CallableId>,
     previous_curried_signature_call: Option<CurriedSignatureCallValue>,
+    previous_higher_order_param_alias: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -683,6 +685,7 @@ impl TypeChecker<'_> {
             function_return_effect_callables: HashMap::new(),
             local_curried_signature_calls: HashMap::new(),
             last_checked_curried_signature_call: None,
+            local_higher_order_param_aliases: HashMap::new(),
             higher_order_param_scope_stack: Vec::new(),
             higher_order_param_invocations: BTreeMap::new(),
             higher_order_param_closure_invocations: BTreeMap::new(),
@@ -703,12 +706,15 @@ impl TypeChecker<'_> {
                     let previous_function_effect = self.local_function_effects.get(&name).cloned();
                     let previous_curried_signature_call =
                         self.local_curried_signature_calls.get(&name).cloned();
+                    let previous_higher_order_param_alias =
+                        self.local_higher_order_param_aliases.get(&name).cloned();
                     let previous_ty = self.bind_local(name.clone(), ty);
                     LocalBindingSnapshotEntry {
                         name,
                         previous_ty,
                         previous_function_effect,
                         previous_curried_signature_call,
+                        previous_higher_order_param_alias,
                     }
                 })
                 .collect(),
@@ -719,6 +725,7 @@ impl TypeChecker<'_> {
         let previous = self.locals.insert(name.clone(), ty);
         let previous_function_effect = self.local_function_effects.remove(&name);
         let previous_curried_signature_call = self.local_curried_signature_calls.remove(&name);
+        let previous_higher_order_param_alias = self.local_higher_order_param_aliases.remove(&name);
         if let Some(frame) = self.closure_capture_stack.last_mut() {
             frame.locals.insert(name.clone());
         }
@@ -728,6 +735,7 @@ impl TypeChecker<'_> {
                 previous_ty: previous.clone(),
                 previous_function_effect,
                 previous_curried_signature_call,
+                previous_higher_order_param_alias,
             });
         }
         previous
@@ -741,6 +749,11 @@ impl TypeChecker<'_> {
     fn bind_local_curried_signature_call(&mut self, name: &str, value: CurriedSignatureCallValue) {
         self.local_curried_signature_calls
             .insert(name.to_owned(), value);
+    }
+
+    fn bind_local_higher_order_param_alias(&mut self, name: &str, param_name: &str) {
+        self.local_higher_order_param_aliases
+            .insert(name.to_owned(), param_name.to_owned());
     }
 
     fn restore_scoped_locals(&mut self, snapshot: LocalBindingSnapshot) {
@@ -757,9 +770,16 @@ impl TypeChecker<'_> {
                 self.local_function_effects.remove(&entry.name);
             }
             if let Some(value) = entry.previous_curried_signature_call {
-                self.local_curried_signature_calls.insert(entry.name, value);
+                self.local_curried_signature_calls
+                    .insert(entry.name.clone(), value);
             } else {
                 self.local_curried_signature_calls.remove(&entry.name);
+            }
+            if let Some(param_name) = entry.previous_higher_order_param_alias {
+                self.local_higher_order_param_aliases
+                    .insert(entry.name, param_name);
+            } else {
+                self.local_higher_order_param_aliases.remove(&entry.name);
             }
         }
     }
@@ -1186,12 +1206,16 @@ impl TypeChecker<'_> {
     }
 
     fn record_higher_order_param_invocation(&mut self, callee: Option<&str>) {
-        let Some(param_name) = callee else {
+        let Some(callee) = callee else {
             return;
         };
         let Some(scope) = self.higher_order_param_scope_stack.last() else {
             return;
         };
+        let param_name = self
+            .local_higher_order_param_aliases
+            .get(callee)
+            .map_or(callee, String::as_str);
         if !scope.param_names.contains(param_name) {
             return;
         }
@@ -1305,6 +1329,25 @@ impl TypeChecker<'_> {
                 .cloned(),
             _ => None,
         }
+    }
+
+    fn higher_order_param_alias_for_function_expr(
+        &self,
+        expr: &Expr,
+        ty: &TypeKind,
+    ) -> Option<String> {
+        if !matches!(ty, TypeKind::Function { .. }) {
+            return None;
+        }
+        let Expr::Path(path) = expr else {
+            return None;
+        };
+        let name = path.as_label();
+        let scope = self.higher_order_param_scope_stack.last()?;
+        if scope.param_names.contains(name) {
+            return Some(name.to_owned());
+        }
+        self.local_higher_order_param_aliases.get(name).cloned()
     }
 
     fn local_symbol_type_with_capture(&mut self, name: &str) -> Option<TypeKind> {

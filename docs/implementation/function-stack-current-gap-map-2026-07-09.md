@@ -61,6 +61,8 @@ includes:
   declaration order;
 - product AWBC save/load rejection of escaped function values through the
   structured unsupported-runtime-value path.
+- captured function values preserve effect rows through local aliases,
+  including aliases captured by returned closures.
 
 The detailed evidence remains in:
 
@@ -80,7 +82,7 @@ These keep the active goal open:
 | AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding dynamic apply still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects runtime functions. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers, pure value control expressions, and exact calls to already-accepted source-local candidates. Task/dialogue/stream functions, trait/impl methods, adapter thunks, host/adapter call-bearing bodies, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
-| Final closure effect-row model | Current composition is useful and broadly covered, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
+| Final closure effect-row model | Current composition is useful and broadly covered, including captured function aliases through returned closures, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
 
 Runtime ID atom-table storage is deferred until profiling shows it is needed.
 The typed path API is already in place, so atom storage is not a current

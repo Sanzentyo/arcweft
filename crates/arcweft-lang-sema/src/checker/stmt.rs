@@ -488,6 +488,11 @@ impl TypeChecker<'_> {
             {
                 self.bind_local_curried_signature_call(name, value);
             }
+            if let Some(name) = ident_pattern_name(pattern)
+                && let Some(param_name) = self.higher_order_param_alias_for_function_expr(expr, ty)
+            {
+                self.bind_local_higher_order_param_alias(name, &param_name);
+            }
         }
         self.last_checked_closure_effect_callable = None;
         self.last_checked_curried_signature_call = None;
