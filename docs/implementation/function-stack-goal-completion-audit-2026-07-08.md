@@ -25,6 +25,7 @@ explicit requirements remain in request/design space.
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
 - `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
+- `docs/implementation/function-stack-spread-contract-closure-2026-07-09.md`
 - `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`
 - `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
 - `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
@@ -42,10 +43,10 @@ explicit requirements remain in request/design space.
 | Closure expressions `|x| expr` / `|| expr` with typed/pattern parameters | Closure typing, typed parameters, parameter patterns, braced return annotations, and closure-local `return` are recorded in the status index. Destructured closure parameters now lower to runtime-only synthetic function parameters plus `RuntimeExpr::Match`, with VM pure backend execution coverage. | Implemented |
 | Capture analysis hooks and lifetime diagnostics at suspension boundaries | Capture inventory, checked runtime-plan capture metadata, and borrowed-capture suspension diagnostics are recorded in 07.4 and the status index. | Implemented for current policy |
 | Expression `_` placeholder abstraction distinct from pattern wildcard | Expected-function `_`, inferred binary `_`, known-callable partial-call abstraction, and pattern `_` distinction are recorded in the status index. | Implemented for fixed accepted shapes |
-| Partial-application desugaring | Helper-backed prefix partials, named/fixed missing-input partials, local aliases, runtime apply, and the first simple non-helper source-local `fn` materialization are implemented, including curried groups, returned simple closure literals, direct calls to function-typed parameters, local callback aliases/partials, destructuring closure literals in local function-valued bindings, exact pure-helper calls in that accepted family, inline fixed-length literal spread in function-value calls, inline fixed-length literal spread in direct fixed-parameter signature exact/partial calls, and inline fixed-length literal spread in data-last method fallback. Helper-less signature partials still fail as unsupported callable family `signature_partial_without_helper` when no pure helper or accepted source-function candidate exists; variable-length spread remains request/design work. | Partially implemented; spread split to 07.2.1 and broader non-helper expansion remains in 07.7 |
+| Partial-application desugaring | Helper-backed prefix partials, named/fixed missing-input partials, local aliases, runtime apply, and the first simple non-helper source-local `fn` materialization are implemented, including curried groups, returned simple closure literals, direct calls to function-typed parameters, local callback aliases/partials, destructuring closure literals in local function-valued bindings, exact pure-helper calls in that accepted family, inline fixed-length literal spread in function-value calls, inline fixed-length literal spread in direct fixed-parameter signature exact/partial calls, and inline fixed-length literal spread in data-last method fallback. Variable-length spread in partial-call construction and data-last fallback is a structured rejection by the current language contract. Helper-less signature partials still fail as unsupported callable family `signature_partial_without_helper` when no pure helper or accepted source-function candidate exists. | Partially implemented; broader non-helper expansion remains in 07.7 |
 | `^` pipe-left placeholder scoped only inside pipe RHS | Status index records scoped RHS behavior and substitution. | Implemented |
 | Left-associative `|>` with `^` substitution or data-last application when no `^` appears | Status index records explicit `^` substitution, no-`^` data-last application, helper-aware pipes, local function-valued aliases, and named RHS argument-order preservation for pure helpers plus accepted source-function candidates. | Implemented for fixed accepted shapes |
-| Method-chain sugar with inherent/trait first and data-last fallback with ambiguity diagnostics | Status index records resolution order, deterministic runtime argument order, ambiguity diagnostics, real-method priority, and shadowed fallback warnings. Spread fallback remains request/design work. | Partially implemented; spread fallback split to 07.2.1 |
+| Method-chain sugar with inherent/trait first and data-last fallback with ambiguity diagnostics | Status index records resolution order, deterministic runtime argument order, ambiguity diagnostics, real-method priority, shadowed fallback warnings, inline fixed-length literal spread fallback, and structured rejection for variable-length spread fallback. | Implemented for current callable contract |
 | Let type ascription and numeric literal inference/fallback representation with LSP/lint hooks | Status index records inferred function-valued `let` inlays, numeric fallback lints in inferred closure bodies, and source-backed expression inlays. | Implemented for current policy |
 | Canonical primitive spellings without compatibility aliases or formatter shims | Status index records accepted canonical primitive labels and rejected non-canonical spellings. | Implemented |
 | Keep `Unit` / `Never` consistent | Status index records canonical `Unit` / `Never` behavior as part of primitive spelling. | Implemented |
@@ -58,12 +59,10 @@ explicit requirements remain in request/design space.
 
 The goal is not complete because these explicit areas remain unresolved:
 
-1. Spread data-last fallback semantics and variable-length spread:
-   `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
-2. AWBC suspension-aware dynamic function apply and persisted closure
+1. AWBC suspension-aware dynamic function apply and persisted closure
    snapshots:
    `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
-3. General non-helper/effectful/suspending callable allocation:
+2. General non-helper/effectful/suspending callable allocation:
    `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
    The callable-family inventory step is complete. A narrow source-local
    `fn` family is accepted, including curried groups and returned simple
@@ -73,7 +72,7 @@ The goal is not complete because these explicit areas remain unresolved:
    but host/top-level non-helper call-bearing, effectful, suspending callable values,
    task/dialogue/stream functions, trait/impl methods, adapter thunks, and
    persistence remain outside the accepted contract.
-4. Full closure effect-row final contract:
+3. Full closure effect-row final contract:
    `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
 
 Runtime ID atom-table storage remains deliberately deferred until profiling

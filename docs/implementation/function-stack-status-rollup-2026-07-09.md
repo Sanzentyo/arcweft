@@ -35,6 +35,7 @@ Current supporting audits:
 - `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
 - `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`
 - `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`
+- `docs/implementation/function-stack-spread-contract-closure-2026-07-09.md`
 - `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
@@ -179,11 +180,12 @@ Previous named baseline before the spread rejection hardening slice:
 
 ### Explicit Rejection Boundaries
 
-- Variable-length spread shapes are intentionally rejected until their runtime
-  expansion contract is designed. Low-level runtime `Apply` spread expansion
-  is verified for exact, partial-prefix, and curried function application, and
-  source function-value calls, direct fixed-parameter signature calls, and
-  data-last method fallback accept inline fixed-length literal spread.
+- Variable-length spread shapes in partial-call construction and data-last
+  fallback are intentionally rejected by the current language contract.
+  Low-level runtime `Apply` spread expansion is verified for exact,
+  partial-prefix, and curried function application, and source function-value
+  calls, direct fixed-parameter signature calls, and data-last method fallback
+  accept inline fixed-length literal spread.
 - Helper-less signature partials are rejected by checked runtime-plan lowering
   with unsupported callable family `signature_partial_without_helper`.
 - Data-last pipe partials through helper-less source functions are rejected by
@@ -203,7 +205,6 @@ These are the pieces that keep the active goal open:
 
 | Area | Current state | Blocking document |
 | --- | --- | --- |
-| Spread partial application and spread data-last fallback | Fixed partial/fallback paths are implemented. Low-level runtime `Apply` spread expansion is verified, and source function-value calls, direct fixed-parameter signature calls, and data-last method fallback accept inline fixed-length literal spread. Variable-length spread remains outside the accepted contract. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`; `docs/implementation/function-stack-apply-spread-runtime-substrate-2026-07-09.md`; `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`; `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`; `docs/implementation/function-stack-data-last-fixed-spread-fallback-2026-07-09.md` |
 | AWBC suspension-aware dynamic apply | Non-suspending `MakeFunction` / `ApplyFunction` works, including lazy AWBC branch lowering for value-position `if` / `if let` / `match` bodies. Apply that suspends or budget-yields still has no resumable safe-point contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects function values. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Non-helper/effectful/suspending callable allocation | Callable families are inventoried. The first non-helper source-local `fn` expansion is implemented for expression bodies with no host/effect/suspension syntax, including multiple curried `ParamGroup`s, returned simple closure literals, direct calls to function-typed parameters, local callback aliases/partials, destructuring closure literals in function-valued local bindings, exact calls to already-lowered pure helpers, pure value control expressions, and fixed-point exact calls to already-accepted source-local candidates. Effectful/suspending bodies, host/adapter call-bearing bodies, task/dialogue/stream functions, trait/impl methods, adapter thunks, and persistence remain unaccepted. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`; `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`; `docs/implementation/function-stack-current-gap-map-2026-07-09.md` |

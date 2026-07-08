@@ -164,6 +164,46 @@ let is_high = (_ >= 80)
 let add_alice = add_affection(@character.alice, 1)
 ```
 
+## Spread arguments in partials and data-last fallback
+
+Spread call arguments use `expr...`.
+
+Ordinary exact calls may use spread only where the callee signature gives a
+deterministic target. A variable-length spread may feed a rest parameter after
+the required fixed parameters have already been supplied. It is not used to
+infer how many fixed parameters should be filled.
+
+Partial-call construction and data-last method fallback accept spread only when
+the spread source has a statically known inline literal length:
+
+```arcw
+let add_one = add([1i64]...)
+let exact = add([1i64]..., 2i64)
+let in_range = score.between([60i64, 90i64]...)
+```
+
+The same rule applies to function-value calls:
+
+```arcw
+let add_one = add(1i64)
+let three = add_one([2i64]...)
+```
+
+Variable-length spread remains rejected in partial-call construction and
+data-last fallback:
+
+```arcw
+let later = add(values...)          // error: variable-length partial spread
+let later = add(values..., 1i64)    // error: spread followed by fixed arg
+let ok = score.above(thresholds...) // error: variable-length data-last spread
+```
+
+This is a language contract, not a temporary lowering limitation. The runtime
+can expand `RuntimeExpr::SpreadArg`, but source-level partial construction
+needs deterministic arity, argument order, and typed lowering evidence. Use an
+inline fixed-length literal spread or write an explicit closure when the spread
+length is not statically known.
+
 ## Seq と lazy pipeline
 
 ```arcw

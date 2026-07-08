@@ -1703,8 +1703,9 @@ spread, including compact numeric bracket sequence literals, and sema expands
 that fixed length for arity, result type, and curried group progress. Checked
 runtime-plan lowering preserves `RuntimeExpr::SpreadArg` so the core runtime
 performs expansion through the already verified `RuntimeExpr::Apply` path.
-Variable-length function-value spread and spread partial construction remain in
-the 07.2.1 request boundary. Details are recorded in
+Variable-length function-value spread outside ordinary exact-call signature
+targets and variable-length spread partial construction remain structured
+rejections under the current language contract. Details are recorded in
 `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
 
 The signature fixed spread apply follow-up extends the same fixed-length
@@ -1713,8 +1714,8 @@ literal contract to direct fixed-parameter signature calls. `add([1i64,
 `add([1i64]...)` now type-check by expanding the inline literal spread into
 fixed parameter slots. Runtime-plan lowering preserves `RuntimeExpr::SpreadArg`
 so either source-function `Apply` or pure-call evaluation performs runtime
-argument expansion. Variable-length spread remains in the 07.2.1 request
-boundary. Details are recorded in
+argument expansion. Variable-length spread in partial-call construction remains
+rejected by the current contract. Details are recorded in
 `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`.
 
 The data-last fixed spread fallback follow-up extends the fixed-length literal
@@ -1728,6 +1729,17 @@ of duplicating the spread for every covered parameter. Variable-length
 fallback spread remains rejected with a structured diagnostic. Details are
 recorded in
 `docs/implementation/function-stack-data-last-fixed-spread-fallback-2026-07-09.md`.
+
+The spread contract closure follow-up closes the current 07.2.1 request by
+making that boundary explicit: inline fixed-length literal spread is accepted
+for function-value calls, direct fixed-parameter signature calls, and data-last
+method fallback, while variable-length spread in partial-call construction and
+data-last fallback is a stable structured rejection. The language summary and
+request status are updated in
+`docs/01-language/functions-and-pipeline.md` and
+`docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`.
+Spread partial/fallback is therefore no longer an active completion blocker for
+the function-stack goal.
 
 The unsupported bare source-function value follow-up tightens the 07.7
 rejection boundary. Sema now records a `FunctionValueReference` lowering fact

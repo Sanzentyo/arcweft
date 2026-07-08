@@ -72,7 +72,8 @@ includes:
   inline fixed-length literal spread; direct fixed-parameter signature calls
   accept inline fixed-length literal spread for exact and missing-input
   partial calls; data-last method fallback accepts inline fixed-length literal
-  spread; variable-length spread remains a separate contract.
+  spread; variable-length spread in partial-call construction and data-last
+  fallback remains a structured rejection by the current language contract.
 - bare top-level source-function value references outside the pure-helper and
   accepted source-function candidate families are rejected as
   `source_function_value_without_runtime_candidate` instead of falling through
@@ -88,6 +89,7 @@ The detailed evidence remains in:
 - `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`
 - `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
 - `docs/implementation/function-stack-spread-rejection-boundary-2026-07-09.md`
+- `docs/implementation/function-stack-spread-contract-closure-2026-07-09.md`
 - `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
@@ -98,7 +100,6 @@ These keep the active goal open:
 
 | Area | Why it remains open | Request |
 | --- | --- | --- |
-| Spread partial application and spread data-last fallback | Fixed partial/fallback paths are implemented; low-level runtime `Apply` spread expansion is verified; source function-value calls, direct fixed-parameter signature calls, and data-last method fallback accept inline fixed-length literal spread. Variable-length spread is not yet designed. | `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`; `docs/implementation/function-stack-apply-spread-runtime-substrate-2026-07-09.md`; `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`; `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`; `docs/implementation/function-stack-data-last-fixed-spread-fallback-2026-07-09.md` |
 | AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding dynamic apply still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects runtime functions. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers, pure value control expressions, and exact calls to already-accepted source-local candidates. Task/dialogue/stream functions, trait/impl methods, adapter thunks, host/adapter call-bearing bodies, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
