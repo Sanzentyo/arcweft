@@ -48,7 +48,7 @@ Related function-value and runtime substrate evidence:
 
 The spread request remains open for:
 
-- data-last method fallback with spread;
+- variable-length data-last method fallback spread;
 - variable-length spread in partial-call construction;
 - rest-parameter plus fixed-slot spread interactions beyond the existing rest
   spread rule;

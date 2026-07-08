@@ -600,13 +600,7 @@ fn lower_strict_data_last_method_fallback(
                         index
                     )
                 })?;
-                if arg.is_spread() {
-                    return Err(format!(
-                        "data-last method fallback `{}` does not accept spread arguments",
-                        runtime_method_name(method)
-                    ));
-                }
-                lower_runtime_expr_strict_with_helpers(arg.value(), helpers)
+                lower_strict_call_arg(arg, helpers)
             }
             RuntimeDataLastMethodFallbackArg::Receiver => {
                 lower_runtime_expr_strict_with_helpers(receiver, helpers)

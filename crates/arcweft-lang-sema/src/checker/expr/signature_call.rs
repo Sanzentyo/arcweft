@@ -1,12 +1,15 @@
+use super::super::helpers::numeric_literal_suffix_type;
 use super::builtin::CapabilityFunctionSpec;
 use super::partial::expr_contains_partial_placeholder;
-use super::support::{signature_param_label, spread_item_type};
+use super::support::{
+    FixedLiteralSpreadSlot, call_arg_spread_value, fixed_literal_spread_slot_count,
+    fixed_literal_spread_slots, is_unit_number_type, signature_param_label, spread_item_type,
+};
 use super::{
     CallArg, Expr, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use crate::env::FunctionParam;
-use arcweft_lang_syntax::expr::Literal;
 
 impl TypeChecker<'_> {
     pub(super) fn check_untyped_function_args(&mut self, name: &str, args: &[CallArg]) {
@@ -54,6 +57,7 @@ impl TypeChecker<'_> {
                 }
                 CallArg::Spread { value } => match fixed_literal_spread_slots(value) {
                     Some(slots) if rest.is_none() => {
+                        self.reserve_fixed_literal_spread_container_expr(value);
                         for slot_value in slots {
                             self.check_positional_signature_arg_slot(
                                 name,
@@ -72,7 +76,7 @@ impl TypeChecker<'_> {
                     if positional_index < fixed.len() {
                         self.check_positional_signature_arg_slot(
                             name,
-                            SignatureArgSlot::Expr(positional),
+                            FixedLiteralSpreadSlot::Expr(positional),
                             &fixed,
                             &mut provided_fixed,
                             &mut positional_index,
@@ -118,7 +122,7 @@ impl TypeChecker<'_> {
     fn check_positional_signature_arg_slot(
         &mut self,
         function_name: &str,
-        value: SignatureArgSlot<'_>,
+        value: FixedLiteralSpreadSlot<'_>,
         fixed: &[&FunctionParam],
         provided_fixed: &mut [bool],
         positional_index: &mut usize,
@@ -130,7 +134,7 @@ impl TypeChecker<'_> {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{function_name}` received too many positional arguments"
             )));
-            self.check_signature_arg_slot(value, None);
+            self.check_fixed_literal_spread_slot(value, None);
             return;
         };
         provided_fixed[*positional_index] = true;
@@ -378,7 +382,7 @@ impl TypeChecker<'_> {
         self.expect_signature_arg_slot_type(
             function_name,
             arg_label,
-            SignatureArgSlot::Expr(arg),
+            FixedLiteralSpreadSlot::Expr(arg),
             expected,
         )
     }
@@ -387,10 +391,10 @@ impl TypeChecker<'_> {
         &mut self,
         function_name: &str,
         arg_label: &str,
-        arg: SignatureArgSlot<'_>,
+        arg: FixedLiteralSpreadSlot<'_>,
         expected: &TypeKind,
     ) -> Option<TypeKind> {
-        let actual = self.check_signature_arg_slot(arg, Some(expected));
+        let actual = self.check_fixed_literal_spread_slot(arg, Some(expected));
         if let Some(actual) = actual.as_ref()
             && !self.types_compatible(expected, actual)
         {
@@ -404,63 +408,52 @@ impl TypeChecker<'_> {
         actual
     }
 
-    fn check_signature_arg_slot(
+    pub(super) fn check_fixed_literal_spread_slot(
         &mut self,
-        arg: SignatureArgSlot<'_>,
+        arg: FixedLiteralSpreadSlot<'_>,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         match arg {
-            SignatureArgSlot::Expr(expr) => self.check_expr_with_expected(expr, expected),
-            SignatureArgSlot::Int { value, suffix } => {
-                let raw =
-                    suffix.map_or_else(|| value.to_string(), |suffix| format!("{value}{suffix}"));
-                let expr = Expr::Literal(Literal::Int {
-                    raw,
-                    value,
-                    suffix: suffix.map(str::to_owned),
-                });
-                self.check_expr_with_expected(&expr, expected)
+            FixedLiteralSpreadSlot::Expr(expr) => self.check_expr_with_expected(expr, expected),
+            FixedLiteralSpreadSlot::Int { suffix, .. } => {
+                Some(self.check_fixed_literal_spread_int_slot(suffix, expected))
             }
         }
     }
-}
 
-#[derive(Clone, Copy)]
-enum SignatureArgSlot<'a> {
-    Expr(&'a Expr),
-    Int { value: i64, suffix: Option<&'a str> },
-}
-
-impl<'a> SignatureArgSlot<'a> {
-    const fn source_expr(self) -> Option<&'a Expr> {
-        match self {
-            Self::Expr(expr) => Some(expr),
-            Self::Int { .. } => None,
+    pub(super) fn reserve_fixed_literal_spread_container_expr(&mut self, value: &Expr) {
+        if matches!(value, Expr::BracketSeq(_) | Expr::NumericBracketSeq(_)) {
+            self.stats.expressions += 1;
         }
     }
-}
 
-fn fixed_literal_spread_slots(value: &Expr) -> Option<Vec<SignatureArgSlot<'_>>> {
-    match value {
-        Expr::BracketSeq(items) => Some(items.iter().map(SignatureArgSlot::Expr).collect()),
-        Expr::NumericBracketSeq(seq) => Some(
-            seq.values()
-                .iter()
-                .map(|value| SignatureArgSlot::Int {
-                    value: *value,
-                    suffix: seq.suffix(),
-                })
-                .collect(),
-        ),
-        _ => None,
-    }
-}
-
-fn fixed_literal_spread_slot_count(value: &Expr) -> Option<usize> {
-    match value {
-        Expr::BracketSeq(items) => Some(items.len()),
-        Expr::NumericBracketSeq(seq) => Some(seq.len()),
-        _ => None,
+    fn check_fixed_literal_spread_int_slot(
+        &mut self,
+        suffix: Option<&str>,
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
+        if let Some(suffix) = suffix {
+            let ty = if let Some(ty) = numeric_literal_suffix_type(Some(suffix)) {
+                ty
+            } else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "unknown integer literal suffix `{suffix}`"
+                )));
+                TypeKind::Named("_".to_owned())
+            };
+            if ty.is_integer() || is_unit_number_type(&ty) {
+                return ty;
+            }
+            self.errors.push(TypeCheckError::new(format!(
+                "integer literal suffix must be an integer type, found {ty:?}"
+            )));
+            return TypeKind::Named("_".to_owned());
+        }
+        if let Some(expected) = expected.filter(|ty| ty.is_integer()) {
+            return expected.clone();
+        }
+        self.record_numeric_fallback_in_inferred_closure("integer spread slot", TypeKind::I32);
+        TypeKind::I32
     }
 }
 
@@ -474,7 +467,7 @@ fn fixed_literal_spread_args(args: &[CallArg]) -> bool {
 fn partial_signature_call_args<'a>(
     params: &[FunctionParam],
     args: &'a [CallArg],
-) -> Option<Vec<Option<SignatureArgSlot<'a>>>> {
+) -> Option<Vec<Option<FixedLiteralSpreadSlot<'a>>>> {
     let mut provided = std::iter::repeat_with(|| None)
         .take(params.len())
         .collect::<Vec<_>>();
@@ -487,7 +480,7 @@ fn partial_signature_call_args<'a>(
                     positional_index += 1;
                 }
                 let slot = provided.get_mut(positional_index)?;
-                *slot = Some(SignatureArgSlot::Expr(value));
+                *slot = Some(FixedLiteralSpreadSlot::Expr(value));
                 positional_index += 1;
             }
             CallArg::Named { name, value } => {
@@ -497,7 +490,7 @@ fn partial_signature_call_args<'a>(
                 if provided[index].is_some() {
                     return None;
                 }
-                provided[index] = Some(SignatureArgSlot::Expr(value));
+                provided[index] = Some(FixedLiteralSpreadSlot::Expr(value));
             }
             CallArg::Spread { value } => {
                 let slots = fixed_literal_spread_slots(value)?;
@@ -515,13 +508,6 @@ fn partial_signature_call_args<'a>(
     }
 
     Some(provided)
-}
-
-fn call_arg_spread_value(arg: &CallArg) -> Option<&Expr> {
-    match arg {
-        CallArg::Spread { value } => Some(value),
-        CallArg::Positional(_) | CallArg::Named { .. } => None,
-    }
 }
 
 fn unsupported_signature_partial_spread_reason(

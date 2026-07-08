@@ -809,6 +809,85 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_fixed_literal_spread_data_last_method_fallback() {
+    let parsed = parse_source_text(
+        r#"
+#[pure]
+fn between(min: i64, max: i64, value: i64) -> bool {
+    return value > min
+}
+
+flow @flow.main main {
+    let score = 75i64
+    let direct = score.between([60i64, 90i64]...)
+    let mixed = score.between([60i64]..., max = 90i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers fixed spread data-last method fallback");
+    let [
+        FlowOp::Let { .. },
+        FlowOp::Let { expr: direct, .. },
+        FlowOp::Let { expr: mixed, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected score, direct, and mixed lets");
+    };
+    let direct_args = match direct {
+        RuntimeExpr::PureCall { args, .. } | RuntimeExpr::Apply { args, .. } => args,
+        other => panic!("expected direct fallback call expression, got {other:#?}"),
+    };
+    assert!(
+        matches!(
+            direct_args.as_slice(),
+            [RuntimeExpr::SpreadArg(value), RuntimeExpr::Local(score)]
+                if matches!(
+                    value.as_ref(),
+                    RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::Dense(
+                        DenseSeq::I64(values)
+                    ))) if matches!(values.as_slice(), [60, 90])
+                ) && score == "score"
+        ),
+        "expected direct fallback to preserve one spread arg before receiver, got {direct:#?}"
+    );
+    let mixed_args = match mixed {
+        RuntimeExpr::PureCall { args, .. } | RuntimeExpr::Apply { args, .. } => args,
+        other => panic!("expected mixed fallback call expression, got {other:#?}"),
+    };
+    assert!(
+        matches!(
+            mixed_args.as_slice(),
+            [
+                RuntimeExpr::SpreadArg(value),
+                RuntimeExpr::Value(max),
+                RuntimeExpr::Local(score),
+            ] if matches!(
+                value.as_ref(),
+                RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::Dense(
+                    DenseSeq::I64(values)
+                ))) if matches!(values.as_slice(), [60])
+            ) && max == &RuntimeValue::i64(90) && score == "score"
+        ),
+        "expected mixed fallback to preserve spread, named arg, then receiver, got {mixed:#?}"
+    );
+}
+
+#[test]
 fn runtime_plan_lowers_data_last_pipe_call_with_typecheck() {
     let parsed = parse_source_text(
         r#"

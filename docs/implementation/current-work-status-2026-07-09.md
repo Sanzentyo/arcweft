@@ -29,11 +29,11 @@ partial/fallback shapes, and current 07.8 evidence covers captured function
 alias rows plus borrowed-capture row preservation at an `await` boundary. The
 low-level runtime `Apply` substrate also now has spread expansion regression
 coverage for exact, partial-prefix, and curried function application, and
-source function-value calls plus direct fixed-parameter signature calls accept
-inline fixed-length literal spread.
+source function-value calls, direct fixed-parameter signature calls, and
+data-last method fallback accept inline fixed-length literal spread.
 Remaining completion still depends on explicit request/design areas:
 
-1. Spread data-last fallback semantics and variable-length spread.
+1. Variable-length spread semantics.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.
 3. Serializable persisted closure/function snapshots.
 4. General non-helper/effectful/suspending callable allocation and the final

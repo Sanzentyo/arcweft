@@ -1703,9 +1703,8 @@ spread, including compact numeric bracket sequence literals, and sema expands
 that fixed length for arity, result type, and curried group progress. Checked
 runtime-plan lowering preserves `RuntimeExpr::SpreadArg` so the core runtime
 performs expansion through the already verified `RuntimeExpr::Apply` path.
-Variable-length function-value spread, spread partial construction, and
-spread data-last fallback remain in the 07.2.1 request boundary. Details are
-recorded in
+Variable-length function-value spread and spread partial construction remain in
+the 07.2.1 request boundary. Details are recorded in
 `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
 
 The signature fixed spread apply follow-up extends the same fixed-length
@@ -1714,6 +1713,18 @@ literal contract to direct fixed-parameter signature calls. `add([1i64,
 `add([1i64]...)` now type-check by expanding the inline literal spread into
 fixed parameter slots. Runtime-plan lowering preserves `RuntimeExpr::SpreadArg`
 so either source-function `Apply` or pure-call evaluation performs runtime
-argument expansion. Data-last fallback spread and variable-length spread
-remain in the 07.2.1 request boundary. Details are recorded in
+argument expansion. Variable-length spread remains in the 07.2.1 request
+boundary. Details are recorded in
 `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`.
+
+The data-last fixed spread fallback follow-up extends the fixed-length literal
+spread contract to method-chain fallback. `score.between([60i64, 90i64]...)`
+and `score.between([60i64]..., max = 90i64)` now type-check when `between`
+resolves as a data-last callable. Sema checks each expanded literal slot
+against the callable parameters but records the source spread argument only
+once in `DataLastMethodFallbackArg` evidence, so runtime-plan lowering
+preserves one `RuntimeExpr::SpreadArg` in the proven data-last order instead
+of duplicating the spread for every covered parameter. Variable-length
+fallback spread remains rejected with a structured diagnostic. Details are
+recorded in
+`docs/implementation/function-stack-data-last-fixed-spread-fallback-2026-07-09.md`.

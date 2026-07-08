@@ -47,7 +47,7 @@ Related lower-runtime substrate coverage remains recorded in
 The spread request remains open for:
 
 - variable-length source spread partial-call construction;
-- source spread data-last method fallback;
+- variable-length source spread data-last method fallback;
 - rest-parameter plus data-last receiver interaction;
 - typed lowering evidence for runtime-expanded argument ranges;
 - variable-length spread sources in function-value calls.

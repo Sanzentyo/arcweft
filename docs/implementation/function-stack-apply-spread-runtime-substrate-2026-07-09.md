@@ -5,9 +5,9 @@ This note records a narrow substrate validation for
 
 ## Scope
 
-This slice does not accept new source-level spread partial application or
-source-level spread data-last fallback shapes. It verifies the lower runtime
-piece those future shapes would need:
+This slice did not itself accept new source-level spread partial application
+or source-level spread data-last fallback shapes. It verified the lower
+runtime piece those shapes need:
 
 - `RuntimeExpr::Apply` evaluates `RuntimeExpr::SpreadArg` entries through the
   same call-argument expansion path as ordinary runtime calls.
@@ -16,14 +16,18 @@ piece those future shapes would need:
 - Spread expansion may cross curried runtime function boundaries when an apply
   receives more values than the current function arity.
 
-The surface language still rejects spread partial construction and spread
-data-last fallback unless a later contract explicitly accepts a shape. A later
-source-level slice accepts only function-value calls whose spread source is an
-inline fixed-length bracket sequence literal; see
+The surface language still rejects variable-length spread partial
+construction and variable-length spread data-last fallback unless a later
+contract explicitly accepts a shape. Later source-level slices accept
+function-value calls whose spread source is an inline fixed-length bracket
+sequence literal; see
 `docs/implementation/function-stack-function-value-fixed-spread-apply-2026-07-09.md`.
-A second source-level slice accepts direct fixed-parameter signature exact and
+Another source-level slice accepts direct fixed-parameter signature exact and
 missing-input partial calls with inline fixed-length literal spread; see
 `docs/implementation/function-stack-signature-fixed-spread-apply-2026-07-09.md`.
+A data-last fallback slice accepts inline fixed-length literal spread with
+single-source-argument evidence; see
+`docs/implementation/function-stack-data-last-fixed-spread-fallback-2026-07-09.md`.
 
 ## Contract Finding
 
@@ -35,17 +39,18 @@ For data-last fallback, Arcweft currently models the receiver as the final
 callable parameter. Arcweft source rest parameters are also constrained to be
 the final parameter. Therefore a source signature cannot simultaneously place
 a rest parameter immediately before the receiver and keep the receiver as the
-final data-last parameter. Accepting spread data-last fallback will require one
-of these explicit design decisions:
+final data-last parameter. Accepting variable-length spread data-last fallback
+will require one of these explicit design decisions:
 
-1. keep spread data-last fallback rejected;
+1. keep variable-length spread data-last fallback rejected;
 2. change the fallback contract so the receiver can be inserted before a final
    rest parameter;
 3. introduce a separate source spelling for the data-last receiver slot; or
 4. accept only a provably fixed-length spread form with typed length evidence.
 
-Until one of those options is chosen, sema/runtime-plan should continue to
-reject source spread data-last fallback with structured diagnostics.
+The fourth option is implemented for inline fixed-length literal spread.
+Variable-length source spread data-last fallback remains rejected with
+structured diagnostics.
 
 ## Evidence
 

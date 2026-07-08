@@ -3,7 +3,7 @@ use crate::diagnostics::TypeCheckError;
 use crate::env::{FunctionParam, FunctionSignature};
 use crate::types::{EntityKind, MapKind, TypeKind};
 use arcweft_lang_syntax::ast::pattern::Pattern;
-use arcweft_lang_syntax::expr::{BinaryOp, Expr};
+use arcweft_lang_syntax::expr::{BinaryOp, CallArg, Expr};
 use arcweft_lang_syntax::types::FnParam;
 pub(super) enum ChoicePatternCoverage {
     All,
@@ -154,6 +154,51 @@ pub(super) fn spread_item_type(ty: &TypeKind) -> Option<&TypeKind> {
         | TypeKind::Slice(item)
         | TypeKind::Array { item, .. } => Some(item),
         _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum FixedLiteralSpreadSlot<'a> {
+    Expr(&'a Expr),
+    Int { suffix: Option<&'a str> },
+}
+
+impl<'a> FixedLiteralSpreadSlot<'a> {
+    pub(super) const fn source_expr(self) -> Option<&'a Expr> {
+        match self {
+            Self::Expr(expr) => Some(expr),
+            Self::Int { .. } => None,
+        }
+    }
+}
+
+pub(super) fn fixed_literal_spread_slots(value: &Expr) -> Option<Vec<FixedLiteralSpreadSlot<'_>>> {
+    match value {
+        Expr::BracketSeq(items) => Some(items.iter().map(FixedLiteralSpreadSlot::Expr).collect()),
+        Expr::NumericBracketSeq(seq) => Some(
+            seq.values()
+                .iter()
+                .map(|_| FixedLiteralSpreadSlot::Int {
+                    suffix: seq.suffix(),
+                })
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+pub(super) fn fixed_literal_spread_slot_count(value: &Expr) -> Option<usize> {
+    match value {
+        Expr::BracketSeq(items) => Some(items.len()),
+        Expr::NumericBracketSeq(seq) => Some(seq.len()),
+        _ => None,
+    }
+}
+
+pub(super) fn call_arg_spread_value(arg: &CallArg) -> Option<&Expr> {
+    match arg {
+        CallArg::Spread { value } => Some(value),
+        CallArg::Positional(_) | CallArg::Named { .. } => None,
     }
 }
 

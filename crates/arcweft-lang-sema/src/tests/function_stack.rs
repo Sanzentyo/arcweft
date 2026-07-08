@@ -3574,6 +3574,79 @@ flow @flow.method_fallback_named method_fallback_named {
 }
 
 #[test]
+fn method_chain_accepts_fixed_literal_spread_data_last_fallback() {
+    let tree = parse_ok(
+        r"
+flow @flow.method_fallback_fixed_spread method_fallback_fixed_spread {
+    let direct: bool = score.between([60i64, 90i64]...)
+    let mixed: bool = score.between([60i64]..., max = 90i64)
+    log.info(direct)
+    log.info(mixed)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("fixed spread method fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("fixed spread method fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "between",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("max", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback {
+                    method,
+                    arg_count: 1,
+                    arg_order,
+                } if method == "between"
+                    && arg_order == &[
+                        DataLastMethodFallbackArg::CallArg { index: 0 },
+                        DataLastMethodFallbackArg::Receiver,
+                    ]
+            )
+        }),
+        "expected single spread fallback order evidence, got {:?}",
+        report.typed_lowering_evidence
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback {
+                    method,
+                    arg_count: 2,
+                    arg_order,
+                } if method == "between"
+                    && arg_order == &[
+                        DataLastMethodFallbackArg::CallArg { index: 0 },
+                        DataLastMethodFallbackArg::CallArg { index: 1 },
+                        DataLastMethodFallbackArg::Receiver,
+                    ]
+            )
+        }),
+        "expected mixed spread/named fallback order evidence, got {:?}",
+        report.typed_lowering_evidence
+    );
+}
+
+#[test]
 fn method_chain_reports_spread_data_last_fallback_as_unsupported() {
     let tree = parse_ok(
         r"
