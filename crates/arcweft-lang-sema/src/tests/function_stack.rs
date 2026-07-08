@@ -1310,6 +1310,36 @@ effects { }
 }
 
 #[test]
+fn no_effect_rejects_local_closure_effect_when_called() {
+    let tree = parse_ok(
+        r#"
+flow @flow.no_effect_closure_call no_effect_closure_call
+effects { fs.read }
+ensures no_effect fs.read
+{
+    let later = || -> String {
+        adapter.read_text(path = "story.arcw")
+    }
+    let body = later()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("no-effect closure fixture lowers");
+    validate_typecheck_ready(&hir).expect("no-effect closure fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("no_effect must reject closure body effects when the value is called");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error.message().contains("flow.no_effect_closure_call")
+                && error.message().contains("forbids effect `fs.read`")
+        }),
+        "expected no_effect closure call diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn immediate_closure_call_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"

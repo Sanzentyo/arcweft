@@ -7,7 +7,8 @@ historical note.
 
 ## Repository Baseline
 
-- Current pushed head: `e4079ffe0 Inventory non-helper callable families`.
+- Baseline before this status refresh:
+  `9dbf73bd5 Document current function stack status`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
@@ -22,6 +23,7 @@ The unrelated dirty files at this audit point are:
 - `crates/arcweft-player-scene/src/fonts.rs`
 - `crates/arcweft-player-scene/src/input.rs`
 - `crates/arcweft-player-scene/tests/action_button_submit.rs`
+- `crates/arcweft-render-wgpu/src/renderer.rs`
 - `crates/arcweft-render-wgpu/src/view_compositor.rs`
 - `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
 - `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`

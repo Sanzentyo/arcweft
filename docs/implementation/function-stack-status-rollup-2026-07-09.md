@@ -22,11 +22,12 @@ Current supporting audits:
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
 - `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
+- `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
 - `docs/implementation/current-work-status-2026-07-09.md`
 
-Current pushed implementation head:
+Baseline before this status refresh:
 
-- `e4079ffe0 Inventory non-helper callable families`
+- `9dbf73bd5 Document current function stack status`
 
 ## Implemented And Pushed
 
@@ -110,6 +111,9 @@ Current pushed implementation head:
   expression families currently carrying authored source identity.
 - `TypeCheckStats` records source-backed and source-missing expression judgment
   counts for report-level auditing.
+- The closure-effect row audit classifies implemented effect composition paths
+  into stable timing behavior, temporary evidence graph wiring, and
+  diagnostics-only coverage.
 
 ### Explicit Rejection Boundaries
 
@@ -130,7 +134,7 @@ These are the pieces that keep the active goal open:
 | AWBC suspension-aware dynamic apply | Non-suspending `MakeFunction` / `ApplyFunction` works. Apply that suspends or budget-yields has no resumable safe-point contract. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects function values. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Non-helper/effectful/suspending callable allocation | Callable families are inventoried; helper-backed/local closure paths work. The first accepted expansion beyond helper-backed callables is still undefined. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
-| Final closure effect-row model | Current effect composition is broad and useful, but still evidence/path based. The stable row syntax, sema model, report shape, and verifier/LSP boundary are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
+| Final closure effect-row model | Current effect composition is broad and useful. The path audit is complete, and `no_effect` now has focused closure-invocation coverage. Stable row syntax, sema model, report shape, and verifier/LSP boundary are still not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`; `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md` |
 
 ## Deferred Non-Blocker
 
