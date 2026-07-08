@@ -1100,6 +1100,86 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_materializes_source_function_returned_closure() {
+    let parsed = parse_source_text(
+        r#"
+fn pairer(left: String) -> String -> (String, String) {
+    return |right: String| (left, right)
+}
+
+flow @flow.main main {
+    let with_left = pairer("left")
+    let tupled: (String, String) = with_left("right")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function returned closure");
+
+    let [
+        FlowOp::Let {
+            expr: with_left, ..
+        },
+        FlowOp::Let { expr: tupled, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected with_left and tupled lets");
+    };
+    assert!(
+        matches!(
+            with_left,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["left"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Function { params, body }
+                                    if params.as_slice() == ["right"]
+                                        && matches!(
+                                            body.as_ref(),
+                                            RuntimeExpr::Tuple(items)
+                                                if matches!(
+                                                    items.as_slice(),
+                                                    [RuntimeExpr::Local(left), RuntimeExpr::Local(right)]
+                                                        if left == "left" && right == "right"
+                                                )
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value)] if value == &RuntimeValue::String("left".to_owned())
+                )
+        ),
+        "expected with_left to apply returned closure source function, got {with_left:#?}"
+    );
+    assert!(matches!(
+        tupled,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "with_left")
+                && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value)] if value == &RuntimeValue::String("right".to_owned())
+                )
+    ));
+}
+
+#[test]
 fn checked_runtime_plan_rejects_source_function_partial_when_body_calls() {
     let parsed = parse_source_text(
         r#"

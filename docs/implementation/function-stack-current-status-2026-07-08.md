@@ -202,7 +202,8 @@ These should stay as request or design work before implementation:
 4. General non-helper/effectful/suspending top-level callable allocation as
    first-class runtime function values. Helper-backed and local-function paths
    are implemented. The first narrow non-helper source-local `fn` expansion,
-   including curried groups in that accepted family, is recorded in
+   including curried groups and returned simple closure literals in that
+   accepted family, is recorded in
    `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`.
    Broader call-bearing/effectful/suspending callable allocation remains split
    to

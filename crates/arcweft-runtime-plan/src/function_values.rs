@@ -221,8 +221,11 @@ fn runtime_function_value_expr_supported(expr: &Expr) -> bool {
         | Expr::Try { .. }
         | Expr::Await { .. }
         | Expr::Thread { .. }
-        | Expr::Closure { .. }
         | Expr::Raw(_) => false,
+        Expr::Closure { params, body, .. } => {
+            params.iter().all(|param| param.simple_ident().is_some())
+                && runtime_function_value_expr_supported(body)
+        }
     }
 }
 

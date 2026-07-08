@@ -8,7 +8,7 @@ historical note.
 ## Repository Baseline
 
 - Baseline before the latest function-stack status refresh:
-  `4cb5b3c7e Materialize simple source function values`.
+  `d361f2978 Materialize curried source function values`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
@@ -110,7 +110,8 @@ The detailed evidence trail remains:
   with simple identifier parameters and expression bodies that contain no
   call/effect/suspension-capable syntax now materialize as
   `RuntimeExpr::Function` values, including named missing-input wrapper
-  partials and multiple curried `ParamGroup`s lowered to nested functions.
+  partials, multiple curried `ParamGroup`s lowered to nested functions, and
+  returned simple closure literals lowered to nested runtime functions.
 
 ## Remaining Function-Stack Work
 

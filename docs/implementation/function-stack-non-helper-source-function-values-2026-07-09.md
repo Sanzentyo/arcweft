@@ -8,7 +8,10 @@ Runtime-plan lowering can now materialize a narrow subset of ordinary
 source-local top-level `fn` declarations as runtime function values without
 using the pure-helper table. The first follow-up expands that subset from one
 parameter group to multiple curried `ParamGroup`s by lowering each group to a
-nested `RuntimeExpr::Function`.
+nested `RuntimeExpr::Function`. The second follow-up accepts source function
+bodies that return simple closure literals, so a source-local function can now
+return another runtime function without being forced through pure-helper
+lowering.
 
 ## Accepted Contract
 
@@ -21,8 +24,10 @@ The accepted family is intentionally small:
 - Body must be a final expression or final `return` expression, optionally
   preceded by simple `let` statements.
 - Body expressions must lower through strict runtime expression lowering and
-  must not contain calls, pipes, closures, `await`, `try`, threads, dialogue
+  must not contain calls, pipes, `await`, `try`, threads, dialogue
   calls, placeholders, raw syntax, or lifetime paths.
+- Closure literal expressions are accepted when their parameters are simple
+  identifiers and their body recursively satisfies this accepted contract.
 
 Accepted functions lower to `RuntimeExpr::Function` values. Curried groups
 lower to nested functions so evaluating an inner group captures earlier group
@@ -39,8 +44,10 @@ top-level families.
 ## Behavior
 
 Function-value creation is effect-free. The accepted subset does not contain
-call/effect/suspension syntax, so invoking the value cannot perform hidden
-host, adapter, or suspension work in this cut.
+call/effect/suspension syntax outside recursively accepted closure literals, so
+invoking the value cannot perform hidden host, adapter, or suspension work in
+this cut. Returning a closure only allocates another `RuntimeExpr::Function`;
+its body is still constrained by the same no-call/no-suspension rule.
 
 Product AWBC save/load behavior is unchanged: any escaped runtime
 `RuntimeValue::Function` is still rejected by the existing structured
@@ -51,7 +58,8 @@ unsupported-runtime-value path.
 These are still not accepted:
 
 - source function values whose bodies contain calls, effects, pipes, closure
-  values, `await`, `try`, or other suspension-capable constructs;
+  bodies with calls/effects, `await`, `try`, or other suspension-capable
+  constructs;
 - `task fn`, `dialogue fn`, and `stream fn` values;
 - trait/impl method values and receiver binding extraction;
 - adapter/host-call-backed callable thunks;
@@ -66,6 +74,7 @@ function candidate exists.
 ```bash
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_curried_source_function_value -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_returned_closure -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck -- --nocapture
 ```
