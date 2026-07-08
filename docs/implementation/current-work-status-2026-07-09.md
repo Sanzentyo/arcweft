@@ -26,7 +26,9 @@ hardening slice carries `^` substitution through value-position `if`,
 `if let`, and `match` expressions, the spread rejection boundary has precise
 structured diagnostics for spread-before-fixed and multiple-spread
 partial/fallback shapes, and current 07.8 evidence covers captured function
-alias rows plus borrowed-capture row preservation at an `await` boundary.
+alias rows plus borrowed-capture row preservation at an `await` boundary. The
+low-level runtime `Apply` substrate also now has spread expansion regression
+coverage for exact, partial-prefix, and curried function application.
 Remaining completion still depends on explicit request/design areas:
 
 1. Spread partial application and spread data-last fallback semantics.

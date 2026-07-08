@@ -122,6 +122,56 @@ fn vm_pure_backend_partially_applies_runtime_function() {
 }
 
 #[test]
+fn vm_pure_backend_applies_runtime_function_with_spread_args() {
+    let helper = value_helper(RuntimeExpr::Apply {
+        callee: Box::new(RuntimeExpr::Function {
+            params: vec!["lhs".to_owned(), "rhs".to_owned()],
+            body: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
+            }),
+        }),
+        args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
+            vec![
+                RuntimeExpr::Value(RuntimeValue::i64(2)),
+                RuntimeExpr::Value(RuntimeValue::i64(5)),
+            ],
+        )))],
+    });
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
+
+    assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn vm_pure_backend_partially_applies_runtime_function_with_spread_prefix() {
+    let helper = value_helper(RuntimeExpr::Apply {
+        callee: Box::new(RuntimeExpr::Apply {
+            callee: Box::new(RuntimeExpr::Function {
+                params: vec!["lhs".to_owned(), "rhs".to_owned()],
+                body: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
+                }),
+            }),
+            args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
+                vec![RuntimeExpr::Value(RuntimeValue::i64(2))],
+            )))],
+        }),
+        args: vec![RuntimeExpr::Value(RuntimeValue::i64(5))],
+    });
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
+
+    assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
 fn vm_pure_backend_applies_curried_runtime_function() {
     let helper = value_helper(RuntimeExpr::Apply {
         callee: Box::new(RuntimeExpr::Apply {
@@ -139,6 +189,34 @@ fn vm_pure_backend_applies_curried_runtime_function() {
             args: vec![RuntimeExpr::Value(RuntimeValue::i64(2))],
         }),
         args: vec![RuntimeExpr::Value(RuntimeValue::i64(5))],
+    });
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
+
+    assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn vm_pure_backend_applies_curried_runtime_function_with_spread_args() {
+    let helper = value_helper(RuntimeExpr::Apply {
+        callee: Box::new(RuntimeExpr::Function {
+            params: vec!["lhs".to_owned()],
+            body: Box::new(RuntimeExpr::Function {
+                params: vec!["rhs".to_owned()],
+                body: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
+                }),
+            }),
+        }),
+        args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
+            vec![
+                RuntimeExpr::Value(RuntimeValue::i64(2)),
+                RuntimeExpr::Value(RuntimeValue::i64(5)),
+            ],
+        )))],
     });
     let mut backend = VmRuntimePureCallBackend::default();
 

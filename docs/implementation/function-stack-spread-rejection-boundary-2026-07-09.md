@@ -50,6 +50,13 @@ The request remains open for any accepted executable spread semantics:
 - typed lowering evidence for runtime-expanded argument ranges;
 - runtime-plan/AWBC lowering for any accepted spread partial/fallback shape.
 
+Follow-up substrate evidence in
+`docs/implementation/function-stack-apply-spread-runtime-substrate-2026-07-09.md`
+shows that low-level `RuntimeExpr::Apply` already expands `SpreadArg` values
+for exact, partial-prefix, and curried runtime function application. The open
+problem is therefore the source-level mapping contract, not core VM argument
+expansion.
+
 ## Validation
 
 ```bash
