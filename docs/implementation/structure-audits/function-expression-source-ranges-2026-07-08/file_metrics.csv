@@ -845,7 +845,7 @@ crates/arcweft-lsp/src/features/character_metadata.rs,4038,126,118,production,tr
 crates/arcweft-lsp/src/features/completion.rs,6919,190,180,production,true,false,false,false
 crates/arcweft-lsp/src/features/definition.rs,2320,63,58,production,true,false,false,false
 crates/arcweft-lsp/src/features/hover.rs,12091,363,336,production,true,false,false,true
-crates/arcweft-lsp/src/features/inlay.rs,13571,398,376,production,true,false,false,false
+crates/arcweft-lsp/src/features/inlay.rs,13641,402,380,production,true,false,false,false
 crates/arcweft-lsp/src/features/references.rs,2355,68,64,production,true,false,false,false
 crates/arcweft-lsp/src/features/rename.rs,162,4,0,production,true,false,false,false
 crates/arcweft-lsp/src/features/semantic_tokens.rs,157,4,0,production,true,false,false,false

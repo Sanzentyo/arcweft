@@ -149,7 +149,11 @@ fn expression_type_inlay_hints(
             if !emitted.insert((source_range.end(), label.clone())) {
                 return None;
             }
-            Some(expression_inlay_for_range(source_range, label, document))
+            Some(expression_inlay_for_range(
+                source_range,
+                label.as_str(),
+                document,
+            ))
         })
         .collect()
 }
@@ -186,7 +190,7 @@ fn aggregate_literal_inlay_site(kind: &str, ty: &TypeKind, source: &str) -> bool
 
 fn expression_inlay_for_range(
     source_range: TextRange,
-    type_label: String,
+    type_label: &str,
     document: &DocumentSnapshot,
 ) -> InlayHint {
     InlayHint {
