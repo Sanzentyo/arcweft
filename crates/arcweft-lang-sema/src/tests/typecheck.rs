@@ -2203,6 +2203,63 @@ flow @flow.container_source_ranges container_source_ranges {
 }
 
 #[test]
+fn container_child_expression_judgments_carry_source_ranges() {
+    let source = r#"
+flow @flow.container_child_source_ranges container_child_source_ranges {
+    let numbers: Vec<i64> = [10i64, 20i64]
+    let limit = 99i64
+    let repeated: Array<i64, 12> = [505i64; 12]
+    let picked = numbers[6i64]
+    let bounded = 13i64..=limit
+    let literal_record = accept_record({ title = "Loose", enabled = !false })
+}
+"#;
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("container child source range fixture lowers");
+    let record_type = TypeKind::Named("Record".to_owned());
+    let report = analyze_types(
+        &hir,
+        &TypeCheckEnv::new().with_function_signature(
+            "accept_record",
+            FunctionSignature::new(
+                record_type.clone(),
+                [FunctionParam::required("input", record_type)],
+            ),
+        ),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    for (kind, snippet, message) in [
+        ("literal", "12", "array repeat length"),
+        ("literal", "6i64", "index expression"),
+        ("literal", "13i64", "range start bound"),
+        ("path", "limit", "range end bound"),
+        ("literal", r#""Loose""#, "record literal string field"),
+        ("unary", "!false", "record literal unary field"),
+    ] {
+        assert_expr_source_judgment(
+            &report,
+            source,
+            kind,
+            snippet,
+            |_| true,
+            &format!("{message} should carry its authored range"),
+        );
+    }
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "record_literal",
+        r#"{ title = "Loose", enabled = !false }"#,
+        |ty| matches!(ty, TypeKind::Named(name) if name == "Record"),
+        "anonymous record literal should carry its full authored range",
+    );
+}
+
+#[test]
 fn memo_block_option_expression_judgments_carry_source_ranges() {
     let source = r"
 flow @flow.memo_option_source_ranges memo_option_source_ranges {

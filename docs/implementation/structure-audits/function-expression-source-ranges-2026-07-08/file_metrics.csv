@@ -752,7 +752,7 @@ crates/arcweft-lang-sema/src/tests/resolve_symbols.rs,3752,139,123,test,true,tru
 crates/arcweft-lang-sema/src/tests/script_tests.rs,2340,99,88,test,true,true,false,false
 crates/arcweft-lang-sema/src/tests/semantic.rs,16350,556,505,test,true,true,false,false
 crates/arcweft-lang-sema/src/tests/support.rs,4092,115,108,test,true,true,false,false
-crates/arcweft-lang-sema/src/tests/typecheck.rs,111931,3694,3486,test,true,true,false,false
+crates/arcweft-lang-sema/src/tests/typecheck.rs,113852,3751,3542,test,true,true,false,false
 crates/arcweft-lang-sema/src/traits/format.rs,463,17,14,production,true,false,false,false
 crates/arcweft-lang-sema/src/traits/standard_iter.rs,8050,286,267,production,true,false,false,false
 crates/arcweft-lang-sema/src/traits.rs,63900,1922,1745,production,true,false,false,false
@@ -1480,7 +1480,7 @@ docs/implementation/2026-07-04-text-control-visual-navigation-and-component-capt
 docs/implementation/2026-07-05-runtime-control-css-radius-filter-frame-fit.md,6304,100,88,text,false,false,false,false
 docs/implementation/2026-07-06-dialogue-speaker-display-label.md,1555,38,27,text,false,false,false,false
 docs/implementation/2026-07-07-call-select-unification-refactor.md,2368,31,23,text,false,false,false,false
-docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,93364,1364,1304,text,false,false,false,false
+docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,94165,1374,1313,text,false,false,false,false
 docs/implementation/2026-07-08-samples-dsl-canonical-decl-identity.md,3509,74,58,text,false,false,false,false
 docs/implementation/2026-07-08-selectable-static-view-text-blocks.md,2344,40,26,text,false,false,false,false
 docs/implementation/README.md,129902,1853,1833,text,false,false,false,false

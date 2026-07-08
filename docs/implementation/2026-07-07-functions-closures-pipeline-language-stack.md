@@ -1284,6 +1284,16 @@ validation passed with
 `cargo fmt --all --check`, and
 `cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`.
 
+The container child source-range audit tightens the same regression fixture for
+expression families that were implemented but not yet explicitly evidenced:
+array-repeat length expressions, index expressions, range bounds, nominal
+record field values, and anonymous record literals in call-argument position.
+The anonymous record case is intentionally exercised as an expression argument
+because a naked `{ field = value }` after `let` is parsed by the flow statement
+block path rather than as an expression literal. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features container_child_expression_judgments_carry_source_ranges -- --nocapture` and
+`cargo test -p arcweft-lang-sema --all-features container_and_control_expression_judgments_carry_source_ranges -- --nocapture`.
+
 The guarded if-let source-range follow-up fixes the remaining condition split
 inside value-producing `if let ... when ...` expressions. The syntax collector
 now uses the language-level `when` boundary, so the scrutinee range stops before
