@@ -7,7 +7,10 @@ Design specifications remain in the numbered `docs/` chapters. Files here descri
 The current operational worktree map is
 `docs/implementation/current-work-status-2026-07-09.md`.
 
-The active function/closure/currying/pipeline goal status is summarized in
+The active function/closure/currying/pipeline goal status is summarized first
+in the short current-state map
+`docs/implementation/function-stack-current-gap-map-2026-07-09.md`, then in
+the more detailed rollup
 `docs/implementation/function-stack-status-rollup-2026-07-09.md`; the detailed
 implementation log and evidence trail remain
 `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`.

@@ -3,12 +3,13 @@
 This note is the current repository map after the latest pushed function-stack
 slice and the current status cleanup. It supersedes the operational pointers in
 `docs/implementation/current-work-status-2026-07-08.md` without rewriting that
-historical note.
+historical note. For the shortest active-goal gap map, see
+`docs/implementation/function-stack-current-gap-map-2026-07-09.md`.
 
 ## Repository Baseline
 
-- Baseline before the AWBC control-expression parity cut:
-  `917f3a1ad Accept destructured source closure locals`.
+- Current pushed function-stack baseline:
+  `29d19a21e Lower AWBC control expressions lazily`.
 - At the start of this cleanup, `main` and `origin/main` were aligned at that
   head.
 - The working copy still has unrelated View/Web/text-input changes. They are
@@ -52,8 +53,14 @@ The non-function-stack dirty files at this audit point are:
 ## Active Goal Status
 
 The active function/closure/currying/pipeline language-stack goal remains
-open. The implemented surface is broad, but completion still depends on four
-explicit request/design areas:
+open. The implemented surface is broad. One narrow implementation-ready gap is
+still visible inside the already accepted 07.7 source-local function subset:
+exact calls to already-lowered pure helpers from accepted runtime function
+bodies should be allowed through the existing pure-helper lookup while unknown,
+host/effect/suspension, pipe, `await`, and `try` calls remain rejected.
+
+Completion after that focused slice still depends on explicit request/design
+areas:
 
 1. Spread partial application and spread data-last fallback semantics.
 2. AWBC suspension-aware dynamic apply plus resume-point behavior.
@@ -61,8 +68,9 @@ explicit request/design areas:
 4. General non-helper/effectful/suspending callable allocation and the final
    closure effect-row contract.
 
-The current summary is:
+The current short summary is:
 
+- `docs/implementation/function-stack-current-gap-map-2026-07-09.md`
 - `docs/implementation/function-stack-status-rollup-2026-07-09.md`
 
 The detailed evidence trail remains:
