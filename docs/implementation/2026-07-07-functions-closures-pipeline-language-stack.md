@@ -535,6 +535,7 @@ cargo test -p arcweft-compiler --all-features runtime_plan_preserves_curried_cal
 cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_closure_return_statement_to_function_body
 cargo test -p arcweft-lang-syntax --all-features select_and_index_are_structured_for_later_typechecking
 cargo test -p arcweft-lang-sema --all-features numeric_primitive_types_keep_explicit_widths
+cargo test -p arcweft-lang-sema --all-features expected_type_resolves_user_enum_short_variant
 cargo run -p arcweft-cli --all-features -- check samples/function-curried-call-groups/src/main.arcw
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-driver --all-features --test awbc_product_session
@@ -680,6 +681,11 @@ and `Never` parse to `TypeRef::Never`, and sema coverage that
 `TypeKind::primitive_name("Never")` returns `TypeKind::Never` while source
 labels continue to display the canonical `Never` spelling. `!` remains syntax
 only and is not registered as a primitive name.
+The enum shorthand evidence cut has passing sema coverage that user-defined
+unit enum variants such as `.Calm` / `.Alert` resolve from expected types in
+`let` ascriptions, function arguments, and nested value expressions. This locks
+the expected-type enum catalog path rather than relying on a `DataFormat.Json`
+special case.
 
 The closure capture and pattern-parameter cuts have passing sema coverage for
 borrowed closure captures crossing `await`, `yield`, thread, and defer
