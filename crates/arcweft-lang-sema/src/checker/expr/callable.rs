@@ -2,7 +2,7 @@ use super::{
     CallArg, EntityKind, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
-use crate::checker::helpers::{first_arg_type, type_kind_label};
+use crate::checker::helpers::first_arg_type;
 use crate::checker::{CurriedSignatureCallValue, PendingCurriedHigherOrderArg};
 use crate::effect_model::CallableId;
 use crate::env::FunctionParam;
@@ -109,6 +109,7 @@ impl TypeChecker<'_> {
             result_ty,
             supplied_higher_order_args,
             unsupported_arg_syntax,
+            arity_mismatch,
         } = self.check_function_value_call(FunctionValueCallInput {
             callee,
             args,
@@ -118,7 +119,7 @@ impl TypeChecker<'_> {
             curried_group_params: curried_group_params.as_deref(),
             curried_group_arg_offset,
         });
-        if unsupported_arg_syntax {
+        if unsupported_arg_syntax || arity_mismatch {
             self.last_checked_closure_effect_callable = None;
             self.last_checked_curried_signature_call = None;
             return TypeKind::Named("_".to_owned());
@@ -209,6 +210,7 @@ impl TypeChecker<'_> {
         } = input;
         let mut supplied_higher_order_args = Vec::new();
         let mut unsupported_arg_syntax = false;
+        let mut arity_mismatch = false;
         for arg in args {
             if let CallArg::Named { name, value } = arg {
                 unsupported_arg_syntax = true;
@@ -239,23 +241,25 @@ impl TypeChecker<'_> {
             })
             .collect::<Vec<_>>();
         if positional.len() > params.len() {
-            self.errors.push(TypeCheckError::new(format!(
-                "function value expected at most {} positional argument(s), got {}",
-                params.len(),
-                positional.len()
-            )));
+            arity_mismatch = true;
+            self.errors
+                .push(TypeCheckError::function_value_arity_mismatch(
+                    callee,
+                    params.len(),
+                    positional.len(),
+                ));
         }
         for (index, (value, expected)) in positional.iter().zip(params).enumerate() {
             let actual = self.check_expr_with_expected(value, Some(expected));
-            if actual
-                .as_ref()
-                .is_some_and(|actual| !self.types_compatible(expected, actual))
+            if let Some(actual) = actual.as_ref()
+                && !self.types_compatible(expected, actual)
             {
-                self.errors.push(TypeCheckError::new(format!(
-                    "function value argument #{index} must have type {}, found {}",
-                    type_kind_label(expected),
-                    type_kind_label(actual.as_ref().expect("checked above"))
-                )));
+                self.errors.push(TypeCheckError::argument_type_mismatch(
+                    function_value_call_label(callee),
+                    format!("#{index}"),
+                    expected.clone(),
+                    actual.clone(),
+                ));
             }
             if curried_signature_call.is_some()
                 && let Some(group_params) = curried_group_params
@@ -282,6 +286,7 @@ impl TypeChecker<'_> {
             result_ty,
             supplied_higher_order_args,
             unsupported_arg_syntax,
+            arity_mismatch,
         }
     }
 }
@@ -301,4 +306,12 @@ struct FunctionValueCallCheck {
     result_ty: TypeKind,
     supplied_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
     unsupported_arg_syntax: bool,
+    arity_mismatch: bool,
+}
+
+fn function_value_call_label(callee: Option<&str>) -> String {
+    callee.map_or_else(
+        || "function value".to_owned(),
+        |callee| format!("function value `{callee}`"),
+    )
 }

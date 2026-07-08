@@ -41,6 +41,13 @@ pub enum TypeCheckErrorKind {
         callee: Option<String>,
         reason: String,
     },
+    /// A function-value call supplied more positional arguments than the
+    /// function value can accept.
+    FunctionValueArityMismatch {
+        callee: Option<String>,
+        expected: usize,
+        actual: usize,
+    },
     /// A method-call expression has more than one viable data-last callable
     /// fallback candidate, so lowering would depend on source ordering or
     /// environment merge order instead of a typed rule.
@@ -327,6 +334,28 @@ impl TypeCheckError {
         }
     }
 
+    pub(crate) fn function_value_arity_mismatch(
+        callee: Option<&str>,
+        expected: usize,
+        actual: usize,
+    ) -> Self {
+        let callee = callee.map(str::to_owned);
+        let target = callee.as_deref().map_or_else(
+            || "function value".to_owned(),
+            |callee| format!("`{callee}`"),
+        );
+        Self {
+            message: format!(
+                "function value call for {target} expected at most {expected} positional argument(s), got {actual}"
+            ),
+            kind: TypeCheckErrorKind::FunctionValueArityMismatch {
+                callee,
+                expected,
+                actual,
+            },
+        }
+    }
+
     pub(crate) fn ambiguous_data_last_method_fallback(
         method: impl Into<String>,
         receiver: TypeKind,
@@ -498,6 +527,7 @@ impl TypeCheckError {
             | TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. }
             | TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. }
             | TypeCheckErrorKind::UnsupportedFunctionValueCall { .. }
+            | TypeCheckErrorKind::FunctionValueArityMismatch { .. }
             | TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. }
             | TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. }
             | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
@@ -988,6 +1018,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedFunctionValueCall { .. } => {
             "sema.typecheck.unsupported_function_value_call".to_owned()
+        }
+        TypeCheckErrorKind::FunctionValueArityMismatch { .. } => {
+            "sema.typecheck.function_value_arity_mismatch".to_owned()
         }
         TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. } => {
             "sema.typecheck.ambiguous_data_last_method_fallback".to_owned()

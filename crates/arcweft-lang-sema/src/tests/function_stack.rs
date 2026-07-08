@@ -366,6 +366,91 @@ flow @flow.function_value_named_arg function_value_named_arg {
 }
 
 #[test]
+fn function_value_reports_arity_mismatch_with_structured_diagnostic() {
+    let tree = parse_ok(
+        r"
+flow @flow.function_value_arity function_value_arity {
+    let bad = f(1i64, 2i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("function-value arity fixture lowers");
+    validate_typecheck_ready(&hir).expect("function-value arity fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol(
+        "f",
+        TypeKind::Function {
+            params: vec![TypeKind::I64],
+            return_type: Box::new(TypeKind::Bool),
+        },
+    );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::FunctionValueArityMismatch {
+                    callee: Some(callee),
+                    expected: 1,
+                    actual: 2
+                } if callee == "f"
+            ) && diagnostic.stable_code() == "sema.typecheck.function_value_arity_mismatch"
+        }),
+        "expected structured function-value arity diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: Some(callee),
+                    ..
+                } if callee == "f"
+            )
+        }),
+        "rejected function-value arity mismatch must not record apply lowering evidence"
+    );
+}
+
+#[test]
+fn function_value_reports_argument_type_mismatch_structurally() {
+    let tree = parse_ok(
+        r#"
+flow @flow.function_value_arg_type function_value_arg_type {
+    let bad = f("wrong")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("function-value argument fixture lowers");
+    validate_typecheck_ready(&hir).expect("function-value argument fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol(
+        "f",
+        TypeKind::Function {
+            params: vec![TypeKind::I64],
+            return_type: Box::new(TypeKind::Bool),
+        },
+    );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::ArgumentTypeMismatch {
+                    function,
+                    argument,
+                    expected: TypeKind::I64,
+                    actual: TypeKind::String,
+                } if function == "function value `f`" && argument == "#0"
+            ) && diagnostic.stable_code() == "sema.typecheck.argument_type_mismatch"
+        }),
+        "expected structured function-value argument diagnostic, got {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn pure_function_prefix_call_typechecks_as_partial_application() {
     let tree = parse_ok(
         r"

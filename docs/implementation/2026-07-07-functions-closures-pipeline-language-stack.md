@@ -644,6 +644,10 @@ and rejected named arguments on a function-valued local
 (`function_value_rejects_named_arguments_with_structured_diagnostic`). Both
 tests verify the structured `UnsupportedFunctionValueCall` diagnostic and that
 no `FunctionValueCall` lowering evidence is recorded for rejected calls.
+Function-value arity mismatch now reports
+`sema.typecheck.function_value_arity_mismatch` and suppresses rejected apply
+lowering evidence, and function-value argument type mismatch now uses the
+shared `ArgumentTypeMismatch` diagnostic fields.
 
 The closure return type cut has passing parser coverage for `|params| -> Type
 { ... }`, `|| -> Type { ... }`, call-argument closures, and the required block
