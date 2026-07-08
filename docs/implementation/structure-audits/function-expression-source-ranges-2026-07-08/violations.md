@@ -518,7 +518,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-lang-syntax/src/expr/source_ranges.rs`
 
-1355 physical LOC exceeds the 1200 LOC review threshold
+1391 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 

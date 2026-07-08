@@ -1484,3 +1484,30 @@ clipboard lifetime names. Structure audit was rerun with
 the dirty worktree reports 2447 scanned files, 1171 Rust files, 576764 Rust
 physical LOC, and the existing unrelated
 `crates/arcweft-cli/src/app/bundle_view.rs` error with 150 warnings.
+
+The thread-expression body source-range follow-up fixes another localized
+07.4.1 gap in the syntax collector. `Expr::Thread` previously descended into
+each expression statement with the whole `{ ... }` body source, which made
+multiple thread-body expression statements share the same authored range when
+the body statements did not carry their own `AuthoredExpr` range. The collector
+now splits thread body logical items as a fallback, still preferring statement
+or authored expression source ranges when they exist, and also descends through
+common nested flow/statement bodies inside thread expressions. The
+thread/flow-body descent now lives in the `expr/source_ranges/thread_body.rs`
+responsibility module instead of growing the already-large root collector.
+Focused validation passed with
+`cargo test -p arcweft-lang-syntax --all-features thread_expression_statement_sources_do_not_share_block_range -- --nocapture`
+and
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`.
+The broader validation slice passed with
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`
+and
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`.
+Focused clippy exits successfully with existing unrelated warnings from large
+syntax enum variants, `runtime-plan/src/line_task.rs`, sema function/test
+length, and runtime-host clipboard lifetime names. Structure audit was rerun
+with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the dirty worktree reports 2448 scanned files, 1172 Rust files, 577086 Rust
+physical LOC, and the existing unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 150 warnings.

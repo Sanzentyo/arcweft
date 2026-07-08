@@ -786,7 +786,8 @@ crates/arcweft-lang-syntax/src/cst.rs,11936,422,318,production,true,false,false,
 crates/arcweft-lang-syntax/src/expr/char_literal.rs,1785,49,46,production,true,false,false,false
 crates/arcweft-lang-syntax/src/expr/closure_parse.rs,10393,266,250,production,true,false,false,false
 crates/arcweft-lang-syntax/src/expr/closure_source.rs,2013,60,57,production,true,false,false,false
-crates/arcweft-lang-syntax/src/expr/source_ranges.rs,45792,1355,1271,production,true,false,false,true
+crates/arcweft-lang-syntax/src/expr/source_ranges/thread_body.rs,10203,286,278,production,true,false,false,false
+crates/arcweft-lang-syntax/src/expr/source_ranges.rs,47686,1391,1306,production,true,false,false,true
 crates/arcweft-lang-syntax/src/expr.rs,70179,2315,2077,production,true,false,false,true
 crates/arcweft-lang-syntax/src/lib.rs,427,19,12,production,true,false,false,false
 crates/arcweft-lang-syntax/src/lint.rs,26476,897,803,production,true,false,false,true
@@ -1480,7 +1481,7 @@ docs/implementation/2026-07-04-text-control-visual-navigation-and-component-capt
 docs/implementation/2026-07-05-runtime-control-css-radius-filter-frame-fit.md,6304,100,88,text,false,false,false,false
 docs/implementation/2026-07-06-dialogue-speaker-display-label.md,1555,38,27,text,false,false,false,false
 docs/implementation/2026-07-07-call-select-unification-refactor.md,2368,31,23,text,false,false,false,false
-docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,101369,1474,1407,text,false,false,false,false
+docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md,103909,1511,1443,text,false,false,false,false
 docs/implementation/2026-07-08-samples-dsl-canonical-decl-identity.md,3509,74,58,text,false,false,false,false
 docs/implementation/2026-07-08-selectable-static-view-text-blocks.md,2344,40,26,text,false,false,false,false
 docs/implementation/README.md,130165,1858,1837,text,false,false,false,false
@@ -1508,7 +1509,7 @@ docs/implementation/effect-system.md,3353,59,52,text,false,false,false,false
 docs/implementation/executable-runtime-core-2026-06-24.md,6208,138,115,text,false,false,false,false
 docs/implementation/first-order-effect-lowering.md,2787,57,48,text,false,false,false,false
 docs/implementation/fixture-regeneration.md,6629,133,104,text,false,false,false,false
-docs/implementation/function-stack-current-status-2026-07-08.md,10092,200,169,text,false,false,false,false
+docs/implementation/function-stack-current-status-2026-07-08.md,10125,201,170,text,false,false,false,false
 docs/implementation/image-animation-goal-audit.md,7151,80,65,text,false,false,false,false
 docs/implementation/image-animation-policy.md,18855,334,304,text,false,false,false,false
 docs/implementation/incremental-hot-swap-bundle-2026-06-23.md,59499,839,810,text,false,false,false,false
@@ -1690,7 +1691,7 @@ docs/implementation/structure-audit-view-interaction-routing-2026-06-22/violatio
 docs/implementation/structure-audit-web-sample-ui-2026-06-23/violations.md,18298,547,274,text,false,false,false,false
 docs/implementation/structure-audits/call-select-unification-2026-07-08/violations.md,29966,894,448,text,false,false,false,false
 docs/implementation/structure-audits/executable-runtime-core-2026-06-24/violations.md,19888,596,298,text,false,false,false,false
-docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08/violations.md,29976,896,448,text,false,false,false,false
+docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08/violations.md,30402,908,454,text,false,false,false,false
 docs/implementation/structure-audits/seq-01-1-through-01-3-2026-06-24/violations.md,19888,596,298,text,false,false,false,false
 docs/implementation/structure-audits/seq-06-14-responsive-stage-placement-2026-07-03/violations.md,25891,774,388,text,false,false,false,false
 docs/implementation/structure-audits/view-resource-rename-2026-07-08/violations.md,29976,896,448,text,false,false,false,false
@@ -1959,7 +1960,7 @@ docs/reviews/requests/2026-07-07-seq-07.1-function-stack-typed-expression-loweri
 docs/reviews/requests/2026-07-07-seq-07.2-function-stack-placeholder-inference-and-method-fallback.md,7718,143,128,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md,5839,114,98,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-07.4-function-stack-capture-effect-lsp.md,10111,164,151,text,false,false,false,false
-docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md,6232,126,107,text,false,false,false,false
+docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md,6279,126,107,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md,4609,95,80,text,false,false,false,false
 docs/reviews/requests/2026-07-07-seq-07.6-relative-runtime-id-boundaries.md,2777,64,50,text,false,false,false,false
 docs/reviews/requests/2026-07-08-seq-06.16.8-cross-platform-clipboard-text-control-capability.md,8627,175,148,text,false,false,false,false

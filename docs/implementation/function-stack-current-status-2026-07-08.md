@@ -17,7 +17,7 @@ Related slices are:
 - At the start of this audit, `main` and `origin/main` were aligned at
   `1db72d00c Document function stack status`.
 - The current implementation slice is a focused source-range follow-up for
-  line-plan colon blocks inside dialogue-call `with:` plans.
+  thread expression body statement source ranges.
 - The only dirty files outside that slice were unrelated Web IME/player files
   under `web/`.
 
@@ -126,8 +126,9 @@ their own slice if they are still desired.
   value-producing blocks, pipe/desugared expressions, selector expressions,
   dialogue interpolation/call expressions, action/defer/assignment/control
   transfer statements, container child expressions, computation blocks, braced
-  closures, guarded `if let`, effect/prefix expressions, `wait(...)`, and
-  dialogue-call line-plan colon blocks such as `let cue = at(...):`.
+  closures, guarded `if let`, effect/prefix expressions, `wait(...)`,
+  dialogue-call line-plan colon blocks such as `let cue = at(...):`, and
+  thread expression body statement sources.
 
 ### Runtime ID Boundary
 

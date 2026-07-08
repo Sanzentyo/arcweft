@@ -1,7 +1,8 @@
 use super::{BinaryOp, CallArg, Expr, ExprOp, MatchExprArm, is_ident_continue};
 use crate::ast::common::TextRange;
-use crate::ast::flow::{FlowItem, Stmt};
 use crate::ast::line_plan::{LinePlan, LinePlanItem};
+
+mod thread_body;
 
 /// Source range for one parsed expression node.
 ///
@@ -451,7 +452,7 @@ fn collect_control_expr_source_ranges<'a>(
             collect_match_expr_source_ranges(scrutinee, arms, source, base, ranges);
         }
         Expr::Thread { block } => {
-            collect_thread_expr_source_ranges(block.body(), source, base, ranges);
+            thread_body::collect_thread_expr_source_ranges(block.body(), source, base, ranges);
         }
         _ => {}
     }
@@ -507,25 +508,6 @@ fn memo_option_value_sources(source: &str, base: usize) -> Vec<(&str, usize)> {
             Some((&segment[split + '='.len_utf8()..], segment_base + split + 1))
         })
         .collect()
-}
-
-fn collect_thread_expr_source_ranges<'a>(
-    body: &'a [FlowItem],
-    source: &str,
-    base: usize,
-    ranges: &mut Vec<ExprSourceRange<'a>>,
-) {
-    let Some((open, close)) = postfix_delimiter_bounds(source, '{', '}') else {
-        return;
-    };
-    let inner = &source[open + '{'.len_utf8()..close];
-    let inner_base = base + open + '{'.len_utf8();
-    for item in body {
-        let FlowItem::Stmt(Stmt::Expr { expr, .. }) = item else {
-            continue;
-        };
-        collect_expr_source_ranges_inner(expr, inner, inner_base, ranges);
-    }
 }
 
 type IfLetConditionSources<'a> = (&'a str, usize, Option<(&'a str, usize)>);
@@ -1350,6 +1332,60 @@ mod tests {
         assert!(
             labels.contains(&"3i64"),
             "line-plan named cue body should keep child expression ranges: {labels:?}"
+        );
+    }
+
+    #[test]
+    fn thread_expression_statement_sources_do_not_share_block_range() {
+        let source = "thread compute {\n    first()\n    second()\n}";
+        let first_start = source.find("first()").expect("fixture has first call");
+        let second_start = source.find("second()").expect("fixture has second call");
+        let expr = Expr::Thread {
+            block: Box::new(crate::ast::flow::ThreadBlock::new(
+                Vec::new(),
+                Some("compute".to_owned()),
+                vec![
+                    crate::ast::flow::FlowItem::Stmt(crate::ast::flow::Stmt::Expr {
+                        expr: Expr::Call {
+                            callee: Box::new(Expr::Path(DottedPath::single("first"))),
+                            args: Vec::new(),
+                        },
+                        expr_source: Some("first()".to_owned()),
+                        expr_range: Some(TextRange::new(
+                            first_start,
+                            first_start + "first()".len(),
+                        )),
+                    }),
+                    crate::ast::flow::FlowItem::Stmt(crate::ast::flow::Stmt::Expr {
+                        expr: Expr::Call {
+                            callee: Box::new(Expr::Path(DottedPath::single("second"))),
+                            args: Vec::new(),
+                        },
+                        expr_source: Some("second()".to_owned()),
+                        expr_range: Some(TextRange::new(
+                            second_start,
+                            second_start + "second()".len(),
+                        )),
+                    }),
+                ],
+            )),
+        };
+        let ranges = collect_expr_source_ranges(&expr, source, TextRange::new(0, source.len()));
+        let labels = ranges
+            .into_iter()
+            .map(|range| &source[range.range().start()..range.range().end()])
+            .collect::<Vec<_>>();
+        assert!(
+            labels.contains(&"first()"),
+            "first thread body expression should keep its own statement source: {labels:?}"
+        );
+        assert!(
+            labels.contains(&"second()"),
+            "second thread body expression should keep its own statement source: {labels:?}"
+        );
+        assert!(
+            !labels.contains(&"first()\n    second()"),
+            "thread body expression statements must not share the whole block body range: {labels:?}"
         );
     }
 }
