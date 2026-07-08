@@ -32,6 +32,9 @@ pub enum TypeCheckErrorKind {
     /// but used argument syntax that is not representable by the fallback
     /// lowering contract.
     UnsupportedDataLastMethodFallback { method: String, reason: String },
+    /// A signature-backed partial call used argument syntax that is not
+    /// representable by the fixed partial-call lowering contract.
+    UnsupportedSignaturePartialCall { function: String, reason: String },
     /// A method-call expression has more than one viable data-last callable
     /// fallback candidate, so lowering would depend on source ordering or
     /// environment merge order instead of a typed rule.
@@ -290,6 +293,18 @@ impl TypeCheckError {
         }
     }
 
+    pub(crate) fn unsupported_signature_partial_call(
+        function: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        let function = function.into();
+        let reason = reason.into();
+        Self {
+            message: format!("partial call for `{function}` is not available: {reason}"),
+            kind: TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason },
+        }
+    }
+
     pub(crate) fn ambiguous_data_last_method_fallback(
         method: impl Into<String>,
         receiver: TypeKind,
@@ -459,6 +474,7 @@ impl TypeCheckError {
             | TypeCheckErrorKind::ArgumentTypeMismatch { .. }
             | TypeCheckErrorKind::UnsupportedAssignmentTarget { .. }
             | TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. }
+            | TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. }
             | TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. }
             | TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. }
             | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
@@ -943,6 +959,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. } => {
             "sema.typecheck.unsupported_data_last_method_fallback".to_owned()
+        }
+        TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. } => {
+            "sema.typecheck.unsupported_signature_partial_call".to_owned()
         }
         TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. } => {
             "sema.typecheck.ambiguous_data_last_method_fallback".to_owned()

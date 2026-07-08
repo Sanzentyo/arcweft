@@ -333,7 +333,11 @@ Source briefs:
   reorders named helper arguments by helper input name before emitting the call
   body. Named missing-input partial application is implemented for checked
   top-level function signatures that lower through the annotated or inferred
-  helper path. Spread partial-call inference is split to
+  helper path. Spread mixed with fixed signature partial-call forms now reports
+  `sema.typecheck.unsupported_signature_partial_call` instead of degrading to
+  generic spread or missing-argument errors, and rejected spread partials do not
+  record `SignaturePartialCall` lowering evidence. Executable spread
+  partial-call inference remains split to
   `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
   because runtime spread expansion, rest parameters, and fixed missing-input
   function construction need a shared evidence contract. Ambiguous

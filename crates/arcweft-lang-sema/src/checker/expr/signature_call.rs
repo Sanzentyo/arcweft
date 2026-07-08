@@ -1,4 +1,5 @@
 use super::builtin::CapabilityFunctionSpec;
+use super::partial::expr_contains_partial_placeholder;
 use super::support::{signature_param_label, spread_item_type};
 use super::{
     CallArg, Expr, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
@@ -123,6 +124,18 @@ impl TypeChecker<'_> {
             .any(|param| param.is_rest() || param.has_default())
         {
             return None;
+        }
+        if let Some(reason) = unsupported_signature_partial_spread_reason(params, args) {
+            self.errors
+                .push(TypeCheckError::unsupported_signature_partial_call(
+                    name, reason,
+                ));
+            for arg in args {
+                if !expr_contains_partial_placeholder(arg.value()) {
+                    self.check_expr(arg.value());
+                }
+            }
+            return Some(TypeKind::Named("_".to_owned()));
         }
         let provided = partial_signature_call_args(params, args)?;
         let missing = provided
@@ -351,4 +364,56 @@ fn partial_signature_call_args<'a>(
     }
 
     Some(provided)
+}
+
+fn unsupported_signature_partial_spread_reason(
+    params: &[FunctionParam],
+    args: &[CallArg],
+) -> Option<&'static str> {
+    if !args.iter().any(CallArg::is_spread) {
+        return None;
+    }
+    if args
+        .iter()
+        .any(|arg| expr_contains_partial_placeholder(arg.value()))
+    {
+        return Some("spread arguments cannot be mixed with `_` placeholder partial calls");
+    }
+    let missing_fixed = fixed_signature_missing_inputs_ignoring_spread(params, args)?;
+    missing_fixed.then_some(
+        "spread arguments cannot be mixed with missing-input partial calls; supply fixed arguments explicitly or define a rest-parameter contract",
+    )
+}
+
+fn fixed_signature_missing_inputs_ignoring_spread(
+    params: &[FunctionParam],
+    args: &[CallArg],
+) -> Option<bool> {
+    let mut provided = vec![false; params.len()];
+    let mut positional_index = 0usize;
+
+    for arg in args {
+        match arg {
+            CallArg::Positional(_) => {
+                while positional_index < provided.len() && provided[positional_index] {
+                    positional_index += 1;
+                }
+                let slot = provided.get_mut(positional_index)?;
+                *slot = true;
+                positional_index += 1;
+            }
+            CallArg::Named { name, .. } => {
+                let index = params
+                    .iter()
+                    .position(|param| param.name() == Some(name.as_str()))?;
+                if provided[index] {
+                    return None;
+                }
+                provided[index] = true;
+            }
+            CallArg::Spread { .. } => {}
+        }
+    }
+
+    Some(provided.iter().any(|provided| !provided))
 }

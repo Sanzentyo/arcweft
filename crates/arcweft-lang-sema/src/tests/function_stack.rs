@@ -2504,6 +2504,105 @@ flow @flow.partial_call_named partial_call_named {
 }
 
 #[test]
+fn rejects_partial_call_placeholder_mixed_with_spread() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call_spread_placeholder partial_call_spread_placeholder {
+    let values = [1i64]
+    let add_later = add(_, values...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("spread placeholder partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("spread placeholder partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason }
+                    if function == "add" && reason.contains("`_` placeholder")
+            )
+        }),
+        "expected structured spread partial diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("does not accept spread")
+                && !diagnostic.message().contains("missing required argument")
+        }),
+        "spread partial diagnostic should not degrade into generic call errors: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { callee, .. }
+                    if callee == "add"
+            )
+        }),
+        "rejected spread partial must not record signature partial lowering evidence"
+    );
+}
+
+#[test]
+fn rejects_named_missing_input_partial_call_mixed_with_spread() {
+    let tree = parse_ok(
+        r"
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call_named_spread partial_call_named_spread {
+    let values = [2i64]
+    let add_to_right = add(right = 1i64, values...)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("named spread partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("named spread partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedSignaturePartialCall { function, reason }
+                    if function == "add" && reason.contains("missing-input partial")
+            )
+        }),
+        "expected structured named spread partial diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| {
+            !diagnostic.message().contains("does not accept spread")
+                && !diagnostic.message().contains("missing required argument")
+        }),
+        "named spread partial diagnostic should not degrade into generic call errors: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall { callee, .. }
+                    if callee == "add"
+            )
+        }),
+        "rejected named spread partial must not record signature partial lowering evidence"
+    );
+}
+
+#[test]
 fn non_annotated_function_named_missing_input_typechecks_as_partial_application() {
     let tree = parse_ok(
         r"
