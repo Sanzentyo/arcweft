@@ -10,10 +10,11 @@ complete.
 
 ## Baseline
 
-- Current pushed function-stack baseline:
+- Current pushed function-stack baseline before this pipe RHS slice:
+  `3455474e9 Materialize source function control expressions`.
+- Earlier status-cleanup and pure-helper source-function commits were
+  `7841f2613 Document current function stack gaps` and
   `d8254a253 Allow pure helper calls in source function values`.
-- The preceding status-cleanup commit was:
-  `7841f2613 Document current function stack gaps`.
 - The working copy still contains unrelated View/Web/text-input changes. They
   are not part of this function-stack state and should not be staged with
   language-stack documentation or implementation unless they are deliberately
@@ -36,6 +37,7 @@ Read these files in this order:
 
 Supporting focused notes:
 
+- `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
@@ -67,7 +69,8 @@ The following are implemented in pushed commits:
 - Expression `_` placeholder abstraction for the implemented
   expected-function and known-callable shapes, distinct from pattern `_`.
 - Pipe `^` substitution and no-`^` data-last application for implemented fixed
-  argument paths.
+  argument paths, including value-position `if`, `if let`, and `match`
+  expressions in the pipe RHS.
 - Method-chain fallback after inherent/trait/env method lookup, with
   deterministic argument order and ambiguity diagnostics.
 - Canonical primitive spellings without compatibility aliases or formatter
@@ -149,3 +152,16 @@ git diff --check -- crates\arcweft-runtime-plan\src\expr.rs crates\arcweft-runti
 All commands passed. Clippy reported only pre-existing warnings, and the
 structure audit reported 0 errors / 151 warnings after splitting
 `flow/pure_helpers.rs`.
+
+The pipe control-expression RHS hardening slice was validated with:
+
+```bash
+cargo test -p arcweft-lang-syntax --all-features parses_pipe_rhs_ -- --nocapture
+cargo test -p arcweft-compiler --all-features runtime_plan_substitutes_pipe_left_inside_ -- --nocapture
+cargo test -p arcweft-lang-sema --all-features typechecker_lowers_pipe_placeholder_and_data_last_calls -- --nocapture
+rustfmt --edition 2024 --check crates\arcweft-lang-syntax\src\expr.rs crates\arcweft-lang-syntax\src\expr\control_parse.rs crates\arcweft-lang-syntax\src\parser\statements.rs crates\arcweft-lang-sema\src\checker\expr\pipe.rs crates\arcweft-runtime-plan\src\expr.rs crates\arcweft-runtime-plan\src\expr\desugar.rs crates\arcweft-runtime-plan\src\expr\tests.rs crates\arcweft-compiler\src\tests.rs
+cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs\implementation\structure-audits\function-stack-pipe-control-expression-rhs-2026-07-09
+git diff --check -- crates\arcweft-lang-syntax\src\expr.rs crates\arcweft-lang-syntax\src\expr\control_parse.rs crates\arcweft-lang-syntax\src\parser\statements.rs crates\arcweft-lang-sema\src\checker\expr\pipe.rs crates\arcweft-runtime-plan\src\expr.rs crates\arcweft-runtime-plan\src\expr\desugar.rs crates\arcweft-runtime-plan\src\expr\tests.rs crates\arcweft-compiler\src\tests.rs docs\implementation\2026-07-07-functions-closures-pipeline-language-stack.md docs\implementation\function-stack-current-state-2026-07-09.md docs\implementation\function-stack-current-gap-map-2026-07-09.md docs\implementation\function-stack-status-rollup-2026-07-09.md docs\implementation\function-stack-pipe-control-expression-rhs-2026-07-09.md
+```

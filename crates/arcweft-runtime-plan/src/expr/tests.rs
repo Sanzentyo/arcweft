@@ -2,6 +2,7 @@ use super::*;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType};
 use arcweft_core::value::RuntimeIntrinsic;
+use arcweft_lang_hir::syntax::expr::Placeholder;
 
 #[test]
 fn strict_runtime_value_lowering_preserves_calls() {

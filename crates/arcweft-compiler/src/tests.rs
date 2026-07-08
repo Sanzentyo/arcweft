@@ -892,6 +892,131 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_substitutes_pipe_left_inside_if_let_expression() {
+    let parsed = parse_source_text(
+        r"
+flow @flow.main main {
+    let maybe = Some(7i64)
+    let selected: i64 = maybe |> if let .Some(value) = ^ when value > 1i64 {
+        value
+    } else {
+        1i64
+    }
+    return selected
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers pipe-left placeholder inside if-let expression");
+    let [
+        FlowOp::Let { expr: maybe, .. },
+        FlowOp::Let { expr: selected, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected maybe and selected lets");
+    };
+    assert!(matches!(maybe, RuntimeExpr::Variant { name, .. } if name == "Some"));
+    assert!(matches!(
+        selected,
+        RuntimeExpr::IfLet {
+            pattern:
+                RuntimePattern::Variant {
+                    name,
+                    payload: Some(payload),
+                    ..
+                },
+            expr,
+            guard: Some(_),
+            then_expr,
+            else_expr,
+        } if name == "Some"
+            && matches!(
+                payload.as_ref(),
+                RuntimePattern::Tuple(items)
+                    if matches!(items.as_slice(), [RuntimePattern::Ident(value)] if value == "value")
+            )
+            && matches!(expr.as_ref(), RuntimeExpr::Local(name) if name == "maybe")
+            && matches!(then_expr.as_ref(), RuntimeExpr::Local(name) if name == "value")
+            && matches!(else_expr.as_ref(), RuntimeExpr::Value(value) if value == &RuntimeValue::i64(1))
+    ));
+}
+
+#[test]
+fn runtime_plan_substitutes_pipe_left_inside_match_expression() {
+    let parsed = parse_source_text(
+        r"
+flow @flow.main main {
+    let ready = true
+    let selected: i64 = ready |> match ^ {
+        true => 7i64
+        false => 1i64
+    }
+    return selected
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers pipe-left placeholder inside match expression");
+    let [
+        FlowOp::Let { expr: ready, .. },
+        FlowOp::Let { expr: selected, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected ready and selected lets");
+    };
+    assert!(matches!(
+        ready,
+        RuntimeExpr::Value(RuntimeValue::Bool(true))
+    ));
+    assert!(matches!(
+        selected,
+        RuntimeExpr::Match { scrutinee, arms }
+            if matches!(scrutinee.as_ref(), RuntimeExpr::Local(name) if name == "ready")
+                && matches!(
+                    arms.as_slice(),
+                    [
+                        arcweft_core::value::RuntimeExprMatchArm {
+                            pattern: RuntimePattern::Literal(RuntimeValue::Bool(true)),
+                            guard: None,
+                            value: RuntimeExpr::Value(first),
+                        },
+                        arcweft_core::value::RuntimeExprMatchArm {
+                            pattern: RuntimePattern::Literal(RuntimeValue::Bool(false)),
+                            guard: None,
+                            value: RuntimeExpr::Value(second),
+                        },
+                    ] if first == &RuntimeValue::i64(7) && second == &RuntimeValue::i64(1)
+                )
+    ));
+}
+
+#[test]
 fn runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck() {
     let parsed = parse_source_text(
         r#"

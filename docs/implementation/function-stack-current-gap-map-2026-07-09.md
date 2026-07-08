@@ -9,8 +9,8 @@ For the current entry point and reading order, see
 
 ## Repository Baseline
 
-- Current pushed function-stack baseline:
-  `d8254a253 Allow pure helper calls in source function values`.
+- Current pushed function-stack baseline before this pipe RHS slice:
+  `3455474e9 Materialize source function control expressions`.
 - `main` and `origin/main` were aligned at that commit when this gap map was
   written.
 - The working copy still contains View/Web/text-input changes. They are not
@@ -39,7 +39,8 @@ includes:
 - expression `_` placeholder abstraction for the implemented expected-function
   and known-callable shapes;
 - pipe `^` substitution and no-`^` data-last application for implemented fixed
-  argument paths;
+  argument paths, including value-position `if`, `if let`, and `match`
+  expressions in the pipe RHS;
 - method-chain fallback after inherent/trait/env method lookup, with
   deterministic argument order and ambiguity diagnostics;
 - canonical primitive spellings without compatibility aliases;
@@ -60,6 +61,7 @@ The detailed evidence remains in:
 
 - `docs/implementation/function-stack-status-rollup-2026-07-09.md`
 - `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`
+- `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 
 ## Design-Blocked Remaining Work

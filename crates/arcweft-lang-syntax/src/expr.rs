@@ -20,6 +20,7 @@ use thiserror::Error;
 mod char_literal;
 mod closure_parse;
 mod closure_source;
+mod control_parse;
 mod source_ranges;
 
 use closure_parse::parse_closure_params;
@@ -1509,6 +1510,8 @@ impl ExprParser {
                 expr: Box::new(self.parse_expr_bp(90)?),
             }),
             Token::Ident(keyword) if keyword == "thread" => self.parse_thread_expr(),
+            Token::Ident(keyword) if keyword == "if" => self.parse_if_expr_after_keyword(),
+            Token::Ident(keyword) if keyword == "match" => self.parse_match_expr_after_keyword(),
             Token::Bang => Ok(Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Box::new(self.parse_expr_bp(90)?),
@@ -2299,7 +2302,7 @@ impl CallArg {
 
 #[cfg(test)]
 mod tests {
-    use super::{BinaryOp, Expr, parse_expr};
+    use super::{BinaryOp, Expr, Placeholder, parse_expr};
 
     #[test]
     fn parses_field_access_comparison() {
@@ -2311,5 +2314,42 @@ mod tests {
         assert_eq!(op, BinaryOp::Lt);
         assert!(matches!(*lhs, Expr::Select(_)));
         assert!(matches!(*rhs, Expr::Select(_)));
+    }
+
+    #[test]
+    fn parses_pipe_rhs_if_let_expression() {
+        let parsed = parse_expr(
+            "maybe |> if let .Some(value) = ^ when value > 1i64 { value } else { 1i64 }",
+        )
+        .expect("pipe rhs if-let parses as an expression");
+        assert!(matches!(
+            parsed,
+            Expr::Pipe { rhs, .. }
+                if matches!(
+                    rhs.as_ref(),
+                    Expr::IfLet {
+                        expr,
+                        guard: Some(_),
+                        else_branch: Some(_),
+                        ..
+                    } if matches!(expr.as_ref(), Expr::Placeholder(Placeholder::PipeLeft))
+                )
+        ));
+    }
+
+    #[test]
+    fn parses_pipe_rhs_match_expression() {
+        let parsed = parse_expr("ready |> match ^ { true => 7i64 false => 1i64 }")
+            .expect("pipe rhs match parses as an expression");
+        assert!(matches!(
+            parsed,
+            Expr::Pipe { rhs, .. }
+                if matches!(
+                    rhs.as_ref(),
+                    Expr::Match { scrutinee, arms }
+                        if matches!(scrutinee.as_ref(), Expr::Placeholder(Placeholder::PipeLeft))
+                            && arms.len() == 2
+                )
+        ));
     }
 }

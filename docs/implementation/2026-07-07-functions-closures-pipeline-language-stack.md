@@ -1661,3 +1661,18 @@ Focused compiler regressions prove that source-local functions containing
 `RuntimeExpr::If`, guarded `RuntimeExpr::IfLet`, and guarded
 `RuntimeExpr::Match` bodies materialize as runtime function values instead of
 falling back to adapter calls.
+
+The pipe control-expression RHS follow-up closes the matching gap in the
+fixed-argument pipe/placeholder path. The expression parser now accepts `if`,
+`if let`, and `match` as prefix value expressions in ordinary expression
+positions, including the right-hand side of `|>`. `let` statement parsing now
+lets successfully parsed RHS expressions containing `else` win before the
+let-else fallback, so `maybe |> if let ... else ...` is not misclassified as
+let-else. Sema and runtime-plan pipe traversal now detect and substitute `^`
+inside `Expr::IfLet` scrutinees, guards, and branches, and inside `Expr::Match`
+scrutinees, arm guards, and arm values. Runtime-plan partial-placeholder
+traversal was aligned for the same `if let` / `match` expression shapes.
+Focused regressions prove direct parser coverage plus checked runtime-plan
+lowering where `RuntimeExpr::IfLet` and `RuntimeExpr::Match` keep the pipe LHS
+as their structured scrutinee after substitution. Details are recorded in
+`docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`.

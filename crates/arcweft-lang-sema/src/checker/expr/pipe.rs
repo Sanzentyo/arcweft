@@ -1,4 +1,4 @@
-use super::{CallArg, Expr, Placeholder, TypeCheckError, TypeChecker, TypeKind};
+use super::{CallArg, Expr, MatchExprArm, Placeholder, TypeCheckError, TypeChecker, TypeKind};
 
 impl TypeChecker<'_> {
     pub(super) fn check_placeholder_expr(&mut self, placeholder: Placeholder) -> Option<TypeKind> {
@@ -135,6 +135,8 @@ fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
                 .as_deref()
                 .map(|else_branch| Box::new(substitute_pipe_left(else_branch, lhs))),
         },
+        Expr::IfLet { .. } => substitute_pipe_left_if_let(expr, lhs),
+        Expr::Match { .. } => substitute_pipe_left_match(expr, lhs),
         Expr::Try { expr } => Expr::Try {
             expr: Box::new(substitute_pipe_left(expr, lhs)),
         },
@@ -152,6 +154,50 @@ fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
             body: Box::new(substitute_pipe_left(body, lhs)),
         },
         _ => expr.clone(),
+    }
+}
+
+fn substitute_pipe_left_if_let(expr: &Expr, lhs: &Expr) -> Expr {
+    let Expr::IfLet {
+        pattern,
+        expr,
+        guard,
+        then_branch,
+        else_branch,
+    } = expr
+    else {
+        unreachable!("pipe-left if-let substitution expects an if-let expression")
+    };
+    Expr::IfLet {
+        pattern: pattern.clone(),
+        expr: Box::new(substitute_pipe_left(expr, lhs)),
+        guard: guard
+            .as_deref()
+            .map(|guard| Box::new(substitute_pipe_left(guard, lhs))),
+        then_branch: Box::new(substitute_pipe_left(then_branch, lhs)),
+        else_branch: else_branch
+            .as_deref()
+            .map(|else_branch| Box::new(substitute_pipe_left(else_branch, lhs))),
+    }
+}
+
+fn substitute_pipe_left_match(expr: &Expr, lhs: &Expr) -> Expr {
+    let Expr::Match { scrutinee, arms } = expr else {
+        unreachable!("pipe-left match substitution expects a match expression")
+    };
+    Expr::Match {
+        scrutinee: Box::new(substitute_pipe_left(scrutinee, lhs)),
+        arms: arms
+            .iter()
+            .map(|arm| {
+                MatchExprArm::new(
+                    arm.pattern().clone(),
+                    arm.guard()
+                        .map(|guard| Box::new(substitute_pipe_left(guard, lhs))),
+                    Box::new(substitute_pipe_left(arm.value(), lhs)),
+                )
+            })
+            .collect(),
     }
 }
 
@@ -200,6 +246,25 @@ fn expr_contains_pipe_left(expr: &Expr) -> bool {
             expr_contains_pipe_left(condition)
                 || expr_contains_pipe_left(then_branch)
                 || else_branch.as_deref().is_some_and(expr_contains_pipe_left)
+        }
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            expr_contains_pipe_left(expr)
+                || guard.as_deref().is_some_and(expr_contains_pipe_left)
+                || expr_contains_pipe_left(then_branch)
+                || else_branch.as_deref().is_some_and(expr_contains_pipe_left)
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_contains_pipe_left(scrutinee)
+                || arms.iter().any(|arm| {
+                    arm.guard().is_some_and(expr_contains_pipe_left)
+                        || expr_contains_pipe_left(arm.value())
+                })
         }
         _ => false,
     }

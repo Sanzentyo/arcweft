@@ -31,12 +31,13 @@ Current supporting audits:
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
 - `docs/implementation/function-stack-closure-effect-row-audit-2026-07-09.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
+- `docs/implementation/function-stack-pipe-control-expression-rhs-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
 - `docs/implementation/current-work-status-2026-07-09.md`
 
-Current pushed baseline for this status refresh:
+Current pushed baseline before this pipe RHS slice:
 
-- `d8254a253 Allow pure helper calls in source function values`
+- `3455474e9 Materialize source function control expressions`
 
 ## Implemented And Pushed
 
@@ -110,6 +111,9 @@ Current pushed baseline for this status refresh:
 - Pipe RHS with `^` substitutes the pipe LHS before checking/lowering.
 - Pipe RHS without `^` uses data-last application for the implemented fixed
   argument paths.
+- Pipe RHS `^` substitution now descends into value-position `if`, `if let`,
+  and `match` expressions, and checked runtime-plan lowering keeps structured
+  `RuntimeExpr::IfLet` / `RuntimeExpr::Match` scrutinees after substitution.
 - Named RHS calls in no-`^` pipes preserve callable input-name order for pure
   helpers and accepted source-function candidates instead of lowering by
   source argument order.

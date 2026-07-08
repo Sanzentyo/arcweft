@@ -14,6 +14,7 @@ use crate::cst::{
     ArcweftPunctuation, CstBlockEvent, CstPunctuationScan, SyntaxParseStats,
     split_top_level_arcweft_punctuation_once,
 };
+use crate::expr::parse_expr_with_stats;
 use crate::{ast::pattern::Pattern, types::TypeRef};
 
 impl Parser<'_> {
@@ -284,6 +285,17 @@ fn parse_let_stmt(
                 pattern,
                 ty,
                 expr: value_expr,
+                expr_source: Some(expr.to_owned()),
+                expr_range: expr_start.map(|start| TextRange::new(start, start + expr.len())),
+            };
+        }
+        if split_top_level_keyword_once(expr, "else").1.is_some()
+            && parse_expr_with_stats(expr).is_ok()
+        {
+            return Stmt::Let {
+                pattern,
+                ty,
+                expr: parse_expr_with_inline_line_plan_with_stats(expr, stats),
                 expr_source: Some(expr.to_owned()),
                 expr_range: expr_start.map(|start| TextRange::new(start, start + expr.len())),
             };
