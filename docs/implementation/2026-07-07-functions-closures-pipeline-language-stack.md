@@ -689,6 +689,15 @@ Focused validation passed with
 `cargo check -p arcweft-runtime-plan --all-targets --all-features`,
 `cargo clippy -p arcweft-runtime-plan --all-targets --all-features`, and
 `cargo +nightly -Zscript tools/structure-audit.rs --root .`.
+The AWBC expression-apply suspension-boundary hardening adds direct VM
+regressions for the current synchronous dynamic-apply policy:
+`expression_apply_reports_suspending_function_body_as_runtime_error` verifies
+that a function body reaching a safe point reports a runtime trap instead of a
+resumable expression state, and
+`expression_apply_reports_inner_budget_yield_as_runtime_error` verifies that a
+straight-line function body exhausting the internal expression-apply budget
+also reports an explicit runtime trap. This preserves the current rejection
+boundary until 07.5 defines a resumable dynamic-call form.
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies

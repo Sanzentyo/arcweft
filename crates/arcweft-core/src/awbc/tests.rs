@@ -44,6 +44,145 @@ fn minimal_program() -> AwbcProgram {
     }
 }
 
+fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
+    vec![
+        AwbcFrameLayout {
+            slots: vec![
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 0,
+                },
+            ],
+            max_scope_depth: 0,
+        },
+        AwbcFrameLayout {
+            slots: vec![AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            }],
+            max_scope_depth: 0,
+        },
+    ]
+}
+
+fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
+    vec![
+        AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 1),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        },
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Synthetic,
+            signature: AwbcSignatureId(1),
+            frame_layout: AwbcFrameLayoutId(1),
+            blocks: AwbcTableRange::new(1, synthetic_len),
+            entry_block: AwbcBlockId(1),
+            flags: AwbcFunctionFlags(
+                AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
+            ),
+        },
+    ]
+}
+
+fn expression_apply_program(
+    synthetic_entry_instructions: Vec<AwbcInstruction>,
+    synthetic_blocks: Vec<(AwbcTerminator, AwbcSafePointKind)>,
+    resume_points: Vec<AwbcResumePoint>,
+) -> AwbcProgram {
+    let synthetic_len =
+        u32::try_from(synthetic_blocks.len()).expect("test block count fits in AWBC range");
+    let synthetic_instruction_len = u32::try_from(synthetic_entry_instructions.len())
+        .expect("test instruction count fits in AWBC range");
+    let mut blocks = Vec::with_capacity(synthetic_blocks.len() + 1);
+    blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(0, 2),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(1)),
+        },
+        safe_point: AwbcSafePointKind::FlowEntry,
+        source_map: None,
+    });
+    blocks.extend(synthetic_blocks.into_iter().enumerate().map(
+        |(index, (terminator, safe_point))| AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(
+                2,
+                if index == 0 {
+                    synthetic_instruction_len
+                } else {
+                    0
+                },
+            ),
+            terminator,
+            safe_point,
+            source_map: None,
+        },
+    ));
+
+    AwbcProgram {
+        strings: vec!["main".to_owned()],
+        constants: vec![AwbcConstant::Unit],
+        signatures: vec![
+            AwbcSignature {
+                params: Vec::new(),
+                result: Some(AwbcTypeId(0)),
+                effects: AwbcEffectSetId(0),
+            },
+            AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            },
+        ],
+        frame_layouts: expression_apply_frame_layouts(),
+        functions: expression_apply_functions(synthetic_len),
+        blocks,
+        instructions: {
+            let mut instructions = vec![
+                AwbcInstruction::MakeFunction {
+                    dst: AwbcRegisterId(0),
+                    function: AwbcFunctionId(1),
+                    params: Vec::new(),
+                    capture_names: Vec::new(),
+                    captures: Vec::new(),
+                },
+                AwbcInstruction::ApplyFunction {
+                    dst: AwbcRegisterId(1),
+                    callee: AwbcRegisterId(0),
+                    args: Vec::new(),
+                },
+            ];
+            instructions.extend(synthetic_entry_instructions);
+            instructions
+        },
+        resume_points,
+        entries: vec![AwbcEntry {
+            public_id: AwbcStringId(0),
+            kind: AwbcEntryKind::Game,
+            signature: AwbcSignatureId(0),
+            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        }],
+        ..AwbcProgram::default()
+    }
+}
+
 #[test]
 fn canonical_codec_is_deterministic_and_round_trips() {
     let program = minimal_program();
@@ -364,6 +503,94 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
         output.exit,
         super::vm::VmExit::Returned(Some(RuntimeValue::String("captured".to_owned())))
     );
+}
+
+#[test]
+fn expression_apply_reports_suspending_function_body_as_runtime_error() {
+    let program = expression_apply_program(
+        Vec::new(),
+        vec![
+            (
+                AwbcTerminator::BudgetYield {
+                    resume: AwbcResumePointId(0),
+                },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+            (
+                AwbcTerminator::Return { value: None },
+                AwbcSafePointKind::None,
+            ),
+        ],
+        vec![AwbcResumePoint {
+            function: AwbcFunctionId(1),
+            block: AwbcBlockId(2),
+            frame_layout: AwbcFrameLayoutId(1),
+            kind: AwbcSafePointKind::BudgetYield,
+        }],
+    );
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("verify expression apply suspension program");
+
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
+        .expect("create expression apply fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("suspending expression apply records a trap");
+
+    assert!(matches!(
+        output.exit,
+        super::vm::VmExit::Trapped(trap)
+            if trap.message.as_deref().is_some_and(|message|
+                message.contains("function application cannot suspend from expression lowering")
+                && message.contains("BudgetYield")
+            )
+    ));
+}
+
+#[test]
+fn expression_apply_reports_inner_budget_yield_as_runtime_error() {
+    let synthetic_instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        };
+        4_097
+    ];
+    let program = expression_apply_program(
+        synthetic_instructions,
+        vec![(
+            AwbcTerminator::Return { value: None },
+            AwbcSafePointKind::CallableBoundary,
+        )],
+        Vec::new(),
+    );
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("verify expression apply budget program");
+
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
+        .expect("create expression apply fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("budget-yielding expression apply records a trap");
+
+    assert!(matches!(
+        output.exit,
+        super::vm::VmExit::Trapped(trap)
+            if trap.message.as_deref()
+                == Some("runtime error: function application exhausted expression budget")
+    ));
 }
 
 #[test]

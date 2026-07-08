@@ -63,6 +63,9 @@ includes:
   declaration order;
 - product AWBC save/load rejection of escaped function values through the
   structured unsupported-runtime-value path.
+- AWBC expression-level `ApplyFunction` rejects applied functions that suspend
+  or exhaust the synchronous expression-apply budget as runtime traps, rather
+  than pretending resumable dynamic apply exists.
 - captured function values preserve effect rows through local aliases,
   including aliases captured by returned closures;
 - borrowed captures crossing an `await` boundary preserve closed row evidence
@@ -93,6 +96,7 @@ The detailed evidence remains in:
 - `docs/implementation/function-stack-unsupported-bare-source-function-values-2026-07-09.md`
 - `docs/implementation/function-stack-data-last-unsupported-source-partial-2026-07-09.md`
 - `docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`
+- `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md`
 
 ## Design-Blocked Remaining Work
 
@@ -100,7 +104,7 @@ These keep the active goal open:
 
 | Area | Why it remains open | Request |
 | --- | --- | --- |
-| AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding dynamic apply still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
+| AWBC suspension-aware dynamic apply | Non-suspending `ApplyFunction` works. Suspending or budget-yielding expression apply is explicitly rejected as a runtime trap, but accepting it still needs explicit resume-point semantics. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`; `docs/implementation/function-stack-awbc-expression-apply-suspension-boundary-2026-07-09.md` |
 | Persisted closure/function snapshots | Product AWBC save/load rejects runtime functions. Serializable closure state and versioned restore are not designed. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md` |
 | Broad non-helper callable allocation | The first source-local `fn` family is implemented, including exact calls to already-lowered pure helpers, pure value control expressions, and exact calls to already-accepted source-local candidates. Task/dialogue/stream functions, trait/impl methods, adapter thunks, host/adapter call-bearing bodies, effectful bodies, and suspending bodies need a stable identity/effect/suspension/persistence contract. | `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md` |
 | Final closure effect-row model | Current composition is useful and broadly covered, including captured function aliases through returned closures and borrowed-capture row evidence at an `await` boundary, but source row syntax, open-row inference, row-bearing callable values, and final verifier/LSP/runtime consumers are not finalized. | `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md` |
