@@ -1,5 +1,6 @@
 use super::{BinaryOp, CallArg, Expr, ExprOp, MatchExprArm, is_ident_continue};
 use crate::ast::common::TextRange;
+use crate::ast::flow::{FlowItem, Stmt};
 
 /// Source range for one parsed expression node.
 ///
@@ -285,7 +286,29 @@ fn collect_control_expr_source_ranges<'a>(
         Expr::Match { scrutinee, arms } => {
             collect_match_expr_source_ranges(scrutinee, arms, source, base, ranges);
         }
+        Expr::Thread { block } => {
+            collect_thread_expr_source_ranges(block.body(), source, base, ranges);
+        }
         _ => {}
+    }
+}
+
+fn collect_thread_expr_source_ranges<'a>(
+    body: &'a [FlowItem],
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    let Some((open, close)) = postfix_delimiter_bounds(source, '{', '}') else {
+        return;
+    };
+    let inner = &source[open + '{'.len_utf8()..close];
+    let inner_base = base + open + '{'.len_utf8();
+    for item in body {
+        let FlowItem::Stmt(Stmt::Expr { expr, .. }) = item else {
+            continue;
+        };
+        collect_expr_source_ranges_inner(expr, inner, inner_base, ranges);
     }
 }
 

@@ -1384,6 +1384,74 @@ flow @flow.nested_source_ranges nested_source_ranges {
 }
 
 #[test]
+fn numeric_bracket_sequence_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.numeric_source_ranges numeric_source_ranges {
+    let values = [1, 2, 3]
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("numeric bracket source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "numeric_bracket_seq",
+        "[1, 2, 3]",
+        |ty| matches!(ty, TypeKind::Vec(item) if item.as_ref() == &TypeKind::I32),
+        "numeric bracket sequence root should retain its authored range",
+    );
+}
+
+#[test]
+fn thread_expression_body_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.thread_source_ranges thread_source_ranges {
+    let score_task = thread compute_score { route_score(state) }
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("thread expression source range fixture lowers");
+    validate_typecheck_ready(&hir).expect("thread expression source range fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("state", TypeKind::String)
+        .with_function_signature(
+            "route_score",
+            FunctionSignature::new(
+                TypeKind::I64,
+                [FunctionParam::required("state", TypeKind::String)],
+            ),
+        );
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "thread",
+        "thread compute_score { route_score(state) }",
+        |ty| matches!(ty, TypeKind::ThreadHandle(item) if item.as_ref() == &TypeKind::Unit),
+        "thread expression root should retain its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "call",
+        "route_score(state)",
+        |ty| matches!(ty, TypeKind::I64),
+        "thread expression body call should retain its authored body range",
+    );
+}
+
+#[test]
 fn desugared_function_stack_expression_judgments_keep_authored_source_ranges() {
     let source = r#"
 struct Choice {

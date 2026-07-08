@@ -1309,3 +1309,16 @@ unary `-unwrapped`, and boolean unary `!flag`. Focused validation passed with
 `cargo test -p arcweft-lang-syntax --all-features await_question_keeps_inner_expression_source_range_after_question_mark -- --nocapture`
 and
 `cargo test -p arcweft-lang-sema --all-features effect_and_prefix_expression_judgments_carry_source_ranges -- --nocapture`.
+
+The thread/numeric expression source-range follow-up closes two more expression
+families under the same 07.4.1 request. `Expr::Thread` collection now descends
+into the authored `{ ... }` body using postfix brace bounds, so the spawned
+body expression keeps the original document range instead of only checking as
+an anonymous child-task statement. Compact `NumericBracketSeq` roots are also
+covered as source-backed judgments; the compact summary intentionally has no
+child literal `Expr` nodes to attach per-item judgments to. Focused validation
+passed with
+`cargo test -p arcweft-lang-sema --all-features thread_expression_body_judgments_carry_source_ranges -- --nocapture`,
+`cargo test -p arcweft-lang-sema --all-features numeric_bracket_sequence_judgments_carry_source_ranges -- --nocapture`,
+and
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`.
