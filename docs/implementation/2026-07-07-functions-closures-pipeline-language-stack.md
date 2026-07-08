@@ -1821,3 +1821,12 @@ the callback body composes on the final call; the new
 regression proves that forbidden-effect bounds are enforced at that final
 call. Details are recorded in
 `docs/implementation/function-stack-effect-row-curried-higher-order-timing-2026-07-09.md`.
+
+The returned closure effect-row timing follow-up covers the same forbidden-row
+boundary for higher-order callbacks captured by returned closures. Existing
+regressions already prove that returned closure creation is effect-free and
+that the callback body composes when the returned function is invoked; the new
+`no_effect_rejects_returned_closure_callback_when_called` regression proves
+that forbidden-effect bounds are enforced at that returned function call.
+Details are recorded in
+`docs/implementation/function-stack-effect-row-returned-closure-no-effect-2026-07-09.md`.

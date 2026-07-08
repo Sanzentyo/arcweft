@@ -2024,6 +2024,42 @@ effects { }
 }
 
 #[test]
+fn no_effect_rejects_returned_closure_callback_when_called() {
+    let tree = parse_ok(
+        r#"
+fn make_loader(load: String -> String) -> Unit -> String {
+    return |_unit: Unit| -> String { load("story.arcw") }
+}
+
+flow @flow.no_effect_returned_closure_callback_call no_effect_returned_closure_callback_call
+effects { fs.read }
+ensures no_effect fs.read
+{
+    let loader = make_loader(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+    let body = loader(())
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("no-effect returned closure fixture lowers");
+    validate_typecheck_ready(&hir).expect("no-effect returned closure fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("no_effect must reject returned closure callback effects when called");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.no_effect_returned_closure_callback_call")
+                && error.message().contains("forbids effect `fs.read`")
+        }),
+        "expected no_effect returned closure callback diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn stored_returned_closure_callback_composes_when_returned_closure_is_called() {
     let tree = parse_ok(
         r#"
