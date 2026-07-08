@@ -192,7 +192,7 @@ compatibility surface.
 ## Flow and fragments
 
 ```text
-FlowDecl     := Visibility? 'flow' DeclIdentity GenericParams? ParamGroup* ReturnType? Contract* FlowBody
+FlowDecl     := Visibility? 'flow' DeclIdentity GenericParams? ParamGroup? ReturnType? Contract* FlowBody
 FragmentDecl := Visibility? 'fragment' DeclIdentity (':' Type)? Contract* FlowBody
 DeclIdentity := Ident | EntityRef | EntityRef Ident
 FlowBody     := '{' FlowItem* '}'
@@ -222,6 +222,10 @@ StagingSet      := ('bg' | 'show') CallArgs
 StagingRef      := ('bg' | 'show') '.ref' CallArgs
 StagingClear    := ('bg' | 'show') '.clear' CallArgs | 'hide' CallArgs
 ```
+
+Flows may have no parameter group or one parameter group. Multiple
+`ParamGroup` entries are rejected for `flow`; curried parameter groups belong to
+function-like declarations.
 
 `crate`, `self`, and `super` are canonical module-path roots. `parent` is a
 reserved alias for `super`; formatters should normalize it to `super`.

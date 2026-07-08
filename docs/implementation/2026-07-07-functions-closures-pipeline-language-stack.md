@@ -20,6 +20,9 @@ Source briefs:
 - Curried top-level function/task/dialogue/stream signatures are accepted by
   the parser/HIR/sema surface, and curried `flow` signatures are rejected
   directly.
+- Stable language docs now mirror that contract: `FlowDecl` accepts at most one
+  `ParamGroup`, while multiple `ParamGroup` entries are documented only for
+  function-like declarations.
 - Pipe placeholder `^` is scoped to the RHS of `|>`.
 - Pipe RHS with `^` substitutes the pipe LHS into the RHS expression before
   type checking and strict runtime lowering.
