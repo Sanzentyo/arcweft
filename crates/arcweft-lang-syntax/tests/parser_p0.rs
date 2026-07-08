@@ -713,6 +713,10 @@ fn select_and_index_are_structured_for_later_typechecking() {
         parse_type_ref("!").expect("never type parses"),
         TypeRef::Never
     ));
+    assert!(matches!(
+        parse_type_ref("Never").expect("canonical never type parses"),
+        TypeRef::Never
+    ));
 }
 
 #[test]

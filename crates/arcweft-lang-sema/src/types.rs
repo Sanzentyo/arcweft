@@ -523,6 +523,7 @@ impl TypeKind {
             "DebugStatePath" => Self::DebugStatePath,
             "ObservationFieldPath" => Self::ObservationFieldPath,
             "Unit" => Self::Unit,
+            "Never" => Self::Never,
             _ => return None,
         })
     }

@@ -1026,7 +1026,17 @@ fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::primitive_name("usize"), Some(TypeKind::USize));
     assert_eq!(TypeKind::primitive_name("f32"), Some(TypeKind::F32));
     assert_eq!(TypeKind::primitive_name("Unit"), Some(TypeKind::Unit));
+    assert_eq!(TypeKind::primitive_name("Never"), Some(TypeKind::Never));
     assert_eq!(TypeKind::Unit.source_label(), "Unit");
+    assert_eq!(TypeKind::Never.source_label(), "Never");
+    assert_eq!(
+        crate::checker::helpers::type_ref_kind(&parse_type_ref("!").expect("! parses")),
+        TypeKind::Never
+    );
+    assert_eq!(
+        crate::checker::helpers::type_ref_kind(&parse_type_ref("Never").expect("Never parses")),
+        TypeKind::Never
+    );
     assert_eq!(
         TypeKind::Function {
             params: Vec::new(),
@@ -1036,6 +1046,7 @@ fn numeric_primitive_types_keep_explicit_widths() {
         "() -> Unit"
     );
     assert_eq!(TypeKind::primitive_name("()"), None);
+    assert_eq!(TypeKind::primitive_name("!"), None);
     assert_eq!(TypeKind::primitive_name("Bool"), None);
     assert_eq!(TypeKind::primitive_name("Char"), None);
     assert_eq!(TypeKind::primitive_name("int"), None);

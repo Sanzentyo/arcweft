@@ -31,11 +31,13 @@ Source briefs:
   `2i64 |> add(lhs = 1i64)` typecheck as data-last calls rather than as calls
   on the result of `add(...)`.
 - Canonical primitive labels are enforced across sema/runtime-facing surfaces:
-  `bool`, `char`, `Unit`, and explicit-width numeric primitives use the same
-  source labels in diagnostics and LSP-facing type displays; legacy
+  `bool`, `char`, `Unit`, `Never`, and explicit-width numeric primitives use
+  the same source labels in diagnostics and LSP-facing type displays; legacy
   `Bool`/`Char` aliases are rejected. Non-canonical primitive spellings such as
   `string` now produce diagnostics pointing to `String` instead of silently
-  becoming user-defined nominal types.
+  becoming user-defined nominal types. The advanced `!` spelling parses to the
+  same bottom type, but registry/tooling displays keep `Never` as the canonical
+  label.
 - `_` partial placeholder now works when an expected one-parameter function
   type is available:
   - `let high: i64 -> bool = _ > 80i64`
@@ -531,6 +533,8 @@ cargo test -p arcweft-compiler --all-features runtime_plan_lowers_typed_data_las
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_local_function_data_last_pipe_to_apply
 cargo test -p arcweft-compiler --all-features runtime_plan_preserves_curried_call_group_application_samples
 cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_closure_return_statement_to_function_body
+cargo test -p arcweft-lang-syntax --all-features select_and_index_are_structured_for_later_typechecking
+cargo test -p arcweft-lang-sema --all-features numeric_primitive_types_keep_explicit_widths
 cargo run -p arcweft-cli --all-features -- check samples/function-curried-call-groups/src/main.arcw
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-driver --all-features --test awbc_product_session
@@ -671,6 +675,11 @@ closure/function boundary, and multiline return-typed closure lets are consumed
 as one statement. Runtime-plan coverage confirms a closure block return
 statement lowers into the generated function body while calls to that local
 closure lower through `RuntimeExpr::Apply`.
+The Unit/Never canonical type cut has passing parser coverage that both `!`
+and `Never` parse to `TypeRef::Never`, and sema coverage that
+`TypeKind::primitive_name("Never")` returns `TypeKind::Never` while source
+labels continue to display the canonical `Never` spelling. `!` remains syntax
+only and is not registered as a primitive name.
 
 The closure capture and pattern-parameter cuts have passing sema coverage for
 borrowed closure captures crossing `await`, `yield`, thread, and defer
