@@ -8,7 +8,7 @@ historical note.
 ## Repository Baseline
 
 - Baseline before the latest function-stack status refresh:
-  `d361f2978 Materialize curried source function values`.
+  `1c8855731 Materialize returned source closures`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
@@ -108,10 +108,11 @@ The detailed evidence trail remains:
   `signature_partial_without_helper`.
 - First non-helper source function value cut: source-local `fn` declarations
   with simple identifier parameters and expression bodies that contain no
-  call/effect/suspension-capable syntax now materialize as
+  host/effect/suspension-capable syntax now materialize as
   `RuntimeExpr::Function` values, including named missing-input wrapper
   partials, multiple curried `ParamGroup`s lowered to nested functions, and
-  returned simple closure literals lowered to nested runtime functions.
+  returned simple closure literals lowered to nested runtime functions. Direct
+  calls to function-typed parameters lower as local `RuntimeExpr::Apply`.
 
 ## Remaining Function-Stack Work
 

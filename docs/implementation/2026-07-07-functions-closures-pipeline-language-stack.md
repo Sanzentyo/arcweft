@@ -1066,10 +1066,14 @@ Named missing-input partial calls for that family now synthesize wrapper
 functions that preserve declaration argument order. Returned simple closure
 literals in that family now recursively lower to nested runtime functions when
 the closure body stays inside the same no-call/no-suspension accepted subset.
+Direct calls to function-typed parameters in that family now lower as local
+`RuntimeExpr::Apply`, preserving higher-order source functions without
+pretending the callback invocation is a host or adapter call.
 Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_curried_source_function_value -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_returned_closure -- --nocapture` and
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_callback_param_call -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture`.
 
 The runtime-plan closure capture metadata cut adds

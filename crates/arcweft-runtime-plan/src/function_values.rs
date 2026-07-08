@@ -1,12 +1,17 @@
 //! Runtime function-value extraction for source-local top-level `fn` bodies.
 
-use crate::expr::lower_runtime_expr_strict;
+use crate::expr::lower_runtime_expr_strict_with_function_locals;
 use arcweft_core::value::RuntimeExpr;
 use arcweft_lang_hir::{
     model::{HirFunction, HirModule},
     syntax::{
-        ast::{flow::Stmt, items::FunctionKind, pattern::Pattern},
-        expr::{Expr, MatchExprArm},
+        ast::{
+            flow::Stmt,
+            items::FunctionKind,
+            pattern::{Pattern, VariantPatternPayload},
+        },
+        expr::{CallArg, Expr, MatchExprArm},
+        types::TypeRef,
     },
 };
 use std::collections::BTreeMap;
@@ -49,6 +54,21 @@ pub(crate) fn runtime_function_value_map(
         .collect()
 }
 
+#[derive(Clone, Debug, Default)]
+struct RuntimeFunctionValueContext {
+    function_locals: BTreeMap<String, usize>,
+}
+
+impl RuntimeFunctionValueContext {
+    fn function_local_arity(&self, name: &str) -> Option<usize> {
+        self.function_locals.get(name).copied()
+    }
+
+    fn shadows_function_local(&self, name: &str) -> bool {
+        self.function_locals.contains_key(name)
+    }
+}
+
 fn lower_runtime_function_value_candidate(
     function: &HirFunction,
 ) -> Option<RuntimeFunctionValueCandidate> {
@@ -56,16 +76,17 @@ fn lower_runtime_function_value_candidate(
         return None;
     }
     let param_groups = runtime_function_value_param_groups(function)?;
+    let context = runtime_function_value_context(function);
     let input_names = param_groups.first()?.clone();
     let (statements, value) = runtime_function_value_body_parts(function)?;
     if !statements
         .iter()
-        .all(runtime_function_value_statement_supported)
-        || !runtime_function_value_expr_supported(value)
+        .all(|stmt| runtime_function_value_statement_supported(stmt, &context))
+        || !runtime_function_value_expr_supported(value, &context)
     {
         return None;
     }
-    let body = lower_runtime_function_value_body(statements, value)?;
+    let body = lower_runtime_function_value_body(statements, value, &context)?;
     let value = param_groups
         .into_iter()
         .rev()
@@ -104,6 +125,28 @@ fn runtime_function_value_param_groups(function: &HirFunction) -> Option<Vec<Vec
     (!groups.is_empty()).then_some(groups)
 }
 
+fn runtime_function_value_context(function: &HirFunction) -> RuntimeFunctionValueContext {
+    let function_locals = function
+        .signature()
+        .param_groups()
+        .iter()
+        .flat_map(|group| group.params().iter())
+        .filter_map(|param| {
+            let arity = function_type_arity(param.ty())?;
+            let name = binding_pattern_name(param.pattern())?;
+            Some((name, arity))
+        })
+        .collect();
+    RuntimeFunctionValueContext { function_locals }
+}
+
+fn function_type_arity(ty: &TypeRef) -> Option<usize> {
+    match ty {
+        TypeRef::Function { params, .. } => Some(params.len()),
+        _ => None,
+    }
+}
+
 fn runtime_function_value_body_parts(function: &HirFunction) -> Option<(&[Stmt], &Expr)> {
     if let Some(value) = function.value() {
         return Some((function.statements(), value.expr()));
@@ -115,14 +158,20 @@ fn runtime_function_value_body_parts(function: &HirFunction) -> Option<(&[Stmt],
     }
 }
 
-fn lower_runtime_function_value_body(statements: &[Stmt], value: &Expr) -> Option<RuntimeExpr> {
-    let body = lower_runtime_expr_strict(value).ok()?;
+fn lower_runtime_function_value_body(
+    statements: &[Stmt],
+    value: &Expr,
+    context: &RuntimeFunctionValueContext,
+) -> Option<RuntimeExpr> {
+    let body =
+        lower_runtime_expr_strict_with_function_locals(value, &context.function_locals).ok()?;
     statements.iter().rev().try_fold(body, |body, stmt| {
         let Stmt::Let { pattern, expr, .. } = stmt else {
             return None;
         };
         let name = binding_pattern_name(pattern)?;
-        let expr = lower_runtime_expr_strict(expr).ok()?;
+        let expr =
+            lower_runtime_expr_strict_with_function_locals(expr, &context.function_locals).ok()?;
         Some(RuntimeExpr::Let {
             name,
             expr: Box::new(expr),
@@ -140,82 +189,142 @@ fn binding_pattern_name(pattern: &Pattern) -> Option<String> {
     }
 }
 
-fn runtime_function_value_statement_supported(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::Let { pattern, expr, .. } => {
-            binding_pattern_name(pattern).is_some() && runtime_function_value_expr_supported(expr)
+fn pattern_binds_function_local(pattern: &Pattern, context: &RuntimeFunctionValueContext) -> bool {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            context.shadows_function_local(name)
         }
+        Pattern::Whole { name, pattern } => {
+            context.shadows_function_local(name) || pattern_binds_function_local(pattern, context)
+        }
+        Pattern::Tuple(items) | Pattern::BracketSeq { items, .. } => items
+            .iter()
+            .any(|pattern| pattern_binds_function_local(pattern, context)),
+        Pattern::Record { fields, .. } => fields
+            .iter()
+            .any(|field| pattern_binds_function_local(field.pattern(), context)),
+        Pattern::Variant { payload, .. } => payload
+            .as_ref()
+            .is_some_and(|payload| variant_payload_binds_function_local(payload, context)),
+        Pattern::Literal(_) | Pattern::Entity(_) | Pattern::Discard | Pattern::Raw(_) => false,
+    }
+}
+
+fn variant_payload_binds_function_local(
+    payload: &VariantPatternPayload,
+    context: &RuntimeFunctionValueContext,
+) -> bool {
+    match payload {
+        VariantPatternPayload::Tuple(items) => items
+            .iter()
+            .any(|pattern| pattern_binds_function_local(pattern, context)),
+        VariantPatternPayload::Record { fields, .. } => fields
+            .iter()
+            .any(|field| pattern_binds_function_local(field.pattern(), context)),
+    }
+}
+
+fn runtime_function_value_statement_supported(
+    stmt: &Stmt,
+    context: &RuntimeFunctionValueContext,
+) -> bool {
+    match stmt {
+        Stmt::Let { pattern, expr, .. } => binding_pattern_name(pattern).is_some_and(|name| {
+            !context.shadows_function_local(&name)
+                && runtime_function_value_expr_supported(expr, context)
+        }),
         _ => false,
     }
 }
 
-fn runtime_function_value_expr_supported(expr: &Expr) -> bool {
+fn runtime_function_value_expr_supported(
+    expr: &Expr,
+    context: &RuntimeFunctionValueContext,
+) -> bool {
     match expr {
         Expr::Literal(_)
         | Expr::EntityRef(_)
         | Expr::Path(_)
         | Expr::ShortVariant(_)
         | Expr::NumericBracketSeq(_) => true,
-        Expr::Tuple(items) | Expr::BracketSeq(items) => {
-            items.iter().all(runtime_function_value_expr_supported)
-        }
+        Expr::Tuple(items) | Expr::BracketSeq(items) => items
+            .iter()
+            .all(|item| runtime_function_value_expr_supported(item, context)),
         Expr::ArrayRepeat { value, len }
         | Expr::Index {
             target: value,
             index: len,
         } => {
-            runtime_function_value_expr_supported(value)
-                && runtime_function_value_expr_supported(len)
+            runtime_function_value_expr_supported(value, context)
+                && runtime_function_value_expr_supported(len, context)
         }
-        Expr::Select(select) => runtime_function_value_expr_supported(select.target()),
+        Expr::Select(select) => runtime_function_value_expr_supported(select.target(), context),
         Expr::Range { start, end, .. } => start
             .as_deref()
             .into_iter()
             .chain(end.as_deref())
-            .all(runtime_function_value_expr_supported),
+            .all(|expr| runtime_function_value_expr_supported(expr, context)),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
             .iter()
-            .all(|(_, value)| runtime_function_value_expr_supported(value)),
+            .all(|(_, value)| runtime_function_value_expr_supported(value, context)),
         Expr::Binary { lhs, rhs, .. } => {
-            runtime_function_value_expr_supported(lhs) && runtime_function_value_expr_supported(rhs)
+            runtime_function_value_expr_supported(lhs, context)
+                && runtime_function_value_expr_supported(rhs, context)
         }
-        Expr::Unary { expr, .. } => runtime_function_value_expr_supported(expr),
+        Expr::Unary { expr, .. } => runtime_function_value_expr_supported(expr, context),
         Expr::Block { statements, value }
         | Expr::ComputationBlock {
             statements, value, ..
         }
         | Expr::NamedBlock {
             statements, value, ..
-        } => runtime_function_value_block_supported(statements, value.as_deref()),
+        } => runtime_function_value_block_supported(statements, value.as_deref(), context),
         Expr::MemoBlock {
             options,
             statements,
             value,
-        } => runtime_function_value_memo_block_supported(options, statements, value.as_deref()),
+        } => runtime_function_value_memo_block_supported(
+            options,
+            statements,
+            value.as_deref(),
+            context,
+        ),
         Expr::If {
             condition,
             then_branch,
             else_branch,
-        } => runtime_function_value_if_supported(condition, then_branch, else_branch.as_deref()),
+        } => runtime_function_value_if_supported(
+            condition,
+            then_branch,
+            else_branch.as_deref(),
+            context,
+        ),
         Expr::IfLet {
+            pattern,
             expr,
             guard,
             then_branch,
             else_branch,
             ..
         } => runtime_function_value_if_let_supported(
+            pattern,
             expr,
             guard.as_deref(),
             then_branch,
             else_branch.as_deref(),
+            context,
         ),
         Expr::Match { scrutinee, arms } => {
-            runtime_function_value_expr_supported(scrutinee)
-                && arms.iter().all(runtime_function_value_match_arm_supported)
+            runtime_function_value_expr_supported(scrutinee, context)
+                && arms
+                    .iter()
+                    .all(|arm| runtime_function_value_match_arm_supported(arm, context))
+        }
+        Expr::Call { callee, args } => {
+            runtime_function_value_local_function_call_supported(callee, args, context)
         }
         Expr::LifetimePath { .. }
         | Expr::Placeholder(_)
-        | Expr::Call { .. }
         | Expr::DialogueCall { .. }
         | Expr::Pipe { .. }
         | Expr::Try { .. }
@@ -224,53 +333,90 @@ fn runtime_function_value_expr_supported(expr: &Expr) -> bool {
         | Expr::Raw(_) => false,
         Expr::Closure { params, body, .. } => {
             params.iter().all(|param| param.simple_ident().is_some())
-                && runtime_function_value_expr_supported(body)
+                && params.iter().all(|param| {
+                    param
+                        .simple_ident()
+                        .is_some_and(|name| !context.shadows_function_local(name))
+                })
+                && runtime_function_value_expr_supported(body, context)
         }
     }
 }
 
-fn runtime_function_value_block_supported(statements: &[Stmt], value: Option<&Expr>) -> bool {
+fn runtime_function_value_local_function_call_supported(
+    callee: &Expr,
+    args: &[CallArg],
+    context: &RuntimeFunctionValueContext,
+) -> bool {
+    let Expr::Path(path) = callee else {
+        return false;
+    };
+    context
+        .function_local_arity(path.as_label())
+        .is_some_and(|arity| arity >= args.len())
+        && args.iter().all(|arg| {
+            !arg.is_spread()
+                && arg.name().is_none()
+                && runtime_function_value_expr_supported(arg.value(), context)
+        })
+}
+
+fn runtime_function_value_block_supported(
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    context: &RuntimeFunctionValueContext,
+) -> bool {
     statements
         .iter()
-        .all(runtime_function_value_statement_supported)
-        && value.is_some_and(runtime_function_value_expr_supported)
+        .all(|stmt| runtime_function_value_statement_supported(stmt, context))
+        && value.is_some_and(|value| runtime_function_value_expr_supported(value, context))
 }
 
 fn runtime_function_value_memo_block_supported(
     options: &[(String, Expr)],
     statements: &[Stmt],
     value: Option<&Expr>,
+    context: &RuntimeFunctionValueContext,
 ) -> bool {
     options
         .iter()
-        .all(|(_, value)| runtime_function_value_expr_supported(value))
-        && runtime_function_value_block_supported(statements, value)
+        .all(|(_, value)| runtime_function_value_expr_supported(value, context))
+        && runtime_function_value_block_supported(statements, value, context)
 }
 
 fn runtime_function_value_if_supported(
     condition: &Expr,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
+    context: &RuntimeFunctionValueContext,
 ) -> bool {
-    runtime_function_value_expr_supported(condition)
-        && runtime_function_value_expr_supported(then_branch)
-        && else_branch.is_some_and(runtime_function_value_expr_supported)
+    runtime_function_value_expr_supported(condition, context)
+        && runtime_function_value_expr_supported(then_branch, context)
+        && else_branch.is_some_and(|expr| runtime_function_value_expr_supported(expr, context))
 }
 
 fn runtime_function_value_if_let_supported(
+    pattern: &Pattern,
     expr: &Expr,
     guard: Option<&Expr>,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
+    context: &RuntimeFunctionValueContext,
 ) -> bool {
-    runtime_function_value_expr_supported(expr)
-        && guard.is_none_or(runtime_function_value_expr_supported)
-        && runtime_function_value_expr_supported(then_branch)
-        && else_branch.is_some_and(runtime_function_value_expr_supported)
+    !pattern_binds_function_local(pattern, context)
+        && runtime_function_value_expr_supported(expr, context)
+        && guard.is_none_or(|guard| runtime_function_value_expr_supported(guard, context))
+        && runtime_function_value_expr_supported(then_branch, context)
+        && else_branch.is_some_and(|expr| runtime_function_value_expr_supported(expr, context))
 }
 
-fn runtime_function_value_match_arm_supported(arm: &MatchExprArm) -> bool {
-    arm.guard()
-        .is_none_or(runtime_function_value_expr_supported)
-        && runtime_function_value_expr_supported(arm.value())
+fn runtime_function_value_match_arm_supported(
+    arm: &MatchExprArm,
+    context: &RuntimeFunctionValueContext,
+) -> bool {
+    !pattern_binds_function_local(arm.pattern(), context)
+        && arm
+            .guard()
+            .is_none_or(|guard| runtime_function_value_expr_supported(guard, context))
+        && runtime_function_value_expr_supported(arm.value(), context)
 }

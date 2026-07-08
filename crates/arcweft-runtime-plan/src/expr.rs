@@ -315,6 +315,21 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
     lower_runtime_expr_strict_with_helpers(expr, None)
 }
 
+pub(crate) fn lower_runtime_expr_strict_with_function_locals(
+    expr: &Expr,
+    function_locals: &BTreeMap<String, usize>,
+) -> Result<RuntimeExpr, String> {
+    let helper_ids = BTreeMap::new();
+    let helpers = [];
+    lower_runtime_expr_strict_with_helpers(
+        expr,
+        Some(
+            RuntimePureHelperLookup::new(&helper_ids, &helpers)
+                .with_function_locals(function_locals),
+        ),
+    )
+}
+
 pub(crate) fn lower_runtime_expr_strict_with_pure(
     expr: &Expr,
     helpers: RuntimePureHelperLookup<'_, '_>,

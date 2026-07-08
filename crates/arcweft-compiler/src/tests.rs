@@ -1180,6 +1180,78 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_materializes_source_function_callback_param_call() {
+    let parsed = parse_source_text(
+        r#"
+fn use_loader(path: String, load: String -> String) -> String {
+    return load(path)
+}
+
+flow @flow.main main {
+    let load = |path: String| path
+    let body: String = use_loader("story.arcw", load)
+    return body
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes source function callback call");
+
+    let [
+        FlowOp::Let { expr: load, .. },
+        FlowOp::Let { expr: body, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected load and body lets");
+    };
+    assert!(matches!(
+        load,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["path"]
+                && matches!(body.as_ref(), RuntimeExpr::Local(name) if name == "path")
+    ));
+    assert!(
+        matches!(
+            body,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(
+                    callee.as_ref(),
+                    RuntimeExpr::Function { params, body }
+                        if params.as_slice() == ["path", "load"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Apply { callee, args }
+                                    if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "load")
+                                        && matches!(
+                                            args.as_slice(),
+                                            [RuntimeExpr::Local(name)] if name == "path"
+                                        )
+                            )
+                ) && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value), RuntimeExpr::Local(name)]
+                        if value == &RuntimeValue::String("story.arcw".to_owned())
+                            && name == "load"
+                )
+        ),
+        "expected body to apply source function whose body applies callback param, got {body:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_rejects_source_function_partial_when_body_calls() {
     let parsed = parse_source_text(
         r#"
