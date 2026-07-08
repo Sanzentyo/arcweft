@@ -1417,6 +1417,52 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_closure_return_statement_to_function_body() {
+    let tree = parse_ok(
+        r"
+flow @flow.main main {
+    let f = || -> i64 {
+        let value = 7i64
+        return value
+    }
+    let result = f()
+    return result
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure return fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("closure return runtime plan lowers");
+
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
+        panic!("expected closure binding");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Function { params, body }
+            if params.is_empty()
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Let { name, body, .. }
+                        if name == "value"
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Local(returned) if returned == "value"
+                            )
+                )
+    ));
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[1] else {
+        panic!("expected closure call binding");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
+                && args.is_empty()
+    ));
+}
+
+#[test]
 fn runtime_plan_lowers_data_format_path_to_enum_variant() {
     let tree = parse_ok(
         r#"

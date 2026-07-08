@@ -530,6 +530,7 @@ cargo test -p arcweft-compiler --all-features runtime_plan_lowers_inferred_parti
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_typed_data_last_method_fallback
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_local_function_data_last_pipe_to_apply
 cargo test -p arcweft-compiler --all-features runtime_plan_preserves_curried_call_group_application_samples
+cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_closure_return_statement_to_function_body
 cargo run -p arcweft-cli --all-features -- check samples/function-curried-call-groups/src/main.arcw
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-driver --all-features --test awbc_product_session
@@ -665,8 +666,11 @@ The closure return type cut has passing parser coverage for `|params| -> Type
 { ... }`, `|| -> Type { ... }`, call-argument closures, and the required block
 body diagnostic. Sema coverage confirms declared closure return types typecheck
 against body values, mismatch diagnostics are produced, curried closure return
-types preserve remaining function values, and multiline return-typed closure
-lets are consumed as one statement.
+types preserve remaining function values, `return expr` binds to the nearest
+closure/function boundary, and multiline return-typed closure lets are consumed
+as one statement. Runtime-plan coverage confirms a closure block return
+statement lowers into the generated function body while calls to that local
+closure lower through `RuntimeExpr::Apply`.
 
 The closure capture and pattern-parameter cuts have passing sema coverage for
 borrowed closure captures crossing `await`, `yield`, thread, and defer

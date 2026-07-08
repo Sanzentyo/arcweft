@@ -99,8 +99,9 @@ shims or preserving removed syntax.
      line-task, and defer boundaries.
    - Specify how closure effects compose into existing effect rows.
    - Specify and implement `return expr` binding to the nearest closure or
-     function-like boundary. Return type annotation and final-expression body
-     typing are implemented; closure-local return control flow is still open.
+     function-like boundary. Return type annotation, final-expression body
+     typing, and closure-local return control flow are implemented, including
+     runtime-plan evidence for closure block return lowering.
 
 5. Define LSP/tooling evidence.
    - Inlay hints for inferred closure/function types.
