@@ -78,15 +78,15 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         Stmt::Let { expr, .. }
         | Stmt::LetElse { expr, .. }
         | Stmt::Return { expr, .. }
-        | Stmt::Out { expr, .. }
         | Stmt::Expr { expr, .. }
-        | Stmt::Break {
-            expr: Some(expr), ..
-        }
         | Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
             expr_contains_unchecked_promotion(expr)
         }
-        Stmt::Defer { expr, .. } => expr_contains_unchecked_promotion(expr.expr()),
+        Stmt::Out { expr, .. }
+        | Stmt::Break {
+            expr: Some(expr), ..
+        }
+        | Stmt::Defer { expr, .. } => expr_contains_unchecked_promotion(expr.expr()),
         Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
             expr_contains_unchecked_promotion(expr.expr())
         }
@@ -725,7 +725,7 @@ fn collect_flow_item_thread_result_type_labels(item: &FlowItem, labels: &mut BTr
 fn collect_thread_result_type_labels(stmt: &Stmt, labels: &mut BTreeSet<String>) {
     match stmt {
         Stmt::Out { expr, .. } => {
-            labels.insert(expr_type_label(expr));
+            labels.insert(expr_type_label(expr.expr()));
         }
         Stmt::If {
             body, else_body, ..

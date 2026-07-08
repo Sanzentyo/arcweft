@@ -1356,10 +1356,10 @@ fn collect_stmt_action_invokes(
     invokes: &mut Vec<ViewActionInvokeAction>,
 ) {
     match statement {
-        Stmt::Let { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::Expr { expr, .. }
-        | Stmt::Out { expr, .. } => collect_expr_action_invokes(expr, range, invokes),
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
+            collect_expr_action_invokes(expr, range, invokes);
+        }
+        Stmt::Out { expr, .. } => collect_expr_action_invokes(expr.expr(), range, invokes),
         Stmt::LetActionReceive { action, .. } | Stmt::Defer { expr: action, .. } => {
             collect_expr_action_invokes(action.expr(), range, invokes);
         }
@@ -1437,7 +1437,7 @@ fn collect_stmt_action_invokes(
         }
         Stmt::Break { expr, .. } => {
             if let Some(expr) = expr {
-                collect_expr_action_invokes(expr, range, invokes);
+                collect_expr_action_invokes(expr.expr(), range, invokes);
             }
         }
         Stmt::LetChoice { .. }

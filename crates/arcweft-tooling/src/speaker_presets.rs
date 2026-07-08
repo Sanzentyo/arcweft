@@ -365,10 +365,11 @@ fn collect_speaker_presets_from_stmt(
                 collect_speaker_presets_from_await_branch(branch, character_aliases, presets);
             }
         }
-        Stmt::Return { expr, .. } | Stmt::Out { expr, .. } | Stmt::Expr { expr, .. } => {
+        Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             collect_speaker_presets_from_expr(expr, character_aliases, presets);
         }
-        Stmt::Defer { expr, .. }
+        Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
         | Stmt::Goto(expr)
         | Stmt::Yield(expr)
         | Stmt::Close(expr)
@@ -455,7 +456,7 @@ fn collect_speaker_presets_from_control_stmt(
         Stmt::Break {
             expr: Some(expr), ..
         } => {
-            collect_speaker_presets_from_expr(expr, character_aliases, presets);
+            collect_speaker_presets_from_expr(expr.expr(), character_aliases, presets);
         }
         _ => {}
     }

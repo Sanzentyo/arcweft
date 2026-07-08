@@ -113,12 +113,15 @@ fn collect_mounted_view_ids(items: &[HirFlowItem], ids: &mut BTreeSet<String>) {
 
 fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
     match stmt {
-        Stmt::Let { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::Expr { expr, .. }
-        | Stmt::Out { expr, .. } => collect_mounted_view_ids_from_expr(expr, ids),
-        Stmt::Defer { expr, .. } => collect_mounted_view_ids_from_expr(expr.expr(), ids),
-        Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+        Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
+            collect_mounted_view_ids_from_expr(expr, ids);
+        }
+        Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
+        | Stmt::Goto(expr)
+        | Stmt::Yield(expr)
+        | Stmt::Close(expr)
+        | Stmt::Select(expr) => {
             collect_mounted_view_ids_from_expr(expr.expr(), ids);
         }
         Stmt::Assign { target, expr } => {

@@ -660,14 +660,14 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_break_stmt(&mut self, label: Option<&str>, expr: Option<&Expr>) {
+    fn check_break_stmt(&mut self, label: Option<&str>, expr: Option<&AuthoredExpr>) {
         let Some(index) = self.resolve_loop_label(label) else {
             self.errors.push(TypeCheckError::new(label.map_or_else(
                 || "break is only allowed inside loop, while, or for".to_owned(),
                 |label| format!("break label `'{label}` does not name an active loop"),
             )));
             if let Some(expr) = expr {
-                self.check_expr(expr);
+                self.check_authored_expr(expr);
             }
             return;
         };
@@ -677,10 +677,10 @@ impl TypeChecker<'_> {
                 self.errors.push(TypeCheckError::new(
                     "break expr is allowed only in loop blocks".to_owned(),
                 ));
-                self.check_expr(expr);
+                self.check_authored_expr(expr);
             }
             Some(expr) => {
-                if let Some(ty) = self.check_expr(expr) {
+                if let Some(ty) = self.check_authored_expr(expr) {
                     self.loop_stack[index].break_types.push(ty);
                 }
             }
@@ -704,7 +704,11 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn check_out_stmt(&mut self, label: Option<&str>, expr: &Expr) -> Option<TypeKind> {
+    pub(super) fn check_out_stmt(
+        &mut self,
+        label: Option<&str>,
+        expr: &AuthoredExpr,
+    ) -> Option<TypeKind> {
         if let Some(label) = label
             && !self
                 .line_label_stack
@@ -716,7 +720,7 @@ impl TypeChecker<'_> {
                 "out label `'{label}` does not name an active line-plan scope"
             )));
         }
-        self.check_expr(expr)
+        self.check_authored_expr(expr)
     }
 
     fn resolve_loop_label(&self, label: Option<&str>) -> Option<usize> {

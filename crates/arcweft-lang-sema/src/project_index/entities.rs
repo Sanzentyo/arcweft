@@ -147,10 +147,10 @@ fn index_stmt_agent_actions(
     match stmt {
         Stmt::Let { expr, .. }
         | Stmt::Return { expr, .. }
-        | Stmt::Out { expr, .. }
         | Stmt::LifetimeSet { expr, .. }
         | Stmt::Expr { expr, .. } => index = index_expr_agent_actions(expr, index, source_name)?,
-        Stmt::Defer { expr, .. }
+        Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
         | Stmt::Goto(expr)
         | Stmt::Yield(expr)
         | Stmt::Close(expr)

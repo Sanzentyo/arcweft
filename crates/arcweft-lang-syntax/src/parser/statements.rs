@@ -701,16 +701,30 @@ fn parse_control_transfer_stmt(trimmed: &str, base: Option<usize>) -> Option<Stm
     }
     if let Some(rest) = trimmed.strip_prefix("out ") {
         let (label, expr) = split_optional_label_ref(rest.trim());
+        let source = expr.trim();
+        let start = statement_value_start(trimmed, source, base);
         return Some(Stmt::Out {
             label,
-            expr: parse_expr_lossy(expr.trim()),
+            expr: AuthoredExpr::with_source(
+                parse_stmt_value_expr(source),
+                source.to_owned(),
+                start.map(|start| TextRange::new(start, start + source.len())),
+            ),
         });
     }
     if let Some(rest) = trimmed.strip_prefix("break ") {
         let (label, expr) = split_optional_label_ref(rest.trim());
+        let source = expr.trim();
+        let start = statement_value_start(trimmed, source, base);
         return Some(Stmt::Break {
             label,
-            expr: (!expr.trim().is_empty()).then(|| parse_expr_lossy(expr.trim())),
+            expr: (!source.is_empty()).then(|| {
+                AuthoredExpr::with_source(
+                    parse_stmt_value_expr(source),
+                    source.to_owned(),
+                    start.map(|start| TextRange::new(start, start + source.len())),
+                )
+            }),
         });
     }
     if let Some(source) = trimmed.strip_prefix("return ").map(str::trim) {

@@ -476,7 +476,7 @@ fn parse_choice_select_action(body: &str) -> ChoiceAction {
             crate::expr::Expr::EntityRef(target) => ChoiceAction::Goto(target.clone()),
             _ => ChoiceAction::SelectBlock(statements),
         },
-        [Stmt::Out { expr, .. }] => ChoiceAction::Out(expr.clone()),
+        [Stmt::Out { expr, .. }] => ChoiceAction::Out(expr.expr().clone()),
         [] => ChoiceAction::None,
         _ => ChoiceAction::SelectBlock(statements),
     }

@@ -415,11 +415,13 @@ fn stmt_contains_partial_placeholder(stmt: &arcweft_lang_syntax::ast::flow::Stmt
         Stmt::Let { expr, .. }
         | Stmt::LetElse { expr, .. }
         | Stmt::Expr { expr, .. }
-        | Stmt::Return { expr, .. }
-        | Stmt::Out { expr, .. } => expr_contains_partial_placeholder(expr),
-        Stmt::LetActionReceive { action, .. } | Stmt::Defer { expr: action, .. } => {
-            expr_contains_partial_placeholder(action.expr())
+        | Stmt::Return { expr, .. } => expr_contains_partial_placeholder(expr),
+        Stmt::Out { expr, .. }
+        | Stmt::Break {
+            expr: Some(expr), ..
         }
+        | Stmt::Defer { expr, .. } => expr_contains_partial_placeholder(expr.expr()),
+        Stmt::LetActionReceive { action, .. } => expr_contains_partial_placeholder(action.expr()),
         Stmt::Assign { target, expr } => {
             expr_contains_partial_placeholder(target.expr())
                 || expr_contains_partial_placeholder(expr.expr())

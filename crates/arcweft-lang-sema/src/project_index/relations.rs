@@ -209,12 +209,12 @@ fn index_stmt_symbol_dependency_relations(
     match stmt {
         Stmt::Let { expr, .. }
         | Stmt::Return { expr, .. }
-        | Stmt::Out { expr, .. }
         | Stmt::LifetimeSet { expr, .. }
         | Stmt::Expr { expr, .. } => {
             index = index_expr_symbol_dependency_relations(parent, expr, index)?;
         }
-        Stmt::Defer { expr, .. }
+        Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
         | Stmt::Yield(expr)
         | Stmt::Close(expr)
         | Stmt::Select(expr)
@@ -716,12 +716,15 @@ fn index_stmt_relations(
         }
         Stmt::Let { expr, .. }
         | Stmt::Return { expr, .. }
-        | Stmt::Out { expr, .. }
         | Stmt::LifetimeSet { expr, .. }
         | Stmt::Expr { expr, .. } => {
             index = index_expr_dependency_relations(parent, expr, index)?;
         }
-        Stmt::Defer { expr, .. } | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+        Stmt::Out { expr, .. }
+        | Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::Close(expr)
+        | Stmt::Select(expr) => {
             index = index_expr_dependency_relations(parent, expr.expr(), index)?;
         }
         Stmt::Assign { target, expr } => {

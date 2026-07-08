@@ -677,8 +677,8 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Break {
             expr: Some(expr), ..
         }
-        | Stmt::Out { expr, .. } => collect_expr(expr, uses),
-        Stmt::Select(expr) => collect_expr(expr.expr(), uses),
+        | Stmt::Out { expr, .. }
+        | Stmt::Select(expr) => collect_expr(expr.expr(), uses),
         Stmt::Wait(target) => collect_wait_target(target, uses),
         Stmt::On { body, .. } | Stmt::Loop { body } => collect_stmt_block(body, uses),
         Stmt::UnsafeLifetime { reason, body, .. } => {

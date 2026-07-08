@@ -567,8 +567,9 @@ flow @flow.opening opening {
     };
     assert!(matches!(
         skip_rule.action(),
-        [Stmt::Out { label: Some(label), expr: Expr::ShortVariant(path) }]
-            if label == "line" && path == "Skipped"
+        [Stmt::Out { label: Some(label), expr }]
+            if label == "line"
+                && matches!(expr.expr(), Expr::ShortVariant(path) if path == "Skipped")
     ));
     let LinePlanItem::CancelRule(back_rule) = &plan.items()[1] else {
         panic!("expected back-to-title cancel rule");

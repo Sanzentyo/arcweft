@@ -1748,6 +1748,9 @@ fn control_transfer_statement_judgments_carry_source_ranges() {
 flow @flow.control_source_ranges control_source_ranges {
     goto @flow.next
     close @flow.next
+    let chosen = loop {
+        break 8i64 + 9i64
+    }
     let _line = alice.say()[Pick one.] with {
         select @choice.primary
     }
@@ -1799,6 +1802,14 @@ stream fn sample_stream(frames: Stream<i64, String>) -> Stream<i64, String> {
             )
         }),
         "line-plan select target should retain its authored range"
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "8i64 + 9i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "break value expression should retain its authored range",
     );
     assert!(
         report.judgments.iter().any(|judgment| {

@@ -482,7 +482,7 @@ facade file has 2153 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/tests/typecheck.rs`
 
-3825 physical LOC exceeds the 2500 LOC review threshold
+3836 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -854,13 +854,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-verify/src/lib.rs`
 
-1926 physical LOC exceeds the 1200 LOC review threshold
+1927 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE002 — `crates/arcweft-verify/src/lib.rs`
 
-facade file has 1926 physical LOC; target is below 250 LOC
+facade file has 1927 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 

@@ -60,7 +60,7 @@ fn hir_thread_result_type_labels(items: &[HirFlowItem], can_fallthrough: bool) -
 fn collect_hir_thread_result_type_labels(item: &HirFlowItem, labels: &mut BTreeSet<String>) {
     match item {
         HirFlowItem::Stmt(Stmt::Out { expr, .. }) => {
-            labels.insert(expr_static_type_label(expr));
+            labels.insert(expr_static_type_label(expr.expr()));
         }
         HirFlowItem::Stmt(_)
         | HirFlowItem::Dialogue(_)
@@ -866,11 +866,11 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn collect_transfer_stmt_expr(&mut self, stmt: &Stmt, facts: &mut FlowFacts) {
         match stmt {
-            Stmt::Return { expr, .. }
-            | Stmt::Out { expr, .. }
+            Stmt::Return { expr, .. } => self.collect_expr(expr, facts),
+            Stmt::Out { expr, .. }
             | Stmt::Break {
                 expr: Some(expr), ..
-            } => self.collect_expr(expr, facts),
+            } => self.collect_expr(expr.expr(), facts),
             Stmt::Close(expr) | Stmt::Goto(expr) | Stmt::Yield(expr) => {
                 self.collect_expr(expr.expr(), facts);
             }
@@ -903,14 +903,14 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::LetLoop { block, .. } => self.collect_loop_syntax(block),
             Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
             Stmt::LetActionReceive { action, .. } => self.collect_expr(action.expr(), state),
-            Stmt::Return { expr, .. }
-            | Stmt::Expr { expr, .. }
-            | Stmt::Let { expr, .. }
-            | Stmt::Out { expr, .. }
+            Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } | Stmt::Let { expr, .. } => {
+                self.collect_expr(expr, state);
+            }
+            Stmt::Out { expr, .. }
             | Stmt::Break {
                 expr: Some(expr), ..
-            } => self.collect_expr(expr, state),
-            Stmt::Defer { expr, .. } => self.collect_expr(expr.expr(), state),
+            }
+            | Stmt::Defer { expr, .. } => self.collect_expr(expr.expr(), state),
             Stmt::Close(expr) | Stmt::Select(expr) | Stmt::Goto(expr) | Stmt::Yield(expr) => {
                 self.collect_expr(expr.expr(), state);
             }

@@ -1013,8 +1013,9 @@ flow @flow.title title {
     assert_eq!(block.label(), Some("events"));
     assert!(matches!(
         block.body(),
-        [FlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(Expr::EntityRef(entity)) })]
-            if label == "events" && entity.body() == "flow.title"
+        [FlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(expr) })]
+            if label == "events"
+                && matches!(expr.expr(), Expr::EntityRef(entity) if entity.body() == "flow.title")
     ));
 
     let hir = lower_to_hir(&tree).expect("loop expression fixture lowers");
@@ -1025,8 +1026,9 @@ flow @flow.title title {
     assert_eq!(block.label(), Some("events"));
     assert!(matches!(
         block.body(),
-        [HirFlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(Expr::EntityRef(entity)) })]
-            if label == "events" && entity.body() == "flow.title"
+        [HirFlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(expr) })]
+            if label == "events"
+                && matches!(expr.expr(), Expr::EntityRef(entity) if entity.body() == "flow.title")
     ));
 
     let registry = registry_from_hir(&hir);

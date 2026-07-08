@@ -1926,7 +1926,7 @@ impl FlowRuntimeLowerer<'_> {
             Stmt::Out { label, expr } => {
                 vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
                     label: label.clone(),
-                    value: expr_label(expr),
+                    value: expr_label(expr.expr()),
                 }))]
             }
             Stmt::If {
@@ -1963,9 +1963,9 @@ impl FlowRuntimeLowerer<'_> {
                 arms: self.lower_stmt_match_arms(flow_id, flow_index, arms),
             }],
             Stmt::Break { expr, .. } => {
-                vec![FlowOp::Break(
-                    self.lower_optional_runtime_expr(expr.as_ref()),
-                )]
+                vec![FlowOp::Break(self.lower_optional_runtime_expr(
+                    expr.as_ref().map(AuthoredExpr::expr),
+                ))]
             }
             Stmt::Continue { .. } => vec![FlowOp::Continue],
             other => {

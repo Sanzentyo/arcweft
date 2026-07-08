@@ -1135,12 +1135,15 @@ impl ObligationCollector {
             Stmt::LetLoop { block, .. } => self.collect_flow_items_syntax(block.body()),
             Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
             Stmt::LetActionReceive { action, .. } => self.collect_expr(action.expr()),
-            Stmt::Let { expr, .. }
-            | Stmt::Return { expr, .. }
-            | Stmt::Out { expr, .. }
-            | Stmt::Expr { expr, .. } => self.collect_expr(expr),
-            Stmt::Defer { expr, .. } => self.collect_expr(expr.expr()),
-            Stmt::Goto(expr) | Stmt::Yield(expr) | Stmt::Close(expr) | Stmt::Select(expr) => {
+            Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
+                self.collect_expr(expr);
+            }
+            Stmt::Out { expr, .. }
+            | Stmt::Defer { expr, .. }
+            | Stmt::Goto(expr)
+            | Stmt::Yield(expr)
+            | Stmt::Close(expr)
+            | Stmt::Select(expr) => {
                 self.collect_expr(expr.expr());
             }
             Stmt::Assign { target, expr } => {
@@ -1210,12 +1213,10 @@ impl ObligationCollector {
                     self.collect_stmts(arm.body());
                 }
             }
-            Stmt::Break { expr, .. } => {
-                if let Some(expr) = expr {
-                    self.collect_expr(expr);
-                }
-            }
-            Stmt::Continue { .. } => {}
+            Stmt::Break {
+                expr: Some(expr), ..
+            } => self.collect_expr(expr.expr()),
+            Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
             Stmt::Raw(raw) => self.add_raw_obligation(
                 format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
                 raw.range().map(|range| format!("{range:?}")),

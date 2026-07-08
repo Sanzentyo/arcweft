@@ -809,7 +809,7 @@ pub(super) fn choice_output_type(choice: &arcweft_lang_hir::model::HirChoice) ->
                 let [Stmt::Out { expr, .. }] = statements.as_slice() else {
                     return None;
                 };
-                simple_expr_type(expr)?
+                simple_expr_type(expr.expr())?
             }
             ChoiceAction::Goto(_) | ChoiceAction::None => return None,
         };

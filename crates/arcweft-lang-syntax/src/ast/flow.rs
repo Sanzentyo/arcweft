@@ -333,7 +333,7 @@ pub enum Stmt {
     /// `out expr` or `out 'label expr` from a line/cue/content continuation.
     Out {
         label: Option<String>,
-        expr: Expr,
+        expr: AuthoredExpr,
     },
     Goto(AuthoredExpr),
     /// `thread name { ... }` / `thread name:` scoped VM child task.
@@ -408,7 +408,7 @@ pub enum Stmt {
     /// `break`, `break expr`, or `break 'label expr`.
     Break {
         label: Option<String>,
-        expr: Option<Expr>,
+        expr: Option<AuthoredExpr>,
     },
     /// `continue` or `continue 'label`.
     Continue {

@@ -1395,3 +1395,30 @@ needless-pass-by-value warning. Structure audit was rerun with
 the dirty worktree reports 2446 scanned files, 1171 Rust files, 576263 Rust
 physical LOC, and the existing unrelated
 `crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
+
+The control-transfer authored expression follow-up extends the same source
+identity substrate to value-carrying `out` and `break` statements. `Stmt::Out`
+and value-bearing `Stmt::Break` now store `AuthoredExpr` payloads through
+syntax and HIR, while sema, runtime-plan, verify, tooling, symbol collection,
+and view-mount collection explicitly project those authored payloads back to
+plain `Expr` only where source identity is not needed. This closes the
+remaining gap where line-plan `out expr` and loop `break expr` could be
+type-checked without a stable source range attached to the expression
+judgment. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features control_transfer_statement_judgments_carry_source_ranges -- --nocapture`
+and
+`cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`.
+The broader validation slice passed with
+`cargo test -p arcweft-lang-syntax --all-features --test parser_flow_statements_and_body -- --nocapture`,
+`cargo fmt --all --check`,
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-tooling -p arcweft-verify -p arcweft-cli -p arcweft-lsp --all-targets --all-features`,
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-tooling -p arcweft-verify -p arcweft-cli -p arcweft-lsp --all-targets --all-features`,
+and `git diff --check`. Focused clippy exits successfully with existing
+unrelated warnings from large syntax enum variants,
+`runtime-plan/src/line_task.rs`, sema function/test length,
+runtime-host/player-native clipboard helpers, and render-wgpu font docs.
+Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the dirty worktree reports 2446 scanned files, 1171 Rust files, 576472 Rust
+physical LOC, and the existing unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.

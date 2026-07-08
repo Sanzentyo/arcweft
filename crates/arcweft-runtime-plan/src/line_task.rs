@@ -453,7 +453,7 @@ impl LinePlanGraphLowerer {
             Stmt::Expr { expr, .. } => self.lower_expr_effect(expr),
             Stmt::Out { label, expr } => vec![LineEffectRequest::Out(LineOutRequest {
                 label: label.clone(),
-                value: expr_label(expr),
+                value: expr_label(expr.expr()),
             })],
             Stmt::Return { expr, .. } => vec![LineEffectRequest::Return(expr_label(expr))],
             Stmt::Goto(expr) => vec![LineEffectRequest::Goto(expr_label(expr.expr()))],
@@ -468,7 +468,7 @@ impl LinePlanGraphLowerer {
             Stmt::Select(expr) => vec![LineEffectRequest::Select(expr_label(expr.expr()))],
             Stmt::Break { label, expr } => vec![LineEffectRequest::Break {
                 label: label.clone(),
-                value: expr.as_ref().map(expr_label),
+                value: expr.as_ref().map(|expr| expr_label(expr.expr())),
             }],
             Stmt::Continue { label } => vec![LineEffectRequest::Continue {
                 label: label.clone(),
