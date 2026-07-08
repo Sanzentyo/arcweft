@@ -2438,11 +2438,11 @@ fn stream_id_for(program: &AwbcProgram, stream: AwbcStreamPlanId) -> StreamRunti
         .stream_plans
         .get(stream.index())
         .and_then(|plan| program.strings.get(plan.public_id.index()))
-        .cloned()
-        .map_or_else(
-            || StreamRuntimeId(format!("awbc.stream.{}", stream.0)),
-            StreamRuntimeId,
-        )
+        .and_then(|label| StreamRuntimeId::from_runtime_target_value(label).ok())
+        .unwrap_or_else(|| {
+            StreamRuntimeId::canonical(&format!("awbc_stream_{}", stream.0))
+                .expect("generated AWBC stream ID is canonical")
+        })
 }
 
 fn entry_argument_diagnostic(error: &FiberStateError) -> RuntimeDiagnostic {

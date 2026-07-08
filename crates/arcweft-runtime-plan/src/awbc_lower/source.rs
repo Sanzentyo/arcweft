@@ -98,7 +98,8 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             .stream_plan_id(&stream.id)
             .unwrap_or(AwbcStreamPlanId(0));
         let function = self.lower_stream_function(stream, stream_id);
-        let public_id = self.inventory.intern_string(&stream.id.0);
+        let public_label = stream.id.public_label();
+        let public_id = self.inventory.intern_string(public_label.as_str());
         let item_type = self.inventory.dynamic_ty();
         let error_type = self.inventory.dynamic_ty();
         self.inventory.push_stream_plan(
@@ -146,15 +147,17 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             })
             .map(|slot| slot.ty)
             .collect();
-        let layout = self
-            .inventory
-            .intern_frame_layout(format!("stream:{}", stream.id.0), frame_layout);
+        let layout = self.inventory.intern_frame_layout(
+            format!("stream:{}", stream.id.canonical_label()),
+            frame_layout,
+        );
         let signature = self
             .inventory
             .intern_signature(params, None, AwbcEffectSetId(0));
-        let public_id = self.inventory.intern_string(&stream.id.0);
+        let public_label = stream.id.public_label();
+        let public_id = self.inventory.intern_string(public_label.as_str());
         self.inventory.push_function(
-            Some(stream.id.0.as_str()),
+            Some(public_label.as_str()),
             AwbcFunction {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::StreamTransform,
@@ -202,9 +205,10 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                     }
                 }
                 Some(StaticQueueTarget::Stream(target)) => {
-                    if let Some(stream) = self
-                        .inventory
-                        .stream_plan_id(&arcweft_core::stream::StreamRuntimeId(target.to_owned()))
+                    if let Some(stream) =
+                        arcweft_core::stream::StreamRuntimeId::from_runtime_target_value(target)
+                            .ok()
+                            .and_then(|id| self.inventory.stream_plan_id(&id))
                     {
                         self.inventory
                             .push_instruction(AwbcInstruction::StreamClose { stream });

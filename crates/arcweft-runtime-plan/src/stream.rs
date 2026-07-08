@@ -20,7 +20,8 @@ pub(crate) fn lower_stream_function(
         .and_then(stream_type_labels)
         .unwrap_or_else(|| ("Unit".to_owned(), "Unit".to_owned()));
     StreamPlan {
-        id: StreamRuntimeId(function.name().to_owned()),
+        id: StreamRuntimeId::canonical(function.name())
+            .expect("stream function names are valid canonical runtime IDs"),
         item_ty,
         error_ty,
         ops: lower_stream_stmt_list(function.statements(), pure_helpers),

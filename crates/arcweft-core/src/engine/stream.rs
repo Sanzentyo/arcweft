@@ -28,7 +28,7 @@ impl Engine {
             if budget == 0 {
                 output.diagnostics.push(RuntimeDiagnostic::new(format!(
                     "stream {} exhausted frame budget",
-                    plan.id.0
+                    plan.id.public_label()
                 )));
             }
         }
@@ -253,14 +253,12 @@ impl Engine {
                 if let Some(source) = target.strip_prefix("source:") {
                     self.close_source(&SourceId(source.to_owned()), output);
                 } else if let Some(stream) = target.strip_prefix("stream:")
-                    && let Some(state) = self
-                        .fiber
-                        .stream_states
-                        .get_mut(&StreamRuntimeId(stream.to_owned()))
+                    && let Ok(stream_id) = StreamRuntimeId::from_runtime_target_value(stream)
+                    && let Some(state) = self.fiber.stream_states.get_mut(&stream_id)
                     && let Some(sequence) = state.close_with_sequence()
                 {
                     output.effects.stream_events.push(RuntimeStreamEvent {
-                        stream: StreamRuntimeId(stream.to_owned()),
+                        stream: stream_id,
                         sequence,
                         kind: SourceEventKind::End,
                     });
@@ -291,12 +289,10 @@ impl Engine {
                     .contains_key(&SourceId(target.clone()))
                 {
                     Ok(format!("source:{target}"))
-                } else if self
-                    .fiber
-                    .stream_states
-                    .contains_key(&StreamRuntimeId(target.clone()))
+                } else if let Ok(stream) = StreamRuntimeId::from_runtime_target_value(&target)
+                    && self.fiber.stream_states.contains_key(&stream)
                 {
-                    Ok(format!("stream:{target}"))
+                    Ok(format!("stream:{}", stream.canonical_label()))
                 } else {
                     Ok(format!("source:{target}"))
                 }
@@ -315,11 +311,13 @@ impl Engine {
                 .get_mut(&SourceId(source.to_owned()))
                 .and_then(|state| state.queue.pop_front());
         }
-        key.strip_prefix("stream:").and_then(|stream| {
-            self.fiber
-                .stream_states
-                .get_mut(&StreamRuntimeId(stream.to_owned()))
-                .and_then(|state| state.queue.pop_front())
-        })
+        key.strip_prefix("stream:")
+            .and_then(|stream| StreamRuntimeId::from_runtime_target_value(stream).ok())
+            .and_then(|stream| {
+                self.fiber
+                    .stream_states
+                    .get_mut(&stream)
+                    .and_then(|state| state.queue.pop_front())
+            })
     }
 }

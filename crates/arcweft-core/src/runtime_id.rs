@@ -20,6 +20,7 @@ pub enum RuntimeIdFamily {
     Fragment,
     Entry,
     Line,
+    Stream,
     View,
     Asset,
     Pure,
@@ -107,6 +108,7 @@ impl RuntimeIdFamily {
             Self::Fragment => "fragment",
             Self::Entry => "entry",
             Self::Line => "say",
+            Self::Stream => "stream",
             Self::View => "view",
             Self::Asset => "asset",
             Self::Pure => "pure",
@@ -120,6 +122,7 @@ impl RuntimeIdFamily {
             Self::Fragment => &["fragment", "frag"],
             Self::Entry => &["entry"],
             Self::Line => &["say", "line"],
+            Self::Stream => &["stream"],
             Self::View => &["view"],
             Self::Asset => &["asset"],
             Self::Pure => &["pure"],
@@ -287,6 +290,15 @@ fn validate_segment(family: RuntimeIdFamily, value: &str) -> Result<(), RuntimeI
 fn reserved_family_segment(value: &str) -> bool {
     matches!(
         value,
-        "flow" | "fragment" | "frag" | "entry" | "say" | "line" | "view" | "asset" | "pure"
+        "flow"
+            | "fragment"
+            | "frag"
+            | "entry"
+            | "say"
+            | "line"
+            | "stream"
+            | "view"
+            | "asset"
+            | "pure"
     )
 }

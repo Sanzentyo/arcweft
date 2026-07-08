@@ -3,6 +3,7 @@ use arcweft_core::runtime_id::{
     RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimeIdReference, RuntimeIdReferenceAnchor,
     RuntimePublicLabel,
 };
+use arcweft_core::stream::StreamRuntimeId;
 
 #[test]
 fn source_flow_entity_lowers_to_canonical_runtime_id_without_family_payload() {
@@ -75,6 +76,30 @@ fn line_runtime_id_does_not_store_say_prefixed_string() {
     assert_eq!(line.canonical_label(), "main.alice.001");
     assert_eq!(line.public_label().as_str(), "say.main.alice.001");
     assert_eq!(line.path().segments().len(), 3);
+}
+
+#[test]
+fn stream_runtime_id_does_not_store_stream_prefixed_string() {
+    let stream = StreamRuntimeId::from_source_entity_body("stream.audio.rms")
+        .expect("stream source ID lowers");
+
+    assert_eq!(stream.canonical_label(), "audio.rms");
+    assert_eq!(stream.public_label().as_str(), "stream.audio.rms");
+    assert_eq!(stream.path().segments().len(), 2);
+}
+
+#[test]
+fn canonical_stream_runtime_id_rejects_stream_family_segment() {
+    let err =
+        StreamRuntimeId::canonical("stream.rms").expect_err("family segment is not canonical");
+
+    assert_eq!(
+        err,
+        RuntimeIdError::ReservedFamilySegment {
+            family: RuntimeIdFamily::Stream,
+            segment: "stream".to_owned(),
+        }
+    );
 }
 
 #[test]

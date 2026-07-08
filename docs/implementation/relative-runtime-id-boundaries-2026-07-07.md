@@ -3,15 +3,17 @@
 ## Status
 
 This cut applies the seq-07.6 final-shape intent without keeping
-`FlowRuntimeId(String)`, `EntryRuntimeId(String)`, or `RuntimeLineId(String)` as
+`FlowRuntimeId(String)`, `EntryRuntimeId(String)`, `RuntimeLineId(String)`, or
+`StreamRuntimeId(String)` as
 tuple string newtypes.
 
 Implemented:
 
-- `FlowRuntimeId`, `EntryRuntimeId`, and `RuntimeLineId` now store a typed
+- `FlowRuntimeId`, `EntryRuntimeId`, `RuntimeLineId`, and `StreamRuntimeId` now
+  store a typed
   `RuntimeIdPath`.
 - `RuntimeIdPath` stores validated `RuntimeIdSegment` values. It does not store
-  source-family prefixes such as `flow`, `entry`, or `say`.
+  source-family prefixes such as `flow`, `entry`, `say`, or `stream`.
 - Source-side absolute/current/parent-relative references are represented by
   `RuntimeIdReference` and `RuntimeIdReferenceAnchor`; execution-facing runtime
   IDs are already resolved paths.
@@ -25,6 +27,8 @@ Implemented:
   - `EntryRuntimeId::from_source_entity_body(...)`
   - `RuntimeLineId::from_source_entity_body(...)`
   - `RuntimeLineId::from_runtime_line_value(...)`
+  - `StreamRuntimeId::from_source_entity_body(...)`
+  - `StreamRuntimeId::from_runtime_target_value(...)`
 
 ## Deviation From The Zip
 
@@ -46,7 +50,7 @@ Reason:
 
 This is a design deviation, not a compatibility shim. The important final-shape
 constraint from the package is preserved: runtime lookup IDs are typed paths,
-not raw `flow.*`/`say.*`/`entry.*` strings.
+not raw `flow.*`/`say.*`/`entry.*`/`stream.*` strings.
 
 ## Boundary Design
 
@@ -102,6 +106,20 @@ cargo test -p arcweft-core --test runtime_id_boundaries --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy -p arcweft-core --all-targets --all-features
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit-runtime-id-owned-path
+```
+
+Additional StreamRuntimeId migration validation:
+
+```bash
+cargo test -p arcweft-core --test runtime_id_boundaries --all-features
+cargo test -p arcweft-core --lib --all-features stream_plan_drains_source_queue_and_emits_stream_items
+cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_stream_and_source_plans_separately_from_flow_ops
+cargo test -p arcweft-runtime-plan --all-features awbc_product_parity_stream
+cargo test -p arcweft-runtime-plan --all-features awbc_product_parity_source_stream
+cargo test -p arcweft-runtime-plan --all-features awbc_product_parity_multi_stream_yield_and_close
+cargo check -p arcweft-core -p arcweft-runtime-plan --all-targets --all-features
+cargo clippy -p arcweft-core -p arcweft-runtime-plan --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit-stream-runtime-id
 ```
 
 `cargo check --workspace --all-targets --all-features` reports one unrelated

@@ -56,6 +56,10 @@ fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
 }
 
+fn stream_id(value: &str) -> StreamRuntimeId {
+    StreamRuntimeId::from_runtime_target_value(value).expect("test stream ID is valid")
+}
+
 fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParityStep> {
     run_parity_with_options(
         plan,
@@ -1159,7 +1163,7 @@ fn awbc_product_parity_source_stream() {
 fn awbc_product_parity_stream_for_next_binds_source_item() {
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![StreamPlan {
-            id: StreamRuntimeId("passthrough".to_owned()),
+            id: stream_id("passthrough"),
             item_ty: "IteratorItem".to_owned(),
             error_ty: "CaptureError".to_owned(),
             ops: vec![StreamOp::ForNext {
@@ -1534,7 +1538,7 @@ fn awbc_product_parity_source_handler_yields_to_source_queue() {
 fn awbc_product_parity_stream_yield() {
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![StreamPlan {
-            id: StreamRuntimeId("stream.generated".to_owned()),
+            id: stream_id("stream.generated"),
             item_ty: "String".to_owned(),
             error_ty: "String".to_owned(),
             ops: vec![
@@ -1557,7 +1561,7 @@ fn awbc_product_parity_stream_yield() {
 fn awbc_product_parity_stream_yield_then_close() {
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![StreamPlan {
-            id: StreamRuntimeId("stream.generated".to_owned()),
+            id: stream_id("stream.generated"),
             item_ty: "String".to_owned(),
             error_ty: "String".to_owned(),
             ops: vec![
@@ -1584,7 +1588,7 @@ fn awbc_product_parity_multi_stream_yield_and_close() {
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![
             StreamPlan {
-                id: StreamRuntimeId("stream.alpha".to_owned()),
+                id: stream_id("stream.alpha"),
                 item_ty: "String".to_owned(),
                 error_ty: "String".to_owned(),
                 ops: vec![StreamOp::Yield {
@@ -1592,7 +1596,7 @@ fn awbc_product_parity_multi_stream_yield_and_close() {
                 }],
             },
             StreamPlan {
-                id: StreamRuntimeId("stream.beta".to_owned()),
+                id: stream_id("stream.beta"),
                 item_ty: "String".to_owned(),
                 error_ty: "String".to_owned(),
                 ops: vec![
@@ -1617,7 +1621,7 @@ fn awbc_product_parity_stream_closes_source_target() {
     let source = SourceId("source.generated".to_owned());
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![StreamPlan {
-            id: StreamRuntimeId("stream.driver".to_owned()),
+            id: stream_id("stream.driver"),
             item_ty: "String".to_owned(),
             error_ty: "String".to_owned(),
             ops: vec![StreamOp::Close {

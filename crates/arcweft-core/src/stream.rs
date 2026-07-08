@@ -1,19 +1,22 @@
 use crate::pattern::RuntimePattern;
+use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
 use crate::source::SourceEventKind;
 use crate::task::TaskSequence;
 use crate::value::{RuntimeExpr, RuntimePayload};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct StreamRuntimeId(pub String);
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct StreamRuntimeId {
+    path: RuntimeIdPath,
+}
 
 /// Lowered stream transform state machine.
 ///
 /// The core runtime keeps this as deterministic data. Host adapters may execute
 /// the state machine or replace it with an equivalent backend implementation,
 /// but device acquisition never happens inside this plan.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StreamPlan {
     pub id: StreamRuntimeId,
     pub item_ty: String,
@@ -80,6 +83,47 @@ pub struct StreamEvent<T, E> {
 }
 
 pub type RuntimeStreamEvent = StreamEvent<RuntimePayload, RuntimePayload>;
+
+impl StreamRuntimeId {
+    pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Stream, value).map(|path| Self { path })
+    }
+
+    pub fn from_source_entity_body(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_source_entity_body(
+            RuntimeIdFamily::Stream,
+            value,
+            RuntimeIdFamily::Stream.source_families(),
+        )
+        .map(|path| Self { path })
+    }
+
+    pub fn from_runtime_target_value(value: &str) -> Result<Self, RuntimeIdError> {
+        let Some((family, _)) = value.split_once('.') else {
+            return Self::canonical(value);
+        };
+        if RuntimeIdFamily::Stream.source_families().contains(&family) {
+            Self::from_source_entity_body(value)
+        } else {
+            Self::canonical(value)
+        }
+    }
+
+    #[must_use]
+    pub const fn path(&self) -> &RuntimeIdPath {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn canonical_label(&self) -> String {
+        self.path.label()
+    }
+
+    #[must_use]
+    pub fn public_label(&self) -> RuntimePublicLabel {
+        RuntimePublicLabel::for_family(RuntimeIdFamily::Stream, &self.path)
+    }
+}
 
 impl StreamRuntimeState {
     pub fn new(id: StreamRuntimeId) -> Self {

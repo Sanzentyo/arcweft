@@ -377,9 +377,10 @@ Source briefs:
   covers non-suspending expression closures; suspension-aware dynamic function
   calls and persisted closure state remain open.
 - Runtime identifiers no longer use `FlowRuntimeId(String)`,
-  `EntryRuntimeId(String)`, or `RuntimeLineId(String)` tuple string newtypes in
-  the migrated runtime-plan/core/player/CLI call sites. The seq-07.6 cut uses
-  typed owned `RuntimeIdPath` values, explicit source-boundary conversion, and
+  `EntryRuntimeId(String)`, `RuntimeLineId(String)`, or
+  `StreamRuntimeId(String)` tuple string newtypes in the migrated
+  runtime-plan/core/player/CLI call sites. The seq-07.6 cut uses typed owned
+  `RuntimeIdPath` values, explicit source-boundary conversion, and
   `RuntimePublicLabel` for debug/AWBC/report strings. The supplied atom-table
   variant remains deliberately deferred until profiling shows ID equality,
   hashing, serialization size, or allocation cost is worth carrying

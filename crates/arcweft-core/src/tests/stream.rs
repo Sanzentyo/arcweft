@@ -3,7 +3,8 @@ use crate::{engine::*, pattern::*, plan::*, source::*, step::*, stream::*, task:
 #[test]
 fn stream_plan_drains_source_queue_and_emits_stream_items() {
     let source_id = SourceId("source.camera".to_owned());
-    let stream_id = StreamRuntimeId("stream.rms".to_owned());
+    let stream_id =
+        StreamRuntimeId::from_source_entity_body("stream.rms").expect("stream source ID lowers");
     let source = SourcePlan {
         id: source_id.clone(),
         item_ty: "Frame".to_owned(),

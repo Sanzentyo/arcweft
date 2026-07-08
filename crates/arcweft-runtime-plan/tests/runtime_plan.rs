@@ -1007,7 +1007,7 @@ flow @flow.opening opening {
     let plan = lower_runtime_plan(&hir).expect("stream/source runtime plan lowers");
 
     assert_eq!(plan.stream_plans.len(), 1);
-    assert_eq!(plan.stream_plans[0].id.0, "rms_level");
+    assert_eq!(plan.stream_plans[0].id.canonical_label(), "rms_level");
     assert!(matches!(
         plan.stream_plans[0].ops.as_slice(),
         [StreamOp::ForNext { body, .. }]
