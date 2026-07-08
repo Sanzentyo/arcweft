@@ -1059,12 +1059,14 @@ signature partials now carry the unsupported-family marker
 `signature_partial_without_helper`, so the rejection boundary is auditable
 without pretending the broader non-helper allocation contract is implemented.
 The follow-up source-function-value cut accepts the first narrow non-helper
-family: ordinary single-group source-local `fn` declarations with simple
-identifier parameters and expression bodies that contain no call/effect/
-suspension-capable syntax. Named missing-input partial calls for that family
-now synthesize wrapper functions that preserve declaration argument order.
+family: ordinary source-local `fn` declarations with simple identifier
+parameters and expression bodies that contain no call/effect/suspension-capable
+syntax. Curried `ParamGroup`s in that family lower to nested runtime functions.
+Named missing-input partial calls for that family now synthesize wrapper
+functions that preserve declaration argument order.
 Focused validation passed with
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture` and
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_curried_source_function_value -- --nocapture` and
 `cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture`.
 
 The runtime-plan closure capture metadata cut adds

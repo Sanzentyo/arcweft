@@ -8,7 +8,7 @@ historical note.
 ## Repository Baseline
 
 - Baseline before the latest function-stack status refresh:
-  `a0e4d7b35 Consume closed effect rows for agent proofs`.
+  `4cb5b3c7e Materialize simple source function values`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
@@ -106,11 +106,11 @@ The detailed evidence trail remains:
   design-blocked callable families are classified; unsupported helper-less
   signature partials now report the explicit family marker
   `signature_partial_without_helper`.
-- First non-helper source function value cut: single-group source-local `fn`
-  declarations with simple identifier parameters and expression bodies that
-  contain no call/effect/suspension-capable syntax now materialize as
+- First non-helper source function value cut: source-local `fn` declarations
+  with simple identifier parameters and expression bodies that contain no
+  call/effect/suspension-capable syntax now materialize as
   `RuntimeExpr::Function` values, including named missing-input wrapper
-  partials.
+  partials and multiple curried `ParamGroup`s lowered to nested functions.
 
 ## Remaining Function-Stack Work
 

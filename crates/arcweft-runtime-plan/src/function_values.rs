@@ -55,7 +55,8 @@ fn lower_runtime_function_value_candidate(
     if function.kind() != FunctionKind::Function {
         return None;
     }
-    let input_names = runtime_function_value_params(function)?;
+    let param_groups = runtime_function_value_param_groups(function)?;
+    let input_names = param_groups.first()?.clone();
     let (statements, value) = runtime_function_value_body_parts(function)?;
     if !statements
         .iter()
@@ -65,30 +66,42 @@ fn lower_runtime_function_value_candidate(
         return None;
     }
     let body = lower_runtime_function_value_body(statements, value)?;
+    let value = param_groups
+        .into_iter()
+        .rev()
+        .fold(body, |body, params| RuntimeExpr::Function {
+            params,
+            body: Box::new(body),
+        });
     Some(RuntimeFunctionValueCandidate {
         name: function.name().to_owned(),
-        input_names: input_names.clone(),
-        value: RuntimeExpr::Function {
-            params: input_names,
-            body: Box::new(body),
-        },
+        input_names,
+        value,
     })
 }
 
-fn runtime_function_value_params(function: &HirFunction) -> Option<Vec<String>> {
-    let [group] = function.signature().param_groups() else {
-        return None;
-    };
-    group
-        .params()
+fn runtime_function_value_param_groups(function: &HirFunction) -> Option<Vec<Vec<String>>> {
+    let groups = function
+        .signature()
+        .param_groups()
         .iter()
-        .map(|param| {
-            if param.is_rest() || param.default().is_some() || param.receiver_kind().is_some() {
-                return None;
-            }
-            binding_pattern_name(param.pattern())
+        .map(|group| {
+            group
+                .params()
+                .iter()
+                .map(|param| {
+                    if param.is_rest()
+                        || param.default().is_some()
+                        || param.receiver_kind().is_some()
+                    {
+                        return None;
+                    }
+                    binding_pattern_name(param.pattern())
+                })
+                .collect::<Option<Vec<_>>>()
         })
-        .collect()
+        .collect::<Option<Vec<_>>>()?;
+    (!groups.is_empty()).then_some(groups)
 }
 
 fn runtime_function_value_body_parts(function: &HirFunction) -> Option<(&[Stmt], &Expr)> {
