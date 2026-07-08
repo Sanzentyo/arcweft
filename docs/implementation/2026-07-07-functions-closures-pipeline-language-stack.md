@@ -536,6 +536,7 @@ cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_closure_re
 cargo test -p arcweft-lang-syntax --all-features select_and_index_are_structured_for_later_typechecking
 cargo test -p arcweft-lang-sema --all-features numeric_primitive_types_keep_explicit_widths
 cargo test -p arcweft-lang-sema --all-features expected_type_resolves_user_enum_short_variant
+cargo test -p arcweft-lang-syntax --all-features trait_and_impl_members_preserve_curried_param_groups
 cargo run -p arcweft-cli --all-features -- check samples/function-curried-call-groups/src/main.arcw
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-driver --all-features --test awbc_product_session
@@ -717,6 +718,8 @@ errors / 148 warnings.
 The curried trait method metadata cut has passing sema coverage for preserving
 the remaining call-group function type after a method call and rejecting
 flattened curried trait method arguments.
+Parser coverage now also fixes that both trait members and impl members
+preserve multiple `FnSignature` parameter groups before HIR/sema lowering.
 
 The canonical primitive spelling cut has passing coverage for rejecting
 `Bool`, `Char`, and `string` in type annotations/signatures with direct
