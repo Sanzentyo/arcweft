@@ -7,8 +7,8 @@ or design work.
 
 ## Repository Baseline
 
-- Current checked-in head before this request split:
-  `97f34793 Use typed flow ids for AWBC flow lookup`.
+- Current checked-in head before this completion audit:
+  `e03702f5 Split remaining function stack design requests`.
 - `main` and `origin/main` are aligned at that head.
 - The dirty files at this audit point are unrelated View rendering, font,
   sample, Web IME/player, and runtime-driver text-input files:
@@ -50,6 +50,10 @@ The current status index for that goal is:
 The detailed running log is:
 
 - `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`
+
+The current requirement-by-requirement completion audit is:
+
+- `docs/implementation/function-stack-goal-completion-audit-2026-07-08.md`
 
 ## Completed Function-Stack Surface
 

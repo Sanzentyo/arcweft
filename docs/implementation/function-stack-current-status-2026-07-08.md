@@ -14,11 +14,12 @@ Related slices are:
 - `docs/implementation/current-work-status-2026-07-08.md`
 - `docs/implementation/function-stack-expression-source-range-coverage-2026-07-08.md`
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
+- `docs/implementation/function-stack-goal-completion-audit-2026-07-08.md`
 
 ## Current Repository State
 
 - At the start of this refresh, `main` and `origin/main` were aligned at
-  `97f34793 Use typed flow ids for AWBC flow lookup`.
+  `e03702f5 Split remaining function stack design requests`.
 - The last completed implementation slices were the source-range follow-up for
   thread expression body statement ranges, the authored-payload conversion for
   `Stmt::Signal` / `Stmt::LifetimeSet`, and the expression source-range
@@ -197,6 +198,11 @@ These should stay as request or design work before implementation:
    allocation pressure, as recorded in
    `docs/reviews/requests/2026-07-07-seq-07.6-relative-runtime-id-boundaries.md`
    and `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`.
+
+The requirement-by-requirement completion audit is recorded in
+`docs/implementation/function-stack-goal-completion-audit-2026-07-08.md`.
+That audit is the current reason the active goal remains open rather than
+being marked complete.
 
 ## Not Part Of This Goal
 

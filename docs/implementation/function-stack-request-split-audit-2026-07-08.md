@@ -6,6 +6,9 @@ This note records the request/design split performed after the AWBC typed
 flow-ID lookup cleanup. It is part of the active function/closure/currying/
 pipeline goal's evidence trail.
 
+The requirement-by-requirement goal audit is recorded separately in
+`docs/implementation/function-stack-goal-completion-audit-2026-07-08.md`.
+
 ## Current Implementation-Ready State
 
 The previously identified implementation-ready runtime-ID cleanup is complete:
