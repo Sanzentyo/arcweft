@@ -2698,6 +2698,43 @@ effects { }
 }
 
 #[test]
+fn no_effect_rejects_partial_curried_higher_order_callback_on_final_call() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
+    return load(path)
+}
+
+flow @flow.no_effect_partial_curried_higher_order_call no_effect_partial_curried_higher_order_call
+effects { fs.read }
+ensures no_effect fs.read
+{
+    let stage = use_loader("story.arcw")
+    let partial = stage(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+    let body = partial(".bak")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("no-effect partial curried call fixture lowers");
+    validate_typecheck_ready(&hir).expect("no-effect partial curried call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("no_effect must reject partial curried callback effects at final call");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.no_effect_partial_curried_higher_order_call")
+                && error.message().contains("forbids effect `fs.read`")
+        }),
+        "expected no_effect partial curried callback diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn partial_curried_higher_order_callback_composes_on_immediate_final_call() {
     let tree = parse_ok(
         r#"

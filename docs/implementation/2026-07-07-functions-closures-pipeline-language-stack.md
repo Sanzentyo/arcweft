@@ -1812,3 +1812,12 @@ application is effect-free until the partial value is called; the new
 that forbidden-effect bounds are enforced at the eventual partial alias call.
 Details are recorded in
 `docs/implementation/function-stack-effect-row-partial-closure-timing-2026-07-09.md`.
+
+The curried higher-order effect-row timing follow-up applies the same
+forbidden-row check to later curried callback groups. Existing regressions
+already prove that partial curried callback creation is effect-free and that
+the callback body composes on the final call; the new
+`no_effect_rejects_partial_curried_higher_order_callback_on_final_call`
+regression proves that forbidden-effect bounds are enforced at that final
+call. Details are recorded in
+`docs/implementation/function-stack-effect-row-curried-higher-order-timing-2026-07-09.md`.

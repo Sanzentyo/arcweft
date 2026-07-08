@@ -55,16 +55,18 @@ effect-row model is introduced:
 | Returned closures delay captured callback effects until the returned closure is called. | `returned_closure_callback_does_not_compose_until_closure_is_called`; `returned_closure_callback_composes_when_returned_closure_is_called`; `stored_returned_closure_callback_composes_when_returned_closure_is_called` |
 | Captured function values preserve callback effect rows through local aliases, including aliases captured by returned closures. | `returned_closure_captured_function_alias_does_not_compose_until_called`; `returned_closure_captured_function_alias_composes_when_called` |
 | Borrowed captures that cross suspension boundaries keep their lifetime diagnostic and still project closure body effect rows. | `borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary` |
-| Later curried callback groups compose only when the reached call group invokes the callback. | `curried_higher_order_function_argument_composes_when_later_group_param_is_called`; `partial_curried_higher_order_callback_does_not_compose_until_final_call`; `partial_curried_higher_order_callback_composes_on_final_call`; `partial_curried_higher_order_callback_composes_on_immediate_final_call` |
+| Later curried callback groups compose only when the reached call group invokes the callback. | `curried_higher_order_function_argument_composes_when_later_group_param_is_called`; `curried_higher_order_function_alias_composes_when_later_group_param_is_called`; `partial_curried_higher_order_callback_does_not_compose_until_final_call`; `partial_curried_higher_order_callback_composes_on_final_call`; `partial_curried_higher_order_callback_composes_on_immediate_final_call`; `no_effect_rejects_partial_curried_higher_order_callback_on_final_call` |
 | `no_effect` rejects closure body effects when a closure value is actually called, not when it is merely created. | `no_effect_rejects_local_closure_effect_when_called` |
 | The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence` |
 | Agent verified-effects manifests are built from the closed row projection rather than from graph summaries directly. | `compile_agent_bundle_with_project_builds_agent_controller_bundle`; `compile_agent_bundle_lowers_inferred_effects_not_unused_source_upper_bound` |
 
 The `no_effect_rejects_local_closure_effect_when_called` and
-`no_effect_rejects_partial_closure_alias_effect_when_called` regressions fix
+`no_effect_rejects_partial_closure_alias_effect_when_called`, and
+`no_effect_rejects_partial_curried_higher_order_callback_on_final_call`
+regressions fix
 the 07.8 test requirement that forbidden-effect bounds apply to closure values
 whose inferred effects exceed the bound after invocation, including partial
-closure aliases.
+closure aliases and partial curried higher-order callbacks.
 
 ## Temporary Evidence-Based Composition
 
@@ -136,6 +138,7 @@ The following 07.8 decisions remain open:
 ```bash
 cargo test -p arcweft-lang-sema --all-features no_effect_rejects_local_closure_effect_when_called -- --nocapture
 cargo test -p arcweft-lang-sema --all-features no_effect_rejects_partial_closure_alias_effect_when_called -- --nocapture
+cargo test -p arcweft-lang-sema --all-features no_effect_rejects_partial_curried_higher_order_callback_on_final_call -- --nocapture
 cargo test -p arcweft-lang-sema --all-features closure_effect_rows_project_closed_report_evidence -- --nocapture
 cargo test -p arcweft-lang-sema --all-features borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary -- --nocapture
 cargo test -p arcweft-lang-sema --all-features returned_closure_captured_function_alias -- --nocapture
