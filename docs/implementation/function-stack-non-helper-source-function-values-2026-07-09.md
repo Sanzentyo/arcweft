@@ -197,6 +197,38 @@ slice:
 | `crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_class_mix.rs` | 222475 | 5760 | integration test |
 | `crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs` | 222425 | 5659 | integration test |
 
+2026-07-09 exact source-local candidate call validation:
+
+```bash
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_exact_source_call_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_pure_helper_call_body -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
+cargo check -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+cargo clippy -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
+rustfmt --edition 2024 --check crates\arcweft-runtime-plan\src\expr.rs crates\arcweft-runtime-plan\src\expr\enum_constructor.rs crates\arcweft-runtime-plan\src\expr\named_callable.rs crates\arcweft-runtime-plan\src\flow.rs crates\arcweft-runtime-plan\src\function_values.rs crates\arcweft-runtime-plan\src\source.rs crates\arcweft-runtime-plan\src\stream.rs crates\arcweft-compiler\src\tests.rs
+git diff --check -- crates\arcweft-runtime-plan crates\arcweft-compiler\src\tests.rs docs\implementation docs\reviews\requests\2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs\implementation\structure-audits\function-stack-source-function-exact-call-fixed-point-2026-07-09
+```
+
+All commands passed. Clippy still reports only existing large-enum warnings in
+`arcweft-lang-syntax` and the existing `too_many_lines` warning in
+`arcweft-lang-sema::semantic::analyze_stmt`. The structure audit scanned 2474
+files / 1179 Rust files / 582815 Rust physical LOC and reported 0 errors /
+151 warnings.
+
+Structural measurement after the exact source-local candidate call cut:
+
+| Path | Crate | Bytes | Physical LOC | Classification | Embedded test LOC | Responsibilities |
+| --- | --- | ---: | ---: | --- | ---: | --- |
+| `crates/arcweft-runtime-plan/src/expr.rs` | `arcweft-runtime-plan` | 77151 | 2187 | production | 0 | strict runtime expression lowering and helper/function-value lookup with independent source-candidate lifetimes |
+| `crates/arcweft-runtime-plan/src/expr/enum_constructor.rs` | `arcweft-runtime-plan` | 2772 | 98 | production | 0 | enum constructor strict lowering over the widened helper lookup type |
+| `crates/arcweft-runtime-plan/src/expr/named_callable.rs` | `arcweft-runtime-plan` | 4703 | 142 | production | 0 | declaration-order named callable lowering for pure helpers and runtime function-value candidates |
+| `crates/arcweft-runtime-plan/src/flow.rs` | `arcweft-runtime-plan` | 90757 | 2485 | production | 0 | runtime-plan flow lowering with helper/evidence/function-value lookup lifetimes separated |
+| `crates/arcweft-runtime-plan/src/function_values.rs` | `arcweft-runtime-plan` | 21199 | 644 | production | 0 | fixed-point accepted source-local function candidate discovery and exact source-candidate call admission |
+| `crates/arcweft-runtime-plan/src/source.rs` | `arcweft-runtime-plan` | 8097 | 222 | production | 0 | source plan lowering over the widened helper lookup type |
+| `crates/arcweft-runtime-plan/src/stream.rs` | `arcweft-runtime-plan` | 4318 | 119 | production | 0 | stream plan lowering over the widened helper lookup type |
+| `crates/arcweft-compiler/src/tests.rs` | `arcweft-compiler` | 130635 | 4019 | test | 4019 | compiler/runtime-plan function-stack regression fixtures |
+
 2026-07-09 exact pure-helper call validation:
 
 ```bash
