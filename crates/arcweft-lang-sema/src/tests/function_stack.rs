@@ -312,6 +312,60 @@ flow @flow.curried_spread_later_group curried_spread_later_group {
 }
 
 #[test]
+fn function_value_rejects_named_arguments_with_structured_diagnostic() {
+    let tree = parse_ok(
+        r"
+flow @flow.function_value_named_arg function_value_named_arg {
+    let bad = f(value = 1i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("function-value named arg fixture lowers");
+    validate_typecheck_ready(&hir).expect("function-value named arg fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol(
+        "f",
+        TypeKind::Function {
+            params: vec![TypeKind::I64],
+            return_type: Box::new(TypeKind::Bool),
+        },
+    );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedFunctionValueCall {
+                    callee: Some(callee),
+                    reason
+                } if callee == "f" && reason.contains("named argument `value`")
+            )
+        }),
+        "expected structured function-value named-argument diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| !diagnostic
+            .message()
+            .contains("do not accept named argument")),
+        "function-value named arg should not degrade into a generic call error: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: Some(callee),
+                    ..
+                } if callee == "f"
+            )
+        }),
+        "rejected function-value named arg must not record apply lowering evidence"
+    );
+}
+
+#[test]
 fn pure_function_prefix_call_typechecks_as_partial_application() {
     let tree = parse_ok(
         r"

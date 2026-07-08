@@ -637,6 +637,14 @@ is recorded. The shadowed-fallback warning cut covers real env-method and trait
 method priority with `method_chain_prefers_real_method_over_data_last_callable_fallback`
 and `method_chain_prefers_trait_method_over_data_last_callable_fallback`.
 
+The unsupported function-value argument diagnostic cut has passing sema
+coverage for rejected spread arguments on a later curried call group
+(`curried_function_value_rejects_later_spread_group_with_structured_diagnostic`)
+and rejected named arguments on a function-valued local
+(`function_value_rejects_named_arguments_with_structured_diagnostic`). Both
+tests verify the structured `UnsupportedFunctionValueCall` diagnostic and that
+no `FunctionValueCall` lowering evidence is recorded for rejected calls.
+
 The closure return type cut has passing parser coverage for `|params| -> Type
 { ... }`, `|| -> Type { ... }`, call-argument closures, and the required block
 body diagnostic. Sema coverage confirms declared closure return types typecheck
