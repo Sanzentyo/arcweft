@@ -72,6 +72,45 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn let_dialogue_call_expr_source_includes_following_line_plan() {
+    let source = r"
+flow @flow.opening opening {
+    let result = alice.say()[Pick one.]
+    with:
+        out score + 1i64
+}
+";
+    let tree = parse_ok(source);
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::Stmt(Stmt::Let {
+        expr: Expr::DialogueCall {
+            plan: Some(plan), ..
+        },
+        expr_source: Some(expr_source),
+        expr_range: Some(expr_range),
+        ..
+    }) = &flow.body()[0]
+    else {
+        panic!("expected dialogue call let binding with source");
+    };
+
+    assert_eq!(
+        expr_source,
+        "alice.say()[Pick one.]\n    with:\n        out score + 1i64"
+    );
+    assert_eq!(
+        &source[expr_range.as_range()],
+        "alice.say()[Pick one.]\n    with:\n        out score + 1i64"
+    );
+    assert_eq!(
+        &source[plan.range().as_range()],
+        "    with:\n        out score + 1i64"
+    );
+}
+
+#[test]
 fn dialogue_line_options_are_structured_not_raw_args() {
     let source = r#"
 alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]

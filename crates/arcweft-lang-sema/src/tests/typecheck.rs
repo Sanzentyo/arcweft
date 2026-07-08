@@ -1967,6 +1967,9 @@ fn dialogue_call_line_plan_expression_judgments_carry_source_ranges() {
     let source = r"
 flow @flow.dialogue_call_plan_source_ranges dialogue_call_plan_source_ranges {
     let result = alice.say()[Pick one.] with { out score + 1i64 }
+    let second = alice.say()[Choose again.]
+    with:
+        out score + 2i64
 }
 ";
     let tree = parse_ok(source);
@@ -1997,6 +2000,22 @@ flow @flow.dialogue_call_plan_source_ranges dialogue_call_plan_source_ranges {
         "1i64",
         |ty| matches!(ty, TypeKind::I64),
         "dialogue call line-plan child literal should carry its own authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "binary",
+        "score + 2i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "following-line dialogue call line-plan out expression should carry its authored range",
+    );
+    assert_expr_source_judgment(
+        &report,
+        source,
+        "literal",
+        "2i64",
+        |ty| matches!(ty, TypeKind::I64),
+        "following-line dialogue call line-plan child literal should carry its own range",
     );
 }
 

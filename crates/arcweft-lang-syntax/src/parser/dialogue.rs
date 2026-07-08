@@ -112,10 +112,10 @@ impl Parser<'_> {
         let line_leading = start.text.len() - start.text.trim_start().len();
         let trailing_start = start.start + line_leading + close + 1 + trailing_leading;
         let inline_plan = self.take_trailing_line_plan(trailing, trailing_start, &mut cursor);
-        let inline_plan_end = inline_plan.as_ref().map(|plan| plan.range().end());
 
         self.index = cursor + 1;
         let plan = inline_plan.or_else(|| self.take_optional_line_plan());
+        let plan_end = plan.as_ref().map(|plan| plan.range().end());
         let mut expr = parse_dialogue_call_expr_source(expr_source)
             .unwrap_or_else(|| parse_expr_lossy(expr_source));
         let has_dialogue = if let Some(plan) = plan {
@@ -129,23 +129,21 @@ impl Parser<'_> {
 
         let (pattern, ty) = parse_binding_pattern(pattern);
         let expr_start = start.start + line_leading + expr_offset + expr_leading;
-        let (expr_source, expr_range) = inline_plan_end
-            .and_then(|end| {
-                let text_base = start.start + line_leading;
-                let source_start = expr_offset + expr_leading;
-                let source_end = end.checked_sub(text_base)?;
-                let source = text.get(source_start..source_end)?.trim_end();
-                Some((
-                    source.to_owned(),
-                    TextRange::new(expr_start, expr_start + source.len()),
-                ))
-            })
-            .unwrap_or_else(|| {
-                (
-                    expr_source.to_owned(),
-                    TextRange::new(expr_start, expr_start + expr_source.len()),
-                )
-            });
+        let (expr_source, expr_range) = plan_end
+            .and_then(|end| self.source_text_in_range(expr_start, end))
+            .map_or_else(
+                || {
+                    (
+                        expr_source.to_owned(),
+                        TextRange::new(expr_start, expr_start + expr_source.len()),
+                    )
+                },
+                |source| {
+                    let source = source.trim_end().to_owned();
+                    let end = expr_start + source.len();
+                    (source, TextRange::new(expr_start, end))
+                },
+            );
         Some(Stmt::Let {
             pattern,
             ty,
@@ -153,6 +151,25 @@ impl Parser<'_> {
             expr_source: Some(expr_source),
             expr_range: Some(expr_range),
         })
+    }
+
+    fn source_text_in_range(&self, start: usize, end: usize) -> Option<String> {
+        if start >= end {
+            return None;
+        }
+        let mut source = String::new();
+        for line in self.events.iter() {
+            if line.end() <= start || line.start() >= end {
+                continue;
+            }
+            if !source.is_empty() {
+                source.push('\n');
+            }
+            let line_start = start.saturating_sub(line.start());
+            let line_end = end.min(line.end()).saturating_sub(line.start());
+            source.push_str(line.text().get(line_start..line_end)?);
+        }
+        (!source.is_empty()).then_some(source)
     }
 
     pub(super) fn parse_content_call_or_speaker_line(&mut self) -> Option<FlowItem> {

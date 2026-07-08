@@ -1333,16 +1333,32 @@ head expressions. Focused validation passed with
 `cargo test -p arcweft-lang-sema --all-features memo_block_option_expression_judgments_carry_source_ranges -- --nocapture`.
 
 The dialogue-call line-plan expression source-range follow-up closes a separate
-07.4.1 gap for same-line `with { ... }` attachments on `let` dialogue calls.
+07.4.1 gap for same-line `with { ... }` and following-line `with:` attachments
+on `let` dialogue calls.
 `parse_let_dialogue_call` already attached the parsed plan to
 `Expr::DialogueCall`, but its statement `expr_source` ended at the dialogue
 content bracket, so line-plan-only expression judgments such as `out score +
-1i64` had no authored range. The parser now extends the `Stmt::Let` expression
-source/range through same-line inline plans, and the syntax expression source
-collector descends into `LinePlanItem::Out`, option, let, timed cue, assert,
-plain expression, and simple grouped plan items from the authored dialogue-call
-source. Focused validation passed with
+1i64` had no authored range. The parser now reconstructs the `Stmt::Let`
+expression source/range through attached line plans, and the syntax expression
+source collector descends into `LinePlanItem::Out`, option, let, timed cue,
+assert, plain expression, and simple grouped plan items from the authored
+dialogue-call source. Focused validation passed with
 `cargo test -p arcweft-lang-syntax --all-features --test parser_dialogue_syntax_and_defaults let_dialogue_call_expr_source_includes_same_line_plan -- --nocapture`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_dialogue_syntax_and_defaults let_dialogue_call_expr_source_includes_following_line_plan -- --nocapture`,
 `cargo test -p arcweft-lang-sema --all-features dialogue_call_line_plan_expression_judgments_carry_source_ranges -- --nocapture`,
 and
 `cargo test -p arcweft-lang-sema --all-features source_ranges -- --nocapture`.
+The broader slice checks also passed with
+`cargo check -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`,
+`cargo test -p arcweft-lang-syntax --all-features --test parser_dialogue_syntax_and_defaults -- --nocapture`,
+`cargo test -p arcweft-lsp --all-features expression_type_inlays_are_profile_gated_and_skip_trivial_sites -- --nocapture`,
+`cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features`,
+and
+`git diff --check`. Focused clippy exits successfully with existing unrelated
+warnings from large syntax enum variants, `runtime-plan/src/line_task.rs`,
+sema test/function length, runtime-host clipboard lifetimes, and an LSP
+needless-pass-by-value warning. Structure audit was rerun with
+`cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/function-expression-source-ranges-2026-07-08`;
+the dirty worktree reports 2446 scanned files, 1171 Rust files, 576263 Rust
+physical LOC, and the existing unrelated
+`crates/arcweft-cli/src/app/bundle_view.rs` error with 148 warnings.
