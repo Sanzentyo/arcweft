@@ -8,7 +8,7 @@ historical note.
 ## Repository Baseline
 
 - Baseline before the latest function-stack status refresh:
-  `a1cf4a9fe Project closed closure effect rows`.
+  `a0e4d7b35 Consume closed effect rows for agent proofs`.
 - `main` and `origin/main` are aligned at that head.
 - The working copy still has unrelated View/Web/text-input changes. They are
   not part of the function/closure/currying/pipeline goal and should not be
@@ -18,11 +18,17 @@ The unrelated dirty files at this audit point are:
 
 - `crates/arcweft-cli/src/app/bundle/tests.rs`
 - `crates/arcweft-cli/src/app/bundle_view.rs`
+- `crates/arcweft-cli/src/app/bundle_view_layout.rs`
+- `crates/arcweft-cli/src/app/progress.rs`
+- `crates/arcweft-cli/src/app/runtime/run.rs`
+- `crates/arcweft-cli/src/app.rs`
 - `crates/arcweft-cli/tests/native_text_input_native_interactive_smoke.rs`
 - `crates/arcweft-cli/tests/native_text_input_sample_sidecars.rs`
 - `crates/arcweft-player-scene/src/fonts.rs`
 - `crates/arcweft-player-scene/src/input.rs`
 - `crates/arcweft-player-scene/tests/action_button_submit.rs`
+- `crates/arcweft-render-wgpu/src/font_system.rs`
+- `crates/arcweft-render-wgpu/src/geometry/text_controls.rs`
 - `crates/arcweft-render-wgpu/src/renderer.rs`
 - `crates/arcweft-render-wgpu/src/view_compositor.rs`
 - `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
@@ -100,6 +106,11 @@ The detailed evidence trail remains:
   design-blocked callable families are classified; unsupported helper-less
   signature partials now report the explicit family marker
   `signature_partial_without_helper`.
+- First non-helper source function value cut: single-group source-local `fn`
+  declarations with simple identifier parameters and expression bodies that
+  contain no call/effect/suspension-capable syntax now materialize as
+  `RuntimeExpr::Function` values, including named missing-input wrapper
+  partials.
 
 ## Remaining Function-Stack Work
 

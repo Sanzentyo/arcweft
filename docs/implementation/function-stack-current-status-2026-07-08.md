@@ -201,9 +201,11 @@ These should stay as request or design work before implementation:
    Product AWBC save/load behavior is explicit structured rejection.
 4. General non-helper/effectful/suspending top-level callable allocation as
    first-class runtime function values. Helper-backed and local-function paths
-   are implemented, and the callable-family inventory is recorded in
-   `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`.
-   The first accepted expansion beyond helper-backed callables is still split to
+   are implemented. The first narrow non-helper source-local `fn` expansion is
+   now recorded in
+   `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`.
+   Broader call-bearing/effectful/suspending callable allocation remains split
+   to
    `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`.
 5. Full closure effect-row integration. The implemented effect composition is
    broad, but the stable effect-row contract for closure captures remains a

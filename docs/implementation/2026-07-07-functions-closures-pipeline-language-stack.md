@@ -1029,7 +1029,7 @@ validation passed with
 `cargo test -p arcweft-lang-sema --all-features non_annotated_function_prefix_call_typechecks_as_partial_application`,
 `cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck`,
 and
-`cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_non_helper_signature_partial_call`;
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls`;
 the compiler tests were rerun serially after an initial parallel target-lock
 timeout. The same slice passed
 `cargo check -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`
@@ -1056,10 +1056,16 @@ closures, helper-less signature partials, effectful/suspending callables,
 task/dialogue/stream functions, trait/impl methods, adapter-backed callables,
 and persisted function values. Runtime-plan diagnostics for helper-less
 signature partials now carry the unsupported-family marker
-`signature_partial_without_helper`, so the current rejection boundary is
-auditable without pretending the broader non-helper allocation contract is
-implemented. Focused validation passed with
-`cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_non_helper_signature_partial_call -- --nocapture`.
+`signature_partial_without_helper`, so the rejection boundary is auditable
+without pretending the broader non-helper allocation contract is implemented.
+The follow-up source-function-value cut accepts the first narrow non-helper
+family: ordinary single-group source-local `fn` declarations with simple
+identifier parameters and expression bodies that contain no call/effect/
+suspension-capable syntax. Named missing-input partial calls for that family
+now synthesize wrapper functions that preserve declaration argument order.
+Focused validation passed with
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture` and
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture`.
 
 The runtime-plan closure capture metadata cut adds
 `RuntimeClosureCaptureInventory` / `RuntimeClosureCapture` under the

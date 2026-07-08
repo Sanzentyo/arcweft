@@ -11,6 +11,7 @@ use crate::expr::{
     RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_expected_type,
     lower_runtime_expr_strict_with_pure, runtime_call_effect,
 };
+use crate::function_values::{lower_runtime_function_value_candidates, runtime_function_value_map};
 use crate::host_request::{lower_agent_host_task_request, lower_host_task_request};
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
@@ -247,10 +248,13 @@ pub fn lower_runtime_plan_with_stats_and_options(
     };
     let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
+    let function_value_candidates = lower_runtime_function_value_candidates(module);
+    let function_values = runtime_function_value_map(&function_value_candidates);
     let entries = lower_runtime_entries(module);
     let (flows, line_task_groups, line_display_catalog, stream_plans, source_plans) = {
         let typed_expression_cursor = Cell::new(0);
         let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers)
+            .with_runtime_function_values(&function_values)
             .with_typed_lowering_evidence(
                 options.typed_lowering_evidence(),
                 &typed_expression_cursor,
@@ -340,9 +344,12 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
     };
     let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
+    let function_value_candidates = lower_runtime_function_value_candidates(module);
+    let function_values = runtime_function_value_map(&function_value_candidates);
     let lowered = {
         let typed_expression_cursor = Cell::new(0);
         let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers)
+            .with_runtime_function_values(&function_values)
             .with_typed_lowering_evidence(
                 options.typed_lowering_evidence(),
                 &typed_expression_cursor,

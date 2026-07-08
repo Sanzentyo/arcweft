@@ -7,7 +7,8 @@ This note closes the inventory step from
 It classifies callable families by their current function-value behavior and
 records which families remain blocked on larger contracts.
 
-Status: inventory complete; general non-helper callable allocation is still not
+Status: inventory complete; the first narrow non-helper source function value
+cut is implemented; general non-helper callable allocation is still not
 complete.
 
 ## Current Accepted Function-Value Families
@@ -17,6 +18,7 @@ complete.
 | Expression closures | `RuntimeExpr::Function` and `RuntimeExpr::Apply` execute in the core evaluator; non-suspending AWBC closure/apply is implemented. | `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`; AWBC 07.5 request implemented-boundary section. |
 | Local aliases to function values | Calls through local function-valued bindings lower to `RuntimeExpr::Apply` from typed evidence. | Compiler/runtime-plan function-stack regressions. |
 | Helper-backed top-level `fn` values | Bare helper names and prefix partial calls materialize executable runtime functions when pure-helper lowering succeeds. | `runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck`; `runtime_plan_lowers_named_missing_inferred_helper_input`. |
+| Simple non-helper source-local `fn` values | Single-group ordinary `fn` declarations with simple identifier parameters and expression bodies that contain no call/effect/suspension-capable syntax materialize as `RuntimeExpr::Function` without using the pure-helper table. Named missing-input partial calls synthesize wrapper functions that preserve declaration argument order. | `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`; `checked_runtime_plan_materializes_named_missing_source_function_partial_call`. |
 | Data-last pipes through helper/local function values | Fixed data-last order lowers through helper or local function-value apply. | `runtime_plan_lowers_local_function_data_last_pipe_to_apply`; typed data-last method fallback regressions. |
 | Non-suspending AWBC-backed generated closures | AWBC lowers generated functions with `MakeFunction` and executes `ApplyFunction` for exact, partial, and chained apply when no suspension occurs. | `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`. |
 
@@ -24,7 +26,7 @@ complete.
 
 | Family | Current behavior | Reason / next contract |
 | --- | --- | --- |
-| Signature partial without helper lowering | Checked runtime-plan lowering rejects this as `unsupported callable family signature_partial_without_helper`. | Needs 07.7 accepted callable representation before lowering can produce a function value. |
+| Signature partial without helper lowering | Checked runtime-plan lowering rejects this as `unsupported callable family signature_partial_without_helper` when no pure helper and no accepted source function-value candidate exists. | Needs additional 07.7 callable representations for call-bearing/effectful/suspending/adapter-backed bodies. |
 | Effectful top-level callable values | Creation timing, call timing, and row composition remain under the effect-row final contract. | Blocked on 07.8 plus 07.7 representation. |
 | Suspending callable values | Dynamic apply that may suspend has no resumable AWBC safe point contract. | Blocked on 07.5 dynamic apply/resume design. |
 | `task fn`, `dialogue fn`, and `stream fn` values | Their curried signatures type-check, but materializing them as runtime function values is not accepted. | Needs callable identity, suspension/effects, and runtime lowering contract. |
@@ -47,14 +49,18 @@ future family yet.
 
 ## Remaining 07.7 Work
 
-The next design decision is to choose the first accepted expansion beyond
-helper-backed top-level function values. That decision must specify:
+The first accepted expansion beyond helper-backed top-level function values is
+the simple source-local `fn` family documented in
+`docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`.
 
-- runtime representation;
-- effect timing;
-- suspension and AWBC behavior;
-- curried group handling;
-- save/load behavior;
+The remaining design decisions must specify:
+
+- runtime representation for call-bearing/effectful/suspending callable
+  values;
+- effect timing once body calls or adapter effects are accepted;
+- suspension and AWBC behavior for dynamic apply that may yield;
+- curried group handling for non-helper source functions;
+- save/load behavior for escaped callable values;
 - diagnostics for families that remain rejected.
 
 Until that contract exists, existing helper-backed/local closure behavior
@@ -64,7 +70,8 @@ with the explicit unsupported-family diagnostic.
 ## Validation
 
 ```bash
-cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_non_helper_signature_partial_call -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_named_missing_source_function_partial_call -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
 cargo check -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
 cargo clippy -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features
 cargo fmt -p arcweft-runtime-plan -p arcweft-compiler -- --check

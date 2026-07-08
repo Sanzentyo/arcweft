@@ -935,7 +935,7 @@ flow @flow.main main {
 }
 
 #[test]
-fn checked_runtime_plan_rejects_non_helper_signature_partial_call() {
+fn checked_runtime_plan_materializes_named_missing_source_function_partial_call() {
     let parsed = parse_source_text(
         r#"
 fn choose(left: String, right: String) -> String {
@@ -957,12 +957,85 @@ flow @flow.main main {
         typecheck.diagnostics
     );
 
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("checked runtime plan materializes non-helper source function partial");
+
+    let [
+        FlowOp::Let {
+            expr: choose_right, ..
+        },
+        FlowOp::Let { expr: value, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected choose_right and value lets");
+    };
+    assert!(matches!(
+        choose_right,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["left"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Apply { callee, args }
+                        if matches!(
+                            callee.as_ref(),
+                            RuntimeExpr::Function { params, body }
+                                if params.as_slice() == ["left", "right"]
+                                    && matches!(body.as_ref(), RuntimeExpr::Local(name) if name == "right")
+                        ) && matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Local(name), RuntimeExpr::Value(value)]
+                                if name == "left" && value == &RuntimeValue::String("tail".to_owned())
+                        )
+                )
+    ));
+    assert!(
+        matches!(
+            value,
+            RuntimeExpr::Apply { callee, args }
+                if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "choose_right")
+                    && matches!(
+                        args.as_slice(),
+                        [RuntimeExpr::Value(value)] if value == &RuntimeValue::String("head".to_owned())
+                    )
+        ),
+        "expected value let to call choose_right, got {value:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_rejects_source_function_partial_when_body_calls() {
+    let parsed = parse_source_text(
+        r#"
+fn trim_right(left: String, right: String) -> String {
+    return right.trim()
+}
+
+flow @flow.main main {
+    let trim_tail = trim_right(right = " tail ")
+    let value: String = trim_tail("head")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
         &RuntimePlanLowerOptions::default(),
     )
-    .expect_err("checked runtime plan rejects non-helper signature partials");
+    .expect_err("checked runtime plan rejects source function partials whose body calls");
 
     assert!(
         errors.iter().any(|error| {
@@ -970,7 +1043,7 @@ flow @flow.main main {
                 .message()
                 .contains("unsupported callable family `signature_partial_without_helper`")
                 && error.message().contains(
-                    "function `choose` partial application requires executable helper lowering",
+                    "function `trim_right` partial application requires executable helper lowering",
                 )
         }),
         "expected non-helper partial diagnostic, got {errors:#?}"

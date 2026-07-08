@@ -1,5 +1,6 @@
 //! Runtime expression and effect-call lowering.
 
+use crate::function_values::RuntimeFunctionValueCandidate;
 use crate::labels::{
     call_arg_label, duration_expr, entity_ref_label, expr_label, literal_label, named_arg_label,
     named_arg_value,
@@ -33,12 +34,18 @@ use arcweft_lang_hir::syntax::{
 use std::{cell::Cell, collections::BTreeMap};
 
 mod enum_constructor;
+mod named_callable;
 use enum_constructor::{lower_constructor_call, lower_expected_enum_record_constructor};
+use named_callable::{
+    PureHelperNamedCallLowering, lower_strict_function_value_named_call,
+    lower_strict_named_callable_args, lower_strict_pure_helper_named_call,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) struct RuntimePureHelperLookup<'helpers, 'locals> {
     ids: &'helpers BTreeMap<String, RuntimePureHelperId>,
     helpers: &'helpers [RuntimePureHelper],
+    function_values: Option<&'helpers BTreeMap<String, RuntimeFunctionValueCandidate>>,
     function_locals: Option<&'locals BTreeMap<String, usize>>,
     typed_lowering_evidence: Option<RuntimeTypedLoweringEvidenceLookup<'helpers>>,
     expression_cursor: Option<&'helpers Cell<usize>>,
@@ -52,6 +59,7 @@ impl<'helpers> RuntimePureHelperLookup<'helpers, 'static> {
         Self {
             ids,
             helpers,
+            function_values: None,
             function_locals: None,
             typed_lowering_evidence: None,
             expression_cursor: None,
@@ -67,7 +75,22 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
         RuntimePureHelperLookup {
             ids: self.ids,
             helpers: self.helpers,
+            function_values: self.function_values,
             function_locals: Some(function_locals),
+            typed_lowering_evidence: self.typed_lowering_evidence,
+            expression_cursor: self.expression_cursor,
+        }
+    }
+
+    pub(crate) fn with_runtime_function_values(
+        self,
+        function_values: &'helpers BTreeMap<String, RuntimeFunctionValueCandidate>,
+    ) -> RuntimePureHelperLookup<'helpers, 'locals> {
+        RuntimePureHelperLookup {
+            ids: self.ids,
+            helpers: self.helpers,
+            function_values: Some(function_values),
+            function_locals: self.function_locals,
             typed_lowering_evidence: self.typed_lowering_evidence,
             expression_cursor: self.expression_cursor,
         }
@@ -81,6 +104,7 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
         RuntimePureHelperLookup {
             ids: self.ids,
             helpers: self.helpers,
+            function_values: self.function_values,
             function_locals: self.function_locals,
             typed_lowering_evidence: Some(RuntimeTypedLoweringEvidenceLookup::new(
                 typed_lowering_evidence,
@@ -105,10 +129,23 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
     }
 
     fn function_value(self, name: &str) -> Option<RuntimeExpr> {
-        self.helper(name).map(|helper| RuntimeExpr::Function {
-            params: helper.input_names.clone(),
-            body: Box::new(helper.expr.clone()),
-        })
+        self.helper(name)
+            .map(|helper| RuntimeExpr::Function {
+                params: helper.input_names.clone(),
+                body: Box::new(helper.expr.clone()),
+            })
+            .or_else(|| {
+                self.function_value_candidate(name)
+                    .map(RuntimeFunctionValueCandidate::value)
+            })
+    }
+
+    fn function_value_candidate(
+        self,
+        name: &str,
+    ) -> Option<&'helpers RuntimeFunctionValueCandidate> {
+        self.function_values
+            .and_then(|function_values| function_values.get(name))
     }
 
     fn local_function_arity(self, name: &str) -> Option<usize> {
@@ -1478,6 +1515,7 @@ fn lower_strict_call_expr(
         && helpers.is_some_and(|helpers| {
             helpers.has_signature_partial_call_evidence(expression_id, callee, args.len())
                 && helpers.helper(callee).is_none()
+                && helpers.function_value_candidate(callee).is_none()
         })
     {
         return Err(format!(
@@ -1489,6 +1527,13 @@ fn lower_strict_call_expr(
         && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
     {
         return lower_strict_pure_helper_named_call(callee, args, helper, helpers);
+    }
+    if let Some(callee) = path_callee
+        && args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
+        && let Some(candidate) =
+            helpers.and_then(|helpers| helpers.function_value_candidate(callee))
+    {
+        return lower_strict_function_value_named_call(callee, args, candidate, helpers);
     }
     let args = match path_callee {
         Some(callee) => lower_strict_named_callee_args(callee, args, helpers)?,
@@ -1530,122 +1575,23 @@ fn lower_strict_named_callee_args(
     if args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
         && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
     {
-        return lower_strict_pure_helper_named_args(callee, args, helper, helpers).and_then(
-            |lowering| match lowering {
-                PureHelperNamedCallLowering::Exact(args) => Ok(args),
-                PureHelperNamedCallLowering::Partial(_) => Err(format!(
-                    "pure helper `{callee}` named partial call must lower as a function expression"
-                )),
-            },
-        );
+        return lower_strict_named_callable_args(
+            "pure helper",
+            callee,
+            args,
+            &helper.input_names,
+            helpers,
+        )
+        .and_then(|lowering| match lowering {
+            PureHelperNamedCallLowering::Exact(args) => Ok(args),
+            PureHelperNamedCallLowering::Partial(_) => Err(format!(
+                "pure helper `{callee}` named partial call must lower as a function expression"
+            )),
+        });
     }
     args.iter()
         .map(|arg| lower_strict_call_arg(arg, helpers))
         .collect::<Result<Vec<_>, _>>()
-}
-
-fn lower_strict_pure_helper_named_call(
-    callee: &str,
-    args: &[CallArg],
-    helper: &RuntimePureHelper,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
-) -> Result<RuntimeExpr, String> {
-    match lower_strict_pure_helper_named_args(callee, args, helper, helpers)? {
-        PureHelperNamedCallLowering::Exact(args) => Ok(RuntimeExpr::PureCall {
-            helper: helper.id,
-            args,
-        }),
-        PureHelperNamedCallLowering::Partial(partial) => Ok(RuntimeExpr::Function {
-            params: partial.params,
-            body: Box::new(RuntimeExpr::PureCall {
-                helper: helper.id,
-                args: partial.args,
-            }),
-        }),
-    }
-}
-
-#[derive(Clone, Debug)]
-struct PureHelperNamedPartialCall {
-    params: Vec<String>,
-    args: Vec<RuntimeExpr>,
-}
-
-#[derive(Clone, Debug)]
-enum PureHelperNamedCallLowering {
-    Exact(Vec<RuntimeExpr>),
-    Partial(PureHelperNamedPartialCall),
-}
-
-fn lower_strict_pure_helper_named_args(
-    callee: &str,
-    args: &[CallArg],
-    helper: &RuntimePureHelper,
-    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
-) -> Result<PureHelperNamedCallLowering, String> {
-    let mut lowered = std::iter::repeat_with(|| None)
-        .take(helper.input_names.len())
-        .collect::<Vec<_>>();
-    let mut positional_index = 0usize;
-
-    for arg in args {
-        match arg {
-            CallArg::Positional(value) => {
-                while positional_index < lowered.len() && lowered[positional_index].is_some() {
-                    positional_index += 1;
-                }
-                let Some(slot) = lowered.get_mut(positional_index) else {
-                    return Err(format!(
-                        "pure helper `{callee}` received too many positional arguments"
-                    ));
-                };
-                *slot = Some(lower_runtime_expr_strict_with_helpers(value, helpers)?);
-                positional_index += 1;
-            }
-            CallArg::Named { name, value } => {
-                let Some(index) = helper.input_names.iter().position(|input| input == name) else {
-                    return Err(format!(
-                        "pure helper `{callee}` has no input named `{name}`"
-                    ));
-                };
-                if lowered[index].is_some() {
-                    return Err(format!(
-                        "pure helper `{callee}` input `{name}` was provided more than once"
-                    ));
-                }
-                lowered[index] = Some(lower_runtime_expr_strict_with_helpers(value, helpers)?);
-            }
-            CallArg::Spread { .. } => {
-                return Err(format!(
-                    "pure helper `{callee}` does not accept spread arguments in named calls"
-                ));
-            }
-        }
-    }
-
-    let mut missing = Vec::new();
-    let args = lowered
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| {
-            value.unwrap_or_else(|| {
-                let name = helper.input_names[index].clone();
-                missing.push(name.clone());
-                RuntimeExpr::Local(name)
-            })
-        })
-        .collect::<Vec<_>>();
-
-    if missing.is_empty() {
-        Ok(PureHelperNamedCallLowering::Exact(args))
-    } else {
-        Ok(PureHelperNamedCallLowering::Partial(
-            PureHelperNamedPartialCall {
-                params: missing,
-                args,
-            },
-        ))
-    }
 }
 
 fn lower_strict_named_call(
@@ -1675,6 +1621,11 @@ fn lower_strict_named_call(
         } else {
             RuntimeExpr::PureCall { helper, args }
         }
+    } else if let Some(function) = helpers.and_then(|helpers| helpers.function_value(callee)) {
+        RuntimeExpr::Apply {
+            callee: Box::new(function),
+            args,
+        }
     } else {
         RuntimeExpr::Call {
             callee: RuntimeCallTarget::from_label(callee),
@@ -1693,6 +1644,9 @@ fn lower_strict_intrinsic_function_call(
         .and_then(|helpers| helpers.local_function_arity(&label))
         .is_some()
         || helpers.and_then(|helpers| helpers.id(&label)).is_some()
+        || helpers
+            .and_then(|helpers| helpers.function_value_candidate(&label))
+            .is_some()
     {
         return None;
     }
