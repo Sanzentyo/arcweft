@@ -2369,6 +2369,53 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_rejects_source_function_partial_when_body_calls_unaccepted_source() {
+    let parsed = parse_source_text(
+        r#"
+fn trim_right(left: String, right: String) -> String {
+    return right.trim()
+}
+
+fn normalize(left: String, right: String) -> String {
+    return trim_right(left, right)
+}
+
+flow @flow.main main {
+    let normalize_tail = normalize(right = " tail ")
+    let value: String = normalize_tail("head")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects partials through chained unsupported sources");
+
+    assert!(
+        errors.iter().any(|error| {
+            error
+                .message()
+                .contains("unsupported callable family `signature_partial_without_helper`")
+                && error.message().contains(
+                    "function `normalize` partial application requires executable helper lowering",
+                )
+        }),
+        "expected chained source partial diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_rejects_prefix_source_function_partial_when_body_calls() {
     let parsed = parse_source_text(
         r#"
@@ -2450,6 +2497,52 @@ flow @flow.main main {
                 .contains("function `trim_right` cannot be referenced as a runtime function value")
         }),
         "expected unsupported bare source function value diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
+fn checked_runtime_plan_rejects_bare_source_function_value_when_body_calls_unaccepted_source() {
+    let parsed = parse_source_text(
+        r#"
+fn trim_right(left: String, right: String) -> String {
+    return right.trim()
+}
+
+fn normalize(left: String, right: String) -> String {
+    return trim_right(left, right)
+}
+
+flow @flow.main main {
+    let normalize_value = normalize
+    let value: String = normalize_value("head", " tail ")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects source functions that call unaccepted sources");
+
+    assert!(
+        errors.iter().any(|error| {
+            error.message().contains(
+                "unsupported callable family `source_function_value_without_runtime_candidate`",
+            ) && error
+                .message()
+                .contains("function `normalize` cannot be referenced as a runtime function value")
+        }),
+        "expected unsupported chained source function diagnostic, got {errors:#?}"
     );
 }
 

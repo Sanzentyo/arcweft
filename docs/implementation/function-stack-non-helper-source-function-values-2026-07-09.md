@@ -50,6 +50,11 @@ signature partial calls now carry `SignaturePartialCall` evidence on the pipe
 expression itself, so runtime-plan pipe lowering rejects unsupported
 source-function partials with `signature_partial_without_helper` instead of
 falling through to direct runtime-call lowering.
+The eleventh follow-up adds focused evidence for source-local functions that
+exact-call unaccepted source-local functions. Such wrapper functions remain
+outside the accepted runtime function-value family; missing-input partial
+construction rejects as `signature_partial_without_helper`, and bare value
+references reject as `source_function_value_without_runtime_candidate`.
 
 ## Accepted Contract
 
@@ -159,6 +164,9 @@ That rejection boundary is covered for both named missing-input partials and
 positional prefix partials.
 Bare top-level source-function value references outside the same executable
 families fail as `source_function_value_without_runtime_candidate`.
+Source-local functions that call unaccepted source-local functions also remain
+outside the executable family, with focused coverage for missing-input partial
+construction and bare value references.
 Data-last pipe partials through source functions outside those executable
 families fail as `signature_partial_without_helper`.
 Task/dialogue/stream data-last partial rejection is recorded separately in
@@ -178,6 +186,7 @@ cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_control_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_materializes_source_function_if_let_expression_body -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_source_function_partial_when_body_calls -- --nocapture
+cargo test -p arcweft-compiler --all-features when_body_calls_unaccepted_source -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_prefix_source_function_partial_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_bare_source_function_value_when_body_calls -- --nocapture
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls -- --nocapture
