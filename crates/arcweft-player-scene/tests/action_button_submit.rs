@@ -7,14 +7,16 @@ use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::{InputController, InputDiagnosticKind, InputPointerModifiers};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint};
-use arcweft_presentation::semantic::{SemanticActionError, SemanticNode, SemanticRole};
+use arcweft_presentation::semantic::{
+    SemanticActionError, SemanticNode, SemanticRole, SemanticTree,
+};
 use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
-    RenderControlStyle, RenderPreferences, RenderScene, RenderTextInputControl, RenderViewport,
-    SharedFramePlanner,
+    RenderControlStyle, RenderDialogue, RenderPreferences, RenderScene, RenderTextInputControl,
+    RenderViewport, SharedFramePlanner,
 };
 
 fn target(value: &str) -> InteractionTarget {
@@ -104,6 +106,16 @@ fn action_invoke_scene() -> RenderScene {
     }
 }
 
+fn with_dialogue(mut scene: RenderScene) -> RenderScene {
+    scene.dialogue = Some(RenderDialogue {
+        speaker: "concierge".to_owned(),
+        text: "Submit the form.".to_owned(),
+        base_styles: Vec::new(),
+        text_runs: Vec::new(),
+    });
+    scene
+}
+
 #[test]
 fn pointer_activation_on_action_button_emits_semantic_action() {
     let scene = scene_with_text_input_and_action_button();
@@ -124,6 +136,24 @@ fn pointer_activation_on_action_button_emits_semantic_action() {
     assert_eq!(
         outcome.actions()[0].payload().map(String::as_str),
         Some("hello")
+    );
+}
+
+#[test]
+fn pointer_activation_on_action_button_does_not_implicitly_advance_dialogue() {
+    let scene = with_dialogue(action_invoke_scene());
+    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let mut input = InputController::default();
+    let position = ViewportPoint::new(80.0, 72.0);
+
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+    assert!(!outcome.dialogue_advance);
+    assert_eq!(outcome.actions().len(), 1);
+    assert_eq!(
+        outcome.actions()[0].kind().as_str(),
+        "action.feedback.submit_name"
     );
 }
 
@@ -175,7 +205,7 @@ fn pointer_activation_reports_semantic_action_rejection() {
         .find(&target("button.continue"))
         .expect("button semantic node exists")
         .clone();
-    frame.semantics = Default::default();
+    frame.semantics = SemanticTree::default();
     frame.semantics.push(
         SemanticNode::new(
             original_node.layer().clone(),

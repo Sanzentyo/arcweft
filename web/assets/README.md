@@ -8,6 +8,10 @@ This directory contains the browser demo's checked-in visual assets:
   Open Font License. The default Web player registers this SFNT font with the
   shared renderer so browser canvas text uses Japanese glyphs without relying
   on host system fonts.
+- `noto-emoji-regular.ttf`: Noto Emoji regular font, licensed under the SIL
+  Open Font License. The default Web player registers this SFNT font so emoji
+  glyphs are available in browser canvas text without relying on platform font
+  fallback.
 - `noto-sans-jp-*-wght-normal.woff2`: Noto Sans JP variable-font
   unicode-range shards from `@fontsource-variable/noto-sans-jp`, retained for
   future WOFF2 decoder compatibility tests. They are not part of the default

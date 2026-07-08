@@ -452,10 +452,11 @@ impl InputController {
 
     pub fn ensure_choice_focus(&mut self, frame: &PreparedFrame) -> bool {
         if self.interaction.focus().target().is_none()
-            && let Some(target) = frame.first_keyboard_focus_target()
+            && self.focused_text_editor.is_none()
+            && let Some(target) = frame.choices.first().map(|choice| choice.target.clone())
         {
             self.set_focus(frame, target);
-            true
+            self.interaction.focus().target().is_some()
         } else {
             false
         }
@@ -531,9 +532,11 @@ impl InputController {
             phase: PointerPhase::Down,
         }));
         let routed = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
+        let mut focused_routed_target = false;
         if let RouteDecision::Routed(event) = routed.decision() {
             let target = event.target().clone();
             if let Some(node) = frame.semantics.find(&target) {
+                focused_routed_target = true;
                 let intent = if frame_target_is_text_input(frame, &target) {
                     let intent = self.text_drag_intent(frame, &target, position, modifiers);
                     self.pending_text_pointer_selection = (intent == DragIntent::SelectOrActivate)
@@ -549,8 +552,7 @@ impl InputController {
                     self.pending_text_pointer_selection = None;
                     DragIntent::SelectOrActivate
                 };
-                self.interaction
-                    .set_focus(FocusState::new(node.layer().clone(), target.clone()));
+                self.set_focus(frame, target.clone());
                 self.interaction.capture_pointer(PointerCapture::new(
                     pointer,
                     node.layer().clone(),
@@ -574,6 +576,10 @@ impl InputController {
                     },
                 );
             }
+        }
+        if !focused_routed_target {
+            self.deactivate_focused_text_editor();
+            self.interaction.clear_focus();
         }
         InputOutcome::redraw(true)
     }
@@ -839,6 +845,7 @@ impl InputController {
                 InputOutcome::redraw(true)
             }
             "Enter" | " " | "Space" => self.activate_focused(frame),
+            "Backspace" => self.dialogue_advance_from_keyboard(frame),
             _ => InputOutcome::default(),
         }
     }
@@ -955,21 +962,48 @@ impl InputController {
             });
         let mut actions = actions;
         actions.extend(submit.action);
-        let text_control_write_backs = submit.write_back.into_iter().collect();
+        let text_control_write_backs: Vec<TextControlWriteBack> =
+            submit.write_back.into_iter().collect();
         let diagnostics = submit.diagnostic.into_iter().collect();
-        let activates_target = focused.as_ref().is_some_and(|target| {
-            frame.choice_for_target(target).is_some()
-                || frame.action_button_for_target(target).is_some()
-        });
+        let activates_choice = focused
+            .as_ref()
+            .is_some_and(|target| frame.choice_for_target(target).is_some());
+        let focused_view_control = focused
+            .as_ref()
+            .is_some_and(|target| frame_target_is_view_control(frame, target));
         activation_outcome(
             frame,
             actions,
             text_control_write_backs,
             diagnostics,
-            !activates_target,
+            !activates_choice && !focused_view_control,
         )
     }
 
+    fn dialogue_advance_from_keyboard(&self, frame: &PreparedFrame) -> InputOutcome {
+        let dialogue_advance = self.dialogue_can_advance_from_unfocused_input(frame);
+        InputOutcome {
+            dialogue_advance,
+            redraw: dialogue_advance,
+            ..InputOutcome::default()
+        }
+    }
+
+    fn dialogue_can_advance_from_unfocused_input(&self, frame: &PreparedFrame) -> bool {
+        let focused_target = self.interaction.focus().target().or_else(|| {
+            self.focused_text_editor
+                .as_ref()
+                .map(TextEditorState::target)
+        });
+        frame.has_dialogue()
+            && frame.choices.is_empty()
+            && !focused_target.is_some_and(|target| frame_target_is_view_control(frame, target))
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Text input updates share editor state, write-back, semantic action, and dialogue gating in one event path."
+    )]
     pub fn text_input(
         &mut self,
         frame: &PreparedFrame,
@@ -984,6 +1018,7 @@ impl InputController {
         if stale {
             self.deactivate_focused_text_editor();
         }
+        let mut submitted_runtime_text_control = false;
         if let Some(editor) = self
             .focused_text_editor
             .as_mut()
@@ -1014,6 +1049,7 @@ impl InputController {
                 || outputs
                     .iter()
                     .any(|output| matches!(output, TextEditorOutput::Submitted(_)));
+            submitted_runtime_text_control = submitted;
             let changed = input.commits_runtime_text_control_value()
                 && (editor.text() != before_text || editor.selection() != before_selection);
             if changed || submitted {
@@ -1069,7 +1105,8 @@ impl InputController {
             text_control_write_backs,
             clipboard_requests,
             diagnostics: Vec::new(),
-            dialogue_advance: false,
+            dialogue_advance: submitted_runtime_text_control
+                && self.dialogue_can_advance_from_unfocused_input(frame),
             cancel: false,
             redraw: true,
         })
@@ -1247,6 +1284,9 @@ impl InputController {
         frame: &PreparedFrame,
         target: arcweft_presentation::input::InteractionTarget,
     ) {
+        if !frame_target_is_text_input(frame, &target) {
+            self.deactivate_focused_text_editor();
+        }
         if let Some(node) = frame.semantics.find(&target) {
             self.interaction
                 .set_focus(FocusState::new(node.layer().clone(), target));
@@ -1630,11 +1670,7 @@ fn activation_outcome(
     diagnostics: Vec<InputDiagnostic>,
     advances_dialogue: bool,
 ) -> InputOutcome {
-    let dialogue_advance = advances_dialogue
-        && actions.is_empty()
-        && text_control_write_backs.is_empty()
-        && frame.has_dialogue()
-        && frame.choices.is_empty();
+    let dialogue_advance = advances_dialogue && frame.has_dialogue() && frame.choices.is_empty();
     InputOutcome {
         actions,
         text_control_write_backs,
@@ -1679,6 +1715,13 @@ fn frame_target_is_action_button(
     target: &arcweft_presentation::input::InteractionTarget,
 ) -> bool {
     frame.action_button_for_target(target).is_some()
+}
+
+fn frame_target_is_view_control(
+    frame: &PreparedFrame,
+    target: &arcweft_presentation::input::InteractionTarget,
+) -> bool {
+    frame_target_is_text_input(frame, target) || frame_target_is_action_button(frame, target)
 }
 
 #[cfg(test)]
@@ -1789,6 +1832,26 @@ mod tests {
     }
 
     #[test]
+    fn ensure_choice_focus_does_not_autofocus_view_text_controls() {
+        let target = target("text_input.no_auto_focus");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(43),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextArea,
+            HitRect::new(20.0, 30.0, 220.0, 80.0),
+        );
+        let frame = SharedFramePlanner::prepare(&scene(control)).unwrap();
+        let mut input = InputController::default();
+
+        assert!(!input.ensure_choice_focus(&frame));
+        assert!(input.visual_state().focused.is_none());
+        assert!(input.focused_text_editor().is_none());
+    }
+
+    #[test]
     fn text_input_edits_player_owned_focused_text_editor_state() {
         let target = target("text_input.editor");
         let session = TextInputSessionId(42);
@@ -1837,8 +1900,9 @@ mod tests {
             SemanticRole::TextField,
             HitRect::new(20.0, 30.0, 220.0, 32.0),
         );
-        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control)).unwrap();
+        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
         let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
         let position = ViewportPoint::new(30.0, 40.0);
 
         let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
@@ -1846,6 +1910,122 @@ mod tests {
 
         assert!(!down.dialogue_advance);
         assert!(!up.dialogue_advance);
+    }
+
+    #[test]
+    fn enter_without_view_control_focus_advances_dialogue() {
+        let target = target("text_input.unfocused_enter");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(64),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
+        let mut input = InputController::default();
+
+        let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
+
+        assert!(outcome.dialogue_advance);
+    }
+
+    #[test]
+    fn enter_with_text_input_focus_does_not_advance_dialogue() {
+        let target = target("text_input.focused_enter");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(65),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
+        let mut input = InputController::default();
+        let position = ViewportPoint::new(30.0, 40.0);
+        input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+        let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
+
+        assert!(!outcome.dialogue_advance);
+    }
+
+    #[test]
+    fn backspace_advances_dialogue_only_without_view_control_focus() {
+        let target = target("text_input.backspace_focus");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(66),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control)).unwrap();
+        let mut input = InputController::default();
+
+        let unfocused = input.keyboard(&frame, "Backspace", KeyPhase::Down);
+        assert!(unfocused.dialogue_advance);
+
+        let position = ViewportPoint::new(30.0, 40.0);
+        input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        let focused = input.keyboard(&frame, "Backspace", KeyPhase::Down);
+
+        assert!(!focused.dialogue_advance);
+    }
+
+    #[test]
+    fn pointer_down_outside_view_control_clears_text_focus_without_advancing() {
+        let target = target("text_input.blank_defocus");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(67),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
+        let mut input = InputController::default();
+
+        let text_position = ViewportPoint::new(30.0, 40.0);
+        input.pointer_down(
+            &frame,
+            PointerId(0),
+            text_position,
+            InputPointerModifiers::NONE,
+        );
+        input.pointer_up(
+            &frame,
+            PointerId(0),
+            text_position,
+            InputPointerModifiers::NONE,
+        );
+        assert!(input.interaction().focus().target().is_some());
+        input.activate_text_control(&control).unwrap();
+        assert!(input.focused_text_editor().is_some());
+
+        let blank_position = ViewportPoint::new(500.0, 500.0);
+        let blank = input.pointer_down(
+            &frame,
+            PointerId(0),
+            blank_position,
+            InputPointerModifiers::NONE,
+        );
+        assert!(!blank.dialogue_advance);
+        assert!(input.interaction().focus().target().is_none());
+        assert!(input.focused_text_editor().is_none());
+
+        let advance = input.keyboard(&frame, "Backspace", KeyPhase::Down);
+        assert!(advance.dialogue_advance);
     }
 
     #[test]
@@ -1931,6 +2111,47 @@ mod tests {
         assert!(event.is_submit());
         assert!(!event.is_change());
         assert_eq!(event.value().as_str(), "ready");
+    }
+
+    #[test]
+    fn submit_command_with_text_focus_does_not_advance_active_dialogue() {
+        let target = target("text_input.dialogue_submit");
+        let session = TextInputSessionId(63);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "ready",
+            TextRange::new(TextByteOffset(5), TextByteOffset(5)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene_with_dialogue(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+
+        let outcome = input
+            .text_input(
+                &frame,
+                TextInput::single(
+                    session,
+                    TextInputSerial(19),
+                    TextInputOperation::Command(TextEditCommand::Submit),
+                ),
+            )
+            .unwrap();
+
+        assert!(!outcome.dialogue_advance);
+        assert_eq!(outcome.text_control_write_backs().len(), 1);
+        assert!(outcome.text_control_write_backs()[0].is_submit());
     }
 
     #[test]

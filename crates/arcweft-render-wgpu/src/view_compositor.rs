@@ -575,7 +575,11 @@ impl ViewCompositor {
                 backdrop: None,
                 mask: None,
                 output,
-                uniform: ViewCompositorUniform::composite(1.0, ViewBlendShaderMode::Normal),
+                uniform: ViewCompositorUniform::composite_to_final_target(
+                    1.0,
+                    ViewBlendShaderMode::Normal,
+                    self.format,
+                ),
                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                 blend_over_existing: false,
             },

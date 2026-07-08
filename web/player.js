@@ -1,21 +1,31 @@
 import { createArcweftEditContextPlayerGlue } from "./player-editcontext.js";
 
 const DEFAULT_WASM_URL = "./pkg/arcweft_player_web.js";
+const DEFAULT_WASM_BINARY_URL = "./pkg/arcweft_player_web_bg.wasm";
 const DEFAULT_FONT_URLS = [
-  "./assets/arcweft-demo.ttf",
   "./assets/noto-sans-jp-vf.ttf",
+  "./assets/noto-emoji-regular.ttf",
+  "./assets/arcweft-demo.ttf",
 ];
 let wasmModulePromise = null;
+let wasmModuleCacheKey = null;
 const runtimeTextInputs = new Map();
 let runtimeCommandListenerInstalled = false;
 
-export async function loadArcweftWasm(url = DEFAULT_WASM_URL) {
-  if (globalThis.__arcweftWasmModule) {
+export async function loadArcweftWasm(url = DEFAULT_WASM_URL, wasmBinaryUrl) {
+  const cacheKey = `${url ?? ""}\0${wasmBinaryUrl ?? ""}`;
+  if (
+    globalThis.__arcweftWasmModule &&
+    globalThis.__arcweftWasmModuleCacheKey === cacheKey
+  ) {
     return globalThis.__arcweftWasmModule;
   }
-  if (!wasmModulePromise) {
+  if (!wasmModulePromise || wasmModuleCacheKey !== cacheKey) {
+    wasmModuleCacheKey = cacheKey;
     wasmModulePromise = import(url).then(async (module) => {
-      await module.default();
+      await module.default(wasmBinaryUrl ? { module_or_path: wasmBinaryUrl } : undefined);
+      globalThis.__arcweftWasmModule = module;
+      globalThis.__arcweftWasmModuleCacheKey = cacheKey;
       return module;
     });
   }
@@ -79,8 +89,12 @@ export async function startArcweftWebPlayer(options = {}) {
     if (!navigator.gpu) {
       throw new Error("WebGPU is unsupported: navigator.gpu is unavailable");
     }
-    const wasm = await loadArcweftWasm(options.wasmUrl);
-    const bundleUrl = options.bundleUrl || params.get("bundle") || "./demo.awfb";
+    const wasmUrls = resolveWasmUrls(options, params);
+    const wasm = await loadArcweftWasm(wasmUrls.moduleUrl, wasmUrls.binaryUrl);
+    const bundleUrl = withAssetCachebust(
+      options.bundleUrl || params.get("bundle") || "./demo.awfb",
+      assetCachebustParam(params),
+    );
     const fontUrls = resolveFontUrls(options, params);
     const [bundleBytes, fontByteArrays] = await Promise.all([
       fetchBytes(bundleUrl, "Arcweft bundle"),
@@ -116,15 +130,31 @@ export async function startArcweftWebPlayer(options = {}) {
   }
 }
 
+function resolveWasmUrls(options, params) {
+  const cachebust = assetCachebustParam(params);
+  const explicitModuleUrl = options.wasmUrl || params.get("wasmUrl") || params.get("wasm");
+  const explicitBinaryUrl =
+    options.wasmBinaryUrl || params.get("wasmBinaryUrl") || params.get("wasmBinary");
+  return {
+    moduleUrl: withAssetCachebust(explicitModuleUrl || DEFAULT_WASM_URL, cachebust),
+    binaryUrl: explicitBinaryUrl
+      ? withAssetCachebust(explicitBinaryUrl, cachebust)
+      : explicitModuleUrl
+        ? undefined
+        : withAssetCachebust(DEFAULT_WASM_BINARY_URL, cachebust),
+  };
+}
+
 function resolveFontUrls(options, params) {
+  const cachebust = assetCachebustParam(params);
   const explicitFontUrls = urlListOption(options.fontUrls);
   if (explicitFontUrls.length > 0) {
-    return explicitFontUrls;
+    return explicitFontUrls.map((url) => withAssetCachebust(url, cachebust));
   }
 
   const queryFontUrls = urlListOption(params.get("fontUrls") ?? params.get("fonts"));
   if (queryFontUrls.length > 0) {
-    return queryFontUrls;
+    return queryFontUrls.map((url) => withAssetCachebust(url, cachebust));
   }
 
   const primary = options.fontUrl || params.get("font");
@@ -133,9 +163,9 @@ function resolveFontUrls(options, params) {
       ? urlListOption(options.additionalFontUrls)
       : urlListOption(params.get("additionalFontUrls") ?? params.get("additionalFonts"));
   if (primary) {
-    return [primary, ...additional];
+    return [primary, ...additional].map((url) => withAssetCachebust(url, cachebust));
   }
-  return [...DEFAULT_FONT_URLS, ...additional];
+  return [...DEFAULT_FONT_URLS, ...additional].map((url) => withAssetCachebust(url, cachebust));
 }
 
 function urlListOption(value) {
@@ -165,6 +195,26 @@ function resolveFrameFitOptions(options, params) {
     designWidth: designWidth || 1280,
     designHeight: designHeight || 720,
   };
+}
+
+function assetCachebustParam(params) {
+  return params.get("assetCachebust") ?? params.get("cachebust");
+}
+
+function withAssetCachebust(url, cachebust) {
+  if (!cachebust) {
+    return url;
+  }
+  try {
+    const resolved = new URL(url, window.location.href);
+    if (resolved.protocol === "data:" || resolved.protocol === "blob:") {
+      return url;
+    }
+    resolved.searchParams.set("cachebust", cachebust);
+    return resolved.href;
+  } catch {
+    return url;
+  }
 }
 
 function numberOption(value) {
@@ -294,6 +344,8 @@ function autostartOptionsFromCanvas(canvas) {
     fontUrl: canvas.dataset.arcweftFontUrl || undefined,
     fontUrls: dataListOption(canvas.dataset.arcweftFontUrls),
     additionalFontUrls: dataListOption(canvas.dataset.arcweftAdditionalFontUrls),
+    wasmUrl: canvas.dataset.arcweftWasmUrl || undefined,
+    wasmBinaryUrl: canvas.dataset.arcweftWasmBinaryUrl || undefined,
     textInput: canvas.dataset.arcweftTextInput === "false" ? false : undefined,
   };
 }

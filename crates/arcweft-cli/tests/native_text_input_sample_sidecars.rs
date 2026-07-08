@@ -71,9 +71,17 @@ fn modern_feedback_view_sample_uses_view_style_and_flow_submit() {
     assert!(source.contains("Panel {"));
     assert!(source.contains("pub action feedback.submit_name(value: String)"));
     assert!(source.contains("pub action feedback.submit_brief(value: String)"));
+    assert!(source.contains("\"Noto Emoji\""));
     assert!(source.contains("TextField(visitor_name)"));
     assert!(source.contains("TextArea(product_brief)"));
     assert!(source.contains("Button(@button:.send_brief, label = \"Send brief\")"));
+    assert!(
+        source.contains("action.invoke(@action:.feedback.submit_name, value = visitor_name.text)")
+    );
+    assert!(
+        source
+            .contains("action.invoke(@action:.feedback.submit_brief, value = product_brief.text)")
+    );
     assert!(source.contains("let name_event = receive action(@action:.feedback.submit_name)"));
     assert!(source.contains("let visitor_name = name_event.value"));
     assert!(source.contains("let brief_event = receive action(@action:.feedback.submit_brief)"));

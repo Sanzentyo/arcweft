@@ -10,6 +10,12 @@
 use glyphon::FontSystem;
 use std::borrow::Cow;
 
+pub(crate) struct FontRegistrationReport {
+    pub before_faces: usize,
+    pub after_faces: usize,
+    pub primary_sans_family: Option<String>,
+}
+
 pub(crate) fn new_font_system() -> FontSystem {
     let system = FontSystem::new();
     let original_locale = system.locale().to_owned();
@@ -19,6 +25,34 @@ pub(crate) fn new_font_system() -> FontSystem {
     }
     let (_, db) = system.into_locale_and_db();
     FontSystem::new_with_locale_and_db(locale, db)
+}
+
+pub(crate) fn load_font_data_and_maybe_set_primary_sans(
+    font_system: &mut FontSystem,
+    bytes: Vec<u8>,
+    set_primary_sans: bool,
+) -> FontRegistrationReport {
+    let before_faces = font_system.db().faces().count();
+    font_system.db_mut().load_font_data(bytes);
+    let primary_sans_family = set_primary_sans
+        .then(|| first_loaded_family_name(font_system, before_faces))
+        .flatten();
+    if let Some(family) = primary_sans_family.as_deref() {
+        font_system.db_mut().set_sans_serif_family(family);
+    }
+    FontRegistrationReport {
+        before_faces,
+        after_faces: font_system.db().faces().count(),
+        primary_sans_family,
+    }
+}
+
+fn first_loaded_family_name(font_system: &FontSystem, before_faces: usize) -> Option<String> {
+    font_system
+        .db()
+        .faces()
+        .skip(before_faces)
+        .find_map(|face| face.families.first().map(|family| family.0.clone()))
 }
 
 fn fallback_locale_label(locale: &str) -> Cow<'_, str> {

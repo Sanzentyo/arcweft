@@ -13,6 +13,14 @@
       <p id="arcweft-loading" role="status">Arcweft WebGPU playerを起動しています…</p>
       <pre id="arcweft-fatal" role="alert" hidden></pre>
     </main>
-    <script type="module" src="./player.js"></script>
+    <script type="module">
+      const params = new URLSearchParams(window.location.search);
+      const cachebust = params.get("assetCachebust") ?? params.get("cachebust");
+      const playerUrl = new URL("./player.js", window.location.href);
+      if (cachebust) {
+        playerUrl.searchParams.set("cachebust", cachebust);
+      }
+      await import(playerUrl.href);
+    </script>
   </body>
 </html>

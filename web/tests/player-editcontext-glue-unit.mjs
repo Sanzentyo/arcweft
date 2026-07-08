@@ -133,7 +133,11 @@ try {
       hostId: host.id,
       initialText: "",
       statusTarget,
-      delegate: {},
+      delegate: {
+        createEditContext(_hostId, initialText) {
+          return new window.EditContext({ text: initialText });
+        },
+      },
     });
     await glue.install();
     host.editContext.dispatchEvent(new Event("compositionstart"));
@@ -148,12 +152,142 @@ try {
     host.editContext.dispatchEvent(update);
     host.editContext.dispatchEvent(new Event("compositionend"));
     await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const keydownHost = document.createElement("div");
+    keydownHost.id = "unit-editcontext-keydown-host";
+    keydownHost.tabIndex = 0;
+    keydownHost.style.cssText = "position:absolute;left:8px;top:72px;width:320px;height:48px";
+    document.body.append(keydownHost);
+    const keydownUpdates = [];
+    const keydownStatuses = [];
+    const commandCalls = [];
+    const keydownStatusTarget = new EventTarget();
+    keydownStatusTarget.addEventListener(
+      "arcweft-text-input-status",
+      (event) => keydownStatuses.push(event.detail.state),
+    );
+    const keydownGlue = module.createArcweftEditContextPlayerGlue(keydownHost, {
+      hostId: keydownHost.id,
+      initialText: "ab",
+      statusTarget: keydownStatusTarget,
+      delegate: {
+        createEditContext(_hostId, initialText) {
+          return new window.EditContext({ text: initialText });
+        },
+        commandForKeyEvent(_hostId, event) {
+          commandCalls.push({
+            key: event.key,
+            ctrlKey: event.ctrlKey,
+            altKey: event.altKey,
+            metaKey: event.metaKey,
+          });
+          return null;
+        },
+        dispatchTextUpdate(hostId, payload) {
+          keydownUpdates.push({ hostId, payload });
+        },
+      },
+    });
+    await keydownGlue.install();
+    keydownGlue.updateFromRuntimeSnapshot({ text: "ab", selectionStart: 1, selectionEnd: 2 });
+    const printableKey = new KeyboardEvent("keydown", { key: "Z", bubbles: true, cancelable: true });
+    const printableDispatchAccepted = keydownHost.dispatchEvent(printableKey);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const shortcutKey = new KeyboardEvent("keydown", {
+      key: "c",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const shortcutDispatchAccepted = keydownHost.dispatchEvent(shortcutKey);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const updatesBeforeInactiveKey = keydownUpdates.length;
+    keydownGlue.applyRuntimeCommand({ kind: "deactivate", session: 7 });
+    const inactiveKey = new KeyboardEvent("keydown", { key: "X", bubbles: true, cancelable: true });
+    const inactiveDispatchAccepted = keydownHost.dispatchEvent(inactiveKey);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const pointerHost = document.createElement("div");
+    pointerHost.id = "unit-editcontext-pointer-host";
+    pointerHost.tabIndex = 0;
+    pointerHost.style.cssText = "position:absolute;left:0;top:0;width:640px;height:360px";
+    pointerHost.setPointerCapture = () => {};
+    pointerHost.releasePointerCapture = () => {};
+    document.body.append(pointerHost);
+    const pointerUpdates = [];
+    const pointerStatuses = [];
+    const pointerStatusTarget = new EventTarget();
+    pointerStatusTarget.addEventListener(
+      "arcweft-text-input-status",
+      (event) => pointerStatuses.push(event.detail.state),
+    );
+    const pointerGlue = module.createArcweftEditContextPlayerGlue(pointerHost, {
+      hostId: pointerHost.id,
+      initialText: "abcd",
+      statusTarget: pointerStatusTarget,
+      delegate: {
+        createEditContext(_hostId, initialText) {
+          return new window.EditContext({ text: initialText });
+        },
+        dispatchTextUpdate(hostId, payload) {
+          pointerUpdates.push({ hostId, payload });
+        },
+      },
+    });
+    await pointerGlue.install();
+    pointerGlue.updateFromRuntimeSnapshot({ text: "abcd", selectionStart: 0, selectionEnd: 0 });
+    pointerGlue.updateGeometry({
+      controlRect: { x: 50, y: 50, width: 100, height: 32 },
+      caretRect: { x: 50, y: 50, width: 1, height: 32 },
+    });
+    const outsidePointer = new PointerEvent("pointerdown", {
+      pointerId: 41,
+      clientX: 240,
+      clientY: 140,
+      bubbles: true,
+      cancelable: true,
+    });
+    const outsideDispatchAccepted = pointerHost.dispatchEvent(outsidePointer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const updatesAfterOutsidePointer = pointerUpdates.length;
+    const insidePointer = new PointerEvent("pointerdown", {
+      pointerId: 42,
+      clientX: 64,
+      clientY: 60,
+      bubbles: true,
+      cancelable: true,
+    });
+    const insideDispatchAccepted = pointerHost.dispatchEvent(insidePointer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     return {
       fallbackInstalled: glue.status().fallbackInstalled,
       text: host.editContext.text,
       statuses: statuses.map((status) => status.state).filter(Boolean),
       mirrorNodeCount: document.querySelectorAll(".committed-text,.composition-text,.caret").length,
       forbiddenActiveNodeCount: document.querySelectorAll("input, textarea, [contenteditable], [role='textbox']").length,
+      keydown: {
+        text: keydownHost.editContext.text,
+        updates: keydownUpdates,
+        statuses: keydownStatuses,
+        commandCalls,
+        printableDefaultPrevented: printableKey.defaultPrevented,
+        printableDispatchAccepted,
+        shortcutDefaultPrevented: shortcutKey.defaultPrevented,
+        shortcutDispatchAccepted,
+        inactiveDefaultPrevented: inactiveKey.defaultPrevented,
+        inactiveDispatchAccepted,
+        inactiveUpdateCount: keydownUpdates.length - updatesBeforeInactiveKey,
+      },
+      pointer: {
+        updates: pointerUpdates,
+        statuses: pointerStatuses,
+        outsideDefaultPrevented: outsidePointer.defaultPrevented,
+        outsideDispatchAccepted,
+        updatesAfterOutsidePointer,
+        insideDefaultPrevented: insidePointer.defaultPrevented,
+        insideDispatchAccepted,
+      },
     };
   });
 
@@ -165,6 +299,59 @@ try {
   }
   if (!result.statuses.includes("composition_update") || !result.statuses.includes("composition_end")) {
     throw new Error(`missing composition statuses: ${result.statuses.join(", ")}`);
+  }
+  if (result.keydown.text !== "aZ") {
+    throw new Error(`printable keydown did not replace selected text: ${JSON.stringify(result.keydown)}`);
+  }
+  if (!result.keydown.printableDefaultPrevented || result.keydown.printableDispatchAccepted !== false) {
+    throw new Error(`printable keydown was not synchronously claimed: ${JSON.stringify(result.keydown)}`);
+  }
+  if (result.keydown.shortcutDefaultPrevented || result.keydown.shortcutDispatchAccepted !== true) {
+    throw new Error(`shortcut-like keydown should remain command-owned: ${JSON.stringify(result.keydown)}`);
+  }
+  if (result.keydown.updates.length !== 1) {
+    throw new Error(`printable keydown should emit one text update: ${JSON.stringify(result.keydown)}`);
+  }
+  const update = result.keydown.updates[0];
+  if (
+    update.hostId !== "unit-editcontext-keydown-host" ||
+    update.payload.updateRangeStart !== 1 ||
+    update.payload.updateRangeEnd !== 2 ||
+    update.payload.text !== "Z" ||
+    update.payload.selectionStart !== 2 ||
+    update.payload.selectionEnd !== 2 ||
+    update.payload.observedTextBefore !== "ab" ||
+    update.payload.composing !== false
+  ) {
+    throw new Error(`unexpected printable keydown payload: ${JSON.stringify(result.keydown)}`);
+  }
+  if (
+    result.keydown.commandCalls.length !== 1 ||
+    result.keydown.commandCalls[0].key !== "c" ||
+    result.keydown.commandCalls[0].ctrlKey !== true
+  ) {
+    throw new Error(`plain printable keydown should bypass command lookup: ${JSON.stringify(result.keydown)}`);
+  }
+  if (result.keydown.inactiveDefaultPrevented || result.keydown.inactiveDispatchAccepted !== true) {
+    throw new Error(`inactive keydown should pass through to the player: ${JSON.stringify(result.keydown)}`);
+  }
+  if (result.keydown.inactiveUpdateCount !== 0 || !result.keydown.statuses.includes("keydown_ignored_inactive")) {
+    throw new Error(`inactive keydown should not dispatch text updates: ${JSON.stringify(result.keydown)}`);
+  }
+  if (result.pointer.outsideDefaultPrevented || result.pointer.outsideDispatchAccepted !== true) {
+    throw new Error(`outside pointerdown should pass through to the player: ${JSON.stringify(result.pointer)}`);
+  }
+  if (result.pointer.updatesAfterOutsidePointer !== 0) {
+    throw new Error(`outside pointerdown should not dispatch text updates: ${JSON.stringify(result.pointer)}`);
+  }
+  if (!result.pointer.statuses.includes("pointer_ignored_outside_control")) {
+    throw new Error(`outside pointerdown should report an ignored text-control hit: ${JSON.stringify(result.pointer)}`);
+  }
+  if (!result.pointer.insideDefaultPrevented || result.pointer.insideDispatchAccepted !== false) {
+    throw new Error(`inside pointerdown should remain a text-control selection: ${JSON.stringify(result.pointer)}`);
+  }
+  if (result.pointer.updates.length !== 1) {
+    throw new Error(`inside pointerdown should dispatch one text selection update: ${JSON.stringify(result.pointer)}`);
   }
   console.log(JSON.stringify({ test: "player-editcontext-invisible-glue-unit", result }));
 } finally {

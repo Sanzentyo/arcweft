@@ -1,6 +1,6 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::font_family::render_font_family;
-use crate::font_system::new_font_system;
+use crate::font_system::{load_font_data_and_maybe_set_primary_sans, new_font_system};
 use crate::geometry::{
     PaintRect, PreparedControlPaint, PreparedControlShadow, PreparedFrame, PreparedViewScene,
     RenderFontFamily, RenderGlyphMotion, RenderGlyphTransformSpan, RenderImage,
@@ -19,6 +19,7 @@ use crate::view_scene::ViewBoxShadowKind;
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_text::RichTextRange;
 use bytemuck::{Pod, Zeroable};
+use glyphon::cosmic_text::Align;
 use glyphon::{
     Attrs, Buffer, Cache, Color, FontSystem, Metrics, Resolution, Shaping, Style, SwashCache,
     TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
@@ -146,8 +147,9 @@ impl SharedRenderer {
         if bytes.is_empty() {
             return Err(SharedRendererError::EmptyFont);
         }
+        let set_primary_sans = self.registered_font_bytes == 0;
         self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
-        self.font_system.db_mut().load_font_data(bytes);
+        load_font_data_and_maybe_set_primary_sans(&mut self.font_system, bytes, set_primary_sans);
         Ok(())
     }
 
@@ -1077,7 +1079,7 @@ fn text_buffer(font_system: &mut FontSystem, block: &RenderTextBlock) -> Buffer 
         &block.text,
         &text_attrs(block),
         Shaping::Advanced,
-        None,
+        Some(Align::Left),
     );
     buffer.shape_until_scroll(font_system, false);
     buffer
@@ -1101,7 +1103,13 @@ fn styled_paragraph_buffer(
     );
     let default_attrs = attrs_from_style(&paragraph.default_style);
     let spans = styled_paragraph_attr_spans(paragraph);
-    buffer.set_rich_text(font_system, spans, &default_attrs, Shaping::Advanced, None);
+    buffer.set_rich_text(
+        font_system,
+        spans,
+        &default_attrs,
+        Shaping::Advanced,
+        Some(Align::Left),
+    );
     buffer.shape_until_scroll(font_system, false);
     buffer
 }
@@ -1270,6 +1278,7 @@ fn scale_text_bounds(bounds: HitRect, scale_factor: f32) -> TextBounds {
 #[derive(Debug)]
 pub struct StyledParagraphEvidenceFontContext {
     font_system: FontSystem,
+    registered_font_bytes: usize,
 }
 
 impl StyledParagraphEvidenceFontContext {
@@ -1277,6 +1286,7 @@ impl StyledParagraphEvidenceFontContext {
     pub fn new() -> Self {
         Self {
             font_system: new_font_system(),
+            registered_font_bytes: 0,
         }
     }
 
@@ -1284,7 +1294,9 @@ impl StyledParagraphEvidenceFontContext {
         if bytes.is_empty() {
             return Err(SharedRendererError::EmptyFont);
         }
-        self.font_system.db_mut().load_font_data(bytes);
+        let set_primary_sans = self.registered_font_bytes == 0;
+        self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
+        load_font_data_and_maybe_set_primary_sans(&mut self.font_system, bytes, set_primary_sans);
         Ok(())
     }
 
@@ -2094,6 +2106,68 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{RenderTextReveal, RenderTextSelectionPolicy};
+
+    #[test]
+    fn plain_text_block_spacing_stays_compact_in_wide_buffer() {
+        let mut font_system = new_font_system();
+        let block = RenderTextBlock {
+            target: None,
+            text: "Alpha beta".to_owned(),
+            bounds: HitRect::new(0.0, 0.0, 400.0, 40.0),
+            clip_bounds: None,
+            buffer_width: Some(400.0),
+            buffer_height: Some(40.0),
+            font_size: 20.0,
+            line_height: 24.0,
+            font_family: RenderFontFamily::SansSerif,
+            weight: RenderTextWeight::Regular,
+            slant: RenderTextSlant::Upright,
+            rgba: [255, 255, 255, 255],
+            selection_policy: RenderTextSelectionPolicy::Disabled,
+            selection: None,
+            selection_rgba: [0.0, 0.0, 0.0, 0.0],
+        };
+
+        let buffer = text_buffer(&mut font_system, &block);
+        let right_edge = layout_text_right_edge(&buffer);
+
+        assert!(right_edge > 20.0, "text did not produce visible glyphs");
+        assert!(
+            right_edge < 220.0,
+            "text layout should not stretch word spacing across the full buffer: {right_edge}"
+        );
+    }
+
+    #[test]
+    fn styled_paragraph_spacing_stays_compact_in_wide_buffer() {
+        let mut font_system = new_font_system();
+        let paragraph = RenderStyledParagraph {
+            text: "Alpha beta".to_owned(),
+            bounds: HitRect::new(0.0, 0.0, 400.0, 40.0),
+            default_style: RenderTextStyle {
+                font_size: 20.0,
+                line_height: 24.0,
+                color: [255, 255, 255, 255],
+                font_family: RenderFontFamily::SansSerif,
+                weight: RenderTextWeight::Regular,
+                slant: RenderTextSlant::Upright,
+            },
+            spans: Vec::new(),
+            reveal: RenderTextReveal { visible_end: 10 },
+            glyph_transforms: Vec::new(),
+            visual_time_millis: 0,
+        };
+
+        let buffer = styled_paragraph_buffer(&mut font_system, &paragraph);
+        let right_edge = layout_text_right_edge(&buffer);
+
+        assert!(right_edge > 20.0, "text did not produce visible glyphs");
+        assert!(
+            right_edge < 220.0,
+            "styled paragraph layout should not stretch word spacing across the full buffer: {right_edge}"
+        );
+    }
 
     #[test]
     fn text_bounds_are_scaled_to_physical_pixels() {
@@ -2123,5 +2197,13 @@ mod tests {
                 bottom: 61,
             }
         );
+    }
+
+    fn layout_text_right_edge(buffer: &Buffer) -> f32 {
+        buffer
+            .layout_runs()
+            .flat_map(|run| run.glyphs.iter())
+            .map(|glyph| glyph.x + glyph.w)
+            .fold(0.0_f32, f32::max)
     }
 }

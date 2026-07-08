@@ -10,7 +10,7 @@ use super::{
     RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight, RenderViewport,
 };
 use crate::font_family::{font_trace_enabled, render_font_family, trace_font_debug};
-use crate::font_system::new_font_system;
+use crate::font_system::{load_font_data_and_maybe_set_primary_sans, new_font_system};
 use crate::text_editor_geometry::{TextEditorGeometryContext, TextEditorGeometryPump};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -110,14 +110,20 @@ impl TextControlFontContext {
         if bytes.is_empty() {
             return Err(FramePlanError::EmptyFont);
         }
-        let before_faces = self.font_system.db().faces().count();
+        let set_primary_sans = self.registered_font_bytes == 0;
         let byte_len = bytes.len();
         self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
-        self.font_system.db_mut().load_font_data(bytes);
-        let after_faces = self.font_system.db().faces().count();
+        let font_report = load_font_data_and_maybe_set_primary_sans(
+            &mut self.font_system,
+            bytes,
+            set_primary_sans,
+        );
         trace_font_debug(format_args!(
-            "text-control-font-register bytes={byte_len} faces_before={before_faces} faces_after={after_faces} registered_bytes={}",
-            self.registered_font_bytes
+            "text-control-font-register bytes={byte_len} faces_before={} faces_after={} primary_sans={:?} registered_bytes={}",
+            font_report.before_faces,
+            font_report.after_faces,
+            font_report.primary_sans_family,
+            self.registered_font_bytes,
         ));
         trace_text_control_font_system_once(self, "after-register", None);
         self.layout_cache.clear();

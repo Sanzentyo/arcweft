@@ -177,6 +177,7 @@ export class ArcweftEditContextPlayerGlue {
     }
     switch (command.kind) {
       case "activate":
+        this.#state.installed = true;
         this.updateFromRuntimeSnapshot(command.snapshot);
         this.#emitStatus("runtime_activated");
         break;
@@ -203,6 +204,7 @@ export class ArcweftEditContextPlayerGlue {
       case "deactivate":
         this.#state.installed = false;
         this.#state.composing = false;
+        this.#state.pointerSelection = null;
         this.#state.compositionAnchorRect = null;
         this.#emitStatus("runtime_deactivated", { session: command.session });
         this.#renderMirror();
@@ -249,8 +251,23 @@ export class ArcweftEditContextPlayerGlue {
 
   async #handleTextUpdate(event) {
     const update = readTextUpdate(event);
-    const observedTextBefore = this.#state.text;
     const composing = readComposing(this.#editContext, event, this.#state.composing);
+    await this.#dispatchTextUpdate(update, composing);
+    this.#state.compositionStart = numberOr(event.compositionStart, update.selectionStart);
+    this.#state.compositionEnd = numberOr(event.compositionEnd, update.selectionEnd);
+    if (composing && !this.#state.compositionAnchorRect) {
+      this.#state.compositionAnchorRect = toDomRectInit(this.#selectionBounds());
+    } else if (!composing) {
+      this.#state.compositionAnchorRect = null;
+    }
+    this.#syncEditContextText();
+    this.#syncEditContextGeometry({ updateCharacterBounds: !composing });
+    this.#renderMirror();
+    this.#emitStatus(composing ? "composition_update" : "committed_update");
+  }
+
+  async #dispatchTextUpdate(update, composing) {
+    const observedTextBefore = this.#state.text;
     await this.#delegateCall("dispatchTextUpdate", this.#state.hostId, {
       updateRangeStart: update.updateRangeStart,
       updateRangeEnd: update.updateRangeEnd,
@@ -271,17 +288,6 @@ export class ArcweftEditContextPlayerGlue {
     this.#state.selectionEnd = update.selectionEnd;
     this.#state.selectionAnchor = update.selectionStart;
     this.#state.composing = composing;
-    this.#state.compositionStart = numberOr(event.compositionStart, update.selectionStart);
-    this.#state.compositionEnd = numberOr(event.compositionEnd, update.selectionEnd);
-    if (composing && !this.#state.compositionAnchorRect) {
-      this.#state.compositionAnchorRect = toDomRectInit(this.#selectionBounds());
-    } else if (!composing) {
-      this.#state.compositionAnchorRect = null;
-    }
-    this.#syncEditContextText();
-    this.#syncEditContextGeometry({ updateCharacterBounds: !composing });
-    this.#renderMirror();
-    this.#emitStatus(composing ? "composition_update" : "committed_update");
   }
 
   #handleCharacterBoundsUpdate(event) {
@@ -302,6 +308,18 @@ export class ArcweftEditContextPlayerGlue {
   }
 
   async #handleKeyDown(event) {
+    if (!this.#state.installed) {
+      this.#emitStatus("keydown_ignored_inactive");
+      return;
+    }
+
+    const printableText = printableTextForKeyEvent(event);
+    if (printableText !== null && !this.#state.composing && !event.isComposing) {
+      event.preventDefault();
+      await this.#commitPrintableKeyText(printableText);
+      return;
+    }
+
     const command = await this.#delegateCall("commandForKeyEvent", this.#state.hostId, {
       key: event.key,
       ctrlKey: event.ctrlKey,
@@ -322,9 +340,38 @@ export class ArcweftEditContextPlayerGlue {
     this.#emitStatus("command", { command: command.name, selecting: Boolean(command.selecting) });
   }
 
+  async #commitPrintableKeyText(text) {
+    const updateRangeStart = Math.min(this.#state.selectionStart, this.#state.selectionEnd);
+    const updateRangeEnd = Math.max(this.#state.selectionStart, this.#state.selectionEnd);
+    const selection = updateRangeStart + utf16Length(text);
+    await this.#dispatchTextUpdate({
+      updateRangeStart,
+      updateRangeEnd,
+      text,
+      selectionStart: selection,
+      selectionEnd: selection,
+    }, false);
+    this.#state.compositionStart = selection;
+    this.#state.compositionEnd = selection;
+    this.#state.compositionAnchorRect = null;
+    this.#syncEditContextText();
+    this.#syncEditContextGeometry();
+    this.#renderMirror();
+    this.#emitStatus("committed_key_update");
+  }
+
   async #handlePointerDown(event) {
+    if (!this.#state.installed) {
+      this.#emitStatus("pointer_ignored_inactive");
+      return;
+    }
     if (this.#state.secure) {
       this.#emitStatus("pointer_geometry_redacted");
+      return;
+    }
+    if (!this.#clientPointInsideActiveControl(event.clientX, event.clientY)) {
+      this.#state.pointerSelection = null;
+      this.#emitStatus("pointer_ignored_outside_control");
       return;
     }
     event.preventDefault();
@@ -432,6 +479,11 @@ export class ArcweftEditContextPlayerGlue {
     const advance = this.#characterAdvance(rect);
     const raw = Math.round((clientX - rect.left - this.#textInsetX()) / advance);
     return nearestGraphemeOffset(this.#state.text, Math.max(0, Math.min(textLength, raw)));
+  }
+
+  #clientPointInsideActiveControl(clientX, clientY) {
+    const rect = this.#state.lastGeometry?.controlRect;
+    return rect ? clientPointInRect(rect, clientX, clientY) : false;
   }
 
   #syncEditContextText() {
@@ -647,6 +699,33 @@ function readComposing(editContext, event, fallback) {
   return Boolean(fallback);
 }
 
+function printableTextForKeyEvent(event) {
+  if (event.defaultPrevented || event.isComposing) {
+    return null;
+  }
+  const key = String(event.key ?? "");
+  if (key.length === 0 || key === "Dead" || key === "Process" || key === "Unidentified") {
+    return null;
+  }
+  const altGraph = typeof event.getModifierState === "function" && event.getModifierState("AltGraph");
+  if (event.metaKey || (event.ctrlKey && !altGraph) || (event.altKey && !altGraph)) {
+    return null;
+  }
+  if (!isSinglePrintableGrapheme(key)) {
+    return null;
+  }
+  return key;
+}
+
+function isSinglePrintableGrapheme(text) {
+  const offsets = graphemeOffsets(text);
+  if (offsets.length !== 2 || offsets[1] !== utf16Length(text)) {
+    return false;
+  }
+  const codePoint = text.codePointAt(0);
+  return codePoint >= 0x20 && codePoint !== 0x7f;
+}
+
 function normalizeRuntimeGeometry(geometry) {
   if (!geometry) {
     return null;
@@ -731,6 +810,14 @@ function runtimeOffsetForPoint(geometry, x, y) {
   }
   const last = bounds[bounds.length - 1];
   return last?.end ?? null;
+}
+
+function clientPointInRect(rect, x, y) {
+  const init = toDomRectInit(rect);
+  return x >= init.x &&
+    x <= init.x + init.width &&
+    y >= init.y &&
+    y <= init.y + init.height;
 }
 
 function replaceUtf16Range(text, start, end, replacement) {

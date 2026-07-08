@@ -116,6 +116,7 @@ try {
 
   await page.waitForFunction(() => (
     Boolean(window.__arcweftFatal) ||
+    Boolean(window.__arcweftImeSample?.fatal) ||
     Boolean(window.__arcweftLastFrameObservation) ||
     Boolean(window.__arcweftImeSample?.unsupportedNoFallback)
   ), null, { timeout: 15_000 });

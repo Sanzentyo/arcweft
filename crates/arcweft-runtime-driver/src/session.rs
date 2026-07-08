@@ -909,6 +909,7 @@ impl BundleSession {
         let task_events = self.tasks.apply_task_events(input.task_events);
         self.release_completed_task_generation_pins(&task_events);
         input.input_events.append(&mut self.pending_input_events);
+        let step_input_events = input.input_events.clone();
         let text_control_write_backs = std::mem::take(&mut self.pending_text_control_write_backs);
         let runtime_input = RuntimeStepInput {
             tick: clock.tick(),
@@ -959,7 +960,12 @@ impl BundleSession {
         let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
-        self.capture_view_host_calls(output.requests.host_calls, &mut diagnostics);
+        self.capture_view_host_calls(
+            output.requests.host_calls,
+            &step_input_events,
+            &text_control_write_backs,
+            &mut diagnostics,
+        );
         let cancel_scopes = output.requests.cancel_scopes;
         for scope in &cancel_scopes {
             self.tasks
@@ -1068,17 +1074,30 @@ impl BundleSession {
     fn capture_view_host_calls(
         &mut self,
         requests: Vec<RuntimeHostCallRequest>,
+        step_input_events: &[RoutedInputEvent],
+        text_control_write_backs: &[RuntimeTextControlWriteBack],
         diagnostics: &mut Vec<String>,
     ) {
         for request in requests {
             if request.capability == "view.action" && request.operation == "await" {
                 match action_receive_action_id(&request) {
                     Some(action_id) => {
-                        self.waiting_action_receive_calls
-                            .push(PendingActionReceiveCall {
-                                request: request.id,
-                                action_id,
+                        if let Some(payload) = action_payload_from_step_inputs(
+                            &action_id,
+                            step_input_events,
+                            text_control_write_backs,
+                        ) {
+                            self.pending_host_call_results.push(RuntimeHostCallResult {
+                                id: request.id,
+                                outcome: Ok(action_receive_payload(&action_id, payload.as_deref())),
                             });
+                        } else {
+                            self.waiting_action_receive_calls
+                                .push(PendingActionReceiveCall {
+                                    request: request.id,
+                                    action_id,
+                                });
+                        }
                     }
                     None => self.pending_host_call_results.push(RuntimeHostCallResult {
                         id: request.id,
@@ -1756,6 +1775,53 @@ fn action_receive_action_id(request: &RuntimeHostCallRequest) -> Option<String> 
         RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => Some(value.to_owned()),
         _ => None,
     }
+}
+
+fn action_payload_from_step_inputs(
+    action_id: &str,
+    step_input_events: &[RoutedInputEvent],
+    text_control_write_backs: &[RuntimeTextControlWriteBack],
+) -> Option<Option<String>> {
+    text_control_write_backs
+        .iter()
+        .find_map(|write_back| {
+            let handler = write_back.handler()?;
+            (write_back.is_submit() && handler.handler_id == action_id)
+                .then(|| Some(write_back.value().as_str().to_owned()))
+        })
+        .or_else(|| {
+            step_input_events
+                .iter()
+                .find_map(|event| action_payload_from_input_event(action_id, event))
+        })
+}
+
+fn action_payload_from_input_event(
+    action_id: &str,
+    event: &RoutedInputEvent,
+) -> Option<Option<String>> {
+    let InputEventKind::Custom { name } = &event.event else {
+        return None;
+    };
+    if name.as_str() != RuntimeInputKind::ActionInvoke.as_str()
+        || event.target.as_str() != action_id
+    {
+        return None;
+    }
+    Some(match event.payload.as_ref() {
+        Some(InteractionPayload::Text(value)) => Some(value.clone()),
+        Some(InteractionPayload::Entity(value)) => Some(value.as_str().to_owned()),
+        Some(
+            InteractionPayload::Null
+            | InteractionPayload::Bool(_)
+            | InteractionPayload::I64(_)
+            | InteractionPayload::U64(_)
+            | InteractionPayload::F64(_)
+            | InteractionPayload::List(_)
+            | InteractionPayload::Map(_),
+        )
+        | None => None,
+    })
 }
 
 fn action_receive_payload(action_id: &str, payload: Option<&str>) -> RuntimePayload {

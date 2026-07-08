@@ -12,8 +12,7 @@ It demonstrates:
   active, disabled, focus-visible states, translucent fills, `box-shadow`, and
   style-authored control depth;
 - `pub view ModernFeedbackPanel()` with `Panel`, `Column`, `Row`, `Text`,
-  `TextField`, `TextArea`, and player-rendered `Button`
-  actions;
+  `TextField`, `TextArea`, and player-rendered `Button` actions;
 - view-owned `TextField` and `TextArea` resources referenced by typed
   `pub action feedback.*` submit routes;
 - explicit `let panel = view(@view:.ModernFeedbackPanel)` scope-owned mounting

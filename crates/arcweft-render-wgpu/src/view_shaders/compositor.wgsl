@@ -12,7 +12,7 @@ struct ViewCompositorUniform {
     clip_vertices: array<vec4<f32>, 96>,
     gradient_stops: array<vec4<f32>, 8>,
     pass_kind: u32,
-    _padding0: u32,
+    output_encoding: u32,
     _padding1: u32,
     _padding2: u32,
 };
@@ -33,6 +33,7 @@ const PASS_CLIP: u32 = 6u;
 const PASS_BOX_SHADOW: u32 = 7u;
 const PASS_MASK_GRADIENT: u32 = 8u;
 const PASS_CLIPPED_COMPOSITE: u32 = 9u;
+const OUTPUT_ENCODING_SRGB: u32 = 1u;
 const PI: f32 = 3.141592653589793;
 const TAU: f32 = 6.283185307179586;
 
@@ -527,8 +528,30 @@ fn composite_source_over(backdrop: vec4<f32>, source: vec4<f32>) -> vec4<f32> {
     return vec4<f32>(out_rgb, out_alpha);
 }
 
-@fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+fn srgb_encode_channel(value_in: f32) -> f32 {
+    let value = clamp(value_in, 0.0, 1.0);
+    if (value <= 0.0031308) {
+        return value * 12.92;
+    }
+    return 1.055 * pow(value, 1.0 / 2.4) - 0.055;
+}
+
+fn srgb_encode(color: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        srgb_encode_channel(color.r),
+        srgb_encode_channel(color.g),
+        srgb_encode_channel(color.b),
+    );
+}
+
+fn encode_output(color: vec4<f32>) -> vec4<f32> {
+    if (uniform_data.output_encoding == OUTPUT_ENCODING_SRGB) {
+        return vec4<f32>(srgb_encode(color.rgb), color.a);
+    }
+    return color;
+}
+
+fn fragment_color(in: VertexOut) -> vec4<f32> {
     let source = source_color(in.uv);
     if (uniform_data.pass_kind == PASS_COLOR_MATRIX) { return apply_color_matrix(source); }
     if (uniform_data.pass_kind == PASS_BLUR) { return blur_color(in.uv); }
@@ -564,4 +587,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         return composite_source_over(backdrop, blended);
     }
     return vec4<f32>(source.rgb, source.a * clamp(uniform_data.params0.x, 0.0, 1.0));
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    return encode_output(fragment_color(in));
 }

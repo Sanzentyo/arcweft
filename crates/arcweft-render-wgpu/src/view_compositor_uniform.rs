@@ -24,6 +24,8 @@ const PASS_CLIP: u32 = 6;
 const PASS_BOX_SHADOW: u32 = 7;
 const PASS_MASK_GRADIENT: u32 = 8;
 const PASS_CLIPPED_COMPOSITE: u32 = 9;
+const OUTPUT_ENCODING_LINEAR: u32 = 0;
+const OUTPUT_ENCODING_SRGB: u32 = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -36,7 +38,8 @@ pub(crate) struct ViewCompositorUniform {
     clip_vertices: [[f32; 4]; MAX_CLIP_PATH_EDGES],
     gradient_stops: [[f32; 4]; MAX_MASK_GRADIENT_STOPS],
     pass_kind: u32,
-    _padding: [u32; 3],
+    output_encoding: u32,
+    _padding: [u32; 2],
 }
 
 impl ViewCompositorUniform {
@@ -50,6 +53,16 @@ impl ViewCompositorUniform {
             },
             ..Self::from_matrix(ViewColorMatrix::identity())
         }
+    }
+
+    pub(crate) fn composite_to_final_target(
+        opacity: f32,
+        blend: ViewBlendShaderMode,
+        target_format: wgpu::TextureFormat,
+    ) -> Self {
+        let mut uniform = Self::composite(opacity, blend);
+        uniform.output_encoding = ViewOutputEncoding::for_target_format(target_format).as_uniform();
+        uniform
     }
 
     pub(crate) fn clipped_composite(
@@ -288,7 +301,33 @@ impl ViewCompositorUniform {
             clip_vertices: [[0.0; 4]; MAX_CLIP_PATH_EDGES],
             gradient_stops: [[0.0; 4]; MAX_MASK_GRADIENT_STOPS],
             pass_kind: PASS_COMPOSITE,
-            _padding: [0; 3],
+            output_encoding: OUTPUT_ENCODING_LINEAR,
+            _padding: [0; 2],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ViewOutputEncoding {
+    Linear,
+    Srgb,
+}
+
+impl ViewOutputEncoding {
+    fn for_target_format(format: wgpu::TextureFormat) -> Self {
+        if format.is_srgb() {
+            return Self::Linear;
+        }
+        match format {
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Rgba8Unorm => Self::Srgb,
+            _ => Self::Linear,
+        }
+    }
+
+    const fn as_uniform(self) -> u32 {
+        match self {
+            Self::Linear => OUTPUT_ENCODING_LINEAR,
+            Self::Srgb => OUTPUT_ENCODING_SRGB,
         }
     }
 }
@@ -395,6 +434,7 @@ fn rgba_to_unit(color: ViewColorRgba8) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::ViewCompositorUniform;
+    use crate::view_blend::ViewBlendShaderMode;
     use crate::view_box_shadow::ViewBoxShadowPassPlan;
     use crate::view_clip_path::ViewClipGeometryPlan;
     use crate::view_scene::{ViewBoxShadow, ViewBoxShadowList, ViewColorRgba8};
@@ -441,6 +481,35 @@ mod tests {
         assert_uniform_value(uniform.params2[0], 1280.0);
         assert_uniform_value(uniform.params2[1], 720.0);
         assert_uniform_row(uniform.matrix[1], [80.0, 258.0, 672.0, 220.0]);
+    }
+
+    #[test]
+    fn final_target_composite_encodes_display_unorm_formats() {
+        let rgba = ViewCompositorUniform::composite_to_final_target(
+            1.0,
+            ViewBlendShaderMode::Normal,
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
+        let bgra = ViewCompositorUniform::composite_to_final_target(
+            1.0,
+            ViewBlendShaderMode::Normal,
+            wgpu::TextureFormat::Bgra8Unorm,
+        );
+        let rgba_srgb = ViewCompositorUniform::composite_to_final_target(
+            1.0,
+            ViewBlendShaderMode::Normal,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        );
+        let rgba_float = ViewCompositorUniform::composite_to_final_target(
+            1.0,
+            ViewBlendShaderMode::Normal,
+            wgpu::TextureFormat::Rgba16Float,
+        );
+
+        assert_eq!(rgba.output_encoding, super::OUTPUT_ENCODING_SRGB);
+        assert_eq!(bgra.output_encoding, super::OUTPUT_ENCODING_SRGB);
+        assert_eq!(rgba_srgb.output_encoding, super::OUTPUT_ENCODING_LINEAR);
+        assert_eq!(rgba_float.output_encoding, super::OUTPUT_ENCODING_LINEAR);
     }
 
     fn assert_uniform_row(actual: [f32; 4], expected: [f32; 4]) {

@@ -381,8 +381,118 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
     bundle.with_product_awbc(product_awbc)
 }
 
+fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
+    let line = line_id("line.action_intro");
+    let plan = RuntimePlan::new(
+        Some(flow_id("flow.main")),
+        vec![RuntimeFlow {
+            id: flow_id("flow.main"),
+            ops: vec![
+                FlowOp::Dialogue {
+                    line: line.clone(),
+                    task_group: 0,
+                },
+                FlowOp::HostCall {
+                    binding: Some(RuntimePattern::Ident("event".to_owned())),
+                    target: RuntimeHostCallTarget::new(
+                        "view.action.await",
+                        "view.action",
+                        "await",
+                        [RuntimeExpr::EntityRef("action.feedback.submit".to_owned())],
+                        RuntimeHostCallMode::Suspend,
+                        true,
+                    ),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Field {
+                    target: Box::new(RuntimeExpr::Local("event".to_owned())),
+                    field: "value".to_owned(),
+                }),
+            ],
+        }],
+        vec![LineTaskGroup::default()],
+    )
+    .expect("runtime plan is valid");
+    let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
+    let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
+        line,
+        callee: "concierge".to_owned(),
+        speaker_label: None,
+        text_key: None,
+        window: None,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![RichTextNode::Text {
+            text: "Submit the form.".to_owned(),
+        }]),
+    }]);
+    let bundle = ArcweftBundle::new(
+        BundleManifest {
+            source_label: "action-receive-after-dialogue.arcw".to_owned(),
+            profile_id: None,
+            profile_kind: None,
+            entry: None,
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                entry_flow: Some("flow.main".to_owned()),
+                flows: stats.flows,
+                bytecode_instructions: stats.instructions,
+                line_task_groups: stats.line_task_groups,
+                stream_plans: 0,
+                source_plans: 0,
+            },
+        },
+        BundleSource {
+            label: "action-receive-after-dialogue.arcw".to_owned(),
+            text: String::new(),
+        },
+        BytecodeProgram::from_runtime_plan(plan.clone()),
+        display.clone(),
+    );
+    let product_awbc = AwbcLowerer::new(&plan, &display, "action-receive-after-dialogue.arcw")
+        .lower()
+        .expect("product AWBC lowers")
+        .program;
+    bundle.with_product_awbc(product_awbc)
+}
+
 fn fixture_action_receive_bundle_with_submit_input() -> ArcweftBundle {
     fixture_action_receive_bundle().with_view_input(ViewInputResource {
+        options: vec![ViewInputOptions {
+            public_id: "input.feedback".to_owned(),
+            view: Some("view.FeedbackForm".to_owned()),
+            containing_scroll_region: None,
+            kind: ViewInputKind::TextField,
+            value_text_source: "text.value.input.feedback".to_owned(),
+            placeholder_text_source: None,
+            purpose: ViewInputPurpose::Text,
+            autocorrect: TextAssistPolicy::PlatformDefault,
+            spellcheck: TextAssistPolicy::PlatformDefault,
+            capitalization: TextCapitalization::None,
+            enter_key: EnterKeyHint::Send,
+            multiline: false,
+            selection_policy: ViewTextSelectionPolicy::Enabled,
+            shortcut_policy: ViewTextShortcutPolicy::Enabled,
+            tab_policy: ViewTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+            secure_policy: ViewSecureInputPolicy::Plain,
+            composition_on_blur: CompositionOnBlurPolicy::Commit,
+            submit_handler: Some("action.feedback.submit".to_owned()),
+            change_handler: Some("input.feedback".to_owned()),
+            adapter_requirements: Vec::new(),
+        }],
+        adapter_requirements: Vec::new(),
+    })
+}
+
+fn fixture_action_receive_after_dialogue_bundle_with_submit_input() -> ArcweftBundle {
+    fixture_action_receive_after_dialogue_bundle().with_view_input(ViewInputResource {
         options: vec![ViewInputOptions {
             public_id: "input.feedback".to_owned(),
             view: Some("view.FeedbackForm".to_owned()),
@@ -657,6 +767,53 @@ fn session_receive_action_host_call_resumes_with_event_value() {
 }
 
 #[test]
+fn session_receive_action_reached_by_dialogue_advance_uses_same_step_action() {
+    let bundle = fixture_action_receive_after_dialogue_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let dialogue = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(
+        dialogue
+            .presentation
+            .dialogue
+            .as_ref()
+            .map(|frame| frame.text.as_str()),
+        Some("Submit the form.")
+    );
+
+    session.queue_dialogue_advance();
+    let action = Action::new(
+        ActionTarget::Runtime,
+        PublicId::try_new("action.feedback.submit").expect("action id"),
+    )
+    .with_payload("Ada");
+    session
+        .queue_semantic_action(&action)
+        .expect("generic semantic action is accepted");
+    let reached_receive = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(!reached_receive.finished);
+
+    let resumed = session.step_with_clock(
+        RuntimeClockStep::from_millis(3, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+
+    assert!(resumed.finished);
+    assert!(resumed.flow_events.iter().any(|event| {
+        matches!(
+            event,
+            FlowEvent::Return { value } if value == "Ada"
+        )
+    }));
+}
+
+#[test]
 fn session_text_control_submit_handler_resumes_receive_action() {
     let bundle = fixture_action_receive_bundle_with_submit_input();
     let submit_session = bundle
@@ -687,6 +844,63 @@ fn session_text_control_submit_handler_resumes_receive_action() {
         .expect("submit writeback is accepted");
     let resumed = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+
+    assert!(resumed.finished);
+    assert!(resumed.flow_events.iter().any(|event| {
+        matches!(
+            event,
+            FlowEvent::Return { value } if value == "Ada"
+        )
+    }));
+}
+
+#[test]
+fn session_receive_action_reached_by_dialogue_advance_uses_same_step_text_submit() {
+    let bundle = fixture_action_receive_after_dialogue_bundle_with_submit_input();
+    let submit_session = bundle
+        .view_input
+        .as_ref()
+        .expect("fixture has input resource")
+        .options[0]
+        .runtime_text_session();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let dialogue = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(
+        dialogue
+            .presentation
+            .dialogue
+            .as_ref()
+            .map(|frame| frame.text.as_str()),
+        Some("Submit the form.")
+    );
+
+    let submit = TextControlWriteBack::submit(
+        PresentationInteractionTarget::new(
+            PublicId::try_new("input.feedback").expect("valid target"),
+        ),
+        TextInputSessionId(submit_session),
+        TextControlValue::plain("Ada"),
+        TextRange::new(TextByteOffset(3), TextByteOffset(3)),
+        TextRevision(1),
+    );
+    session.queue_dialogue_advance();
+    session
+        .queue_text_control_write_back(&submit)
+        .expect("submit writeback is accepted");
+    let reached_receive = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(!reached_receive.finished);
+
+    let resumed = session.step_with_clock(
+        RuntimeClockStep::from_millis(3, 16).expect("clock"),
         BundleStepInput::default(),
     );
 

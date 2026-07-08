@@ -30,7 +30,7 @@ entry game @entry.modern_feedback_view {
 }
 
 pub style modern_feedback_panel {
-  token font.view_stack = ["Arcweft Demo", "Yu Gothic UI", "Yu Gothic", "Meiryo", "MS PGothic", "MS Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]
+  token font.view_stack = ["Noto Sans JP", "Yu Gothic UI", "Yu Gothic", "Meiryo", "MS PGothic", "MS Gothic", "Hiragino Sans", "Noto Emoji", "system-ui", "Arcweft Demo"]
   token color.canvas = rgba(11, 16, 22, 210)
   token color.panel = rgba(28, 41, 56, 178)
   token color.panel_hover = rgba(50, 70, 88, 214)
@@ -164,14 +164,6 @@ pub view ModernFeedbackPanel() {
           .on_submit {
             action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
           }
-
-        Button(@button:.continue, label = "Continue")
-          .style(@style:.modern_feedback_panel)
-          .enabled(true)
-          .focusable(true)
-          .on_click {
-            action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
-          }
       }
 
       TextArea(product_brief)
@@ -203,31 +195,35 @@ pub view ModernFeedbackPanel() {
 }
 
 flow modern_feedback_view {
-  player_viewport(width = 1280px, height = 720px, fit = contain)
-  image(@image.glass_bg)
-  let panel = view(@view:.ModernFeedbackPanel)
+    player_viewport(width = 1280px, height = 720px, fit = contain)
+    image(@image.glass_bg)
 
-  concierge:
-    This sample pairs a translucent view panel with a normal Arcweft flow.[p]
-    Fill the name field first, then submit the brief with Enter, IME send, or the Send brief button.
+    {
+        let panel = view(@view:.ModernFeedbackPanel)
 
-  let name_event = receive action(@action:.feedback.submit_name)
-  let visitor_name = name_event.value
+        concierge:
+            Welcome to the Modern Feedback View sample. This is a translucent view panel with a normal Arcweft flow.[p]
+            Fill the name field first, then submit the brief with Enter, IME send, or the Send brief button.
+        
+        let name_event = receive action(@action:.feedback.submit_name)
+        let visitor_name = name_event.value
+        
+        if visitor_name == "" {
+            concierge: We will keep the greeting anonymous for now.
+        } else {
+            concierge: Nice to meet you, #[visitor_name].
+        }
+        
+        let brief_event = receive action(@action:.feedback.submit_brief)
+        let brief = brief_event.value
+        
+        if brief == "" {
+            concierge: No brief was submitted. The View stays ready for another pass.
+        } else {
+            concierge: Captured the view-backed brief. The next runtime step can branch into a planning route.
+        }
+        concierge: The submitted brief was: #[brief]
 
-  if visitor_name == "" {
-    concierge: We will keep the greeting anonymous for now.
-  } else {
-    concierge: Nice to meet you, #[visitor_name].
-  }
-
-  let brief_event = receive action(@action:.feedback.submit_brief)
-  let brief = brief_event.value
-
-  if brief == "" {
-    concierge: No brief was submitted. The View stays ready for another pass.
-  } else {
-    concierge: Captured the view-backed brief. The next runtime step can branch into a planning route.
-  }
-
-  return brief
+        return brief
+    }
 }
