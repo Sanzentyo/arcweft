@@ -22,14 +22,15 @@ Related slices are:
   thread expression body statement ranges, the authored-payload conversion for
   `Stmt::Signal` / `Stmt::LifetimeSet`, and the expression source-range
   coverage matrix with typed statement branch source fixes.
-- The current dirty files are unrelated View rendering, font, sample, and Web
-  IME/player files. They include display-output encoding changes, emoji font
-  registration, EditContext printable-key handling, and modern-feedback sample
-  and sidecar-test changes around removing the dead name submit route.
+- The current dirty files are unrelated View rendering, font, sample, Web
+  IME/player, and runtime-driver text-input files. They include display-output
+  encoding changes, emoji font registration, EditContext printable-key
+  handling, runtime-driver text-input/session handling, and modern-feedback
+  sample and sidecar-test changes around removing the dead name submit route.
 
-Those View/Web changes are not part of this function-stack status note and
-should be handled as their own rendering/IME/sample slice if they are still
-desired.
+Those View/Web/text-input changes are not part of this function-stack status
+note and should be handled as their own rendering/IME/sample slice if they are
+still desired.
 
 ## Implemented Goal Surface
 
@@ -149,16 +150,23 @@ desired.
 - Runtime IDs use typed `RuntimeIdPath` values.
 - Source references, canonical runtime IDs, and public/debug labels are
   separate domains.
+- AWBC flow target lookup now uses typed `FlowRuntimeId` keys in the compiler
+  inventory. Static `goto`, choice targets, entries, and route targets no
+  longer resolve through a public-label function map, and the old general
+  public-label function index has been removed from `AwbcInventory`.
 - The atom-table representation from the seq-07.6 package is deliberately
   deferred until profiling shows it is needed.
 
 ## Implementation-Ready Remaining Work
 
-These items can be advanced without redesigning the goal:
+The previously identified AWBC flow-target runtime-ID cleanup is implemented.
+No additional concrete implementation-ready function-stack item is currently
+identified from the status index without either finding another typed-key
+cleanup site in code or receiving more design for the items below.
 
-1. Continue typed-runtime-ID cleanup at AWBC/report boundaries where internal
-   maps still use public strings, but only where the AWBC schema/data-format
-   boundary allows typed keys without a larger format change.
+Continue runtime-ID cleanup only for concrete lookup/index maps that still use
+public strings where an owned typed key exists. Do not redesign AWBC/schema
+public strings or add an atom table without profiling evidence.
 
 ## Request/Design Remaining Work
 
@@ -195,12 +203,12 @@ These should stay as request or design work before implementation:
 
 ## Recommended Next Slice
 
-The source-range/inlay audit is now represented by the coverage matrix. The
-next implementation-ready slice is small typed runtime-ID cleanup at
-AWBC/report boundaries, but the larger remaining goal items should stay in
-request/design space until spread partials or resumable AWBC apply receive a
-more concrete contract.
+The source-range/inlay audit is represented by the coverage matrix, and the
+known AWBC flow-target runtime-ID cleanup has been implemented. The larger
+remaining goal items should stay in request/design space until spread partials
+or resumable AWBC apply receive a more concrete contract, unless another
+specific typed-key cleanup site is found by code audit.
 
-Do not fold the current dirty View/Web rendering and IME-player files into this
-goal. They belong to the View/rendering/text-input track and need their own
-validation evidence before commit.
+Do not fold the current dirty View/Web rendering, runtime-driver text-input,
+and IME-player files into this goal. They belong to the View/rendering/text-input
+track and need their own validation evidence before commit.

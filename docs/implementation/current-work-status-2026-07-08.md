@@ -15,9 +15,13 @@ or design work.
   - `crates/arcweft-cli/tests/native_text_input_native_interactive_smoke.rs`
   - `crates/arcweft-cli/tests/native_text_input_sample_sidecars.rs`
   - `crates/arcweft-player-scene/src/fonts.rs`
+  - `crates/arcweft-player-scene/src/input.rs`
+  - `crates/arcweft-player-scene/tests/action_button_submit.rs`
   - `crates/arcweft-render-wgpu/src/view_compositor.rs`
   - `crates/arcweft-render-wgpu/src/view_compositor_uniform.rs`
   - `crates/arcweft-render-wgpu/src/view_shaders/compositor.wgsl`
+  - `crates/arcweft-runtime-driver/src/session.rs`
+  - `crates/arcweft-runtime-driver/tests/session.rs`
   - `samples/modern-feedback-view/README.md`
   - `samples/modern-feedback-view/src/main.arcw`
   - `web/assets/README.md`
@@ -27,12 +31,13 @@ or design work.
   - `web/player.js`
   - `web/tests/ime-sample-smoke.mjs`
   - `web/tests/player-editcontext-glue-unit.mjs`
-- These files are not part of this documentation cleanup. They look like a
-  mixed View-rendering/Web-player slice: display-output encoding, emoji font
-  registration, EditContext printable-key handling, and modern-feedback sample
-  and sidecar-test changes around removing the dead name submit route. They
-  should be validated and committed, reverted, or continued only as their own
-  UI/Web slice.
+- These files are not part of this function-stack/runtime-ID cleanup. They
+  look like a mixed View-rendering/Web-player/text-input slice: display-output
+  encoding, emoji font registration, EditContext printable-key handling,
+  runtime-driver text-input/session handling, and modern-feedback sample and
+  sidecar-test changes around removing the dead name submit route. They should
+  be validated and committed, reverted, or continued only as their own
+  UI/Web/text-input slice.
 
 ## Active Goal
 
@@ -75,6 +80,9 @@ The following is implemented and evidenced by tests or implementation logs:
 - Canonical primitive spellings are enforced without compatibility aliases.
 - Runtime lookup IDs now use typed `RuntimeIdPath` wrappers instead of raw
   `FlowRuntimeId("flow.main")`-style string newtypes.
+- AWBC flow target lookup now uses typed `FlowRuntimeId` keys in the compiler
+  inventory. Static `goto`, choice targets, entries, and route targets no
+  longer resolve through a public-label function map.
 - `Stmt::Signal` and `Stmt::LifetimeSet` now use source-backed
   `AuthoredExpr` payloads. `LifetimeSet` parser output carries authored ranges
   through sema so lifetime write values can produce source-backed type
@@ -100,10 +108,15 @@ new concrete defect appears:
 
 ## Implementation-Ready Remaining Work
 
-These can be implemented without a new design package:
+The previously identified AWBC flow-target runtime-ID cleanup has been
+implemented. At this point there is no additional concrete implementation-ready
+function-stack item identified in the status index without either finding
+another typed-key cleanup site in code or receiving more design for the items
+below.
 
-1. Continue typed runtime-ID cleanup only at boundaries where the current AWBC
-   or report schema can accept typed keys without a data-format redesign.
+Continue runtime-ID cleanup only for concrete lookup/index maps that still use
+public strings where an owned typed key exists. Do not redesign AWBC/schema
+public strings or add an atom table without profiling evidence.
 
 ## Request/Design Remaining Work
 
@@ -139,11 +152,11 @@ function-stack goal:
 
 ## Recommended Next Order
 
-1. Keep this documentation refresh as a docs-only cut.
+1. Keep this runtime-ID cleanup as a function-stack cut.
 2. Decide whether to validate and commit the dirty View/Web slice separately or
    leave it for the rendering/IME track.
-3. Decide whether to take the next implementation-ready runtime-ID cleanup or
-   pause for a design package on spread partials / AWBC resumable apply.
+3. Audit for another concrete typed-key cleanup site, or pause for a design
+   package on spread partials / AWBC resumable apply.
 
 ## Current Structural Risk
 

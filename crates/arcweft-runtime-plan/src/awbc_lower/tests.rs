@@ -1,10 +1,13 @@
 use super::*;
 use arcweft_core::awbc::fiber::FiberState;
-use arcweft_core::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcInstruction, AwbcProgram};
+use arcweft_core::awbc::schema::{
+    AwbcEntryId, AwbcEntryTarget, AwbcFunctionId, AwbcInstruction, AwbcProgram, AwbcTerminator,
+};
 use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmStepOptions};
 use arcweft_core::plan::{
-    FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
-    RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
+    EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
 };
 use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
 
@@ -20,6 +23,10 @@ fn lower_plan(plan: &RuntimePlan) -> AwbcLowerReport {
     )
     .lower()
     .expect("AWBC lowers runtime plan")
+}
+
+fn entry_id(value: &str) -> EntryRuntimeId {
+    EntryRuntimeId::canonical(value).expect("test entry ID is valid")
 }
 
 fn run_entry(program: &AwbcProgram, host: &mut impl VmHost) -> VmExit {
@@ -305,4 +312,56 @@ fn generated_awbc_function_value_apply_can_call_pure_helper_body() {
         run_entry(&report.program, &mut host),
         VmExit::Returned(Some(RuntimeValue::i64(42)))
     );
+}
+
+#[test]
+fn awbc_flow_target_resolution_uses_typed_runtime_ids() {
+    let main = flow_id("chapter.main");
+    let next = flow_id("chapter.next");
+    let plan = RuntimePlan::new(
+        Some(main.clone()),
+        vec![
+            RuntimeFlow {
+                id: main,
+                ops: vec![FlowOp::Goto(next.clone())],
+            },
+            RuntimeFlow {
+                id: next.clone(),
+                ops: vec![FlowOp::Return("ok".to_owned())],
+            },
+        ],
+        Vec::new(),
+    )
+    .expect("plan builds")
+    .with_entries(vec![RuntimeEntrySpec {
+        id: entry_id("server"),
+        kind: RuntimeEntryKind::Server,
+        target: RuntimeEntryTarget::Routes(vec![RuntimeRouteSpec {
+            method: "GET".to_owned(),
+            path: "/next".to_owned(),
+            target: next,
+            bindings: Vec::new(),
+        }]),
+    }]);
+    let report = lower_plan(&plan);
+    let goto_target = report
+        .program
+        .blocks
+        .iter()
+        .find_map(|block| match block.terminator {
+            AwbcTerminator::GotoStatic { function, .. } => Some(function),
+            _ => None,
+        })
+        .expect("static goto lowers to a function target");
+    let route_target = match &report.program.entries[0].target {
+        AwbcEntryTarget::Routes(routes) => routes[0].target,
+        AwbcEntryTarget::Function(_) => panic!("test entry must lower as routes"),
+    };
+
+    assert_eq!(goto_target, route_target);
+    assert!(!report.program.intrinsics.iter().any(|intrinsic| {
+        report.program.strings[intrinsic.public_id.index()]
+            .as_str()
+            .starts_with("goto.static:")
+    }));
 }

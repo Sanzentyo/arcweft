@@ -25,7 +25,7 @@ use arcweft_core::line_task::{
     PresentationCleanup,
 };
 use arcweft_core::plan::{
-    RuntimeEntryKind, RuntimeEntryTarget, RuntimeHostCallTarget, RuntimePlan,
+    FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimeHostCallTarget, RuntimePlan,
 };
 use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
@@ -128,7 +128,7 @@ pub struct AwbcInventory {
     sources: BTreeMap<SourceId, AwbcSourcePlanId>,
     streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
-    entry_functions: BTreeMap<String, AwbcFunctionId>,
+    flow_functions: BTreeMap<FlowRuntimeId, AwbcFunctionId>,
     pending_closures: Vec<PendingAwbcClosure>,
 }
 
@@ -171,7 +171,7 @@ impl AwbcInventory {
             sources: BTreeMap::new(),
             streams: BTreeMap::new(),
             choices: BTreeMap::new(),
-            entry_functions: BTreeMap::new(),
+            flow_functions: BTreeMap::new(),
             pending_closures: Vec::new(),
         };
         this.intern_string(source_label);
@@ -516,24 +516,14 @@ impl AwbcInventory {
         id
     }
 
-    pub fn push_function(
-        &mut self,
-        public_id: Option<&str>,
-        function: AwbcFunction,
-    ) -> AwbcFunctionId {
+    pub fn push_function(&mut self, function: AwbcFunction) -> AwbcFunctionId {
         let id = AwbcFunctionId(table_index(self.program.functions.len()));
-        if let Some(name) = public_id {
-            self.entry_functions.insert(name.to_owned(), id);
-        }
         self.program.functions.push(function);
         id
     }
 
-    pub fn reserve_function_slot(&mut self, public_id: Option<&str>) -> AwbcFunctionId {
+    pub fn reserve_function_slot(&mut self) -> AwbcFunctionId {
         let id = AwbcFunctionId(table_index(self.program.functions.len()));
-        if let Some(name) = public_id {
-            self.entry_functions.insert(name.to_owned(), id);
-        }
         self.program.functions.push(AwbcFunction {
             public_id: None,
             kind: AwbcFunctionKind::Synthetic,
@@ -546,15 +536,17 @@ impl AwbcInventory {
         id
     }
 
+    pub fn reserve_flow_function_slot(&mut self, flow: &FlowRuntimeId) -> AwbcFunctionId {
+        let id = self.reserve_function_slot();
+        self.flow_functions.insert(flow.clone(), id);
+        id
+    }
+
     pub fn replace_function(
         &mut self,
         id: AwbcFunctionId,
-        public_id: Option<&str>,
         function: AwbcFunction,
     ) -> AwbcFunctionId {
-        if let Some(name) = public_id {
-            self.entry_functions.insert(name.to_owned(), id);
-        }
         if let Some(slot) = self.program.functions.get_mut(id.index()) {
             *slot = function;
         } else {
@@ -564,14 +556,19 @@ impl AwbcInventory {
         id
     }
 
-    pub fn function_by_name(&self, name: &str) -> Option<AwbcFunctionId> {
-        self.entry_functions.get(name).copied()
+    pub fn replace_flow_function(
+        &mut self,
+        flow: &FlowRuntimeId,
+        id: AwbcFunctionId,
+        function: AwbcFunction,
+    ) -> AwbcFunctionId {
+        let id = self.replace_function(id, function);
+        self.flow_functions.insert(flow.clone(), id);
+        id
     }
 
-    /// Reserves a deterministic function identifier before lowering bodies so
-    /// forward flow/choice targets resolve without a stringly post-pass.
-    pub fn reserve_function_name(&mut self, name: &str, function: AwbcFunctionId) {
-        self.entry_functions.insert(name.to_owned(), function);
+    pub fn flow_function(&self, flow: &FlowRuntimeId) -> Option<AwbcFunctionId> {
+        self.flow_functions.get(flow).copied()
     }
 
     pub(crate) fn push_pending_closure(&mut self, closure: PendingAwbcClosure) {
@@ -973,7 +970,7 @@ impl AwbcInventory {
             let target = match &entry.target {
                 RuntimeEntryTarget::Flow(flow) => {
                     let flow_public_id = flow.public_label().into_string();
-                    if let Some(function) = self.function_by_name(&flow_public_id) {
+                    if let Some(function) = self.flow_function(flow) {
                         signature = self.program.functions[function.index()].signature;
                         AwbcEntryTarget::Function(function)
                     } else {
@@ -989,9 +986,13 @@ impl AwbcInventory {
                         .iter()
                         .map(|route| {
                             let target_public_id = route.target.public_label().into_string();
-                            let target = self
-                                .function_by_name(&target_public_id)
-                                .unwrap_or(AwbcFunctionId(0));
+                            let target = self.flow_function(&route.target).unwrap_or_else(|| {
+                                self.diagnostic(AwbcLowerDiagnostic::error(
+                                    entry_public_id.clone(),
+                                    format!("route targets missing flow {target_public_id}"),
+                                ));
+                                AwbcFunctionId(0)
+                            });
                             signature = self.program.functions[target.index()].signature;
                             AwbcRoute {
                                 method: self.intern_string(&route.method),
@@ -1025,7 +1026,7 @@ impl AwbcInventory {
         }
         if self.program.entries.is_empty()
             && let Some(entry_flow) = plan.entry_flow.as_ref()
-            && let Some(function) = self.function_by_name(&entry_flow.public_label().into_string())
+            && let Some(function) = self.flow_function(entry_flow)
         {
             let public_id = self.intern_string("entry.main");
             let signature = self.program.functions[function.index()].signature;
@@ -1072,18 +1073,15 @@ impl AwbcInventory {
         });
         let signature = self.intern_unit_signature();
         let public_id = Some(self.intern_string(name));
-        self.push_function(
-            Some(name),
-            AwbcFunction {
-                public_id,
-                kind,
-                signature,
-                frame_layout: layout,
-                blocks: AwbcTableRange::new(block.0, 1),
-                entry_block: block,
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
-            },
-        )
+        self.push_function(AwbcFunction {
+            public_id,
+            kind,
+            signature,
+            frame_layout: layout,
+            blocks: AwbcTableRange::new(block.0, 1),
+            entry_block: block,
+            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        })
     }
 }
 

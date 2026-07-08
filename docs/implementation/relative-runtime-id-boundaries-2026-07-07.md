@@ -29,6 +29,16 @@ Implemented:
   - `RuntimeLineId::from_runtime_line_value(...)`
   - `StreamRuntimeId::from_source_entity_body(...)`
   - `StreamRuntimeId::from_runtime_target_value(...)`
+- AWBC flow-function lookup now uses a typed
+  `BTreeMap<FlowRuntimeId, AwbcFunctionId>` instead of indexing flow
+  functions by public/debug labels. Static `goto`, choice targets,
+  entry targets, route targets, and entry-parameter inference use typed
+  `FlowRuntimeId` keys. The AWBC public string table still emits deliberate
+  public labels such as `flow.chapter.main`.
+- The old compiler-side public-label function index was removed from
+  `AwbcInventory`. Non-flow functions keep their public labels on
+  `AwbcFunction.public_id`; there is no longer a general string lookup table
+  that lowerers can accidentally use for flow target resolution.
 
 ## Deviation From The Zip
 
@@ -85,11 +95,9 @@ the call site owns source syntax or a runtime/debug string boundary.
 
 ## Remaining Follow-Up
 
-- AWBC lowering still emits and sometimes indexes public strings at some
-  boundaries for product-function names and external debug/report surfaces. This
-  is no longer because `FlowRuntimeId` is a string newtype, but further cleanup
-  should continue moving internal maps toward typed keys where the AWBC schema
-  allows it.
+- AWBC lowering still emits public strings at schema, diagnostic, and debug
+  boundaries. That is intentional. Further cleanup should target only concrete
+  lookup/index maps that use public labels where an owned typed key exists.
 - A true atom table should only be introduced after profiling shows ID
   comparison, hashing, serialization size, or allocation cost matters enough to
   justify carrying table context through runtime-plan/data-format boundaries.
@@ -120,6 +128,14 @@ cargo test -p arcweft-runtime-plan --all-features awbc_product_parity_multi_stre
 cargo check -p arcweft-core -p arcweft-runtime-plan --all-targets --all-features
 cargo clippy -p arcweft-core -p arcweft-runtime-plan --all-targets --all-features
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit-stream-runtime-id
+```
+
+Additional AWBC flow lookup cleanup validation:
+
+```bash
+cargo test -p arcweft-runtime-plan --all-features awbc_flow_target_resolution_uses_typed_runtime_ids -- --nocapture
+cargo check -p arcweft-runtime-plan --all-targets --all-features
+cargo fmt --all --check
 ```
 
 `cargo check --workspace --all-targets --all-features` reports one unrelated

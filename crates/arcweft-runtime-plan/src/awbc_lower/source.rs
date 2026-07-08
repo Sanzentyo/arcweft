@@ -156,18 +156,15 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             .intern_signature(params, None, AwbcEffectSetId(0));
         let public_label = stream.id.public_label();
         let public_id = self.inventory.intern_string(public_label.as_str());
-        self.inventory.push_function(
-            Some(public_label.as_str()),
-            AwbcFunction {
-                public_id: Some(public_id),
-                kind: AwbcFunctionKind::StreamTransform,
-                signature,
-                frame_layout: layout,
-                blocks: AwbcTableRange::new(block.0, 1),
-                entry_block: block,
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
-            },
-        )
+        self.inventory.push_function(AwbcFunction {
+            public_id: Some(public_id),
+            kind: AwbcFunctionKind::StreamTransform,
+            signature,
+            frame_layout: layout,
+            blocks: AwbcTableRange::new(block.0, 1),
+            entry_block: block,
+            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        })
     }
 
     fn lower_stream_op(
@@ -377,20 +374,17 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         } else {
             self.inventory.intern_unit_signature()
         };
-        let function = self.inventory.push_function(
-            None,
-            AwbcFunction {
-                public_id: None,
-                kind: AwbcFunctionKind::SourceHandler,
-                signature,
-                frame_layout: layout,
-                blocks: AwbcTableRange::new(block.0, 1),
-                entry_block: block,
-                flags: AwbcFunctionFlags(
-                    AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
-                ),
-            },
-        );
+        let function = self.inventory.push_function(AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::SourceHandler,
+            signature,
+            frame_layout: layout,
+            blocks: AwbcTableRange::new(block.0, 1),
+            entry_block: block,
+            flags: AwbcFunctionFlags(
+                AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
+            ),
+        });
         LoweredSourceHandler { pattern, function }
     }
 

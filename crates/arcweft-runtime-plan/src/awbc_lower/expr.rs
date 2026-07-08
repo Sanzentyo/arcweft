@@ -481,7 +481,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
             .into_iter()
             .filter(|capture| !param_names.contains(capture.name.as_str()))
             .collect::<Vec<_>>();
-        let function = self.inventory.reserve_function_slot(None);
+        let function = self.inventory.reserve_function_slot();
         let params = params
             .iter()
             .map(|param| {
@@ -584,7 +584,6 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory) {
         );
         inventory.replace_function(
             closure.function,
-            None,
             AwbcFunction {
                 public_id: None,
                 kind: AwbcFunctionKind::Synthetic,
