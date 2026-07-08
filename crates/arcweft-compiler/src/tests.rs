@@ -2715,6 +2715,54 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls_unaccepted_source()
+ {
+    let parsed = parse_source_text(
+        r#"
+fn trim_right(left: String, right: String) -> String {
+    return right.trim()
+}
+
+fn normalize(left: String, right: String) -> String {
+    return trim_right(left, right)
+}
+
+flow @flow.main main {
+    let normalize_tail: String -> String = "head" |> normalize
+    let value: String = normalize_tail(" tail ")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects chained unsupported data-last source partials");
+
+    assert!(
+        errors.iter().any(|error| {
+            error
+                .message()
+                .contains("unsupported callable family `signature_partial_without_helper`")
+                && error.message().contains(
+                    "function `normalize` partial application requires executable helper lowering",
+                )
+        }),
+        "expected chained source data-last partial diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
 fn checked_runtime_plan_rejects_data_last_task_function_partial() {
     let parsed = parse_source_text(
         r#"

@@ -9,15 +9,19 @@ source-local function candidates.
   `checked_runtime_plan_rejects_source_function_partial_when_body_calls_unaccepted_source`.
 - Added
   `checked_runtime_plan_rejects_bare_source_function_value_when_body_calls_unaccepted_source`.
+- Added
+  `checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls_unaccepted_source`.
 
 Both fixtures define an unsupported source-local function whose body uses an
 unaccepted call shape, then define another source-local function that exact
 calls that unsupported function. The wrapper function must not become a
 runtime function-value candidate merely because its own call is exact.
 
-The checked runtime-plan path now has focused evidence for both surfaces:
+The checked runtime-plan path now has focused evidence for these surfaces:
 
 - missing-input partial construction rejects as
+  `signature_partial_without_helper`;
+- data-last partial construction rejects as
   `signature_partial_without_helper`;
 - bare function value reference rejects as
   `source_function_value_without_runtime_candidate`.
@@ -32,11 +36,13 @@ source-function candidate.
 - `crates/arcweft-compiler/src/tests.rs`
   - `checked_runtime_plan_rejects_source_function_partial_when_body_calls_unaccepted_source`
   - `checked_runtime_plan_rejects_bare_source_function_value_when_body_calls_unaccepted_source`
+  - `checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls_unaccepted_source`
 
 ## Validation
 
 ```bash
 cargo test -p arcweft-compiler --all-features when_body_calls_unaccepted_source -- --nocapture
+cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls -- --nocapture
 ```
 
-The command passed.
+Both commands passed.

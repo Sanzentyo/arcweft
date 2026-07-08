@@ -1844,6 +1844,7 @@ The source-function unaccepted-source-call rejection follow-up strengthens the
 07.7 callable allocation boundary. A source-local function that exact-calls
 another source-local function is accepted only when the callee is already an
 accepted runtime function-value candidate. Wrappers over unaccepted callees now
-have focused checked-runtime-plan coverage for both missing-input partial
-construction and bare function-value references. Details are recorded in
+have focused checked-runtime-plan coverage for missing-input partial
+construction, data-last partial construction, and bare function-value
+references. Details are recorded in
 `docs/implementation/function-stack-source-function-unaccepted-source-call-rejection-2026-07-09.md`.
