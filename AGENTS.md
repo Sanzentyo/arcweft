@@ -215,6 +215,39 @@ The checked-in structural audit script is the canonical first pass:
 cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
+## Source-gate prohibition
+
+Do not add source gates. A source gate is a test, script, CI check, or audit
+rule that opens checked-in implementation or documentation files and passes or
+fails by searching for source text, symbol spellings, snippets, module paths,
+file locations, or the presence/absence of named implementation details.
+Examples include `include_str!`/`read_to_string` followed by `contains`, token
+deny lists over the repository, and assertions that a particular type or call
+still appears in a particular `.rs` file.
+
+- Do not repair a source gate after a refactor by updating its expected token,
+  symbol, or file list. Replace it with direct evidence or delete it.
+- Do not rename a source gate or move the same spelling/path checks into the
+  structural audit. Structural audits measure ownership, size, dependencies,
+  and typed boundaries; they do not freeze implementation text.
+- Test behavior, serialization, and security invariants through public or
+  crate-owned APIs, including positive, negative, round-trip, and tampered-input
+  cases where relevant.
+- Test language removal through parser/compiler rejection and structured
+  diagnostics. Test API constraints with visibility, type checking, or
+  compile-fail cases. Test architecture and crate layering from Cargo metadata
+  or another structured dependency graph.
+- Deterministic generated-artifact comparison is acceptable when the generated
+  artifact itself is the contract. It must regenerate and compare the artifact,
+  not search unrelated implementation source for expected words.
+- Existing source gates should be removed after preserving any real invariant
+  with direct tests. If a gate does not correspond to an observable invariant,
+  remove it without replacement.
+
+This prohibition does not prevent normal code review or one-off source
+inspection. It prevents source spelling and file placement from becoming
+automated correctness evidence.
+
 ## Rust conventions
 
 - Use `cargo fmt`.
