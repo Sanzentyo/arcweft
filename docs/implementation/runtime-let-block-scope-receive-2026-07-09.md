@@ -98,3 +98,66 @@ The remaining error-level structural violation is existing:
 During this cut `flow.rs` briefly crossed the 2500 LOC error threshold. The
 helper extraction above reduced it to 2435 LOC without changing lowering
 behavior.
+
+## 2026-07-10 Structural Follow-Up
+
+The first cut still classified bare `Expr::Block` directly in
+`lower_let_stmt`. This follow-up replaces that local branch with two explicit
+flow-lowering boundary types:
+
+- `FlowValueBlock` classifies value-producing flow blocks that lower through
+  lexical runtime scope: bare blocks, named blocks, and computation blocks.
+  `MemoBlock` is intentionally excluded because cache policy needs dedicated
+  memo lowering rather than plain scope lowering.
+- `LoweredLetBinding` carries the lowered ops plus optional function arity, so
+  `lower_let_stmt` records binding metadata once after delegating to
+  `lower_let_binding`.
+
+The runtime-plan regression now covers both:
+
+```arcw
+let submitted = {
+    let event = receive action(@action:.feedback.submit)
+    event.value
+}
+
+let submitted = result {
+    let event = receive action(@action:.feedback.submit)
+    event.value
+}
+```
+
+Additional validation:
+
+```bash
+cargo fmt
+cargo test -p arcweft-runtime-plan receive_action_inside_ -- --nocapture
+cargo test -p arcweft-runtime-plan --test runtime_plan -- --nocapture
+cargo test -p arcweft-cli --test native_text_input_sample_sidecars -- --nocapture
+cargo run -p arcweft-cli -- check samples/modern-feedback-view/src/main.arcw
+cargo run -p arcweft-cli -- bundle samples/modern-feedback-view/src/main.arcw --output web/modern-feedback-view.awfb
+cargo clippy -p arcweft-runtime-plan -p arcweft-cli --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write target/structure-audit-codex-let-binding-structure
+```
+
+Structural audit result:
+
+- Revision: `runlwmvknovovztxqutlwqukwzuurrln` / `9dd46e852621`
+- Files scanned: 2566
+- Rust files: 1189
+- Rust physical LOC: 589125
+- Violations: 1 error, 152 warnings
+
+Changed Rust file metrics:
+
+| Path | Crate | Kind | Bytes | Physical LOC | Embedded tests | Responsibilities |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| `crates/arcweft-runtime-plan/src/flow.rs` | `arcweft-runtime-plan` | production | 90131 | 2468 | no | Flow runtime lowering orchestration and dispatch |
+| `crates/arcweft-runtime-plan/src/flow/binding.rs` | `arcweft-runtime-plan` | production | 578 | 27 | no | Lowered let-binding result and function-arity metadata |
+| `crates/arcweft-runtime-plan/src/flow/syntax_helpers.rs` | `arcweft-runtime-plan` | production | 3134 | 100 | no | Flow syntax helper extraction for dialogue calls, task names, runtime IDs, and traverse/parallel parsing |
+| `crates/arcweft-runtime-plan/src/flow/value_block.rs` | `arcweft-runtime-plan` | production | 1105 | 39 | no | Value-producing flow block classification |
+| `crates/arcweft-runtime-plan/tests/runtime_plan.rs` | `arcweft-runtime-plan` | integration test | 58963 | 1939 | no | Runtime-plan lowering regressions |
+
+The remaining error-level structural violation is still existing:
+
+- `crates/arcweft-cli/src/app/bundle_view.rs`: 2590 physical LOC.

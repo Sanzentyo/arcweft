@@ -1,20 +1,24 @@
 //! Flow-runtime lowering.
 
+mod binding;
 mod closure_metadata;
 mod pure_helpers;
 mod record_projection;
 mod syntax_helpers;
+mod value_block;
 
 pub use closure_metadata::{RuntimeClosureCapture, RuntimeClosureCaptureInventory};
 
 pub(crate) use self::syntax_helpers::sanitize_task_id_part;
 use self::{
+    binding::LoweredLetBinding,
     pure_helpers::runtime_pure_helper_inventory,
     record_projection::rewrite_known_record_projections_in_op,
     syntax_helpers::{
         agent_task_name, dialogue_call_parts, flow_runtime_id, method_name, parallel_limit,
         selected_call_parts, split_capability_operation, traverse_callee,
     },
+    value_block::FlowValueBlock,
 };
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{
@@ -1653,14 +1657,15 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         pattern: &Pattern,
         scope: &HirScopeExpr,
     ) -> FlowOp {
-        self.lower_let_scope_parts(
+        let (op, arity) = self.lower_value_scope_op(
             flow_id,
             flow_index,
             pattern,
             None,
-            scope.statements(),
-            scope.value(),
-        )
+            FlowValueBlock::new(scope.statements(), scope.value()),
+        );
+        self.record_function_local_binding(pattern, arity);
+        op
     }
 
     fn lower_match_block(
@@ -1980,14 +1985,15 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         pattern: &Pattern,
         scope: &ScopeExprBlock,
     ) -> Vec<FlowOp> {
-        vec![self.lower_let_scope_parts(
+        let (op, arity) = self.lower_value_scope_op(
             flow_id,
             flow_index,
             pattern,
             None,
-            scope.statements(),
-            scope.value(),
-        )]
+            FlowValueBlock::new(scope.statements(), scope.value()),
+        );
+        self.record_function_local_binding(pattern, arity);
+        vec![op]
     }
 
     fn lower_action_receive_stmt(&mut self, pattern: &Pattern, action: &Expr) -> Vec<FlowOp> {
@@ -2199,55 +2205,81 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         ty: Option<&TypeRef>,
         expr: &Expr,
     ) -> Vec<FlowOp> {
+        let binding = self.lower_let_binding(flow_id, flow_index, pattern, ty, expr);
+        self.record_function_local_binding(pattern, binding.function_arity());
+        binding.into_ops()
+    }
+
+    fn lower_let_binding(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        ty: Option<&TypeRef>,
+        expr: &Expr,
+    ) -> LoweredLetBinding {
         if let Some(ops) = self.lower_dialogue_result_let(flow_id, flow_index, pattern, expr) {
-            self.record_function_local_binding(pattern, None);
-            ops
-        } else if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
-            self.record_function_local_binding(pattern, None);
-            vec![op]
-        } else if let Some(ops) = self.lower_presentation_handle_let(flow_id, pattern, expr) {
-            self.record_function_local_binding(pattern, None);
-            ops
-        } else if let Expr::Block { statements, value } = expr {
-            vec![self.lower_let_scope_parts(
-                flow_id,
-                flow_index,
-                pattern,
-                ty,
-                statements,
-                value.as_deref(),
-            )]
-        } else {
-            let expr = self.lower_runtime_expr_with_expected_type(ty, expr);
-            let arity = self.runtime_expr_function_arity(&expr);
-            self.record_function_local_binding(pattern, arity);
+            return LoweredLetBinding::non_function(ops);
+        }
+        if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
+            return LoweredLetBinding::non_function(vec![op]);
+        }
+        if let Some(ops) = self.lower_presentation_handle_let(flow_id, pattern, expr) {
+            return LoweredLetBinding::non_function(ops);
+        }
+        if let Some(block) = FlowValueBlock::from_expr(expr) {
+            return self.lower_value_scope_binding(flow_id, flow_index, pattern, ty, block);
+        }
+        let expr = self.lower_runtime_expr_with_expected_type(ty, expr);
+        let arity = self.runtime_expr_function_arity(&expr);
+        LoweredLetBinding::new(
             vec![FlowOp::Let {
                 pattern: lower_runtime_pattern(pattern),
                 expr,
-            }]
-        }
+            }],
+            arity,
+        )
     }
 
-    fn lower_let_scope_parts(
+    fn lower_value_scope_binding(
         &mut self,
         flow_id: &FlowRuntimeId,
         flow_index: usize,
         pattern: &Pattern,
         expected_ty: Option<&TypeRef>,
-        statements: &[Stmt],
-        value: Option<&Expr>,
-    ) -> FlowOp {
-        let (ops, value, arity) =
-            self.lower_flow_scope_body(flow_id, flow_index, statements, expected_ty, value);
-        self.record_function_local_binding(pattern, arity);
-        FlowOp::LetScope {
-            pattern: lower_runtime_pattern(pattern),
-            ops,
-            value,
-        }
+        block: FlowValueBlock<'_>,
+    ) -> LoweredLetBinding {
+        let (op, arity) =
+            self.lower_value_scope_op(flow_id, flow_index, pattern, expected_ty, block);
+        LoweredLetBinding::new(vec![op], arity)
     }
 
-    fn lower_flow_scope_body(
+    fn lower_value_scope_op(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        expected_ty: Option<&TypeRef>,
+        block: FlowValueBlock<'_>,
+    ) -> (FlowOp, Option<usize>) {
+        let (ops, value, arity) = self.lower_scoped_statement_value(
+            flow_id,
+            flow_index,
+            block.statements(),
+            expected_ty,
+            block.value(),
+        );
+        (
+            FlowOp::LetScope {
+                pattern: lower_runtime_pattern(pattern),
+                ops,
+                value,
+            },
+            arity,
+        )
+    }
+
+    fn lower_scoped_statement_value(
         &mut self,
         flow_id: &FlowRuntimeId,
         flow_index: usize,
@@ -2331,7 +2363,8 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         flow_index: usize,
         statements: &[Stmt],
     ) -> Vec<FlowOp> {
-        let (ops, _, _) = self.lower_flow_scope_body(flow_id, flow_index, statements, None, None);
+        let (ops, _, _) =
+            self.lower_scoped_statement_value(flow_id, flow_index, statements, None, None);
         ops
     }
 
