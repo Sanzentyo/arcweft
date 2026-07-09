@@ -32,6 +32,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+const POINTER_ACTIVATION_DISTANCE_SQUARED: f32 = 64.0;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DragState {
     pub pointer: PointerId,
@@ -39,7 +41,15 @@ pub struct DragState {
     pub start: ViewportPoint,
     pub current: ViewportPoint,
     pub modifiers: InputPointerModifiers,
+    advances_dialogue: bool,
     intent: DragIntent,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct BlankPointerPressState {
+    start: ViewportPoint,
+    current: ViewportPoint,
+    advances_dialogue: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -145,6 +155,25 @@ impl DragState {
     }
 }
 
+impl BlankPointerPressState {
+    fn distance_squared(&self) -> f32 {
+        let dx = self.current.x - self.start.x;
+        let dy = self.current.y - self.start.y;
+        dx.mul_add(dx, dy * dy)
+    }
+
+    fn activation_outcome(self, frame: &PreparedFrame) -> InputOutcome {
+        activation_outcome(
+            frame,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            self.advances_dialogue
+                && self.distance_squared() <= POINTER_ACTIVATION_DISTANCE_SQUARED,
+        )
+    }
+}
+
 impl InputPointerModifiers {
     pub const NONE: Self = Self { shift: false };
 
@@ -187,6 +216,14 @@ struct ActionButtonSubmitOutcome {
     action: Option<Action>,
     write_back: Option<TextControlWriteBack>,
     diagnostic: Option<InputDiagnostic>,
+}
+
+#[derive(Debug, Default)]
+struct PointerActivationEffects {
+    actions: Vec<Action>,
+    text_control_write_backs: Vec<TextControlWriteBack>,
+    diagnostics: Vec<InputDiagnostic>,
+    action_button_activation: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -261,6 +298,7 @@ pub struct InputController {
     pointer_positions: BTreeMap<u64, ViewportPoint>,
     pressed: BTreeMap<u64, arcweft_presentation::input::InteractionTarget>,
     drags: BTreeMap<u64, DragState>,
+    blank_presses: BTreeMap<u64, BlankPointerPressState>,
     pending_text_pointer_selection: Option<TextPointerSelectionState>,
     text_block_selection: Option<TextBlockSelectionState>,
     choice_scroll: ChoiceScroll,
@@ -472,6 +510,9 @@ impl InputController {
         position: ViewportPoint,
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
+        if let Some(press) = self.blank_presses.get_mut(&pointer.0) {
+            press.current = position;
+        }
         if self.update_text_block_drag_selection(frame, pointer, position) {
             return InputOutcome::redraw(true);
         }
@@ -507,6 +548,7 @@ impl InputController {
         modifiers: InputPointerModifiers,
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
+        self.blank_presses.remove(&pointer.0);
         if let Some(block) = frame.selectable_text_block_at(position).cloned() {
             self.pending_text_pointer_selection = None;
             self.deactivate_focused_text_editor();
@@ -524,6 +566,7 @@ impl InputController {
                     start: position,
                     current: position,
                     modifiers,
+                    advances_dialogue: false,
                     intent: DragIntent::SelectTextBlock,
                 },
             );
@@ -535,6 +578,9 @@ impl InputController {
             phase: PointerPhase::Down,
         }));
         let routed = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
+        let had_view_control_focus = self.focused_target_is_view_control(frame);
+        let advances_dialogue =
+            !had_view_control_focus && self.dialogue_can_advance_from_unfocused_input(frame);
         let mut focused_routed_target = false;
         if let RouteDecision::Routed(event) = routed.decision() {
             let target = event.target().clone();
@@ -553,6 +599,7 @@ impl InputController {
                     intent
                 } else {
                     self.pending_text_pointer_selection = None;
+                    self.deactivate_focused_text_editor();
                     DragIntent::SelectOrActivate
                 };
                 self.set_focus(frame, target.clone());
@@ -575,6 +622,7 @@ impl InputController {
                         start: position,
                         current: position,
                         modifiers,
+                        advances_dialogue,
                         intent,
                     },
                 );
@@ -583,6 +631,14 @@ impl InputController {
         if !focused_routed_target {
             self.deactivate_focused_text_editor();
             self.interaction.clear_focus();
+            self.blank_presses.insert(
+                pointer.0,
+                BlankPointerPressState {
+                    start: position,
+                    current: position,
+                    advances_dialogue,
+                },
+            );
         }
         InputOutcome::redraw(true)
     }
@@ -605,9 +661,10 @@ impl InputController {
         let _ = self.interaction.release_pressed(pointer);
         let _ = self.interaction.release_pointer(pointer);
         let drag = self.drags.remove(&pointer.0);
+        let blank_press = self.blank_presses.remove(&pointer.0);
         let is_activation = drag
             .as_ref()
-            .is_some_and(|drag| drag.distance_squared() <= 64.0);
+            .is_some_and(|drag| drag.distance_squared() <= POINTER_ACTIVATION_DISTANCE_SQUARED);
         if let Some(drag) = drag
             .as_ref()
             .filter(|drag| drag.intent == DragIntent::SelectTextBlock)
@@ -629,6 +686,9 @@ impl InputController {
                 );
             }
             return InputOutcome::redraw(true);
+        }
+        if let Some(blank_press) = blank_press {
+            return blank_press.activation_outcome(frame);
         }
         let mut pointer_text_write_backs = Vec::new();
         if let Some(drag) = drag
@@ -659,37 +719,23 @@ impl InputController {
                 );
             }
         }
-        let (actions, mut text_control_write_backs, diagnostics, action_button_activation) =
-            match (released, routed.decision(), is_activation) {
-                (Some(pressed), RouteDecision::Routed(event), true)
-                    if &pressed == event.target() =>
-                {
-                    let mut actions = choice_action(frame, event.target())
-                        .into_iter()
-                        .collect::<Vec<_>>();
-                    let submit = Self::action_button_submit(frame, event.target());
-                    actions.extend(submit.action);
-                    let text_control_write_backs = submit.write_back.into_iter().collect();
-                    let diagnostics = submit.diagnostic.into_iter().collect();
-                    (
-                        actions,
-                        text_control_write_backs,
-                        diagnostics,
-                        frame_target_is_action_button(frame, event.target()),
-                    )
-                }
-                _ => (Vec::new(), Vec::new(), Vec::new(), false),
-            };
-        text_control_write_backs.extend(pointer_text_write_backs);
+        let mut effects =
+            pointer_activation_effects(frame, released.as_ref(), routed.decision(), is_activation);
+        effects
+            .text_control_write_backs
+            .extend(pointer_text_write_backs);
         let text_input_activation = routed
             .event()
             .is_some_and(|event| frame_target_is_text_input(frame, event.target()));
         activation_outcome(
             frame,
-            actions,
-            text_control_write_backs,
-            diagnostics,
-            is_activation && !text_input_activation && !action_button_activation,
+            effects.actions,
+            effects.text_control_write_backs,
+            effects.diagnostics,
+            is_activation
+                && drag.as_ref().is_some_and(|drag| drag.advances_dialogue)
+                && !text_input_activation
+                && !effects.action_button_activation,
         )
     }
 
@@ -730,6 +776,7 @@ impl InputController {
         self.pointer_positions.remove(&pointer.0);
         self.pressed.remove(&pointer.0);
         self.drags.remove(&pointer.0);
+        self.blank_presses.remove(&pointer.0);
         if self
             .pending_text_pointer_selection
             .as_ref()
@@ -1001,14 +1048,21 @@ impl InputController {
     }
 
     fn dialogue_can_advance_from_unfocused_input(&self, frame: &PreparedFrame) -> bool {
-        let focused_target = self.interaction.focus().target().or_else(|| {
-            self.focused_text_editor
-                .as_ref()
-                .map(TextEditorState::target)
-        });
         frame.has_dialogue()
             && frame.choices.is_empty()
-            && !focused_target.is_some_and(|target| frame_target_is_view_control(frame, target))
+            && !self.focused_target_is_view_control(frame)
+    }
+
+    fn focused_target_is_view_control(&self, frame: &PreparedFrame) -> bool {
+        self.interaction
+            .focus()
+            .target()
+            .or_else(|| {
+                self.focused_text_editor
+                    .as_ref()
+                    .map(TextEditorState::target)
+            })
+            .is_some_and(|target| frame_target_is_view_control(frame, target))
     }
 
     #[allow(
@@ -1910,6 +1964,32 @@ fn choice_action(
         .map(|action| action.with_payload(choice.option_id.clone()))
 }
 
+fn pointer_activation_effects(
+    frame: &PreparedFrame,
+    released: Option<&arcweft_presentation::input::InteractionTarget>,
+    decision: &RouteDecision,
+    is_activation: bool,
+) -> PointerActivationEffects {
+    let (Some(pressed), RouteDecision::Routed(event), true) = (released, decision, is_activation)
+    else {
+        return PointerActivationEffects::default();
+    };
+    if pressed != event.target() {
+        return PointerActivationEffects::default();
+    }
+    let mut actions = choice_action(frame, event.target())
+        .into_iter()
+        .collect::<Vec<_>>();
+    let submit = InputController::action_button_submit(frame, event.target());
+    actions.extend(submit.action);
+    PointerActivationEffects {
+        actions,
+        text_control_write_backs: submit.write_back.into_iter().collect(),
+        diagnostics: submit.diagnostic.into_iter().collect(),
+        action_button_activation: frame_target_is_action_button(frame, event.target()),
+    }
+}
+
 fn frame_target_is_text_input(
     frame: &PreparedFrame,
     target: &arcweft_presentation::input::InteractionTarget,
@@ -1945,8 +2025,9 @@ mod tests {
         TextInputSessionId, TextRange,
     };
     use arcweft_render_wgpu::geometry::{
-        RenderDialogue, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
-        RenderScrollRegion, RenderViewport, SharedFramePlanner,
+        RenderActionButton, RenderControlStyle, RenderDialogue, RenderPreferences, RenderScene,
+        RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion, RenderViewport,
+        SharedFramePlanner,
     };
 
     fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
@@ -2250,6 +2331,70 @@ mod tests {
     }
 
     #[test]
+    fn pointer_activation_on_action_button_clears_text_editor_focus() {
+        let text_target = target("text_input.button_defocus");
+        let button_target = target("button.button_defocus");
+        let control = RenderTextInputControl::new(
+            text_target,
+            TextInputSessionId(69),
+            "draft",
+            TextRange::new(TextByteOffset(5), TextByteOffset(5)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let scene = RenderScene {
+            action_buttons: vec![RenderActionButton {
+                target: button_target.clone(),
+                label: "Send".to_owned(),
+                enabled: true,
+                containing_scroll_region: None,
+                bounds: HitRect::new(300.0, 30.0, 120.0, 32.0),
+                viewport_clip: None,
+                style: RenderControlStyle::default(),
+                action: RenderActionButtonAction::Noop,
+            }],
+            ..scene_with_dialogue(control.clone())
+        };
+        let frame = SharedFramePlanner::prepare(&scene).unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+        assert!(input.focused_text_editor().is_some());
+
+        let position = ViewportPoint::new(320.0, 44.0);
+        let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        let up = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+        assert!(!down.dialogue_advance);
+        assert!(!up.dialogue_advance);
+        assert!(input.focused_text_editor().is_none());
+        assert_eq!(input.interaction().focus().target(), Some(&button_target));
+    }
+
+    #[test]
+    fn pointer_activation_on_blank_area_advances_dialogue_without_view_control_focus() {
+        let target = target("text_input.blank_advance");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(68),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control)).unwrap();
+        let mut input = InputController::default();
+        let position = ViewportPoint::new(500.0, 80.0);
+
+        let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        let up = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+        assert!(!down.dialogue_advance);
+        assert!(up.dialogue_advance);
+    }
+
+    #[test]
     fn enter_without_view_control_focus_advances_dialogue() {
         let target = target("text_input.unfocused_enter");
         let control = RenderTextInputControl::new(
@@ -2357,9 +2502,31 @@ mod tests {
             blank_position,
             InputPointerModifiers::NONE,
         );
+        let blank_up = input.pointer_up(
+            &frame,
+            PointerId(0),
+            blank_position,
+            InputPointerModifiers::NONE,
+        );
         assert!(!blank.dialogue_advance);
+        assert!(!blank_up.dialogue_advance);
         assert!(input.interaction().focus().target().is_none());
         assert!(input.focused_text_editor().is_none());
+
+        let second_down = input.pointer_down(
+            &frame,
+            PointerId(0),
+            blank_position,
+            InputPointerModifiers::NONE,
+        );
+        let second_up = input.pointer_up(
+            &frame,
+            PointerId(0),
+            blank_position,
+            InputPointerModifiers::NONE,
+        );
+        assert!(!second_down.dialogue_advance);
+        assert!(second_up.dialogue_advance);
 
         let advance = input.keyboard(&frame, "Backspace", KeyPhase::Down);
         assert!(advance.dialogue_advance);

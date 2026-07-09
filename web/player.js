@@ -1,7 +1,6 @@
-import { createArcweftEditContextPlayerGlue } from "./player-editcontext.js";
-
 const DEFAULT_WASM_URL = "./pkg/arcweft_player_web.js";
 const DEFAULT_WASM_BINARY_URL = "./pkg/arcweft_player_web_bg.wasm";
+const DEFAULT_EDIT_CONTEXT_URL = "./player-editcontext.js";
 const DEFAULT_FONT_URLS = [
   "./assets/noto-sans-jp-vf.ttf",
   "./assets/noto-emoji-regular.ttf",
@@ -9,6 +8,8 @@ const DEFAULT_FONT_URLS = [
 ];
 let wasmModulePromise = null;
 let wasmModuleCacheKey = null;
+let editContextModulePromise = null;
+let editContextModuleCacheKey = null;
 const runtimeTextInputs = new Map();
 let runtimeCommandListenerInstalled = false;
 
@@ -34,6 +35,10 @@ export async function loadArcweftWasm(url = DEFAULT_WASM_URL, wasmBinaryUrl) {
 
 export async function setupArcweftWebTextInput(options = {}) {
   markArcweftTextInputOwner();
+  const params = new URLSearchParams(window.location.search);
+  const editContextUrl = options.editContextUrl ??
+    withAssetCachebust(DEFAULT_EDIT_CONTEXT_URL, assetCachebustParam(params));
+  const { createArcweftEditContextPlayerGlue } = await loadEditContextGlue(editContextUrl);
   const hostId = options.hostId || "arcweft-canvas";
   const host = options.host || document.getElementById(hostId);
   if (!host) {
@@ -56,6 +61,15 @@ export async function setupArcweftWebTextInput(options = {}) {
   installRuntimeCommandListener(options.statusTarget ?? document);
   globalThis.__arcweftWebTextInput = installed;
   return installed;
+}
+
+async function loadEditContextGlue(url = DEFAULT_EDIT_CONTEXT_URL) {
+  const cacheKey = String(url ?? DEFAULT_EDIT_CONTEXT_URL);
+  if (!editContextModulePromise || editContextModuleCacheKey !== cacheKey) {
+    editContextModuleCacheKey = cacheKey;
+    editContextModulePromise = import(cacheKey);
+  }
+  return editContextModulePromise;
 }
 
 export async function startArcweftWebPlayer(options = {}) {

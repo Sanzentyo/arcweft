@@ -43,6 +43,8 @@ export class ArcweftEditContextPlayerGlue {
       lastGeometry: null,
       lastCharacterBounds: [],
       compositionAnchorRect: null,
+      lastPointerClientX: null,
+      lastPointerClientY: null,
     };
   }
 
@@ -87,17 +89,23 @@ export class ArcweftEditContextPlayerGlue {
       this.#handleKeyDown(event).catch((error) => this.#emitError(error));
     });
     this.#installListener(this.#host, "pointerdown", (event) => {
+      this.#syncCursorForPointer(event);
       this.#handlePointerDown(event).catch((error) => this.#emitError(error));
     });
     this.#installListener(this.#host, "pointermove", (event) => {
+      this.#syncCursorForPointer(event);
       this.#handlePointerMove(event).catch((error) => this.#emitError(error));
     });
     this.#installListener(this.#host, "pointerup", (event) => {
-      this.#handlePointerUp(event).catch((error) => this.#emitError(error));
+      this.#handlePointerUp(event)
+        .then(() => this.#syncCursorForPointer(event))
+        .catch((error) => this.#emitError(error));
     });
     this.#installListener(this.#host, "pointercancel", (event) => {
       this.#handlePointerCancel(event);
+      this.#syncCursor();
     });
+    this.#installListener(this.#host, "pointerleave", () => this.#resetCursor());
     this.#installListener(this.#host, "copy", (event) => this.#handleCopy(event));
     this.#installListener(this.#host, "cut", (event) => {
       this.#handleCut(event).catch((error) => this.#emitError(error));
@@ -148,6 +156,7 @@ export class ArcweftEditContextPlayerGlue {
     if (this.#host.editContext === this.#editContext) {
       this.#host.editContext = null;
     }
+    this.#resetCursor();
     this.#editContext = null;
     this.#state.installed = false;
     this.#emitStatus("deactivated");
@@ -168,6 +177,7 @@ export class ArcweftEditContextPlayerGlue {
     }
     this.#syncEditContextText();
     this.#syncEditContextGeometry();
+    this.#syncCursor();
     this.#renderMirror();
   }
 
@@ -206,6 +216,7 @@ export class ArcweftEditContextPlayerGlue {
         this.#state.composing = false;
         this.#state.pointerSelection = null;
         this.#state.compositionAnchorRect = null;
+        this.#syncCursor();
         this.#emitStatus("runtime_deactivated", { session: command.session });
         this.#renderMirror();
         break;
@@ -224,6 +235,7 @@ export class ArcweftEditContextPlayerGlue {
   updateGeometry(geometry) {
     this.#state.lastGeometry = normalizeRuntimeGeometry(geometry);
     this.#syncEditContextGeometry();
+    this.#syncCursor();
     this.#emitStatus("geometry_update");
   }
 
@@ -419,6 +431,31 @@ export class ArcweftEditContextPlayerGlue {
       this.#state.pointerSelection = null;
       this.#emitStatus("pointer_cancel");
     }
+  }
+
+  #syncCursorForPointer(event) {
+    if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+      this.#state.lastPointerClientX = event.clientX;
+      this.#state.lastPointerClientY = event.clientY;
+    }
+    this.#syncCursor();
+  }
+
+  #syncCursor() {
+    const x = this.#state.lastPointerClientX;
+    const y = this.#state.lastPointerClientY;
+    const insideActiveControl = Number.isFinite(x) &&
+      Number.isFinite(y) &&
+      this.#clientPointInsideActiveControl(x, y);
+    this.#host.style.cursor = this.#state.installed && !this.#state.secure && insideActiveControl
+      ? "text"
+      : "default";
+  }
+
+  #resetCursor() {
+    this.#state.lastPointerClientX = null;
+    this.#state.lastPointerClientY = null;
+    this.#host.style.cursor = "default";
   }
 
   #handleCopy(event) {
