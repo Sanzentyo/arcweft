@@ -1,4 +1,4 @@
-# Component text-control layout bounds resource contract implementation note
+# View text-control layout bounds resource contract implementation note
 
 ## Implemented
 
@@ -35,7 +35,7 @@
 - `crates/arcweft-cli/src/app/bundle.rs`
 - `crates/arcweft-cli/src/app/bundle_view.rs`
 - `tools/build-web-ime-player-rendered-fixture.rs`
-- `docs/design/component-text-control-layout-bounds-resource-contract-2026-07-04.md`
+- `docs/design/view-text-control-layout-bounds-resource-contract-2026-07-04.md`
 - `docs/implementation/component-text-control-layout-bounds-resource-contract-2026-07-04.md`
 
 ## Runtime And Player Path
@@ -52,7 +52,7 @@ stacked bounds only for older resources.
 
 ## Tests Added Or Updated
 
-- Component-only `TextField` deterministic runtime bounds.
+- View-authored `TextField` deterministic runtime bounds.
 - `TextArea` and `SecureField` deterministic runtime bounds.
 - Compact View resource round-trip preservation of layout bounds.
 - Semantic target bounds agreement with text-control bounds.

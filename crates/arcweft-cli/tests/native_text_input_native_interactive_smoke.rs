@@ -139,8 +139,8 @@ fn seq06_16_3_native_smoke_command_and_trace_gate_are_documented() {
     }
 
     let justfile = read(root.join("Justfile"));
-    assert!(justfile.contains("component-text-input-native-smoke-check"));
-    assert!(justfile.contains("component-text-input-native-smoke"));
+    assert!(justfile.contains("view-text-input-native-smoke-check"));
+    assert!(justfile.contains("view-text-input-native-smoke"));
 
     let trace_gate = read(root.join("tools/verify-seq06-16-3-native-smoke-trace.rs"));
     assert!(trace_gate.contains("sekret-1234"));

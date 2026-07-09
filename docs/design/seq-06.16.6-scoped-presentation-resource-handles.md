@@ -86,7 +86,7 @@ Examples:
 ```arcw
 flow @flow.menu {
     let background = image(@image.menu_background, layer=@layer.background)
-    let menu = component(@component.MainMenu, focus=.Trap, input_capture=.Modal)
+    let menu = view(@view.MainMenu, focus=.Trap, input_capture=.Modal)
 
     wait(choice_ready())
 
@@ -99,7 +99,7 @@ flow @flow.menu {
 
 ```arcw
 let overlay_result = scope pause_menu {
-    let overlay = overlay(@component.PauseMenu, focus=.Modal)
+    let overlay = overlay(@view.PauseMenu, focus=.Modal)
     out await overlay.closed()
 }
 // overlay is popped/released here, while the underlying flow state remains live.
@@ -120,7 +120,7 @@ for old syntax:
 ```rust
 enum HirPresentationHandleKind {
     Image,
-    Component,
+    View,
     Menu,
     Overlay,
     TextBox,
@@ -325,7 +325,7 @@ one-shot presentation emissions:
 
 ```arcw
 image(@image.menu_background)
-component(@component.MainMenu)
+view(@view.MainMenu)
 ```
 
 The new behavior is selected only when the presentation constructor appears in a
@@ -333,7 +333,7 @@ value-producing position:
 
 ```arcw
 let background = image(@image.menu_background)
-let menu = component(@component.MainMenu)
+let menu = view(@view.MainMenu)
 ```
 
 This distinction keeps existing authored scenario files and generated bundles
@@ -346,7 +346,7 @@ compatibility shim is introduced.
 Parser/lowering:
 
 - `presentation_handle_image_binding_lowers_to_create_operation`
-- `presentation_handle_component_binding_lowers_to_create_operation`
+- `presentation_handle_view_binding_lowers_to_create_operation`
 - `presentation_handle_hide_show_unmount_dispose_lower_to_lifecycle_operations`
 - `presentation_handle_invalid_kind_reports_structured_diagnostic`
 - `presentation_handle_escape_to_state_requires_detach`

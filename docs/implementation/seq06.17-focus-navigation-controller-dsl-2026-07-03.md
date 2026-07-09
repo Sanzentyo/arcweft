@@ -1,7 +1,7 @@
 # seq06.17 Focus Navigation and Controller DSL
 
 Date: 2026-07-03
-Target: `Sanzentyo/arcweft` main, after seq06.16.1 component/View submit buttons and automatic prepared-frame spatial focus navigation.
+Target: `Sanzentyo/arcweft` main, after seq06.16.1 View submit buttons and automatic prepared-frame spatial focus navigation.
 
 ## Intent
 
@@ -9,10 +9,10 @@ This package makes focus navigation an Arcweft-owned product View contract inste
 
 ## Chosen DSL syntax
 
-The final syntax stays inside the existing `component` / `View` DSL:
+The final syntax stays inside the existing `view` DSL:
 
 ```arcw
-pub component SettingsPanel() {
+pub view SettingsPanel() {
   Column(nav: .vertical, group: @group:.settings, wrap: false, initial: @button:.name, trap: .modal) {
     TextField(@input:.name, value: "Aster", label: "Name")
       .nav(right: @button:.apply, down: @input:.notes)
@@ -29,7 +29,7 @@ pub component SettingsPanel() {
 }
 ```
 
-Container `nav:` declares a group axis and group defaults. `.nav(...)` declares per-target directional overrides. `auto`, `none`, and `boundary` are keywords. Entity references such as `@button:.apply` are lowered with the same normalization rules as the existing component/View lowering.
+Container `nav:` declares a group axis and group defaults. `.nav(...)` declares per-target directional overrides. `auto`, `none`, and `boundary` are keywords. Entity references such as `@button:.apply` are lowered with the same normalization rules as the existing View lowering.
 
 ## Data model
 

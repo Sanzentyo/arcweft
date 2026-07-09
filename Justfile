@@ -257,7 +257,7 @@ ime-sample-native:
 
 ime-sample-native-real: ime-sample-native
 
-component-text-input-native-smoke-check:
+view-text-input-native-smoke-check:
     @cargo test -p arcweft-cli --test native_text_input_sample_sidecars --quiet
     @cargo test -p arcweft-cli --test native_text_input_native_interactive_smoke --quiet
     @cargo run -p arcweft-cli -- check --manifest-path samples\native-text-input\arcw.toml
@@ -268,8 +268,8 @@ component-text-input-native-smoke-check:
     @cargo run -p arcweft-cli -- bundle samples\modern-feedback-view\src\main.arcw --output target\arcweft\modern-feedback-view-seq06.16.3.awfb
     @cargo +nightly -Zscript tools\source-gates\seq06_4j1_native_ime_player_rendered_gates.rs --root .
 
-component-text-input-native-smoke out="target\\native-text-input-trace\\seq06.16.3":
-    @just component-text-input-native-smoke-check
+view-text-input-native-smoke out="target\\native-text-input-trace\\seq06.16.3":
+    @just view-text-input-native-smoke-check
     @New-Item -ItemType Directory -Force -Path "{{out}}" | Out-Null
     @cargo run -p arcweft-cli --features native-player -- run --runner native samples\native-text-input\src\main.arcw --text-input-trace-out "{{out}}\native-player-ime.real.json"
     @cargo +nightly -Zscript tools\verify-seq06-16-3-native-smoke-trace.rs --trace "{{out}}\native-player-ime.real.json"

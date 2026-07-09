@@ -1,4 +1,4 @@
-# Component text input native interactive smoke
+# View text input native interactive smoke
 
 Date: 2026-07-04
 Sequence: seq06.16.3
@@ -49,7 +49,7 @@ View text control
 Preflight and bundle checks:
 
 ```bash
-just component-text-input-native-smoke-check
+just view-text-input-native-smoke-check
 ```
 
 Equivalent expanded commands:
@@ -120,8 +120,8 @@ provided observation JSON.
 - `crates/arcweft-cli/tests/native_text_input_native_interactive_smoke.rs`
 - `tools/verify-seq06-16-3-native-smoke-trace.rs`
 - `tools/source-gates/seq06_4j1_native_ime_player_rendered_gates.rs`
-- `Justfile` recipes: `component-text-input-native-smoke-check` and
-  `component-text-input-native-smoke`
+- `Justfile` recipes: `view-text-input-native-smoke-check` and
+  `view-text-input-native-smoke`
 - this implementation note
 
 ## Validation status for this package
@@ -165,7 +165,7 @@ cargo fmt --all
 cargo test -p arcweft-cli --test native_text_input_sample_sidecars --quiet
 cargo test -p arcweft-cli --test native_text_input_native_interactive_smoke --quiet
 cargo +nightly -Zscript tools/source-gates/seq06_4j1_native_ime_player_rendered_gates.rs --root .
-just component-text-input-native-smoke-check
+just view-text-input-native-smoke-check
 cargo +nightly -Zscript tools/verify-seq06-16-3-native-smoke-trace.rs --help
 cargo fmt --all -- --check
 cargo clippy -p arcweft-cli --all-targets -- -D warnings
@@ -183,7 +183,7 @@ Changed Rust file measurements:
 | Path | Owner | Kind | Bytes | Physical LOC | Embedded test LOC | Responsibilities |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | `crates/arcweft-cli/tests/native_text_input_native_interactive_smoke.rs` | `arcweft-cli` | integration test | 5,877 | 172 | 0 | Sample contract, shared submit-route guard, documentation/Justfile/trace-gate guard, ignored real-window launch wrapper. |
-| `tools/source-gates/seq06_4j1_native_ime_player_rendered_gates.rs` | workspace tool | Cargo script source gate | 4,106 | 136 | 0 | Component-authored native text-control source gate, removed sidecar guard, native bridge/source-route checks. |
+| `tools/source-gates/seq06_4j1_native_ime_player_rendered_gates.rs` | workspace tool | Cargo script source gate | 4,106 | 136 | 0 | View-authored native text-control source gate, removed sidecar guard, native bridge/source-route checks. |
 | `tools/verify-seq06-16-3-native-smoke-trace.rs` | workspace tool | Cargo script verifier | 6,521 | 210 | 0 | Native text-input trace JSON validation, secure redaction checks, optional observation leak checks. |
 
 Largest workspace Rust hotspots observed during the audit sample, unchanged by
@@ -203,5 +203,5 @@ this cut:
   target OS, display server, keyboard layout, and IME.
 - Mobile and Web validation are out of scope for this native-only smoke.
 - Modern feedback View style-to-runtime-control rendering remains tracked by
-  seq06.16.4; this smoke only checks that the component-authored text-control and
+  seq06.16.4; this smoke only checks that the View-authored text-control and
   submit routes remain launchable through the player-backed path.

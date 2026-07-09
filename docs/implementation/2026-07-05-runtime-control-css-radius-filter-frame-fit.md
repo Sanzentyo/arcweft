@@ -85,7 +85,7 @@ cargo test -p arcweft-cli native_watch_uses_windowed_ingress_instead_of_standalo
 cargo clippy -p arcweft-launch -p arcweft-lang-sema -p arcweft-runtime-driver -p arcweft-player-scene -p arcweft-render-wgpu -p arcweft-player-native -p arcweft-player-web -p arcweft-cli --all-targets --all-features
 cargo build -p arcweft-player-web --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
-just component-text-input-native-smoke-check
+just view-text-input-native-smoke-check
 ```
 
 The structure audit scanned 2361 files, 1129 Rust files, and 531887 Rust
