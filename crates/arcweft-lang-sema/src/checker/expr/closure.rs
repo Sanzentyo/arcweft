@@ -17,6 +17,7 @@ impl TypeChecker<'_> {
             Some(TypeKind::Function {
                 params,
                 return_type,
+                ..
             }) => Some((params.as_slice(), return_type.as_ref())),
             _ => None,
         };
@@ -99,10 +100,7 @@ impl TypeChecker<'_> {
             .cloned()
             .or(body_type)
             .unwrap_or(TypeKind::Unit);
-        TypeKind::Function {
-            params: function_params,
-            return_type: Box::new(return_type),
-        }
+        TypeKind::function(function_params, return_type)
     }
 
     pub(super) fn check_vec_map_method_call(
@@ -136,10 +134,7 @@ impl TypeChecker<'_> {
             self.check_expr(arg.value());
             return None;
         }
-        let expected = TypeKind::Function {
-            params: vec![item.clone()],
-            return_type: Box::new(TypeKind::Named("_".to_owned())),
-        };
+        let expected = TypeKind::function([item.clone()], TypeKind::Named("_".to_owned()));
         let Some(actual) = self.check_expr_with_expected(arg.value(), Some(&expected)) else {
             self.errors.push(TypeCheckError::new(
                 "map requires a closure or `_` placeholder function argument".to_owned(),
@@ -150,6 +145,7 @@ impl TypeChecker<'_> {
             TypeKind::Function {
                 params,
                 return_type,
+                ..
             } if params.as_slice() == [item.clone()] => Some(TypeKind::Vec(return_type.clone())),
             TypeKind::Function { params, .. } => {
                 self.errors.push(TypeCheckError::new(format!(
@@ -212,10 +208,7 @@ impl TypeChecker<'_> {
             self.check_expr(arg.value());
             return None;
         }
-        let expected = TypeKind::Function {
-            params: vec![item.clone()],
-            return_type: Box::new(TypeKind::Bool),
-        };
+        let expected = TypeKind::function([item.clone()], TypeKind::Bool);
         let Some(actual) = self.check_expr_with_expected(arg.value(), Some(&expected)) else {
             self.errors.push(TypeCheckError::new(
                 "filter requires a closure or `_` placeholder function argument".to_owned(),
@@ -226,12 +219,14 @@ impl TypeChecker<'_> {
             TypeKind::Function {
                 params,
                 return_type,
+                ..
             } if params.as_slice() == [item.clone()] && return_type.as_ref() == &TypeKind::Bool => {
                 Some(TypeKind::Vec(Box::new(item.clone())))
             }
             TypeKind::Function {
                 params,
                 return_type,
+                ..
             } => {
                 self.errors.push(TypeCheckError::new(format!(
                     "filter function must be {} -> bool, found ({}) -> {}",

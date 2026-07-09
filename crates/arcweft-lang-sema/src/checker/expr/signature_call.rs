@@ -204,13 +204,11 @@ impl TypeChecker<'_> {
             let _ = self.expect_signature_arg_slot_type(name, &label, *value, param.ty());
         }
 
-        let result_ty = TypeKind::Function {
-            params: missing
-                .iter()
-                .map(|index| params[*index].ty().clone())
-                .collect(),
-            return_type: Box::new(signature.return_type().clone()),
-        };
+        let result_ty = TypeKind::function_with_effects(
+            missing.iter().map(|index| params[*index].ty().clone()),
+            signature.return_type().clone(),
+            self.function_effect_row(name),
+        );
         self.record_typed_lowering_evidence(TypedLoweringEvidence {
             expression_id,
             kind: TypedLoweringEvidenceKind::SignaturePartialCall {

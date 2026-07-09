@@ -1226,13 +1226,15 @@ impl TypeChecker<'_> {
             TypeKind::Function {
                 params,
                 return_type,
-            } => TypeKind::Function {
-                params: params
+                effects,
+            } => {
+                let params = params
                     .iter()
                     .map(|param| self.erase_aliases_with_seen(param, seen))
-                    .collect(),
-                return_type: Box::new(self.erase_aliases_with_seen(return_type, seen)),
-            },
+                    .collect::<Vec<_>>();
+                let return_type = self.erase_aliases_with_seen(return_type, seen);
+                TypeKind::function_with_effects(params, return_type, effects.clone())
+            }
             TypeKind::Tuple(items) => TypeKind::Tuple(
                 items
                     .iter()

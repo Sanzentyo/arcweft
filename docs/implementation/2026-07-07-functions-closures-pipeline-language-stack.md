@@ -1907,3 +1907,10 @@ callable effects, and sema has a returned-closure callback regression proving
 that the report exposes both the local callable edge and the external
 `adapter.read_text` edge for an inferred `fs.read` row. Details are recorded
 in `docs/implementation/function-stack-effect-trace-report-2026-07-09.md`.
+
+The function-type effect-row follow-up makes semantic function values
+row-bearing. `TypeKind::Function` now stores an `EffectRow`, known environment
+and project function values can expose closed registered rows, partial function
+values preserve those rows, and closed non-empty rows appear in function source
+labels. Details are recorded in
+`docs/implementation/function-stack-function-type-effect-rows-2026-07-09.md`.

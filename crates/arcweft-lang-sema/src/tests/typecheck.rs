@@ -1069,30 +1069,19 @@ fn numeric_primitive_types_keep_explicit_widths() {
         TypeKind::Never
     );
     assert_eq!(
-        TypeKind::Function {
-            params: Vec::new(),
-            return_type: Box::new(TypeKind::Unit),
-        }
-        .source_label(),
+        TypeKind::function([], TypeKind::Unit).source_label(),
         "() -> Unit"
     );
     assert_eq!(
-        TypeKind::Function {
-            params: vec![TypeKind::I64],
-            return_type: Box::new(TypeKind::Function {
-                params: vec![TypeKind::String],
-                return_type: Box::new(TypeKind::Bool),
-            }),
-        }
+        TypeKind::function(
+            [TypeKind::I64],
+            TypeKind::function([TypeKind::String], TypeKind::Bool),
+        )
         .source_label(),
         "i64 -> String -> bool"
     );
     assert_eq!(
-        TypeKind::Function {
-            params: vec![TypeKind::I64, TypeKind::String],
-            return_type: Box::new(TypeKind::Bool),
-        }
-        .source_label(),
+        TypeKind::function([TypeKind::I64, TypeKind::String], TypeKind::Bool).source_label(),
         "(i64, String) -> bool"
     );
     assert_eq!(TypeKind::primitive_name("()"), None);
@@ -2486,10 +2475,7 @@ flow @flow.block_value_source_ranges block_value_source_ranges {
         |ty| {
             matches!(
                 ty,
-                TypeKind::Function {
-                    params,
-                    return_type,
-                } if params.is_empty() && return_type.as_ref() == &TypeKind::I64
+                TypeKind::Function { params, return_type, .. } if params.is_empty() && return_type.as_ref() == &TypeKind::I64
             )
         },
         "braced closure root should retain its full authored range",

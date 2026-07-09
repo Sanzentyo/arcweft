@@ -703,13 +703,14 @@ fn curried_project_signature_return_type(signature: &SyntaxFnSignature) -> TypeK
         .iter()
         .skip(1)
         .rev()
-        .fold(return_type, |return_type, group| TypeKind::Function {
-            params: group
-                .params()
-                .iter()
-                .map(|param| project_type_ref_kind(param.ty()))
-                .collect(),
-            return_type: Box::new(return_type),
+        .fold(return_type, |return_type, group| {
+            TypeKind::function(
+                group
+                    .params()
+                    .iter()
+                    .map(|param| project_type_ref_kind(param.ty())),
+                return_type,
+            )
         })
 }
 
@@ -909,6 +910,7 @@ fn type_kind_stable_label(ty: &TypeKind) -> String {
         TypeKind::Function {
             params,
             return_type,
+            ..
         } => format!(
             "Function<({}),{}>",
             params

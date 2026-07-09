@@ -1,3 +1,4 @@
+use crate::effect_row::EffectRow;
 use crate::types::{EntityKind, EntityType, TypeKind};
 use arcweft_character::manifest::CharacterManifest;
 use arcweft_lang_syntax::types::FnParamKind;
@@ -200,9 +201,18 @@ impl FunctionSignature {
 
     /// Type of this callable when referenced as a first-class function value.
     pub fn function_value_type(&self) -> Option<TypeKind> {
-        self.checks_args.then(|| TypeKind::Function {
-            params: self.params.iter().map(|param| param.ty.clone()).collect(),
-            return_type: Box::new(self.return_type.clone()),
+        self.function_value_type_with_effects(EffectRow::unknown())
+    }
+
+    /// Type of this callable when referenced as a function value with a known
+    /// effect row.
+    pub fn function_value_type_with_effects(&self, effects: EffectRow) -> Option<TypeKind> {
+        self.checks_args.then(|| {
+            TypeKind::function_with_effects(
+                self.params.iter().map(|param| param.ty.clone()),
+                self.return_type.clone(),
+                effects,
+            )
         })
     }
 }
@@ -1106,10 +1116,12 @@ fn normalize_type_kind(ty: TypeKind) -> TypeKind {
         TypeKind::Function {
             params,
             return_type,
-        } => TypeKind::Function {
-            params: params.into_iter().map(normalize_type_kind).collect(),
-            return_type: Box::new(normalize_type_kind(*return_type)),
-        },
+            effects,
+        } => TypeKind::function_with_effects(
+            params.into_iter().map(normalize_type_kind),
+            normalize_type_kind(*return_type),
+            effects,
+        ),
         TypeKind::Projection {
             subject,
             trait_name,

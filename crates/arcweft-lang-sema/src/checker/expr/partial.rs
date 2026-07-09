@@ -24,6 +24,7 @@ impl TypeChecker<'_> {
         let TypeKind::Function {
             params,
             return_type,
+            effects,
         } = expected
         else {
             self.errors.push(TypeCheckError::new(
@@ -60,10 +61,11 @@ impl TypeChecker<'_> {
         } else {
             return_type.as_ref().clone()
         };
-        Some(TypeKind::Function {
-            params: params.clone(),
-            return_type: Box::new(inferred_return),
-        })
+        Some(TypeKind::function_with_effects(
+            params.clone(),
+            inferred_return,
+            effects.clone(),
+        ))
     }
 
     pub(super) fn current_partial_placeholder_type(&self) -> Option<TypeKind> {
@@ -104,10 +106,7 @@ impl TypeChecker<'_> {
             _ => return None,
         };
         let return_ty = inferred_binary_return_type(op, &operand_ty)?;
-        Some(TypeKind::Function {
-            params: vec![operand_ty],
-            return_type: Box::new(return_ty),
-        })
+        Some(TypeKind::function([operand_ty], return_ty))
     }
 
     fn infer_partial_placeholder_call_function_type(
@@ -119,12 +118,14 @@ impl TypeChecker<'_> {
             && let Some(TypeKind::Function {
                 params,
                 return_type,
+                effects,
             }) = self.symbol_type(name)
         {
             return partial_call_function_type_from_positional_args(
                 args,
                 params.iter(),
                 return_type.as_ref(),
+                effects,
             );
         }
         let Expr::Path(name) = callee else {
@@ -158,6 +159,7 @@ fn partial_call_function_type_from_positional_args<'a>(
     args: &[CallArg],
     params: impl IntoIterator<Item = &'a TypeKind>,
     return_type: &TypeKind,
+    effects: &crate::effect_row::EffectRow,
 ) -> Option<TypeKind> {
     let params = params.into_iter().collect::<Vec<_>>();
     let mut inferred_param = None;
@@ -175,10 +177,8 @@ fn partial_call_function_type_from_positional_args<'a>(
             None => inferred_param = Some((*param).clone()),
         }
     }
-    inferred_param.map(|param| TypeKind::Function {
-        params: vec![param],
-        return_type: Box::new(return_type.clone()),
-    })
+    inferred_param
+        .map(|param| TypeKind::function_with_effects([param], return_type.clone(), effects.clone()))
 }
 
 fn partial_call_function_type_from_signature_args(
@@ -222,10 +222,7 @@ fn partial_call_function_type_from_signature_args(
         }
     }
 
-    inferred_param.map(|param| TypeKind::Function {
-        params: vec![param],
-        return_type: Box::new(signature.return_type().clone()),
-    })
+    inferred_param.map(|param| TypeKind::function([param], signature.return_type().clone()))
 }
 
 fn infer_partial_param_type(inferred_param: &mut Option<TypeKind>, param: &TypeKind) -> Option<()> {

@@ -917,10 +917,7 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
         TypeRef::Function {
             params,
             return_type,
-        } => TypeKind::Function {
-            params: params.iter().map(type_ref_kind).collect(),
-            return_type: Box::new(type_ref_kind(return_type)),
-        },
+        } => TypeKind::function(params.iter().map(type_ref_kind), type_ref_kind(return_type)),
         TypeRef::Choice(alternatives) => {
             normalize_choice_type(alternatives.iter().map(type_ref_kind).collect::<Vec<_>>())
         }

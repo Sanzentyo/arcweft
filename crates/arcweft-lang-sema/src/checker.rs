@@ -8,6 +8,7 @@ use crate::diagnostics::{
 use crate::effect_analysis::EffectAnalysisReport;
 use crate::effect_collector::EffectCollector;
 use crate::effect_model::{CallableId, CallableKind, EffectContract, EffectSite, Visibility};
+use crate::effect_row::{EffectRow, EffectRowTail};
 use crate::effects::{EffectId, EffectSet};
 use crate::env::{
     AgentActionEnvParam, DebugPathKind, EffectCapability, EnumVariantPayload, FunctionParam,
@@ -1463,8 +1464,27 @@ impl TypeChecker<'_> {
     }
 
     fn function_value_type(&self, name: &str) -> Option<TypeKind> {
-        self.function_signature(name)
-            .and_then(FunctionSignature::function_value_type)
+        self.function_signature(name).and_then(|signature| {
+            signature.function_value_type_with_effects(self.function_effect_row(name))
+        })
+    }
+
+    fn function_effect_row(&self, name: &str) -> EffectRow {
+        let effects = self
+            .global_function_effects
+            .get(name)
+            .map(|effects| effects.iter().map(String::as_str).collect::<Vec<_>>())
+            .or_else(|| {
+                self.env.function_effects(name).map(|effects| {
+                    effects
+                        .iter()
+                        .map(crate::env::EffectCapability::as_str)
+                        .collect()
+                })
+            });
+        effects
+            .and_then(|effects| EffectSet::from_labels(effects).ok())
+            .map_or_else(EffectRow::unknown, EffectRow::closed)
     }
 
     fn nominal_field_type(&self, receiver: &TypeKind, field: &str) -> Option<TypeKind> {
@@ -1557,13 +1577,11 @@ fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
         .iter()
         .skip(1)
         .rev()
-        .fold(return_type, |return_type, group| TypeKind::Function {
-            params: group
-                .params()
-                .iter()
-                .map(|param| type_ref_kind(param.ty()))
-                .collect(),
-            return_type: Box::new(return_type),
+        .fold(return_type, |return_type, group| {
+            TypeKind::function(
+                group.params().iter().map(|param| type_ref_kind(param.ty())),
+                return_type,
+            )
         })
 }
 
@@ -2224,10 +2242,12 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
             TypeKind::Function {
                 params: expected_params,
                 return_type: expected_return,
+                effects: expected_effects,
             },
             TypeKind::Function {
                 params: actual_params,
                 return_type: actual_return,
+                effects: actual_effects,
             },
         ) => {
             expected_params.len() == actual_params.len()
@@ -2236,8 +2256,23 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
                     .zip(actual_params.iter())
                     .all(|(expected, actual)| types_compatible(expected, actual))
                 && types_compatible(expected_return, actual_return)
+                && effect_rows_compatible(expected_effects, actual_effects)
         }
         _ => false,
+    }
+}
+
+fn effect_rows_compatible(expected: &EffectRow, actual: &EffectRow) -> bool {
+    match (expected.tail(), actual.tail()) {
+        (EffectRowTail::Unknown, _) | (_, EffectRowTail::Unknown) => true,
+        (EffectRowTail::Closed, EffectRowTail::Closed)
+        | (EffectRowTail::Variable(_), EffectRowTail::Closed | EffectRowTail::Variable(_)) => {
+            actual
+                .concrete()
+                .effects_not_covered_by(expected.concrete())
+                .is_empty()
+        }
+        (EffectRowTail::Closed, EffectRowTail::Variable(_)) => false,
     }
 }
 

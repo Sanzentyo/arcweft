@@ -12,13 +12,8 @@ flow @flow.call_value call_value {
     );
     let hir = lower_to_hir(&tree).expect("function value call fixture lowers");
     validate_typecheck_ready(&hir).expect("function value call fixture is structured");
-    let env = TypeCheckEnv::new().with_symbol(
-        "f",
-        TypeKind::Function {
-            params: vec![TypeKind::I64],
-            return_type: Box::new(TypeKind::Bool),
-        },
-    );
+    let env =
+        TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
 
     let report = analyze_types(&hir, &env);
     assert!(
@@ -68,10 +63,7 @@ flow @flow.partial_call partial_call {
     validate_typecheck_ready(&hir).expect("partial function value fixture is structured");
     let env = TypeCheckEnv::new().with_symbol(
         "f",
-        TypeKind::Function {
-            params: vec![TypeKind::I64, TypeKind::I64],
-            return_type: Box::new(TypeKind::Bool),
-        },
+        TypeKind::function([TypeKind::I64, TypeKind::I64], TypeKind::Bool),
     );
 
     let report = analyze_types(&hir, &env);
@@ -138,10 +130,7 @@ flow @flow.local_function_alias local_function_alias {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             &judgment.ty,
-            TypeKind::Function {
-                params,
-                return_type,
-            } if params.as_slice() == [TypeKind::I64, TypeKind::I64]
+            TypeKind::Function { params, return_type, .. } if params.as_slice() == [TypeKind::I64, TypeKind::I64]
                 && return_type.as_ref() == &TypeKind::I64
         )
     }));
@@ -168,6 +157,72 @@ flow @flow.local_function_alias local_function_alias {
             )
         }),
         "expected call through top-level function alias to record function-value evidence"
+    );
+}
+
+#[test]
+fn environment_function_value_type_carries_closed_effect_row() {
+    let tree = parse_ok(
+        r"
+flow @flow.env_function_value_effect_row env_function_value_effect_row {
+    let reader = read_text
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("environment function value fixture lowers");
+    validate_typecheck_ready(&hir).expect("environment function value fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_function_signature(
+            "read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("read_text", ["fs.read".to_owned()]);
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    let Some(TypeKind::Function {
+        params,
+        return_type,
+        effects,
+    }) = report.judgments.iter().find_map(|judgment| {
+        matches!(
+            &judgment.subject,
+            TypeJudgmentSubject::LetBinding { pattern } if pattern.contains("reader")
+        )
+        .then_some(&judgment.ty)
+    })
+    else {
+        panic!("expected reader binding to have function type judgment");
+    };
+    assert_eq!(params.as_slice(), [TypeKind::String]);
+    assert_eq!(return_type.as_ref(), &TypeKind::String);
+    assert_eq!(
+        effects.tail(),
+        crate::effect_row::EffectRowTail::Closed,
+        "environment callable effects should be captured as a closed function row"
+    );
+    assert_eq!(effects.concrete().to_labels(), ["fs.read"]);
+    assert_eq!(
+        report
+            .typed_lowering_evidence
+            .iter()
+            .find_map(|evidence| {
+                let TypedLoweringEvidenceKind::FunctionValueReference { callee, ty } =
+                    &evidence.kind
+                else {
+                    return None;
+                };
+                (callee == "read_text").then_some(ty.source_label())
+            })
+            .as_deref(),
+        Some("String -> String effects { fs.read }")
     );
 }
 
@@ -258,7 +313,7 @@ flow @flow.curried curried {
                 TypeJudgmentSubject::Expr { kind: "call", .. }
                     if matches!(
                         &judgment.ty,
-                        TypeKind::Function { params, return_type }
+                        TypeKind::Function { params, return_type, .. }
                             if params == &[TypeKind::I64]
                                 && return_type.as_ref() == &TypeKind::I64
                     )
@@ -420,13 +475,8 @@ flow @flow.function_value_named_arg function_value_named_arg {
     );
     let hir = lower_to_hir(&tree).expect("function-value named arg fixture lowers");
     validate_typecheck_ready(&hir).expect("function-value named arg fixture is structured");
-    let env = TypeCheckEnv::new().with_symbol(
-        "f",
-        TypeKind::Function {
-            params: vec![TypeKind::I64],
-            return_type: Box::new(TypeKind::Bool),
-        },
-    );
+    let env =
+        TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
 
     let report = analyze_types(&hir, &env);
     assert!(
@@ -474,13 +524,8 @@ flow @flow.function_value_arity function_value_arity {
     );
     let hir = lower_to_hir(&tree).expect("function-value arity fixture lowers");
     validate_typecheck_ready(&hir).expect("function-value arity fixture is structured");
-    let env = TypeCheckEnv::new().with_symbol(
-        "f",
-        TypeKind::Function {
-            params: vec![TypeKind::I64],
-            return_type: Box::new(TypeKind::Bool),
-        },
-    );
+    let env =
+        TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
 
     let report = analyze_types(&hir, &env);
     assert!(
@@ -522,13 +567,8 @@ flow @flow.function_value_arg_type function_value_arg_type {
     );
     let hir = lower_to_hir(&tree).expect("function-value argument fixture lowers");
     validate_typecheck_ready(&hir).expect("function-value argument fixture is structured");
-    let env = TypeCheckEnv::new().with_symbol(
-        "f",
-        TypeKind::Function {
-            params: vec![TypeKind::I64],
-            return_type: Box::new(TypeKind::Bool),
-        },
-    );
+    let env =
+        TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
 
     let report = analyze_types(&hir, &env);
     assert!(
@@ -579,7 +619,7 @@ flow @flow.partial_pure partial_pure {
         .filter(|judgment| {
             matches!(
                 &judgment.ty,
-                TypeKind::Function { params, return_type }
+                TypeKind::Function { params, return_type, .. }
                     if params == &[TypeKind::I64] && return_type.as_ref() == &TypeKind::I64
             )
         })
@@ -617,7 +657,7 @@ flow @flow.partial_non_pure partial_non_pure {
     assert!(
         report.judgments.iter().any(|judgment| matches!(
             &judgment.ty,
-            TypeKind::Function { params, return_type }
+            TypeKind::Function { params, return_type, .. }
                 if params == &[TypeKind::I64] && return_type.as_ref() == &TypeKind::I64
         )),
         "add(2i64) should typecheck as a function awaiting the missing rhs argument: {:?}",
@@ -636,7 +676,7 @@ flow @flow.partial_non_pure partial_non_pure {
                 } if callee == "add"
                     && matches!(
                         result_ty,
-                        TypeKind::Function { params, return_type }
+                        TypeKind::Function { params, return_type, .. }
                             if params.as_slice() == [TypeKind::I64]
                                 && return_type.as_ref() == &TypeKind::I64
                     )
@@ -674,7 +714,7 @@ flow @flow.fixed_literal_spread_signature_call fixed_literal_spread_signature_ca
     assert!(
         report.judgments.iter().any(|judgment| matches!(
             &judgment.ty,
-            TypeKind::Function { params, return_type }
+            TypeKind::Function { params, return_type, .. }
                 if params.as_slice() == [TypeKind::I64]
                     && return_type.as_ref() == &TypeKind::I64
         )),
@@ -694,7 +734,7 @@ flow @flow.fixed_literal_spread_signature_call fixed_literal_spread_signature_ca
                 } if callee == "add"
                     && matches!(
                         result_ty,
-                        TypeKind::Function { params, return_type }
+                        TypeKind::Function { params, return_type, .. }
                             if params.as_slice() == [TypeKind::I64]
                                 && return_type.as_ref() == &TypeKind::I64
                     )
@@ -773,7 +813,7 @@ flow @flow.curried_samples curried_samples {
         report.judgments.iter().any(|judgment| {
             matches!(
                 &judgment.ty,
-                TypeKind::Function { params, return_type }
+                TypeKind::Function { params, return_type, .. }
                     if params == &[TypeKind::I64]
                         && matches!(
                             return_type.as_ref(),
@@ -788,14 +828,11 @@ flow @flow.curried_samples curried_samples {
         report.judgments.iter().any(|judgment| {
             matches!(
                 &judgment.ty,
-                TypeKind::Function { params, return_type }
+                TypeKind::Function { params, return_type, .. }
                     if params == &[TypeKind::I64]
                         && matches!(
                             return_type.as_ref(),
-                            TypeKind::Function {
-                                params: final_params,
-                                return_type: final_return_type,
-                            }
+                            TypeKind::Function { params: final_params, return_type: final_return_type, .. }
                                 if final_params == &[TypeKind::I64, TypeKind::I64]
                                     && final_return_type.as_ref() == &TypeKind::I64
                         )
@@ -894,7 +931,7 @@ flow @flow.curried_function_kind_calls curried_function_kind_calls {
         report.judgments.iter().any(|judgment| {
             matches!(
                 &judgment.ty,
-                TypeKind::Function { params, return_type }
+                TypeKind::Function { params, return_type, .. }
                     if params == &[TypeKind::String] && return_type.as_ref() == &TypeKind::String
             )
         }),
@@ -944,7 +981,7 @@ flow @flow.curried_trait_method curried_trait_method {
                 TypeJudgmentSubject::Expr { kind: "call", .. }
                     if matches!(
                         &judgment.ty,
-                        TypeKind::Function { params, return_type }
+                        TypeKind::Function { params, return_type, .. }
                             if params == &[TypeKind::I64]
                                 && return_type.as_ref() == &TypeKind::Bool
                     )
@@ -1017,7 +1054,7 @@ flow @flow.closure_return closure_return {
         report.judgments.iter().any(|judgment| {
             matches!(
                 &judgment.ty,
-                TypeKind::Function { params, return_type }
+                TypeKind::Function { params, return_type, .. }
                     if params == &[TypeKind::I64] && return_type.as_ref() == &TypeKind::Bool
             )
         }),
@@ -1050,7 +1087,7 @@ fn closure_tuple_pattern() -> i64 {
         report.judgments.iter().any(|judgment| {
             matches!(
                 &judgment.ty,
-                TypeKind::Function { params, return_type }
+                TypeKind::Function { params, return_type, .. }
                     if params
                         == &[TypeKind::Tuple(vec![TypeKind::I64, TypeKind::I64])]
                         && return_type.as_ref() == &TypeKind::I64
@@ -2576,10 +2613,7 @@ effects { }
     let env = read_text_env().with_enum_variant_payload(
         TypeKind::Named("ExternalLoaderSpec".to_owned()),
         "WithLoad",
-        EnumVariantPayload::tuple([TypeKind::Function {
-            params: vec![TypeKind::String],
-            return_type: Box::new(TypeKind::String),
-        }]),
+        EnumVariantPayload::tuple([TypeKind::function([TypeKind::String], TypeKind::String)]),
     );
 
     let errors = typecheck_hir(&hir, &env)
@@ -2618,10 +2652,7 @@ effects { }
         "WithLoad",
         EnumVariantPayload::record([(
             "load",
-            TypeKind::Function {
-                params: vec![TypeKind::String],
-                return_type: Box::new(TypeKind::String),
-            },
+            TypeKind::function([TypeKind::String], TypeKind::String),
         )]),
     );
 
@@ -3006,14 +3037,11 @@ flow @flow.curried_closure_return curried_closure_return {
         report.judgments.iter().any(|judgment| {
             matches!(
                 &judgment.ty,
-                TypeKind::Function { params, return_type }
+                TypeKind::Function { params, return_type, .. }
                     if params == &[TypeKind::I64]
                         && matches!(
                             return_type.as_ref(),
-                            TypeKind::Function {
-                                params: inner_params,
-                                return_type: inner_return_type,
-                            } if inner_params == &[TypeKind::I64]
+                            TypeKind::Function { params: inner_params, return_type: inner_return_type, .. } if inner_params == &[TypeKind::I64]
                                 && inner_return_type.as_ref() == &TypeKind::Bool
                         )
             )
@@ -3070,10 +3098,7 @@ flow @flow.partial_infer partial_infer {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             &judgment.ty,
-            TypeKind::Function {
-                params,
-                return_type,
-            } if params.as_slice() == [TypeKind::I64]
+            TypeKind::Function { params, return_type, .. } if params.as_slice() == [TypeKind::I64]
                 && return_type.as_ref() == &TypeKind::Bool
         )
     }));
@@ -3088,7 +3113,7 @@ flow @flow.partial_infer partial_infer {
                 } if expected_ty == actual_ty
                     && matches!(
                         expected_ty,
-                        TypeKind::Function { params, return_type }
+                        TypeKind::Function { params, return_type, .. }
                             if params.as_slice() == [TypeKind::I64]
                                 && return_type.as_ref() == &TypeKind::Bool
                     )
@@ -3120,10 +3145,7 @@ flow @flow.partial_infer_grouped partial_infer_grouped {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             &judgment.ty,
-            TypeKind::Function {
-                params,
-                return_type,
-            } if params.as_slice() == [TypeKind::I64]
+            TypeKind::Function { params, return_type, .. } if params.as_slice() == [TypeKind::I64]
                 && return_type.as_ref() == &TypeKind::Bool
         )
     }));
@@ -3156,10 +3178,7 @@ flow @flow.partial_call partial_call {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             &judgment.ty,
-            TypeKind::Function {
-                params,
-                return_type,
-            } if params.as_slice() == [TypeKind::I64]
+            TypeKind::Function { params, return_type, .. } if params.as_slice() == [TypeKind::I64]
                 && return_type.as_ref() == &TypeKind::I64
         )
     }));
@@ -3192,10 +3211,7 @@ flow @flow.partial_call_repeated partial_call_repeated {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             &judgment.ty,
-            TypeKind::Function {
-                params,
-                return_type,
-            } if params.as_slice() == [TypeKind::I64]
+            TypeKind::Function { params, return_type, .. } if params.as_slice() == [TypeKind::I64]
                 && return_type.as_ref() == &TypeKind::I64
         )
     }));
@@ -3210,7 +3226,7 @@ flow @flow.partial_call_repeated partial_call_repeated {
                 } if expected_ty == actual_ty
                     && matches!(
                         expected_ty,
-                        TypeKind::Function { params, return_type }
+                        TypeKind::Function { params, return_type, .. }
                             if params.as_slice() == [TypeKind::I64]
                                 && return_type.as_ref() == &TypeKind::I64
                     )
@@ -3247,10 +3263,7 @@ flow @flow.partial_call_named partial_call_named {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             &judgment.ty,
-            TypeKind::Function {
-                params,
-                return_type,
-            } if params.as_slice() == [TypeKind::I64]
+            TypeKind::Function { params, return_type, .. } if params.as_slice() == [TypeKind::I64]
                 && return_type.as_ref() == &TypeKind::I64
         )
     }));
@@ -3265,7 +3278,7 @@ flow @flow.partial_call_named partial_call_named {
                 } if expected_ty == actual_ty
                     && matches!(
                         expected_ty,
-                        TypeKind::Function { params, return_type }
+                        TypeKind::Function { params, return_type, .. }
                             if params.as_slice() == [TypeKind::I64]
                                 && return_type.as_ref() == &TypeKind::I64
                     )
@@ -3598,10 +3611,7 @@ flow @flow.partial_named_missing partial_named_missing {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             &judgment.ty,
-            TypeKind::Function {
-                params,
-                return_type,
-            } if params.as_slice() == [TypeKind::I64]
+            TypeKind::Function { params, return_type, .. } if params.as_slice() == [TypeKind::I64]
                 && return_type.as_ref() == &TypeKind::I64
         )
     }));

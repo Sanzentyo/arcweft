@@ -1,3 +1,4 @@
+use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_lang_syntax::expr::LifetimeScopeKind;
 
 /// Entity family used by semantic references and ID checks.
@@ -148,6 +149,7 @@ pub enum TypeKind {
     Function {
         params: Vec<TypeKind>,
         return_type: Box<TypeKind>,
+        effects: EffectRow,
     },
     GenericParam(String),
     Projection {
@@ -242,7 +244,8 @@ impl TypeKind {
             Self::Function {
                 params,
                 return_type,
-            } => Self::function_source_label(params, return_type),
+                effects,
+            } => Self::function_source_label(params, return_type, effects),
             Self::GenericParam(name) | Self::Named(name) => name.clone(),
             Self::Projection {
                 subject,
@@ -324,7 +327,7 @@ impl TypeKind {
         })
     }
 
-    fn function_source_label(params: &[Self], return_type: &Self) -> String {
+    fn function_source_label(params: &[Self], return_type: &Self, effects: &EffectRow) -> String {
         let params = if params.len() == 1 {
             params[0].source_label()
         } else {
@@ -337,7 +340,10 @@ impl TypeKind {
                     .join(", ")
             )
         };
-        format!("{params} -> {}", return_type.source_label())
+        let label = format!("{params} -> {}", return_type.source_label());
+        function_effect_row_label(effects).map_or(label.clone(), |effects| {
+            format!("{label} effects {effects}")
+        })
     }
 
     #[must_use]
@@ -360,6 +366,24 @@ impl TypeKind {
         match self {
             Self::Function { params, .. } => Some(params.len()),
             _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn function(params: impl IntoIterator<Item = TypeKind>, return_type: TypeKind) -> Self {
+        Self::function_with_effects(params, return_type, EffectRow::unknown())
+    }
+
+    #[must_use]
+    pub fn function_with_effects(
+        params: impl IntoIterator<Item = TypeKind>,
+        return_type: TypeKind,
+        effects: EffectRow,
+    ) -> Self {
+        Self::Function {
+            params: params.into_iter().collect(),
+            return_type: Box::new(return_type),
+            effects,
         }
     }
 
@@ -526,6 +550,30 @@ impl TypeKind {
             _ => return None,
         })
     }
+}
+
+fn function_effect_row_label(effects: &EffectRow) -> Option<String> {
+    match effects.tail() {
+        EffectRowTail::Unknown => None,
+        EffectRowTail::Closed if effects.concrete().is_empty() => None,
+        EffectRowTail::Closed => Some(format_effect_row_concrete(effects)),
+        EffectRowTail::Variable(variable) if effects.concrete().is_empty() => {
+            Some(format!("{{ | e{} }}", variable.index()))
+        }
+        EffectRowTail::Variable(variable) => Some(format!(
+            "{{ {} | e{} }}",
+            effect_labels(effects),
+            variable.index()
+        )),
+    }
+}
+
+fn format_effect_row_concrete(effects: &EffectRow) -> String {
+    format!("{{ {} }}", effect_labels(effects))
+}
+
+fn effect_labels(effects: &EffectRow) -> String {
+    effects.concrete().to_labels().join(", ")
 }
 
 impl EntityType {

@@ -5,6 +5,7 @@ use super::{
 use crate::checker::helpers::first_arg_type;
 use crate::checker::{CurriedSignatureCallValue, PendingCurriedHigherOrderArg};
 use crate::effect_model::CallableId;
+use crate::effect_row::EffectRow;
 use crate::env::FunctionParam;
 use arcweft_lang_syntax::expr::Literal;
 
@@ -87,6 +88,7 @@ impl TypeChecker<'_> {
         let TypeKind::Function {
             params,
             return_type,
+            effects,
         } = &callee_ty
         else {
             unreachable!("function value call evidence must receive a function type");
@@ -106,6 +108,7 @@ impl TypeChecker<'_> {
             args,
             params,
             return_type,
+            effects,
             curried_signature_call,
             curried_group_params: curried_group_params.as_deref(),
             curried_group_arg_offset,
@@ -205,6 +208,7 @@ impl TypeChecker<'_> {
             curried_signature_call,
             curried_group_params,
             curried_group_arg_offset,
+            effects,
         } = input;
         let mut supplied_higher_order_args = Vec::new();
         let mut arity_mismatch = false;
@@ -253,10 +257,11 @@ impl TypeChecker<'_> {
         let result_ty = if supplied.len() >= params.len() {
             return_type.clone()
         } else {
-            TypeKind::Function {
-                params: params[supplied.len()..].to_vec(),
-                return_type: Box::new(return_type.clone()),
-            }
+            TypeKind::function_with_effects(
+                params[supplied.len()..].to_vec(),
+                return_type.clone(),
+                effects.clone(),
+            )
         };
         FunctionValueCallCheck {
             result_ty,
@@ -345,6 +350,7 @@ struct FunctionValueCallInput<'a> {
     args: &'a [CallArg],
     params: &'a [TypeKind],
     return_type: &'a TypeKind,
+    effects: &'a EffectRow,
     curried_signature_call: Option<&'a CurriedSignatureCallValue>,
     curried_group_params: Option<&'a [FunctionParam]>,
     curried_group_arg_offset: usize,

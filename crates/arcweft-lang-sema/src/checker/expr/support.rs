@@ -128,14 +128,15 @@ fn curried_trait_method_return_type(
         .iter()
         .skip(1)
         .rev()
-        .fold(return_type, |return_type, group| TypeKind::Function {
-            params: group
-                .params()
-                .iter()
-                .filter(|param| !is_trait_receiver_param(param))
-                .map(|param| type_ref_kind(param.ty()))
-                .collect(),
-            return_type: Box::new(return_type),
+        .fold(return_type, |return_type, group| {
+            TypeKind::function(
+                group
+                    .params()
+                    .iter()
+                    .filter(|param| !is_trait_receiver_param(param))
+                    .map(|param| type_ref_kind(param.ty())),
+                return_type,
+            )
         })
 }
 

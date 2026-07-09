@@ -35,7 +35,7 @@ pub struct EffectSetParseError {
 }
 
 /// Deterministically ordered set of canonical effects.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct EffectSet(BTreeSet<EffectId>);
 
 impl EffectId {

@@ -9,7 +9,7 @@ use crate::{effect_model::CallableId, effects::EffectSet};
 pub struct EffectVar(u32);
 
 /// Tail state of a set-like effect row.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum EffectRowTail {
     Closed,
     Variable(EffectVar),
@@ -19,7 +19,7 @@ pub enum EffectRowTail {
 }
 
 /// Set-like effect row `{ concrete | tail }`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct EffectRow {
     concrete: EffectSet,
     tail: EffectRowTail,

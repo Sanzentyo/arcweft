@@ -1805,13 +1805,12 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
         TypeRef::Function {
             params,
             return_type,
-        } => TypeKind::Function {
-            params: params
+        } => TypeKind::function(
+            params
                 .iter()
-                .map(|param| trait_type_ref_kind(param, generic_params))
-                .collect(),
-            return_type: Box::new(trait_type_ref_kind(return_type, generic_params)),
-        },
+                .map(|param| trait_type_ref_kind(param, generic_params)),
+            trait_type_ref_kind(return_type, generic_params),
+        ),
         TypeRef::Projection { subject, assoc } => TypeKind::Projection {
             subject: Box::new(trait_type_ref_kind(subject, generic_params)),
             trait_name: None,
