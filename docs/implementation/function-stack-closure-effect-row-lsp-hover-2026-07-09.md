@@ -6,14 +6,14 @@ currying/pipeline goal.
 ## Implemented
 
 - LSP hover now uses closure expression `FunctionEffectCallable` evidence to
-  display the closure expression's closed effect row.
-- Closure hover also displays a closed expected-function effect row as the
+  display the closure expression's effect row.
+- Closure hover also displays an expected-function effect row as the
   closure expression's upper bound when the closure is checked against a typed
   function ascription such as `String -> String effects { fs.read }`.
 - The hover is limited to the closure header `|...|` range so body expressions
   keep their own hover behavior and do not masquerade as the closure value.
-- The hover consumes the same `ClosedEffectRowReport` boundary as declaration
-  effect-row hover instead of reading sema effect-graph internals.
+- The hover consumes the same owned raw `EffectRowReport` boundary as
+  declaration effect-row hover instead of reading sema effect-graph internals.
 
 ## Evidence
 
@@ -28,8 +28,8 @@ currying/pipeline goal.
 
 ## Still Open
 
-This is still current closed-row evidence, not the final row language. Source
-row syntax, open-row inference/substitution, row variables for closure and
-higher-order parameters, and final verifier/runtime-plan consumption remain
-under
+This is still current row evidence, not the final row language. Source row
+syntax, open-row inference/substitution that produces rows from checked
+programs, row variables for closure and higher-order parameters, and final
+verifier/runtime-plan consumption remain under
 `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`.

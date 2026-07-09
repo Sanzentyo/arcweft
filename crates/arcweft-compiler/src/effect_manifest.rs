@@ -4,8 +4,8 @@ use arcweft_agent_protocol::{
     verified_effects::VerifiedEffectSummary,
 };
 use arcweft_lang_sema::{
+    check::{ClosedEffectRowReport, EffectRowCloseError},
     effect_model::CallableId,
-    effect_row::{ClosedEffectRowReport, EffectRowCloseError},
     effects::EffectSet,
 };
 use thiserror::Error;
@@ -81,7 +81,7 @@ fn effect_digest(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_lang_sema::effect_row::ClosedEffectRowSummary;
+    use arcweft_lang_sema::check::ClosedEffectRowSummary;
 
     #[test]
     fn verified_effect_summary_uses_closed_inferred_row() {

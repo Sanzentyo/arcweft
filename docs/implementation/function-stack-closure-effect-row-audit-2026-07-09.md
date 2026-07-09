@@ -21,8 +21,10 @@ artifact boundary effect proofs. The closed-boundary follow-up adds
 `EffectAnalysisReport` now owns current row-substitution resolution, so
 compiler/LSP consumers consume the closed report directly rather than
 constructing `EffectSubstitution` values.
-The LSP hover follow-up consumes that same closed boundary for declaration-name
-effect-row display.
+The LSP hover follow-up originally consumed that same closed boundary for
+declaration-name effect-row display. A later hardening slice moved callable and
+closure hover to the owned raw `EffectRowReport`, while Agent artifact
+generation remains a closed-row consumer.
 
 ## Current Implementation Shape
 
@@ -66,7 +68,7 @@ effect-row model is introduced:
 | `no_effect` rejects closure body effects when a closure value is actually called, not when it is merely created. | `no_effect_rejects_local_closure_effect_when_called` |
 | The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence`; `effect_row::tests::report_resolves_to_closed_boundary_rows` |
 | Agent verified-effects manifests are built from the closed row projection rather than from graph summaries directly. | `compile_agent_bundle_with_project_builds_agent_controller_bundle`; `compile_agent_bundle_lowers_inferred_effects_not_unused_source_upper_bound` |
-| LSP callable declaration hover can display closed row evidence without reading sema graph internals. | `hover_describes_callable_closed_effect_row`; `callable_effect_row_hover_ignores_body_name_references` |
+| LSP callable and closure hover can display row evidence without reading sema graph internals, and the raw-row formatter can render open row labels. | `hover_describes_callable_closed_effect_row`; `callable_effect_row_hover_ignores_body_name_references`; `hover_describes_closure_expression_expected_effect_row_bound`; `effect_row_hover_text_renders_open_rows_without_closed_projection` |
 
 The `no_effect_rejects_local_closure_effect_when_called`,
 `no_effect_rejects_partial_closure_alias_effect_when_called`,
@@ -135,12 +137,13 @@ The following 07.8 decisions remain open:
 3. Sema representation for synthetic closures, returned function values,
    curried groups, and higher-order parameters as first-class row-bearing
    callable values rather than temporary graph side channels.
-4. Runtime-plan/verifier/LSP consumers for the closed-row boundary projection.
+4. Runtime-plan/verifier/LSP consumers for the row boundary projection.
    Agent artifact verified-effects lowering is the first consumer and now uses
    `ClosedEffectRowReport` rather than resolving `EffectRow` internals itself.
    This has been hardened so downstream compiler/LSP consumers request the
-   closed report from `EffectAnalysisReport` directly.
-   LSP callable declaration hover is the first editor-facing display consumer.
+   closed report from `EffectAnalysisReport` directly when they require closed
+   rows. LSP callable and closure hover are editor-facing raw-row display
+   consumers.
 5. Replacement of path-specific closure/higher-order graph edges with final row
    evidence.
 6. LSP rendering policy for inferred rows, row origins, callback edges, and

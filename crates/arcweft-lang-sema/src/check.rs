@@ -15,6 +15,7 @@ pub use crate::{
     effect_analysis::{EffectTraceReport, EffectTraceSummary},
     effect_row::{
         ClosedEffectRowReport, ClosedEffectRowSummary, EffectRow, EffectRowCloseError,
-        EffectRowError, EffectRowReport, EffectRowSummary, EffectRowTail,
+        EffectRowError, EffectRowReport, EffectRowSummary, EffectRowTail, EffectSubstitution,
+        EffectVar, EffectVarSupply,
     },
 };

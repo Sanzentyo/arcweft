@@ -840,7 +840,7 @@ effects { }
 
     #[test]
     fn effect_row_hover_text_renders_open_rows_without_closed_projection() {
-        use arcweft_lang_sema::{effect_row::EffectVar, effects::EffectSet};
+        use arcweft_lang_sema::{check::EffectVar, effects::EffectSet};
 
         let variable = EffectVar::from_index(9);
         let inferred = EffectRow::open(

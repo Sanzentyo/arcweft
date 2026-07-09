@@ -43,9 +43,11 @@ Updated consumers:
   exposes the report-owned row summary and that `closed_effect_rows()` resolves
   through the same owned report/substitution boundary.
 - The public type-check facade now re-exports `ClosedEffectRowReport`,
-  `ClosedEffectRowSummary`, `EffectRowCloseError`, and `EffectRowError` so
-  crate-boundary consumers can name the row boundary without importing sema's
-  internal module path directly.
+  `ClosedEffectRowSummary`, `EffectRow`, `EffectRowReport`, `EffectRowTail`,
+  `EffectSubstitution`, `EffectVar`, `EffectVarSupply`,
+  `EffectRowCloseError`, and `EffectRowError` so crate-boundary consumers can
+  name the row boundary without importing sema's internal module path
+  directly.
 
 A later artifact-consumer follow-up also changed Agent verified-effect summary
 building to take `ClosedEffectRowReport` directly instead of the full
@@ -77,3 +79,19 @@ in `arcweft-lang-syntax`, `arcweft-lang-sema`,
 `arcweft-runtime-driver`, and `arcweft-runtime-host`; no warning is attributed
 to the report-boundary changes. The structure audit reports 0 errors and 153
 warnings.
+
+2026-07-09 public-facade follow-up validation:
+
+```bash
+cargo fmt --all --check
+cargo test -p arcweft-compiler --all-features verified_effect_summary_uses_closed_inferred_row -- --nocapture
+cargo test -p arcweft-lsp --all-features effect_row_hover_text_renders_open_rows_without_closed_projection -- --nocapture
+cargo check -p arcweft-lang-sema -p arcweft-compiler -p arcweft-lsp --all-targets --all-features
+cargo clippy -p arcweft-lang-sema -p arcweft-compiler -p arcweft-lsp --all-targets --all-features
+git diff --check
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs\implementation\structure-audits\function-stack-effect-row-public-facade-2026-07-09
+```
+
+All public-facade follow-up commands passed. Clippy still reports only the
+same pre-existing warnings listed above. The structure audit reports 0 errors
+and 153 warnings.

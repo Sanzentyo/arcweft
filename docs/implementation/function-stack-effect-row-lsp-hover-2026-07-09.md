@@ -4,21 +4,23 @@
 
 Implemented as a 07.8 tooling-consumer slice.
 
-LSP hover now consumes the typed closed effect-row boundary for callable
-declaration names. Hovering a `flow`, `fn`, or `agent` declaration name after a
-successful type check shows the callable's inferred row, source upper bound
-when present, and forbidden row when non-empty.
+LSP hover originally consumed the typed closed effect-row boundary for callable
+declaration names. A later raw-row hardening slice moved the hover consumer to
+`EffectAnalysisReport::effect_rows()` while preserving the same closed-row
+display for current programs. Hovering a `flow`, `fn`, or `agent` declaration
+name after a successful type check shows the callable's inferred row, source
+upper bound when present, and forbidden row when non-empty.
 
 ## Contract
 
 This slice does not add source-level effect-row syntax and does not widen the
-semantic effect model. It is a display consumer of the existing
-`ClosedEffectRowReport` boundary:
+semantic effect model. The current hover path is a display consumer of the
+owned raw `EffectRowReport` boundary:
 
 - the hover path parses, lowers, resolves, and type checks the document using
   the active LSP profile;
 - hover output is emitted only when type checking succeeds and the callable has
-  a closed row summary;
+  a row summary;
 - matching is limited to callable declaration headers so body references such
   as `let body = load_story(...)` are not treated as declaration hovers.
 
@@ -27,16 +29,16 @@ semantic effect model. It is a display consumer of the existing
 LSP hover regressions cover:
 
 - `flow` and `fn` declaration hovers rendering inferred and upper-bound
-  `fs.read` rows from the closed effect-row boundary; and
+  `fs.read` rows from the row boundary; and
 - body call references with the same callable name not producing declaration
   effect-row hover text.
 
 ## Remaining Open Work
 
 This is not the final 07.8 row-display policy. Remaining work still includes
-source row syntax, open-row inference/substitution, row-bearing callable
-values, final row-origin traces, and any richer LSP display for callback row
-origins.
+source row syntax, open-row inference/substitution that produces rows from
+checked programs, row-bearing callable values, final row-origin traces, and any
+richer LSP display for callback row origins.
 
 ## Validation
 
