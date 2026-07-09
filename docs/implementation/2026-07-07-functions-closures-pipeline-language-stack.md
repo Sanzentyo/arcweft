@@ -1869,3 +1869,11 @@ partials that produce function values are arity-tracked when assigned to
 locals, so those local values can be invoked later in the same accepted body.
 Details are recorded in
 `docs/implementation/function-stack-source-function-pipe-bodies-2026-07-09.md`.
+
+The closed effect-row boundary follow-up strengthens 07.8's typed report
+boundary. `EffectRowReport` now resolves into `ClosedEffectRowReport`, which
+contains only resolved `EffectSet` values for inferred, upper-bound, and
+forbidden rows and preserves callable identity on unresolved-row failures. The
+Agent verified-effects builder now consumes that closed boundary instead of
+resolving `EffectRow` tails directly. Details are recorded in
+`docs/implementation/function-stack-effect-row-closed-boundary-2026-07-09.md`.

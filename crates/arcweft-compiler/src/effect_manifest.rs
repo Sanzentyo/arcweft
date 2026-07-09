@@ -6,7 +6,7 @@ use arcweft_agent_protocol::{
 use arcweft_lang_sema::{
     effect_analysis::EffectAnalysisReport,
     effect_model::CallableId,
-    effect_row::{EffectRowError, EffectSubstitution},
+    effect_row::{EffectRowCloseError, EffectSubstitution},
     effects::EffectSet,
 };
 use thiserror::Error;
@@ -21,11 +21,10 @@ pub enum VerifiedEffectBuildError {
     AnalysisFailed,
     #[error("effect analysis report has no summary for `{callable}`")]
     MissingSummary { callable: CallableId },
-    #[error("effect analysis row report could not resolve `{callable}`: {source}")]
-    InvalidRow {
-        callable: CallableId,
+    #[error("effect analysis row report contains unresolved rows: {source}")]
+    InvalidRows {
         #[source]
-        source: EffectRowError,
+        source: EffectRowCloseError,
     },
     #[error(transparent)]
     InvalidDigest(#[from] IdentifierError),
@@ -43,19 +42,16 @@ pub fn build_verified_effect_summary(
     if report.has_errors() {
         return Err(VerifiedEffectBuildError::AnalysisFailed);
     }
-    let rows = report.closed_effect_rows();
+    let rows = report
+        .closed_effect_rows()
+        .resolve_closed(&EffectSubstitution::new())
+        .map_err(|source| VerifiedEffectBuildError::InvalidRows { source })?;
     let summary =
         rows.summary(callable)
             .ok_or_else(|| VerifiedEffectBuildError::MissingSummary {
                 callable: callable.clone(),
             })?;
-    let inferred = summary
-        .inferred()
-        .resolve(&EffectSubstitution::new())
-        .map_err(|source| VerifiedEffectBuildError::InvalidRow {
-            callable: callable.clone(),
-            source,
-        })?;
+    let inferred = summary.inferred().clone();
     let actual = inferred
         .iter()
         .map(|effect| EffectCapability::new(effect.as_str()))

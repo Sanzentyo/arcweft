@@ -15,7 +15,9 @@ Follow-up implementation also connects the existing
 closed inferred, upper-bound, and forbidden rows for every callable without
 making downstream consumers inspect the temporary effect graph.
 The Agent verified-effects builder now consumes this projection when lowering
-artifact boundary effect proofs.
+artifact boundary effect proofs. The closed-boundary follow-up adds
+`ClosedEffectRowReport`, so downstream consumers can accept resolved
+`EffectSet` rows without depending on `EffectRow` tail resolution details.
 
 ## Current Implementation Shape
 
@@ -57,7 +59,7 @@ effect-row model is introduced:
 | Borrowed captures that cross suspension boundaries keep their lifetime diagnostic and still project closure body effect rows. | `borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary` |
 | Later curried callback groups compose only when the reached call group invokes the callback. | `curried_higher_order_function_argument_composes_when_later_group_param_is_called`; `curried_higher_order_function_alias_composes_when_later_group_param_is_called`; `partial_curried_higher_order_callback_does_not_compose_until_final_call`; `partial_curried_higher_order_callback_composes_on_final_call`; `partial_curried_higher_order_callback_composes_on_immediate_final_call`; `no_effect_rejects_partial_curried_higher_order_callback_on_final_call` |
 | `no_effect` rejects closure body effects when a closure value is actually called, not when it is merely created. | `no_effect_rejects_local_closure_effect_when_called` |
-| The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence` |
+| The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence`; `effect_row::tests::report_resolves_to_closed_boundary_rows` |
 | Agent verified-effects manifests are built from the closed row projection rather than from graph summaries directly. | `compile_agent_bundle_with_project_builds_agent_controller_bundle`; `compile_agent_bundle_lowers_inferred_effects_not_unused_source_upper_bound` |
 
 The `no_effect_rejects_local_closure_effect_when_called`,
@@ -127,8 +129,9 @@ The following 07.8 decisions remain open:
 3. Sema representation for synthetic closures, returned function values,
    curried groups, and higher-order parameters as first-class row-bearing
    callable values rather than temporary graph side channels.
-4. Runtime-plan/verifier/LSP consumers for the closed-row report projection.
-   Agent artifact verified-effects lowering is the first consumer.
+4. Runtime-plan/verifier/LSP consumers for the closed-row boundary projection.
+   Agent artifact verified-effects lowering is the first consumer and now uses
+   `ClosedEffectRowReport` rather than resolving `EffectRow` internals itself.
 5. Replacement of path-specific closure/higher-order graph edges with final row
    evidence.
 6. LSP rendering policy for inferred rows, row origins, callback edges, and
