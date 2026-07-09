@@ -3,7 +3,7 @@
 use arcweft_core::time::LogicalDuration;
 use arcweft_lang_hir::syntax::ast::{ids::EntityRefSyntax, pattern::Pattern};
 use arcweft_lang_hir::syntax::expr::{BinaryOp, CallArg, DurationUnit, Expr, Literal, UnaryOp};
-use arcweft_lang_hir::syntax::types::TypeRef;
+use arcweft_lang_hir::syntax::types::{TypeEffectRow, TypeRef};
 
 pub(crate) fn named_arg_label(value: &str) -> Option<String> {
     value.split_once(" = ").map(|(name, _)| name.to_owned())
@@ -149,6 +149,7 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
         TypeRef::Function {
             params,
             return_type,
+            effects,
         } => {
             let params = if params.len() == 1 {
                 type_label(&params[0])
@@ -158,7 +159,10 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
                     params.iter().map(type_label).collect::<Vec<_>>().join(", ")
                 )
             };
-            format!("{params} -> {}", type_label(return_type))
+            let label = format!("{params} -> {}", type_label(return_type));
+            type_effect_row_label(effects.as_ref()).map_or(label.clone(), |effects| {
+                format!("{label} effects {effects}")
+            })
         }
         TypeRef::Choice(alternatives) => alternatives
             .iter()
@@ -189,6 +193,16 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
         }
         TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
     }
+}
+
+fn type_effect_row_label(effects: Option<&TypeEffectRow>) -> Option<String> {
+    effects.map(|effects| {
+        if effects.effects().is_empty() {
+            "{ }".to_owned()
+        } else {
+            format!("{{ {} }}", effects.effects().join(", "))
+        }
+    })
 }
 
 fn decimal_to_nanos(amount: &str, unit_nanos: u64) -> Option<u64> {

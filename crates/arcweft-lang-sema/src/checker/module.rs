@@ -1102,11 +1102,19 @@ impl TypeChecker<'_> {
             TypeRef::Function {
                 params,
                 return_type,
+                effects,
             } => {
                 for param in params {
                     self.check_type_ref_shape(param);
                 }
                 self.check_type_ref_shape(return_type);
+                if let Some(effects) = effects
+                    && let Err(error) = EffectSet::from_labels(effects.effects())
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "invalid function type effect row: {error}"
+                    )));
+                }
             }
             TypeRef::Generic { args, .. } => {
                 for arg in args {
@@ -1436,6 +1444,7 @@ fn type_ref_contains_choice(ty: &TypeRef) -> bool {
         TypeRef::Function {
             params,
             return_type,
+            ..
         } => params.iter().any(type_ref_contains_choice) || type_ref_contains_choice(return_type),
         TypeRef::Generic { args, .. } => args.iter().any(type_ref_contains_choice),
         TypeRef::TraitBound(bound) => {

@@ -28,6 +28,7 @@ pub enum TypeRef {
     Function {
         params: Vec<TypeRef>,
         return_type: Box<TypeRef>,
+        effects: Option<TypeEffectRow>,
     },
     Choice(Vec<TypeRef>),
     Generic {
@@ -44,6 +45,12 @@ pub enum TypeRef {
         inner: Box<TypeRef>,
     },
     Slice(Box<TypeRef>),
+}
+
+/// Closed effect row attached to a function type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeEffectRow {
+    effects: Vec<String>,
 }
 
 /// Function signature shape preserved before semantic generic resolution.
@@ -302,7 +309,8 @@ fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
 }
 
 fn parse_function_type(source: &str) -> Result<TypeRef, TypeParseError> {
-    if let Some((params, return_type)) = split_top_level_arrow(source) {
+    let (function_source, effects) = split_type_effect_row_suffix(source)?;
+    if let Some((params, return_type)) = split_top_level_arrow(function_source) {
         let params = parse_function_type_params(params.trim())?;
         if return_type.trim().is_empty() {
             return Err(TypeParseError::new("expected return type after `->`"));
@@ -310,6 +318,35 @@ fn parse_function_type(source: &str) -> Result<TypeRef, TypeParseError> {
         return Ok(TypeRef::Function {
             params,
             return_type: Box::new(parse_function_type(return_type.trim())?),
+            effects,
+        });
+    }
+    if let Some(effects) = effects {
+        let Some(inner) = parenthesized_type(function_source) else {
+            return Err(TypeParseError::new(
+                "effect row can only annotate a function type",
+            ));
+        };
+        let inner_ty = parse_function_type(inner)?;
+        let TypeRef::Function {
+            params,
+            return_type,
+            effects: inner_effects,
+        } = inner_ty
+        else {
+            return Err(TypeParseError::new(
+                "effect row can only annotate a function type",
+            ));
+        };
+        if inner_effects.is_some() {
+            return Err(TypeParseError::new(
+                "function type cannot declare multiple effect rows",
+            ));
+        }
+        return Ok(TypeRef::Function {
+            params,
+            return_type,
+            effects: Some(effects),
         });
     }
     parse_type_choice(source)
@@ -441,6 +478,40 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
         }
     }
     Ok(TypeRef::Path(source.to_owned()))
+}
+
+fn split_type_effect_row_suffix(
+    source: &str,
+) -> Result<(&str, Option<TypeEffectRow>), TypeParseError> {
+    let (before_effects, effects) = split_top_level_keyword_once(source, "effects");
+    let Some(effects) = effects else {
+        return Ok((source, None));
+    };
+    let effects = effects.trim();
+    if before_effects.trim().is_empty() && !effects.starts_with('{') {
+        return Ok((source, None));
+    }
+    let Some(close) = effects
+        .starts_with('{')
+        .then(|| find_matching_punctuation(effects, 0, '{', '}'))
+        .flatten()
+    else {
+        return Err(TypeParseError::new(
+            "expected `{ ... }` after function type `effects`",
+        ));
+    };
+    if !effects[close + 1..].trim().is_empty() {
+        return Err(TypeParseError::new(
+            "unexpected tokens after function type effect row",
+        ));
+    }
+    let labels = split_top_level_punctuation(&effects[1..close], ',')
+        .into_iter()
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(ToOwned::to_owned)
+        .collect();
+    Ok((before_effects.trim_end(), Some(TypeEffectRow::new(labels))))
 }
 
 enum TypeArg {
@@ -606,9 +677,16 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
         TypeRef::Function {
             params,
             return_type,
+            effects,
         } => {
             params.iter().any(type_ref_has_whitespace_path)
                 || type_ref_has_whitespace_path(return_type)
+                || effects.as_ref().is_some_and(|effects| {
+                    effects
+                        .effects()
+                        .iter()
+                        .any(|effect| effect.chars().any(char::is_whitespace))
+                })
         }
         TypeRef::Choice(alternatives) => alternatives.iter().any(type_ref_has_whitespace_path),
         TypeRef::Generic { base, args } => {
@@ -645,6 +723,7 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
         TypeRef::Function {
             params,
             return_type,
+            effects,
         } => {
             let params = if params.len() == 1 {
                 type_ref_parse_label(&params[0])
@@ -658,7 +737,10 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
                         .join(", ")
                 )
             };
-            format!("{params} -> {}", type_ref_parse_label(return_type))
+            let label = format!("{params} -> {}", type_ref_parse_label(return_type));
+            type_effect_row_label(effects.as_ref()).map_or(label.clone(), |effects| {
+                format!("{label} effects {effects}")
+            })
         }
         TypeRef::Choice(alternatives) => alternatives
             .iter()
@@ -701,6 +783,16 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
     }
 }
 
+fn type_effect_row_label(effects: Option<&TypeEffectRow>) -> Option<String> {
+    effects.map(|effects| {
+        if effects.effects().is_empty() {
+            "{ }".to_owned()
+        } else {
+            format!("{{ {} }}", effects.effects().join(", "))
+        }
+    })
+}
+
 fn parse_lifetime_name(source: &str) -> LifetimeName {
     LifetimeName {
         name: source.trim_start_matches('\'').to_owned(),
@@ -738,6 +830,17 @@ impl FnSignature {
     /// Where-clause predicates.
     pub fn where_clauses(&self) -> &[WhereClause] {
         &self.where_clauses
+    }
+}
+
+impl TypeEffectRow {
+    fn new(effects: Vec<String>) -> Self {
+        Self { effects }
+    }
+
+    /// Source labels declared in this closed effect row.
+    pub fn effects(&self) -> &[String] {
+        &self.effects
     }
 }
 

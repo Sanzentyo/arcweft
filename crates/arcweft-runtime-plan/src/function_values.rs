@@ -216,6 +216,7 @@ fn function_local_signature_from_type(ty: &TypeRef) -> Option<FunctionLocalSigna
         TypeRef::Function {
             params,
             return_type,
+            ..
         } => Some(FunctionLocalSignature {
             arity: params.len(),
             return_type: Some((**return_type).clone()),

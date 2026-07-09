@@ -1805,11 +1805,13 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
         TypeRef::Function {
             params,
             return_type,
-        } => TypeKind::function(
+            effects,
+        } => TypeKind::function_with_effects(
             params
                 .iter()
                 .map(|param| trait_type_ref_kind(param, generic_params)),
             trait_type_ref_kind(return_type, generic_params),
+            crate::checker::helpers::type_ref_effect_row(effects.as_ref()),
         ),
         TypeRef::Projection { subject, assoc } => TypeKind::Projection {
             subject: Box::new(trait_type_ref_kind(subject, generic_params)),

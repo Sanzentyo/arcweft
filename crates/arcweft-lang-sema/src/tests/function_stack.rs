@@ -161,6 +161,63 @@ flow @flow.local_function_alias local_function_alias {
 }
 
 #[test]
+fn source_function_type_effect_row_becomes_closed_semantic_row() {
+    let tree = parse_ok(
+        r#"
+flow @flow.source_effect_row source_effect_row
+effects { fs.read }
+{
+    let loader: String -> String effects { fs.read } = load
+    let text: String = loader("avatar")
+    log.info(text)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("source function effect row fixture lowers");
+    validate_typecheck_ready(&hir).expect("source function effect row fixture is structured");
+    let fs_read = crate::effects::EffectSet::from_labels(["fs.read"]).expect("valid effect set");
+    let env = TypeCheckEnv::new()
+        .with_symbol(
+            "load",
+            TypeKind::function_with_effects(
+                [TypeKind::String],
+                TypeKind::String,
+                crate::effect_row::EffectRow::closed(fs_read.clone()),
+            ),
+        )
+        .with_function("log.info", TypeKind::Unit);
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.subject,
+                TypeJudgmentSubject::LetBinding { pattern } if pattern.contains("loader")
+            ) && matches!(
+                &judgment.ty,
+                TypeKind::Function { effects, .. }
+                    if effects.tail() == crate::effect_row::EffectRowTail::Closed
+                        && effects.concrete() == &fs_read
+            )
+        }),
+        "let annotation should preserve the closed source effect row"
+    );
+    assert_eq!(
+        crate::checker::helpers::type_ref_kind(
+            &parse_type_ref("String -> String effects { fs.read }")
+                .expect("function type effect row parses")
+        )
+        .source_label(),
+        "String -> String effects { fs.read }"
+    );
+}
+
+#[test]
 fn environment_function_value_type_carries_closed_effect_row() {
     let tree = parse_ok(
         r"

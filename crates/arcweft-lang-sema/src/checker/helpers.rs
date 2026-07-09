@@ -3,6 +3,7 @@ use super::{
     EnumVariantPayload, Expr, LifetimeScopeKind, Literal, MapKind, NominalTypeContext, Pattern,
     Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
 };
+use crate::{effect_row::EffectRow, effects::EffectSet};
 use std::collections::HashMap;
 
 pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
@@ -917,7 +918,12 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
         TypeRef::Function {
             params,
             return_type,
-        } => TypeKind::function(params.iter().map(type_ref_kind), type_ref_kind(return_type)),
+            effects,
+        } => TypeKind::function_with_effects(
+            params.iter().map(type_ref_kind),
+            type_ref_kind(return_type),
+            type_ref_effect_row(effects.as_ref()),
+        ),
         TypeRef::Choice(alternatives) => {
             normalize_choice_type(alternatives.iter().map(type_ref_kind).collect::<Vec<_>>())
         }
@@ -1033,6 +1039,7 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
         TypeRef::Function {
             params,
             return_type,
+            effects,
         } => {
             let params = if params.len() == 1 {
                 type_ref_label(&params[0])
@@ -1046,7 +1053,10 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
                         .join(", ")
                 )
             };
-            format!("{params} -> {}", type_ref_label(return_type))
+            let label = format!("{params} -> {}", type_ref_label(return_type));
+            type_ref_effect_row_label(effects.as_ref()).map_or(label.clone(), |effects| {
+                format!("{label} effects {effects}")
+            })
         }
         TypeRef::Choice(alternatives) => alternatives
             .iter()
@@ -1079,6 +1089,27 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
         }
         TypeRef::Slice(inner) => format!("[{}]", type_ref_label(inner)),
     }
+}
+
+pub(crate) fn type_ref_effect_row(
+    effects: Option<&arcweft_lang_syntax::types::TypeEffectRow>,
+) -> EffectRow {
+    effects.map_or_else(EffectRow::unknown, |effects| {
+        EffectSet::from_labels(effects.effects())
+            .map_or_else(|_| EffectRow::unknown(), EffectRow::closed)
+    })
+}
+
+pub(crate) fn type_ref_effect_row_label(
+    effects: Option<&arcweft_lang_syntax::types::TypeEffectRow>,
+) -> Option<String> {
+    effects.map(|effects| {
+        if effects.effects().is_empty() {
+            "{ }".to_owned()
+        } else {
+            format!("{{ {} }}", effects.effects().join(", "))
+        }
+    })
 }
 
 pub(super) fn normalize_choice_type(alternatives: Vec<TypeKind>) -> TypeKind {

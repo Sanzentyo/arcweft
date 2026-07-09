@@ -35,6 +35,7 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
     let TypeRef::Function {
         params,
         return_type,
+        ..
     } = parse_type_ref("A -> B -> C").expect("function type parses")
     else {
         panic!("expected function type");
@@ -43,6 +44,7 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
     let TypeRef::Function {
         params,
         return_type,
+        ..
     } = return_type.as_ref()
     else {
         panic!("expected right-associative return function");
@@ -53,6 +55,7 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
     let TypeRef::Function {
         params,
         return_type,
+        ..
     } = parse_type_ref("(A, B) -> C").expect("call-group function type parses")
     else {
         panic!("expected function type");
@@ -71,6 +74,7 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
     let TypeRef::Function {
         params,
         return_type,
+        ..
     } = parse_type_ref("Pair<A -> B, C -> D> -> E")
         .expect("outer function arrow ignores generic argument function arrows")
     else {
@@ -83,8 +87,8 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
                 && matches!(
                     args.as_slice(),
                     [
-                        TypeRef::Function { params: first_params, return_type: first_return },
-                        TypeRef::Function { params: second_params, return_type: second_return },
+                        TypeRef::Function { params: first_params, return_type: first_return, .. },
+                        TypeRef::Function { params: second_params, return_type: second_return, .. },
                     ] if first_params == &[TypeRef::Path("A".to_owned())]
                         && first_return.as_ref() == &TypeRef::Path("B".to_owned())
                         && second_params == &[TypeRef::Path("C".to_owned())]
@@ -102,10 +106,56 @@ fn function_signatures_keep_function_typed_parameters() {
     assert_eq!(signature.param_groups().len(), 2);
     assert!(matches!(
         signature.param_groups()[0].params()[0].ty(),
-        TypeRef::Function { params, return_type }
+        TypeRef::Function { params, return_type, .. }
             if params.len() == 1
                 && matches!(&params[0], TypeRef::Path(path) if path == "A")
                 && matches!(return_type.as_ref(), TypeRef::Path(path) if path == "B")
+    ));
+}
+
+#[test]
+fn function_types_keep_closed_effect_rows() {
+    let TypeRef::Function {
+        params,
+        return_type,
+        effects,
+    } = parse_type_ref("String -> String effects { fs.read, state.write('flow) }")
+        .expect("function type effect row parses")
+    else {
+        panic!("expected function type");
+    };
+
+    assert_eq!(params, vec![TypeRef::Path("String".to_owned())]);
+    assert_eq!(return_type.as_ref(), &TypeRef::Path("String".to_owned()));
+    assert_eq!(
+        effects.expect("effect row is present").effects(),
+        &["fs.read".to_owned(), "state.write('flow)".to_owned()]
+    );
+
+    let TypeRef::Function {
+        effects,
+        return_type,
+        ..
+    } = parse_type_ref("(String -> String) effects { fs.read }")
+        .expect("parenthesized function type effect row parses")
+    else {
+        panic!("expected function type");
+    };
+    assert_eq!(
+        effects.expect("outer effect row is present").effects(),
+        &["fs.read".to_owned()]
+    );
+    assert_eq!(return_type.as_ref(), &TypeRef::Path("String".to_owned()));
+
+    assert!(
+        parse_type_ref("String effects { fs.read }")
+            .expect_err("non-function effect row is rejected")
+            .to_string()
+            .contains("function type")
+    );
+    assert!(matches!(
+        parse_type_ref("effects").expect("plain path named effects parses"),
+        TypeRef::Path(path) if path == "effects"
     ));
 }
 

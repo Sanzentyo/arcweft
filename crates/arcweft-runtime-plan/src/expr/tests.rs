@@ -197,6 +197,7 @@ fn strict_runtime_lowers_expected_partial_placeholder_to_function_expr() {
     let expected = TypeRef::Function {
         params: vec![TypeRef::Path("i64".to_owned())],
         return_type: Box::new(TypeRef::Path("bool".to_owned())),
+        effects: None,
     };
     let ids = BTreeMap::new();
     let helpers = Vec::new();

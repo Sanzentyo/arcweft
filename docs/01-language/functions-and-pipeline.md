@@ -8,6 +8,14 @@ fn filter<A>(pred: A -> bool)(xs: Vec<A>) -> Vec<A>
 fn fold<A, B>(init: B, step: (B, A) -> B)(xs: Vec<A>) -> B
 ```
 
+Function type は closed effect row を suffix として持てる。これは関数値の
+生成ではなく、その関数値を apply した時に発生しうる effect を表す。
+
+```arcw
+let load_text: String -> String effects { fs.read } = read_text
+let projector: (String -> String) effects { fs.read } = read_text
+```
+
 これにより、以下が自然になる。
 
 ```arcw

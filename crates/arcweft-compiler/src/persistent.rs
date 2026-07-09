@@ -851,6 +851,7 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
         TypeRef::Function {
             params,
             return_type,
+            effects,
         } => {
             put_str(bytes, "function")?;
             put_len(bytes, "function params", params.len())?;
@@ -858,6 +859,16 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
                 record_type_ref(param, bytes)?;
             }
             record_type_ref(return_type, bytes)?;
+            match effects {
+                Some(effects) => {
+                    put_str(bytes, "effects")?;
+                    put_len(bytes, "function effect row", effects.effects().len())?;
+                    for effect in effects.effects() {
+                        put_str(bytes, effect)?;
+                    }
+                }
+                None => put_str(bytes, "effects-unknown")?,
+            }
         }
         TypeRef::Choice(alternatives) => {
             put_str(bytes, "choice")?;
