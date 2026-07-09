@@ -1877,3 +1877,11 @@ forbidden rows and preserves callable identity on unresolved-row failures. The
 Agent verified-effects builder now consumes that closed boundary instead of
 resolving `EffectRow` tails directly. Details are recorded in
 `docs/implementation/function-stack-effect-row-closed-boundary-2026-07-09.md`.
+
+The LSP effect-row hover follow-up adds the first editor-facing consumer of
+that closed boundary. Hovering a `flow`, `fn`, or `agent` declaration name now
+shows the callable's inferred row, source upper bound when present, and
+forbidden row when non-empty. The hover is limited to declaration headers so
+body call references do not masquerade as callable declarations. Details are
+recorded in
+`docs/implementation/function-stack-effect-row-lsp-hover-2026-07-09.md`.

@@ -18,6 +18,8 @@ The Agent verified-effects builder now consumes this projection when lowering
 artifact boundary effect proofs. The closed-boundary follow-up adds
 `ClosedEffectRowReport`, so downstream consumers can accept resolved
 `EffectSet` rows without depending on `EffectRow` tail resolution details.
+The LSP hover follow-up consumes that same closed boundary for declaration-name
+effect-row display.
 
 ## Current Implementation Shape
 
@@ -61,6 +63,7 @@ effect-row model is introduced:
 | `no_effect` rejects closure body effects when a closure value is actually called, not when it is merely created. | `no_effect_rejects_local_closure_effect_when_called` |
 | The current analyzer can project closed row evidence without exposing graph internals. | `closure_effect_rows_project_closed_report_evidence`; `effect_row::tests::report_resolves_to_closed_boundary_rows` |
 | Agent verified-effects manifests are built from the closed row projection rather than from graph summaries directly. | `compile_agent_bundle_with_project_builds_agent_controller_bundle`; `compile_agent_bundle_lowers_inferred_effects_not_unused_source_upper_bound` |
+| LSP callable declaration hover can display closed row evidence without reading sema graph internals. | `hover_describes_callable_closed_effect_row`; `callable_effect_row_hover_ignores_body_name_references` |
 
 The `no_effect_rejects_local_closure_effect_when_called`,
 `no_effect_rejects_partial_closure_alias_effect_when_called`,
@@ -132,6 +135,7 @@ The following 07.8 decisions remain open:
 4. Runtime-plan/verifier/LSP consumers for the closed-row boundary projection.
    Agent artifact verified-effects lowering is the first consumer and now uses
    `ClosedEffectRowReport` rather than resolving `EffectRow` internals itself.
+   LSP callable declaration hover is the first editor-facing display consumer.
 5. Replacement of path-specific closure/higher-order graph edges with final row
    evidence.
 6. LSP rendering policy for inferred rows, row origins, callback edges, and

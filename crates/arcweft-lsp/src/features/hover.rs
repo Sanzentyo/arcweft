@@ -2,16 +2,27 @@ use crate::documents::DocumentSnapshot;
 use crate::features::cascade::effective_dialogue_cascade_at;
 use crate::features::character_metadata::character_hover_markdown;
 use crate::profiles::LspProfile;
+use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_sema::{
+    check::{analyze_types, validate_typecheck_ready},
+    effect_model::CallableId,
+    effect_row::EffectSubstitution,
+    effects::EffectSet,
+    resolve::{registry_from_hir, validate_hir_references},
+};
 use arcweft_lang_syntax::ast::dialogue::{
     DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem,
 };
-use arcweft_lang_syntax::ast::items::Item;
+use arcweft_lang_syntax::ast::{
+    common::TextRange,
+    items::{Item, TypedSyntaxTree},
+};
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     LineDisplaySpec, RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource,
     RichTextStyleContribution,
 };
-use arcweft_verify_lsp::profile_hover;
+use arcweft_verify_lsp::{LspPositionMapper, profile_hover};
 use lsp_types::{Hover, HoverContents, MarkedString, Position};
 
 /// Computes hover text for the word under the cursor.
@@ -27,7 +38,10 @@ pub fn hover(
     if let Some(hover) = effective_dialogue_style_hover(profile, document, offset) {
         return Some(hover);
     }
-    let word = word_at_position(document, position)?;
+    let (word, word_range) = word_at_position_range(document, position)?;
+    if let Some(hover) = callable_effect_row_hover(profile, document, &word, word_range) {
+        return Some(hover);
+    }
     if let Some(text) = character_hover_markdown(profile, &word) {
         return Some(Hover {
             contents: HoverContents::Scalar(MarkedString::String(text)),
@@ -35,6 +49,138 @@ pub fn hover(
         });
     }
     profile_hover(&profile.context(), &word)
+}
+
+fn callable_effect_row_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    word: &str,
+    word_range: TextRange,
+) -> Option<Hover> {
+    let parsed = parse_source(document.text().to_owned());
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    let tree = parsed.typed_tree();
+    let callable = callable_at_word(tree, document.text(), word, word_range)?;
+    let hir = lower_to_hir(tree).ok()?;
+    let registry = registry_from_hir(&hir);
+    if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
+    {
+        return None;
+    }
+    let report = analyze_types(&hir, &profile.typecheck_env());
+    if !report.diagnostics.is_empty() {
+        return None;
+    }
+    let rows = report
+        .effects
+        .closed_effect_rows()
+        .resolve_closed(&EffectSubstitution::new())
+        .ok()?;
+    let summary = rows.summary(&callable.id)?;
+    Some(Hover {
+        contents: HoverContents::Scalar(MarkedString::String(effect_row_hover_text(
+            callable.label.as_str(),
+            summary.inferred(),
+            summary.upper_bound(),
+            summary.forbidden(),
+        ))),
+        range: Some(
+            document
+                .line_index()
+                .range_from_byte_span(word_range.start(), word_range.end()),
+        ),
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CallableHoverTarget {
+    id: CallableId,
+    label: String,
+}
+
+fn callable_at_word(
+    tree: &TypedSyntaxTree,
+    source: &str,
+    word: &str,
+    word_range: TextRange,
+) -> Option<CallableHoverTarget> {
+    tree.items().iter().find_map(|item| match item {
+        Item::Flow(flow)
+            if flow.name() == Some(word)
+                && declaration_header_contains_word(source, flow.range(), word_range) =>
+        {
+            Some(CallableHoverTarget {
+                id: CallableId::new(format!("flow.{word}")),
+                label: word.to_owned(),
+            })
+        }
+        Item::Function(function)
+            if function.signature().name() == word
+                && declaration_header_contains_word(source, function.range(), word_range) =>
+        {
+            Some(CallableHoverTarget {
+                id: CallableId::new(format!("fn.{word}")),
+                label: word.to_owned(),
+            })
+        }
+        Item::Agent(agent)
+            if agent.name() == word
+                && declaration_header_contains_word(source, agent.range(), word_range) =>
+        {
+            Some(CallableHoverTarget {
+                id: CallableId::new(format!("agent.{word}")),
+                label: word.to_owned(),
+            })
+        }
+        _ => None,
+    })
+}
+
+fn declaration_header_contains_word(
+    source: &str,
+    item_range: &TextRange,
+    word_range: TextRange,
+) -> bool {
+    if word_range.start() < item_range.start() || item_range.end() < word_range.end() {
+        return false;
+    }
+    let Some(item_source) = source.get(item_range.as_range()) else {
+        return false;
+    };
+    let header_end = item_source.find('{').unwrap_or(item_source.len());
+    word_range.end() <= item_range.start().saturating_add(header_end)
+}
+
+fn effect_row_hover_text(
+    label: &str,
+    inferred: &EffectSet,
+    upper_bound: Option<&EffectSet>,
+    forbidden: &EffectSet,
+) -> String {
+    let mut lines = vec![
+        format!("effect row for `{label}`"),
+        format!("inferred: {}", effect_set_label(inferred)),
+    ];
+    if let Some(upper_bound) = upper_bound {
+        lines.push(format!("upper bound: {}", effect_set_label(upper_bound)));
+    } else {
+        lines.push("upper bound: inferred".to_owned());
+    }
+    if !forbidden.is_empty() {
+        lines.push(format!("forbidden: {}", effect_set_label(forbidden)));
+    }
+    lines.join("\n")
+}
+
+fn effect_set_label(effects: &EffectSet) -> String {
+    let labels = effects.to_labels();
+    if labels.is_empty() {
+        "{ }".to_owned()
+    } else {
+        format!("{{ {} }}", labels.join(", "))
+    }
 }
 
 fn effective_dialogue_style_hover(
@@ -234,6 +380,13 @@ fn document_value_label(
 }
 
 pub(crate) fn word_at_position(document: &DocumentSnapshot, position: Position) -> Option<String> {
+    word_at_position_range(document, position).map(|(word, _)| word)
+}
+
+fn word_at_position_range(
+    document: &DocumentSnapshot,
+    position: Position,
+) -> Option<(String, TextRange)> {
     let offset = document.line_index().byte_offset_from_position(position);
     let text = document.text();
     let start = text[..offset]
@@ -245,7 +398,7 @@ pub(crate) fn word_at_position(document: &DocumentSnapshot, position: Position) 
         .char_indices()
         .find_map(|(index, ch)| (!is_symbol_char(ch)).then_some(offset + index))
         .unwrap_or(text.len());
-    (start < end).then(|| text[start..end].to_owned())
+    (start < end).then(|| (text[start..end].to_owned(), TextRange::new(start, end)))
 }
 
 fn is_symbol_char(ch: char) -> bool {
@@ -359,5 +512,108 @@ flow opening {
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
+    }
+
+    #[test]
+    fn hover_describes_callable_closed_effect_row() {
+        let source = r#"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+fn load_story(path: String) -> String
+effects { fs.read }
+{
+    fs.read_text(path = path)
+}
+
+flow @flow.opening opening
+effects { fs.read }
+{
+    let body = load_story("story.arcw")
+}
+"#;
+        let mut store = DocumentStore::default();
+        let uri = "file:///effect-row-hover.arcw".parse().expect("uri");
+        let document = store.open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
+            },
+            PositionEncoding::Utf16,
+        );
+        let offset = source.find("opening\n").expect("flow name offset");
+        let position = document.line_index().position_from_byte_offset(offset);
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let flow_hover = hover(&profile, &document, position).expect("effect row hover");
+
+        match flow_hover.contents {
+            HoverContents::Scalar(MarkedString::String(text)) => {
+                assert!(text.contains("effect row for `opening`"));
+                assert!(text.contains("inferred: { fs.read }"));
+                assert!(text.contains("upper bound: { fs.read }"));
+            }
+            other => panic!("unexpected hover contents: {other:?}"),
+        }
+
+        let offset = source.find("load_story").expect("function name offset");
+        let position = document.line_index().position_from_byte_offset(offset);
+        let function_hover =
+            hover(&profile, &document, position).expect("function effect row hover");
+
+        match function_hover.contents {
+            HoverContents::Scalar(MarkedString::String(text)) => {
+                assert!(text.contains("effect row for `load_story`"));
+                assert!(text.contains("inferred: { fs.read }"));
+                assert!(text.contains("upper bound: { fs.read }"));
+            }
+            other => panic!("unexpected hover contents: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn callable_effect_row_hover_ignores_body_name_references() {
+        let source = r#"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+fn load_story(path: String) -> String
+effects { fs.read }
+{
+    fs.read_text(path = path)
+}
+
+flow @flow.opening opening
+effects { fs.read }
+{
+    let body = load_story("story.arcw")
+}
+"#;
+        let mut store = DocumentStore::default();
+        let uri = "file:///effect-row-body-hover.arcw".parse().expect("uri");
+        let document = store.open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
+            },
+            PositionEncoding::Utf16,
+        );
+        let offset = source.rfind("load_story").expect("body call offset");
+        let position = document.line_index().position_from_byte_offset(offset);
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+
+        assert!(
+            hover(&profile, &document, position).is_none(),
+            "body call references should not be treated as callable declarations"
+        );
     }
 }
