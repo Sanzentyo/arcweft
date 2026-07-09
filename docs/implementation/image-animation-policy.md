@@ -63,7 +63,7 @@ metadata.
 encoded format (`png`, `jpeg`, `gif`, or `webp`), records whether the asset is
 static or animated, records intrinsic dimensions, and can resolve its encoded
 bytes without filesystem I/O or source lowering. The CLI bundler decodes
-`.arcweft/asset` PNG/JPEG/GIF/WebP files through `arcweft-image` while building
+PNG/JPEG/GIF/WebP files from the authored asset root through `arcweft-image` while building
 the bundle so metadata reflects the actual payload; static WebP remains static,
 and multi-frame GIF/WebP is marked animated. Render/runtime adapters still
 decode the encoded bundle payloads for frame upload and playback rather than
@@ -138,7 +138,7 @@ readback report the resulting object-local `frame_index` and
 
 Source-level runtime calls can now feed that same presentation-image path for
 the first background slot. During Agent observe, `bg(@asset:.bg.room)` and the
-quoted equivalent resolve to `samples/.arcweft/asset/bg/room.{png,jpg,jpeg,gif,webp}`
+quoted equivalent resolve to `samples/assets/bg/room.{png,jpg,jpeg,gif,webp}`
 beside the observed `.arcw` source, decode through `arcweft-image`, lower into
 an `ImagePresentationObject`, lower again through `ViewImagePresentationFrame`,
 and populate typed Agent image objects plus object-id keyed native frame-store
@@ -285,7 +285,7 @@ image capture.
 
 1. Generalize source asset declarations from the current entity-id declaration
    surface into a payload-driving declaration if the language chooses to let
-   source declarations override or supplement `.arcweft/asset` discovery.
+   source declarations override or supplement authored asset-root discovery.
    compact `asset ... { ... }` headers now parse, lower, resolve, and typecheck
    as Asset entity declarations, and `samples/image-animation.arcw` declares its
    static and animated image asset ids. The bundle image asset table still owns

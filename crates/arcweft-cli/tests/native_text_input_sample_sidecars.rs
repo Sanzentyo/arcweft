@@ -23,10 +23,10 @@ fn native_text_input_sample_declares_required_controls_in_dsl() {
     assert!(!source.contains("view style"));
     assert!(source.contains("font-family = token(font.jp_sans_stack)"));
     assert!(!sample.join("scene-contract.json").exists());
-    assert!(!sample.join(".arcweft/content/view.input.json").exists());
-    assert!(!sample.join(".arcweft/content/view.program.json").exists());
-    assert!(!sample.join(".arcweft/content/view.style.json").exists());
-    assert!(!sample.join(".arcweft/content/view.text.json").exists());
+    assert!(!sample.join("content/view.input.json").exists());
+    assert!(!sample.join("content/view.program.json").exists());
+    assert!(!sample.join("content/view.style.json").exists());
+    assert!(!sample.join("content/view.text.json").exists());
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn modern_feedback_view_sample_uses_view_style_and_flow_submit() {
     assert!(source.contains("let name_event = receive action(@action:.feedback.submit_name)"));
     assert!(source.contains("name_event.value"));
     assert!(source.contains("let brief_event = receive action(@action:.feedback.submit_brief)"));
-    assert!(source.contains("let brief = brief_event.value"));
+    assert!(source.contains("brief_event.value"));
     assert!(source.contains("goto @flow:.modern_feedback_view"));
     assert!(!source.contains("panel.close()"));
 }

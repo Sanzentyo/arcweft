@@ -21,8 +21,7 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
-const WEB_ASSET_DIR: &str = "web/assets";
-const BUNDLE_ASSET_DIR: &str = "web/.arcweft/asset/generated";
+const ASSET_DIR: &str = "web/bundle-assets/generated";
 const PULSE_SIZE: u32 = 96;
 
 fn main() {
@@ -33,45 +32,29 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let web_asset_dir = Path::new(WEB_ASSET_DIR);
-    let bundle_asset_dir = Path::new(BUNDLE_ASSET_DIR);
-    fs::create_dir_all(web_asset_dir)?;
-    fs::create_dir_all(bundle_asset_dir)?;
+    let asset_dir = Path::new(ASSET_DIR);
+    fs::create_dir_all(asset_dir)?;
 
     let background = background_image();
-    write_png(&web_asset_dir.join("generated-background.png"), &background)?;
-    write_png(&bundle_asset_dir.join("background.png"), &background)?;
-    validate_static(
-        ImageFormat::Png,
-        &fs::read(web_asset_dir.join("generated-background.png"))?,
-    )?;
+    let background_path = asset_dir.join("background.png");
+    write_png(&background_path, &background)?;
+    validate_static(ImageFormat::Png, &fs::read(background_path)?)?;
 
     let character = character_image();
-    write_png(&web_asset_dir.join("generated-character.png"), &character)?;
-    write_png(&bundle_asset_dir.join("character_stand.png"), &character)?;
-    validate_static(
-        ImageFormat::Png,
-        &fs::read(web_asset_dir.join("generated-character.png"))?,
-    )?;
+    let character_path = asset_dir.join("character_stand.png");
+    write_png(&character_path, &character)?;
+    validate_static(ImageFormat::Png, &fs::read(character_path)?)?;
 
     let frames = pulse_frames();
-    write_gif(&web_asset_dir.join("generated-pulse.gif"), &frames)?;
-    write_gif(&bundle_asset_dir.join("gif_pulse.gif"), &frames)?;
-    validate_animation(
-        ImageFormat::Gif,
-        &fs::read(web_asset_dir.join("generated-pulse.gif"))?,
-    )?;
+    let gif_path = asset_dir.join("gif_pulse.gif");
+    write_gif(&gif_path, &frames)?;
+    validate_animation(ImageFormat::Gif, &fs::read(gif_path)?)?;
 
     let webp = animated_webp(&frames)?;
-    fs::write(web_asset_dir.join("generated-pulse.webp"), &webp)?;
-    fs::write(bundle_asset_dir.join("webp_pulse.webp"), &webp)?;
+    fs::write(asset_dir.join("webp_pulse.webp"), &webp)?;
     validate_animation(ImageFormat::WebP, &webp)?;
 
-    println!(
-        "generated WebGPU demo assets in {} and {}",
-        web_asset_dir.display(),
-        bundle_asset_dir.display()
-    );
+    println!("generated WebGPU demo assets in {}", asset_dir.display());
     Ok(())
 }
 

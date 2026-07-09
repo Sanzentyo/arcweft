@@ -53,8 +53,7 @@ source extension は **`.arcw`** とする。
 推奨 project layout:
 
 ```text
-project.arcw.toml
-arcweft.lock
+arcw.toml
 
 src/
   main.arcw
@@ -62,30 +61,43 @@ src/
   view/settings.arcw
   shaders/post.arcw
 
+assets/
+  bg/room.png
+
+content/
+  view.program.json
+  view.style.json
+
 .arcweft/
-  entities.toml
-  links.toml
-  graph-cache/
+  save/
+  temp/
+  export/
+  cache/
 ```
 
 versioned file:
 
 ```text
 *.arcw
-project.arcw.toml
-.arcweft/entities.toml
-.arcweft/links.toml
+arcw.toml
+assets/**
+content/**
 ```
 
 generated / local-only file:
 
 ```text
-.arcweft/cache/
-.arcweft/history/
-.arcweft/rag/
+.arcweft/**
 *.awfb
 *.arcwx
 ```
+
+`assets/` と `content/` は authored input、`.arcweft/` は tool/runtime が所有する
+local state である。大容量またはライセンス制約のある asset を Git 管理しない場合も、
+Arcweft が読む配置は manifest の `asset-dir` のままにし、取得手順・digest・provenance
+を project 側で管理する。詳細は
+[Authored resource and local state storage](../05-build-and-security/authored-resource-storage.md)
+を参照する。
 
 ## Rust workspace / crate 名
 

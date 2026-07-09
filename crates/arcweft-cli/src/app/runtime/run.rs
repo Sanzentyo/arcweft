@@ -7,7 +7,7 @@ use super::profile::report_path;
 use super::script_bench::script_bench_selection;
 use super::script_test::script_test_selection;
 use super::serve::{RuntimeServeSelectionConfig, runtime_serve_selection};
-use super::steps::{run_runtime_steps, runtime_step_run_config_from_run_options};
+use super::steps::{NativeRunSource, run_runtime_steps, runtime_step_run_config_from_run_options};
 use crate::app::bundle::{
     build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_for_selection,
     write_bundle_artifact, write_patch_bundle_artifact,
@@ -162,9 +162,10 @@ fn runtime_run_headless_command(
     })?;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
+    let file_roots = selection.native_file_roots()?;
     let trace = run_runtime_steps(
         plan,
-        Some(selection.path()),
+        Some(NativeRunSource::new(selection.path(), &file_roots)),
         runtime_step_run_config_from_run_options(options, pure_config),
         &host_policy,
         adapter_registrars,
@@ -805,6 +806,9 @@ fn watch_input_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCo
         paths.push(manifest.to_path_buf());
         paths.extend(watch_project_source_paths(manifest)?);
     } else if let Some(profile) = selection.profile() {
+        if let Some(manifest) = selection.resource_manifest() {
+            paths.push(manifest.to_path_buf());
+        }
         if let Ok(manifest) = arcweft_project_loader::project::discover_manifest(profile.source()) {
             paths.extend(watch_project_source_paths(&manifest)?);
             paths.push(manifest);
@@ -813,7 +817,7 @@ fn watch_input_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCo
         paths.extend(profile.character_manifests().iter().cloned());
         paths.extend(profile.rust_metadata().iter().cloned());
     }
-    paths.extend(watch_virtual_input_paths(selection.path())?);
+    paths.extend(watch_authored_resource_paths(selection)?);
     Ok(paths)
 }
 
@@ -829,16 +833,12 @@ fn watch_project_source_paths(manifest: &Path) -> Result<Vec<PathBuf>, ExitCode>
         .collect())
 }
 
-fn watch_virtual_input_paths(source_path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
-    let Some(source_dir) = source_path.parent() else {
-        return Ok(Vec::new());
-    };
-    let root = source_dir.join(".arcweft");
+fn watch_authored_resource_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCode> {
+    let roots = selection.authored_resource_roots()?;
     let mut paths = Vec::new();
-    for name in [BundleVirtualFileSpace::Asset.as_str(), "content"] {
-        let dir = root.join(name);
+    for dir in [roots.asset(), roots.content()] {
         if dir.exists() {
-            collect_watch_input_files_from_dir(&dir, &mut paths)?;
+            collect_watch_input_files_from_dir(dir, &mut paths)?;
         }
     }
     Ok(paths)
@@ -1103,7 +1103,7 @@ name = "watch_test"
         .expect("main source writes");
         fs::write(
             nested.join("opening.arcw"),
-            r#"mod routes::opening
+            r#"mod routes.opening
 flow @flow.opening opening { return "ok" }
 "#,
         )
@@ -1124,14 +1124,12 @@ flow @flow.opening opening { return "ok" }
     }
 
     #[test]
-    fn watch_inputs_include_virtual_asset_and_content_files() {
+    fn watch_inputs_include_authored_asset_and_content_files() {
         let root = temp_project_root("watch-virtual-inputs");
         let source_root = root.join("src");
-        let asset_dir = source_root.join(".arcweft").join("asset").join("bg");
-        let content_dir = source_root
-            .join(".arcweft")
-            .join("content")
-            .join("chapter_two");
+        let asset_dir = root.join("assets").join("bg");
+        let content_dir = root.join("content").join("chapter_two");
+        fs::create_dir_all(&source_root).expect("source dir");
         fs::create_dir_all(&asset_dir).expect("asset dir");
         fs::create_dir_all(&content_dir).expect("content dir");
         fs::write(
@@ -1162,7 +1160,7 @@ name = "watch_virtual_test"
     }
 
     #[test]
-    fn watch_inputs_detect_virtual_file_additions() {
+    fn watch_inputs_detect_authored_file_additions() {
         let root = temp_project_root("watch-virtual-additions");
         let source_root = root.join("src");
         fs::create_dir_all(&source_root).expect("source dir");
@@ -1181,7 +1179,7 @@ name = "watch_virtual_addition_test"
             path: source,
         };
         let before = watch_inputs(&selection).expect("initial watch inputs");
-        let asset_dir = source_root.join(".arcweft").join("asset").join("view");
+        let asset_dir = root.join("assets").join("view");
         fs::create_dir_all(&asset_dir).expect("asset dir");
         fs::write(asset_dir.join("logo.png"), [0_u8, 1, 2, 3]).expect("asset writes");
 

@@ -2,7 +2,7 @@ use super::entry::apply_runtime_entry_selection;
 use super::executor::RuntimeExecutorInstance;
 use super::options::RuntimeProfileOptions;
 use super::profile::{compile_profile_runtime_plan, report_path, run_profile_phase};
-use super::steps::{NativeRunHost, run_runtime_steps_with_executor};
+use super::steps::{NativeRunHost, NativeRunSource, run_runtime_steps_with_executor};
 use crate::app::project::{
     native_host_policy_for_selection_with_adapter, resolve_source_selection,
     runtime_pure_config_for_selection, typecheck_env_for_selection,
@@ -54,11 +54,12 @@ pub(in crate::app) fn runtime_profile_command(
             pure_config,
         ))
     })?;
+    let file_roots = selection.native_file_roots()?;
     let trace = run_profile_phase(&mut phases, "run", || {
         run_runtime_steps_with_executor(
             &mut executor,
             NativeRunHost {
-                source_path: Some(selection.path()),
+                source: Some(NativeRunSource::new(selection.path(), &file_roots)),
                 policy: &host_policy,
                 adapter_registrars,
             },

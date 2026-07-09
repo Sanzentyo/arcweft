@@ -18,11 +18,12 @@ use arcweft_lang_syntax::{lint::SyntaxLint, source::ParsedSource};
 use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
+use arcweft_project::manifest::AuthoredResourceRoots;
 use arcweft_runtime_accelerator::{
     RuntimePureAcceleratorConfig, RuntimePureBackendMode, RuntimePureWorkerCount,
     math::RuntimeMathBackend,
 };
-use arcweft_runtime_host::NativeTaskBridge;
+use arcweft_runtime_host::{NativeFileRoots, NativeTaskBridge};
 use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
 use arcweft_rust_abi::ArcweftRustManifest;
 use arcweft_source::{Diagnostic, DiagnosticSeverity, SourceName};
@@ -46,31 +47,80 @@ pub(in crate::app) struct ProfileOptions {
 
 #[derive(Clone, Debug)]
 pub(in crate::app) enum SourceSelection {
-    Direct { path: PathBuf },
-    Project { manifest: PathBuf, path: PathBuf },
-    Profile(Box<ResolvedLaunchProfile>),
+    Direct {
+        path: PathBuf,
+    },
+    Project {
+        manifest: PathBuf,
+        path: PathBuf,
+    },
+    Profile {
+        manifest: PathBuf,
+        profile: Box<ResolvedLaunchProfile>,
+    },
 }
 
 impl SourceSelection {
     pub(in crate::app) fn path(&self) -> &Path {
         match self {
             Self::Direct { path } | Self::Project { path, .. } => path,
-            Self::Profile(profile) => profile.source(),
+            Self::Profile { profile, .. } => profile.source(),
         }
     }
 
     pub(in crate::app) fn manifest(&self) -> Option<&Path> {
         match self {
             Self::Project { manifest, .. } => Some(manifest),
-            Self::Direct { .. } | Self::Profile(_) => None,
+            Self::Direct { .. } | Self::Profile { .. } => None,
+        }
+    }
+
+    pub(in crate::app) fn resource_manifest(&self) -> Option<&Path> {
+        match self {
+            Self::Project { manifest, .. } | Self::Profile { manifest, .. } => Some(manifest),
+            Self::Direct { .. } => None,
         }
     }
 
     pub(in crate::app) fn profile(&self) -> Option<&ResolvedLaunchProfile> {
         match self {
             Self::Direct { .. } | Self::Project { .. } => None,
-            Self::Profile(profile) => Some(profile),
+            Self::Profile { profile, .. } => Some(profile),
         }
+    }
+
+    pub(in crate::app) fn authored_resource_roots(
+        &self,
+    ) -> Result<AuthoredResourceRoots, ExitCode> {
+        if let Some(manifest) = self.resource_manifest() {
+            return arcweft_project_loader::project::load_authored_resource_roots(manifest)
+                .map_err(|error| {
+                    eprintln!("error: {error}");
+                    ExitCode::FAILURE
+                });
+        }
+
+        let source_dir = self.path().parent().unwrap_or_else(|| Path::new("."));
+        Ok(AuthoredResourceRoots::new(
+            source_dir.join("assets"),
+            source_dir.join("content"),
+        ))
+    }
+
+    pub(in crate::app) fn local_state_root(&self) -> PathBuf {
+        self.resource_manifest()
+            .and_then(Path::parent)
+            .or_else(|| self.path().parent())
+            .unwrap_or_else(|| Path::new("."))
+            .join(".arcweft")
+    }
+
+    pub(in crate::app) fn native_file_roots(&self) -> Result<NativeFileRoots, ExitCode> {
+        let authored = self.authored_resource_roots()?;
+        Ok(NativeFileRoots::new(
+            authored.asset(),
+            self.local_state_root(),
+        ))
     }
 
     pub(in crate::app) fn entry(&self) -> Option<&str> {
@@ -233,7 +283,10 @@ fn resolve_profile_source_selection_from_manifest(
             eprintln!("error: {error}");
             ExitCode::FAILURE
         })?;
-    Ok(SourceSelection::Profile(Box::new(resolved)))
+    Ok(SourceSelection::Profile {
+        manifest: manifest_path.to_path_buf(),
+        profile: Box::new(resolved),
+    })
 }
 
 fn resolve_project_root_source_selection(

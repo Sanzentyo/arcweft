@@ -174,10 +174,14 @@ the stable JSON bundle representation. Full schema-native Avro sections remain
 available through the separate `arcweft-codec-avro` data adapter when a caller
 has a concrete Avro schema for tabular or streaming data.
 
-The CLI includes `.arcweft/asset` by default and can opt into `.arcweft/save`,
-`.arcweft/temp`, and `.arcweft/export`. Packaged virtual paths use only normal
-relative components. Parent traversal, absolute paths, and host path prefixes
-are rejected or omitted before encoding.
+The CLI includes the manifest-selected authored `assets/` root by default and
+can opt into `.arcweft/save`, `.arcweft/temp`, and `.arcweft/export` from the
+local state root. Authored `content/` is an input to typed bundle content/View
+sections rather than mutable local state. Packaged virtual paths use only
+normal relative components. Parent traversal, absolute paths, and host path
+prefixes are rejected or omitted before encoding. See
+[Authored resource and local state storage](authored-resource-storage.md) for
+the source-tree, version-control, and external-asset policy.
 
 Image assets are typed bundle records that bind a stable asset id to one
 encoded asset virtual file. Static PNG/JPEG/WebP and animated GIF/WebP use the
@@ -187,8 +191,8 @@ dimensions; adapters decode bytes again after looking up the referenced virtual
 file for frame upload and playback, so bundle execution can use encoded payloads
 without re-reading or re-lowering source files.
 
-The CLI bundler derives image asset records for image files under
-`.arcweft/asset`: `bg/room.png` becomes `asset.bg.room`, `view/logo.webp` becomes
+The CLI bundler derives image asset records for image files under the authored
+asset root: `bg/room.png` becomes `asset.bg.room`, `view/logo.webp` becomes
 `asset.view.logo`, and the record points at the matching asset virtual file.
 PNG/JPEG are marked `static`; GIF/WebP are marked from decoded frame count, so
 static WebP remains a normal one-frame image while multi-frame GIF/WebP is

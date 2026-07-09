@@ -101,6 +101,10 @@ fn stand_top_right_bundles_and_observes_responsive_bbox() {
         "1080",
         "--image",
         "png",
+        "--mode",
+        "one-op",
+        "--steps",
+        "1",
         "--json",
     ]);
     assert_success("arcw agent observe", &observe);

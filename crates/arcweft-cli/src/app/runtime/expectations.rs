@@ -1,8 +1,7 @@
 use crate::output::RuntimeStepRunSummary;
 use arcweft_lang_syntax::expr::{CallArg, Expr, Literal, parse_expr};
-use arcweft_runtime_host::NativeTaskBridge;
+use arcweft_runtime_host::{NativeFileRoots, NativeTaskBridge};
 use arcweft_test::{ScriptStep, ScriptTest};
-use std::path::Path;
 
 pub(in crate::app) fn test_goto_flow(test: &ScriptTest) -> Option<String> {
     test.steps
@@ -30,24 +29,24 @@ fn evaluate_test_expectation(
 
 pub(in crate::app) struct RuntimeExpectationView<'a> {
     frames: &'a [RuntimeStepRunSummary],
-    source_path: Option<&'a Path>,
+    file_roots: Option<&'a NativeFileRoots>,
 }
 
 impl<'a> RuntimeExpectationView<'a> {
     pub(in crate::app) const fn new(frames: &'a [RuntimeStepRunSummary]) -> Self {
         Self {
             frames,
-            source_path: None,
+            file_roots: None,
         }
     }
 
-    pub(in crate::app) const fn with_source_path(
+    pub(in crate::app) const fn with_file_roots(
         frames: &'a [RuntimeStepRunSummary],
-        source_path: &'a Path,
+        file_roots: &'a NativeFileRoots,
     ) -> Self {
         Self {
             frames,
-            source_path: Some(source_path),
+            file_roots: Some(file_roots),
         }
     }
 
@@ -76,10 +75,10 @@ impl<'a> RuntimeExpectationView<'a> {
     }
 
     fn file_text(&self, virtual_path: &str) -> Result<String, String> {
-        let Some(source_path) = self.source_path else {
+        let Some(file_roots) = self.file_roots else {
             return Err("file expectations require a source-backed runtime".to_owned());
         };
-        NativeTaskBridge::read_text_snapshot(source_path, virtual_path)
+        NativeTaskBridge::read_text_snapshot(file_roots, virtual_path)
     }
 }
 

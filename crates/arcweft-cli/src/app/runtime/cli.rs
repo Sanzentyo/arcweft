@@ -1,6 +1,6 @@
 use super::entry::apply_runtime_cli_entry_selection;
 use super::options::CliRunOptions;
-use super::steps::{RuntimeStepRunConfig, run_runtime_steps};
+use super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
     load_and_check_selection, native_host_policy_for_selection, require_profile_kind,
     resolve_source_selection, runtime_plan_options_for_selection,
@@ -63,9 +63,10 @@ pub(in crate::app) fn runtime_cli_command(
         value: RuntimeValue::i64(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
     });
 
+    let file_roots = selection.native_file_roots()?;
     let trace = run_runtime_steps(
         plan,
-        Some(selection.path()),
+        Some(NativeRunSource::new(selection.path(), &file_roots)),
         RuntimeStepRunConfig {
             steps: options.steps,
             mode: options.mode,

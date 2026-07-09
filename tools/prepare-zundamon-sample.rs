@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 const DEFAULT_SOURCE: &str =
     ".arcweft-local/character-psd/zundamon-v3.2/ずんだもん立ち絵素材V3.2_全部詰め版.psd";
-const DEFAULT_OUTPUT: &str = "samples/zundamon-stand-switch/.arcweft/asset/zundamon";
+const DEFAULT_OUTPUT: &str = "samples/zundamon-stand-switch/assets/zundamon";
 
 fn main() {
     if let Err(error) = run() {

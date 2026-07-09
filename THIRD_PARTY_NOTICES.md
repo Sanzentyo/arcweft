@@ -64,5 +64,5 @@ covered by the SIL Open Font License 1.1. Its notice is checked in as
 Font License 1.1. The license text is checked in as
 `web/assets/LICENSE-NotoSans.txt`.
 
-The generated image fixtures in `web/assets` and `web/.arcweft/asset/generated`
-are project-owned generated demo fixtures.
+The generated image fixtures in `web/bundle-assets/generated` are project-owned
+generated demo fixtures.

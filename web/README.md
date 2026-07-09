@@ -74,13 +74,17 @@ WebGPU). The smoke checks canvas-only rendering, semantic input, and the typed
 frame observation summary used by the native/Web parity tests. Set
 `ARW_PLAYWRIGHT_CHANNEL` to use another installed Playwright browser channel.
 
+`web/arcw.toml` mounts `web/bundle-assets/` as the Arcweft authored asset root.
+`web/assets/` is reserved for browser-served fonts and static files and is not
+walked into `demo.awfb`.
+
 ## Manual launch
 
 From the repository root:
 
 ```bash
 cargo +nightly -Zscript tools/generate-webgpu-demo-assets.rs
-cargo run -p arcweft-cli -- bundle web/demo.arcw --output web/demo.awfb
+cargo run -p arcweft-cli -- bundle --manifest-path web/arcw.toml --profile main --output web/demo.awfb
 cargo build -p arcweft-player-web --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-dir web/pkg --out-name arcweft_player_web target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm
 ```

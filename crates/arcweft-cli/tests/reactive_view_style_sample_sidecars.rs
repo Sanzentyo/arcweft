@@ -5,7 +5,7 @@ use std::path::Path;
 #[test]
 fn reactive_view_style_sample_sidecars_define_css_and_arcweft_sources() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let style_path = root.join("samples/reactive-view-style/.arcweft/content/view.style.json");
+    let style_path = root.join("samples/reactive-view-style/content/view.style.json");
     let style: Value =
         serde_json::from_slice(&fs::read(style_path).expect("style sidecar")).expect("style json");
 
@@ -22,7 +22,7 @@ fn reactive_view_style_sample_sidecars_define_css_and_arcweft_sources() {
 #[test]
 fn reactive_view_style_sample_sidecars_define_interaction_selectors() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let style_path = root.join("samples/reactive-view-style/.arcweft/content/view.style.json");
+    let style_path = root.join("samples/reactive-view-style/content/view.style.json");
     let style: Value =
         serde_json::from_slice(&fs::read(style_path).expect("style sidecar")).expect("style json");
 

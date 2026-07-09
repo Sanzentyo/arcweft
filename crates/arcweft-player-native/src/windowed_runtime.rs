@@ -627,7 +627,9 @@ where
         HostAdapterRegistryBuilder,
     ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
 {
-    let builder = arcweft_runtime_host::native_task::standard_cli_registry_builder(source_path)?;
+    let builder = arcweft_runtime_host::native_task::standard_cli_registry_builder(
+        arcweft_runtime_host::NativeFileRoots::for_bundle_workspace(source_path),
+    )?;
     let registry = install(source_path, builder)?.build();
     NativeTaskBridge::try_with_registry(windowed_host_policy(bundle), registry)
         .map_err(WindowedRuntimeOwnerError::NativeAdapter)

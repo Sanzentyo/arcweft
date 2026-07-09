@@ -1,0 +1,299 @@
+{
+  "style_program_id": "view.style.reactive_view_style_sample",
+  "arcweft_sources": [
+    {
+      "public_id": "style.reactive.arcweft",
+      "syntax": "arcweft",
+      "identity": {
+        "file": {
+          "path": "styles/reactive-view.arcwstyle"
+        }
+      },
+      "content_digest": null
+    }
+  ],
+  "css_sources": [
+    {
+      "public_id": "style.reactive.css",
+      "syntax": "css",
+      "identity": {
+        "file": {
+          "path": "styles/reactive-view.css"
+        }
+      },
+      "content_digest": null
+    }
+  ],
+  "tokens": [
+    {
+      "public_id": "token.reactive.surface",
+      "value": {
+        "rgba": {
+          "red": 13,
+          "green": 18,
+          "blue": 31,
+          "alpha": 255
+        }
+      }
+    },
+    {
+      "public_id": "token.reactive.button",
+      "value": {
+        "rgba": {
+          "red": 26,
+          "green": 45,
+          "blue": 76,
+          "alpha": 255
+        }
+      }
+    },
+    {
+      "public_id": "token.reactive.button_hover",
+      "value": {
+        "rgba": {
+          "red": 43,
+          "green": 85,
+          "blue": 132,
+          "alpha": 255
+        }
+      }
+    },
+    {
+      "public_id": "token.reactive.button_active",
+      "value": {
+        "rgba": {
+          "red": 17,
+          "green": 103,
+          "blue": 117,
+          "alpha": 255
+        }
+      }
+    },
+    {
+      "public_id": "token.reactive.focus",
+      "value": {
+        "rgba": {
+          "red": 116,
+          "green": 230,
+          "blue": 218,
+          "alpha": 255
+        }
+      }
+    },
+    {
+      "public_id": "token.reactive.font_stack",
+      "value": {
+        "text": "Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-view"
+      }
+    }
+  ],
+  "rules": [
+    {
+      "selector": {
+        "parts": [
+          {
+            "element": "panel"
+          }
+        ]
+      },
+      "declarations": [
+        {
+          "property": "background-color",
+          "value": {
+            "token": "token.reactive.surface"
+          },
+          "op": "replace"
+        },
+        {
+          "property": "font-family",
+          "value": {
+            "token": "token.reactive.font_stack"
+          },
+          "op": "replace"
+        }
+      ],
+      "source": null
+    },
+    {
+      "selector": {
+        "parts": [
+          {
+            "element": "button"
+          }
+        ]
+      },
+      "declarations": [
+        {
+          "property": "background-color",
+          "value": {
+            "token": "token.reactive.button"
+          },
+          "op": "replace"
+        },
+        {
+          "property": "color",
+          "value": {
+            "system_color": "accent_text"
+          },
+          "op": "replace"
+        },
+        {
+          "property": "border-radius-milli",
+          "value": {
+            "milli": 8000
+          },
+          "op": "replace"
+        }
+      ],
+      "source": null
+    },
+    {
+      "selector": {
+        "parts": [
+          {
+            "element": "button"
+          },
+          {
+            "interaction": "hover"
+          }
+        ]
+      },
+      "declarations": [
+        {
+          "property": "background-color",
+          "value": {
+            "token": "token.reactive.button_hover"
+          },
+          "op": "replace"
+        },
+        {
+          "property": "translate-y-milli",
+          "value": {
+            "milli": -1000
+          },
+          "op": "replace"
+        }
+      ],
+      "source": null
+    },
+    {
+      "selector": {
+        "parts": [
+          {
+            "element": "button"
+          },
+          {
+            "interaction": "active"
+          }
+        ]
+      },
+      "declarations": [
+        {
+          "property": "background-color",
+          "value": {
+            "token": "token.reactive.button_active"
+          },
+          "op": "replace"
+        },
+        {
+          "property": "scale-milli",
+          "value": {
+            "milli": 970
+          },
+          "op": "replace"
+        }
+      ],
+      "source": null
+    },
+    {
+      "selector": {
+        "parts": [
+          {
+            "element": "button"
+          },
+          {
+            "state": "focus_visible"
+          }
+        ]
+      },
+      "declarations": [
+        {
+          "property": "outline-color",
+          "value": {
+            "token": "token.reactive.focus"
+          },
+          "op": "replace"
+        },
+        {
+          "property": "outline-width-milli",
+          "value": {
+            "milli": 3000
+          },
+          "op": "replace"
+        }
+      ],
+      "source": null
+    },
+    {
+      "selector": {
+        "parts": [
+          {
+            "element": "button"
+          },
+          {
+            "interaction": "disabled"
+          }
+        ]
+      },
+      "declarations": [
+        {
+          "property": "opacity-milli",
+          "value": {
+            "milli": 520
+          },
+          "op": "replace"
+        }
+      ],
+      "source": null
+    }
+  ],
+  "part_rules": [
+    {
+      "part": "part.reactive_button.label",
+      "selector": {
+        "parts": []
+      },
+      "declarations": [
+        {
+          "property": "font-weight",
+          "value": {
+            "text": "600"
+          },
+          "op": "replace"
+        }
+      ],
+      "source": null
+    }
+  ],
+  "environment_predicates": [
+    {
+      "color_scheme": "system"
+    },
+    {
+      "text_scale_at_least_milli": 1000
+    }
+  ],
+  "source_map_refs": [],
+  "external_css_descriptors": [
+    {
+      "public_id": "css.reactive.file",
+      "identity": {
+        "file": {
+          "path": "styles/reactive-view.css"
+        }
+      },
+      "source_map": null
+    }
+  ],
+  "adapter_requirements": []
+}

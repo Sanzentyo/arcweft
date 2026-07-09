@@ -883,13 +883,27 @@ profile-level content policy tables such as
 `[profiles.release.content."content.chapter_two"]` with typed `residency`,
 `placement`, and `compression` values.
 
+Project and launch manifests may also select authored input roots. Both paths
+are relative to `arcw.toml`; omitted values default to `assets/` and
+`content/`:
+
+```toml
+[resources]
+asset-dir = "assets"
+content-dir = "content"
+```
+
+These roots are visible authoring inputs. Mutable `save`, `temp`, and `export`
+files remain under the project-local `.arcweft/` state directory. See
+[Authored resource and local state storage](../05-build-and-security/authored-resource-storage.md).
+
 Release-mode project verification rejects dynamic `goto` targets. Release
 tree shaking therefore requires static flow references or a future finite,
 manifest-backed dynamic set instead of an unbounded runtime flow lookup.
 
 `arcw build --watch` keeps the same build outputs current, watches the selected
-project source, manifest/profile inputs, and source-local `.arcweft/asset` and
-`.arcweft/content` payload files, and emits patch AWFB artifacts whenever the
+project source, manifest/profile inputs, and the manifest-selected authored
+asset/content roots, and emits patch AWFB artifacts whenever the
 rebuilt target differs from the active base. Each rebuild compares the previous
 and current build snapshots and reports module/query invalidation counts beside
 the emitted patch. It is the artifact-writing watch path; `arcw run --watch`
@@ -907,13 +921,16 @@ arcw build --manifest arcw.toml --patch-base dist/debug/game.awfb
 
 ## Bundle
 
-`arcw bundle <file.arcw> --output game.awfb [--include-save] [--include-temp] [--include-export] [--json]`
+`arcw bundle [<file.arcw>] [--manifest-path arcw.toml] [--profile NAME] --output game.awfb [--include-save] [--include-temp] [--include-export] [--json]`
 packages the current source, executable bytecode, a runtime summary, required
 host-call ids, adapter manifest bodies, adapter manifest ids, and selected
 virtual files into an AWFB v1 product container by default. It is the explicit
 single-source bundling route; `arcw build` is the profile-aware project route.
 The bundle crate is Sans I/O; the CLI owns reading the source, reading
-`.arcweft/<space>/...`, and writing the artifact. Artifact paths are source
+the authored asset/content roots and selected local-state virtual spaces, and
+writing the artifact. Direct single-source commands resolve `assets/`,
+`content/`, and `.arcweft/` next to the source; manifest/profile commands
+resolve them from the manifest directory. Artifact paths are source
 labels and relative virtual paths only, so generated bundle artifacts must not
 carry host absolute paths. Inspection exports remain available with
 `--format json`, `.awfb.json`, or the explicit TOML/YAML/MessagePack/CBOR/Avro

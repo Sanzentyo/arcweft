@@ -71,6 +71,7 @@ use arcweft_lang_syntax::ast::{
     style::StyleSyntax,
 };
 use arcweft_launch::LaunchKind;
+use arcweft_project::manifest::AuthoredResourceRoots;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
@@ -315,11 +316,16 @@ pub(in crate::app) fn compile_bundle_for_selection(
         &adapter_manifest,
         required_host_calls.iter().map(String::as_str),
     )?;
-    let virtual_files = collect_bundle_virtual_files(selection.path(), include_spaces)?;
+    let authored_resources = selection.authored_resource_roots()?;
+    let virtual_files = collect_bundle_virtual_files(
+        &authored_resources,
+        &selection.local_state_root(),
+        include_spaces,
+    )?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
     let mut image_objects = bundle_image_objects(&image_declarations)?;
-    let view_sidecars = collect_bundle_view_sidecars(selection.path())?.merged(
+    let view_sidecars = collect_bundle_view_sidecars(authored_resources.content())?.merged(
         collect_bundle_dsl_view_resources(&compiled.hir, &image_objects)?,
     );
     image_objects.extend(view_sidecars.image_objects.iter().cloned());
@@ -446,20 +452,10 @@ fn merge_view_style(mut left: ViewStyleResource, right: ViewStyleResource) -> Vi
     left
 }
 
-fn collect_bundle_view_sidecars(source_path: &Path) -> Result<BundleViewSidecars, ExitCode> {
-    let Some(source_dir) = source_path.parent() else {
+fn collect_bundle_view_sidecars(root: &Path) -> Result<BundleViewSidecars, ExitCode> {
+    if !root.exists() {
         return Ok(BundleViewSidecars::default());
-    };
-    let roots = [
-        source_dir.join(".arcweft").join("content"),
-        source_dir.parent().map_or_else(
-            || source_dir.join(".arcweft").join("content"),
-            |project_dir| project_dir.join(".arcweft").join("content"),
-        ),
-    ];
-    let Some(root) = roots.iter().find(|candidate| candidate.exists()) else {
-        return Ok(BundleViewSidecars::default());
-    };
+    }
 
     Ok(BundleViewSidecars {
         program: read_optional_json_sidecar(&root.join("view.program.json"))?,
@@ -2070,16 +2066,21 @@ fn bundle_adapter_manifest_from_context(manifest: &AdapterManifest) -> BundleAda
 }
 
 fn collect_bundle_virtual_files(
-    source_path: &Path,
+    authored_resources: &AuthoredResourceRoots,
+    local_state_root: &Path,
     spaces: impl IntoIterator<Item = BundleVirtualFileSpace>,
 ) -> Result<Vec<BundleVirtualFile>, ExitCode> {
-    let root = source_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(".arcweft");
     spaces
         .into_iter()
-        .map(|space| collect_bundle_virtual_files_for_space(&root, space))
+        .map(|space| {
+            let root = match space {
+                BundleVirtualFileSpace::Asset => authored_resources.asset().to_path_buf(),
+                BundleVirtualFileSpace::Save
+                | BundleVirtualFileSpace::Temp
+                | BundleVirtualFileSpace::Export => local_state_root.join(space.as_str()),
+            };
+            collect_bundle_virtual_files_for_space(&root, space)
+        })
         .collect::<Result<Vec<_>, _>>()
         .map(|groups| groups.into_iter().flatten().collect())
 }
@@ -2190,15 +2191,14 @@ fn bundle_asset_id_component(value: &str) -> Option<String> {
 }
 
 fn collect_bundle_virtual_files_for_space(
-    root: &Path,
+    dir: &Path,
     space: BundleVirtualFileSpace,
 ) -> Result<Vec<BundleVirtualFile>, ExitCode> {
-    let dir = root.join(space.as_str());
     if !dir.exists() {
         return Ok(Vec::new());
     }
     let mut files = Vec::new();
-    collect_bundle_virtual_files_from_dir(&dir, &dir, space, &mut files)?;
+    collect_bundle_virtual_files_from_dir(dir, dir, space, &mut files)?;
     Ok(files)
 }
 

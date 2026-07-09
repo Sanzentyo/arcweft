@@ -19,12 +19,11 @@ Current refresh targets:
 
 | Target | Source | Command |
 | --- | --- | --- |
-| `web/demo.awfb` | `web/demo.arcw` | `just fixture-refresh-web-demo-awfb` |
-| `web/assets/generated-background.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
-| `web/assets/generated-character.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
-| `web/assets/generated-pulse.gif` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
-| `web/assets/generated-pulse.webp` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
-| `web/.arcweft/asset/generated/*` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/demo.awfb` | `web/arcw.toml` profile `main` (`web/demo.arcw`) | `just fixture-refresh-web-demo-awfb` |
+| `web/bundle-assets/generated/background.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/bundle-assets/generated/character_stand.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/bundle-assets/generated/gif_pulse.gif` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/bundle-assets/generated/webp_pulse.webp` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `crates/arcweft-lang-syntax/src/jlreq_punctuation_data.rs` | `tools/generate_jlreq_punctuation_data.rs` | `just generate-jlreq-punctuation` |
 | `fixtures/persistent-cache-build/seq04-8-4/goldens/*.json` | normal `arcw build` CLI fixture verifier | `just persistent-cache-build-seq04-8-4-goldens-regenerate` |
 

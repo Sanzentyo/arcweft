@@ -1,6 +1,7 @@
-# WebGPU demo assets
+# Web Player Static Assets
 
-This directory contains the browser demo's checked-in visual assets:
+This directory contains checked-in browser-served static resources. Arcweft
+authoring inputs for `web/demo.arcw` live separately under `web/bundle-assets/`.
 
 - `arcweft-demo.ttf`: Noto Sans Regular, licensed under the SIL Open Font
   License. The license text is checked in as `LICENSE-NotoSans.txt`.
@@ -17,14 +18,5 @@ This directory contains the browser demo's checked-in visual assets:
   future WOFF2 decoder compatibility tests. They are not part of the default
   Web player font list because the current Rust-side WOFF2 decoder rejects
   these shards before renderer registration.
-- `generated-background.png`, `generated-character.png`, `generated-pulse.gif`,
-  and `generated-pulse.webp`: generated Arcweft demo fixtures.
-
-Regenerate the project-owned image fixtures from the repository root:
-
-```bash
-cargo +nightly -Zscript tools/generate-webgpu-demo-assets.rs
-```
-
 The same font bytes should be registered through `SharedRenderer::register_font_bytes`
 in native and browser visual-parity jobs.

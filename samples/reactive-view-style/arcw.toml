@@ -1,0 +1,9 @@
+default = "main"
+
+[package]
+name = "reactive-view-style"
+version = "0.1.0"
+
+[profiles.main]
+kind = "game"
+source = "src/main.arcw"

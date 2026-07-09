@@ -3,7 +3,7 @@
 This sample keeps two things together:
 
 - an Arcweft `.arcw` scene with interactive choices that can be hovered and pressed through the current shared renderer path;
-- product View sidecars that declare the intended retained View style layers from both Arcweft-style authoring and CSS-style authoring.
+- product View sidecars under `content/` that declare the intended retained View style layers from both Arcweft-style authoring and CSS-style authoring.
 
 Run the local sample fixture from the repository root:
 

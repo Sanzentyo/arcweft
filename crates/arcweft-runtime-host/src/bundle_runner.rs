@@ -1,4 +1,6 @@
-use crate::native_task::{NativeAdapterRegistrar, NativeTaskBridge, NativeTaskStats};
+use crate::native_task::{
+    NativeAdapterRegistrar, NativeFileRoots, NativeTaskBridge, NativeTaskStats,
+};
 use crate::stats::{RuntimeExecutorStats, runtime_executor_stats};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleImageAnimation, BundleImageAsset,
@@ -568,6 +570,7 @@ fn run_runtime_steps_with_executor(
         .map(|path| {
             NativeTaskBridge::try_new(
                 path,
+                NativeFileRoots::for_bundle_workspace(path),
                 host_config.policy.clone(),
                 host_config.adapter_registrars,
             )
@@ -1097,8 +1100,7 @@ mod tests {
                 .join("..")
                 .join("..")
                 .join("samples")
-                .join(".arcweft")
-                .join("asset")
+                .join("assets")
                 .join(path),
         )
         .expect("sample image asset is readable")

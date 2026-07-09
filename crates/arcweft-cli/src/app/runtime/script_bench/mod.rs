@@ -16,7 +16,7 @@ use arcweft_compiler::lower::lower_source_pure_helper_candidates;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
-use arcweft_runtime_host::NativeAdapterRegistrar;
+use arcweft_runtime_host::{NativeAdapterRegistrar, NativeFileRoots};
 use arcweft_test::collect_script_tests;
 use run::run_script_bench;
 use std::process::ExitCode;
@@ -26,6 +26,7 @@ pub(in crate::app) struct BenchRuntimeContext<'a> {
     pub(in crate::app) pure_config: RuntimePureAcceleratorConfig,
     pub(in crate::app) host_policy: &'a HostCallPolicy,
     pub(in crate::app) adapter_registrars: &'a [NativeAdapterRegistrar],
+    pub(in crate::app) file_roots: &'a NativeFileRoots,
 }
 
 pub(in crate::app) fn script_bench_command(
@@ -55,6 +56,7 @@ pub(in crate::app) fn script_bench_selection(
     let env = typecheck_env_for_selection(selection, None, &mut phases)?;
     let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
     let host_policy = native_host_policy_for_selection(selection)?;
+    let file_roots = selection.native_file_roots()?;
     let manifest = collect_script_tests(&compiled.hir);
     let pure_helpers =
         lower_source_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);
@@ -62,6 +64,7 @@ pub(in crate::app) fn script_bench_selection(
         pure_config,
         host_policy: &host_policy,
         adapter_registrars,
+        file_roots: &file_roots,
     };
     let output = crate::output::ScriptBenchRunReport {
         source: report_path(selection.path()),

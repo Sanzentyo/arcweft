@@ -4,7 +4,7 @@ use super::{
     RuntimeExecutorInstance, bundle_host_policy, bundle_runner_bytecode, bundle_runner_entry,
     run_bundle_runner_phase, step_options, validate_bundle_image_assets, validate_bundle_kind,
 };
-use crate::native_task::{NativeTaskBridge, standard_cli_registry_builder};
+use crate::native_task::{NativeFileRoots, NativeTaskBridge, standard_cli_registry_builder};
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::{
     engine::{FlowFiberStatus, FlowStatusLabelStyle},
@@ -92,8 +92,10 @@ impl BundleRunnerSession {
 
         let policy = bundle_host_policy(bundle);
         let run_started = Instant::now();
-        let builder = standard_cli_registry_builder(workspace.source_path())
-            .map_err(BundleRunnerError::NativeAdapter)?;
+        let builder = standard_cli_registry_builder(NativeFileRoots::for_bundle_workspace(
+            workspace.source_path(),
+        ))
+        .map_err(BundleRunnerError::NativeAdapter)?;
         let registry = install(workspace.source_path(), builder)
             .map(HostAdapterRegistryBuilder::build)
             .map_err(BundleRunnerError::NativeAdapter)?;

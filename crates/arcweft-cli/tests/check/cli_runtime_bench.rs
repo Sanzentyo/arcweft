@@ -1724,10 +1724,12 @@ fn bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_t
         "bundle JSON summary must not leak workspace paths: {bundle_stdout}"
     );
 
-    let bundle_json: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(&bundle_path).expect("image animation bundle JSON is written"),
+    let bundle = arcweft_bundle::ArcweftBundle::from_format_slice(
+        arcweft_bundle::BundleFormat::Awfb,
+        &fs::read(&bundle_path).expect("image animation AWFB is written"),
     )
-    .expect("image animation bundle artifact is JSON");
+    .expect("image animation AWFB decodes");
+    let bundle_json = serde_json::to_value(bundle).expect("image animation bundle serializes");
     assert_image_animation_bundle_assets(&bundle_json);
     let bundle_text =
         serde_json::to_string(&bundle_json).expect("image animation bundle JSON reserializes");
@@ -1739,8 +1741,6 @@ fn bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_t
     let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run-bundle")
         .arg(&bundle_path)
-        .arg("--flow")
-        .arg("image_animated_webp")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -1813,7 +1813,8 @@ fn assert_image_animation_run_bundle_output(run_stdout: &str) {
             .any(|phase| phase["name"] == "validate_image_assets"),
         "run-bundle should explicitly validate bundled image assets: {run_stdout}"
     );
-    assert_eq!(run_json["final_status"], "done return image_animated_webp");
+    assert_eq!(run_json["executor"], "awbc_product");
+    assert_eq!(run_json["final_status"], "dialogue image.static_png");
     assert!(
         !run_stdout.contains(&workspace_root().display().to_string()),
         "run-bundle JSON must not leak workspace paths: {run_stdout}"
@@ -1859,7 +1860,7 @@ struct BundleNativeFileFixture {
 fn bundle_native_file_fixture() -> BundleNativeFileFixture {
     let dir = temp_dir("bundle-native-file-task");
     let source_path = dir.join("main.arcw");
-    let asset_dir = dir.join(".arcweft").join("asset");
+    let asset_dir = dir.join("assets");
     let save_dir = dir.join(".arcweft").join("save");
     let bundle_path = dir.join("game.awfb");
     fs::create_dir_all(asset_dir.join("bg")).expect("create virtual asset bg root");
@@ -1938,7 +1939,13 @@ fn assert_bundle_package_output(fixture: &BundleNativeFileFixture, bundle_stdout
         !bundle_stdout.contains(&fixture.dir.display().to_string()),
         "bundle JSON must not record absolute temp paths: {bundle_stdout}"
     );
-    let bundle_json = fs::read_to_string(&fixture.bundle_path).expect("bundle JSON is written");
+    let bundle = arcweft_bundle::ArcweftBundle::from_format_slice(
+        arcweft_bundle::BundleFormat::Awfb,
+        &fs::read(&fixture.bundle_path).expect("bundle AWFB is written"),
+    )
+    .expect("bundle AWFB decodes");
+    let bundle_json =
+        serde_json::to_string_pretty(&bundle).expect("decoded bundle serializes for assertions");
     assert!(
         bundle_json.contains("\"adapter_manifest_ids\"")
             && bundle_json.contains("\"adapter_manifests\"")
@@ -1967,8 +1974,7 @@ fn sample_image_asset_path(relative: impl AsRef<Path>) -> PathBuf {
         .join("..")
         .join("..")
         .join("samples")
-        .join(".arcweft")
-        .join("asset")
+        .join("assets")
         .join(relative)
 }
 

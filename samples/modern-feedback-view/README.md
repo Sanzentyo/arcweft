@@ -30,7 +30,8 @@ cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-view/a
 ## Bundle
 
 ```bash
-cargo run -p arcweft-cli -- bundle samples/modern-feedback-view/src/main.arcw \
+cargo run -p arcweft-cli -- bundle \
+  --manifest-path samples/modern-feedback-view/arcw.toml --profile main \
   --output target/arcweft/modern-feedback-view.awfb
 ```
 
@@ -46,6 +47,6 @@ be replaced by DOM or native platform widgets.
 
 ## Assets
 
-`src/.arcweft/asset/bg/glass_lights.png` is a deterministic Arcweft-authored
+`assets/bg/glass_lights.png` is a deterministic Arcweft-authored
 sample image included for this repository. It is distributed under the same
 license terms as the sample code and does not require external attribution.

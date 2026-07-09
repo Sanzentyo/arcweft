@@ -714,6 +714,7 @@ mod report {
                 violation.suggestion
             ));
         }
+        output.pop();
         output
     }
 
@@ -990,8 +991,11 @@ mod walk {
     use std::path::{Path, PathBuf};
 
     const IGNORED_DIRECTORIES: &[&str] = &[
+        ".arcweft",
+        ".arcweft-local",
         ".git",
         ".idea",
+        ".jj",
         ".vscode",
         "node_modules",
         "target",

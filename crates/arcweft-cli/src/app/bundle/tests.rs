@@ -409,9 +409,7 @@ flow test {
 }
 
 #[test]
-fn view_lazy_row_and_column_lower_to_typed_eager_elements() {
-    use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramInstruction};
-
+fn view_lazy_row_and_column_require_a_future_typed_runtime_contract() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
 view LazyList() {
@@ -432,25 +430,16 @@ flow test {
 }
 "#,
     );
-    assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
-    let program = sidecars.program.expect("program sidecar");
-
-    assert!(program.instructions.iter().any(|instruction| matches!(
-        instruction,
-        ViewProgramInstruction::OpenElement {
-            element: ViewElementKind::LazyRow,
-            ..
-        }
-    )));
-    assert!(program.instructions.iter().any(|instruction| matches!(
-        instruction,
-        ViewProgramInstruction::OpenElement {
-            element: ViewElementKind::LazyColumn,
-            ..
-        }
-    )));
+    assert!(parsed.errors().iter().any(|error| {
+        error
+            .message()
+            .contains("unsupported View element `LazyRow`")
+    }));
+    assert!(parsed.errors().iter().any(|error| {
+        error
+            .message()
+            .contains("unsupported View element `LazyColumn`")
+    }));
 }
 
 #[test]
@@ -710,7 +699,7 @@ fn modern_feedback_view_subtitle_text_block_reserves_wrapped_height() {
         .iter()
         .find(|block| {
             text.literal_text(&block.text_source)
-                .is_some_and(|value| value.contains("flow-backed submit actions"))
+                .is_some_and(|value| value.contains("one-line player-rendered view"))
         })
         .expect("subtitle text block");
     assert!(
@@ -1255,8 +1244,7 @@ fn sample_image_virtual_file(path: &str) -> BundleVirtualFile {
             .join("..")
             .join("..")
             .join("samples")
-            .join(".arcweft")
-            .join("asset")
+            .join("assets")
             .join(path),
     )
     .expect("sample image asset is readable");
@@ -1350,6 +1338,92 @@ flow main {
         .expect("ordinary project product AWFB decodes");
     assert!(decoded.product_awbc().is_some());
     assert!(decoded.bytecode.program.flows.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn project_bundle_uses_manifest_resource_roots_and_project_local_state() {
+    let unique = format!(
+        "arcweft-project-resource-roots-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after UNIX epoch")
+            .as_nanos()
+    );
+    let root = std::env::temp_dir().join(unique);
+    let source_root = root.join("src");
+    let custom_asset_root = root.join("game-assets").join("bg");
+    let state_root = root.join(".arcweft").join("save");
+    fs::create_dir_all(&source_root).expect("temporary project source directory");
+    fs::create_dir_all(&custom_asset_root).expect("custom asset directory");
+    fs::create_dir_all(&state_root).expect("project state directory");
+    fs::create_dir_all(source_root.join(".arcweft/save")).expect("source-local legacy state");
+    let manifest_path = root.join("arcw.toml");
+    let source_path = source_root.join("main.arcw");
+    fs::write(
+        &manifest_path,
+        r#"
+[package]
+name = "resource_root_builder"
+
+[resources]
+asset-dir = "game-assets"
+content-dir = "game-content"
+"#,
+    )
+    .expect("temporary manifest writes");
+    fs::write(&source_path, "flow main { return \"done\" }")
+        .expect("temporary project source writes");
+    fs::write(
+        custom_asset_root.join("room.png"),
+        sample_image_virtual_file("bg/room.png").bytes,
+    )
+    .expect("custom asset writes");
+    fs::write(state_root.join("slot.txt"), "project-state").expect("project state writes");
+    fs::write(source_root.join(".arcweft/save/legacy.txt"), "legacy-state")
+        .expect("legacy state writes");
+    let selection = SourceSelection::Project {
+        manifest: manifest_path,
+        path: source_path,
+    };
+    let mut phases = Vec::new();
+
+    let artifact = compile_bundle_for_selection(
+        &selection,
+        vec![BundleVirtualFileSpace::Asset, BundleVirtualFileSpace::Save],
+        &mut phases,
+    )
+    .expect("project bundle uses explicit roots");
+
+    assert!(
+        artifact
+            .bundle
+            .virtual_file(&BundleVirtualFileRef {
+                space: BundleVirtualFileSpace::Asset,
+                path: "bg/room.png".to_owned(),
+            })
+            .is_some()
+    );
+    assert!(
+        artifact
+            .bundle
+            .virtual_file(&BundleVirtualFileRef {
+                space: BundleVirtualFileSpace::Save,
+                path: "slot.txt".to_owned(),
+            })
+            .is_some()
+    );
+    assert!(
+        artifact
+            .bundle
+            .virtual_file(&BundleVirtualFileRef {
+                space: BundleVirtualFileSpace::Save,
+                path: "legacy.txt".to_owned(),
+            })
+            .is_none()
+    );
 
     let _ = fs::remove_dir_all(root);
 }

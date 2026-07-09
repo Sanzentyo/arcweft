@@ -1,6 +1,6 @@
 use super::expectations::{test_expectation_failures, test_goto_flow};
 use super::options::ScriptTestOptions;
-use super::steps::{RuntimeStepRunConfig, run_runtime_steps};
+use super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
     SourceSelection, load_and_check_selection, native_host_policy_for_selection,
     require_profile_kind, resolve_source_selection, runtime_plan_options_for_selection,
@@ -18,7 +18,6 @@ use arcweft_host_adapter::HostCallPolicy;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_test::{ScriptTest, collect_script_tests};
-use std::path::Path;
 use std::process::ExitCode;
 
 pub(in crate::app) fn script_test_command(
@@ -73,6 +72,8 @@ pub(in crate::app) fn script_test_selection(
         }
         ExitCode::FAILURE
     })?;
+    let file_roots = selection.native_file_roots()?;
+    let source = NativeRunSource::new(selection.path(), &file_roots);
     let output = ScriptTestRunReport {
         tests: manifest
             .tests
@@ -81,7 +82,7 @@ pub(in crate::app) fn script_test_selection(
                 run_script_test(
                     test,
                     &plan,
-                    selection.path(),
+                    source,
                     config,
                     &host_policy,
                     adapter_registrars,
@@ -122,7 +123,7 @@ pub(in crate::app) fn script_test_selection(
 fn run_script_test(
     test: &ScriptTest,
     plan: &RuntimePlan,
-    source_path: &Path,
+    source: NativeRunSource<'_>,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
@@ -161,7 +162,7 @@ fn run_script_test(
     plan.entry_flow = Some(start);
     let Ok(trace) = run_runtime_steps(
         plan,
-        Some(source_path),
+        Some(source),
         config,
         host_policy,
         adapter_registrars,

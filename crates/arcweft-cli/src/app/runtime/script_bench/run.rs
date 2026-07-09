@@ -2,7 +2,7 @@ use super::super::bench::run_runtime_bench_steps_with_pure;
 use super::super::executor::RuntimeExecutorTemplate;
 use super::super::expectations::{RuntimeExpectationView, evaluate_runtime_expectation};
 use super::super::options::ScriptBenchOptions;
-use super::super::steps::{RuntimeStepRunConfig, run_runtime_steps};
+use super::super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use super::BenchRuntimeContext;
 use super::samples::{RuntimeBenchSamples, bench_goto_flow, validate_bench_section};
 use crate::app::jit::{
@@ -22,7 +22,7 @@ use arcweft_core::plan::{
 use arcweft_core::pure::RuntimePureCallBackend;
 use arcweft_lang_syntax::expr::{Expr, parse_expr};
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
-use arcweft_runtime_host::{host_system_info, runtime_executor_stats};
+use arcweft_runtime_host::{NativeFileRoots, host_system_info, runtime_executor_stats};
 use arcweft_runtime_plan::pure::{PureHelperCandidate, PureHelperLowerError};
 use arcweft_test::{BenchSection, ScriptBench};
 use std::path::Path;
@@ -138,7 +138,7 @@ fn bench_expectation_failures(
     assertion_plan.entry_flow = Some(flow);
     let frames = run_runtime_steps(
         assertion_plan,
-        Some(source_path),
+        Some(NativeRunSource::new(source_path, runtime.file_roots)),
         RuntimeStepRunConfig {
             steps: options.steps,
             mode: options.mode,
@@ -155,19 +155,19 @@ fn bench_expectation_failures(
     };
     assertions
         .into_iter()
-        .flat_map(|section| bench_assertion_failures(section, &frames.steps, source_path))
+        .flat_map(|section| bench_assertion_failures(section, &frames.steps, runtime.file_roots))
         .collect()
 }
 
 fn bench_assertion_failures(
     section: &BenchSection,
     frames: &[RuntimeStepRunSummary],
-    source_path: &Path,
+    file_roots: &NativeFileRoots,
 ) -> Vec<String> {
     match bench_assertion_text(section) {
         Ok(text) => evaluate_runtime_expectation(
             text,
-            &RuntimeExpectationView::with_source_path(frames, source_path),
+            &RuntimeExpectationView::with_file_roots(frames, file_roots),
         )
         .err()
         .map(|failure| format!("bench assert failed: {failure}"))
@@ -475,7 +475,7 @@ fn run_bench_flow_section(
         let started = Instant::now();
         let trace = run_runtime_bench_steps_with_pure(
             executor,
-            Some(source_path),
+            Some(NativeRunSource::new(source_path, runtime.file_roots)),
             RuntimeStepRunConfig {
                 steps: options.steps,
                 mode: options.mode,

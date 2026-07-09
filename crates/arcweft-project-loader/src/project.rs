@@ -7,7 +7,7 @@ use arcweft_lang_syntax::{
 use arcweft_launch::LaunchProfileManifest;
 use arcweft_project::{
     graph::ModuleDependency,
-    manifest::ProjectManifest,
+    manifest::{AuthoredResourceRoots, ProjectManifest, ResourceManifest},
     sources::{ProjectSourceFile, ProjectSources},
 };
 use std::{
@@ -112,6 +112,18 @@ pub fn discover_manifest(start: &Path) -> Result<PathBuf, ProjectLoadError> {
 /// Discovers and loads the project containing `start`.
 pub fn load_discovered(start: &Path) -> Result<LoadedProject, ProjectLoadError> {
     load(&discover_manifest(start)?)
+}
+
+/// Loads only the authored asset/content roots from an explicit `arcw.toml`.
+///
+/// This accepts launch-only manifests without requiring a package source tree.
+pub fn load_authored_resource_roots(
+    manifest_path: &Path,
+) -> Result<AuthoredResourceRoots, ProjectLoadError> {
+    let manifest_source = read_to_string(manifest_path)?;
+    let resources = ResourceManifest::parse_project_toml(&manifest_source)?;
+    let project_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    Ok(resources.resolve(project_root))
 }
 
 /// Loads one explicit `arcw.toml` and all `.arcw` sources under its source root.
@@ -371,7 +383,7 @@ mod tests {
             inferred_module_path(root, Path::new("src/game/routes/opening.arcw"))
                 .unwrap()
                 .to_string(),
-            "crate::game::routes::opening"
+            "crate.game.routes.opening"
         );
         assert!(matches!(
             inferred_module_path(root, Path::new("src/game/mod.arcw")),

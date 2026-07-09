@@ -9,14 +9,15 @@ use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
-    NativeAdapterRegistrar, NativeTaskBridge, NativeTaskStats, RuntimeExecutorStats,
+    NativeAdapterRegistrar, NativeFileRoots, NativeTaskBridge, NativeTaskStats,
+    RuntimeExecutorStats,
 };
 use std::path::Path;
 use std::process::ExitCode;
 
 pub(in crate::app) fn run_runtime_steps(
     plan: RuntimePlan,
-    source_path: Option<&Path>,
+    source: Option<NativeRunSource<'_>>,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
@@ -26,7 +27,7 @@ pub(in crate::app) fn run_runtime_steps(
     run_runtime_steps_with_executor(
         &mut executor,
         NativeRunHost {
-            source_path,
+            source,
             policy: host_policy,
             adapter_registrars,
         },
@@ -61,10 +62,11 @@ fn try_run_runtime_steps_with_executor(
     values: &[RuntimeBinding],
 ) -> Result<RuntimeRunTrace, arcweft_host_adapter::HostAdapterError> {
     let mut host = host_config
-        .source_path
-        .map(|path| {
+        .source
+        .map(|source| {
             NativeTaskBridge::try_new(
-                path,
+                source.path,
+                source.file_roots.clone(),
                 host_config.policy.clone(),
                 host_config.adapter_registrars,
             )
@@ -117,9 +119,29 @@ pub(in crate::app) struct RuntimeRunTrace {
 
 #[derive(Clone, Copy)]
 pub(in crate::app) struct NativeRunHost<'a> {
-    pub(in crate::app) source_path: Option<&'a Path>,
+    pub(in crate::app) source: Option<NativeRunSource<'a>>,
     pub(in crate::app) policy: &'a HostCallPolicy,
     pub(in crate::app) adapter_registrars: &'a [NativeAdapterRegistrar],
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::app) struct NativeRunSource<'a> {
+    path: &'a Path,
+    file_roots: &'a NativeFileRoots,
+}
+
+impl<'a> NativeRunSource<'a> {
+    pub(in crate::app) const fn new(path: &'a Path, file_roots: &'a NativeFileRoots) -> Self {
+        Self { path, file_roots }
+    }
+
+    pub(in crate::app) const fn path(self) -> &'a Path {
+        self.path
+    }
+
+    pub(in crate::app) const fn file_roots(self) -> &'a NativeFileRoots {
+        self.file_roots
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

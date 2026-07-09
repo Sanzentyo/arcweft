@@ -24,6 +24,16 @@ pub type NativeAdapterRegistrar =
 
 pub const INTERNAL_SCHEDULER_ADAPTER_ID: &str = "internal-scheduler";
 
+/// Physical roots mounted behind Arcweft's native virtual file spaces.
+///
+/// Authored assets are read-only and may live outside the tool-owned state
+/// directory. Save, temporary, and export paths remain under `state`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeFileRoots {
+    asset: PathBuf,
+    state: PathBuf,
+}
+
 #[derive(Clone, Debug)]
 pub struct NativeTaskBridge {
     policy: HostCallPolicy,
@@ -105,10 +115,11 @@ pub struct NativeTaskClassCounts {
 impl NativeTaskBridge {
     pub fn try_new(
         source_path: &Path,
+        file_roots: NativeFileRoots,
         policy: HostCallPolicy,
         registrars: &[NativeAdapterRegistrar],
     ) -> Result<Self, HostAdapterError> {
-        let registry = registry_with_registrars(source_path, registrars)?;
+        let registry = registry_with_registrars(source_path, file_roots, registrars)?;
         Self::try_with_registry(policy, registry)
     }
 
@@ -142,19 +153,14 @@ impl NativeTaskBridge {
         Self::standard_policy().union(Self::policy_from_manifest(manifest))
     }
 
-    pub fn source_io_root(source_path: &Path) -> PathBuf {
-        let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
-        source_dir.join(".arcweft")
-    }
-
     pub fn stats(&self) -> NativeTaskStats {
         let mut stats = self.stats;
         stats.scheduler = NativeSchedulerStats::from(self.scheduler.stats());
         stats
     }
 
-    pub fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
-        virtual_path(&Self::source_io_root(source_path), value)
+    pub fn read_text_snapshot(file_roots: &NativeFileRoots, value: &str) -> Result<String, String> {
+        virtual_path(file_roots, value, NativeFileAccess::Read)
             .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     }
 
@@ -328,6 +334,36 @@ impl NativeTaskBridge {
     }
 }
 
+impl NativeFileRoots {
+    pub fn new(asset: impl Into<PathBuf>, state: impl Into<PathBuf>) -> Self {
+        Self {
+            asset: asset.into(),
+            state: state.into(),
+        }
+    }
+
+    /// Default roots for a standalone source file.
+    pub fn for_source(source_path: &Path) -> Self {
+        let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+        Self::new(source_dir.join("assets"), source_dir.join(".arcweft"))
+    }
+
+    /// Roots for a bundle workspace whose encoded assets were materialized by the host.
+    pub fn for_bundle_workspace(source_path: &Path) -> Self {
+        let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+        let state = source_dir.join(".arcweft");
+        Self::new(state.join("asset"), state)
+    }
+
+    pub fn asset(&self) -> &Path {
+        &self.asset
+    }
+
+    pub fn state(&self) -> &Path {
+        &self.state
+    }
+}
+
 #[derive(Clone, Debug)]
 struct TaskCompletions {
     parallel: bool,
@@ -344,7 +380,7 @@ struct TaskCompletion {
 #[derive(Clone, Debug)]
 struct NativeFileAdapter {
     manifest: AdapterManifest,
-    io_root: PathBuf,
+    roots: NativeFileRoots,
 }
 
 #[derive(Clone, Debug)]
@@ -366,16 +402,16 @@ impl HostAdapter for NativeFileAdapter {
     fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
         let (result, metrics) = match &task.request {
             HostTaskRequest::FileReadText(request) => {
-                complete_read_text(&self.io_root, &request.path)
+                complete_read_text(&self.roots, &request.path)
             }
             HostTaskRequest::FileWriteText(request) => {
-                complete_write_text(&self.io_root, &request.path, &request.text)
+                complete_write_text(&self.roots, &request.path, &request.text)
             }
             HostTaskRequest::FileReadBytes(request) => {
-                complete_read_bytes(&self.io_root, &request.path)
+                complete_read_bytes(&self.roots, &request.path)
             }
             HostTaskRequest::FileWriteBytes(request) => {
-                complete_write_bytes(&self.io_root, &request.path, &request.bytes)
+                complete_write_bytes(&self.roots, &request.path, &request.bytes)
             }
             _ => return None,
         };
@@ -433,13 +469,12 @@ impl HostAdapter for InternalSchedulerMarkerAdapter {
 }
 
 pub fn standard_cli_registry_builder(
-    source_path: &Path,
+    file_roots: NativeFileRoots,
 ) -> Result<HostAdapterRegistryBuilder, HostAdapterError> {
-    let io_root = NativeTaskBridge::source_io_root(source_path);
     let builder = HostAdapterRegistry::builder()
         .register(NativeFileAdapter {
             manifest: standard::native_file_manifest(),
-            io_root,
+            roots: file_roots,
         })?
         .register(NativeSystemInfoAdapter {
             manifest: standard::system_info_manifest(),
@@ -453,12 +488,13 @@ pub fn standard_cli_registry_builder(
 
 fn registry_with_registrars(
     source_path: &Path,
+    file_roots: NativeFileRoots,
     registrars: &[NativeAdapterRegistrar],
 ) -> Result<HostAdapterRegistry, HostAdapterError> {
     registrars
         .iter()
         .try_fold(
-            standard_cli_registry_builder(source_path)?,
+            standard_cli_registry_builder(file_roots)?,
             |builder, register| register(source_path, builder),
         )
         .map(HostAdapterRegistryBuilder::build)
@@ -511,10 +547,10 @@ fn complete_task(registry: &HostAdapterRegistry, task: &TaskSpec) -> Option<Task
 }
 
 fn complete_read_text(
-    io_root: &Path,
+    roots: &NativeFileRoots,
     path: &str,
 ) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
-    match virtual_path(io_root, path)
+    match virtual_path(roots, path, NativeFileAccess::Read)
         .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     {
         Ok(text) => {
@@ -533,10 +569,10 @@ fn complete_read_text(
 }
 
 fn complete_read_bytes(
-    io_root: &Path,
+    roots: &NativeFileRoots,
     path: &str,
 ) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
-    match virtual_path(io_root, path)
+    match virtual_path(roots, path, NativeFileAccess::Read)
         .and_then(|path| fs::read(path).map_err(|error| error.to_string()))
     {
         Ok(bytes) => {
@@ -555,11 +591,11 @@ fn complete_read_bytes(
 }
 
 fn complete_write_text(
-    io_root: &Path,
+    roots: &NativeFileRoots,
     path: &str,
     text: &str,
 ) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
-    let result = virtual_path(io_root, path).and_then(|path| {
+    let result = virtual_path(roots, path, NativeFileAccess::Write).and_then(|path| {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -578,11 +614,11 @@ fn complete_write_text(
 }
 
 fn complete_write_bytes(
-    io_root: &Path,
+    roots: &NativeFileRoots,
     path: &str,
     bytes: &[u8],
 ) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
-    let result = virtual_path(io_root, path).and_then(|path| {
+    let result = virtual_path(roots, path, NativeFileAccess::Write).and_then(|path| {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -634,7 +670,17 @@ fn is_scheduler_marker(capability: &str, operation: &str) -> bool {
     matches!(capability, "line_task" | "flow_thread") && operation == "run_child"
 }
 
-fn virtual_path(io_root: &Path, value: &str) -> Result<PathBuf, String> {
+#[derive(Clone, Copy)]
+enum NativeFileAccess {
+    Read,
+    Write,
+}
+
+fn virtual_path(
+    roots: &NativeFileRoots,
+    value: &str,
+    access: NativeFileAccess,
+) -> Result<PathBuf, String> {
     let (space, relative) = value
         .split_once(':')
         .ok_or_else(|| "file task path must be a virtual path".to_owned())?;
@@ -650,7 +696,14 @@ fn virtual_path(io_root: &Path, value: &str) -> Result<PathBuf, String> {
     }) {
         return Err("virtual path must be relative and normalized".to_owned());
     }
-    Ok(io_root.join(space).join(relative_path))
+    match (space, access) {
+        ("asset", NativeFileAccess::Read) => Ok(roots.asset().join(relative_path)),
+        ("asset", NativeFileAccess::Write) => {
+            Err("asset virtual path space is read-only".to_owned())
+        }
+        ("save" | "temp" | "export", _) => Ok(roots.state().join(space).join(relative_path)),
+        _ => unreachable!("virtual path space is validated above"),
+    }
 }
 
 impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
@@ -716,8 +769,13 @@ mod tests {
     #[test]
     fn native_bridge_rejects_host_call_missing_from_manifest() {
         let source_path = std::env::temp_dir().join("arcweft-native-bridge-reject.arcw");
-        let mut bridge = NativeTaskBridge::try_new(&source_path, HostCallPolicy::default(), &[])
-            .expect("standard native adapters are unique");
+        let mut bridge = NativeTaskBridge::try_new(
+            &source_path,
+            NativeFileRoots::for_source(&source_path),
+            HostCallPolicy::default(),
+            &[],
+        )
+        .expect("standard native adapters are unique");
         let events = bridge.complete_tasks(vec![task(
             "missing",
             HostTaskRequest::SystemInfo(SystemInfoRequest {
@@ -739,8 +797,13 @@ mod tests {
     fn native_bridge_completes_system_info_allowed_by_manifest() {
         let source_path = std::env::temp_dir().join("arcweft-native-bridge-system.arcw");
         let policy = NativeTaskBridge::policy_from_manifest(&standard::system_info_manifest());
-        let mut bridge = NativeTaskBridge::try_new(&source_path, policy, &[])
-            .expect("standard native adapters are unique");
+        let mut bridge = NativeTaskBridge::try_new(
+            &source_path,
+            NativeFileRoots::for_source(&source_path),
+            policy,
+            &[],
+        )
+        .expect("standard native adapters are unique");
         let events = bridge.complete_tasks(vec![task(
             "system",
             HostTaskRequest::SystemInfo(SystemInfoRequest {
@@ -762,8 +825,13 @@ mod tests {
         let source_path = std::env::temp_dir().join("arcweft-native-bridge-unimplemented.arcw");
         let policy = HostCallPolicy::from_manifests([standard::native_http_manifest()]);
 
-        let error = NativeTaskBridge::try_new(&source_path, policy, &[])
-            .expect_err("missing native implementations are rejected before task execution");
+        let error = NativeTaskBridge::try_new(
+            &source_path,
+            NativeFileRoots::for_source(&source_path),
+            policy,
+            &[],
+        )
+        .expect_err("missing native implementations are rejected before task execution");
         assert!(matches!(
             error,
             HostAdapterError::MissingHostCallImplementations { host_call_ids }
@@ -788,6 +856,24 @@ mod tests {
         ] {
             assert!(policy.contains(id), "missing host call {id}");
         }
+    }
+
+    #[test]
+    fn native_file_roots_separate_read_only_assets_from_mutable_state() {
+        let roots = NativeFileRoots::new("project/assets", "project/.arcweft");
+
+        assert_eq!(
+            virtual_path(&roots, "asset:bg/room.png", NativeFileAccess::Read).unwrap(),
+            Path::new("project/assets/bg/room.png")
+        );
+        assert_eq!(
+            virtual_path(&roots, "save:slot/one.json", NativeFileAccess::Write).unwrap(),
+            Path::new("project/.arcweft/save/slot/one.json")
+        );
+        assert_eq!(
+            virtual_path(&roots, "asset:bg/room.png", NativeFileAccess::Write).unwrap_err(),
+            "asset virtual path space is read-only"
+        );
     }
 
     fn task(id: &str, request: HostTaskRequest) -> TaskSpec {

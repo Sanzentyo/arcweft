@@ -1,0 +1,13 @@
+default = "main"
+
+[package]
+name = "web-demo"
+version = "0.1.0"
+
+[resources]
+asset-dir = "bundle-assets"
+content-dir = "content"
+
+[profiles.main]
+kind = "game"
+source = "demo.arcw"

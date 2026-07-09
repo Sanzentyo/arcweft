@@ -14,6 +14,7 @@
 8. [RuntimeStep and Executors](02-runtime/runtime-step-and-executors.md)
 9. [描画・View・音声](03-presentation/README.md)
 10. [ツール・検証・LLM デバッグ](04-tooling/README.md)
+11. [Authored resource and local state storage](05-build-and-security/authored-resource-storage.md)
 
 ## Arcweft 固有の命名
 

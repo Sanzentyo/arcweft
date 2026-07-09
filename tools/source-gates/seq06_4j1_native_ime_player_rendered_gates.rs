@@ -35,10 +35,10 @@ fn main() {
     }
     for generated_control_sidecar in [
         "samples/native-text-input/scene-contract.json",
-        "samples/native-text-input/.arcweft/content/view.input.json",
-        "samples/native-text-input/.arcweft/content/view.program.json",
-        "samples/native-text-input/.arcweft/content/view.style.json",
-        "samples/native-text-input/.arcweft/content/view.text.json",
+        "samples/native-text-input/content/view.input.json",
+        "samples/native-text-input/content/view.program.json",
+        "samples/native-text-input/content/view.style.json",
+        "samples/native-text-input/content/view.text.json",
     ] {
         assert_path_absent(
             &root,

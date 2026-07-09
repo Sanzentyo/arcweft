@@ -781,7 +781,7 @@ fn authored_image_virtual_file() -> BundleVirtualFile {
     BundleVirtualFile {
         space: BundleVirtualFileSpace::Asset,
         path: "bg/room.png".to_owned(),
-        bytes: include_bytes!("../../../samples/.arcweft/asset/bg/room.png").to_vec(),
+        bytes: include_bytes!("../../../samples/assets/bg/room.png").to_vec(),
     }
 }
 

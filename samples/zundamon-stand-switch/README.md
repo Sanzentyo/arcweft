@@ -26,7 +26,7 @@ cargo +nightly -Zscript tools/prepare-zundamon-sample.rs --apply --source "<loca
 The script writes only ignored files under:
 
 ```text
-samples/zundamon-stand-switch/.arcweft/asset/zundamon/
+samples/zundamon-stand-switch/assets/zundamon/
 ```
 
 Run through the CLI routes after preparing assets:

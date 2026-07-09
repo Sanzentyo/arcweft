@@ -29,8 +29,8 @@ pub use capabilities::{
 };
 pub use native_system::{HostSystemInfo, host_system_info, system_info_value};
 pub use native_task::{
-    INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge,
-    NativeTaskClassCounts, NativeTaskStats, internal_scheduler_manifest,
+    INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeFileRoots, NativeSchedulerStats,
+    NativeTaskBridge, NativeTaskClassCounts, NativeTaskStats, internal_scheduler_manifest,
 };
 pub use player_text_input_bridge::{
     PlayerTextInputBridgeCore, PlayerTextInputEdit, PlayerTextInputFocusedControl,

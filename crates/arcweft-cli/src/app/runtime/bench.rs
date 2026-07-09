@@ -1,6 +1,6 @@
 use super::executor::RuntimeExecutorCore;
 use super::parse::step_options;
-use super::steps::RuntimeStepRunConfig;
+use super::steps::{NativeRunSource, RuntimeStepRunConfig};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::step::{
     RuntimePureCallStats, RuntimeStepInput, RuntimeStepResult, RuntimeStepStats,
@@ -12,12 +12,11 @@ use arcweft_runtime_host::{
     NativeAdapterRegistrar, NativeTaskBridge, NativeTaskStats, RuntimeExecutorStats,
     runtime_executor_stats,
 };
-use std::path::Path;
 use std::process::ExitCode;
 
 pub(in crate::app) fn run_runtime_bench_steps_with_pure(
     mut executor: RuntimeExecutorCore,
-    source_path: Option<&Path>,
+    source: Option<NativeRunSource<'_>>,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
@@ -52,16 +51,21 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
         if done {
             break;
         }
-        if let Some(source_path) = source_path
+        if let Some(source) = source
             && !task_requests.is_empty()
         {
             if host.is_none() {
                 host = Some(
-                    NativeTaskBridge::try_new(source_path, host_policy.clone(), adapter_registrars)
-                        .map_err(|error| {
-                            eprintln!("error: {error}");
-                            ExitCode::FAILURE
-                        })?,
+                    NativeTaskBridge::try_new(
+                        source.path(),
+                        source.file_roots().clone(),
+                        host_policy.clone(),
+                        adapter_registrars,
+                    )
+                    .map_err(|error| {
+                        eprintln!("error: {error}");
+                        ExitCode::FAILURE
+                    })?,
                 );
             }
             if let Some(host) = host.as_mut() {

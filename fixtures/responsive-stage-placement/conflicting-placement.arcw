@@ -31,7 +31,7 @@ pub image @image.bad.independent_scale {
 }
 
 entry game {
-    start @flow.main
+    goto @flow.main
 }
 
 flow main {

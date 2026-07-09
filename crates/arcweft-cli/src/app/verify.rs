@@ -13,7 +13,7 @@ use super::runtime::options::{
 use super::runtime::parse::{parse_runtime_binding_arg, parse_runtime_pure_workers};
 use super::runtime::profile::report_path;
 use super::runtime::profile::run_profile_phase;
-use super::runtime::steps::{NativeRunHost, run_runtime_steps_with_executor};
+use super::runtime::steps::{NativeRunHost, NativeRunSource, run_runtime_steps_with_executor};
 use super::shared::print_json;
 use crate::output::{
     BorrowCheckProfileStats, RuntimeExecutorTier, RuntimeTypeValidationProfileStats,
@@ -241,11 +241,12 @@ fn verify_types_runtime_self_check(
         ))
     })?;
     let host_policy = native_host_policy_for_selection(selection)?;
+    let file_roots = selection.native_file_roots()?;
     let trace = run_profile_phase(&mut checked.phases, "run", || {
         run_runtime_steps_with_executor(
             &mut executor,
             NativeRunHost {
-                source_path: Some(selection.path()),
+                source: Some(NativeRunSource::new(selection.path(), &file_roots)),
                 policy: &host_policy,
                 adapter_registrars,
             },

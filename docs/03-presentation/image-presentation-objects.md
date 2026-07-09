@@ -92,8 +92,8 @@ generated surfaces, manifest/tooling output, stored public-id roundtrips, and
 external interfaces that need the stored public id verbatim, but they are not
 the recommended spelling for ordinary hand-authored asset references. Asset
 bodies are preserved as source metadata;
-the current bundle implementation still records encoded payloads from
-`.arcweft/asset` into `image_assets[]` and validates statically known image
+the current bundle implementation still records encoded payloads from the
+manifest-selected `assets/` root into `image_assets[]` and validates statically known image
 references against that table.
 
 The older fluent sketch form `image(@asset).fit(...)` is not the implemented
