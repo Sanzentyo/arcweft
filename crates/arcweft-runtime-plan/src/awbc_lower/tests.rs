@@ -1,9 +1,11 @@
 use super::*;
 use arcweft_core::awbc::fiber::FiberState;
 use arcweft_core::awbc::schema::{
-    AwbcEntryId, AwbcEntryTarget, AwbcFunctionId, AwbcInstruction, AwbcProgram, AwbcTerminator,
+    AwbcEffectKind, AwbcEntryId, AwbcEntryTarget, AwbcFunctionId, AwbcInstruction, AwbcProgram,
+    AwbcTerminator,
 };
-use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmStepOptions};
+use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmObservation, VmStepOptions};
+use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
@@ -30,6 +32,10 @@ fn entry_id(value: &str) -> EntryRuntimeId {
 }
 
 fn run_entry(program: &AwbcProgram, host: &mut impl VmHost) -> VmExit {
+    step_entry(program, host).exit
+}
+
+fn step_entry(program: &AwbcProgram, host: &mut impl VmHost) -> vm::VmStepOutput {
     let mut fiber =
         FiberState::for_entry(program, AwbcEntryId(0), 0, 256).expect("AWBC fiber initializes");
     vm::step_with_host(
@@ -41,7 +47,6 @@ fn run_entry(program: &AwbcProgram, host: &mut impl VmHost) -> VmExit {
         host,
     )
     .expect("AWBC VM executes entry")
-    .exit
 }
 
 #[derive(Default)]
@@ -312,6 +317,73 @@ fn entry_parameter_inference_keeps_let_scope_locals_inside_block_value() {
     assert_eq!(
         run_entry(&report.program, &mut host),
         VmExit::Returned(Some(RuntimeValue::String("ok".to_owned())))
+    );
+}
+
+#[test]
+fn let_scope_exit_emits_registered_cleanup_before_parent_binding() {
+    let main = flow_id("main");
+    let cleanup = LineEffectRequest::Call(RuntimeCall {
+        callee: "presentation.handle.dispose".to_owned(),
+        args: vec!["handle = @handle.flow.main.panel".to_owned()],
+    });
+    let plan = RuntimePlan::new(
+        Some(main.clone()),
+        vec![RuntimeFlow {
+            id: main,
+            ops: vec![
+                FlowOp::LetScope {
+                    pattern: arcweft_core::pattern::RuntimePattern::Ident("result".to_owned()),
+                    ops: vec![
+                        FlowOp::RegisterCleanup {
+                            key: "handle.flow.main.panel".to_owned(),
+                            effect: cleanup,
+                        },
+                        FlowOp::Let {
+                            pattern: arcweft_core::pattern::RuntimePattern::Ident(
+                                "event".to_owned(),
+                            ),
+                            expr: RuntimeExpr::Record(vec![RuntimeFieldExpr {
+                                name: "value".to_owned(),
+                                value: RuntimeExpr::Value(RuntimeValue::String("ok".to_owned())),
+                            }]),
+                        },
+                    ],
+                    value: RuntimeExpr::Field {
+                        target: Box::new(RuntimeExpr::Local("event".to_owned())),
+                        field: "value".to_owned(),
+                    },
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Local("result".to_owned())),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("plan builds");
+    let report = lower_plan(&plan);
+    let mut host = TestPureHelperHost;
+    let output = step_entry(&report.program, &mut host);
+
+    assert_eq!(
+        output.exit,
+        VmExit::Returned(Some(RuntimeValue::String("ok".to_owned())))
+    );
+    let cleanup_effects = output
+        .observations
+        .iter()
+        .filter_map(|observation| match observation {
+            VmObservation::Effect { effect, .. } => Some(*effect),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        cleanup_effects.len(),
+        1,
+        "leaving the let-scope should emit exactly the registered cleanup"
+    );
+    assert_eq!(
+        report.program.effect_plans[cleanup_effects[0].index()].kind,
+        AwbcEffectKind::Call
     );
 }
 

@@ -237,3 +237,61 @@ Changed Rust file metrics:
 | --- | --- | --- | ---: | ---: | --- | --- |
 | `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` | `arcweft-runtime-plan` | production | 79548 | 2055 | no | AWBC flow lowering and entry free-local collection |
 | `crates/arcweft-runtime-plan/src/awbc_lower/tests.rs` | `arcweft-runtime-plan` | unit test | 14182 | 397 | no | AWBC lowering and VM regression tests |
+
+## 2026-07-10 AWBC LetScope Cleanup Follow-Up
+
+The previous follow-up fixed entry arity but also exposed a lifetime mismatch:
+the structured Sans I/O flow engine expands `FlowOp::LetScope` into a scoped
+sequence, while AWBC lowering emitted only the block body, final value, and
+parent binding. Presentation handle cleanups registered by a view inside a
+value-producing block were therefore stored on the surrounding/root cleanup
+stack instead of the block cleanup stack. In the modern feedback sample this
+meant `name_panel` remained visible after:
+
+```arcw
+let visitor_name = {
+    let name_panel = view(@view:.ModernFeedbackNamePanel)
+    let name_event = receive action(@action:.feedback.submit_name)
+    name_event.value
+}
+```
+
+even though the binding's lexical block had ended.
+
+AWBC lowering now treats `LetScope` as a real runtime scope:
+
+1. emit `EnterScope`;
+2. lower block statements;
+3. evaluate the block value;
+4. move the value into a root-scope temporary;
+5. emit `ExitScope`, which drains scoped cleanups;
+6. bind the saved value to the parent pattern.
+
+This preserves the intended order: the block value is computed before cleanup,
+then presentation handles registered inside the block are disposed before the
+parent binding continues.
+
+Additional regression coverage:
+
+- `let_scope_exit_emits_registered_cleanup_before_parent_binding` executes the
+  lowered AWBC entry and verifies that leaving the let-scope emits the
+  registered cleanup effect while still returning the block value.
+
+Additional validation:
+
+```bash
+cargo fmt
+cargo test -p arcweft-runtime-plan let_scope_exit_emits_registered_cleanup_before_parent_binding -- --nocapture
+cargo test -p arcweft-runtime-plan entry_parameter_inference_keeps_let_scope_locals_inside_block_value -- --nocapture
+cargo test -p arcweft-runtime-plan --test runtime_plan receive_action_inside_ -- --nocapture
+cargo build -p arcweft-cli
+target/debug/arcw.exe check samples/modern-feedback-view/src/main.arcw
+target/debug/arcw.exe bundle samples/modern-feedback-view/src/main.arcw --output web/modern-feedback-view.awfb
+target/debug/arcw.exe run-bundle web/modern-feedback-view.awfb --steps 3 --mode game --max-ops 64 --json
+cargo clippy --workspace --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+```
+
+Browser verification on
+`http://127.0.0.1:4173/?bundle=./modern-feedback-view.awfb&cachebust=codex-let-scope-cleanup-002`
+confirmed that the name panel disappears after submitting the name action.

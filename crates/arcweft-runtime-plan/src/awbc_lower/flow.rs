@@ -675,19 +675,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 pattern,
                 ops,
                 value,
-            } => {
-                self.lower_ops(frame, body, ops, &format!("{path}.let_scope"));
-                if !body.terminated {
-                    let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
-                    let pattern = lower_pattern(self.inventory, frame, pattern);
-                    self.inventory
-                        .push_instruction(AwbcInstruction::BindPattern {
-                            pattern,
-                            value,
-                            mode: AwbcBindMode::Declare,
-                        });
-                }
-            }
+            } => self.lower_let_scope(frame, body, pattern, ops, value, path),
             FlowOp::Break(value) => {
                 if let Some(value) = value {
                     let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
@@ -1110,6 +1098,43 @@ impl<'a> AwbcFlowLowerer<'a> {
             frame.exit_scope();
         }
         frame.restore_scope_depth_after_branch(restored_scope_depth);
+    }
+
+    fn lower_let_scope(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        pattern: &RuntimePattern,
+        ops: &[FlowOp],
+        value: &RuntimeExpr,
+        path: &str,
+    ) {
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        self.lower_ops(frame, body, ops, &format!("{path}.let_scope"));
+        if body.terminated {
+            frame.exit_scope();
+            return;
+        }
+
+        let scoped_value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
+        let value = frame.root_temp(self.inventory.dynamic_ty());
+        self.inventory.push_instruction(AwbcInstruction::Move {
+            dst: value,
+            src: scoped_value,
+        });
+        self.inventory
+            .push_instruction(AwbcInstruction::ExitScope { scope });
+        frame.exit_scope();
+
+        let pattern = lower_pattern(self.inventory, frame, pattern);
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value,
+                mode: AwbcBindMode::Declare,
+            });
     }
 
     fn lower_branch_pattern(
