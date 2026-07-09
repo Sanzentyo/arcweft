@@ -29,3 +29,9 @@ Required follow-up:
   that file.
 - Candidate boundaries include literal/path dispatch, call/select dispatch,
   control-expression checking, and statement/block expression checking.
+
+Resolution:
+
+- The literal/path/short-variant expression checker was split into
+  `checker/expr/path.rs` in the follow-up recorded by
+  `docs/implementation/function-stack-expr-path-split-2026-07-09.md`.

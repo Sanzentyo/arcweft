@@ -36,6 +36,8 @@ request.
   The audit reports one size error for the pre-existing 2510-LOC
   `checker/expr.rs`; the scoped exception and required split follow-up are
   recorded in that audit directory.
+  The follow-up split is recorded in
+  `docs/implementation/function-stack-expr-path-split-2026-07-09.md`.
 
 ## Still Open
 
