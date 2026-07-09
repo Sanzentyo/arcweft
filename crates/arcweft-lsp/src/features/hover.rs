@@ -4,9 +4,11 @@ use crate::features::character_metadata::character_hover_markdown;
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
-    check::{TypeCheckReport, TypeJudgmentSubject, analyze_types, validate_typecheck_ready},
+    check::{
+        EffectRow, EffectRowTail, TypeCheckReport, TypeJudgmentSubject, analyze_types,
+        validate_typecheck_ready,
+    },
     effect_model::CallableId,
-    effects::EffectSet,
     resolve::{registry_from_hir, validate_hir_references},
 };
 use arcweft_lang_syntax::ast::dialogue::{
@@ -79,7 +81,7 @@ fn closure_effect_row_hover(
     if !report.diagnostics.is_empty() {
         return None;
     }
-    let rows = report.effects.closed_effect_rows().ok()?;
+    let rows = report.effects.effect_rows();
     let target = closure_effect_hover_target(&report, document.text(), offset)?;
     let summary = rows.summary(&target.callable)?;
     Some(Hover {
@@ -193,7 +195,7 @@ fn callable_effect_row_hover(
     if !report.diagnostics.is_empty() {
         return None;
     }
-    let rows = report.effects.closed_effect_rows().ok()?;
+    let rows = report.effects.effect_rows();
     let summary = rows.summary(&callable.id)?;
     Some(Hover {
         contents: HoverContents::Scalar(MarkedString::String(effect_row_hover_text(
@@ -271,31 +273,30 @@ fn declaration_header_contains_word(
 
 fn effect_row_hover_text(
     label: &str,
-    inferred: &EffectSet,
-    upper_bound: Option<&EffectSet>,
-    forbidden: &EffectSet,
+    inferred: &EffectRow,
+    upper_bound: Option<&EffectRow>,
+    forbidden: &EffectRow,
 ) -> String {
     let mut lines = vec![
         format!("effect row for `{label}`"),
-        format!("inferred: {}", effect_set_label(inferred)),
+        format!("inferred: {}", inferred.display_label()),
     ];
     if let Some(upper_bound) = upper_bound {
-        lines.push(format!("upper bound: {}", effect_set_label(upper_bound)));
+        lines.push(format!("upper bound: {}", upper_bound.display_label()));
     } else {
         lines.push("upper bound: inferred".to_owned());
     }
-    if !forbidden.is_empty() {
-        lines.push(format!("forbidden: {}", effect_set_label(forbidden)));
+    if effect_row_has_visible_forbidden_value(forbidden) {
+        lines.push(format!("forbidden: {}", forbidden.display_label()));
     }
     lines.join("\n")
 }
 
-fn effect_set_label(effects: &EffectSet) -> String {
-    let labels = effects.to_labels();
-    if labels.is_empty() {
-        "{ }".to_owned()
-    } else {
-        format!("{{ {} }}", labels.join(", "))
+fn effect_row_has_visible_forbidden_value(row: &EffectRow) -> bool {
+    match row.tail() {
+        EffectRowTail::Unknown => false,
+        EffectRowTail::Closed => !row.concrete().is_empty(),
+        EffectRowTail::Variable(_) => true,
     }
 }
 
@@ -835,5 +836,27 @@ effects { }
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
+    }
+
+    #[test]
+    fn effect_row_hover_text_renders_open_rows_without_closed_projection() {
+        use arcweft_lang_sema::{effect_row::EffectVar, effects::EffectSet};
+
+        let variable = EffectVar::from_index(9);
+        let inferred = EffectRow::open(
+            EffectSet::from_labels(["fs.read"]).expect("valid inferred row"),
+            variable,
+        );
+        let upper_bound = EffectRow::open(EffectSet::new(), variable);
+        let forbidden = EffectRow::closed(EffectSet::new());
+
+        let text = effect_row_hover_text("callback", &inferred, Some(&upper_bound), &forbidden);
+        assert!(text.contains("effect row for `callback`"));
+        assert!(text.contains("inferred: { fs.read | e9 }"));
+        assert!(text.contains("upper bound: { | e9 }"));
+        assert!(
+            !text.contains("forbidden:"),
+            "empty closed forbidden row should stay hidden: {text}"
+        );
     }
 }

@@ -134,6 +134,23 @@ impl EffectRow {
         !matches!(self.tail, EffectRowTail::Unknown)
     }
 
+    pub fn display_label(&self) -> String {
+        match self.tail {
+            EffectRowTail::Unknown => "unknown".to_owned(),
+            EffectRowTail::Closed => format_effect_set(&self.concrete),
+            EffectRowTail::Variable(variable) if self.concrete.is_empty() => {
+                format!("{{ | e{} }}", variable.index())
+            }
+            EffectRowTail::Variable(variable) => {
+                format!(
+                    "{{ {} | e{} }}",
+                    effect_labels(&self.concrete),
+                    variable.index()
+                )
+            }
+        }
+    }
+
     pub fn resolve(&self, substitutions: &EffectSubstitution) -> Result<EffectSet, EffectRowError> {
         match self.tail {
             EffectRowTail::Closed => Ok(self.concrete.clone()),
@@ -314,6 +331,19 @@ impl EffectSubstitution {
     }
 }
 
+fn format_effect_set(effects: &EffectSet) -> String {
+    let labels = effect_labels(effects);
+    if labels.is_empty() {
+        "{ }".to_owned()
+    } else {
+        format!("{{ {labels} }}")
+    }
+}
+
+fn effect_labels(effects: &EffectSet) -> String {
+    effects.to_labels().join(", ")
+}
+
 impl EffectVarSupply {
     /// Allocates a fresh effect-row variable.
     ///
@@ -334,6 +364,30 @@ impl EffectVarSupply {
 mod tests {
     use super::*;
     use crate::effects::EffectSet;
+
+    #[test]
+    fn effect_row_display_label_covers_closed_open_and_unknown_rows() {
+        let variable = EffectVar::from_index(3);
+        assert_eq!(EffectRow::unknown().display_label(), "unknown");
+        assert_eq!(EffectRow::closed(EffectSet::new()).display_label(), "{ }");
+        assert_eq!(
+            EffectRow::closed(EffectSet::from_labels(["fs.read"]).expect("valid row"))
+                .display_label(),
+            "{ fs.read }"
+        );
+        assert_eq!(
+            EffectRow::open(EffectSet::new(), variable).display_label(),
+            "{ | e3 }"
+        );
+        assert_eq!(
+            EffectRow::open(
+                EffectSet::from_labels(["log.write"]).expect("valid row"),
+                variable
+            )
+            .display_label(),
+            "{ log.write | e3 }"
+        );
+    }
 
     #[test]
     fn resolves_a_polymorphic_effect_tail() {

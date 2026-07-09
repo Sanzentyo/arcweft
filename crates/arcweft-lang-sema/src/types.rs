@@ -556,24 +556,8 @@ fn function_effect_row_label(effects: &EffectRow) -> Option<String> {
     match effects.tail() {
         EffectRowTail::Unknown => None,
         EffectRowTail::Closed if effects.concrete().is_empty() => None,
-        EffectRowTail::Closed => Some(format_effect_row_concrete(effects)),
-        EffectRowTail::Variable(variable) if effects.concrete().is_empty() => {
-            Some(format!("{{ | e{} }}", variable.index()))
-        }
-        EffectRowTail::Variable(variable) => Some(format!(
-            "{{ {} | e{} }}",
-            effect_labels(effects),
-            variable.index()
-        )),
+        EffectRowTail::Closed | EffectRowTail::Variable(_) => Some(effects.display_label()),
     }
-}
-
-fn format_effect_row_concrete(effects: &EffectRow) -> String {
-    format!("{{ {} }}", effect_labels(effects))
-}
-
-fn effect_labels(effects: &EffectRow) -> String {
-    effects.concrete().to_labels().join(", ")
 }
 
 impl EntityType {
