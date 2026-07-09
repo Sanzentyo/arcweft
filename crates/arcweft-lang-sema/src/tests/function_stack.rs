@@ -2015,6 +2015,65 @@ effects { }
 }
 
 #[test]
+fn effect_trace_report_records_returned_closure_callback_origin() {
+    let tree = parse_ok(
+        r#"
+fn make_loader(load: String -> String) -> Unit -> String {
+    return |_unit: Unit| -> String { load("story.arcw") }
+}
+
+flow @flow.returned_closure_callback_trace returned_closure_callback_trace
+effects { }
+{
+    let loader = make_loader(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+    let body = loader(())
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("returned closure trace fixture lowers");
+    validate_typecheck_ready(&hir).expect("returned closure trace fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    let callable = crate::effect_model::CallableId::new("flow.returned_closure_callback_trace");
+    let effect = crate::effects::EffectId::parse("fs.read").expect("valid effect");
+    let trace = report
+        .effects
+        .effect_traces()
+        .trace(&callable, &effect)
+        .expect("flow effect trace is available from the analysis report");
+
+    assert_eq!(trace.effect(), &effect);
+    assert!(
+        report
+            .effects
+            .effect_traces()
+            .traces_for(&callable)
+            .iter()
+            .any(|summary| summary.callable() == &callable && summary.effect() == &effect),
+        "trace summary should retain the owning callable"
+    );
+    assert!(
+        trace.steps().iter().any(|step| matches!(
+            step,
+            crate::effect_diagnostics::EffectTraceStep::Call { .. }
+        )),
+        "returned callback origin should include at least one local callable edge: {trace:?}"
+    );
+    assert!(
+        trace.steps().iter().any(|step| {
+            matches!(
+                step,
+                crate::effect_diagnostics::EffectTraceStep::ExternalCall { callee, .. }
+                    if callee == "adapter.read_text"
+            )
+        }),
+        "returned callback origin should end at the adapter read: {trace:?}"
+    );
+}
+
+#[test]
 fn no_effect_rejects_returned_closure_callback_when_called() {
     let tree = parse_ok(
         r#"

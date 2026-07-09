@@ -25,6 +25,7 @@ explicit requirements remain in request/design space.
 - `docs/implementation/function-stack-request-split-audit-2026-07-08.md`
 - `docs/implementation/function-stack-non-helper-callable-inventory-2026-07-08.md`
 - `docs/implementation/function-stack-non-helper-source-function-values-2026-07-09.md`
+- `docs/implementation/function-stack-effect-trace-report-2026-07-09.md`
 - `docs/implementation/function-stack-spread-contract-closure-2026-07-09.md`
 - `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`
 - `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
@@ -74,6 +75,9 @@ The goal is not complete because these explicit areas remain unresolved:
    persistence remain outside the accepted contract.
 3. Full closure effect-row final contract:
    `docs/reviews/requests/2026-07-08-seq-07.8-function-stack-closure-effect-row-final-contract.md`
+   Current analysis owns closed-row projection and a typed trace report, but
+   source row syntax, open rows, row-bearing callable values, and final
+   row-origin display/verification policy remain incomplete.
 
 Runtime ID atom-table storage remains deliberately deferred until profiling
 evidence justifies carrying table context through runtime-plan/data-format

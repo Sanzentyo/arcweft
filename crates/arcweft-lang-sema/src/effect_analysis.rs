@@ -22,10 +22,24 @@ pub struct EffectSummary {
     inferred: EffectSet,
 }
 
+/// Stable trace for one inferred effect on one callable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectTraceSummary {
+    callable: CallableId,
+    trace: EffectTrace,
+}
+
+/// Deterministic origin traces for effects inferred by analysis.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EffectTraceReport {
+    traces: BTreeMap<CallableId, Vec<EffectTraceSummary>>,
+}
+
 /// Result of first-order effect closure and contract validation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EffectAnalysisReport {
     summaries: BTreeMap<CallableId, EffectSummary>,
+    traces: EffectTraceReport,
     row_substitutions: EffectSubstitution,
     diagnostics: Vec<EffectDiagnostic>,
     fixed_point_iterations: usize,
@@ -36,12 +50,14 @@ pub fn analyze_effects(program: &EffectProgram) -> EffectAnalysisReport {
     let mut diagnostics = collect_graph_diagnostics(program);
     let mut summaries = initial_summaries(program);
     let fixed_point_iterations = propagate_local_effects(program, &mut summaries);
+    let traces = collect_effect_traces(program, &summaries);
 
     diagnostics.extend(validate_contracts(program, &summaries));
     diagnostics.sort_by(|left, right| diagnostic_sort_key(left).cmp(&diagnostic_sort_key(right)));
 
     EffectAnalysisReport {
         summaries,
+        traces,
         row_substitutions: EffectSubstitution::new(),
         diagnostics,
         fixed_point_iterations,
@@ -66,6 +82,48 @@ impl EffectSummary {
     }
 }
 
+impl EffectTraceSummary {
+    pub const fn callable(&self) -> &CallableId {
+        &self.callable
+    }
+
+    pub const fn effect(&self) -> &EffectId {
+        self.trace.effect()
+    }
+
+    pub const fn trace(&self) -> &EffectTrace {
+        &self.trace
+    }
+}
+
+impl EffectTraceReport {
+    pub fn trace(&self, callable: &CallableId, effect: &EffectId) -> Option<&EffectTrace> {
+        self.summary(callable, effect)
+            .map(EffectTraceSummary::trace)
+    }
+
+    pub fn summary(&self, callable: &CallableId, effect: &EffectId) -> Option<&EffectTraceSummary> {
+        self.traces
+            .get(callable)?
+            .iter()
+            .find(|summary| summary.effect() == effect)
+    }
+
+    pub fn traces_for(&self, callable: &CallableId) -> &[EffectTraceSummary] {
+        self.traces.get(callable).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn callables(&self) -> impl ExactSizeIterator<Item = (&CallableId, &[EffectTraceSummary])> {
+        self.traces
+            .iter()
+            .map(|(callable, traces)| (callable, traces.as_slice()))
+    }
+
+    pub fn summaries(&self) -> impl Iterator<Item = &EffectTraceSummary> {
+        self.traces.values().flat_map(|traces| traces.iter())
+    }
+}
+
 impl EffectAnalysisReport {
     pub fn summary(&self, callable: &CallableId) -> Option<&EffectSummary> {
         self.summaries.get(callable)
@@ -73,6 +131,10 @@ impl EffectAnalysisReport {
 
     pub fn summaries(&self) -> impl ExactSizeIterator<Item = (&CallableId, &EffectSummary)> {
         self.summaries.iter()
+    }
+
+    pub const fn effect_traces(&self) -> &EffectTraceReport {
+        &self.traces
     }
 
     pub fn diagnostics(&self) -> &[EffectDiagnostic] {
@@ -113,6 +175,31 @@ impl EffectAnalysisReport {
     pub fn closed_effect_rows(&self) -> Result<ClosedEffectRowReport, EffectRowCloseError> {
         self.effect_rows().resolve_closed(&self.row_substitutions)
     }
+}
+
+fn collect_effect_traces(
+    program: &EffectProgram,
+    summaries: &BTreeMap<CallableId, EffectSummary>,
+) -> EffectTraceReport {
+    let traces = summaries
+        .iter()
+        .filter_map(|(callable, summary)| {
+            let callable_traces = summary
+                .inferred()
+                .iter()
+                .filter_map(|effect| {
+                    trace_for(program, summaries, callable, effect).map(|trace| {
+                        EffectTraceSummary {
+                            callable: callable.clone(),
+                            trace,
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            (!callable_traces.is_empty()).then(|| (callable.clone(), callable_traces))
+        })
+        .collect();
+    EffectTraceReport { traces }
 }
 
 fn initial_summaries(program: &EffectProgram) -> BTreeMap<CallableId, EffectSummary> {

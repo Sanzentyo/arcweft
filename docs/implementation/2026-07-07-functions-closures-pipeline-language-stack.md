@@ -1899,3 +1899,11 @@ forbidden row when non-empty. The hover is limited to declaration headers so
 body call references do not masquerade as callable declarations. Details are
 recorded in
 `docs/implementation/function-stack-effect-row-lsp-hover-2026-07-09.md`.
+
+The effect trace report follow-up moves row-origin witness data out of the
+diagnostic-only path. `EffectAnalysisReport` now owns a typed
+`EffectTraceReport` with deterministic `EffectTrace` witnesses for inferred
+callable effects, and sema has a returned-closure callback regression proving
+that the report exposes both the local callable edge and the external
+`adapter.read_text` edge for an inferred `fs.read` row. Details are recorded
+in `docs/implementation/function-stack-effect-trace-report-2026-07-09.md`.
