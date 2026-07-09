@@ -18,8 +18,8 @@ Status definitions:
 | Selector | `:hover`, `:focus`, `:active`, `:disabled` | Product data only | Maps to retained interaction state; final player-state feed is gated on seq06.11. |
 | Selector | pseudo-elements (`::before`, `::after`, `::part`) | Intentionally rejected | They synthesize or remap nodes outside this retained View cut. |
 | Selector | structural selectors (`:nth-child`, `:has`, `:not`, `:is`, `:where`) | Structured diagnostic | Not approximated; specificity/evidence emits `UnsupportedCssSelector`. |
-| Cascade | Arcweft base/component layers | Supported now | Ordered before CSS author layers. |
-| Cascade | CSS reset/base/component/inline layers | Supported now | Deterministic first-cut order: reset < base < component < inline after Arcweft layers. |
+| Cascade | Arcweft base/view layers | Supported now | Ordered before CSS author layers. |
+| Cascade | CSS reset/base/view/inline layers | Supported now | Deterministic first-cut order: reset < base < view < inline after Arcweft layers. |
 | Cascade | specificity | Supported now | Tuple `(ids, classes_or_attributes_or_pseudos, elements)`. |
 | Cascade | source order | Supported now | Later source order wins when importance, layer, and specificity tie. |
 | Cascade | `!important` | Supported now | Supported as priority bit; important declarations outrank non-important declarations. |

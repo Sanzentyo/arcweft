@@ -5,7 +5,7 @@ Date: 2026-07-06
 ## Scope
 
 This document designs the scoped presentation resource handle model requested by
-seq 06.16.6. The design builds on the verified explicit image/component mount
+seq 06.16.6. The design builds on the verified explicit image/view mount
 surface instead of replacing it. An expression statement such as
 `image(@image.menu_background)` continues to explicitly emit or mount a
 presentation object. A binding such as
@@ -20,7 +20,7 @@ The goals are:
 - identical native, web, and Agent observe behavior through the existing
   `BundlePresentationSnapshot` / player-frame path;
 - no lower-level renderer awareness of language scopes;
-- no redesign of already implemented explicit image/component declaration or
+- no redesign of already implemented explicit image/view declaration or
   mount behavior.
 
 ## Decision summary
@@ -63,7 +63,7 @@ return expression.
 ```text
 PresentationHandleCreateExpr :=
     image(EntityRef, MountArgs?)
-  | component(EntityRef, MountArgs?)
+  | view(EntityRef, MountArgs?)
   | menu(EntityRef, MountArgs?)
   | overlay(EntityRef, MountArgs?)
   | textbox(EntityRef, MountArgs?)
@@ -205,7 +205,7 @@ On each VM step, `arcweft-runtime-driver`:
 3. resolves existing explicit image effects exactly as before;
 4. overlays scoped image handles onto the active image object list;
 5. filters text controls, action buttons, focus groups, and focus navigation for
-   hidden/unmounted/released/destroyed component/menu/overlay/textbox/control
+   hidden/unmounted/released/destroyed view/menu/overlay/textbox/control
    handles;
 6. increments snapshot revision when either the filtered presentation data or the
    handle table changes;
@@ -251,12 +251,12 @@ revived by a stale `show` operation emitted after rollback.
 
 All families share the runtime lifecycle contract, but the language exposes typed
 families. This avoids invalid operations such as asking an image handle for
-component focus traversal while still allowing one serializer and one runtime
+view focus traversal while still allowing one serializer and one runtime
 operation table.
 
 ```text
 ImageHandle          -> show/hide/unmount/release/destroy, image playback query
-ComponentHandle      -> show/hide/unmount/release/destroy, component capture id
+ViewHandle           -> show/hide/unmount/release/destroy, view capture id
 MenuHandle           -> overlay stack and modal focus APIs
 OverlayHandle        -> pop/close result APIs
 TextBoxHandle        -> text reveal/cursor APIs
@@ -268,12 +268,12 @@ owner transfer, but public APIs should prefer the typed families.
 
 ## Ownership and storage
 
-Presentation handles are move-only. Passing a handle to another component moves
+Presentation handles are move-only. Passing a handle to another view moves
 ownership unless the signature borrows it for a bounded scope:
 
 ```arcw
-fn show_menu(menu: ComponentHandle) { ... }       // moves ownership
-fn inspect_menu(menu: &ComponentHandle) { ... }   // temporary borrow only
+fn show_menu(menu: ViewHandle) { ... }       // moves ownership
+fn inspect_menu(menu: &ViewHandle) { ... }   // temporary borrow only
 ```
 
 Storing a live handle in persistent game state is rejected because it would tie
@@ -281,7 +281,7 @@ save data to renderer lifetime. A handle may be stored only after an explicit
 `detach(scope=scene|global)` operation that produces a serializable detached
 handle token with a runtime owner.
 
-## Layers, depth, focus, input capture, and component capture
+## Layers, depth, focus, input capture, and view capture
 
 Mount arguments carry layer, depth, focus, and input-capture policy. The runtime
 resolves these before frame planning. Hidden, unmounted, released, and destroyed
@@ -290,11 +290,11 @@ resources are absent from:
 - rendered frames;
 - hit testing;
 - focus navigation;
-- component/layer/object capture descriptors;
+- view/layer/object capture descriptors;
 - Agent observe resource lists.
 
-Component-scoped capture preserves the existing URI/resource identifier grammar.
-A visible scoped component uses the same component id as the mounted component.
+View-scoped capture preserves the existing URI/resource identifier grammar.
+A visible scoped view uses the same view id as the mounted view.
 A hidden or disposed handle returns a missing-scope diagnostic instead of a
 synthetic visual substitute.
 
@@ -375,14 +375,14 @@ Native/web/observe parity:
 
 Capture:
 
-- `component_capture_selected_handle_uses_existing_component_uri`
-- `component_capture_hidden_handle_reports_missing_scope`
-- `component_capture_disposed_handle_reports_missing_scope`
+- `view_capture_selected_handle_uses_existing_view_uri`
+- `view_capture_hidden_handle_reports_missing_scope`
+- `view_capture_disposed_handle_reports_missing_scope`
 - `image_handle_object_capture_preserves_existing_object_uri`
 
 Regression:
 
 - `explicit_image_call_still_emits_declared_presentation_object`
 - `explicit_inline_image_call_still_emits_bounded_object`
-- `explicit_component_mount_still_works_without_scoped_handle`
+- `explicit_view_mount_still_works_without_scoped_handle`
 - `runtime_control_style_snapshot_path_is_unchanged`
