@@ -16,10 +16,6 @@ fn css_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
         "css-style-parity should parse cleanly: {:?}",
         parsed.errors()
     );
-    assert!(source.contains("[style .opacity 0.86]"));
-    assert!(source.contains("[transform .offset x=6px y=-1px]"));
-    assert!(source.contains("[effect .wave amp=2px dir=0,1 period=8 speed=1]"));
-
     let style = parsed
         .typed_tree()
         .items()

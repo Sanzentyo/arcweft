@@ -4,6 +4,11 @@ This document records the local validation policy for Arcweft development. It is
 based on profiling from 2026-06-12 on Windows after the native rich-text capture
 work landed and was re-measured while tuning the test policy.
 
+Policy update (2026-07-10): source-tree spelling scanners are no longer part of
+any validation tier. Invariants must be enforced by typed APIs, compiler/lint
+boundaries, executable behavior tests, or complete deterministic artifact
+comparison. Older timing tables below remain historical measurements.
+
 ## Profiling Snapshot
 
 The slow path is not ordinary Rust unit testing or native rendering itself. The
@@ -125,7 +130,8 @@ full recipe:
 `arcweft-cli --test check` is now a purpose-specific CLI integration suite, not
 part of the workspace fast path. `just test-workspace` excludes `arcweft-cli`
 from the workspace-wide lib/test command, then runs `arcweft-cli` lib/bin tests,
-the source-tree regression harness, and the checked-in fixture check runner.
+the native-only runtime-option behavior tests, and the checked-in fixture check
+runner.
 Use `just test-cli-check`, exact `check.rs` tests, or the relevant Tier 2 target
 when a change intentionally touches broad CLI command behavior.
 
@@ -196,7 +202,6 @@ Representative exact tests:
 | --- | ---: |
 | `agent_mcp_stdio_lists_resource_templates_before_observe` | 1.212s including harness startup; test body 0.05s |
 | `agent_mcp_stdio_captures_profile_selected_source_without_prior_observe` | 2.80s test body for profile-selected observe-before-capture |
-| `agent_observe_native_renderer_writes_framebuffer_png` | 2.038s |
 | `agent_observe_native_renderer_writes_rich_text_layer_png_crop` | 1.663s |
 | `agent_mcp_stdio_observes_and_reads_rich_text_child_image` | 3.43s test body after lazy MCP resource listing |
 | `just test-slow-mcp` | 18.38s test body for all 14 ignored MCP stdio tests |
@@ -262,11 +267,13 @@ and native capture work. `just test-rich-text` adds the direct native
 `agent observe` exact smoke slice. `just test-workspace` is the normal workspace
 fast path: it runs workspace lib/integration tests except the large
 `arcweft-cli --test check` binary, then runs CLI lib/bin tests plus lightweight
-CLI integration harnesses. It intentionally does not run doc-tests.
+CLI behavior and fixture integration tests. It intentionally does not run
+doc-tests or repository-source scanners.
 `just test-doc` is the explicit doc-test path for Rust documentation examples
 and milestone validation.
 `just test-visual-smoke` runs the deterministic non-exact visual smoke suite for
-viewport, layer, selected object, object-id, mask, and overflow/wrap captures.
+viewport, layer, selected object, object-id, and mask captures. Text wrapping
+remains a typed `arcweft-text-layout` and focused native-capture responsibility.
 It asserts dimensions, non-empty image content, crop bounds, and seq06.5
 `selected_capture` metadata, but does not compare exact pixels. `just
 test-cli-native` is the normal native rich-text/Agent observe smoke slice and
@@ -387,8 +394,8 @@ Operational budget:
 - Main push cut point: add `just test-workspace` unless the change is docs-only
   or otherwise demonstrably outside Rust behavior. Use `just verify` when the
   cut point touches generated JLREQ punctuation data or is broad enough that
-  formatter, clippy, workspace fast tests, absolute-path scans, removed-DSL
-  scans, and `just check-jlreq-punctuation` should all be asserted together.
+  formatter, clippy, workspace fast tests, and
+  `just check-jlreq-punctuation` should all be asserted together.
   Add `just test-cli-check`, a focused exact `check.rs` test set, or a matching
   Tier 2 target when the CLI integration surface changed broadly. Add
   `just test-doc` only when Rust documentation comments, doctest examples, or

@@ -243,6 +243,10 @@ still appears in a particular `.rs` file.
 - Existing source gates should be removed after preserving any real invariant
   with direct tests. If a gate does not correspond to an observable invariant,
   remove it without replacement.
+- This repository-wide rule supersedes older design requests and implementation
+  notes that ask for source gates. Translate those historical acceptance items
+  into direct behavior, codec, compile, lint, or dependency evidence instead of
+  reintroducing their prescribed source scans.
 
 This prohibition does not prevent normal code review or one-off source
 inspection. It prevents source spelling and file placement from becoming

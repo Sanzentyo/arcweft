@@ -1306,25 +1306,6 @@ name = "watch_virtual_addition_test"
     }
 
     #[test]
-    fn native_watch_uses_windowed_ingress_instead_of_standalone_endpoint() {
-        let source = include_str!("run.rs");
-        let native_watch_start = source
-            .find("fn run_native_windowed_watch_target(")
-            .expect("native watch target helper exists");
-        let after_native_watch = &source[native_watch_start..];
-        let native_watch_end = after_native_watch
-            .find("fn has_headless_debug_options_for_watch(")
-            .expect("native watch helper ends before common watch helpers");
-        let native_watch_body = &after_native_watch[..native_watch_end];
-
-        assert!(native_watch_body.contains("run_native_bundle_with_ingress"));
-        assert!(native_watch_body.contains("push_patch_bundle_bytes"));
-        assert!(!native_watch_body.contains("NativePatchEndpoint"));
-        assert!(!native_watch_body.contains("start_native_watch_endpoint"));
-        assert!(!native_watch_body.contains("apply_native_watch_patch"));
-    }
-
-    #[test]
     fn watch_file_state_tracks_size_changes() {
         let root = temp_project_root("watch-state");
         fs::create_dir_all(&root).expect("temp dir");

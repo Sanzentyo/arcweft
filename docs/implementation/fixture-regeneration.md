@@ -24,7 +24,7 @@ Current refresh targets:
 | `web/bundle-assets/generated/character_stand.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `web/bundle-assets/generated/gif_pulse.gif` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `web/bundle-assets/generated/webp_pulse.webp` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
-| `crates/arcweft-lang-syntax/src/jlreq_punctuation_data.rs` | `tools/generate_jlreq_punctuation_data.rs` | `just generate-jlreq-punctuation` |
+| `crates/arcweft-text-layout/src/jlreq_punctuation_data.rs` | `tools/generate_jlreq_punctuation_data.rs` | `just generate-jlreq-punctuation` |
 | `fixtures/persistent-cache-build/seq04-8-4/goldens/*.json` | normal `arcw build` CLI fixture verifier | `just persistent-cache-build-seq04-8-4-goldens-regenerate` |
 
 Focused validation run by `just fixture-refresh-check`:

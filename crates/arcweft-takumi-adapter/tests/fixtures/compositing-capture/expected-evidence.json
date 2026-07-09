@@ -12,7 +12,7 @@
         "key": 9001,
         "kind": "Container(Stack)",
         "style": 22,
-        "component": null,
+        "view": null,
         "program": null,
         "part": null,
         "semantic": null,

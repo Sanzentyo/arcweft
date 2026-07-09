@@ -116,38 +116,13 @@ coverage but does not branch retained View rendering on CSS media queries yet.
 
 ## Evidence format
 
-The package adds fixture evidence files under
-`fixtures/css-layout-cascade-coverage/`:
+The first cut uses `coverage.css` as parser input and asserts the resulting
+typed `CssCoverageReport`: selector support, cascade winners, declarations,
+diagnostic codes, and invalidation classes. This is executable coverage of the
+contract rather than a check that expected words occur in fixture files.
 
-- `computed-style-default.json`
-- `computed-style-compact.json`
-- `computed-style-hidpi.json`
-- `unsupported-diagnostics.expected.json`
-- `visual-smoke-manifest.json`
-
-The schema fields mirror the Rust types:
-
-```json
-{
-  "schema_version": "arcweft.css-layout-cascade-coverage.v1",
-  "computed_styles": [
-    {
-      "node_path": "0.1",
-      "property": "gap",
-      "value": "12px",
-      "winner": {
-        "selector": ".aw-panel > .aw-row",
-        "layer": "CssView",
-        "specificity": { "ids": 0, "classes": 2, "elements": 0 },
-        "source_order": 7,
-        "important": false
-      },
-      "invalidation": "LayoutScene"
-    }
-  ],
-  "layout_boxes": []
-}
-```
-
-The validation script checks that the expected fixture and diagnostic fields are
-present and that the three visual smoke checkpoints are recorded.
+Computed-style JSON and visual-smoke manifests are not part of the current
+contract. A future artifact format must be produced from the typed report,
+decoded against a schema, and compared as a complete deterministic value before
+it can be treated as validation evidence. Placeholder JSON and source-spelling
+scanners are explicitly insufficient.

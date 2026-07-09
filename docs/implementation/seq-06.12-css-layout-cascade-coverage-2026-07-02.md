@@ -3,6 +3,10 @@
 This implementation slice adds deterministic CSS coverage classification around
 Takumi retained View lowering.
 
+Maintenance update (2026-07-10): the repository-text fixture gate was removed.
+`coverage.css` remains as parser input for the typed coverage-report test;
+unconsumed expected JSON/visual files were deleted.
+
 ## Added code
 
 - `arcweft-takumi-adapter::coverage`
@@ -10,8 +14,7 @@ Takumi retained View lowering.
 - expanded `DirectCssSupport` to carry `CssCoverageReport`
 - focused integration tests for selectors, cascade, custom properties,
   unsupported grid/container/media diagnostics, and invalidation evidence
-- fixture/sample data outside `css-style-parity`
-- `tools/run-css-layout-cascade-coverage-gates.rs`
+- `coverage.css` fixture data outside `css-style-parity`
 
 ## Related docs
 
@@ -24,7 +27,6 @@ Takumi retained View lowering.
 ```bash
 cargo fmt --all --check
 cargo test -p arcweft-takumi-adapter css_layout_cascade --quiet
-cargo +nightly -Zscript tools/run-css-layout-cascade-coverage-gates.rs --fixtures fixtures/css-layout-cascade-coverage
 cargo test -p arcweft-takumi-adapter --quiet
 cargo clippy -p arcweft-takumi-adapter --all-targets -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write target/structure-audit-seq06-12

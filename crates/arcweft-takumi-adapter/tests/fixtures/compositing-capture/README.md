@@ -1,9 +1,10 @@
-# seq06.9c compositing capture fixtures
+# seq06.9c compositing capture evidence
 
-`scene.css` covers `filter`, `backdrop-filter`, `mask`, `clip-path`, and
-`mix-blend-mode` with stable Arcweft fixture ids. `expected-evidence.json` is the
-reviewable JSON packet used before any exact PNG promotion.
+`expected-evidence.json` is the canonical serialization of a typed
+`TakumiCompositingCaptureRecord`. The integration test compares the complete
+generated packet with this file, including stable ids, bounds, masks, blend
+mode, and effect outsets.
 
-The exact PNG lane remains ignored/manual because compositor output can be GPU
-and driver sensitive. The JSON packet is intended to be the stable CI evidence
-surface.
+This fixture does not claim pixel coverage. Exact image capture belongs to a
+pinned renderer/GPU lane with a real capture implementation, not to a test that
+only inspects repository text.

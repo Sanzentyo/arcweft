@@ -581,7 +581,7 @@ cargo test -p arcweft-cli agent_observe_json_reports_rich_text_display_objects
 cargo test -p arcweft-cli agent_observe_json_reports_rich_text_reset_controls_and_host_markers --test check -- --exact
 cargo test -p arcweft-cli agent_observe_writes_layer_png_and_object_raw_images -- --exact
 cargo test -p arcweft-cli agent_mcp_stdio_observes_and_reads_rich_text_child_image --test check -- --exact
-cargo test -p arcweft-cli agent_observe_native_renderer_writes_framebuffer_png --test check -- --exact
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::visual_smoke_viewport_layer_and_object_captures_expose_selected_metadata -- --exact
 cargo test -p arcweft-cli agent_observe_native_renderer_writes_rich_text_layer_png_crop --test check -- --exact
 cargo test -p arcweft-cli agent_observe_native_renderer_captures_clear_after_page_layer --test check -- --exact
 cargo test -p arcweft-cli agent_observe_native_renderer_captures_clear_after_page_object --test check -- --exact

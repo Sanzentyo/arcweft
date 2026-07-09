@@ -56,16 +56,11 @@ exercise let, await, match, and repeat schema reference emission, so a test that
 only asserted the new private module boundary would be implementation-coupled
 and low value.
 
-## Confirmed follow-up findings
+## Remaining follow-up findings
 
 The audit has confirmed these higher-value implementation issues for separate,
 reviewable slices:
 
-- Patch artifacts do not yet recompute and compare every declared section
-  fingerprint field against the materialized target, while runtime hot swap
-  locally reclassifies a declared compatibility result. The source-inspection
-  test for this contract gives false confidence and should be replaced by
-  tampered-artifact behavior tests plus typed validation errors.
 - `arcweft-lang-sema` manually repeats every `DataFormat` variant even though
   `arcweft-data::DataFormat` owns the enum and its author-facing names. The
   owning enum needs an iterable authoritative inventory, and semantic
@@ -172,3 +167,225 @@ cargo +nightly -Zscript tools/structure-audit.rs --root . \
   --write target/structure-audit/slice-02
   0 error(s); 153 warning(s)
 ```
+
+## Slice 3: remove source gates and finish the contracts they obscured
+
+Source gates are not required for Arcweft's correctness. They coupled tests to
+spellings, paths, and temporary implementation shapes while missing real
+behavioral defects. `AGENTS.md` now prohibits adding or repairing them and
+explicitly supersedes older request packages that prescribed source scans.
+
+The checkout removes 43 obsolete entries: 27 Rust integration-test files,
+seven Rust audit/tool scripts, eight placeholder or source-gate fixture files,
+and one web source-inspection test. Not every deleted test was named as a source
+gate; the same review also removed smoke tests that only checked helper output,
+authored sidecar literals, fixed object IDs, transparent padding, or observation
+geometry that the public report does not expose. The complete slice is 98 files,
+1,900 insertions, and 6,166 deletions.
+
+Observable invariants were retained at their owning boundaries:
+
+- patch validation now uses typed tamper, duplicate-operation, wrong-base,
+  no-op, manifest-only, and materialized-target behavior tests;
+- CLI native-option rejection is exercised by invoking the binary, and visual
+  capture tests derive observed IDs and validate serialized capture metadata;
+- text wrapping remains covered by `arcweft-text-layout` typed geometry tests,
+  rather than a CLI report that does not publish cluster geometry;
+- unsafe isolation is enforced by crate lints and two explicitly named unsafe
+  modules, rather than repository text scanning;
+- macOS adapter availability uses target/feature compilation, while web IME
+  smoke reports an explicit environment block only when no WebGPU adapter is
+  available;
+- Takumi compositing evidence compares the complete deterministic evidence
+  object, without a placeholder PNG or authored CSS sidecar.
+
+### Patch identity and hot-swap final form
+
+Patch materialization now recomputes target fingerprints and compatibility from
+the actual base and target bytes. `PatchMaterializedTarget` is the verified
+boundary: bytes and report are private, duplicate section operation IDs are
+rejected, no-op artifacts still materialize and validate, and native owners
+reuse that single materialization for resource validation and commit.
+
+The review then exposed a deeper identity hole: AWFB `content_root` covers
+section descriptors but not the manifest. A session that remembered only the
+content root could accept a patch prepared for a different manifest, and could
+misclassify a manifest-only patch as a no-op. `BundleSession` now stores one
+optional `ArtifactIdentity`, derives its content-root accessor from it, compares
+the complete base identity, and commits the verified target identity. Plain
+in-memory sessions represent the absence of an AWFB identity as `None`.
+
+Session-save schema v2 likewise stores the optional complete identity and
+rejects restore against an equal-section-root/different-manifest artifact. This
+is an intentional direct schema replacement: retaining a v1 root-only restore
+shim would preserve the defect. Native endpoint tests prove that manifest-only
+patches update generation, source label, active bytes, and target identity, and
+that prepared patches cannot cross the equal-root artifact boundary.
+
+### Executor and unsafe boundaries
+
+`ArcweftRuntimeExecutor` is now the application-facing facade. Concrete VM,
+bytecode VM, AOT, and product-AWBC executor types are `pub(crate)`, and CLI
+wiring no longer depends on their construction. The stable runtime design
+chapter now describes the facade instead of the removed public concrete shape.
+
+The Cranelift crate and desktop-native crate deny unsafe code by default. The
+JIT native-call ABI module and Windows TSF COM module are the only explicit
+unsafe boundaries and opt in locally; both also deny undocumented unsafe blocks
+and unsafe operations inside unsafe functions.
+
+No Cargo dependency edge changed. The two Cargo manifest edits configure lints,
+and the existing dependency graph continues to point through the runtime facade
+and bundle/runtime layers. Public contract changes are limited to sealing the
+concrete executor types and replacing the root-only session-save v1 identity
+field with the v2 `ArtifactIdentity` field.
+
+### Just workflow cleanup
+
+The root `Justfile` is now 28,020 bytes / 307 lines. Benchmark and profiling
+recipes live in imported `just/bench.just` at 30,948 bytes / 313 lines while
+retaining their flat recipe names. Redundant aliases and duplicated profiling
+commands were removed. Browser benchmark recipes share one build prerequisite,
+fixture refresh dependencies match the artifacts they regenerate, and
+`verify-full` includes the full CLI check route.
+
+`test-workspace` is the canonical fast workspace route and now includes the
+small CLI behavior/fixture integration binaries that had silently fallen out of
+the broad exclusion. `test-workspace-profile` measures that recipe instead of
+copying its command list. The native exact-test filters now use fully qualified
+module paths; this exposed five filters that had previously selected zero tests
+and led to removal or repair of their stale assumptions.
+
+### Current checkout measurements
+
+Measurements are from the checkout stack starting at revision `169f8fb1baf8`
+and ending at Jujutsu change `xomrxnyw`, using current files rather than diff
+additions. Byte and LOC figures include embedded tests; their LOC is stated
+separately where present.
+
+| Path | Owner / kind | Bytes | Physical LOC | Embedded test LOC | Major responsibility touched |
+| --- | --- | ---: | ---: | ---: | --- |
+| `crates/arcweft-bundle/src/patch.rs` | `arcweft-bundle` / production | 58,709 | 1,609 | 0 | Patch schema, materialization, fingerprints, and verified target boundary |
+| `crates/arcweft-cli/src/app/bundle.rs` | `arcweft-cli` / production | 81,641 | 2,275 | 0 | Bundle command orchestration and verified patch target access |
+| `crates/arcweft-cli/src/app/runtime/run.rs` | `arcweft-cli` / production | 48,621 | 1,331 | 253 | Runtime command policy and native/headless option routing |
+| `crates/arcweft-cli/src/server_adapter.rs` | `arcweft-cli` / production | 13,861 | 428 | 101 | Runtime-host adapter construction through the executor facade |
+| `crates/arcweft-core/src/executor.rs` | `arcweft-core` / production | 15,649 | 478 | 0 | Public executor facade and internal execution tiers |
+| `crates/arcweft-desktop-native/src/text_input/windows_tsf/unsafe_com.rs` | `arcweft-desktop-native` / production | 31,175 | 965 | 0 | Audited Windows COM/TSF unsafe boundary |
+| `crates/arcweft-lang-jit-cranelift/src/native_call.rs` | `arcweft-lang-jit-cranelift` / production | 45,174 | 1,155 | 0 | Audited JIT/native-call ABI unsafe boundary |
+| `crates/arcweft-player-native/src/lib.rs` | `arcweft-player-native` / facade | 13,755 | 367 | 184 | Native player facade and status reporting |
+| `crates/arcweft-player-native/src/patch_endpoint.rs` | `arcweft-player-native` / production | 39,018 | 1,016 | 519 | Owned AWFB bytes, prepared patch validation, live apply/restart |
+| `crates/arcweft-player-native/src/scene_windowed.rs` | `arcweft-player-native` / production | 65,264 | 1,777 | 54 | Windowed scene/input orchestration after wrapper removal |
+| `crates/arcweft-player-native/src/windowed_runtime.rs` | `arcweft-player-native` / production | 37,884 | 976 | 305 | Frame-safe resource and patch commit orchestration |
+| `crates/arcweft-player-scene/src/fonts.rs` | `arcweft-player-scene` / production | 9,832 | 292 | 143 | Runtime font inventory without source-spelling guards |
+| `crates/arcweft-project-loader/src/release_adapter/trust.rs` | `arcweft-project-loader` / production | 22,268 | 644 | 0 | Release trust projection through the verified patch API |
+| `crates/arcweft-runtime-driver/src/session.rs` | `arcweft-runtime-driver` / production | 74,195 | 1,930 | 0 | Session state, complete container identity, and hot-swap commit |
+| `crates/arcweft-runtime-driver/src/session_save.rs` | `arcweft-runtime-driver` / production | 16,112 | 448 | 0 | Strict session-save v2 codec and identity snapshot |
+| `crates/arcweft-runtime-driver/src/swap.rs` | `arcweft-runtime-driver` / production | 32,314 | 972 | 337 | Program-generation classification and unified swap commit |
+| `tools/structure-audit.rs` | workspace tool / production | 31,251 | 969 | 0 | Size, ownership, generated metadata, and dependency audit |
+| `crates/arcweft-bundle/tests/patch_schema.rs` | `arcweft-bundle` / integration test | 11,939 | 324 | 0 | Patch tamper, duplicate, identity, and compatibility matrix |
+| `crates/arcweft-bundle/tests/view_resource_codecs.rs` | `arcweft-bundle` / integration test | 24,594 | 669 | 0 | Typed View resource codec round trips |
+| `crates/arcweft-cli/tests/check_core_cli.rs` | `arcweft-cli` / integration test | 539 | 19 | 0 | Direct CLI check behavior only |
+| `crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs` | `arcweft-cli` / integration test | 214,665 | 5,848 | 0 | Native sample/effect observation matrix after stale capture tests were removed |
+| `crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs` | `arcweft-cli` / integration test | 238,553 | 6,629 | 0 | Vertical/ruby observation matrix after unobservable wrap test removal |
+| `crates/arcweft-cli/tests/check/agent_observe_native/selected_capture_metadata.rs` | `arcweft-cli` / integration test | 2,442 | 55 | 0 | Serialized selected-capture metadata contract |
+| `crates/arcweft-cli/tests/check/agent_observe_native/visual_smoke.rs` | `arcweft-cli` / integration test | 13,346 | 355 | 0 | Viewport/layer/object/mask/object-id behavior smoke |
+| `crates/arcweft-cli/tests/css_style_parity_sample.rs` | `arcweft-cli` / integration test | 2,009 | 58 | 0 | CSS parity sample behavior |
+| `crates/arcweft-cli/tests/runtime_native_options.rs` | `arcweft-cli` / integration test | 2,305 | 82 | 0 | Headless/watch session and trace option rejection |
+| `crates/arcweft-desktop-native/tests/macos_text_input_compile.rs` | `arcweft-desktop-native` / integration test | 256 | 7 | 0 | macOS plus feature-gated adapter export compilation |
+| `crates/arcweft-runtime-driver/tests/awbc_product_session.rs` | `arcweft-runtime-driver` / integration test | 18,133 | 511 | 0 | Product session save/restore identity rejection |
+| `crates/arcweft-runtime-driver/tests/session.rs` | `arcweft-runtime-driver` / integration test | 60,713 | 1,673 | 0 | Hot-swap identity, manifest-only, no-op, and generation behavior |
+| `crates/arcweft-takumi-adapter/tests/compositing_capture_fixtures.rs` | `arcweft-takumi-adapter` / integration test | 1,517 | 41 | 0 | Complete deterministic compositing evidence |
+| `crates/arcweft-takumi-adapter/tests/css_layout_cascade_coverage.rs` | `arcweft-takumi-adapter` / integration test | 6,225 | 170 | 0 | Typed CSS cascade coverage and unsupported diagnostics |
+
+The largest non-generated production files remain unchanged ownership
+hotspots:
+
+| Path | Bytes | Physical LOC | Embedded tests |
+| --- | ---: | ---: | --- |
+| `crates/arcweft-core/src/awbc/product_step.rs` | 95,176 | 2,499 | no |
+| `crates/arcweft-core/src/value.rs` | 83,955 | 2,498 | no |
+| `crates/arcweft-core/src/engine/eval/calls.rs` | 89,488 | 2,481 | no |
+| `crates/arcweft-runtime-plan/src/flow.rs` | 90,131 | 2,468 | no |
+| `crates/arcweft-cli/src/app/bundle_view.rs` | 87,720 | 2,468 | no |
+
+The changed large production files were reviewed rather than split by line
+count alone. `patch.rs` is one cohesive deterministic artifact algorithm;
+`session.rs` is the state owner whose identity fix crosses construction,
+snapshot, and commit; the large CLI/player files shrank or received only narrow
+boundary call-site changes. The two large Agent integration files remain
+warning-level domain matrices below the 8,000-LOC error threshold. A future
+split should follow observation domains, not add pass-through test modules.
+
+The canonical audit now reports:
+
+```text
+files scanned: 2482
+Rust files: 1149
+Rust physical LOC: 583980
+package manifests: 91
+violations: 0 error(s), 151 warning(s)
+```
+
+Generated Rust classification no longer guesses from comments. The audit reads
+explicit `.gitattributes` metadata for the two generated text-layout tables.
+The old `TYPE001`/`TYPE002` spelling/name rules were removed; size, embedded-test,
+manifest, and structured dependency rules remain.
+
+## Slice 3 validation
+
+```text
+cargo fmt --all -- --check
+  passed
+just test-cli-native
+  2 visual smoke tests and 1 fully qualified exact test passed
+cargo test -p arcweft-runtime-driver --test session --test awbc_product_session
+  32 + 12 passed
+cargo test -p arcweft-player-native patch_endpoint::tests --all-features
+  9 passed
+just test-workspace
+  passed, including the explicit CLI behavior and fixture integration targets
+cargo clippy --workspace --all-targets --all-features
+  passed; pre-existing warnings remain, no warning from this slice after the
+  focused patch-schema cleanup
+cargo clippy -p arcweft-bundle --test patch_schema --all-features
+  passed without warnings
+npm.cmd --prefix web run test:ime
+  passed; browser run reported the explicit unavailable-WebGPU-adapter block
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write target/structure-audit/source-gate-cleanup
+  0 error(s); 151 warning(s)
+just --unstable --fmt --justfile Justfile
+just --unstable --fmt --justfile just/bench.just
+just --summary
+just --dry-run test-workspace
+just --dry-run test-cli-native
+just --dry-run verify-full
+  all parsed and resolved
+active CI/Cargo/Just/crate/tool/web search for deleted source-gate names
+  no matches
+git diff --check
+  passed
+```
+
+The first `just test-workspace` attempt was terminated by its external ten-minute
+command limit and is not counted as validation. Re-running the identical recipe
+with the warmed build cache and a sufficient limit completed successfully.
+
+## Remaining TODOs after Slice 3
+
+- Replace the repeated `DataFormat` semantic registry, dialogue ID
+  normalization, and evaluator index conversion noted above with owning typed
+  APIs in separate reviewable slices.
+- Design a sealed, typed product-resource codec inventory before adding another
+  resource family. The removed source scans must not be recreated as the
+  registry mechanism.
+- Run the macOS text-input compile test on an actual macOS target with
+  `macos-text-input`; the current Windows checkout can validate cfg and lint
+  shape but the platform-validation workflow remains intentionally disabled.
+- Decompose existing warning-level production and Agent integration hotspots
+  only along cohesive responsibility boundaries. No error-level structural
+  violation remains in this slice.
+
+There are no known design deviations in this slice. The session-save schema v2
+break is intentional and documented because retaining root-only compatibility
+would preserve an identity and restore vulnerability.

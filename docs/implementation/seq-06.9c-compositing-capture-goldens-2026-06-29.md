@@ -2,6 +2,11 @@
 
 Date: 2026-06-29
 
+Maintenance update: 2026-07-10. The original source-spelling gates and the
+placeholder "exact PNG" test were removed. They inspected repository text and
+did not capture pixels. The maintained CI contract is now the complete typed
+evidence packet comparison described below.
+
 ## Baseline
 
 This package is designed against the latest inspected main-line state after
@@ -30,17 +35,15 @@ Schemas and fixtures:
 
 - adds `docs/schemas/compositing-capture-evidence.schema.json`;
 - adds `docs/schemas/compositing-capture-evidence.md`;
-- adds CSS and expected JSON fixtures under the adapter crate's test fixtures;
-- adds manual-only promotion review notes for exact PNG baselines.
+- adds the expected JSON fixture under the adapter crate's test fixtures.
 
 Tests:
 
 - `compositing_capture_schema.rs` checks the public metadata schema surface;
-- `compositing_capture_fixtures.rs` verifies all five CSS compositing families
-  are represented and stable fixture ids/effect evidence are present;
-- `compositing_capture_source_gates.rs` blocks platform identity leakage and
-  CPU-raster expected-output hooks;
-- `compositing_capture_exact_png.rs` is ignored/manual-only.
+- `compositing_capture_fixtures.rs` compares the complete deterministic JSON
+  emitted from a typed compositing record with `expected-evidence.json`;
+- renderer and lowering behavior remains covered by their typed unit and
+  integration tests. No source-spelling or placeholder PNG gate is retained.
 
 ## Validation commands
 
@@ -51,7 +54,6 @@ Run from the repository root after applying this package:
 cargo fmt --all -- --check
 cargo test -p arcweft-takumi-adapter --test compositing_capture_schema -- --nocapture
 cargo test -p arcweft-takumi-adapter --test compositing_capture_fixtures -- --nocapture
-cargo test -p arcweft-takumi-adapter --test compositing_capture_source_gates -- --nocapture
 cargo test -p arcweft-takumi-adapter --lib -- --nocapture capture evidence lowering
 cargo check -p arcweft-takumi-adapter --all-targets --all-features
 cargo clippy -p arcweft-takumi-adapter --all-targets --all-features -- -D warnings
@@ -59,11 +61,8 @@ cargo +nightly -Zscript tools/structure-audit.rs --root .
 git diff --check
 ```
 
-Optional manual exact PNG lane:
-
-```bash
-cargo test -p arcweft-takumi-adapter --test compositing_capture_exact_png -- --ignored --nocapture
-```
+Pixel-exact promotion remains out of scope until a real pinned-GPU capture lane
+exists. It must compare generated image bytes or metrics, not source text.
 
 ## Structural audit notes
 

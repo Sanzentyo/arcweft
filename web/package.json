@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node tests/webgpu-canvas-smoke.mjs",
     "test:seq06-13e1-exact": "node tests/seq06-13e1-inset-shadow-exact-capture.mjs",
-    "test:ime": "node tests/ime-sample-source.mjs && node tests/ime-player-rendered-fixture-source.mjs && node tests/player-editcontext-glue-unit.mjs && node tests/player-editcontext-runtime-geometry-unit.mjs && node tests/player-editcontext-runtime-bridge-unit.mjs && node tests/ime-sample-smoke.mjs",
+    "test:ime": "node tests/ime-player-rendered-fixture-contract.mjs && node tests/player-editcontext-glue-unit.mjs && node tests/player-editcontext-runtime-geometry-unit.mjs && node tests/player-editcontext-runtime-bridge-unit.mjs && node tests/ime-sample-smoke.mjs",
     "test:ime:real": "node tests/editcontext-real-ime-harness.mjs"
   },
   "devDependencies": {

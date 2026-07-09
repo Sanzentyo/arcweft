@@ -294,7 +294,7 @@ fn view_input_secure_policy_changes_are_restart_required() {
 }
 
 #[test]
-fn view_resource_source_gate_rejects_json_fallback() {
+fn view_resource_rejects_json_fallback() {
     let json = br#"{"style_program_id":"style.dialogue","tokens":[]}"#;
 
     assert!(

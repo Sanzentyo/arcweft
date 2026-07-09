@@ -1,34 +1,3 @@
-
-#[test]
-fn selected_capture_metadata_source_gate_rejects_adapter_local_json() {
-    let native_dir = workspace_path("crates/arcweft-cli/src/app/agent/native");
-    let forbidden = [
-        "\"selected_capture\"",
-        "\"capture_metadata\"",
-        "\"coordinate_basis\"",
-        "\"crop_bounds\"",
-        "\"mask_metadata\"",
-        "\"source_identity\"",
-    ];
-    for entry in fs::read_dir(native_dir).expect("native agent dir is readable") {
-        let path = entry.expect("native dir entry").path();
-        if path.extension().is_none_or(|ext| ext != "rs") {
-            continue;
-        }
-        let source = fs::read_to_string(&path).expect("native source is readable");
-        if !source.contains("serde_json::json!") {
-            continue;
-        }
-        for key in forbidden {
-            assert!(
-                !source.contains(key),
-                "{} must use AgentSelectedCaptureMetadata builders, not adapter-local JSON key {key}",
-                path.display()
-            );
-        }
-    }
-}
-
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: requires native-capture feature subprocess"]
 fn agent_mcp_stdio_lists_selected_capture_metadata() {

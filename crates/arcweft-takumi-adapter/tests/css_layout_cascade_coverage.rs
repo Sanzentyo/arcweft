@@ -168,14 +168,3 @@ fn css_layout_cascade_matrix_keeps_future_work_explicit() {
             && row.status() == CssCoverageStatus::IntentionallyRejected
     }));
 }
-
-#[test]
-fn css_layout_cascade_visual_smoke_manifest_names_two_sizes_and_hidpi() {
-    let manifest =
-        include_str!("../../../fixtures/css-layout-cascade-coverage/visual-smoke-manifest.json");
-
-    assert!(manifest.contains("\"default\""));
-    assert!(manifest.contains("\"compact\""));
-    assert!(manifest.contains("\"hidpi\""));
-    assert!(manifest.contains("\"scale\": 2.0"));
-}

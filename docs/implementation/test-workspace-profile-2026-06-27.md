@@ -3,6 +3,12 @@
 This note records the current `just test-workspace` wall-time breakdown and the
 fixture-regeneration command update made from the same investigation.
 
+Maintenance update (2026-07-10): `test-workspace-profile` now times the
+`test-workspace` recipe itself and propagates its exit status. This keeps one
+authoritative command list as CLI integration coverage evolves. The per-command
+breakdowns below are retained as historical measurements; use focused Cargo
+timing when a current bottleneck needs attribution.
+
 ## Profile Command
 
 Use this entrypoint to reproduce the invocation-level timing:
@@ -11,8 +17,7 @@ Use this entrypoint to reproduce the invocation-level timing:
 just test-workspace-profile
 ```
 
-The recipe times the same four commands used by `just test-workspace`, plus two
-front-loaded probes for the non-CLI workspace slice:
+At the time of this measurement, the recipe expanded to the commands below:
 
 ```bash
 cargo test --workspace --lib --tests --exclude arcweft-cli --no-run --quiet

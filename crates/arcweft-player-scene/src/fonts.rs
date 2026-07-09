@@ -280,31 +280,6 @@ mod tests {
     }
 
     #[test]
-    fn web_default_font_assets_match_player_shell_order() {
-        let player_shell = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/player.js"),
-        )
-        .expect("web player shell exists");
-
-        let font_positions = [
-            "noto-sans-jp-vf.ttf",
-            "noto-emoji-regular.ttf",
-            "arcweft-demo.ttf",
-        ]
-        .map(|font| {
-            player_shell
-                .find(font)
-                .unwrap_or_else(|| panic!("web player shell must register {font}"))
-        });
-        assert!(
-            font_positions
-                .windows(2)
-                .all(|window| window[0] < window[1]),
-            "web player shell font order should prefer text fonts before display fonts"
-        );
-    }
-
-    #[test]
     fn empty_font_resource_is_rejected_with_index() {
         assert!(matches!(
             PlayerFontSet::from_font_resource_bytes(vec![

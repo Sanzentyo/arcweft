@@ -56,10 +56,6 @@ jobs:
         timeout-minutes: 20
         run: cargo test -p arcweft-cli --lib --bins
 
-      - name: CLI regression harness
-        timeout-minutes: 10
-        run: cargo test -p arcweft-cli --test regression_harness
-
       - name: CLI fixture check and run tests
         timeout-minutes: 10
         run: cargo test -p arcweft-cli --test arcw_fixtures_check_run

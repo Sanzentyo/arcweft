@@ -1,5 +1,7 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
+import 'just/bench.just'
+
 default:
     @just --list
 
@@ -17,17 +19,16 @@ test: test-workspace
 test-workspace:
     @cargo test --workspace --lib --tests --exclude arcweft-cli --quiet
     @cargo test -p arcweft-cli --lib --bins --quiet
-    @cargo test -p arcweft-cli --test regression_harness --quiet
+    @cargo test -p arcweft-cli --test runtime_native_options --quiet
+    @cargo test -p arcweft-cli --test check_core_cli --quiet
+    @cargo test -p arcweft-cli --test css_style_parity_sample --quiet
+    @cargo test -p arcweft-cli --test release_trust_json --quiet
+    @cargo test -p arcweft-cli --test responsive_stage_placement --quiet
     @cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
     @cargo test -p arcweft-cli --test seq04_8_4_persistent_cache_build_cli_goldens --quiet
 
 test-workspace-profile:
-    @Write-Host "workspace-no-run-excluding-cli"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); cargo test --workspace --lib --tests --exclude arcweft-cli --no-run --quiet; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }
-    @Write-Host "workspace-list-excluding-cli"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); cargo test --workspace --lib --tests --exclude arcweft-cli --quiet -- --list | Out-Null; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }
-    @Write-Host "workspace-lib-tests-excluding-cli"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); cargo test --workspace --lib --tests --exclude arcweft-cli --quiet; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }
-    @Write-Host "cli-lib-bins"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); cargo test -p arcweft-cli --lib --bins --quiet; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }
-    @Write-Host "cli-regression-harness"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); cargo test -p arcweft-cli --test regression_harness --quiet; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }
-    @Write-Host "cli-fixtures-check-run"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }
+    @Write-Host "test-workspace"; $sw = [System.Diagnostics.Stopwatch]::StartNew(); just test-workspace; $code = $LASTEXITCODE; $sw.Stop(); Write-Host ("elapsed_seconds={0:N3}" -f $sw.Elapsed.TotalSeconds); if ($code -ne 0) { exit $code }
 
 test-doc:
     @cargo test --workspace --doc --quiet
@@ -36,10 +37,10 @@ test-fast:
     @cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet
 
 check-crate crate:
-    @cargo check -p {{crate}}
+    @cargo check -p {{ crate }}
 
 test-crate crate:
-    @cargo test -p {{crate}} --quiet
+    @cargo test -p {{ crate }} --quiet
 
 test-rich-text:
     @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet
@@ -52,10 +53,10 @@ test-rich-text-object-goal:
     @cargo test -p arcweft-render-native shader -- --nocapture
     @cargo test -p arcweft-render-native post_process -- --nocapture
     @cargo test -p arcweft-render-native typewriter -- --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources -- --exact --nocapture
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-full-grammar.arcw
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-effects-animation.arcw
 
@@ -69,13 +70,13 @@ test-image-animation-goal:
     @cargo test -p arcweft-cli app::image_declarations -- --nocapture
     @cargo test -p arcweft-cli app::bundle::tests::static_image_asset_refs_collects_declared_image_object_assets -- --exact --nocapture
     @cargo test -p arcweft-cli --test check bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_object_frame_metadata -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_layer_frame_pixels -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_reports_animated_image_object_proxy_metadata -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_image_alignment_sample_uses_authored_alignment_geometry -- --exact --nocapture
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_captures_clipped_animated_image_object -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry -- --exact --nocapture
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_captures_clipped_animated_image_object -- --exact --nocapture
     @cargo run -p arcweft-cli --quiet -- check samples/image-animation.arcw
 
 test-cli-check:
@@ -89,22 +90,10 @@ test-cli-check-full:
     @cargo test -p arcweft-cli --features native-capture --test check --quiet
 
 test-cli-native: test-visual-smoke
-    @foreach ($test in @("agent_observe_native_renderer_writes_framebuffer_png", "agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop", "agent_observe_native_renderer_writes_object_raw_crop", "agent_observe_native_renderer_writes_textbox_mask_as_glyph_geometry", "agent_observe_native_renderer_writes_textbox_object_id_as_glyph_geometry")) { cargo test -p arcweft-cli --features native-capture --test check $test --quiet -- --exact; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop --quiet -- --exact
 
 test-visual-smoke:
     @cargo test -p arcweft-cli --features native-capture --test check visual_smoke -- --nocapture
-
-test-profile:
-    @Write-Host "workspace-no-run"; Measure-Command { cargo test --workspace --no-run --quiet }
-    @Write-Host "workspace-lib-tests"; Measure-Command { cargo test --workspace --lib --tests --quiet }
-    @Write-Host "workspace-doc"; Measure-Command { cargo test --workspace --doc --quiet }
-    @Write-Host "workspace-all"; Measure-Command { cargo test --workspace --quiet }
-    @Write-Host "test-fast"; Measure-Command { cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet }
-    @Write-Host "cli-check"; Measure-Command { cargo test -p arcweft-cli --features native-capture --test check --quiet }
-    @Write-Host "cli-native"; Measure-Command { just test-cli-native }
-    @Write-Host "bench-json"; Measure-Command { cargo test -p arcweft-cli --test check bench_json --quiet }
-    @Write-Host "run-json"; Measure-Command { cargo test -p arcweft-cli --test check run_json --quiet }
-    @Write-Host "jit-check-json"; Measure-Command { cargo test -p arcweft-cli --test check jit_check_json --quiet }
 
 test-slow-mcp:
     @cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --ignored --nocapture
@@ -114,24 +103,24 @@ test-visual-golden: test-visual-smoke
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixture -- --ignored --nocapture
 
 native-visual-preflight out:
-    @New-Item -ItemType Directory -Force -Path "{{out}}" | Out-Null
-    @cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{out}}" --out "{{out}}\exact-native-golden.environment.json" --status preflight
-    @if (-not (Get-Command imq -ErrorAction SilentlyContinue)) { cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{out}}" --out "{{out}}\exact-native-golden.environment.json" --status environment_blocker --blocker missing_imq; Write-Error "native visual artifacts blocked: imq is not available; fingerprint={{out}}\exact-native-golden.environment.json"; exit 2 }
-    @if (-not (Test-Path (Join-Path $env:WINDIR 'Fonts\msmincho.ttc'))) { cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{out}}" --out "{{out}}\exact-native-golden.environment.json" --status environment_blocker --blocker missing_pinned_font; Write-Error "native visual artifacts blocked: MS Mincho font probe failed; fingerprint={{out}}\exact-native-golden.environment.json"; exit 2 }
+    @New-Item -ItemType Directory -Force -Path "{{ out }}" | Out-Null
+    @cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{ out }}" --out "{{ out }}\exact-native-golden.environment.json" --status preflight
+    @if (-not (Get-Command imq -ErrorAction SilentlyContinue)) { cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{ out }}" --out "{{ out }}\exact-native-golden.environment.json" --status environment_blocker --blocker missing_imq; Write-Error "native visual artifacts blocked: imq is not available; fingerprint={{ out }}\exact-native-golden.environment.json"; exit 2 }
+    @if (-not (Test-Path (Join-Path $env:WINDIR 'Fonts\msmincho.ttc'))) { cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{ out }}" --out "{{ out }}\exact-native-golden.environment.json" --status environment_blocker --blocker missing_pinned_font; Write-Error "native visual artifacts blocked: MS Mincho font probe failed; fingerprint={{ out }}\exact-native-golden.environment.json"; exit 2 }
 
 native-visual-artifacts out="target\\arcweft-native-capture-artifacts":
-    @just native-visual-preflight "{{out}}"
+    @just native-visual-preflight "{{ out }}"
     @cargo build --release -p arcweft-cli --features native-capture --quiet
-    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_tutr_golden.arcw --json --image png --out "{{out}}\vertical_tutr_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_tutr_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_tutr_golden.png "{{out}}\vertical_tutr_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_tutr_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_loose_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_loose_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.png "{{out}}\vertical_jlreq_preset_loose_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_jlreq_preset_loose_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_normal_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_normal_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.png "{{out}}\vertical_jlreq_preset_normal_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_jlreq_preset_normal_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.arcw --json --image png --out "{{out}}\vertical_lr_ruby_text_combine_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_lr_ruby_text_combine_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.png "{{out}}\vertical_lr_ruby_text_combine_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_lr_ruby_text_combine_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_goal_clear_smoke.arcw --json --image png --out "{{out}}\vertical_goal_clear_smoke.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_goal_clear_smoke.observe.json"
-    @cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{out}}" --out "{{out}}\exact-native-golden.environment.json" --status artifacts_complete
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_tutr_golden.arcw --json --image png --out "{{ out }}\vertical_tutr_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_tutr_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_tutr_golden.png "{{ out }}\vertical_tutr_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_tutr_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.arcw --json --image png --out "{{ out }}\vertical_jlreq_preset_loose_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_jlreq_preset_loose_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.png "{{ out }}\vertical_jlreq_preset_loose_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_jlreq_preset_loose_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.arcw --json --image png --out "{{ out }}\vertical_jlreq_preset_normal_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_jlreq_preset_normal_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.png "{{ out }}\vertical_jlreq_preset_normal_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_jlreq_preset_normal_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.arcw --json --image png --out "{{ out }}\vertical_lr_ruby_text_combine_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_lr_ruby_text_combine_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.png "{{ out }}\vertical_lr_ruby_text_combine_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_lr_ruby_text_combine_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_goal_clear_smoke.arcw --json --image png --out "{{ out }}\vertical_goal_clear_smoke.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_goal_clear_smoke.observe.json"
+    @cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{ out }}" --out "{{ out }}\exact-native-golden.environment.json" --status artifacts_complete
 
 fixture-refresh-list:
     @Write-Host "Checked-in portable fixtures regenerated by just fixture-refresh:"
@@ -141,16 +130,16 @@ fixture-refresh-list:
     @Write-Host "  web/bundle-assets/generated/gif_pulse.gif <- tools/generate-webgpu-demo-assets.rs"
     @Write-Host "  web/bundle-assets/generated/webp_pulse.webp <- tools/generate-webgpu-demo-assets.rs"
     @Write-Host "Generated deterministic data refreshed by just fixture-refresh:"
-    @Write-Host "  crates/arcweft-lang-syntax/src/jlreq_punctuation_data.rs <- tools/generate_jlreq_punctuation_data.rs"
+    @Write-Host "  crates/arcweft-text-layout/src/jlreq_punctuation_data.rs <- tools/generate_jlreq_punctuation_data.rs"
     @Write-Host "  fixtures/persistent-cache-build/seq04-8-4/goldens/*.json <- just persistent-cache-build-seq04-8-4-goldens-regenerate"
     @Write-Host "Platform-dependent native capture candidates generated by just fixture-refresh-all:"
     @Write-Host "  target/arcweft-native-capture-refresh/vertical_tutr_golden.png <- matching .arcw source"
     @Write-Host "  target/arcweft-native-capture-refresh/vertical_jlreq_preset_loose_golden.png <- matching .arcw source"
     @Write-Host "  target/arcweft-native-capture-refresh/vertical_jlreq_preset_normal_golden.png <- matching .arcw source"
     @Write-Host "  target/arcweft-native-capture-refresh/vertical_lr_ruby_text_combine_golden.png <- matching .arcw source"
-    @Write-Host "  target/arcweft-native-capture-artifacts/vertical_goal_clear_smoke.candidate.png <- smoke-only visual artifact"
     @Write-Host "Candidate-only fixture artifacts:"
     @Write-Host "  just native-visual-artifacts [out] writes comparison candidates under target/."
+    @Write-Host "  native-visual-artifacts also writes vertical_goal_clear_smoke.candidate.png."
     @Write-Host "  just webgpu-parity writes browser/native comparison artifacts under target/."
     @Write-Host "Authored fixtures not regenerated by this command:"
     @Write-Host "  tests/fixtures/arcw/**/*.arcw"
@@ -159,7 +148,7 @@ fixture-refresh-list:
 
 fixture-refresh: fixture-refresh-portable fixture-refresh-check
 
-fixture-refresh-portable: fixture-refresh-web-demo-awfb fixture-refresh-webgpu-demo-assets generate-jlreq-punctuation
+fixture-refresh-portable: fixture-refresh-web-demo-awfb fixture-refresh-webgpu-demo-assets generate-jlreq-punctuation persistent-cache-build-seq04-8-4-goldens-regenerate
 
 fixture-refresh-all: fixture-refresh fixture-refresh-native-capture-candidates fixture-refresh-native-capture-check
 
@@ -170,16 +159,16 @@ fixture-refresh-webgpu-demo-assets:
     @cargo +nightly -Zscript tools\generate-webgpu-demo-assets.rs
 
 fixture-refresh-native-capture-candidates out="target\\arcweft-native-capture-refresh":
-    @just native-visual-preflight "{{out}}"
-    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_tutr_golden.arcw --json --image png --out "{{out}}\vertical_tutr_golden.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_tutr_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_tutr_golden.png "{{out}}\vertical_tutr_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_tutr_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_loose_golden.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_loose_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.png "{{out}}\vertical_jlreq_preset_loose_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_jlreq_preset_loose_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.arcw --json --image png --out "{{out}}\vertical_jlreq_preset_normal_golden.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_jlreq_preset_normal_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.png "{{out}}\vertical_jlreq_preset_normal_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_jlreq_preset_normal_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.arcw --json --image png --out "{{out}}\vertical_lr_ruby_text_combine_golden.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_lr_ruby_text_combine_golden.observe.json"
-    @imq image tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.png "{{out}}\vertical_lr_ruby_text_combine_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_lr_ruby_text_combine_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{out}}" --out "{{out}}\exact-native-golden.environment.json" --status refresh_candidates_complete
+    @just native-visual-preflight "{{ out }}"
+    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_tutr_golden.arcw --json --image png --out "{{ out }}\vertical_tutr_golden.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_tutr_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_tutr_golden.png "{{ out }}\vertical_tutr_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_tutr_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.arcw --json --image png --out "{{ out }}\vertical_jlreq_preset_loose_golden.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_jlreq_preset_loose_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_loose_golden.png "{{ out }}\vertical_jlreq_preset_loose_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_jlreq_preset_loose_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.arcw --json --image png --out "{{ out }}\vertical_jlreq_preset_normal_golden.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_jlreq_preset_normal_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_jlreq_preset_normal_golden.png "{{ out }}\vertical_jlreq_preset_normal_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_jlreq_preset_normal_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo run -p arcweft-cli --features native-capture --quiet -- agent observe tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.arcw --json --image png --out "{{ out }}\vertical_lr_ruby_text_combine_golden.png" --mode drain --steps 4 --max-ops 64 > "{{ out }}\vertical_lr_ruby_text_combine_golden.observe.json"
+    @imq image tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.png "{{ out }}\vertical_lr_ruby_text_combine_golden.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{ out }}\vertical_lr_ruby_text_combine_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo +nightly -Zscript tools\write-native-golden-fingerprint.rs --root . --artifact-dir "{{ out }}" --out "{{ out }}\exact-native-golden.environment.json" --status refresh_candidates_complete
 
 fixture-refresh-check:
     @cargo run -p arcweft-cli --quiet -- inspect web/demo.awfb --json | Out-Null
@@ -225,7 +214,6 @@ css-style-parity-profile:
 
 css-layout-cascade-coverage:
     @cargo test -p arcweft-takumi-adapter css_layout_cascade --quiet
-    @cargo +nightly -Zscript tools\run-css-layout-cascade-coverage-gates.rs --fixtures fixtures\css-layout-cascade-coverage
 
 reactive-view-style-sample:
     @New-Item -ItemType Directory -Force -Path web\local,target\reactive-view-style,target\reactive-view-style\interaction-states | Out-Null
@@ -239,39 +227,34 @@ web-player-refresh:
     @cargo run -p arcweft-cli --all-features -- bundle --manifest-path samples\modern-feedback-view\arcw.toml --profile main --output web\modern-feedback-view.awfb
 
 web-player-serve port="4173":
-    @Write-Host "Serving Arcweft web player at http://127.0.0.1:{{port}}/"
-    @Write-Host "Modern feedback: http://127.0.0.1:{{port}}/?bundle=./modern-feedback-view.awfb"
-    @python -m http.server {{port}} --bind 127.0.0.1 --directory web
+    @Write-Host "Serving Arcweft web player at http://127.0.0.1:{{ port }}/"
+    @Write-Host "Modern feedback: http://127.0.0.1:{{ port }}/?bundle=./modern-feedback-view.awfb"
+    @python -m http.server {{ port }} --bind 127.0.0.1 --directory web
 
 ime-sample-web port="8786":
     @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
     @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
-    @Write-Host "Serving Arcweft player-rendered IME sample at http://127.0.0.1:{{port}}/ime-sample.html"
-    @Write-Host "Equivalent player URL: http://127.0.0.1:{{port}}/index.html?bundle=./ime-player-rendered.awfb"
-    @python -m http.server {{port}} --bind 127.0.0.1 --directory web
+    @Write-Host "Serving Arcweft player-rendered IME sample at http://127.0.0.1:{{ port }}/ime-sample.html"
+    @Write-Host "Equivalent player URL: http://127.0.0.1:{{ port }}/index.html?bundle=./ime-player-rendered.awfb"
+    @python -m http.server {{ port }} --bind 127.0.0.1 --directory web
 
 ime-sample-native:
     @cargo run -p arcweft-cli --features native-player -- run --runner native samples/native-text-input/src/main.arcw --text-input-trace-out target\native-text-input-trace\native-player-ime.real.json
 
-ime-sample-native-real: ime-sample-native
-
 view-text-input-native-smoke-check:
-    @cargo test -p arcweft-cli --test native_text_input_sample_sidecars --quiet
-    @cargo test -p arcweft-cli --test native_text_input_native_interactive_smoke --quiet
     @cargo run -p arcweft-cli -- check --manifest-path samples\native-text-input\arcw.toml
     @cargo run -p arcweft-cli -- check --manifest-path samples\text-submit-flow\arcw.toml
     @cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-view\arcw.toml
     @cargo run -p arcweft-cli -- bundle samples\native-text-input\src\main.arcw --output target\arcweft\native-text-input-seq06.16.3.awfb
     @cargo run -p arcweft-cli -- bundle samples\text-submit-flow\src\main.arcw --output target\arcweft\text-submit-flow-seq06.16.3.awfb
     @cargo run -p arcweft-cli -- bundle --manifest-path samples\modern-feedback-view\arcw.toml --profile main --output target\arcweft\modern-feedback-view-seq06.16.3.awfb
-    @cargo +nightly -Zscript tools\source-gates\seq06_4j1_native_ime_player_rendered_gates.rs --root .
 
 view-text-input-native-smoke out="target\\native-text-input-trace\\seq06.16.3":
     @just view-text-input-native-smoke-check
-    @New-Item -ItemType Directory -Force -Path "{{out}}" | Out-Null
-    @cargo run -p arcweft-cli --features native-player -- run --runner native samples\native-text-input\src\main.arcw --text-input-trace-out "{{out}}\native-player-ime.real.json"
-    @cargo +nightly -Zscript tools\verify-seq06-16-3-native-smoke-trace.rs --trace "{{out}}\native-player-ime.real.json"
+    @New-Item -ItemType Directory -Force -Path "{{ out }}" | Out-Null
+    @cargo run -p arcweft-cli --features native-player -- run --runner native samples\native-text-input\src\main.arcw --text-input-trace-out "{{ out }}\native-player-ime.real.json"
+    @cargo +nightly -Zscript tools\verify-seq06-16-3-native-smoke-trace.rs --trace "{{ out }}\native-player-ime.real.json"
 
 ime-sample-native-contract:
     @cargo run -p arcweft-desktop-native --example ime_text_input_contract
@@ -281,13 +264,9 @@ ime-sample-check:
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
     @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
     @npm.cmd --prefix web run test:ime
-    @cargo test -p arcweft-cli --features native-player native_text_input_sample --quiet
     @cargo test -p arcweft-render-wgpu focused_text_input_target --all-features --quiet
     @cargo test -p arcweft-player-scene --test runtime_text_controls --quiet
     @cargo test -p arcweft-player-web runtime_text_input --all-features --quiet
-    @cargo test -p arcweft-player-native native_text_input_bridge --quiet
-    @cargo test -p arcweft-player-native --test native_text_input_seq06_4j1_source_gate --quiet
-    @cargo +nightly -Zscript tools\source-gates\seq06_4j1_native_ime_player_rendered_gates.rs --root .
 
 check-vendor-glyphon:
     @cargo check --manifest-path vendor\glyphon\Cargo.toml
@@ -305,21 +284,15 @@ test-slow-agent-observe:
 
 test-tier2: test-slow-mcp test-slow-agent-observe test-visual-golden
 
-seq06-13e1-inset-shadow-policy:
-    @cargo +nightly -Zscript tools\source-gates\seq06_13e1_inset_shadow_exact_golden_policy.rs --root .
-    @cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_policy_pins_typed_compositor_route --all-features -- --exact
-
 seq06-13e1-inset-shadow-native-capture out="target\\seq06.13e.1-inset-box-shadow-golden":
-    @cargo +nightly -Zscript tools\capture-seq06-13e1-inset-shadow-native-frame.rs --root . --out-dir "{{out}}"
+    @cargo +nightly -Zscript tools\capture-seq06-13e1-inset-shadow-native-frame.rs --root . --out-dir "{{ out }}"
 
 seq06-13e1-inset-shadow-pinned-native-golden out="target\\seq06.13e.1-inset-box-shadow-golden":
-    @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{out}}" --mode native --run
+    @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{ out }}" --mode native --run
 
 seq06-13e1-inset-shadow-pinned-golden out="target\\seq06.13e.1-inset-box-shadow-golden":
-    @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{out}}" --mode both --run
-    @cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden --all-features -- --ignored --exact --nocapture
-
-test-seq06-13e1-inset-shadow-pinned-golden: seq06-13e1-inset-shadow-policy seq06-13e1-inset-shadow-pinned-golden
+    @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{ out }}" --mode both --run
+    @cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden --all-features -- --ignored --nocapture
 
 generate-jlreq-punctuation:
     @rustc tools\generate_jlreq_punctuation_data.rs -o target\generate_jlreq_punctuation_data.exe
@@ -329,325 +302,6 @@ check-jlreq-punctuation:
     @rustc tools\generate_jlreq_punctuation_data.rs -o target\generate_jlreq_punctuation_data.exe
     @.\target\generate_jlreq_punctuation_data.exe --check
 
-regression:
-    @cargo test -p arcweft-cli --test regression_harness
-
 verify: fmt-check check-jlreq-punctuation clippy test-workspace
 
-verify-full: verify test-doc verify-vendor-glyphon test-tier2
-
-toolchain-profile-pure-jit-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-003 --command bench-009 --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-aot-object-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-009-aot-object --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-width-fast-path-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit --command bench-033-width-aot --command bench-033-width-vm --command bench-040-width-jit --command bench-040-width-aot --command bench-040-width-vm --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-width-release-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-jit-release --command bench-033-width-aot-release --command bench-033-width-vm-release --command bench-040-width-jit-release --command bench-040-width-aot-release --command bench-040-width-vm-release --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-width-object-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command bench-033-width-aot-object --command bench-040-width-aot-object --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-math-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias --command math-matrix-add --command math-tensor-add --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-math-f64-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-f64 --command math-matrix-add-f64 --command math-tensor-add-f64 --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-math-wgpu-reuse-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-bias-wgpu-reuse --command math-matrix-add-wgpu-reuse --command math-tensor-add-wgpu-reuse --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-math-auto-wgpu-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command math-matmul-auto-wgpu --command math-matmul-bias-auto-wgpu-reuse --command math-matrix-add-auto-wgpu-reuse --command math-tensor-add-auto-wgpu-reuse --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-flow-math-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-glam --command flow-math-matrix-add-ndarray --command flow-math-tensor-add-ndarray --command flow-math-matmul-f64-ndarray --command flow-math-matrix-add-f64-ndarray --command flow-math-tensor-add-f64-ndarray --repeat {{repeat}} --warmup {{warmup}} --json
-
-toolchain-profile-flow-math-auto-wgpu-benches repeat="3" warmup="1":
-    @cargo run -p arcweft-cli --quiet -- toolchain-profile --command flow-math-matmul-auto-wgpu --repeat {{repeat}} --warmup {{warmup}} --json
-
-bench-009:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit --pure-workers 4 --pure-batch-min-len 64
-
-bench-002:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-003:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-005:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/005_inferred_pure_jit.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-007:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/007_branching_iter_pure_jit.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 128 --max-ops 128 --pure-backend jit
-
-bench-008:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/008_large_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend auto
-
-bench-010:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/010_dense_i32_sum.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
-
-bench-011:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/011_dense_u64_sum.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
-
-bench-012:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/012_dense_integer_widths_sum.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
-
-bench-013:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/013_dense_scalar_len.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
-
-bench-014:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/014_dense_textual_scalar_len.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
-
-bench-015:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/015_dense_wide_numeric_len.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
-
-bench-016:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/016_dense_i32_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-017:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/017_dense_u32_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-018:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/018_dense_u64_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-019:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/019_dense_i128_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-020:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/020_dense_u128_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-022:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-023:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-029:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-030:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-031:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/031_dense_u8_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-032:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/032_dense_u16_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-033:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
-
-bench-036:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/036_dense_isize_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-037:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/037_dense_usize_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-038:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/038_wide_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-
-bench-039:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/039_hot_for_pure_auto_jit.arcw --json --iterations 4 --warmup 1 --samples 3 --steps 512 --max-ops 512 --pure-backend auto
-
-bench-040:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
-
-bench-numeric-vm:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/010_dense_i32_sum.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/011_dense_u64_sum.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/012_dense_integer_widths_sum.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/013_dense_scalar_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/014_dense_textual_scalar_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/015_dense_wide_numeric_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
-
-bench-numeric-pure-vm:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/016_dense_i32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/017_dense_u32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/018_dense_u64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/019_dense_i128_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/020_dense_u128_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/031_dense_u8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/032_dense_u16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/036_dense_isize_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/037_dense_usize_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend vm
-
-bench-numeric-aot:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/016_dense_i32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/017_dense_u32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/018_dense_u64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/019_dense_i128_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/020_dense_u128_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/031_dense_u8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/032_dense_u16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/036_dense_isize_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/037_dense_usize_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend aot
-
-bench-numeric-jit:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/005_inferred_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/007_branching_iter_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 128 --max-ops 128 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/008_large_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend auto
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend auto
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/029_dense_i8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/030_dense_i16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/016_dense_i32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/031_dense_u8_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/032_dense_u16_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/017_dense_u32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/018_dense_u64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/022_dense_f32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/023_dense_f64_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/036_dense_isize_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/037_dense_usize_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/038_wide_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/039_hot_for_pure_auto_jit.arcw --json --iterations 4 --warmup 1 --samples 3 --steps 512 --max-ops 512 --pure-backend auto
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/040_mixed_width_for_iter_pure_jit.arcw --json --iterations 2 --warmup 1 --samples 1 --steps 128 --max-ops 128 --pure-backend jit
-
-bench-024:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend glam --value lhs=matrix/f32/4x4:1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1 --value rhs=matrix/f32/4x4:2,0,0,0,0,2,0,0,0,0,2,0,0,0,0,2
-
-bench-024-wgpu-auto:
-    @cargo run -p arcweft-cli --features math-wgpu --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw --json --iterations 5 --warmup 2 --samples 5 --steps 64 --max-ops 64 --math-backend auto --math-wgpu-min-elements 1 --value lhs=matrix/f32/8x8:1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1 --value rhs=matrix/f32/8x8:2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
-
-bench-025:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/025_matrix_add_f32.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend ndarray --value lhs=matrix/f32/4x4:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16 --value rhs=matrix/f32/4x4:16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1
-
-bench-026:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/026_tensor_add_f32.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend ndarray --value lhs=tensor/f32/2x2x2:1,2,3,4,5,6,7,8 --value rhs=tensor/f32/2x2x2:8,7,6,5,4,3,2,1
-
-bench-027:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/027_matrix_matmul_f64.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend ndarray --value lhs=matrix/f64/2x2:1.5,2,3.25,4.5 --value rhs=matrix/f64/2x2:5,6.5,7,8.25
-
-bench-028:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/028_tensor_add_f64.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend ndarray --value lhs=tensor/f64/2x2:1.5,2.25,3.75,4.5 --value rhs=tensor/f64/2x2:5,6.25,7.5,8.75
-
-bench-035:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/035_matrix_add_f64.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend ndarray --value lhs=matrix/f64/2x2:1.5,2.25,3.75,4.5 --value rhs=matrix/f64/2x2:5,6.25,7.5,8.75
-
-bench-thread:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw --json --iterations 10 --warmup 2 --samples 5 --steps 64 --max-ops 64
-
-bench-system:
-    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/004_system_info_threads.arcw --json --iterations 1 --warmup 0 --samples 3 --steps 24 --max-ops 24 --mode drain
-
-bench-math-cpu:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul --size 64 --iterations 10 --warmup 2
-
-bench-math-glam:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul --size 4 --iterations 50 --warmup 5
-
-bench-math-wgpu:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matmul --size 512 --iterations 3 --warmup 1
-
-bench-math-matmul-bias:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul-bias-add --size 64 --iterations 10 --warmup 2
-
-bench-math-f64:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul-f64 --size 64 --iterations 10 --warmup 2
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matrix-add-f64 --size 1024 --iterations 5 --warmup 1
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op tensor-add-f64 --size 1024 --iterations 5 --warmup 1
-
-bench-math-matmul-bias-wgpu:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matmul-bias-add --size 512 --iterations 3 --warmup 1
-
-bench-math-matmul-bias-reuse:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul-bias-add --size 128 --iterations 5 --warmup 1 --reuse
-
-bench-math-matmul-bias-submit-only:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul-bias-add --size 512 --iterations 3 --warmup 1 --submit-only
-
-bench-math-matmul-bias-reuse-update:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul-bias-add --size 128 --iterations 5 --warmup 1 --reuse-update-inputs
-
-bench-math-matmul-bias-reuse-capacity:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul-bias-add --size 128 --iterations 5 --warmup 1 --reuse-capacity
-
-bench-math-inference-matmul-bias-reuse:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op inference-matmul-bias-add --size 128 --iterations 5 --warmup 1 --reuse
-
-bench-math-inference-matmul-bias-reuse-update:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op inference-matmul-bias-add --size 128 --iterations 5 --warmup 1 --reuse-update-inputs
-
-bench-math-matmul-reuse-update:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 128 --iterations 5 --warmup 1 --reuse-update-inputs
-
-bench-math-matmul-reuse-capacity:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 128 --iterations 5 --warmup 1 --reuse-capacity
-
-bench-math-matrix-add:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matrix-add --size 4096 --iterations 5 --warmup 1
-
-bench-math-tensor-add:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op tensor-add --size 4096 --iterations 5 --warmup 1
-
-bench-math-matrix-add-reuse:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 4096 --iterations 5 --warmup 1 --reuse
-
-bench-math-matrix-add-submit-only:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 4096 --iterations 3 --warmup 1 --submit-only
-
-bench-math-matrix-add-reuse-update:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 64 --iterations 5 --warmup 1 --reuse-update-inputs
-
-bench-math-matrix-add-reuse-capacity:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 64 --iterations 5 --warmup 1 --reuse-capacity
-
-bench-math-tensor-add-reuse:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 4096 --iterations 5 --warmup 1 --reuse
-
-bench-math-tensor-add-submit-only:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 4096 --iterations 3 --warmup 1 --submit-only
-
-bench-math-tensor-add-reuse-update:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 64 --iterations 5 --warmup 1 --reuse-update-inputs
-
-bench-math-tensor-add-reuse-capacity:
-    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 64 --iterations 5 --warmup 1 --reuse-capacity
-
-browser-webgpu-bench-check:
-    @cargo check -p arcweft-browser-bench --target wasm32-unknown-unknown --all-features
-    @node --test crates/arcweft-browser-bench/web/chrome-smoke-summary.test.mjs
-
-browser-webgpu-bench-build:
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
-
-browser-webgpu-bench-serve port="8787":
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build-and-serve --port {{port}}
-
-browser-webgpu-bench-smoke port="8787":
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
-    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}}
-
-browser-webgpu-bench-perf port="8788":
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
-    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}} --preset perf --timeout-ms 180000
-
-browser-webgpu-bench-isolate port="8789":
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
-    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}} --preset isolate --timeout-ms 180000
-
-browser-webgpu-bench-stability port="8790":
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
-    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}} --preset stability --timeout-ms 240000
-
-browser-webgpu-bench-capacity-stability port="8791":
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
-    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}} --preset capacity-stability --timeout-ms 300000
-
-browser-webgpu-bench-submit-only port="8792":
-    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
-    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}} --preset submit-only --timeout-ms 300000
+verify-full: verify test-doc verify-vendor-glyphon test-cli-check-full test-tier2

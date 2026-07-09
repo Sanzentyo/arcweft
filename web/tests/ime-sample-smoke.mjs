@@ -114,6 +114,17 @@ try {
     throw new Error(`sample did not declare player-rendered boundary: ${JSON.stringify(sourceShape.sample)}`);
   }
 
+  const webGpuAvailable = await page.evaluate(async () => {
+    if (!navigator.gpu) {
+      return false;
+    }
+    try {
+      return Boolean(await navigator.gpu.requestAdapter());
+    } catch {
+      return false;
+    }
+  });
+
   await page.waitForFunction(() => (
     Boolean(window.__arcweftFatal) ||
     Boolean(window.__arcweftImeSample?.fatal) ||
@@ -122,13 +133,16 @@ try {
   ), null, { timeout: 15_000 });
 
   const fatal = await page.evaluate(() => window.__arcweftFatal ?? window.__arcweftImeSample?.fatal ?? null);
-  if (fatal) {
+  if (!webGpuAvailable) {
     console.log(JSON.stringify({
       sample: "web-ime-player-rendered-smoke",
       status: "environment_blocked",
+      reason: "browser WebGPU adapter is unavailable",
       fatal,
       forbiddenActiveNodeCount: sourceShape.forbiddenActiveNodeCount,
     }));
+  } else if (fatal) {
+    throw new Error(`player failed despite an available WebGPU adapter: ${JSON.stringify(fatal)}`);
   } else {
     await page.locator("#arcweft-canvas").click({ position: { x: 96, y: 96 } });
     await page.waitForTimeout(250);

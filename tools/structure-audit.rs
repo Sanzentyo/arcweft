@@ -47,7 +47,8 @@ fn run() -> Result<i32> {
 
     let root = arguments.root.canonicalize()?;
     let paths = walk::collect_files(&root)?;
-    let files = metrics::analyze_files(&root, &paths)?;
+    let generated_paths = generated_files::load(&root)?;
+    let files = metrics::analyze_files(&root, &paths, &generated_paths)?;
     let manifests = cargo_manifest::parse_manifests(&root, &paths)?;
     let violations = rules::evaluate(&files, &manifests);
 
@@ -66,6 +67,38 @@ fn run() -> Result<i32> {
     } else {
         0
     })
+}
+
+mod generated_files {
+    use anyhow::Result;
+    use std::collections::BTreeSet;
+    use std::fs;
+    use std::path::Path;
+
+    pub fn load(root: &Path) -> Result<BTreeSet<String>> {
+        let path = root.join(".gitattributes");
+        if !path.exists() {
+            return Ok(BTreeSet::new());
+        }
+        let source = fs::read_to_string(path)?;
+        Ok(source
+            .lines()
+            .filter_map(generated_path)
+            .map(|path| path.replace('\\', "/"))
+            .collect())
+    }
+
+    fn generated_path(line: &str) -> Option<String> {
+        let line = line.split_once('#').map_or(line, |(prefix, _)| prefix).trim();
+        if line.is_empty() {
+            return None;
+        }
+        let mut fields = line.split_whitespace();
+        let path = fields.next()?;
+        fields
+            .any(|field| matches!(field, "linguist-generated" | "linguist-generated=true"))
+            .then(|| path.to_owned())
+    }
 }
 
 mod args {
@@ -293,6 +326,7 @@ mod cargo_manifest {
 
 mod metrics {
     use anyhow::Result;
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -301,12 +335,6 @@ mod metrics {
         pub kind: String,
         pub name: String,
         pub line: usize,
-    }
-
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub struct SourceHit {
-        pub line: usize,
-        pub text: String,
     }
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -320,7 +348,6 @@ mod metrics {
         pub is_generated: bool,
         pub has_embedded_tests: bool,
         pub public_types: Vec<PublicType>,
-        pub stringly_boundary_hits: Vec<SourceHit>,
     }
 
     impl FileMetrics {
@@ -337,10 +364,14 @@ mod metrics {
         }
     }
 
-    pub fn analyze_files(root: &Path, files: &[PathBuf]) -> Result<Vec<FileMetrics>> {
+    pub fn analyze_files(
+        root: &Path,
+        files: &[PathBuf],
+        generated_paths: &BTreeSet<String>,
+    ) -> Result<Vec<FileMetrics>> {
         files
             .iter()
-            .filter_map(|path| match analyze_file(root, path) {
+            .filter_map(|path| match analyze_file(root, path, generated_paths) {
                 Ok(Some(metrics)) => Some(Ok(metrics)),
                 Ok(None) => None,
                 Err(error) => Some(Err(error)),
@@ -348,7 +379,11 @@ mod metrics {
             .collect()
     }
 
-    fn analyze_file(root: &Path, path: &Path) -> Result<Option<FileMetrics>> {
+    fn analyze_file(
+        root: &Path,
+        path: &Path,
+        generated_paths: &BTreeSet<String>,
+    ) -> Result<Option<FileMetrics>> {
         if !is_text_candidate(path) {
             return Ok(None);
         }
@@ -368,18 +403,12 @@ mod metrics {
                 + usize::from(!content.ends_with('\n'))
         };
         let code_lines = count_code_lines(&lines);
-        let is_generated = is_rust && is_generated_source(&lines);
+        let is_generated = is_rust && generated_paths.contains(&normalized);
         let public_types = if is_rust {
             public_types(&lines)
         } else {
             Vec::new()
         };
-        let stringly_boundary_hits = if is_rust {
-            stringly_boundary_hits(&lines)
-        } else {
-            Vec::new()
-        };
-
         Ok(Some(FileMetrics {
             path: normalized.clone(),
             bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
@@ -390,7 +419,6 @@ mod metrics {
             is_generated,
             has_embedded_tests: is_rust && has_embedded_test_module(&lines),
             public_types,
-            stringly_boundary_hits,
         }))
     }
 
@@ -430,15 +458,6 @@ mod metrics {
             || path.ends_with("/tests.rs")
             || path.ends_with("_test.rs")
             || path.ends_with("_tests.rs")
-    }
-
-    fn is_generated_source(lines: &[&str]) -> bool {
-        lines.iter().take(20).any(|line| {
-            let lower = line.to_ascii_lowercase();
-            lower.contains("generated")
-                || lower.contains("do not edit")
-                || lower.contains("@generated")
-        })
     }
 
     fn count_code_lines(lines: &[&str]) -> usize {
@@ -511,29 +530,6 @@ mod metrics {
                     line: line_number,
                 })
             })
-    }
-
-    fn stringly_boundary_hits(lines: &[&str]) -> Vec<SourceHit> {
-        const PATTERNS: &[&str] = &[
-            "pub kind: String",
-            "pub payload: Option<String>",
-            "pub event_type: String",
-            "pub action: String",
-        ];
-        lines
-            .iter()
-            .enumerate()
-            .filter_map(|(index, line)| {
-                let trimmed = line.trim();
-                PATTERNS
-                    .iter()
-                    .any(|pattern| trimmed.contains(pattern))
-                    .then(|| SourceHit {
-                        line: index + 1,
-                        text: trimmed.to_owned(),
-                    })
-            })
-            .collect()
     }
 
     fn has_embedded_test_module(lines: &[&str]) -> bool {
@@ -733,7 +729,6 @@ mod report {
 mod rules {
     use crate::cargo_manifest::{DependencyKind, Manifest};
     use crate::metrics::FileMetrics;
-    use std::collections::{BTreeMap, BTreeSet};
     use std::fmt;
 
     #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -764,8 +759,6 @@ mod rules {
     pub fn evaluate(files: &[FileMetrics], manifests: &[Manifest]) -> Vec<Violation> {
         let mut violations = Vec::new();
         evaluate_file_size(files, &mut violations);
-        evaluate_stringly_boundaries(files, &mut violations);
-        evaluate_duplicate_boundary_types(files, &mut violations);
         evaluate_dependencies(manifests, &mut violations);
         violations.sort_by(|left, right| {
             left.severity
@@ -848,68 +841,6 @@ mod rules {
 
     fn is_facade_name(path: &str) -> bool {
         path.ends_with("/lib.rs") || path.ends_with("/main.rs")
-    }
-
-    fn evaluate_stringly_boundaries(files: &[FileMetrics], violations: &mut Vec<Violation>) {
-        for file in files {
-            let boundary_path = file.path.contains("arcweft-core/src/step.rs")
-                || file.path.contains("agent-protocol")
-                || file.path.contains("presentation/src/input.rs");
-            if !boundary_path {
-                continue;
-            }
-            violations.extend(file.stringly_boundary_hits.iter().map(|hit| Violation {
-                severity: Severity::Warning,
-                code: "TYPE001",
-                path: file.path.clone(),
-                line: Some(hit.line),
-                message: format!("stringly boundary field: {}", hit.text),
-                suggestion:
-                    "replace kind/payload strings with a tagged enum and typed payload".to_owned(),
-            }));
-        }
-    }
-
-    fn evaluate_duplicate_boundary_types(files: &[FileMetrics], violations: &mut Vec<Violation>) {
-        let mut locations = BTreeMap::<&str, Vec<(&str, usize)>>::new();
-        for file in files {
-            for item in &file.public_types {
-                if matches!(item.name.as_str(), "InputEvent" | "AudioEvent") {
-                    locations
-                        .entry(item.name.as_str())
-                        .or_default()
-                        .push((&file.path, item.line));
-                }
-            }
-        }
-        for (name, entries) in locations {
-            let crates = entries
-                .iter()
-                .filter_map(|(path, _)| crate_directory(path))
-                .collect::<BTreeSet<_>>();
-            if crates.len() <= 1 {
-                continue;
-            }
-            for (path, line) in entries {
-                violations.push(Violation {
-                    severity: Severity::Warning,
-                    code: "TYPE002",
-                    path: path.to_owned(),
-                    line: Some(line),
-                    message: format!("boundary type {name} is defined in multiple crates"),
-                    suggestion: concat!(
-                        "move the shared contract to one low-level model crate and use a ",
-                        "specific routed/raw name"
-                    )
-                    .to_owned(),
-                });
-            }
-        }
-    }
-
-    fn crate_directory(path: &str) -> Option<&str> {
-        let mut parts = path.split('/');
-        (parts.next()? == "crates").then(|| parts.next()).flatten()
     }
 
     fn evaluate_dependencies(manifests: &[Manifest], violations: &mut Vec<Violation>) {

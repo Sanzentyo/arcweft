@@ -8,31 +8,31 @@ const fixture = JSON.parse(await readFile(
   "utf8",
 ));
 
-const hits = [];
+const errors = [];
 const ids = new Set(fixture.controls.map((control) => control.id));
 for (const required of ["input.jp_text_field", "input.long_latin_area", "input.secret_secure_field"]) {
   if (!ids.has(required)) {
-    hits.push(`missing required control id ${required}`);
+    errors.push(`missing required control id ${required}`);
   }
 }
 for (const kind of ["text_field", "text_area", "secure_field"]) {
   if (!fixture.controls.some((control) => control.kind === kind)) {
-    hits.push(`missing control kind ${kind}`);
+    errors.push(`missing control kind ${kind}`);
   }
 }
 const secure = fixture.controls.find((control) => control.kind === "secure_field");
 if (!secure?.secure || secure?.evidence?.plaintextInObservation !== false) {
-  hits.push("secure field must declare redacted observation evidence");
+  errors.push("secure field must declare redacted observation evidence");
 }
 if (!fixture.fontStacks?.some((stack) => stack.id === "jp-serif")) {
-  hits.push("fixture must record the Japanese serif font stack");
+  errors.push("fixture must record the Japanese serif font stack");
 }
 if (!fixture.fontStacks?.some((stack) => stack.id === "view-sans")) {
-  hits.push("fixture must record the View sans font stack");
+  errors.push("fixture must record the View sans font stack");
 }
 
-if (hits.length > 0) {
-  throw new Error(hits.join("\n"));
+if (errors.length > 0) {
+  throw new Error(errors.join("\n"));
 }
 
-console.log(JSON.stringify({ gate: "ime-player-rendered-fixture-source", status: "passed" }));
+console.log(JSON.stringify({ contract: "ime-player-rendered-fixture", status: "passed" }));
