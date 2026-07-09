@@ -1529,6 +1529,60 @@ effects { }
 }
 
 #[test]
+fn effect_analysis_report_owns_effect_row_report_boundary() {
+    let tree = parse_ok(
+        r#"
+flow @flow.owned_row_report owned_row_report
+effects { fs.read }
+{
+    let body = adapter.read_text(path = "story.arcw")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("effect-row report fixture lowers");
+    validate_typecheck_ready(&hir).expect("effect-row report fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "declared effect row should cover the adapter call: {:?}",
+        report.diagnostics
+    );
+    let callable = crate::effect_model::CallableId::new("flow.owned_row_report");
+    let row = report
+        .effects
+        .effect_rows()
+        .summary(&callable)
+        .expect("analysis report should own a row summary for the flow");
+    assert_eq!(
+        row.inferred().concrete().to_labels(),
+        vec!["fs.read"],
+        "owned row report should preserve inferred effects before closed projection"
+    );
+    assert_eq!(
+        row.upper_bound()
+            .expect("explicit effect row should become the upper bound")
+            .concrete()
+            .to_labels(),
+        vec!["fs.read"]
+    );
+
+    let closed = report
+        .effects
+        .closed_effect_rows()
+        .expect("owned row report should resolve through the report's substitutions");
+    let closed_row = closed.summary(&callable).expect("closed row summary");
+    assert_eq!(closed_row.inferred().to_labels(), vec!["fs.read"]);
+    assert_eq!(
+        closed_row
+            .upper_bound()
+            .expect("closed upper bound")
+            .to_labels(),
+        vec!["fs.read"]
+    );
+}
+
+#[test]
 fn closure_expected_function_type_effect_row_sets_closed_upper_bound() {
     let tree = parse_ok(
         r"

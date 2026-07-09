@@ -83,6 +83,9 @@ includes:
 - `EffectAnalysisReport` owns current row-substitution resolution, so compiler
   and LSP consumers no longer construct `EffectSubstitution` values to close
   row reports.
+- `EffectAnalysisReport` owns the current `EffectRowReport` instead of
+  rebuilding it from summaries, so future open-row evidence can live in the
+  analysis result before closed projection.
 - Agent verified-effect artifact lowering now takes `ClosedEffectRowReport`
   directly instead of accepting the full effect-analysis report.
 - LSP callable declaration hover consumes the closed row boundary for current

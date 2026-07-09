@@ -220,6 +220,9 @@ Previous named baseline before the spread rejection hardening slice:
 - `EffectAnalysisReport` now owns current row-substitution resolution and
   exposes closed row reports directly, so compiler and LSP consumers no longer
   depend on `EffectSubstitution` to close current reports.
+- `EffectAnalysisReport` now also owns the current `EffectRowReport`, so row
+  evidence is part of the analysis result before closed projection instead of
+  being reconstructed from first-order summaries by each accessor.
 - Agent verified-effect artifact lowering now takes `ClosedEffectRowReport`
   directly, so the artifact builder no longer accepts the full sema effect
   analysis report as input.

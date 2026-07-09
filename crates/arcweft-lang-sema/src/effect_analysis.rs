@@ -39,6 +39,7 @@ pub struct EffectTraceReport {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EffectAnalysisReport {
     summaries: BTreeMap<CallableId, EffectSummary>,
+    rows: EffectRowReport,
     traces: EffectTraceReport,
     row_substitutions: EffectSubstitution,
     diagnostics: Vec<EffectDiagnostic>,
@@ -50,6 +51,7 @@ pub fn analyze_effects(program: &EffectProgram) -> EffectAnalysisReport {
     let mut diagnostics = collect_graph_diagnostics(program);
     let mut summaries = initial_summaries(program);
     let fixed_point_iterations = propagate_local_effects(program, &mut summaries);
+    let rows = collect_effect_rows(&summaries);
     let traces = collect_effect_traces(program, &summaries);
 
     diagnostics.extend(validate_contracts(program, &summaries));
@@ -57,6 +59,7 @@ pub fn analyze_effects(program: &EffectProgram) -> EffectAnalysisReport {
 
     EffectAnalysisReport {
         summaries,
+        rows,
         traces,
         row_substitutions: EffectSubstitution::new(),
         diagnostics,
@@ -161,20 +164,24 @@ impl EffectAnalysisReport {
         self.fixed_point_iterations
     }
 
-    pub fn effect_rows(&self) -> EffectRowReport {
-        EffectRowReport::new(self.summaries.values().map(|summary| {
-            EffectRowSummary::closed(
-                summary.callable().clone(),
-                summary.inferred().clone(),
-                summary.declared().cloned(),
-                summary.forbidden().clone(),
-            )
-        }))
+    pub const fn effect_rows(&self) -> &EffectRowReport {
+        &self.rows
     }
 
     pub fn closed_effect_rows(&self) -> Result<ClosedEffectRowReport, EffectRowCloseError> {
-        self.effect_rows().resolve_closed(&self.row_substitutions)
+        self.rows.resolve_closed(&self.row_substitutions)
     }
+}
+
+fn collect_effect_rows(summaries: &BTreeMap<CallableId, EffectSummary>) -> EffectRowReport {
+    EffectRowReport::new(summaries.values().map(|summary| {
+        EffectRowSummary::closed(
+            summary.callable().clone(),
+            summary.inferred().clone(),
+            summary.declared().cloned(),
+            summary.forbidden().clone(),
+        )
+    }))
 }
 
 fn collect_effect_traces(

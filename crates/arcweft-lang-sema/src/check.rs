@@ -13,5 +13,8 @@ pub use crate::{
     },
     diagnostics::TypeCheckWarning,
     effect_analysis::{EffectTraceReport, EffectTraceSummary},
-    effect_row::{EffectRow, EffectRowReport, EffectRowSummary, EffectRowTail},
+    effect_row::{
+        ClosedEffectRowReport, ClosedEffectRowSummary, EffectRow, EffectRowCloseError,
+        EffectRowError, EffectRowReport, EffectRowSummary, EffectRowTail,
+    },
 };
