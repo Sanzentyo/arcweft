@@ -10,11 +10,12 @@ use crate::cst::{
     split_top_level_punctuation_sequence_once, take_doc_comment_prefix,
 };
 use crate::{
-    ast::flow::{AuthoredExpr, ContractClause, Stmt},
+    ast::flow::{AuthoredExpr, ContractClause, FlowItem, Stmt},
     ast::ids::EntityRef,
     ast::items::Item,
     expr::Expr,
     parser::{ParseOptions, SourceDialect, parse_document, parse_source},
+    types::TypeRef,
 };
 
 #[test]
@@ -513,6 +514,49 @@ flow @flow.opening opening {
     );
 
     assert_eq!(parsed.syntax_stats().numeric_seq_summaries, 1);
+}
+
+#[test]
+fn flow_let_value_continuation_keeps_effect_row_type_ascription_with_closure() {
+    let parsed = parse_source(
+        r"
+flow @flow.closure_expected_row closure_expected_row
+effects { }
+{
+    let later: String -> String effects { fs.read } =
+        |path: String| -> String {
+            adapter.read_text(path = path)
+        }
+}
+",
+    );
+    assert!(
+        parsed.errors().is_empty(),
+        "source should parse without recovery errors: {:?}",
+        parsed.errors()
+    );
+    let [Item::Flow(flow)] = parsed.typed_tree().items() else {
+        panic!("expected one flow item");
+    };
+    let [
+        FlowItem::Stmt(Stmt::Let {
+            ty: Some(TypeRef::Function { effects, .. }),
+            expr_source: Some(expr_source),
+            ..
+        }),
+    ] = flow.body()
+    else {
+        panic!("expected one typed let flow statement: {:?}", flow.body());
+    };
+
+    let effects = effects.as_ref().expect("function type effect row");
+    assert_eq!(effects.effects(), &["fs.read".to_owned()]);
+    assert!(
+        expr_source
+            .trim_start()
+            .starts_with("|path: String| -> String"),
+        "closure expression should stay attached to the let statement: {expr_source}"
+    );
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use super::support::spread_item_type;
 use super::{CallArg, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
 use crate::checker::helpers::{pattern_bindings_with_fallback, type_kind_label, type_ref_kind};
+use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_lang_syntax::expr::ClosureParam;
 use arcweft_lang_syntax::types::TypeRef;
 
@@ -17,11 +18,11 @@ impl TypeChecker<'_> {
             Some(TypeKind::Function {
                 params,
                 return_type,
-                ..
-            }) => Some((params.as_slice(), return_type.as_ref())),
+                effects,
+            }) => Some((params.as_slice(), return_type.as_ref(), effects)),
             _ => None,
         };
-        if let Some((expected_params, _)) = expected_function
+        if let Some((expected_params, _, _)) = expected_function
             && expected_params.len() != params.len()
         {
             self.errors.push(TypeCheckError::new(format!(
@@ -34,7 +35,7 @@ impl TypeChecker<'_> {
         let mut bindings = Vec::new();
         let mut function_params = Vec::new();
         for (index, param) in params.iter().enumerate() {
-            let expected_param = expected_function.and_then(|(params, _)| params.get(index));
+            let expected_param = expected_function.and_then(|(params, _, _)| params.get(index));
             let ty = param
                 .ty()
                 .map(type_ref_kind)
@@ -57,14 +58,16 @@ impl TypeChecker<'_> {
             expression_id,
             bindings.iter().map(|(name, _)| name.clone()),
         );
+        let expected_effects = expected_function.map(|(_, _, effects)| effects);
+        let expected_effect_bound = expected_effects.and_then(closed_effect_row);
         let (closure_effect_callable, previous_effect_callable) =
-            self.enter_closure_effect_callable(expression_id);
+            self.enter_closure_effect_callable(expression_id, expected_effect_bound);
         let local_snapshot = self.insert_scoped_locals(bindings);
         let declared_return_type = declared_return_type.map(type_ref_kind);
         let inferred_return_type = declared_return_type.is_none()
-            && expected_function.is_none_or(|(_, return_type)| is_unknown_type(return_type));
+            && expected_function.is_none_or(|(_, return_type, _)| is_unknown_type(return_type));
         if let (Some(expected_return), Some(declared_return_type)) = (
-            expected_function.map(|(_, return_type)| return_type),
+            expected_function.map(|(_, return_type, _)| return_type),
             declared_return_type.as_ref(),
         ) && !self.types_compatible(expected_return, declared_return_type)
         {
@@ -76,7 +79,7 @@ impl TypeChecker<'_> {
         }
         let expected_return = declared_return_type
             .as_ref()
-            .or_else(|| expected_function.map(|(_, return_type)| return_type));
+            .or_else(|| expected_function.map(|(_, return_type, _)| return_type));
         self.expected_returns.push(expected_return.cloned());
         self.push_closure_inference_context(inferred_return_type);
         let body_type = self.check_expr_with_expected(body, expected_return);
@@ -106,7 +109,11 @@ impl TypeChecker<'_> {
             .cloned()
             .or(body_type)
             .unwrap_or(TypeKind::Unit);
-        TypeKind::function(function_params, return_type)
+        TypeKind::function_with_effects(
+            function_params,
+            return_type,
+            expected_effects.cloned().unwrap_or_else(EffectRow::unknown),
+        )
     }
 
     pub(super) fn check_vec_map_method_call(
@@ -267,6 +274,10 @@ impl TypeChecker<'_> {
 
 fn is_unknown_type(ty: &TypeKind) -> bool {
     matches!(ty, TypeKind::Named(name) if name == "_")
+}
+
+fn closed_effect_row(effects: &EffectRow) -> Option<crate::effects::EffectSet> {
+    matches!(effects.tail(), EffectRowTail::Closed).then(|| effects.concrete().clone())
 }
 
 fn closure_param_label(param: &ClosureParam) -> String {

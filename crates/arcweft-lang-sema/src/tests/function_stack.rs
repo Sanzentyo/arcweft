@@ -1529,6 +1529,103 @@ effects { }
 }
 
 #[test]
+fn closure_expected_function_type_effect_row_sets_closed_upper_bound() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_expected_row closure_expected_row
+effects { }
+{
+    let later: String -> String effects { fs.read } =
+        |path: String| -> String {
+            adapter.read_text(path = path)
+        }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure expected row fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure expected row fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "expected effect row should cover closure body effects: {:?}",
+        report.diagnostics
+    );
+    let fs_read = crate::effects::EffectSet::from_labels(["fs.read"]).expect("valid effect set");
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.subject,
+                TypeJudgmentSubject::Expr {
+                    kind: "closure",
+                    ..
+                }
+            ) && matches!(
+                &judgment.ty,
+                TypeKind::Function { effects, .. }
+                    if effects.tail() == crate::effect_row::EffectRowTail::Closed
+                        && effects.concrete() == &fs_read
+            )
+        }),
+        "closure expression judgment should preserve the expected closed effect row"
+    );
+    let rows = report
+        .effects
+        .closed_effect_rows()
+        .expect("closed effect rows resolve");
+    let closure_row = rows
+        .summaries()
+        .find(|(callable, _)| callable.as_str().starts_with("closure.expr."))
+        .map(|(_, row)| row)
+        .expect("closure row is present");
+    assert_eq!(
+        closure_row.inferred().to_labels(),
+        vec!["fs.read"],
+        "closure inferred row should still come from the body"
+    );
+    assert_eq!(
+        closure_row
+            .upper_bound()
+            .expect("expected row should become the closure upper bound")
+            .to_labels(),
+        vec!["fs.read"]
+    );
+}
+
+#[test]
+fn closure_expected_empty_effect_row_rejects_body_effect() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_empty_expected_row closure_empty_expected_row
+effects { }
+{
+    let later: String -> String effects { } =
+        |path: String| -> String {
+            adapter.read_text(path = path)
+        }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure empty expected row fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure empty expected row fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("closure body effects must not exceed expected empty row");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(
+                error.kind(),
+                TypeCheckErrorKind::Effect { diagnostic }
+                    if diagnostic.code()
+                        == crate::effect_diagnostics::EffectDiagnosticCode::UpperBoundExceeded
+                        && diagnostic.callable().as_str().starts_with("closure.expr.")
+            )
+        }),
+        "expected closure upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn closure_effect_callable_evidence_joins_type_judgment_to_closed_row() {
     let tree = parse_ok(
         r"

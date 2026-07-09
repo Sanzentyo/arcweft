@@ -908,15 +908,17 @@ impl TypeChecker<'_> {
     fn enter_closure_effect_callable(
         &mut self,
         expression_id: TypeExpressionId,
+        upper_bound: Option<EffectSet>,
     ) -> (CallableId, Option<CallableId>) {
         let id = closure_effect_callable_id(expression_id);
         let source_name = id.as_str().to_owned();
+        let contract = upper_bound.map_or_else(EffectContract::inferred, EffectContract::bounded);
         if let Err(error) = self.effect_collector.register_callable(
             source_name,
             id.clone(),
             CallableKind::Function,
             Visibility::Private,
-            EffectContract::inferred(),
+            contract,
         ) {
             self.errors.push(TypeCheckError::new(error.to_string()));
         }

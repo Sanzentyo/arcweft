@@ -265,12 +265,16 @@ impl<'a> Parser<'a> {
             let is_balanced = punctuation_depth_is_balanced(depth);
             let is_dot_continuation =
                 indentation(&next.text) > indent && next_trimmed.starts_with('.');
-            if is_balanced && !is_dot_continuation {
+            let is_value_continuation = is_balanced
+                && statement_needs_value_continuation(stmt.as_ref())
+                && indentation(&next.text) > indent;
+            if is_balanced && !is_dot_continuation && !is_value_continuation {
                 break;
             }
-            // Dot-leading lines are expression continuations, not new flow
-            // items. Unbalanced punctuation also keeps multiline expression
-            // statements such as return-typed closure literals together.
+            // Dot-leading lines and value-required statement heads are
+            // expression continuations, not new flow items. Unbalanced
+            // punctuation also keeps multiline expression statements such as
+            // return-typed closure literals together.
             // Preserve a newline so parser diagnostics can still point back
             // to the authored shape when the expression is malformed.
             let text = stmt.to_mut();
@@ -701,6 +705,10 @@ fn add_punctuation_depth(depth: &mut CstPunctuationDeltas, delta: CstPunctuation
 
 fn punctuation_depth_is_balanced(depth: CstPunctuationDeltas) -> bool {
     depth.brace <= 0 && depth.paren <= 0 && depth.bracket <= 0
+}
+
+fn statement_needs_value_continuation(source: &str) -> bool {
+    source.trim_end().ends_with('=')
 }
 
 fn split_leading_command(source: &str) -> Option<(&str, &str)> {

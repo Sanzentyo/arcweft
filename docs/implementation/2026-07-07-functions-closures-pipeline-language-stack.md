@@ -1914,3 +1914,13 @@ and project function values can expose closed registered rows, partial function
 values preserve those rows, and closed non-empty rows appear in function source
 labels. Details are recorded in
 `docs/implementation/function-stack-function-type-effect-rows-2026-07-09.md`.
+
+The closure expected-row follow-up connects closed source function type rows to
+closure checking. A closed row on an expected function type becomes the
+synthetic closure callable's upper bound, so covered body effects are accepted
+and `effects { }` rejects effectful closure bodies with
+`UpperBoundExceeded`. The flow parser also keeps value-required `let ... =`
+heads joined to their following indented closure expression, so multiline
+return-typed closures with balanced function type annotations do not split into
+raw flow-item recovery. Details are recorded in
+`docs/implementation/function-stack-closure-expected-effect-row-bound-2026-07-09.md`.
