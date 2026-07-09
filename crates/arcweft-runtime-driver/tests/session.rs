@@ -3,8 +3,9 @@ use arcweft_bundle::container::{
 };
 use arcweft_bundle::patch::{
     BundlePatchArtifact, BundlePatchManifest, BundlePatchPlan, PATCH_PLAN_SCHEMA_VERSION,
-    PatchCompatibility, PatchMaterializationContract, RuntimeAbiRange, SectionChangeDerivation,
-    SectionChangeOperation, SectionCompatibilityFingerprint, SectionOperation, encode_patch_bundle,
+    PatchBundleError, PatchCompatibility, PatchMaterializationContract, RuntimeAbiRange,
+    SectionChangeDerivation, SectionChangeOperation, SectionCompatibilityFingerprint,
+    SectionOperation, encode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
@@ -69,13 +70,16 @@ fn awfb_bytes(bundle: &ArcweftBundle) -> Vec<u8> {
         .expect("fixture encodes as AWFB")
 }
 
-fn awfb_root(bytes: &[u8]) -> BundleDigest {
+fn awfb_identity(bytes: &[u8]) -> ArtifactIdentity {
     BundleView::parse(bytes, ReadBudget::default())
         .expect("fixture AWFB parses")
-        .content_root()
+        .artifact_identity()
 }
 
-fn test_patch_artifact(plan: BundlePatchPlan) -> BundlePatchArtifact {
+fn test_patch_artifact(
+    plan: BundlePatchPlan,
+    base_artifact: ArtifactIdentity,
+) -> BundlePatchArtifact {
     let compatibility_fingerprints = plan
         .operations
         .iter()
@@ -119,21 +123,23 @@ fn test_patch_artifact(plan: BundlePatchPlan) -> BundlePatchArtifact {
         .iter()
         .map(|fingerprint| fingerprint.compatibility)
         .fold(PatchCompatibility::ContentOnly, PatchCompatibility::max);
+    let target_artifact =
+        if plan.is_empty() && plan.target_content_root == base_artifact.content_root {
+            base_artifact
+        } else {
+            ArtifactIdentity::for_current_container(
+                BundleKind::Program,
+                plan.target_content_root,
+                BundleDigest::of(b"test-target-manifest"),
+            )
+        };
     BundlePatchArtifact {
         manifest: BundlePatchManifest {
             schema_version: PATCH_PLAN_SCHEMA_VERSION,
             min_reader_schema_version: PATCH_PLAN_SCHEMA_VERSION,
             runtime_abi: RuntimeAbiRange::CURRENT,
-            base_artifact: ArtifactIdentity::for_current_container(
-                BundleKind::Program,
-                plan.base_content_root,
-                BundleDigest::of(b"test-base-manifest"),
-            ),
-            target_artifact: ArtifactIdentity::for_current_container(
-                BundleKind::Program,
-                plan.target_content_root,
-                BundleDigest::of(b"test-target-manifest"),
-            ),
+            base_artifact,
+            target_artifact,
             base_content_root: plan.base_content_root,
             target_content_root: plan.target_content_root,
             compatibility,
@@ -1291,20 +1297,78 @@ fn patch_readiness_accepts_noop_patch_for_active_generation() {
     let bytes = awfb_bytes(&bundle);
     let session = BundleSession::from_awfb_bytes(&bytes, BundleSessionOptions::default())
         .expect("session starts");
-    let base = awfb_root(&bytes);
-    let artifact = test_patch_artifact(BundlePatchPlan {
-        base_content_root: base,
-        target_content_root: base,
-        operations: Vec::new(),
-    });
+    let base_artifact = awfb_identity(&bytes);
+    let artifact = test_patch_artifact(
+        BundlePatchPlan {
+            base_content_root: base_artifact.content_root,
+            target_content_root: base_artifact.content_root,
+            operations: Vec::new(),
+        },
+        base_artifact,
+    );
 
     let report = session
         .inspect_hot_swap_patch_artifact(&artifact)
         .expect("noop patch is ready");
 
     assert_eq!(report.base_generation, session.active_generation().id);
-    assert_eq!(report.compatibility, PatchCompatibility::ContentOnly);
+    assert_eq!(
+        report.declared_compatibility,
+        PatchCompatibility::ContentOnly
+    );
     assert_eq!(report.readiness, BundlePatchReadiness::Noop);
+}
+
+#[test]
+fn patch_readiness_rejects_same_root_from_a_different_base_artifact() {
+    let expected_base = fixture_bundle();
+    let mut active_base = expected_base.clone();
+    active_base.manifest.source_label = "active-base.arcw".to_owned();
+    let target = fixture_bundle_with("Updated text", false, false);
+    let expected_base_bytes = awfb_bytes(&expected_base);
+    let active_base_bytes = awfb_bytes(&active_base);
+    let target_bytes = awfb_bytes(&target);
+    let expected_base_view =
+        BundleView::parse(&expected_base_bytes, ReadBudget::default()).expect("base parses");
+    let active_base_view =
+        BundleView::parse(&active_base_bytes, ReadBudget::default()).expect("active base parses");
+    let target_view =
+        BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
+    assert_eq!(
+        expected_base_view.content_root(),
+        active_base_view.content_root()
+    );
+    assert_ne!(
+        expected_base_view.artifact_identity(),
+        active_base_view.artifact_identity()
+    );
+    let patch = BundlePatchArtifact::from_views(&expected_base_view, &target_view)
+        .expect("patch artifact builds");
+    let patch_bytes = encode_patch_bundle(&patch).expect("patch encodes");
+    let mut session =
+        BundleSession::from_awfb_bytes(&active_base_bytes, BundleSessionOptions::default())
+            .expect("session starts from the other manifest");
+
+    let error = session
+        .inspect_hot_swap_patch_artifact(&patch)
+        .expect_err("matching section roots do not authorize another base artifact");
+
+    assert!(matches!(
+        error,
+        BundleHotSwapError::WrongPatchBaseArtifact { active, expected }
+            if *active == active_base_view.artifact_identity()
+                && *expected == expected_base_view.artifact_identity()
+    ));
+
+    let error = session
+        .hot_swap_patch_bytes(&expected_base_bytes, &patch_bytes)
+        .expect_err("caller-provided base bytes cannot bypass the active artifact identity");
+    assert!(matches!(
+        error,
+        BundleHotSwapError::WrongPatchBaseArtifact { active, expected }
+            if *active == active_base_view.artifact_identity()
+                && *expected == expected_base_view.artifact_identity()
+    ));
 }
 
 #[test]
@@ -1313,15 +1377,18 @@ fn patch_readiness_reports_target_bundle_required_for_section_operations() {
     let bytes = awfb_bytes(&bundle);
     let session = BundleSession::from_awfb_bytes(&bytes, BundleSessionOptions::default())
         .expect("session starts");
-    let base = awfb_root(&bytes);
-    let artifact = test_patch_artifact(BundlePatchPlan {
-        base_content_root: base,
-        target_content_root: BundleDigest::of(b"target"),
-        operations: vec![SectionOperation::Remove {
-            id: SectionId::from_bytes([7; 16]),
-            old: BundleDigest::of(b"old"),
-        }],
-    });
+    let base_artifact = awfb_identity(&bytes);
+    let artifact = test_patch_artifact(
+        BundlePatchPlan {
+            base_content_root: base_artifact.content_root,
+            target_content_root: BundleDigest::of(b"target"),
+            operations: vec![SectionOperation::Remove {
+                id: SectionId::from_bytes([7; 16]),
+                old: BundleDigest::of(b"old"),
+            }],
+        },
+        base_artifact,
+    );
 
     let report = session
         .inspect_hot_swap_patch_artifact(&artifact)
@@ -1331,7 +1398,10 @@ fn patch_readiness_reports_target_bundle_required_for_section_operations() {
         report.readiness,
         BundlePatchReadiness::TargetBundleRequired { operations: 1 }
     );
-    assert_eq!(report.compatibility, PatchCompatibility::RestartRequired);
+    assert_eq!(
+        report.declared_compatibility,
+        PatchCompatibility::RestartRequired
+    );
 }
 
 #[test]
@@ -1340,12 +1410,15 @@ fn patch_readiness_decodes_awfb_patch_bytes() {
     let bundle_bytes = awfb_bytes(&bundle);
     let session = BundleSession::from_awfb_bytes(&bundle_bytes, BundleSessionOptions::default())
         .expect("session starts");
-    let base = awfb_root(&bundle_bytes);
-    let artifact = test_patch_artifact(BundlePatchPlan {
-        base_content_root: base,
-        target_content_root: base,
-        operations: Vec::new(),
-    });
+    let base_artifact = awfb_identity(&bundle_bytes);
+    let artifact = test_patch_artifact(
+        BundlePatchPlan {
+            base_content_root: base_artifact.content_root,
+            target_content_root: base_artifact.content_root,
+            operations: Vec::new(),
+        },
+        base_artifact,
+    );
     let bytes = encode_patch_bundle(&artifact).expect("patch bundle encodes");
 
     let report = session
@@ -1353,7 +1426,10 @@ fn patch_readiness_decodes_awfb_patch_bytes() {
         .expect("patch bundle decodes");
 
     assert_eq!(report.readiness, BundlePatchReadiness::Noop);
-    assert_eq!(report.compatibility, PatchCompatibility::ContentOnly);
+    assert_eq!(
+        report.declared_compatibility,
+        PatchCompatibility::ContentOnly
+    );
 }
 
 #[test]
@@ -1362,17 +1438,28 @@ fn patch_readiness_rejects_wrong_active_base() {
     let bytes = awfb_bytes(&bundle);
     let session = BundleSession::from_awfb_bytes(&bytes, BundleSessionOptions::default())
         .expect("session starts");
-    let artifact = test_patch_artifact(BundlePatchPlan {
-        base_content_root: BundleDigest::of(b"other-base"),
-        target_content_root: BundleDigest::of(b"target"),
-        operations: Vec::new(),
-    });
+    let other_base = BundleDigest::of(b"other-base");
+    let artifact = test_patch_artifact(
+        BundlePatchPlan {
+            base_content_root: other_base,
+            target_content_root: BundleDigest::of(b"target"),
+            operations: Vec::new(),
+        },
+        ArtifactIdentity::for_current_container(
+            BundleKind::Program,
+            other_base,
+            BundleDigest::of(b"other-base-manifest"),
+        ),
+    );
 
     let error = session
         .inspect_hot_swap_patch_artifact(&artifact)
         .expect_err("wrong base rejects");
 
-    assert!(matches!(error, BundleHotSwapError::WrongPatchBase(_)));
+    assert!(matches!(
+        error,
+        BundleHotSwapError::WrongPatchBaseArtifact { .. }
+    ));
 }
 
 #[test]
@@ -1380,35 +1467,47 @@ fn patch_readiness_requires_awfb_backed_session() {
     let bundle = fixture_bundle();
     let session =
         BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    let artifact = test_patch_artifact(BundlePatchPlan {
-        base_content_root: BundleDigest::of(b"base"),
-        target_content_root: BundleDigest::of(b"target"),
-        operations: Vec::new(),
-    });
+    let base = BundleDigest::of(b"base");
+    let artifact = test_patch_artifact(
+        BundlePatchPlan {
+            base_content_root: base,
+            target_content_root: BundleDigest::of(b"target"),
+            operations: Vec::new(),
+        },
+        ArtifactIdentity::for_current_container(
+            BundleKind::Program,
+            base,
+            BundleDigest::of(b"base-manifest"),
+        ),
+    );
 
     let error = session
         .inspect_hot_swap_patch_artifact(&artifact)
-        .expect_err("decoded-only session has no AWFB base root");
+        .expect_err("decoded-only session has no AWFB artifact identity");
 
     assert!(matches!(
         error,
-        BundleHotSwapError::MissingActiveContainerRoot
+        BundleHotSwapError::MissingActiveContainerIdentity
     ));
 }
 
 #[test]
-fn hot_swap_patch_bytes_reports_restart_required_before_materializing_target() {
+fn hot_swap_patch_bytes_does_not_trust_declared_restart_before_materialization() {
     let bundle = fixture_bundle();
     let bundle_bytes = awfb_bytes(&bundle);
-    let base = awfb_root(&bundle_bytes);
-    let artifact = test_patch_artifact(BundlePatchPlan {
-        base_content_root: base,
-        target_content_root: BundleDigest::of(b"target"),
-        operations: vec![SectionOperation::Remove {
-            id: SectionId::from_bytes([9; 16]),
-            old: BundleDigest::of(b"old"),
-        }],
-    });
+    let base_artifact = awfb_identity(&bundle_bytes);
+    let base = base_artifact.content_root;
+    let artifact = test_patch_artifact(
+        BundlePatchPlan {
+            base_content_root: base,
+            target_content_root: BundleDigest::of(b"target"),
+            operations: vec![SectionOperation::Remove {
+                id: SectionId::from_bytes([9; 16]),
+                old: BundleDigest::of(b"old"),
+            }],
+        },
+        base_artifact,
+    );
     let patch_bytes = encode_patch_bundle(&artifact).expect("patch bundle encodes");
     let mut session =
         BundleSession::from_awfb_bytes(&bundle_bytes, BundleSessionOptions::default())
@@ -1416,15 +1515,89 @@ fn hot_swap_patch_bytes_reports_restart_required_before_materializing_target() {
 
     let error = session
         .hot_swap_patch_bytes(b"not an AWFB base", &patch_bytes)
-        .expect_err("restart-required patch rejects before materialization");
+        .expect_err("unverified restart declaration must not bypass materialization");
 
     assert!(matches!(
         error,
-        BundleHotSwapError::RestartRequired {
-            compatibility: SwapCompatibility::RestartRequired,
-        }
+        BundleHotSwapError::MaterializePatch(PatchBundleError::Container(_))
     ));
     assert_eq!(session.active_container_content_root(), Some(base));
+}
+
+#[test]
+fn hot_swap_patch_bytes_materializes_noop_before_reporting_success() {
+    let bundle = fixture_bundle();
+    let bundle_bytes = awfb_bytes(&bundle);
+    let view = BundleView::parse(&bundle_bytes, ReadBudget::default()).expect("AWFB parses");
+    let patch = BundlePatchArtifact::from_views(&view, &view).expect("noop patch artifact");
+    let patch_bytes = encode_patch_bundle(&patch).expect("noop patch encodes");
+    let mut session =
+        BundleSession::from_awfb_bytes(&bundle_bytes, BundleSessionOptions::default())
+            .expect("session starts");
+    let generation = session.active_generation().id;
+
+    let error = session
+        .hot_swap_patch_bytes(b"not an AWFB base", &patch_bytes)
+        .expect_err("noop patch still validates its materialized base identity");
+    assert!(matches!(
+        error,
+        BundleHotSwapError::MaterializePatch(PatchBundleError::Container(_))
+    ));
+
+    let report = session
+        .hot_swap_patch_bytes(&bundle_bytes, &patch_bytes)
+        .expect("verified noop succeeds");
+    assert_eq!(report.generation, generation);
+    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
+    assert_eq!(session.active_generation().id, generation);
+    assert_eq!(
+        session.active_container_content_root(),
+        Some(view.content_root())
+    );
+    assert_eq!(
+        session.active_container_artifact_identity(),
+        Some(view.artifact_identity())
+    );
+}
+
+#[test]
+fn hot_swap_patch_bytes_applies_manifest_only_target() {
+    let old_bundle = fixture_bundle();
+    let mut new_bundle = old_bundle.clone();
+    new_bundle.manifest.source_label = "manifest-only-target.arcw".to_owned();
+    let old_bytes = awfb_bytes(&old_bundle);
+    let new_bytes = awfb_bytes(&new_bundle);
+    let old_view = BundleView::parse(&old_bytes, ReadBudget::default()).expect("old AWFB parses");
+    let new_view = BundleView::parse(&new_bytes, ReadBudget::default()).expect("new AWFB parses");
+    assert_eq!(old_view.content_root(), new_view.content_root());
+    assert_ne!(old_view.artifact_identity(), new_view.artifact_identity());
+    let patch = BundlePatchArtifact::from_views(&old_view, &new_view).expect("patch artifact");
+    assert!(patch.plan.is_empty());
+    let patch_bytes = encode_patch_bundle(&patch).expect("patch encodes");
+    let mut session = BundleSession::from_awfb_bytes(&old_bytes, BundleSessionOptions::default())
+        .expect("session starts");
+
+    let readiness = session
+        .inspect_hot_swap_patch_artifact(&patch)
+        .expect("manifest-only patch is ready");
+    assert_eq!(
+        readiness.readiness,
+        BundlePatchReadiness::TargetBundleRequired { operations: 0 }
+    );
+    let report = session
+        .hot_swap_patch_bytes(&old_bytes, &patch_bytes)
+        .expect("manifest-only patch applies");
+
+    assert_eq!(
+        report.generation,
+        arcweft_runtime_driver::swap::GenerationId(1)
+    );
+    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
+    assert_eq!(session.source_label(), "manifest-only-target.arcw");
+    assert_eq!(
+        session.active_container_artifact_identity(),
+        Some(new_view.artifact_identity())
+    );
 }
 
 #[test]
@@ -1460,4 +1633,41 @@ fn hot_swap_patch_bytes_materializes_target_and_applies_content_only_swap() {
             .map(|frame| frame.text.as_str()),
         Some("New text")
     );
+}
+
+#[test]
+fn hot_swap_patch_bytes_rejects_tampered_compatibility_without_mutating_session() {
+    let old_bundle = fixture_bundle_with("Old text", false, false);
+    let new_bundle = fixture_bundle_with("New text", false, false);
+    let old_bytes = awfb_bytes(&old_bundle);
+    let new_bytes = awfb_bytes(&new_bundle);
+    let old_view = BundleView::parse(&old_bytes, ReadBudget::default()).expect("old AWFB parses");
+    let new_view = BundleView::parse(&new_bytes, ReadBudget::default()).expect("new AWFB parses");
+    let mut patch = BundlePatchArtifact::from_views(&old_view, &new_view).expect("patch artifact");
+    patch.manifest.compatibility = PatchCompatibility::CodeCompatible;
+    for fingerprint in &mut patch.manifest.compatibility_fingerprints {
+        fingerprint.compatibility = PatchCompatibility::CodeCompatible;
+    }
+    let patch_bytes = encode_patch_bundle(&patch).expect("self-consistent tamper encodes");
+    let mut session = BundleSession::from_awfb_bytes(&old_bytes, BundleSessionOptions::default())
+        .expect("session starts");
+    let generation_before = session.active_generation().id;
+    let root_before = session.active_container_content_root();
+    let source_before = session.source_label().to_owned();
+    let presentation_before = session.presentation().clone();
+
+    let error = session
+        .hot_swap_patch_bytes(&old_bytes, &patch_bytes)
+        .expect_err("materialized fingerprint verification rejects tampering");
+
+    assert!(matches!(
+        error,
+        BundleHotSwapError::MaterializePatch(
+            PatchBundleError::MaterializedFingerprintMismatch { .. }
+        )
+    ));
+    assert_eq!(session.active_generation().id, generation_before);
+    assert_eq!(session.active_container_content_root(), root_before);
+    assert_eq!(session.source_label(), source_before);
+    assert_eq!(session.presentation(), &presentation_before);
 }

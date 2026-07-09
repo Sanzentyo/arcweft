@@ -1180,7 +1180,7 @@ fn run_patched_bundle_with_native_adapters(
         eprintln!("error: failed to apply bundle patch: {error}");
         ExitCode::FAILURE
     })?;
-    let target_bytes = materialized.bytes;
+    let target_bytes = materialized.into_bytes();
     let target_bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &target_bytes)
         .map_err(|error| {
             eprintln!("error: failed to decode patched target bundle: {error}");

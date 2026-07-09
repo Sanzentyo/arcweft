@@ -22,10 +22,10 @@ use crate::task::{
     RuntimeTaskOwner, RuntimeTaskRecord, RuntimeTaskRegistry,
 };
 use crate::text_control_writeback::RuntimeTextControlWriteBack;
-use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
+use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::patch::{
-    BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchValidationError,
-    apply_patch_bundle, decode_patch_bundle,
+    BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchMaterializedTarget,
+    PatchValidationError, apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::{
     ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeControlStyleDiagnostics,
@@ -188,7 +188,7 @@ pub struct BundleSession {
     task_generation_pins: BTreeMap<TaskSequence, Arc<ProgramGeneration>>,
     tasks: RuntimeTaskRegistry,
     next_generation_id: u64,
-    active_container_content_root: Option<BundleDigest>,
+    active_container_identity: Option<ArtifactIdentity>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -265,7 +265,11 @@ pub struct BundlePatchReadinessReport {
     pub base_generation: GenerationId,
     pub base_content_root: BundleDigest,
     pub target_content_root: BundleDigest,
-    pub compatibility: PatchCompatibility,
+    /// Compatibility declared by the decoded patch manifest.
+    ///
+    /// This value is suitable for inspection only. Applying a patch requires
+    /// the verified compatibility returned after bundle materialization.
+    pub declared_compatibility: PatchCompatibility,
     pub readiness: BundlePatchReadiness,
 }
 
@@ -287,8 +291,13 @@ pub enum BundleHotSwapError {
     InvalidPatch(#[source] PatchBundleError),
     #[error("patch does not apply to the active generation: {0}")]
     WrongPatchBase(#[source] PatchValidationError),
+    #[error("patch base artifact mismatch: active {active:?}, expected {expected:?}")]
+    WrongPatchBaseArtifact {
+        active: Box<ArtifactIdentity>,
+        expected: Box<ArtifactIdentity>,
+    },
     #[error("active session was not created from an AWFB container")]
-    MissingActiveContainerRoot,
+    MissingActiveContainerIdentity,
     #[error("failed to materialize AWFB patch: {0}")]
     MaterializePatch(#[source] PatchBundleError),
     #[error("failed to decode materialized AWFB patch target: {message}")]
@@ -390,7 +399,7 @@ impl BundleSession {
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
     ) -> Result<Self, BundleSessionError> {
-        Self::new_with_container_root(bundle, options, None)
+        Self::new_with_container_identity(bundle, options, None)
     }
 
     pub fn from_awfb_bytes(
@@ -402,20 +411,20 @@ impl BundleSession {
                 message: error.to_string(),
             }
         })?;
-        let container_root = view.content_root();
+        let container_identity = view.artifact_identity();
         let bundle =
             ArcweftBundle::from_format_slice(BundleFormat::Awfb, bytes).map_err(|error| {
                 BundleSessionError::DecodeBundle {
                     message: error.to_string(),
                 }
             })?;
-        Self::new_with_container_root(&bundle, options, Some(container_root))
+        Self::new_with_container_identity(&bundle, options, Some(container_identity))
     }
 
-    fn new_with_container_root(
+    fn new_with_container_identity(
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
-        active_container_content_root: Option<BundleDigest>,
+        active_container_identity: Option<ArtifactIdentity>,
     ) -> Result<Self, BundleSessionError> {
         let generation = Arc::new(initial_generation(bundle)?);
         let runtime = build_session_runtime(bundle, &options)?;
@@ -462,7 +471,7 @@ impl BundleSession {
             task_generation_pins: BTreeMap::new(),
             tasks: RuntimeTaskRegistry::default(),
             next_generation_id: 1,
-            active_container_content_root,
+            active_container_identity,
         })
     }
 
@@ -522,7 +531,15 @@ impl BundleSession {
     }
 
     pub const fn active_container_content_root(&self) -> Option<BundleDigest> {
-        self.active_container_content_root
+        match self.active_container_identity {
+            Some(identity) => Some(identity.content_root),
+            None => None,
+        }
+    }
+
+    /// Returns the logical identity of the active AWFB container, when present.
+    pub const fn active_container_artifact_identity(&self) -> Option<ArtifactIdentity> {
+        self.active_container_identity
     }
 
     pub const fn presentation(&self) -> &BundlePresentationSnapshot {
@@ -664,17 +681,28 @@ impl BundleSession {
         &mut self,
         bundle: &ArcweftBundle,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
-        self.hot_swap_bundle_with_container_root(bundle, None)
+        self.hot_swap_bundle_with_compatibility_floor(bundle, None, SwapCompatibility::ContentOnly)
     }
 
-    fn hot_swap_bundle_with_container_root(
+    fn hot_swap_bundle_with_compatibility_floor(
         &mut self,
         bundle: &ArcweftBundle,
-        active_container_content_root: Option<BundleDigest>,
+        next_container_identity: Option<ArtifactIdentity>,
+        compatibility_floor: SwapCompatibility,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let next_id = GenerationId(self.next_generation_id);
         let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
-        let compatibility = classify_swap(self.swap.active(), &next_generation);
+        let compatibility =
+            classify_swap(self.swap.active(), &next_generation).max(compatibility_floor);
+        if compatibility == SwapCompatibility::ContentOnly
+            && next_container_identity.is_some()
+            && next_container_identity == self.active_container_identity
+        {
+            return Ok(BundleHotSwapReport {
+                generation: self.active_generation().id,
+                compatibility,
+            });
+        }
         if compatibility == SwapCompatibility::RestartRequired {
             return Err(BundleHotSwapError::RestartRequired { compatibility });
         }
@@ -683,7 +711,7 @@ impl BundleSession {
         preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
 
         self.swap
-            .prepare(next_generation)
+            .prepare_with_compatibility(next_generation, compatibility)
             .map_err(BundleHotSwapError::Prepare)?;
         self.swap
             .begin_quiescence()
@@ -732,88 +760,61 @@ impl BundleSession {
         }
         self.retire_unused_generations();
         self.next_generation_id = self.next_generation_id.saturating_add(1);
-        self.active_container_content_root = active_container_content_root;
+        self.active_container_identity = next_container_identity;
         Ok(BundleHotSwapReport {
             generation: next_id,
             compatibility: committed,
         })
     }
 
-    fn hot_swap_bundle_with_declared_compatibility(
+    /// Applies an already materialized patch target to this session.
+    ///
+    /// Materialization proves the patch identities and compatibility from the
+    /// actual base and target bytes. The runtime independently classifies the
+    /// decoded program generation and applies whichever policy is stricter.
+    pub fn hot_swap_materialized_patch(
         &mut self,
-        bundle: &ArcweftBundle,
-        active_container_content_root: Option<BundleDigest>,
-        compatibility: SwapCompatibility,
+        materialized: &PatchMaterializedTarget,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
-        let next_id = GenerationId(self.next_generation_id);
-        let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
-        if compatibility == SwapCompatibility::RestartRequired {
-            return Err(BundleHotSwapError::RestartRequired { compatibility });
-        }
-
-        let actual = classify_swap(self.swap.active(), &next_generation);
-        if actual == SwapCompatibility::RestartRequired {
-            return Err(BundleHotSwapError::RestartRequired {
-                compatibility: actual,
+        let active_identity = self
+            .active_container_identity
+            .ok_or(BundleHotSwapError::MissingActiveContainerIdentity)?;
+        let base_identity = materialized.report().base_artifact;
+        if base_identity != active_identity {
+            return Err(BundleHotSwapError::WrongPatchBaseArtifact {
+                active: Box::new(active_identity),
+                expected: Box::new(base_identity),
             });
         }
-        let mut next_runtime = build_session_runtime(bundle, &self.options)?;
-        preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
 
-        self.swap
-            .prepare_with_compatibility(next_generation, compatibility)
-            .map_err(BundleHotSwapError::Prepare)?;
-        self.swap
-            .begin_quiescence()
-            .map_err(BundleHotSwapError::Prepare)?;
-
-        match compatibility {
-            SwapCompatibility::ContentOnly => {
-                self.source_label.clone_from(&bundle.manifest.source_label);
-                self.display = bundle.display.clone();
-                self.image_objects.clone_from(&bundle.image_objects);
-                self.text_inputs.clone_from(&next_runtime.text_inputs);
-                self.action_buttons.clone_from(&next_runtime.action_buttons);
-                self.scroll_regions.clone_from(&next_runtime.scroll_regions);
-                self.surfaces.clone_from(&next_runtime.surfaces);
-                self.text_blocks.clone_from(&next_runtime.text_blocks);
-                self.runtime_control_style_diagnostics
-                    .clone_from(&next_runtime.runtime_control_style_diagnostics);
-                self.focus_groups.clone_from(&next_runtime.focus_groups);
-                self.focus_navigation
-                    .clone_from(&next_runtime.focus_navigation);
-            }
-            SwapCompatibility::CodeCompatible => {
-                self.activate_runtime(next_runtime.clone());
-                self.pending_input_events.clear();
-                self.pending_host_call_results.clear();
-                self.waiting_action_receive_calls.clear();
-                self.presentation = BundlePresentationSnapshot::default();
-            }
-            SwapCompatibility::CodeGenerational => {
-                // Keep current fiber on the old executor. New entries are bound
-                // to the committed active generation through the runtime table.
-            }
-            SwapCompatibility::RestartRequired => {
-                unreachable!("restart-required compatibility returned before prepare")
-            }
+        let target_view =
+            BundleView::parse(materialized.bytes(), ReadBudget::default()).map_err(|error| {
+                BundleHotSwapError::DecodePatchTarget {
+                    message: error.to_string(),
+                }
+            })?;
+        let actual_identity = target_view.artifact_identity();
+        if actual_identity != materialized.report().target_artifact {
+            return Err(BundleHotSwapError::DecodePatchTarget {
+                message: format!(
+                    "materialized target identity {actual_identity:?} does not match verified identity {:?}",
+                    materialized.report().target_artifact
+                ),
+            });
         }
-
-        let committed = self.swap.commit().map_err(BundleHotSwapError::Commit)?;
-        self.runtime_images.insert(GenerationRuntimeImage::new(
-            self.swap.active().clone(),
-            next_runtime,
-        ))?;
-        if committed == SwapCompatibility::CodeCompatible {
-            self.runtime_generation_pin = Some(self.swap.pin_active_generation());
-        }
-        self.retire_unused_generations();
-        self.next_generation_id = self.next_generation_id.saturating_add(1);
-        self.active_container_content_root = active_container_content_root;
-        Ok(BundleHotSwapReport {
-            generation: next_id,
-            compatibility: committed,
-        })
+        let target_bundle =
+            ArcweftBundle::from_format_slice(BundleFormat::Awfb, materialized.bytes()).map_err(
+                |error| BundleHotSwapError::DecodePatchTarget {
+                    message: error.to_string(),
+                },
+            )?;
+        let compatibility_floor =
+            SwapCompatibility::from_patch_compatibility(materialized.compatibility());
+        self.hot_swap_bundle_with_compatibility_floor(
+            &target_bundle,
+            Some(actual_identity),
+            compatibility_floor,
+        )
     }
 
     pub fn inspect_hot_swap_patch_bytes(
@@ -831,39 +832,10 @@ impl BundleSession {
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let artifact =
             decode_patch_bundle(patch_awfb_bytes).map_err(BundleHotSwapError::DecodePatch)?;
-        let readiness = self.inspect_hot_swap_patch_artifact(&artifact)?;
-        if readiness.readiness == BundlePatchReadiness::Noop {
-            return Ok(BundleHotSwapReport {
-                generation: self.active_generation().id,
-                compatibility: SwapCompatibility::ContentOnly,
-            });
-        }
-        let declared_compatibility =
-            SwapCompatibility::from_patch_compatibility(readiness.compatibility);
-        if declared_compatibility == SwapCompatibility::RestartRequired {
-            return Err(BundleHotSwapError::RestartRequired {
-                compatibility: declared_compatibility,
-            });
-        }
+        self.inspect_hot_swap_patch_artifact(&artifact)?;
         let materialized = apply_patch_bundle(base_awfb_bytes, &artifact)
             .map_err(BundleHotSwapError::MaterializePatch)?;
-        let target_bytes = materialized.bytes;
-        let target_view =
-            BundleView::parse(&target_bytes, ReadBudget::default()).map_err(|error| {
-                BundleHotSwapError::DecodePatchTarget {
-                    message: error.to_string(),
-                }
-            })?;
-        let target_container_root = target_view.content_root();
-        let target_bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &target_bytes)
-            .map_err(|error| BundleHotSwapError::DecodePatchTarget {
-                message: error.to_string(),
-            })?;
-        self.hot_swap_bundle_with_declared_compatibility(
-            &target_bundle,
-            Some(target_container_root),
-            declared_compatibility,
-        )
+        self.hot_swap_materialized_patch(&materialized)
     }
 
     pub fn inspect_hot_swap_patch_artifact(
@@ -873,15 +845,21 @@ impl BundleSession {
         artifact
             .validate()
             .map_err(BundleHotSwapError::InvalidPatch)?;
-        let active_container_root = self
-            .active_container_content_root
-            .ok_or(BundleHotSwapError::MissingActiveContainerRoot)?;
+        let active_container_identity = self
+            .active_container_identity
+            .ok_or(BundleHotSwapError::MissingActiveContainerIdentity)?;
+        if artifact.manifest.base_artifact != active_container_identity {
+            return Err(BundleHotSwapError::WrongPatchBaseArtifact {
+                active: Box::new(active_container_identity),
+                expected: Box::new(artifact.manifest.base_artifact),
+            });
+        }
         artifact
             .plan
-            .validate_base(active_container_root)
+            .validate_base(active_container_identity.content_root)
             .map_err(BundleHotSwapError::WrongPatchBase)?;
         let readiness = if artifact.plan.is_empty()
-            && artifact.plan.target_content_root == active_container_root
+            && artifact.manifest.target_artifact == active_container_identity
         {
             BundlePatchReadiness::Noop
         } else {
@@ -893,7 +871,7 @@ impl BundleSession {
             base_generation: self.active_generation().id,
             base_content_root: artifact.plan.base_content_root,
             target_content_root: artifact.plan.target_content_root,
-            compatibility: artifact.manifest.compatibility,
+            declared_compatibility: artifact.manifest.compatibility,
             readiness,
         })
     }
@@ -1175,7 +1153,7 @@ impl BundleSession {
             generation: BundleSessionGenerationSnapshot {
                 active_generation: active.id,
                 content_root: active.content_root,
-                active_container_content_root: self.active_container_content_root,
+                active_container_identity: self.active_container_identity,
                 bytecode_abi: active.bytecode_abi,
                 adapter_requirements: active.adapter_requirements,
             },
@@ -1346,11 +1324,11 @@ impl BundleSession {
                 actual: digest_label(&active.content_root),
             });
         }
-        if snapshot.active_container_content_root != self.active_container_content_root {
+        if snapshot.active_container_identity != self.active_container_identity {
             return Err(BundleSessionSaveError::GenerationMismatch {
-                field: "active_container_content_root",
-                saved: format!("{:?}", snapshot.active_container_content_root),
-                actual: format!("{:?}", self.active_container_content_root),
+                field: "active_container_identity",
+                saved: format!("{:?}", snapshot.active_container_identity),
+                actual: format!("{:?}", self.active_container_identity),
             });
         }
         if snapshot.bytecode_abi != active.bytecode_abi {

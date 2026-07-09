@@ -2,7 +2,8 @@
 
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::patch::{
-    PatchBundleError, PatchCompatibility, apply_patch_bundle, decode_patch_bundle,
+    PatchBundleError, PatchCompatibility, PatchMaterializedTarget, apply_patch_bundle,
+    decode_patch_bundle,
 };
 use arcweft_runtime_driver::session::{
     BundleHotSwapError, BundleHotSwapReport, BundlePatchReadiness, BundlePatchReadinessReport,
@@ -25,6 +26,36 @@ pub struct NativePatchEndpoint {
     base_awfb_bytes: Vec<u8>,
     options: BundleSessionOptions,
     session: BundleSession,
+}
+
+/// A patch target materialized and verified against one endpoint generation.
+///
+/// Windowed owners may validate bundle-backed resources from `target_awfb_bytes`
+/// before committing the same target to the runtime session.
+#[derive(Debug)]
+pub struct NativePreparedPatch {
+    materialized: PatchMaterializedTarget,
+    is_noop: bool,
+}
+
+impl NativePreparedPatch {
+    /// Returns the verified target AWFB bytes.
+    #[must_use]
+    pub fn target_awfb_bytes(&self) -> &[u8] {
+        self.materialized.bytes()
+    }
+
+    /// Returns the verified target content root.
+    #[must_use]
+    pub const fn target_content_root(&self) -> BundleDigest {
+        self.materialized.report().target_artifact.content_root
+    }
+
+    /// Returns compatibility derived during target materialization.
+    #[must_use]
+    pub const fn compatibility(&self) -> PatchCompatibility {
+        self.materialized.compatibility()
+    }
 }
 
 /// Result of applying a patch through the native player endpoint.
@@ -265,38 +296,57 @@ impl NativePatchEndpoint {
         &mut self,
         patch_awfb_bytes: &[u8],
     ) -> Result<NativePatchOutcome, NativePatchEndpointError> {
+        let prepared = self.prepare_patch_bytes(patch_awfb_bytes)?;
+        self.apply_prepared_patch(prepared)
+    }
+
+    /// Materializes and verifies a patch without mutating the endpoint.
+    pub fn prepare_patch_bytes(
+        &self,
+        patch_awfb_bytes: &[u8],
+    ) -> Result<NativePreparedPatch, NativePatchEndpointError> {
         let artifact =
             decode_patch_bundle(patch_awfb_bytes).map_err(NativePatchEndpointError::DecodePatch)?;
         let readiness = self
             .session
             .inspect_hot_swap_patch_artifact(&artifact)
             .map_err(NativePatchEndpointError::InspectPatch)?;
-        if readiness.readiness == BundlePatchReadiness::Noop {
-            return Ok(NativePatchOutcome::Noop {
-                generation: readiness.base_generation,
-                content_root: readiness.target_content_root,
-            });
-        }
-
         let materialized = apply_patch_bundle(&self.base_awfb_bytes, &artifact)
             .map_err(NativePatchEndpointError::MaterializePatch)?;
-        let target_awfb_bytes = materialized.bytes;
+        Ok(NativePreparedPatch {
+            materialized,
+            is_noop: readiness.readiness == BundlePatchReadiness::Noop,
+        })
+    }
+
+    /// Commits a previously materialized target to the owned session.
+    pub fn apply_prepared_patch(
+        &mut self,
+        prepared: NativePreparedPatch,
+    ) -> Result<NativePatchOutcome, NativePatchEndpointError> {
+        let content_root = prepared.target_content_root();
+        let is_noop = prepared.is_noop;
         match self
             .session
-            .hot_swap_patch_bytes(&self.base_awfb_bytes, patch_awfb_bytes)
+            .hot_swap_materialized_patch(&prepared.materialized)
         {
+            Ok(report) if is_noop => Ok(NativePatchOutcome::Noop {
+                generation: report.generation,
+                content_root,
+            }),
             Ok(report) => {
-                self.base_awfb_bytes = target_awfb_bytes;
+                self.base_awfb_bytes = prepared.materialized.into_bytes();
                 Ok(NativePatchOutcome::Applied {
                     report,
-                    content_root: readiness.target_content_root,
+                    content_root,
                 })
             }
-            Err(BundleHotSwapError::RestartRequired { .. }) => self.restart_from_patch_target(
-                target_awfb_bytes,
-                readiness.compatibility,
-                readiness.target_content_root,
-            ),
+            Err(BundleHotSwapError::RestartRequired { compatibility }) => self
+                .restart_from_patch_target(
+                    prepared.materialized.into_bytes(),
+                    compatibility.patch_compatibility(),
+                    content_root,
+                ),
             Err(error) => Err(NativePatchEndpointError::LiveApply(error)),
         }
     }
@@ -478,9 +528,15 @@ mod tests {
             NativePatchEndpoint::from_awfb_bytes(old_bytes, BundleSessionOptions::default())
                 .expect("endpoint starts");
 
+        let prepared = endpoint
+            .prepare_patch_bytes(&patch_bytes)
+            .expect("content patch prepares");
+        assert_eq!(prepared.target_awfb_bytes(), new_bytes);
+        assert_eq!(prepared.target_content_root(), new_root);
+        assert_eq!(prepared.compatibility(), PatchCompatibility::ContentOnly);
         let outcome = endpoint
-            .apply_patch_bytes(&patch_bytes)
-            .expect("content patch applies");
+            .apply_prepared_patch(prepared)
+            .expect("prepared content patch applies");
 
         assert!(matches!(
             outcome,
@@ -507,16 +563,151 @@ mod tests {
     }
 
     #[test]
-    fn native_patch_endpoint_applies_generational_patch_target() {
+    fn native_prepared_patch_rejects_a_stale_endpoint_generation() {
+        let old = fixture_bundle_with("Old text", false);
+        let new = fixture_bundle_with("New text", false);
+        let old_bytes = awfb_bytes(&old);
+        let new_bytes = awfb_bytes(&new);
+        let patch_bytes = patch_bytes(&old_bytes, &new_bytes);
+        let source_endpoint =
+            NativePatchEndpoint::from_awfb_bytes(old_bytes, BundleSessionOptions::default())
+                .expect("source endpoint starts");
+        let prepared = source_endpoint
+            .prepare_patch_bytes(&patch_bytes)
+            .expect("patch prepares against source generation");
+        let mut stale_endpoint =
+            NativePatchEndpoint::from_awfb_bytes(new_bytes, BundleSessionOptions::default())
+                .expect("stale endpoint starts");
+
+        let error = stale_endpoint
+            .apply_prepared_patch(prepared)
+            .expect_err("prepared patch cannot apply to another active root");
+
+        assert!(matches!(
+            error,
+            NativePatchEndpointError::LiveApply(BundleHotSwapError::WrongPatchBaseArtifact { .. })
+        ));
+    }
+
+    #[test]
+    fn native_prepared_patch_rejects_same_root_from_a_different_artifact() {
+        let base = fixture_bundle_with("Old text", false);
+        let mut other_base = base.clone();
+        other_base.manifest.source_label = "other-base.arcw".to_owned();
+        let target = fixture_bundle_with("New text", false);
+        let base_bytes = awfb_bytes(&base);
+        let other_base_bytes = awfb_bytes(&other_base);
+        let target_bytes = awfb_bytes(&target);
+        let base_view = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
+        let other_base_view =
+            BundleView::parse(&other_base_bytes, ReadBudget::default()).expect("other base parses");
+        assert_eq!(base_view.content_root(), other_base_view.content_root());
+        assert_ne!(
+            base_view.artifact_identity(),
+            other_base_view.artifact_identity()
+        );
+
+        let patch_bytes = patch_bytes(&base_bytes, &target_bytes);
+        let source_endpoint =
+            NativePatchEndpoint::from_awfb_bytes(base_bytes, BundleSessionOptions::default())
+                .expect("source endpoint starts");
+        let prepared = source_endpoint
+            .prepare_patch_bytes(&patch_bytes)
+            .expect("patch prepares against its exact base artifact");
+        let mut other_endpoint =
+            NativePatchEndpoint::from_awfb_bytes(other_base_bytes, BundleSessionOptions::default())
+                .expect("other endpoint starts");
+
+        let error = other_endpoint
+            .apply_prepared_patch(prepared)
+            .expect_err("equal section roots do not make distinct artifacts interchangeable");
+
+        assert!(matches!(
+            error,
+            NativePatchEndpointError::LiveApply(BundleHotSwapError::WrongPatchBaseArtifact { .. })
+        ));
+    }
+
+    #[test]
+    fn native_noop_patch_validates_without_replacing_active_bytes() {
+        let bundle = fixture_bundle_with("Dialogue text", false);
+        let bundle_bytes = awfb_bytes(&bundle);
+        let patch_bytes = patch_bytes(&bundle_bytes, &bundle_bytes);
+        let content_root = awfb_root(&bundle_bytes);
+        let mut endpoint = NativePatchEndpoint::from_awfb_bytes(
+            bundle_bytes.clone(),
+            BundleSessionOptions::default(),
+        )
+        .expect("endpoint starts");
+
+        let outcome = endpoint
+            .apply_patch_bytes(&patch_bytes)
+            .expect("verified noop applies");
+
+        assert!(matches!(
+            outcome,
+            NativePatchOutcome::Noop {
+                content_root: actual,
+                ..
+            } if actual == content_root
+        ));
+        assert_eq!(endpoint.active_awfb_bytes(), bundle_bytes);
+    }
+
+    #[test]
+    fn native_manifest_only_patch_replaces_the_active_artifact() {
+        let base = fixture_bundle_with("Dialogue text", false);
+        let mut target = base.clone();
+        target.manifest.source_label = "renamed-source.arcw".to_owned();
+        let base_bytes = awfb_bytes(&base);
+        let target_bytes = awfb_bytes(&target);
+        let base_view = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
+        let target_view =
+            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
+        assert_eq!(base_view.content_root(), target_view.content_root());
+        assert_ne!(
+            base_view.artifact_identity(),
+            target_view.artifact_identity()
+        );
+        let target_identity = target_view.artifact_identity();
+        let patch_bytes = patch_bytes(&base_bytes, &target_bytes);
+        assert_eq!(patch_operation_count(&patch_bytes), 0);
+        let mut endpoint = NativePatchEndpoint::from_awfb_bytes(
+            base_bytes.clone(),
+            BundleSessionOptions::default(),
+        )
+        .expect("endpoint starts");
+
+        let outcome = endpoint
+            .apply_patch_bytes(&patch_bytes)
+            .expect("manifest-only patch applies");
+
+        assert!(matches!(
+            outcome,
+            NativePatchOutcome::Applied {
+                report: BundleHotSwapReport {
+                    generation: GenerationId(1),
+                    compatibility: SwapCompatibility::ContentOnly,
+                },
+                content_root,
+            } if content_root == target_identity.content_root
+        ));
+        assert_eq!(endpoint.active_awfb_bytes(), target_bytes);
+        assert_ne!(endpoint.active_awfb_bytes(), base_bytes);
+        assert_eq!(endpoint.session().source_label(), "renamed-source.arcw");
+        assert_eq!(
+            endpoint.session().active_container_artifact_identity(),
+            Some(target_identity)
+        );
+    }
+
+    #[test]
+    fn native_patch_endpoint_applies_code_compatible_patch_target() {
         let old = fixture_bundle_with("Dialogue text", false);
         let new = fixture_bundle_with("Dialogue text", true);
         let old_bytes = awfb_bytes(&old);
         let new_bytes = awfb_bytes(&new);
-        let patch_bytes = patch_bytes_with_compatibility(
-            &old_bytes,
-            &new_bytes,
-            PatchCompatibility::CodeGenerational,
-        );
+        let patch_bytes = patch_bytes(&old_bytes, &new_bytes);
         let new_root = awfb_root(&new_bytes);
         let mut endpoint =
             NativePatchEndpoint::from_awfb_bytes(old_bytes, BundleSessionOptions::default())
@@ -531,7 +722,7 @@ mod tests {
             NativePatchOutcome::Applied {
                 report: BundleHotSwapReport {
                     generation: GenerationId(1),
-                    compatibility: SwapCompatibility::CodeGenerational,
+                    compatibility: SwapCompatibility::CodeCompatible,
                 },
                 content_root,
             } if content_root == new_root
@@ -713,22 +904,6 @@ mod tests {
         let old_view = BundleView::parse(old, ReadBudget::default()).expect("old parses");
         let new_view = BundleView::parse(new, ReadBudget::default()).expect("new parses");
         let artifact = BundlePatchArtifact::from_views(&old_view, &new_view).expect("patch builds");
-        encode_patch_bundle(&artifact).expect("patch encodes")
-    }
-
-    fn patch_bytes_with_compatibility(
-        old: &[u8],
-        new: &[u8],
-        compatibility: PatchCompatibility,
-    ) -> Vec<u8> {
-        let old_view = BundleView::parse(old, ReadBudget::default()).expect("old parses");
-        let new_view = BundleView::parse(new, ReadBudget::default()).expect("new parses");
-        let mut artifact =
-            BundlePatchArtifact::from_views(&old_view, &new_view).expect("patch builds");
-        for fingerprint in &mut artifact.manifest.compatibility_fingerprints {
-            fingerprint.compatibility = compatibility;
-        }
-        artifact.manifest.compatibility = compatibility;
         encode_patch_bundle(&artifact).expect("patch encodes")
     }
 

@@ -1,3 +1,4 @@
+use arcweft_bundle::container::{BundleView, ReadBudget};
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
 };
@@ -276,6 +277,38 @@ fn save_decode_rejects_mismatched_bundle_generation() {
 }
 
 #[test]
+fn save_decode_rejects_same_root_from_a_different_bundle_manifest() {
+    let source_bytes = product_awfb_bytes_with_label("entry.main", "source-session.arcw");
+    let target_bytes = product_awfb_bytes_with_label("entry.main", "target-session.arcw");
+    let source_view =
+        BundleView::parse(&source_bytes, ReadBudget::default()).expect("source AWFB parses");
+    let target_view =
+        BundleView::parse(&target_bytes, ReadBudget::default()).expect("target AWFB parses");
+    assert_eq!(source_view.content_root(), target_view.content_root());
+    assert_ne!(
+        source_view.artifact_identity(),
+        target_view.artifact_identity()
+    );
+    let session = product_session_from_bytes(&source_bytes);
+    let save = session
+        .export_session_save_bytes()
+        .expect("source save exports");
+    let mut target = product_session_from_bytes(&target_bytes);
+
+    let error = target
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect_err("manifest identity mismatch rejects restore");
+
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::GenerationMismatch {
+            field: "active_container_identity",
+            ..
+        }
+    ));
+}
+
+#[test]
 fn save_decode_rejects_unsupported_executor_tier() {
     let bytes = product_awfb_bytes("entry.main");
     let session = product_session_from_bytes(&bytes);
@@ -363,9 +396,13 @@ fn encode_session_snapshot(snapshot: &BundleSessionSnapshot, schema_version: u32
 }
 
 fn product_awfb_bytes(entry: &str) -> Vec<u8> {
+    product_awfb_bytes_with_label(entry, "awbc-session.arcw")
+}
+
+fn product_awfb_bytes_with_label(entry: &str, source_label: &str) -> Vec<u8> {
     ArcweftBundle::new(
         BundleManifest {
-            source_label: "awbc-session.arcw".to_owned(),
+            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,

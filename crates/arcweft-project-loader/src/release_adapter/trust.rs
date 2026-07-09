@@ -376,7 +376,7 @@ fn inspect_materialized_target_identity(
     materialized: &PatchMaterializedTarget,
     evidence: &mut Vec<ReleaseTrustEvidence>,
 ) {
-    if materialized.report.target_artifact == patch.target_artifact {
+    if materialized.report().target_artifact == patch.target_artifact {
         evidence.push(ReleaseTrustEvidence::passed(
             ReleaseTrustEvidenceKind::MaterializedTarget,
             "materialized_target_digest_match",
@@ -389,7 +389,8 @@ fn inspect_materialized_target_identity(
             format!("target:{}", patch.target_artifact.content_root),
             format!(
                 "materialized target {:?} does not match AWFR target {:?}",
-                materialized.report.target_artifact, patch.target_artifact
+                materialized.report().target_artifact,
+                patch.target_artifact
             ),
         ));
     }
@@ -525,7 +526,7 @@ fn inspect_target_file_identity(
     evidence: &mut Vec<ReleaseTrustEvidence>,
 ) {
     match BundleView::parse(target_bytes, ReadBudget::default()) {
-        Ok(view) if view.artifact_identity() == materialized.report.target_artifact => {}
+        Ok(view) if view.artifact_identity() == materialized.report().target_artifact => {}
         Ok(view) => evidence.push(ReleaseTrustEvidence::hard_failure(
             ReleaseTrustEvidenceKind::MaterializedTarget,
             "materialized_target_digest_mismatch",
@@ -533,7 +534,7 @@ fn inspect_target_file_identity(
             format!(
                 "target mirror identity {:?} does not match materialized target {:?}",
                 view.artifact_identity(),
-                materialized.report.target_artifact
+                materialized.report().target_artifact
             ),
         )),
         Err(error) => evidence.push(ReleaseTrustEvidence::hard_failure(

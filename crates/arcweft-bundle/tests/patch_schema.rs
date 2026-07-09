@@ -4,9 +4,76 @@ use arcweft_bundle::container::{
 };
 use arcweft_bundle::patch::{
     BundlePatchArtifact, PATCH_PLAN_SCHEMA_VERSION, PatchBundleError, PatchCompatibility,
-    PatchManifestRewrite, PatchMaterializationState, SectionChangeDerivation, apply_patch_bundle,
-    decode_patch_bundle, encode_patch_bundle,
+    PatchManifestRewrite, PatchMaterializationState, SectionChangeDerivation,
+    SectionChangeOperation, apply_patch_bundle, apply_patch_bundle_bytes, decode_patch_bundle,
+    encode_patch_bundle,
 };
+
+#[derive(Clone, Copy, Debug)]
+enum FingerprintTamper {
+    Compatibility,
+    Operation,
+    RawKind,
+    KnownKind,
+    Required,
+    Derivation,
+    BaseDescriptor,
+    TargetDescriptor,
+    BaseContent,
+    TargetContent,
+}
+
+impl FingerprintTamper {
+    const ALL: [Self; 10] = [
+        Self::Compatibility,
+        Self::Operation,
+        Self::RawKind,
+        Self::KnownKind,
+        Self::Required,
+        Self::Derivation,
+        Self::BaseDescriptor,
+        Self::TargetDescriptor,
+        Self::BaseContent,
+        Self::TargetContent,
+    ];
+
+    fn apply(self, artifact: &mut BundlePatchArtifact) {
+        let fingerprint = artifact
+            .manifest
+            .compatibility_fingerprints
+            .first_mut()
+            .expect("fixture has one changed section");
+        match self {
+            Self::Compatibility => {
+                fingerprint.compatibility = PatchCompatibility::CodeCompatible;
+                artifact.manifest.compatibility = PatchCompatibility::CodeCompatible;
+            }
+            Self::Operation => fingerprint.operation = SectionChangeOperation::Add,
+            Self::RawKind => fingerprint.raw_kind_code ^= 0x0100_0000,
+            Self::KnownKind => fingerprint.known_kind = Some(BundleSectionKind::AudioGraph),
+            Self::Required => fingerprint.required = !fingerprint.required,
+            Self::Derivation => {
+                fingerprint.derivation = SectionChangeDerivation::ExternalDescriptor;
+            }
+            Self::BaseDescriptor => {
+                fingerprint.base_descriptor_fingerprint =
+                    Some(BundleDigest::of(b"tampered base descriptor"));
+            }
+            Self::TargetDescriptor => {
+                fingerprint.target_descriptor_fingerprint =
+                    Some(BundleDigest::of(b"tampered target descriptor"));
+            }
+            Self::BaseContent => {
+                fingerprint.base_content_fingerprint =
+                    Some(BundleDigest::of(b"tampered base content"));
+            }
+            Self::TargetContent => {
+                fingerprint.target_content_fingerprint =
+                    Some(BundleDigest::of(b"tampered target content"));
+            }
+        }
+    }
+}
 
 fn content_pack(
     manifest: &'static [u8],
@@ -124,18 +191,71 @@ fn materialization_rewrites_manifest_and_reports_unsigned_target_identity() {
 
     let materialized = apply_patch_bundle(&base, &artifact).expect("patch materializes");
     let materialized_view =
-        BundleView::parse(&materialized.bytes, ReadBudget::default()).expect("target parses");
+        BundleView::parse(materialized.bytes(), ReadBudget::default()).expect("target parses");
 
     assert_eq!(materialized_view.manifest(), target_view.manifest());
     assert_eq!(materialized_view.content_root(), target_view.content_root());
     assert_eq!(
-        materialized.report.target_artifact,
+        materialized.report().target_artifact,
         target_view.artifact_identity()
     );
     assert_eq!(
-        materialized.report.completed_states.last(),
+        materialized.report().completed_states.last(),
         Some(&PatchMaterializationState::Materialized)
     );
+    assert_eq!(
+        materialized.compatibility(),
+        artifact.manifest.compatibility
+    );
+    assert_eq!(materialized.into_bytes(), target);
+}
+
+#[test]
+fn patch_plan_rejects_duplicate_operation_ids() {
+    let base = content_pack(br#"{"kind":"content"}"#, b"old", false);
+    let target = content_pack(br#"{"kind":"content"}"#, b"new", false);
+    let mut artifact = patch_artifact(&base, &target);
+    let duplicate_id = match &artifact.plan.operations[0] {
+        arcweft_bundle::patch::SectionOperation::Add(descriptor) => descriptor.id(),
+        arcweft_bundle::patch::SectionOperation::Replace { next, .. } => next.id(),
+        arcweft_bundle::patch::SectionOperation::Remove { id, .. } => *id,
+    };
+    artifact
+        .plan
+        .operations
+        .push(artifact.plan.operations[0].clone());
+
+    let error = artifact
+        .validate()
+        .expect_err("duplicate operation id must reject");
+
+    assert!(matches!(
+        error,
+        PatchBundleError::DuplicateSectionOperation(id) if id == duplicate_id
+    ));
+}
+
+#[test]
+fn materialization_rejects_every_tampered_compatibility_fingerprint_field() {
+    let base = content_pack(br#"{"kind":"content"}"#, b"old", false);
+    let target = content_pack(br#"{"kind":"content"}"#, b"new", false);
+
+    for tamper in FingerprintTamper::ALL {
+        let mut artifact = patch_artifact(&base, &target);
+        tamper.apply(&mut artifact);
+        let patch_bytes = encode_patch_bundle(&artifact).unwrap_or_else(|error| {
+            panic!("{tamper:?} must pass manifest self-validation: {error}")
+        });
+
+        let error = apply_patch_bundle_bytes(&base, &patch_bytes)
+            .expect_err("materialized target must reject the tampered fingerprint");
+        match error {
+            PatchBundleError::MaterializedFingerprintMismatch {
+                declared, derived, ..
+            } => assert_ne!(declared, derived, "{tamper:?} must change a verified field"),
+            error => panic!("{tamper:?} returned the wrong error: {error}"),
+        }
+    }
 }
 
 #[test]
@@ -168,7 +288,7 @@ fn external_descriptor_change_is_metadata_only_and_preserved() {
 
     let materialized = apply_patch_bundle(&base, &artifact).expect("patch applies");
     let view =
-        BundleView::parse(&materialized.bytes, ReadBudget::default()).expect("patched parses");
+        BundleView::parse(materialized.bytes(), ReadBudget::default()).expect("patched parses");
     let section = view
         .sections()
         .iter()
@@ -196,7 +316,7 @@ fn unknown_optional_section_kind_is_preserved_through_patch() {
 
     let materialized = apply_patch_bundle(&base, &artifact).expect("patch applies");
     let view =
-        BundleView::parse(&materialized.bytes, ReadBudget::default()).expect("patched parses");
+        BundleView::parse(materialized.bytes(), ReadBudget::default()).expect("patched parses");
     let section = view.sections().first().expect("opaque section exists");
 
     assert_eq!(section.kind_code().encoded(), 0xfeed_beef);

@@ -11,9 +11,7 @@ use crate::windowed_patch::{
 };
 use arcweft_adapter_desktop::DesktopAdapterSet;
 use arcweft_bundle::container::BundleDigest;
-use arcweft_bundle::patch::{
-    PatchBundleError, PatchCompatibility, apply_patch_bundle, decode_patch_bundle,
-};
+use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::{ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleVirtualFile};
 use arcweft_core::task::TaskEvent;
 use arcweft_desktop_native::NativeDesktopBackend;
@@ -140,10 +138,6 @@ pub enum WindowedRuntimeOwnerError {
     EncodeBundle { message: String },
     #[error("failed to decode windowed runtime bundle: {message}")]
     DecodeBundle { message: String },
-    #[error("failed to decode windowed patch bundle before commit: {0}")]
-    DecodePatch(#[source] PatchBundleError),
-    #[error("failed to materialize windowed patch target before commit: {0}")]
-    MaterializePatch(#[source] PatchBundleError),
     #[error("native adapter registration failed: {0}")]
     NativeAdapter(#[from] HostAdapterError),
     #[error("failed to create windowed runtime workspace: {0}")]
@@ -441,8 +435,9 @@ impl WindowedRuntimeOwner {
         source: PatchEventSource,
         bytes: &[u8],
     ) -> Result<WindowedRuntimeOutcome, WindowedRuntimeOwnerError> {
-        let target_images = self.images_from_patch_target(bytes)?;
-        let outcome = self.endpoint.apply_patch_bytes(bytes)?;
+        let prepared = self.endpoint.prepare_patch_bytes(bytes)?;
+        let target_images = images_from_awfb_bytes(prepared.target_awfb_bytes())?;
+        let outcome = self.endpoint.apply_prepared_patch(prepared)?;
         let outcome = windowed_outcome_from_native(outcome, source);
         if outcome.refreshes_image_catalog() {
             self.images = target_images;
@@ -480,17 +475,6 @@ impl WindowedRuntimeOwner {
             compatibility: PatchCompatibility::RestartRequired,
             content_root,
         })
-    }
-
-    fn images_from_patch_target(
-        &self,
-        patch_awfb_bytes: &[u8],
-    ) -> Result<BundleImageCatalog, WindowedRuntimeOwnerError> {
-        let artifact = decode_patch_bundle(patch_awfb_bytes)
-            .map_err(WindowedRuntimeOwnerError::DecodePatch)?;
-        let materialized = apply_patch_bundle(self.endpoint.active_awfb_bytes(), &artifact)
-            .map_err(WindowedRuntimeOwnerError::MaterializePatch)?;
-        images_from_awfb_bytes(&materialized.bytes)
     }
 
     fn record_success(&mut self, source: PatchEventSource, outcome: &WindowedRuntimeOutcome) {

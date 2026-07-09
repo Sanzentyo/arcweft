@@ -450,12 +450,42 @@ impl SwapCompatibility {
         }
     }
 
+    /// Returns the equivalent bundle patch compatibility class.
+    #[must_use]
+    pub const fn patch_compatibility(self) -> PatchCompatibility {
+        match self {
+            Self::ContentOnly => PatchCompatibility::ContentOnly,
+            Self::CodeCompatible => PatchCompatibility::CodeCompatible,
+            Self::CodeGenerational => PatchCompatibility::CodeGenerational,
+            Self::RestartRequired => PatchCompatibility::RestartRequired,
+        }
+    }
+
+    /// Returns the compatibility that imposes the stricter swap policy.
+    #[must_use]
+    pub const fn max(self, other: Self) -> Self {
+        if self.rank() >= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::ContentOnly => "content-only",
             Self::CodeCompatible => "code-compatible",
             Self::CodeGenerational => "code-generational",
             Self::RestartRequired => "restart-required",
+        }
+    }
+
+    const fn rank(self) -> u8 {
+        match self {
+            Self::ContentOnly => 0,
+            Self::CodeCompatible => 1,
+            Self::CodeGenerational => 2,
+            Self::RestartRequired => 3,
         }
     }
 }
@@ -531,7 +561,7 @@ impl SwapSession {
         self.prepare_with_compatibility(next, compatibility)
     }
 
-    pub fn prepare_with_compatibility(
+    pub(crate) fn prepare_with_compatibility(
         &mut self,
         next: Arc<ProgramGeneration>,
         compatibility: SwapCompatibility,
@@ -662,6 +692,22 @@ mod tests {
         assert!(compatibility.can_apply_live());
         assert!(!compatibility.requires_quiescence());
         assert_eq!(compatibility.label(), "content-only");
+    }
+
+    #[test]
+    fn compatibility_max_preserves_the_stricter_policy() {
+        assert_eq!(
+            SwapCompatibility::ContentOnly.max(SwapCompatibility::CodeCompatible),
+            SwapCompatibility::CodeCompatible
+        );
+        assert_eq!(
+            SwapCompatibility::CodeGenerational.max(SwapCompatibility::CodeCompatible),
+            SwapCompatibility::CodeGenerational
+        );
+        assert_eq!(
+            SwapCompatibility::RestartRequired.max(SwapCompatibility::ContentOnly),
+            SwapCompatibility::RestartRequired
+        );
     }
 
     #[test]

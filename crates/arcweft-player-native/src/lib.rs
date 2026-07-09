@@ -12,7 +12,7 @@ mod windowed_runtime;
 
 pub use patch_endpoint::{
     NativePatchEndpoint, NativePatchEndpointError, NativePatchOutcome, NativePatchTransportAction,
-    NativePatchTransportEnvelope,
+    NativePatchTransportEnvelope, NativePreparedPatch,
 };
 pub use scene_windowed::{
     NativePlayerOptions, run_bundle_windowed, run_bundle_windowed_with_ingress,

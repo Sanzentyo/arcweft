@@ -213,8 +213,8 @@ pub struct PatchMaterializationReport {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PatchMaterializedTarget {
-    pub bytes: Vec<u8>,
-    pub report: PatchMaterializationReport,
+    bytes: Vec<u8>,
+    report: PatchMaterializationReport,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -254,8 +254,18 @@ pub enum PatchBundleError {
     UnsupportedRuntimeAbi { min: u32, max: u32, current: u32 },
     #[error("AWFB patch section change fingerprints do not match PatchPlan operations")]
     SectionFingerprintMismatch,
+    #[error("AWFB PatchPlan contains duplicate operation for section {0}")]
+    DuplicateSectionOperation(SectionId),
     #[error("AWFB patch manifest compatibility does not match section fingerprints")]
     CompatibilityMismatch,
+    #[error(
+        "AWFB patch section {id} compatibility fingerprint does not match the materialized target"
+    )]
+    MaterializedFingerprintMismatch {
+        id: SectionId,
+        declared: Box<SectionCompatibilityFingerprint>,
+        derived: Box<SectionCompatibilityFingerprint>,
+    },
     #[error("AWFB patch target manifest bytes are required for target manifest digest {expected}")]
     MissingTargetManifest { expected: BundleDigest },
     #[error("AWFB patch target manifest digest mismatch: expected {expected}, actual {actual}")]
@@ -396,6 +406,32 @@ impl PatchCompatibility {
     }
 }
 
+impl PatchMaterializedTarget {
+    /// Returns the verified target container bytes.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Returns the materialization evidence for this target.
+    #[must_use]
+    pub const fn report(&self) -> &PatchMaterializationReport {
+        &self.report
+    }
+
+    /// Returns compatibility derived from the active base and materialized target.
+    #[must_use]
+    pub const fn compatibility(&self) -> PatchCompatibility {
+        self.report.compatibility
+    }
+
+    /// Consumes the verified target and returns its container bytes.
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
 impl std::fmt::Display for PatchCompatibility {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(self.label())
@@ -501,6 +537,7 @@ impl BundlePatchArtifact {
                 current: BYTECODE_ABI_VERSION,
             });
         }
+        validate_operation_ids(&self.plan)?;
         self.validate_changed_section_payloads()?;
         validate_section_fingerprints(&self.plan, &self.manifest.compatibility_fingerprints)?;
         if compatibility_for_fingerprints(&self.manifest.compatibility_fingerprints)
@@ -613,6 +650,7 @@ pub fn decode_patch_bundle(bytes: &[u8]) -> Result<BundlePatchArtifact, PatchBun
         serde_json::from_slice(view.manifest()).map_err(PatchBundleError::DecodePayload)?;
     validate_schema(manifest.schema_version)?;
     let plan_section = decode_patch_plan_section(&view)?;
+    validate_operation_ids(&plan_section.plan)?;
     let changed_sections = decode_changed_sections(&view, &plan_section.plan)?;
     let artifact = BundlePatchArtifact {
         manifest,
@@ -701,6 +739,7 @@ pub fn apply_patch_bundle(
             expected: Box::new(artifact.manifest.target_artifact),
         });
     }
+    let compatibility = verify_materialized_fingerprints(&base, &target_view, artifact)?;
     states.push(PatchMaterializationState::TargetValidated);
     states.push(PatchMaterializationState::Materialized);
     Ok(PatchMaterializedTarget {
@@ -709,7 +748,7 @@ pub fn apply_patch_bundle(
             completed_states: states,
             base_artifact: artifact.manifest.base_artifact,
             target_artifact: artifact.manifest.target_artifact,
-            compatibility: artifact.manifest.compatibility,
+            compatibility,
             target_signature: PatchTargetSignatureState::BaseSignatureInvalidated,
         },
     })
@@ -885,6 +924,16 @@ fn operation_id(operation: &SectionOperation) -> SectionId {
         SectionOperation::Replace { next, .. } => next.id(),
         SectionOperation::Remove { id, .. } => *id,
     }
+}
+
+fn validate_operation_ids(plan: &BundlePatchPlan) -> Result<(), PatchBundleError> {
+    let mut ids = BTreeSet::new();
+    for id in plan.operations.iter().map(operation_id) {
+        if !ids.insert(id) {
+            return Err(PatchBundleError::DuplicateSectionOperation(id));
+        }
+    }
+    Ok(())
 }
 
 fn validate_old_digest(
@@ -1105,6 +1154,30 @@ fn section_fingerprints_for_plan(
         .iter()
         .map(|operation| section_fingerprint_for_operation(base, target, operation))
         .collect()
+}
+
+fn verify_materialized_fingerprints(
+    base: &BundleView<'_>,
+    target: &BundleView<'_>,
+    artifact: &BundlePatchArtifact,
+) -> Result<PatchCompatibility, PatchBundleError> {
+    let derived = section_fingerprints_for_plan(base, target, &artifact.plan)?;
+    for derived_fingerprint in &derived {
+        let declared_fingerprint = artifact
+            .manifest
+            .compatibility_fingerprints
+            .iter()
+            .find(|fingerprint| fingerprint.id == derived_fingerprint.id)
+            .ok_or(PatchBundleError::SectionFingerprintMismatch)?;
+        if declared_fingerprint != derived_fingerprint {
+            return Err(PatchBundleError::MaterializedFingerprintMismatch {
+                id: derived_fingerprint.id,
+                declared: Box::new(declared_fingerprint.clone()),
+                derived: Box::new(derived_fingerprint.clone()),
+            });
+        }
+    }
+    Ok(compatibility_for_fingerprints(&derived))
 }
 
 fn section_fingerprint_for_operation(

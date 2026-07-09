@@ -1,6 +1,6 @@
 use crate::display::BundlePresentationSnapshot;
 use crate::swap::GenerationId;
-use arcweft_bundle::container::BundleDigest;
+use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
 use arcweft_core::awbc::fiber::{
     FiberAwaitManyState, FiberFrame, FiberScope, FiberScopeCleanup, FiberSourceState, FiberState,
     FiberStreamState, FiberSuspensionReason, FiberTerminalValue,
@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 
 pub const BUNDLE_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.bundle_session";
-pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
+pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 2;
 pub const BUNDLE_SESSION_SAVE_CODEC_ID: &str = arcweft_save::TYPED_JSON_CODEC_ID;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -37,7 +37,7 @@ pub struct BundleSessionGenerationSnapshot {
     pub active_generation: GenerationId,
     pub content_root: BundleDigest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active_container_content_root: Option<BundleDigest>,
+    pub active_container_identity: Option<ArtifactIdentity>,
     pub bytecode_abi: u32,
     pub adapter_requirements: BundleDigest,
 }
