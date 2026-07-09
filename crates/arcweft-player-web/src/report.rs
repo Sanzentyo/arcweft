@@ -474,6 +474,7 @@ fn transform_support_label(support: StyledParagraphTransformSupport) -> &'static
     match support {
         StyledParagraphTransformSupport::NoTransforms => "no_transforms",
         StyledParagraphTransformSupport::MetadataOnlyUnsupported => "metadata_only_unsupported",
+        StyledParagraphTransformSupport::Rendered => "rendered",
     }
 }
 
@@ -492,6 +493,7 @@ fn glyph_transform_render_support_label(
         StyledParagraphGlyphTransformRenderSupport::MetadataOnlyUnsupported => {
             "metadata_only_unsupported"
         }
+        StyledParagraphGlyphTransformRenderSupport::Rendered => "rendered",
     }
 }
 

@@ -198,7 +198,6 @@ pub view ModernFeedbackBriefPanel() {
         .label("Product brief")
         .placeholder("Write one sharp product idea")
         .purpose(.text)
-        .enter_key(.send)
         .style(@style:.modern_feedback_panel)
         .on_submit {
           action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
@@ -240,25 +239,24 @@ flow modern_feedback_view {
     if visitor_name == "" {
         concierge: We will keep the greeting anonymous for now.
     } else {
-        concierge: Nice to meet you, #[visitor_name].
+        concierge: Nice to meet you, [effect .wave amp=6px freq=8 speed=1.7 period=1 target=run phase=glyph_transform][color #ff4050][strong][em][size 42]#[visitor_name][/size][/em][/strong][/color][/effect].
     }
 
-    {
-        let brief_panel = view(@view:.ModernFeedbackBriefPanel)
+    concierge:
+        Now the one-line panel has left scope and this multi-line panel is active.[p]
+        Use Enter for brief line breaks, then submit with the Send brief button.
 
-        concierge:
-            Now the one-line panel has left scope and this multi-line panel is active.[p]
-            Submit a product brief with Enter, IME send, or the Send brief button.
+    let brief = {
+        let brief_panel = view(@view:.ModernFeedbackBriefPanel)
         
         let brief_event = receive action(@action:.feedback.submit_brief)
-        let brief = brief_event.value
-        
-        if brief == "" {
-            concierge: No brief was submitted. The View stays ready for another pass.
-        } else {
-            concierge: Captured the view-backed brief. The next runtime step can branch into a planning route.
-        }
-        concierge: The submitted brief was: #[brief]
+        brief_event.value
+    }
+    
+    if brief == "" {
+        concierge: No brief was submitted. The View stays ready for another pass.
+    } else {
+        concierge: Captured the view-backed brief.[r][effect .wave amp=5px freq=7 speed=1.45 period=1 target=run phase=glyph_transform][color #ff4050][strong][em][size 38]#[brief][/size][/em][/strong][/color][/effect]
     }
 
     concierge: This is the end of the modern_feedback flow. Returning to the beginning.

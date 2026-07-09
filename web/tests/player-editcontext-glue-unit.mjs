@@ -201,6 +201,14 @@ try {
     });
     const shortcutDispatchAccepted = keydownHost.dispatchEvent(shortcutKey);
     await new Promise((resolve) => setTimeout(resolve, 0));
+    keydownGlue.updateFromRuntimeSnapshot({ text: "aZ", selectionStart: 2, selectionEnd: 2, multiline: true });
+    const multilineEnterKey = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    const multilineEnterDispatchAccepted = keydownHost.dispatchEvent(multilineEnterKey);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const updatesBeforeInactiveKey = keydownUpdates.length;
     keydownGlue.applyRuntimeCommand({ kind: "deactivate", session: 7 });
     const inactiveKey = new KeyboardEvent("keydown", { key: "X", bubbles: true, cancelable: true });
@@ -275,6 +283,8 @@ try {
         printableDispatchAccepted,
         shortcutDefaultPrevented: shortcutKey.defaultPrevented,
         shortcutDispatchAccepted,
+        multilineEnterDefaultPrevented: multilineEnterKey.defaultPrevented,
+        multilineEnterDispatchAccepted,
         inactiveDefaultPrevented: inactiveKey.defaultPrevented,
         inactiveDispatchAccepted,
         inactiveUpdateCount: keydownUpdates.length - updatesBeforeInactiveKey,
@@ -300,7 +310,7 @@ try {
   if (!result.statuses.includes("composition_update") || !result.statuses.includes("composition_end")) {
     throw new Error(`missing composition statuses: ${result.statuses.join(", ")}`);
   }
-  if (result.keydown.text !== "aZ") {
+  if (result.keydown.text !== "aZ\n") {
     throw new Error(`printable keydown did not replace selected text: ${JSON.stringify(result.keydown)}`);
   }
   if (!result.keydown.printableDefaultPrevented || result.keydown.printableDispatchAccepted !== false) {
@@ -309,8 +319,8 @@ try {
   if (result.keydown.shortcutDefaultPrevented || result.keydown.shortcutDispatchAccepted !== true) {
     throw new Error(`shortcut-like keydown should remain command-owned: ${JSON.stringify(result.keydown)}`);
   }
-  if (result.keydown.updates.length !== 1) {
-    throw new Error(`printable keydown should emit one text update: ${JSON.stringify(result.keydown)}`);
+  if (result.keydown.updates.length !== 2) {
+    throw new Error(`printable keydown and multiline Enter should emit two text updates: ${JSON.stringify(result.keydown)}`);
   }
   const update = result.keydown.updates[0];
   if (
@@ -324,6 +334,25 @@ try {
     update.payload.composing !== false
   ) {
     throw new Error(`unexpected printable keydown payload: ${JSON.stringify(result.keydown)}`);
+  }
+  const newlineUpdate = result.keydown.updates[1];
+  if (
+    newlineUpdate.hostId !== "unit-editcontext-keydown-host" ||
+    newlineUpdate.payload.updateRangeStart !== 2 ||
+    newlineUpdate.payload.updateRangeEnd !== 2 ||
+    newlineUpdate.payload.text !== "\n" ||
+    newlineUpdate.payload.selectionStart !== 3 ||
+    newlineUpdate.payload.selectionEnd !== 3 ||
+    newlineUpdate.payload.observedTextBefore !== "aZ" ||
+    newlineUpdate.payload.composing !== false
+  ) {
+    throw new Error(`unexpected multiline Enter payload: ${JSON.stringify(result.keydown)}`);
+  }
+  if (!result.keydown.multilineEnterDefaultPrevented || result.keydown.multilineEnterDispatchAccepted !== false) {
+    throw new Error(`multiline Enter should be claimed as a newline edit: ${JSON.stringify(result.keydown)}`);
+  }
+  if (!result.keydown.statuses.includes("newline")) {
+    throw new Error(`multiline Enter should report newline status: ${JSON.stringify(result.keydown)}`);
   }
   if (
     result.keydown.commandCalls.length !== 1 ||

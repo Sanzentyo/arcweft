@@ -267,6 +267,65 @@ flow @flow.main main {
 }
 
 #[test]
+fn hard_break_before_styled_interpolation_preserves_value_run() {
+    let parsed = parse_source(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Captured[r][effect .wave amp=5px target=run phase=glyph_transform][color #ff4050][strong][em][size 38]#[brief][/size][/em][/strong][/color][/effect]
+}
+",
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let dialogue = hir
+        .flows()
+        .first()
+        .and_then(|flow| flow.body().first())
+        .and_then(|item| match item {
+            arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+            _ => None,
+        })
+        .expect("dialogue item");
+
+    let spec = lower_dialogue_display(
+        line_id("say.rich_text.styled_interpolation_after_break"),
+        dialogue,
+        &DialogueDisplayDefaults::from_module(&hir),
+    );
+    let frame = spec
+        .resolve_frame(&RuntimeLineContext::new(vec![
+            arcweft_core::value::RuntimeBinding {
+                name: "brief".to_owned(),
+                value: arcweft_core::value::RuntimeValue::String("Idea42".to_owned()),
+            },
+        ]))
+        .expect("rich text frame resolves");
+
+    assert_eq!(frame.text, "Captured\nIdea42");
+    let brief_run = frame
+        .display_map
+        .text_runs
+        .iter()
+        .find(|run| {
+            frame
+                .text
+                .get(run.range.start..run.range.end)
+                .is_some_and(|text| text == "Idea42")
+        })
+        .expect("brief interpolation run");
+    assert!(brief_run.presentation.italic);
+    assert_eq!(brief_run.presentation.effects.len(), 1);
+    assert_eq!(brief_run.presentation.effects[0].id, "wave");
+    assert!(
+        brief_run
+            .styles
+            .iter()
+            .any(|style| matches!(style, RichTextStyle::Strong { .. }))
+    );
+}
+
+#[test]
 fn explicit_object_tag_lowers_text_proxy_metadata_to_presentation() {
     let parsed = parse_source(
         r"

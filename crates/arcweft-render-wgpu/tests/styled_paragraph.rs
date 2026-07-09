@@ -297,7 +297,7 @@ fn layout_evidence_records_reveal_state_per_glyph() {
 }
 
 #[test]
-fn layout_evidence_records_transform_metadata_without_render_support() {
+fn layout_evidence_records_rendered_transform_support() {
     let text = "Wavy words stay deterministic".to_owned();
     let mut params = BTreeMap::new();
     params.insert(
@@ -329,10 +329,10 @@ fn layout_evidence_records_transform_metadata_without_render_support() {
 
     assert_eq!(
         evidence.transform_support,
-        StyledParagraphTransformSupport::MetadataOnlyUnsupported
+        StyledParagraphTransformSupport::Rendered
     );
     assert_eq!(evidence.glyph_transforms.len(), 1);
-    assert!(!evidence.glyph_transforms[0].rendered);
+    assert!(evidence.glyph_transforms[0].rendered);
 }
 
 #[test]

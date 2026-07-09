@@ -103,6 +103,15 @@ struct TextRenderState<'a> {
     viewport: &'a Viewport,
 }
 
+#[derive(Clone, Debug)]
+struct MotionTextOverlay {
+    text: String,
+    left: f32,
+    top: f32,
+    clip_bounds: HitRect,
+    style: RenderTextStyle,
+}
+
 impl SharedRenderer {
     /// Creates pipelines for a host-selected render-target format.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
@@ -849,16 +858,34 @@ fn render_text_ranges_with_renderer(
         .collect::<Vec<_>>();
     let paragraph_buffers = styled_paragraphs
         .iter()
-        .map(|paragraph| styled_paragraph_buffer(font_system, paragraph))
+        .map(|paragraph| styled_paragraph_render_buffer(font_system, paragraph))
+        .collect::<Vec<_>>();
+    let motion_overlays = styled_paragraphs
+        .iter()
+        .filter(|paragraph| !paragraph.glyph_transforms.is_empty())
+        .flat_map(|paragraph| {
+            let buffer = styled_paragraph_buffer(font_system, paragraph);
+            styled_paragraph_motion_overlays(&buffer, paragraph)
+        })
+        .collect::<Vec<_>>();
+    let mut motion_overlay_buffers = motion_overlays
+        .iter()
+        .map(|overlay| motion_overlay_buffer(font_system, overlay))
         .collect::<Vec<_>>();
     let paragraph_areas = paragraph_buffers
         .iter()
         .zip(styled_paragraphs)
         .map(|(buffer, paragraph)| styled_paragraph_text_area(buffer, paragraph, text_scale_factor))
         .collect::<Vec<_>>();
+    let motion_overlay_areas = motion_overlay_buffers
+        .iter_mut()
+        .zip(&motion_overlays)
+        .map(|(buffer, overlay)| motion_overlay_text_area(buffer, overlay, text_scale_factor))
+        .collect::<Vec<_>>();
     let text_areas = text_areas
         .into_iter()
         .chain(paragraph_areas)
+        .chain(motion_overlay_areas)
         .collect::<Vec<_>>();
     text_renderer
         .prepare(
@@ -1089,6 +1116,26 @@ fn styled_paragraph_buffer(
     font_system: &mut FontSystem,
     paragraph: &RenderStyledParagraph,
 ) -> Buffer {
+    styled_paragraph_buffer_with_hidden_ranges(font_system, paragraph, &[])
+}
+
+fn styled_paragraph_render_buffer(
+    font_system: &mut FontSystem,
+    paragraph: &RenderStyledParagraph,
+) -> Buffer {
+    let hidden_ranges = paragraph
+        .glyph_transforms
+        .iter()
+        .map(|transform| transform.range)
+        .collect::<Vec<_>>();
+    styled_paragraph_buffer_with_hidden_ranges(font_system, paragraph, &hidden_ranges)
+}
+
+fn styled_paragraph_buffer_with_hidden_ranges(
+    font_system: &mut FontSystem,
+    paragraph: &RenderStyledParagraph,
+    hidden_ranges: &[RichTextRange],
+) -> Buffer {
     let mut buffer = Buffer::new(
         font_system,
         Metrics::new(
@@ -1102,7 +1149,7 @@ fn styled_paragraph_buffer(
         Some(paragraph.bounds.height),
     );
     let default_attrs = attrs_from_style(&paragraph.default_style);
-    let spans = styled_paragraph_attr_spans(paragraph);
+    let spans = styled_paragraph_attr_spans(paragraph, hidden_ranges);
     buffer.set_rich_text(
         font_system,
         spans,
@@ -1114,7 +1161,10 @@ fn styled_paragraph_buffer(
     buffer
 }
 
-fn styled_paragraph_attr_spans(paragraph: &RenderStyledParagraph) -> Vec<(&str, Attrs<'_>)> {
+fn styled_paragraph_attr_spans<'a>(
+    paragraph: &'a RenderStyledParagraph,
+    hidden_ranges: &[RichTextRange],
+) -> Vec<(&'a str, Attrs<'a>)> {
     let mut output = Vec::new();
     let mut cursor = 0;
     let mut spans = paragraph.spans.iter().collect::<Vec<_>>();
@@ -1129,10 +1179,18 @@ fn styled_paragraph_attr_spans(paragraph: &RenderStyledParagraph) -> Vec<(&str, 
                 cursor,
                 start,
                 &paragraph.default_style,
+                hidden_ranges,
             );
         }
         if start < end {
-            push_revealed_attr_span(&mut output, paragraph, start, end, &span.style);
+            push_revealed_attr_span(
+                &mut output,
+                paragraph,
+                start,
+                end,
+                &span.style,
+                hidden_ranges,
+            );
             cursor = end;
         }
     }
@@ -1143,6 +1201,7 @@ fn styled_paragraph_attr_spans(paragraph: &RenderStyledParagraph) -> Vec<(&str, 
             cursor,
             paragraph.text.len(),
             &paragraph.default_style,
+            hidden_ranges,
         );
     }
     if output.is_empty() {
@@ -1152,6 +1211,7 @@ fn styled_paragraph_attr_spans(paragraph: &RenderStyledParagraph) -> Vec<(&str, 
             0,
             paragraph.text.len(),
             &paragraph.default_style,
+            hidden_ranges,
         );
     }
     output
@@ -1163,18 +1223,39 @@ fn push_revealed_attr_span<'a>(
     start: usize,
     end: usize,
     style: &'a RenderTextStyle,
+    hidden_ranges: &[RichTextRange],
 ) {
     if start >= end {
         return;
     }
     let reveal = paragraph.reveal.visible_end.min(paragraph.text.len());
-    if end <= reveal {
-        push_attr_span(output, paragraph, start, end, style, style.color[3]);
-    } else if start >= reveal {
-        push_attr_span(output, paragraph, start, end, style, TRANSPARENT_ALPHA);
-    } else {
-        push_attr_span(output, paragraph, start, reveal, style, style.color[3]);
-        push_attr_span(output, paragraph, reveal, end, style, TRANSPARENT_ALPHA);
+    let mut points = vec![start, end];
+    if start < reveal && reveal < end {
+        points.push(reveal);
+    }
+    for range in hidden_ranges {
+        let hidden_start = range.start.max(start).min(end);
+        let hidden_end = range.end.max(start).min(end);
+        if hidden_start < hidden_end {
+            points.push(hidden_start);
+            points.push(hidden_end);
+        }
+    }
+    points.sort_unstable();
+    points.dedup();
+
+    for pair in points.windows(2) {
+        let segment_start = pair[0];
+        let segment_end = pair[1];
+        let hidden = hidden_ranges
+            .iter()
+            .any(|range| range.start < segment_end && segment_start < range.end);
+        let alpha = if hidden || segment_start >= reveal {
+            TRANSPARENT_ALPHA
+        } else {
+            style.color[3]
+        };
+        push_attr_span(output, paragraph, segment_start, segment_end, style, alpha);
     }
 }
 
@@ -1208,6 +1289,96 @@ fn styled_paragraph_text_area<'a>(
             paragraph.default_style.color[1],
             paragraph.default_style.color[2],
             paragraph.default_style.color[3],
+        ),
+        custom_glyphs: &[],
+    }
+}
+
+fn styled_paragraph_motion_overlays(
+    buffer: &Buffer,
+    paragraph: &RenderStyledParagraph,
+) -> Vec<MotionTextOverlay> {
+    if paragraph.glyph_transforms.is_empty() {
+        return Vec::new();
+    }
+    let visible_end = paragraph.reveal.visible_end.min(paragraph.text.len());
+    let seconds = visual_seconds(paragraph.visual_time_millis);
+    let line_starts = text_line_start_offsets(&paragraph.text);
+    buffer
+        .layout_runs()
+        .flat_map(|run| {
+            let source_line_start = line_starts.get(run.line_i).copied().unwrap_or_default();
+            run.glyphs.iter().filter_map(move |glyph| {
+                let range = RichTextRange::new(
+                    source_line_start
+                        .saturating_add(glyph.start)
+                        .min(paragraph.text.len()),
+                    source_line_start
+                        .saturating_add(glyph.end)
+                        .min(paragraph.text.len()),
+                );
+                if range.start >= visible_end || range.end > visible_end {
+                    return None;
+                }
+                let transform = paragraph
+                    .glyph_transforms
+                    .iter()
+                    .find(|transform| ranges_intersect(transform.range, range))?;
+                let text = paragraph.text.get(range.start..range.end)?;
+                if text.trim().is_empty() {
+                    return None;
+                }
+                let offset_y = transform.motion.offset_y(seconds, range.start);
+                Some(MotionTextOverlay {
+                    text: text.to_owned(),
+                    left: paragraph.bounds.x + glyph.x,
+                    top: paragraph.bounds.y + run.line_top + offset_y,
+                    clip_bounds: paragraph.bounds,
+                    style: style_for_source_range(paragraph, range).clone(),
+                })
+            })
+        })
+        .collect()
+}
+
+fn motion_overlay_buffer(font_system: &mut FontSystem, overlay: &MotionTextOverlay) -> Buffer {
+    let mut buffer = Buffer::new(
+        font_system,
+        Metrics::new(overlay.style.font_size, overlay.style.line_height),
+    );
+    buffer.set_size(
+        font_system,
+        Some(overlay.clip_bounds.width),
+        Some(overlay.clip_bounds.height),
+    );
+    buffer.set_text(
+        font_system,
+        &overlay.text,
+        &attrs_from_style(&overlay.style),
+        Shaping::Advanced,
+        Some(Align::Left),
+    );
+    buffer.shape_until_scroll(font_system, false);
+    buffer
+}
+
+fn motion_overlay_text_area<'a>(
+    buffer: &'a Buffer,
+    overlay: &MotionTextOverlay,
+    scale_factor: f32,
+) -> TextArea<'a> {
+    let scale_factor = scale_factor.max(f32::EPSILON);
+    TextArea {
+        buffer,
+        left: overlay.left * scale_factor,
+        top: overlay.top * scale_factor,
+        scale: scale_factor,
+        bounds: scale_text_bounds(overlay.clip_bounds, scale_factor),
+        default_color: Color::rgba(
+            overlay.style.color[0],
+            overlay.style.color[1],
+            overlay.style.color[2],
+            overlay.style.color[3],
         ),
         custom_glyphs: &[],
     }
@@ -1382,11 +1553,13 @@ pub enum StyledParagraphRevealState {
 pub enum StyledParagraphTransformSupport {
     NoTransforms,
     MetadataOnlyUnsupported,
+    Rendered,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StyledParagraphGlyphTransformRenderSupport {
     MetadataOnlyUnsupported,
+    Rendered,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1417,9 +1590,11 @@ pub fn styled_paragraph_layout_evidence(
     let buffer = styled_paragraph_buffer(font_system, paragraph);
     let visible_end = paragraph.reveal.visible_end.min(paragraph.text.len());
     let seconds = visual_seconds(paragraph.visual_time_millis);
+    let line_starts = text_line_start_offsets(&paragraph.text);
     let mut line_boxes = Vec::new();
     let mut glyph_bounds = Vec::new();
     for (line_index, run) in buffer.layout_runs().enumerate() {
+        let source_line_start = line_starts.get(run.line_i).copied().unwrap_or_default();
         line_boxes.push(StyledParagraphLineBox {
             line_index,
             bounds: HitRect::new(
@@ -1430,7 +1605,14 @@ pub fn styled_paragraph_layout_evidence(
             ),
         });
         glyph_bounds.extend(run.glyphs.iter().map(|glyph| {
-            let source_range = RichTextRange::new(glyph.start, glyph.end);
+            let source_range = RichTextRange::new(
+                source_line_start
+                    .saturating_add(glyph.start)
+                    .min(paragraph.text.len()),
+                source_line_start
+                    .saturating_add(glyph.end)
+                    .min(paragraph.text.len()),
+            );
             let reveal_state = reveal_state(source_range, visible_end);
             StyledParagraphGlyphBounds {
                 line_index,
@@ -1468,7 +1650,7 @@ pub fn styled_paragraph_layout_evidence(
         transform_support: if glyph_transforms.is_empty() {
             StyledParagraphTransformSupport::NoTransforms
         } else {
-            StyledParagraphTransformSupport::MetadataOnlyUnsupported
+            StyledParagraphTransformSupport::Rendered
         },
         glyph_transforms,
     }
@@ -1529,8 +1711,8 @@ fn glyph_transform_evidence_for_range(
             node_index: transform.node_index,
             motion: transform.motion,
             sampled_offset_y: transform.motion.offset_y(seconds, range.start),
-            rendered: false,
-            render_support: StyledParagraphGlyphTransformRenderSupport::MetadataOnlyUnsupported,
+            rendered: true,
+            render_support: StyledParagraphGlyphTransformRenderSupport::Rendered,
         })
 }
 
@@ -1543,13 +1725,21 @@ fn glyph_transform_span_evidence(
         node_index: transform.node_index,
         motion: transform.motion,
         sampled_offset_y: transform.motion.offset_y(seconds, transform.range.start),
-        rendered: false,
-        render_support: StyledParagraphGlyphTransformRenderSupport::MetadataOnlyUnsupported,
+        rendered: true,
+        render_support: StyledParagraphGlyphTransformRenderSupport::Rendered,
     }
 }
 
 fn ranges_intersect(left: RichTextRange, right: RichTextRange) -> bool {
     left.start < right.end && right.start < left.end
+}
+
+fn text_line_start_offsets(text: &str) -> Vec<usize> {
+    std::iter::once(0)
+        .chain(text.char_indices().filter_map(|(index, character)| {
+            (character == '\n').then_some(index + character.len_utf8())
+        }))
+        .collect()
 }
 
 fn visual_seconds(visual_time_millis: u64) -> f32 {
@@ -2106,7 +2296,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::{RenderTextReveal, RenderTextSelectionPolicy};
+    use crate::geometry::{RenderGlyphTransformKind, RenderTextReveal, RenderTextSelectionPolicy};
 
     #[test]
     fn plain_text_block_spacing_stays_compact_in_wide_buffer() {
@@ -2167,6 +2357,64 @@ mod tests {
             right_edge < 220.0,
             "styled paragraph layout should not stretch word spacing across the full buffer: {right_edge}"
         );
+    }
+
+    #[test]
+    fn motion_overlay_keeps_transformed_text_after_hard_break() {
+        let mut font_system = new_font_system();
+        let text = "Captured the view-backed brief.\nIdea42".to_owned();
+        let brief_start = "Captured the view-backed brief.\n".len();
+        let brief_end = text.len();
+        let brief_style = RenderTextStyle {
+            font_size: 38.0,
+            line_height: 51.3,
+            color: [255, 64, 80, 255],
+            font_family: RenderFontFamily::SansSerif,
+            weight: RenderTextWeight::Bold,
+            slant: RenderTextSlant::Italic,
+        };
+        let paragraph = RenderStyledParagraph {
+            text,
+            bounds: HitRect::new(32.0, 300.0, 760.0, 180.0),
+            default_style: RenderTextStyle {
+                font_size: 25.0,
+                line_height: 34.0,
+                color: [255, 255, 255, 255],
+                font_family: RenderFontFamily::SansSerif,
+                weight: RenderTextWeight::Regular,
+                slant: RenderTextSlant::Upright,
+            },
+            spans: vec![RenderStyledTextSpan {
+                range: RichTextRange::new(brief_start, brief_end),
+                style: brief_style,
+                node_index: 2,
+            }],
+            reveal: RenderTextReveal {
+                visible_end: brief_end,
+            },
+            glyph_transforms: vec![RenderGlyphTransformSpan {
+                range: RichTextRange::new(brief_start, brief_end),
+                motion: RenderGlyphMotion {
+                    kind: RenderGlyphTransformKind::Wave,
+                    amplitude: 5.0,
+                    frequency: 7.0,
+                },
+                node_index: 2,
+            }],
+            visual_time_millis: 1_000,
+        };
+
+        let layout_buffer = styled_paragraph_buffer(&mut font_system, &paragraph);
+        let overlays = styled_paragraph_motion_overlays(&layout_buffer, &paragraph);
+        let overlay_text = overlays
+            .iter()
+            .map(|overlay| overlay.text.as_str())
+            .collect::<String>();
+
+        assert_eq!(overlay_text, "Idea42");
+        assert!(overlays.iter().all(|overlay| {
+            overlay.top > paragraph.bounds.y + paragraph.default_style.line_height * 0.5
+        }));
     }
 
     #[test]

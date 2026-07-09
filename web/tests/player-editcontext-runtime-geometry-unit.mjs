@@ -43,6 +43,7 @@ function fakeHost() {
   return {
     id: "runtime-geometry-host",
     classList: { add() {} },
+    style: {},
     hasAttribute() { return true; },
     addEventListener() {},
     removeEventListener() {},

@@ -29,6 +29,7 @@ export class ArcweftEditContextPlayerGlue {
     this.#state = {
       hostId: host.id || options.hostId || "arcweft-editcontext-host",
       secure: Boolean(options.secure),
+      multiline: Boolean(options.multiline),
       text: initialText,
       selectionStart: initialEnd,
       selectionEnd: initialEnd,
@@ -169,6 +170,7 @@ export class ArcweftEditContextPlayerGlue {
     if (!this.#state.secure) {
       const text = String(snapshot.text ?? snapshot.surroundingText ?? "");
       this.#state.text = text;
+      this.#state.multiline = Boolean(snapshot.multiline ?? this.#state.multiline);
       this.#state.selectionStart = numberOr(snapshot.selectionStart, utf16Length(text));
       this.#state.selectionEnd = numberOr(snapshot.selectionEnd, this.#state.selectionStart);
       this.#state.selectionAnchor = this.#state.selectionStart;
@@ -329,6 +331,13 @@ export class ArcweftEditContextPlayerGlue {
     if (printableText !== null && !this.#state.composing && !event.isComposing) {
       event.preventDefault();
       await this.#commitPrintableKeyText(printableText);
+      return;
+    }
+
+    if (event.key === "Enter" && this.#state.multiline && !this.#state.composing && !event.isComposing) {
+      event.preventDefault();
+      await this.#commitPrintableKeyText("\n");
+      this.#emitStatus("newline");
       return;
     }
 

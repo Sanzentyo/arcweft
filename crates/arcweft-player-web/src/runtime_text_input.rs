@@ -127,6 +127,7 @@ pub struct WebRuntimeTextInputSnapshot {
     revision: u64,
     target: String,
     secure: bool,
+    multiline: bool,
     text: String,
     surrounding_text: String,
     selection_start: u32,
@@ -651,6 +652,7 @@ fn snapshot_to_runtime(
         revision: snapshot.revision().0,
         target: snapshot.target().id().as_str().to_owned(),
         secure,
+        multiline: snapshot.options().is_multiline(),
         text: text.clone(),
         surrounding_text: text,
         selection_start: selection.start().get(),
@@ -966,6 +968,20 @@ mod tests {
         text: &str,
         secure: bool,
     ) -> TextInputClientSnapshot {
+        snapshot_with_options(
+            session,
+            target,
+            text,
+            TextInputOptions::default().secure(secure),
+        )
+    }
+
+    fn snapshot_with_options(
+        session: u64,
+        target: InteractionTarget,
+        text: &str,
+        options: TextInputOptions,
+    ) -> TextInputClientSnapshot {
         let end = TextByteOffset(u32::try_from(text.len()).unwrap());
         TextInputClientSnapshot::new(
             TextInputSessionId(session),
@@ -976,7 +992,7 @@ mod tests {
             TextRange::new(end, end),
             HitRect::new(10.0, 20.0, 240.0, 32.0),
             HitRect::new(38.0, 24.0, 1.0, 24.0),
-            TextInputOptions::default().secure(secure),
+            options,
         )
     }
 
@@ -1076,6 +1092,34 @@ mod tests {
                 TextInputOperation::SetSelection(_)
             ]
         ));
+    }
+
+    #[test]
+    fn runtime_snapshot_exposes_multiline_input_option() {
+        let target = target("web.multiline");
+        let mut bridge = WebPlayerTextInputBridge::new(
+            "arcweft-canvas",
+            WebEditContextFeatureDetection::new(true, true),
+        );
+
+        let sync = bridge
+            .sync_focus(Some(WebRuntimeTextInputFocusedControl::new(
+                snapshot_with_options(
+                    8,
+                    target,
+                    "line",
+                    TextInputOptions::default().multiline(true),
+                ),
+                geometry(8, "line"),
+                WebRuntimeTextInputFocusReason::Fixture,
+            )))
+            .unwrap();
+
+        let WebRuntimeTextInputCommand::Activate { snapshot } = &sync.commands()[0] else {
+            panic!("activate command expected");
+        };
+        assert!(snapshot.multiline);
+        assert!(!snapshot.secure);
     }
 
     #[test]

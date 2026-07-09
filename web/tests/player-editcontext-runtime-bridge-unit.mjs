@@ -67,6 +67,7 @@ function fakeHost() {
   return {
     id: "runtime-bridge-host",
     classList: { add() {} },
+    style: {},
     hasAttribute() { return true; },
     addEventListener() {},
     removeEventListener() {},
