@@ -195,6 +195,7 @@ mod tests {
         use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
         let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
+        let expected_status = format!("dialogue {}", line.canonical_label());
         let plan = RuntimePlan::new(
             Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
             vec![RuntimeFlow {
@@ -260,7 +261,7 @@ mod tests {
 
         let report = run_bundle_headless(&bundle, 8).expect("bundle runs through runtime host");
 
-        assert_eq!(report.status, "dialogue line.opening");
+        assert_eq!(report.status, expected_status);
         assert!((1..=8).contains(&report.steps));
         assert_eq!(report.frames.len(), 1);
         assert_eq!(report.frames[0].text, "Hello bundle");

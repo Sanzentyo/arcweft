@@ -8,7 +8,7 @@
       "selected_profile": null,
       "modules": [
         "crate",
-        "crate::support"
+        "crate.support"
       ],
       "compile_units": [
         {
@@ -21,7 +21,7 @@
         {
           "id": 1,
           "modules": [
-            "crate::support"
+            "crate.support"
           ],
           "cache": "miss"
         }
@@ -49,7 +49,7 @@
         {
           "query": "bytecode_unit",
           "artifact_kind": "bytecode_unit",
-          "logical_item": "bytecode-unit:crate::support",
+          "logical_item": "bytecode-unit:crate.support",
           "status": "rebuilt",
           "key": "<DIGEST>",
           "object_digest": "<DIGEST>",
@@ -85,7 +85,7 @@
         {
           "query": "link_plan",
           "artifact_kind": "link_plan",
-          "logical_item": "link-plan:crate::support",
+          "logical_item": "link-plan:crate.support",
           "status": "rebuilt",
           "key": "<DIGEST>",
           "object_digest": "<DIGEST>",
@@ -109,7 +109,7 @@
       "selected_profile": null,
       "modules": [
         "crate",
-        "crate::support"
+        "crate.support"
       ],
       "compile_units": [
         {
@@ -122,7 +122,7 @@
         {
           "id": 1,
           "modules": [
-            "crate::support"
+            "crate.support"
           ],
           "cache": "miss"
         }
@@ -150,7 +150,7 @@
         {
           "query": "bytecode_unit",
           "artifact_kind": "bytecode_unit",
-          "logical_item": "bytecode-unit:crate::support",
+          "logical_item": "bytecode-unit:crate.support",
           "status": "hit_then_rebuilt",
           "key": "<DIGEST>",
           "object_digest": "<DIGEST>",
@@ -186,7 +186,7 @@
         {
           "query": "link_plan",
           "artifact_kind": "link_plan",
-          "logical_item": "link-plan:crate::support",
+          "logical_item": "link-plan:crate.support",
           "status": "hit_then_rebuilt",
           "key": "<DIGEST>",
           "object_digest": "<DIGEST>",

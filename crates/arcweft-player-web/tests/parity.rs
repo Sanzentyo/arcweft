@@ -88,12 +88,15 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
             height_milli: 720_000,
         }
     );
+    // The generated character is 180x300. Contain-fit preserves that 3:5
+    // aspect ratio inside the authored 208x332 box and centers the 199.2px
+    // visible width horizontally.
     assert_eq!(
         report.images[1].bounds,
         WebFrameBounds {
-            x_milli: 72_000,
+            x_milli: 76_400,
             y_milli: 52_000,
-            width_milli: 208_000,
+            width_milli: 199_200,
             height_milli: 332_000,
         }
     );

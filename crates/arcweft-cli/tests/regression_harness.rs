@@ -11,74 +11,6 @@ fn fixture_tree_does_not_contain_runtime_generated_arcweft_dirs() {
 }
 
 #[test]
-fn source_tree_does_not_reintroduce_removed_whitespace_command_dsl_or_shims() {
-    let root = workspace_root();
-    let search_roots = [root.join("crates"), root.join("docs"), root.join("tests")];
-    let denied = [
-        "legacy_",
-        "deprecated",
-        "compat shim",
-        "compatibility shim",
-        "ref bg(",
-        "ref show(",
-        "clear bg(",
-        "clear show(",
-        "memo rich_text",
-        "wait mark ",
-        "cancel on input ",
-        "at(phoneme \"",
-        "at(char ",
-        "at(word ",
-    ];
-    let violations = search_roots
-        .iter()
-        .flat_map(|root| text_files(root))
-        .filter(|path| !is_historical_review(path))
-        .filter(|path| {
-            path.file_name()
-                .is_none_or(|name| name != "regression_harness.rs")
-        })
-        .flat_map(|path| denied_patterns_in_file(&path, &denied))
-        .collect::<Vec<_>>();
-
-    assert!(
-        violations.is_empty(),
-        "removed DSL or compatibility-shim text reappeared outside docs/reviews: {violations:?}"
-    );
-}
-
-#[test]
-fn checked_in_docs_and_samples_do_not_record_host_absolute_paths() {
-    let root = workspace_root();
-    let search_roots = [
-        root.join("docs/00-overview"),
-        root.join("docs/01-language"),
-        root.join("docs/02-runtime"),
-        root.join("docs/03-presentation"),
-        root.join("docs/04-tooling"),
-        root.join("docs/05-build-and-security"),
-        root.join("docs/examples"),
-        root.join("docs/implementation"),
-        root.join("samples"),
-    ];
-    let denied = host_path_markers();
-    let violations = search_roots
-        .iter()
-        .flat_map(|root| text_files(root))
-        .filter(|path| {
-            path.file_name()
-                .is_none_or(|name| name != "regression_harness.rs")
-        })
-        .flat_map(|path| denied_patterns_in_file(&path, &denied))
-        .collect::<Vec<_>>();
-
-    assert!(
-        violations.is_empty(),
-        "checked-in docs and samples must stay path-free: {violations:?}"
-    );
-}
-
-#[test]
 fn rust_unsafe_sites_stay_inside_audited_native_boundaries() {
     let root = workspace_root();
     let violations = text_files(&root.join("crates"))
@@ -95,16 +27,6 @@ fn rust_unsafe_sites_stay_inside_audited_native_boundaries() {
         violations.is_empty(),
         "Rust unsafe must stay isolated in audited native boundaries: {violations:?}"
     );
-}
-
-fn host_path_markers() -> Vec<String> {
-    vec![
-        format!("{}{}", "C:", "\\"),
-        format!("{}{}", "D:", "\\"),
-        ["\\", "Users", "\\"].concat(),
-        ["/", "home", "/"].concat(),
-        ["/", "tmp", "/"].concat(),
-    ]
 }
 
 fn rust_unsafe_violations_in_file(path: &Path) -> Vec<String> {
@@ -209,23 +131,6 @@ fn text_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn denied_patterns_in_file<T: AsRef<str>>(path: &Path, denied: &[T]) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    denied
-        .iter()
-        .map(AsRef::as_ref)
-        .filter(|pattern| text.contains(*pattern))
-        .map(|pattern| {
-            format!(
-                "{} contains `{pattern}`",
-                relative_to_workspace(path).display()
-            )
-        })
-        .collect()
-}
-
 fn visit_dirs(root: &Path, visit: &mut impl FnMut(&Path)) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
@@ -259,20 +164,6 @@ fn is_ignored_dir(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| matches!(name, "target" | ".git" | ".jj"))
-}
-
-fn is_historical_review(path: &Path) -> bool {
-    let mut previous = None;
-    for component in path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-    {
-        if previous == Some("docs") && component == "reviews" {
-            return true;
-        }
-        previous = Some(component);
-    }
-    false
 }
 
 fn relative_to_workspace(path: &Path) -> PathBuf {

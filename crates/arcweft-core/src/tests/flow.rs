@@ -5,6 +5,7 @@ use crate::{
 
 #[test]
 fn engine_steps_flow_ops_and_applies_goto() {
+    let line = super::line_id("say.opening.001");
     let group = LineTaskGroup {
         root: LineTaskScope {
             node: LineTaskNode::Seq(vec![LineTaskNode::Effect(call("opening_line"))]),
@@ -19,7 +20,7 @@ fn engine_steps_flow_ops_and_applies_goto() {
                 id: super::flow_id("flow.opening"),
                 ops: vec![
                     FlowOp::Dialogue {
-                        line: super::line_id("say.opening.001"),
+                        line: line.clone(),
                         task_group: 0,
                     },
                     FlowOp::Goto(super::flow_id("flow.next")),
@@ -53,7 +54,7 @@ fn engine_steps_flow_ops_and_applies_goto() {
     let resumed = super::runtime_step(
         &mut engine,
         RuntimeStepInput {
-            input_events: vec![super::input_event("advance", Some("say.opening.001"))],
+            input_events: vec![super::dialogue_advance(&line)],
             ..RuntimeStepInput::default()
         },
     );

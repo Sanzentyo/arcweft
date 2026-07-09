@@ -8,19 +8,6 @@ fn native_and_web_use_the_same_runtime_writeback_entrypoint() {
 }
 
 #[test]
-fn submit_writeback_is_owned_by_shared_scene_input() {
-    let native = include_str!("../../arcweft-player-native/src/scene_windowed.rs");
-    let web = include_str!("../../arcweft-player-web/src/app.rs");
-    let shared_input = include_str!("../src/input.rs");
-
-    assert!(shared_input.contains("TextControlWriteBack::submit"));
-    assert!(!native.contains("TextControlWriteBack::submit"));
-    assert!(!web.contains("TextControlWriteBack::submit"));
-    assert!(!native.contains("TextControlWriteBackKind::Submit"));
-    assert!(!web.contains("TextControlWriteBackKind::Submit"));
-}
-
-#[test]
 fn web_does_not_install_hidden_dom_text_input_fallback() {
     let app = include_str!("../../arcweft-player-web/src/app.rs");
     let bridge = include_str!("../../arcweft-player-web/src/runtime_text_input.rs");

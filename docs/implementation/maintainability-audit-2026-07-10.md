@@ -101,3 +101,74 @@ Both tests also fail when run alone, so this is not test-order interference and
 is unrelated to the CLI-only module split. A separate test-contract slice must
 construct the advance payload from the typed runtime line ID and then rerun the
 workspace gate.
+
+## Slice 2: restore typed test contracts and remove false source gates
+
+The normal workspace route exposed a chain of stale tests that had survived
+earlier API and grammar migrations. This slice now derives dialogue advance
+payloads and native status labels from `RuntimeLineId`, tests fixed-arity
+spread rejection with a genuinely dynamic sequence, pins presentation handle
+IDs to their canonical `handle.main.*` form, and updates the persistent-cache
+fixtures from removed `start(...)` syntax to `goto`. The multi-module cache
+golden now uses the language-owned dot-separated canonical module path
+`crate.support`.
+
+Five tests that inspected implementation source or documentation text were
+removed instead of being retargeted to new symbol names or file locations:
+
+- one text-control writeback source-spelling test;
+- two inset-shadow implementation/collector source-spelling tests;
+- the repository-wide removed-word scan;
+- the repository-wide host-path text scan.
+
+The corresponding `just` source-scan entrypoints were removed. Inset-shadow
+exact PNG packet validation remains, as do the behavior tests for text-control
+commands. This avoids converting the same brittle source scan into a differently
+named structural rule.
+
+Current changed-Rust-file measurements at Jujutsu change `vxqyvwvwkoqy`:
+
+| Path | Kind | Bytes | Physical LOC | Embedded tests | Major responsibility touched |
+| --- | --- | ---: | ---: | --- | --- |
+| `crates/arcweft-core/src/tests.rs` | unit-test support | 1,725 | 59 | no | typed dialogue input construction |
+| `crates/arcweft-core/src/tests/flow.rs` | unit tests | 88,953 | 2,553 | no | engine flow behavior |
+| `crates/arcweft-core/src/tests/step.rs` | unit tests | 6,360 | 198 | no | game/server stepping behavior |
+| `crates/arcweft-lang-sema/src/tests/declarations.rs` | unit tests | 42,193 | 1,394 | no | declaration and spread semantics |
+| `crates/arcweft-player-native/src/lib.rs` | production facade | 13,734 | 367 | yes | native player orchestration and status reporting |
+| `crates/arcweft-player-scene/tests/text_control_writeback_source_gates.rs` | integration tests | 1,400 | 30 | no | text-control command behavior evidence |
+| `crates/arcweft-player-web/tests/parity.rs` | integration tests | 29,159 | 845 | no | web/native presentation parity |
+| `crates/arcweft-render-wgpu/tests/view_box_shadow_exact_png_golden.rs` | integration tests | 6,275 | 201 | no | exact PNG artifact packets |
+| `crates/arcweft-runtime-plan/src/flow/tests.rs` | unit tests | 22,292 | 722 | no | flow-to-runtime-plan lowering |
+| `crates/arcweft-cli/tests/regression_harness.rs` | integration tests | 5,061 | 173 | no | checkout hygiene and audited unsafe boundaries |
+
+No Cargo dependency, public production contract, or crate boundary changed, so
+dependency fan-in and fan-out are unchanged. The largest non-generated
+production files remain `arcweft-core/src/awbc/product_step.rs` (95,176 bytes,
+2,499 LOC), `arcweft-core/src/value.rs` (83,955 bytes, 2,498 LOC),
+`arcweft-core/src/engine/eval/calls.rs` (89,488 bytes, 2,481 LOC), and
+`arcweft-cli/src/app/bundle_view.rs` plus `arcweft-runtime-plan/src/flow.rs`
+(both 2,468 LOC). They remain warning-level decomposition candidates; this
+test-contract slice does not mix in unrelated production splits.
+
+## Slice 2 validation
+
+```text
+cargo fmt --all -- --check
+cargo test -p arcweft-core --lib
+  172 passed; 0 failed
+cargo test -p arcweft-runtime-plan --lib flow::tests
+  12 passed; 0 failed
+cargo test -p arcweft-cli --test regression_harness
+  2 passed; 0 failed
+cargo test -p arcweft-cli --test seq04_8_4_persistent_cache_build_cli_goldens
+  2 passed; 0 failed
+cargo test -p arcweft-render-wgpu --test view_box_shadow_exact_png_golden --all-features
+  0 passed; 0 failed; 2 ignored Tier 2 packets
+just test-workspace
+  passed
+cargo clippy --workspace --all-targets --all-features
+  passed with pre-existing warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write target/structure-audit/slice-02
+  0 error(s); 153 warning(s)
+```

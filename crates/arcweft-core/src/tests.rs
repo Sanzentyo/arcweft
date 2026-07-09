@@ -53,3 +53,7 @@ fn input_event(kind: &str, payload: Option<&str>) -> RoutedInputEvent {
     }
     event
 }
+
+fn dialogue_advance(line: &RuntimeLineId) -> RoutedInputEvent {
+    input_event("dialogue.advance", Some(&line.canonical_label()))
+}

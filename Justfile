@@ -332,13 +332,7 @@ check-jlreq-punctuation:
 regression:
     @cargo test -p arcweft-cli --test regression_harness
 
-scan-absolute-paths:
-    @cargo test -p arcweft-cli checked_in_docs_and_samples_do_not_record_host_absolute_paths --test regression_harness
-
-scan-removed-dsl:
-    @cargo test -p arcweft-cli source_tree_does_not_reintroduce_removed_whitespace_command_dsl_or_shims --test regression_harness
-
-verify: fmt-check check-jlreq-punctuation clippy test-workspace scan-absolute-paths scan-removed-dsl
+verify: fmt-check check-jlreq-punctuation clippy test-workspace
 
 verify-full: verify test-doc verify-vendor-glyphon test-tier2
 

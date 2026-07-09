@@ -93,6 +93,7 @@ fn runtime_step_modes_apply_internal_drain_and_budget() {
 
 #[test]
 fn game_mode_stops_on_visible_output_but_server_mode_drains() {
+    let line = super::line_id("say.opening.001");
     let line_group = LineTaskGroup {
         root: LineTaskScope {
             node: LineTaskNode::Seq(vec![LineTaskNode::Effect(call("show.line"))]),
@@ -106,7 +107,7 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
             id: super::flow_id("flow.opening"),
             ops: vec![
                 FlowOp::Dialogue {
-                    line: super::line_id("say.opening.001"),
+                    line: line.clone(),
                     task_group: 0,
                 },
                 FlowOp::Return("done".to_owned()),
@@ -126,7 +127,7 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
 
     let resumed = game.step(
         RuntimeStepInput {
-            input_events: vec![super::input_event("advance", Some("say.opening.001"))],
+            input_events: vec![super::dialogue_advance(&line)],
             ..RuntimeStepInput::default()
         },
         options(RuntimeStepMode::Game, 8),
@@ -147,10 +148,7 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
 
     let resumed = server.step(
         RuntimeStepInput {
-            input_events: vec![super::input_event(
-                "dialogue.advance",
-                Some("say.opening.001"),
-            )],
+            input_events: vec![super::dialogue_advance(&line)],
             ..RuntimeStepInput::default()
         },
         options(RuntimeStepMode::Server, 8),

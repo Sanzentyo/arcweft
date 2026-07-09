@@ -89,35 +89,35 @@ flow main {
         &ops[0],
         FlowOp::Effect(LineEffectRequest::Call(call))
             if call.callee == "presentation.handle.create"
-                && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.panel")
+                && call.args.iter().any(|arg| arg == "handle = @handle.main.panel")
                 && call.args.iter().any(|arg| arg == "kind = \"view\"")
     ));
     assert!(matches!(
         &ops[1],
         FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-            if key == "handle.flow.main.panel"
+            if key == "handle.main.panel"
                 && call.callee == "presentation.handle.dispose"
     ));
     assert!(matches!(
         &ops[2],
         FlowOp::Let { pattern: RuntimePattern::Ident(name), expr: RuntimeExpr::Value(RuntimeValue::String(value)) }
-            if name == "panel" && value == "handle.flow.main.panel"
+            if name == "panel" && value == "handle.main.panel"
     ));
     assert!(matches!(
         &ops[3],
         FlowOp::Effect(LineEffectRequest::Call(call))
             if call.callee == "presentation.handle.unmount"
-                && call.args == ["handle = @handle.flow.main.panel"]
+                && call.args == ["handle = @handle.main.panel"]
     ));
     assert!(matches!(
         &ops[4],
         FlowOp::Effect(LineEffectRequest::Call(call))
             if call.callee == "presentation.handle.release"
-                && call.args == ["handle = @handle.flow.main.panel"]
+                && call.args == ["handle = @handle.main.panel"]
     ));
     assert!(matches!(
         &ops[5],
-        FlowOp::CancelCleanup { key } if key == "handle.flow.main.panel"
+        FlowOp::CancelCleanup { key } if key == "handle.main.panel"
     ));
 }
 
@@ -159,7 +159,7 @@ flow main {
             &ops[0],
             FlowOp::Effect(LineEffectRequest::Call(call))
                 if call.callee == "presentation.handle.create"
-                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.sprite")
+                    && call.args.iter().any(|arg| arg == "handle = @handle.main.sprite")
                     && call.args.iter().any(|arg| arg == "kind = \"image\"")
                     && call.args.iter().any(|arg| arg == "resource = @image.card")
                     && call.args.iter().any(|arg| arg == "visible = false")
@@ -171,7 +171,7 @@ flow main {
         matches!(
             &ops[1],
             FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-                if key == "handle.flow.main.sprite"
+                if key == "handle.main.sprite"
                     && call.callee == "presentation.handle.dispose"
         ),
         "{ops:#?}"
@@ -179,7 +179,7 @@ flow main {
     assert!(matches!(
         &ops[2],
         FlowOp::Let { pattern: RuntimePattern::Ident(name), expr: RuntimeExpr::Value(RuntimeValue::String(value)) }
-            if name == "sprite" && value == "handle.flow.main.sprite"
+            if name == "sprite" && value == "handle.main.sprite"
     ));
     for (index, callee) in [
         (3, "presentation.handle.show"),
@@ -191,14 +191,14 @@ flow main {
                 &ops[index],
                 FlowOp::Effect(LineEffectRequest::Call(call))
                     if call.callee == callee
-                        && call.args == ["handle = @handle.flow.main.sprite"]
+                        && call.args == ["handle = @handle.main.sprite"]
             ),
             "{ops:#?}"
         );
     }
     assert!(matches!(
         &ops[6],
-        FlowOp::CancelCleanup { key } if key == "handle.flow.main.sprite"
+        FlowOp::CancelCleanup { key } if key == "handle.main.sprite"
     ));
     assert!(matches!(&ops[7], FlowOp::ReturnExpr(_)));
 }
@@ -230,7 +230,7 @@ flow main {
             &ops[0],
             FlowOp::Effect(LineEffectRequest::Call(call))
                 if call.callee == "presentation.handle.create"
-                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.overlay_handle")
+                    && call.args.iter().any(|arg| arg == "handle = @handle.main.overlay_handle")
                     && call.args.iter().any(|arg| arg == "kind = \"overlay\"")
                     && call.args.iter().any(|arg| arg == "resource = @view.MenuOverlay")
                     && call.args.iter().any(|arg| arg == "layer = @layer.overlay")
@@ -241,7 +241,7 @@ flow main {
         matches!(
             &ops[1],
             FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-                if key == "handle.flow.main.overlay_handle"
+                if key == "handle.main.overlay_handle"
                     && call.callee == "presentation.handle.dispose"
         ),
         "{ops:#?}"
@@ -250,11 +250,11 @@ flow main {
         &ops[3],
         FlowOp::Effect(LineEffectRequest::Call(call))
             if call.callee == "presentation.handle.dispose"
-                && call.args == ["handle = @handle.flow.main.overlay_handle"]
+                && call.args == ["handle = @handle.main.overlay_handle"]
     ));
     assert!(matches!(
         &ops[4],
-        FlowOp::CancelCleanup { key } if key == "handle.flow.main.overlay_handle"
+        FlowOp::CancelCleanup { key } if key == "handle.main.overlay_handle"
     ));
 }
 
@@ -300,7 +300,7 @@ flow main {
             &ops[0],
             FlowOp::Effect(LineEffectRequest::Call(call))
                 if call.callee == "presentation.handle.create"
-                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.image.image.card")
+                    && call.args.iter().any(|arg| arg == "handle = @handle.main.mount.image.image.card")
                     && call.args.iter().any(|arg| arg == "kind = \"image\"")
                     && call.args.iter().any(|arg| arg == "resource = @image.card")
                     && call.args.iter().any(|arg| arg == "depth = -1000")
@@ -311,7 +311,7 @@ flow main {
         matches!(
             &ops[1],
             FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-                if key == "handle.flow.main.mount.image.image.card"
+                if key == "handle.main.mount.image.image.card"
                     && call.callee == "presentation.handle.dispose"
         ),
         "{ops:#?}"
@@ -321,7 +321,7 @@ flow main {
             &ops[2],
             FlowOp::Effect(LineEffectRequest::Call(call))
                 if call.callee == "presentation.handle.create"
-                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.view.view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "handle = @handle.main.mount.view.view.ModernPanel")
                     && call.args.iter().any(|arg| arg == "kind = \"view\"")
                     && call.args.iter().any(|arg| arg == "resource = @view.ModernPanel")
         ),
@@ -331,7 +331,7 @@ flow main {
         matches!(
             &ops[3],
             FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-                if key == "handle.flow.main.mount.view.view.ModernPanel"
+                if key == "handle.main.mount.view.view.ModernPanel"
                     && call.callee == "presentation.handle.dispose"
         ),
         "{ops:#?}"
@@ -366,7 +366,7 @@ flow main {
             &ops[0],
             FlowOp::Effect(LineEffectRequest::Call(call))
                 if call.callee == "presentation.handle.create"
-                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.menu.view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "handle = @handle.main.mount.menu.view.ModernPanel")
                     && call.args.iter().any(|arg| arg == "kind = \"menu\"")
                     && call.args.iter().any(|arg| arg == "resource = @view.ModernPanel")
                     && call.args.iter().any(|arg| arg == "layer = @layer.menu")
@@ -377,7 +377,7 @@ flow main {
         matches!(
             &ops[1],
             FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-                if key == "handle.flow.main.mount.menu.view.ModernPanel"
+                if key == "handle.main.mount.menu.view.ModernPanel"
                     && call.callee == "presentation.handle.dispose"
         ),
         "{ops:#?}"
@@ -387,7 +387,7 @@ flow main {
             &ops[2],
             FlowOp::Effect(LineEffectRequest::Call(call))
                 if call.callee == "presentation.handle.create"
-                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.overlay.view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "handle = @handle.main.mount.overlay.view.ModernPanel")
                     && call.args.iter().any(|arg| arg == "kind = \"overlay\"")
                     && call.args.iter().any(|arg| arg == "resource = @view.ModernPanel")
                     && call.args.iter().any(|arg| arg == "layer = @layer.overlay")
@@ -398,7 +398,7 @@ flow main {
         matches!(
             &ops[3],
             FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-                if key == "handle.flow.main.mount.overlay.view.ModernPanel"
+                if key == "handle.main.mount.overlay.view.ModernPanel"
                     && call.callee == "presentation.handle.dispose"
         ),
         "{ops:#?}"

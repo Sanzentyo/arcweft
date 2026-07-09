@@ -362,10 +362,14 @@ fn log(message: String, fields: ...String) -> Unit {
     let copied: Vec<String> = fields
 }
 
+fn fixed(a: String, b: String) -> Unit {
+}
+
 flow @flow.ok ok {
     let fields: Vec<String> = ["asset", "elapsed"]
     log("loaded", "asset", "elapsed")
     log("loaded", fields...)
+    fixed("one", ["two"]...)
 }
 "#,
     );
@@ -381,9 +385,10 @@ fn variadic(prefix: String, fields: ...String) -> Unit {
 }
 
 flow @flow.bad bad {
+    let dynamic: Vec<String> = ["two"]
     fixed("one")
     fixed("one", "two", "three")
-    fixed("one", ["two"]...)
+    fixed("one", dynamic...)
     variadic("ok", 1i32)
     variadic("ok", "bad"...)
     variadic(prefix = "ok", fields = "named")
