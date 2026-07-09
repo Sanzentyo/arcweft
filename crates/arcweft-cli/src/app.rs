@@ -3,6 +3,7 @@ mod bundle;
 pub(in crate::app) mod bundle_view;
 mod bundle_view_layout;
 mod bundle_view_overflow;
+mod bundle_view_schema;
 mod cache;
 mod commands;
 mod debug;

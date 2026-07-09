@@ -12,7 +12,6 @@ use arcweft_bundle::{
         ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
         ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
         ViewTextResource,
-        types::DigestRef,
         view::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleAssignOp, StyleSourceIdentity,
             StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization, ViewElementKind,
@@ -28,7 +27,6 @@ use arcweft_lang_syntax::{
     ast::{
         ids::{EntityRef, EntityRefSyntax},
         items::EntityDeclItem,
-        pattern::Pattern,
         view::{
             ViewAction, ViewActionPayload, ViewArg, ViewAwait, ViewAwaitBranchKind, ViewBody,
             ViewButton, ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage,
@@ -48,6 +46,10 @@ use super::bundle_view_layout::{
     text_block_frame, u32_to_i32_saturating,
 };
 use super::bundle_view_overflow::validate_interactive_overflow_modifiers;
+use super::bundle_view_schema::{
+    expr_schema_ref, match_arm_schema_ref, pattern_schema_source, repeat_key_schema_ref,
+    schema_ref_for_source,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::app) struct ViewBundleSidecars {
@@ -1895,130 +1897,6 @@ fn unquote_style_argument(value: &str) -> String {
         })
         .unwrap_or(value)
         .to_owned()
-}
-
-fn expr_schema_ref(expr: &Expr) -> DigestRef {
-    schema_ref_for_source(&expr_source(expr))
-}
-
-fn match_arm_schema_ref(scrutinee: &Expr, arm: &ViewMatchArm) -> DigestRef {
-    let guard = arm.guard().map(expr_source).unwrap_or_default();
-    schema_ref_for_source(&format!(
-        "match:{}=>{} when {}",
-        expr_source(scrutinee),
-        pattern_schema_source(arm.pattern()),
-        guard
-    ))
-}
-
-fn repeat_key_schema_ref(view_for_each: &ViewForEach) -> DigestRef {
-    view_for_each.key().map_or_else(
-        || {
-            schema_ref_for_source(&format!(
-                "source_order:{} in {}",
-                pattern_schema_source(view_for_each.pattern()),
-                expr_source(view_for_each.source())
-            ))
-        },
-        expr_schema_ref,
-    )
-}
-
-fn schema_ref_for_source(source: &str) -> DigestRef {
-    DigestRef {
-        digest: BundleDigest::of(source.as_bytes()),
-    }
-}
-
-fn pattern_schema_source(pattern: &Pattern) -> String {
-    match pattern {
-        Pattern::Ident(name) => name.clone(),
-        Pattern::MutIdent(name) => format!("mut {name}"),
-        Pattern::Literal(expr) => expr_source(expr),
-        Pattern::Entity(entity) => entity.body().to_owned(),
-        Pattern::Variant {
-            path,
-            name,
-            payload,
-        } => format!(
-            "{}{}{}",
-            path.as_ref().map_or("", String::as_str),
-            name,
-            payload
-                .as_ref()
-                .map_or_else(String::new, variant_pattern_payload_source)
-        ),
-        Pattern::Discard => "_".to_owned(),
-        Pattern::Tuple(items) => format!(
-            "({})",
-            items
-                .iter()
-                .map(pattern_schema_source)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Pattern::Record { path, fields, rest } => {
-            let mut fields = fields
-                .iter()
-                .map(|field| {
-                    format!(
-                        "{}: {}",
-                        field.name(),
-                        pattern_schema_source(field.pattern())
-                    )
-                })
-                .collect::<Vec<_>>();
-            if *rest {
-                fields.push("..".to_owned());
-            }
-            format!(
-                "{}{{{}}}",
-                path.as_ref().map_or("", String::as_str),
-                fields.join(", ")
-            )
-        }
-        Pattern::BracketSeq { items, rest } => {
-            let mut items = items.iter().map(pattern_schema_source).collect::<Vec<_>>();
-            if let Some(rest) = rest {
-                items.push(format!("..{rest}"));
-            }
-            format!("[{}]", items.join(", "))
-        }
-        Pattern::Whole { name, pattern } => format!("{name} @ {}", pattern_schema_source(pattern)),
-        Pattern::Typed { name, ty } => format!("{name}: {ty:?}"),
-        Pattern::Raw(source) => source.clone(),
-    }
-}
-
-fn variant_pattern_payload_source(
-    payload: &arcweft_lang_syntax::ast::pattern::VariantPatternPayload,
-) -> String {
-    match payload {
-        arcweft_lang_syntax::ast::pattern::VariantPatternPayload::Tuple(items) => format!(
-            "({})",
-            items
-                .iter()
-                .map(pattern_schema_source)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        arcweft_lang_syntax::ast::pattern::VariantPatternPayload::Record { fields, rest } => {
-            let mut fields = fields
-                .iter()
-                .map(|field| {
-                    format!(
-                        "{}: {}",
-                        field.name(),
-                        pattern_schema_source(field.pattern())
-                    )
-                })
-                .collect::<Vec<_>>();
-            if *rest {
-                fields.push("..".to_owned());
-            }
-            format!("{{{}}}", fields.join(", "))
-        }
-    }
 }
 
 fn usize_to_u32_saturating(value: usize) -> u32 {
