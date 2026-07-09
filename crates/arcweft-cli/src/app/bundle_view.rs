@@ -9,17 +9,18 @@ use arcweft_bundle::{
         ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewInputResource,
         ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule, ViewProgramResource,
         ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
-        ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource,
-        ViewTextBlockResource, ViewTextResource,
+        ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
+        ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
+        ViewTextResource,
         types::DigestRef,
         view::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleAssignOp, StyleSourceIdentity,
             StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization, ViewElementKind,
-            ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewProgramInstruction,
-            ViewSecureInputPolicy, ViewSemanticTarget, ViewStyleApplyRef, ViewStyleDeclaration,
-            ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue, ViewTextSelectionPolicy,
-            ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
-            ViewTextVerticalNavigationPolicy,
+            ViewFocusAutoScrollPolicy, ViewInputKind, ViewInputOptions, ViewInputPurpose,
+            ViewProgramInstruction, ViewSecureInputPolicy, ViewSemanticTarget, ViewStyleApplyRef,
+            ViewStyleDeclaration, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
+            ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
+            ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
         },
     },
 };
@@ -67,6 +68,10 @@ pub(in crate::app) enum ViewSidecarError {
         property: String,
         value: String,
     },
+    #[error(
+        "error[AWF0618 view::scroll_axis_both_unsupported]: `{element}` cannot use `{value}` as a Scroll axis in this cut; use `.vertical` or `.horizontal` and keep two-axis scrolling behind a future typed contract"
+    )]
+    UnsupportedScrollBothAxis { element: String, value: String },
 }
 
 #[derive(Default)]
@@ -485,8 +490,10 @@ fn lower_element(
         let pushed_group = lower_navigation_group(view_id, element, state);
         lower_modifiers(view_id, element.modifiers(), state);
         let frame = match kind {
-            ViewElementKind::Row => lower_layout_row(view_id, element.children(), state, *layout)?,
-            ViewElementKind::Column => {
+            ViewElementKind::Row | ViewElementKind::LazyRow => {
+                lower_layout_row(view_id, element.children(), state, *layout)?
+            }
+            ViewElementKind::Column | ViewElementKind::LazyColumn => {
                 lower_layout_column(view_id, element.children(), state, *layout)?
             }
             ViewElementKind::Scroll => lower_scroll_region(view_id, element, state, *layout)?,
@@ -564,7 +571,7 @@ fn lower_scroll_region(
         element,
         state.scroll_counter,
         state.style_resource.as_ref(),
-    );
+    )?;
     let scroll_id = options.public_id.clone();
     state.scroll_counter = state.scroll_counter.saturating_add(1);
     state.scroll_stack.push(scroll_id.clone());
@@ -596,7 +603,10 @@ fn lower_scroll_region(
             content_height_milli,
             options.axis,
         )
-        .with_overflow(options.overflow),
+        .with_overflow(options.overflow)
+        .with_indicators(options.indicators)
+        .with_overscroll(options.overscroll)
+        .with_auto_scroll_focus(options.auto_scroll_focus),
     );
     Ok(ViewLayoutFrame::new(width_milli, viewport_height_milli))
 }
@@ -608,6 +618,9 @@ struct ScrollRegionOptions {
     height_milli: Option<u32>,
     axis: ViewScrollAxis,
     overflow: ViewScrollOverflowPolicy,
+    indicators: ViewScrollIndicatorsPolicy,
+    overscroll: ViewScrollOverscrollPolicy,
+    auto_scroll_focus: ViewFocusAutoScrollPolicy,
 }
 
 fn scroll_region_options(
@@ -615,14 +628,18 @@ fn scroll_region_options(
     element: &ViewElement,
     fallback_index: u32,
     style_resource: Option<&ViewStyleResource>,
-) -> ScrollRegionOptions {
+) -> Result<ScrollRegionOptions, ViewSidecarError> {
     let mut options = ScrollRegionOptions {
         public_id: scroll_region_public_id(view_id, element, fallback_index),
         width_milli: None,
         height_milli: None,
         axis: ViewScrollAxis::Vertical,
         overflow: ViewScrollOverflowPolicy::default(),
+        indicators: ViewScrollIndicatorsPolicy::default(),
+        overscroll: ViewScrollOverscrollPolicy::default(),
+        auto_scroll_focus: ViewFocusAutoScrollPolicy::default(),
     };
+    reject_dual_axis_scroll_authoring(element)?;
     if let Some(style_resource) = style_resource {
         apply_scroll_style_rules(&mut options, style_resource, element);
     }
@@ -638,8 +655,62 @@ fn scroll_region_options(
     if let Some(axis) = scroll_axis_arg(element.args()) {
         options.axis = axis;
     }
+    if let Some(indicators) = scroll_indicators_arg(element.args()) {
+        options.indicators = indicators;
+    }
+    if let Some(overscroll) = scroll_overscroll_arg(element.args()) {
+        options.overscroll = overscroll;
+    }
+    if let Some(policy) = scroll_auto_focus_arg(element.args()) {
+        options.auto_scroll_focus = policy;
+    }
     apply_scroll_property_modifiers(&mut options, element.modifiers());
-    options
+    Ok(options)
+}
+
+fn reject_dual_axis_scroll_authoring(element: &ViewElement) -> Result<(), ViewSidecarError> {
+    for arg in element.args() {
+        let ViewArg::Named { name, value } = arg else {
+            continue;
+        };
+        if normalize_property_name(name) == "axis"
+            && ViewScrollAxis::is_unsupported_dual_axis_symbol(&expr_source(value))
+        {
+            return Err(ViewSidecarError::UnsupportedScrollBothAxis {
+                element: element.callee().to_owned(),
+                value: expr_source(value),
+            });
+        }
+    }
+    for modifier in element.modifiers() {
+        match modifier {
+            ViewModifier::Property { name, value }
+                if normalize_property_name(name) == "axis"
+                    && ViewScrollAxis::is_unsupported_dual_axis_symbol(&expr_source(value)) =>
+            {
+                return Err(ViewSidecarError::UnsupportedScrollBothAxis {
+                    element: element.callee().to_owned(),
+                    value: expr_source(value),
+                });
+            }
+            ViewModifier::Style(
+                ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
+            ) => {
+                for (name, value) in inline_style_properties(source) {
+                    if normalize_property_name(&name) == "axis"
+                        && ViewScrollAxis::is_unsupported_dual_axis_symbol(&value)
+                    {
+                        return Err(ViewSidecarError::UnsupportedScrollBothAxis {
+                            element: element.callee().to_owned(),
+                            value,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn apply_scroll_style_rules(
@@ -782,6 +853,25 @@ fn apply_scroll_style_declarations(
                     options.axis = axis;
                 }
             }
+            "indicators" | "scroll-indicators" => {
+                if let Some(indicators) =
+                    scroll_style_indicators(style_resource, &declaration.value)
+                {
+                    options.indicators = indicators;
+                }
+            }
+            "overscroll" | "overscroll-behavior" => {
+                if let Some(overscroll) =
+                    scroll_style_overscroll(style_resource, &declaration.value)
+                {
+                    options.overscroll = overscroll;
+                }
+            }
+            "auto-scroll-focus" | "auto-focus-scroll" => {
+                if let Some(policy) = scroll_style_auto_focus(style_resource, &declaration.value) {
+                    options.auto_scroll_focus = policy;
+                }
+            }
             "clip" => {
                 if let Some(clip) = scroll_style_bool(style_resource, &declaration.value) {
                     options.overflow = if clip {
@@ -881,6 +971,63 @@ fn scroll_style_axis_inner(
     }
 }
 
+fn scroll_style_indicators(
+    style_resource: &ViewStyleResource,
+    value: &ViewStyleValue,
+) -> Option<ViewScrollIndicatorsPolicy> {
+    scroll_style_policy_inner(
+        style_resource,
+        value,
+        0,
+        ViewScrollIndicatorsPolicy::from_author_symbol,
+    )
+}
+
+fn scroll_style_overscroll(
+    style_resource: &ViewStyleResource,
+    value: &ViewStyleValue,
+) -> Option<ViewScrollOverscrollPolicy> {
+    scroll_style_policy_inner(
+        style_resource,
+        value,
+        0,
+        ViewScrollOverscrollPolicy::from_author_symbol,
+    )
+}
+
+fn scroll_style_auto_focus(
+    style_resource: &ViewStyleResource,
+    value: &ViewStyleValue,
+) -> Option<ViewFocusAutoScrollPolicy> {
+    scroll_style_policy_inner(
+        style_resource,
+        value,
+        0,
+        ViewFocusAutoScrollPolicy::from_author_symbol,
+    )
+}
+
+fn scroll_style_policy_inner<T>(
+    style_resource: &ViewStyleResource,
+    value: &ViewStyleValue,
+    depth: u8,
+    parse: fn(&str) -> Option<T>,
+) -> Option<T> {
+    if depth > 8 {
+        return None;
+    }
+    match value {
+        ViewStyleValue::Text(value) | ViewStyleValue::Resource(value) => parse(value),
+        ViewStyleValue::Token(token) => style_token_value(style_resource, token)
+            .and_then(|value| scroll_style_policy_inner(style_resource, value, depth + 1, parse)),
+        ViewStyleValue::Milli(_)
+        | ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Digest(_) => None,
+    }
+}
+
 fn scroll_style_bool(style_resource: &ViewStyleResource, value: &ViewStyleValue) -> Option<bool> {
     scroll_style_bool_inner(style_resource, value, 0)
 }
@@ -964,13 +1111,34 @@ fn scroll_axis_arg(args: &[ViewArg]) -> Option<ViewScrollAxis> {
     named_arg(args, "axis").and_then(scroll_axis_expr)
 }
 
+fn scroll_indicators_arg(args: &[ViewArg]) -> Option<ViewScrollIndicatorsPolicy> {
+    named_arg(args, "indicators")
+        .or_else(|| named_arg(args, "scroll-indicators"))
+        .and_then(scroll_indicators_expr)
+}
+
+fn scroll_overscroll_arg(args: &[ViewArg]) -> Option<ViewScrollOverscrollPolicy> {
+    named_arg(args, "overscroll")
+        .or_else(|| named_arg(args, "overscroll-behavior"))
+        .and_then(scroll_overscroll_expr)
+}
+
+fn scroll_auto_focus_arg(args: &[ViewArg]) -> Option<ViewFocusAutoScrollPolicy> {
+    named_arg(args, "auto_scroll_focus")
+        .or_else(|| named_arg(args, "auto-scroll-focus"))
+        .or_else(|| named_arg(args, "auto-focus-scroll"))
+        .and_then(scroll_auto_focus_expr)
+}
+
 fn apply_scroll_property_modifiers(options: &mut ScrollRegionOptions, modifiers: &[ViewModifier]) {
     for modifier in modifiers {
         match modifier {
             ViewModifier::Property { name, value } => {
                 apply_scroll_property(options, name, &expr_source(value));
             }
-            ViewModifier::Style(ViewStyleModifier::InlineArcweft(source)) => {
+            ViewModifier::Style(
+                ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
+            ) => {
                 for (name, value) in inline_style_properties(source) {
                     apply_scroll_property(options, &name, &value);
                 }
@@ -1006,6 +1174,21 @@ fn apply_scroll_property(options: &mut ScrollRegionOptions, name: &str, value: &
         "axis" => {
             if let Some(axis) = scroll_axis_symbol(value) {
                 options.axis = axis;
+            }
+        }
+        "indicators" | "scroll-indicators" => {
+            if let Some(indicators) = ViewScrollIndicatorsPolicy::from_author_symbol(value) {
+                options.indicators = indicators;
+            }
+        }
+        "overscroll" | "overscroll-behavior" => {
+            if let Some(overscroll) = ViewScrollOverscrollPolicy::from_author_symbol(value) {
+                options.overscroll = overscroll;
+            }
+        }
+        "auto-scroll-focus" | "auto-focus-scroll" => {
+            if let Some(policy) = ViewFocusAutoScrollPolicy::from_author_symbol(value) {
+                options.auto_scroll_focus = policy;
             }
         }
         "clip" => {
@@ -1062,6 +1245,18 @@ fn scroll_axis_expr(expr: &Expr) -> Option<ViewScrollAxis> {
     scroll_axis_symbol(&expr_source(expr))
 }
 
+fn scroll_indicators_expr(expr: &Expr) -> Option<ViewScrollIndicatorsPolicy> {
+    ViewScrollIndicatorsPolicy::from_author_symbol(&expr_source(expr))
+}
+
+fn scroll_overscroll_expr(expr: &Expr) -> Option<ViewScrollOverscrollPolicy> {
+    ViewScrollOverscrollPolicy::from_author_symbol(&expr_source(expr))
+}
+
+fn scroll_auto_focus_expr(expr: &Expr) -> Option<ViewFocusAutoScrollPolicy> {
+    ViewFocusAutoScrollPolicy::from_author_symbol(&expr_source(expr))
+}
+
 fn expr_bool(expr: &Expr) -> Option<bool> {
     match expr {
         Expr::Literal(Literal::Bool(value)) => Some(*value),
@@ -1089,11 +1284,7 @@ fn scroll_overflow_symbol(value: &str) -> Option<ViewScrollOverflowPolicy> {
 }
 
 fn scroll_axis_symbol(value: &str) -> Option<ViewScrollAxis> {
-    match value.trim().trim_matches('"').trim_start_matches('.') {
-        "vertical" | "y" | "block" => Some(ViewScrollAxis::Vertical),
-        "horizontal" | "x" | "inline" => Some(ViewScrollAxis::Horizontal),
-        _ => None,
-    }
+    ViewScrollAxis::from_author_symbol(value)
 }
 
 fn lower_layout_row(
@@ -1947,6 +2138,8 @@ fn view_element_kind(value: &str) -> Option<ViewElementKind> {
         "Scroll" => ViewElementKind::Scroll,
         "Row" => ViewElementKind::Row,
         "Column" => ViewElementKind::Column,
+        "LazyRow" => ViewElementKind::LazyRow,
+        "LazyColumn" => ViewElementKind::LazyColumn,
         "Stack" => ViewElementKind::Stack,
         "Button" => ViewElementKind::Button,
         "TextField" => ViewElementKind::TextField,

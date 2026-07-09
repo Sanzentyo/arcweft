@@ -14,9 +14,9 @@ use arcweft_presentation::text_input::{
     TextTabPolicy, TextVerticalNavigationPolicy,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderPreferences, RenderScene, RenderScrollAxis,
-    RenderScrollOverflow, RenderScrollRegion, RenderTextInputControl, RenderViewport,
-    SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderPreferences,
+    RenderScene, RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion,
+    RenderTextInputControl, RenderViewport, SharedFramePlanner,
 };
 
 #[test]
@@ -367,6 +367,7 @@ fn pointer_drag_selection_autoscrolls_containing_scroll_region() {
         offset_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     });
     let frame = SharedFramePlanner::prepare(&scene).expect("focused frame prepares");
 

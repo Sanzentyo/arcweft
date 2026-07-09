@@ -12,9 +12,10 @@ use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedFrame, RenderChoiceItem, RenderControlVisualState, RenderDialogue,
-    RenderFontFamily, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
-    RenderScrollRegion, RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant,
-    RenderTextWeight, RenderViewport, SharedFramePlanContext, SharedFramePlanStats,
+    RenderFocusAutoScrollPolicy, RenderFontFamily, RenderPreferences, RenderScene,
+    RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion, RenderTextBlock,
+    RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight, RenderViewport,
+    SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
@@ -224,6 +225,7 @@ fn render_scroll_region(
         offset_y: input.scroll_offset_y(&region.public_id),
         axis: render_scroll_axis(region.axis),
         overflow: render_scroll_overflow(region.overflow),
+        auto_scroll_focus: render_focus_auto_scroll_policy(region.auto_scroll_focus),
     }
 }
 
@@ -248,6 +250,25 @@ fn render_scroll_overflow(
         }
         arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Hidden => {
             RenderScrollOverflow::Hidden
+        }
+    }
+}
+
+const fn render_focus_auto_scroll_policy(
+    policy: arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy,
+) -> RenderFocusAutoScrollPolicy {
+    match policy {
+        arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy::Nearest => {
+            RenderFocusAutoScrollPolicy::Nearest
+        }
+        arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy::Start => {
+            RenderFocusAutoScrollPolicy::Start
+        }
+        arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy::End => {
+            RenderFocusAutoScrollPolicy::End
+        }
+        arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy::Disabled => {
+            RenderFocusAutoScrollPolicy::Disabled
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::view_scene::{ViewMaskImage, ViewScene};
 use arcweft_id::PublicId;
 use arcweft_layout::ContentRect;
 use arcweft_presentation::hit::{HitRect, HitTree};
-use arcweft_presentation::input::InteractionTarget;
+use arcweft_presentation::input::{InteractionTarget, ViewportPoint};
 use arcweft_presentation::layer::{
     LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree,
     RenderPhase,
@@ -96,6 +96,7 @@ pub struct RenderScrollRegion {
     pub offset_y: f32,
     pub axis: RenderScrollAxis,
     pub overflow: RenderScrollOverflow,
+    pub auto_scroll_focus: RenderFocusAutoScrollPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -111,6 +112,15 @@ pub enum RenderScrollOverflow {
     Auto,
     Scroll,
     Hidden,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderFocusAutoScrollPolicy {
+    #[default]
+    Nearest,
+    Start,
+    End,
+    Disabled,
 }
 
 impl RenderScrollRegion {
@@ -1909,6 +1919,28 @@ impl PreparedFrame {
         self.action_buttons
             .iter()
             .find(|button| &button.target == target)
+    }
+
+    pub fn target_bounds(&self, target: &InteractionTarget) -> Option<HitRect> {
+        self.hits
+            .find_target(target)
+            .map(arcweft_presentation::hit::HitRecord::bounds)
+            .or_else(|| self.semantics.find(target).map(SemanticNode::bounds))
+    }
+
+    pub fn scroll_region_for_target(
+        &self,
+        target: &InteractionTarget,
+    ) -> Option<&RenderScrollRegion> {
+        let bounds = self.target_bounds(target)?;
+        let center = ViewportPoint::new(
+            bounds.x + bounds.width * 0.5,
+            bounds.y + bounds.height * 0.5,
+        );
+        self.scroll_regions
+            .iter()
+            .rev()
+            .find(|region| region.contains(center))
     }
 
     pub fn first_choice_target(&self) -> Option<InteractionTarget> {

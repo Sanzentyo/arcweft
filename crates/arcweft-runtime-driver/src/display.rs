@@ -1262,6 +1262,9 @@ mod tests {
             content_height_milli: 360_000,
             axis: arcweft_bundle::resource_codec::ViewScrollAxis::Vertical,
             overflow: arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Auto,
+            indicators: arcweft_bundle::resource_codec::ViewScrollIndicatorsPolicy::Auto,
+            overscroll: arcweft_bundle::resource_codec::ViewScrollOverscrollPolicy::Clamp,
+            auto_scroll_focus: arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy::Nearest,
         }
     }
 

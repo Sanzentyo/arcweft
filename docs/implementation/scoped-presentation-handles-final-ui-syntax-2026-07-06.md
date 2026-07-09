@@ -1737,8 +1737,13 @@ broader retained-content policy request.
   resource, runtime, input snapshot, native/web wheel routing, renderer
   clipping, and compact codec contracts without old-shape compatibility
   defaults. Scroll-contained retained images and retained View text now have
-  concrete runtime/render paths. Remaining scroll work is virtualization,
-  larger retained-content policies, and adapter-parity broadening; that scope remains split to
+  concrete runtime/render paths. Seq 06.16.6.2 now implements the first policy,
+  precision-scroll, explicit-region scroll, focus-auto-scroll, and eager
+  `LazyRow` / `LazyColumn` cut; see
+  `docs/implementation/seq-06.16.6.2-scroll-axis-virtualization-retained-content-2026-07-09.md`.
+  Remaining scroll work is full range virtualization, non-materialized
+  observe/capture records, visual indicators, elastic overscroll visuals, and
+  gamepad analog scroll routing; that scope remains split to
   `docs/reviews/requests/2026-07-07-seq-06.16.6.2-scroll-axis-virtualization-retained-content.md`.
 - The final View syntax direction's await/pending builder integration no longer
   remains as a syntax/lowering gap: `AwaitView` parses into structured

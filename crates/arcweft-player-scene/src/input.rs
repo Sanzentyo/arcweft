@@ -25,7 +25,8 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
-    PreparedSelectableTextBlock, RenderActionButtonAction, RenderTextInputControl,
+    PreparedSelectableTextBlock, RenderActionButtonAction, RenderFocusAutoScrollPolicy,
+    RenderScrollAxis, RenderScrollRegion, RenderTextInputControl,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -91,6 +92,8 @@ const MULTI_CLICK_DISTANCE_SQUARED: f32 = 64.0;
 const MULTI_CLICK_EPOCH_WINDOW: u64 = 8;
 const TEXT_DRAG_AUTOSCROLL_EDGE: f32 = 24.0;
 const TEXT_DRAG_AUTOSCROLL_STEP: f32 = 32.0;
+const KEYBOARD_PAGE_SCROLL_FRACTION: f32 = 0.9;
+const SCROLL_DELTA_EPSILON: f32 = 0.001;
 
 /// Portable player-input state that can be stored alongside a runtime save.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -832,13 +835,21 @@ impl InputController {
             "ArrowLeft" => self.move_focus(frame, FocusNavigationDirection::Left),
             "ArrowRight" => self.move_focus(frame, FocusNavigationDirection::Right),
             "Tab" => self.move_focus(frame, FocusNavigationDirection::Next),
+            "PageDown" => self.scroll_focus_or_pointer_page(frame, 1.0),
+            "PageUp" => self.scroll_focus_or_pointer_page(frame, -1.0),
             "Home" => {
+                if self.scroll_focus_or_pointer_to_edge(frame, false).redraw {
+                    return InputOutcome::redraw(true);
+                }
                 if let Some(target) = frame.first_keyboard_focus_target() {
                     self.set_focus(frame, target);
                 }
                 InputOutcome::redraw(true)
             }
             "End" => {
+                if self.scroll_focus_or_pointer_to_edge(frame, true).redraw {
+                    return InputOutcome::redraw(true);
+                }
                 if let Some(target) = frame.last_keyboard_focus_target() {
                     self.set_focus(frame, target);
                 }
@@ -1194,33 +1205,129 @@ impl InputController {
     }
 
     pub fn wheel(&mut self, frame: &PreparedFrame, delta_y: f32) -> InputOutcome {
-        if let Some(position) = self.primary_pointer_position()
-            && let Some(region) = frame
-                .scroll_regions
-                .iter()
-                .rev()
-                .find(|region| region.contains(position))
-        {
-            let current = self
-                .scroll_offsets
-                .get(&region.id)
-                .copied()
-                .unwrap_or_else(|| ScrollOffset::new(region.offset_x, region.offset_y));
-            let next = match region.axis {
-                arcweft_render_wgpu::geometry::RenderScrollAxis::Vertical => {
-                    ScrollOffset::new(0.0, region.clamped_offset_y(current.y - delta_y))
-                }
-                arcweft_render_wgpu::geometry::RenderScrollAxis::Horizontal => {
-                    ScrollOffset::new(region.clamped_offset_x(current.x - delta_y), 0.0)
-                }
-            };
-            if next.is_zero() {
-                self.scroll_offsets.remove(&region.id);
-            } else {
-                self.scroll_offsets.insert(region.id.clone(), next);
+        self.precision_scroll(frame, 0.0, delta_y)
+    }
+
+    pub fn precision_scroll(
+        &mut self,
+        frame: &PreparedFrame,
+        delta_x: f32,
+        delta_y: f32,
+    ) -> InputOutcome {
+        let Some(region) = self.scroll_region_for_pointer_or_focus(frame) else {
+            return InputOutcome::redraw(false);
+        };
+        InputOutcome::redraw(self.scroll_region(region, delta_x, delta_y))
+    }
+
+    pub fn scroll_region_by_id(
+        &mut self,
+        frame: &PreparedFrame,
+        region_id: &str,
+        delta_x: f32,
+        delta_y: f32,
+    ) -> InputOutcome {
+        let Some(region) = frame
+            .scroll_regions
+            .iter()
+            .find(|region| region.id == region_id)
+        else {
+            return InputOutcome::redraw(false);
+        };
+        InputOutcome::redraw(self.scroll_region(region, delta_x, delta_y))
+    }
+
+    fn scroll_focus_or_pointer_page(&mut self, frame: &PreparedFrame, sign: f32) -> InputOutcome {
+        let Some(region) = self.scroll_region_for_pointer_or_focus(frame) else {
+            return InputOutcome::default();
+        };
+        let (delta_x, delta_y) = match region.axis {
+            RenderScrollAxis::Vertical => (
+                0.0,
+                -sign * region.bounds.height * KEYBOARD_PAGE_SCROLL_FRACTION,
+            ),
+            RenderScrollAxis::Horizontal => (
+                -sign * region.bounds.width * KEYBOARD_PAGE_SCROLL_FRACTION,
+                0.0,
+            ),
+        };
+        InputOutcome::redraw(self.scroll_region(region, delta_x, delta_y))
+    }
+
+    fn scroll_focus_or_pointer_to_edge(
+        &mut self,
+        frame: &PreparedFrame,
+        end: bool,
+    ) -> InputOutcome {
+        let Some(region) = self.scroll_region_for_pointer_or_focus(frame) else {
+            return InputOutcome::default();
+        };
+        let next = if end {
+            ScrollOffset::new(region.max_offset_x(), region.max_offset_y())
+        } else {
+            ScrollOffset::new(0.0, 0.0)
+        };
+        InputOutcome::redraw(self.store_scroll_offset(&region.id, next))
+    }
+
+    fn scroll_region_for_pointer_or_focus<'a>(
+        &self,
+        frame: &'a PreparedFrame,
+    ) -> Option<&'a RenderScrollRegion> {
+        self.primary_pointer_position()
+            .and_then(|position| {
+                frame
+                    .scroll_regions
+                    .iter()
+                    .rev()
+                    .find(|region| region.contains(position))
+            })
+            .or_else(|| {
+                self.interaction
+                    .focus()
+                    .target()
+                    .and_then(|target| frame.scroll_region_for_target(target))
+            })
+    }
+
+    fn scroll_region(&mut self, region: &RenderScrollRegion, delta_x: f32, delta_y: f32) -> bool {
+        let current = self
+            .scroll_offsets
+            .get(&region.id)
+            .copied()
+            .unwrap_or_else(|| ScrollOffset::new(region.offset_x, region.offset_y));
+        let next = match region.axis {
+            RenderScrollAxis::Vertical => ScrollOffset::new(
+                0.0,
+                region.clamped_offset_y(current.y - finite_delta(delta_y)),
+            ),
+            RenderScrollAxis::Horizontal => {
+                let primary = if delta_x.abs() > SCROLL_DELTA_EPSILON {
+                    delta_x
+                } else {
+                    delta_y
+                };
+                ScrollOffset::new(
+                    region.clamped_offset_x(current.x - finite_delta(primary)),
+                    0.0,
+                )
             }
+        };
+        self.store_scroll_offset(&region.id, next)
+    }
+
+    fn store_scroll_offset(&mut self, region_id: &str, next: ScrollOffset) -> bool {
+        let before = self
+            .scroll_offsets
+            .get(region_id)
+            .copied()
+            .unwrap_or_default();
+        if next.is_zero() {
+            self.scroll_offsets.remove(region_id);
+        } else {
+            self.scroll_offsets.insert(region_id.to_owned(), next);
         }
-        InputOutcome::redraw(true)
+        before != next
     }
 
     fn primary_pointer_position(&self) -> Option<ViewportPoint> {
@@ -1284,13 +1391,63 @@ impl InputController {
         frame: &PreparedFrame,
         target: arcweft_presentation::input::InteractionTarget,
     ) {
+        let auto_scroll_target = target.clone();
         if !frame_target_is_text_input(frame, &target) {
             self.deactivate_focused_text_editor();
         }
         if let Some(node) = frame.semantics.find(&target) {
             self.interaction
                 .set_focus(FocusState::new(node.layer().clone(), target));
+            self.ensure_focused_target_visible(frame, &auto_scroll_target);
         }
+    }
+
+    fn ensure_focused_target_visible(
+        &mut self,
+        frame: &PreparedFrame,
+        target: &arcweft_presentation::input::InteractionTarget,
+    ) -> bool {
+        let Some(region) = frame.scroll_region_for_target(target) else {
+            return false;
+        };
+        let Some(bounds) = frame.target_bounds(target) else {
+            return false;
+        };
+        if region.auto_scroll_focus == RenderFocusAutoScrollPolicy::Disabled {
+            return false;
+        }
+        let current = self
+            .scroll_offsets
+            .get(&region.id)
+            .copied()
+            .unwrap_or_else(|| ScrollOffset::new(region.offset_x, region.offset_y));
+        let next = match region.axis {
+            RenderScrollAxis::Vertical => ScrollOffset::new(
+                current.x,
+                focus_auto_scroll_offset(
+                    region.auto_scroll_focus,
+                    current.y,
+                    region.bounds.y,
+                    region.bounds.height,
+                    bounds.y,
+                    bounds.height,
+                    region.max_offset_y(),
+                ),
+            ),
+            RenderScrollAxis::Horizontal => ScrollOffset::new(
+                focus_auto_scroll_offset(
+                    region.auto_scroll_focus,
+                    current.x,
+                    region.bounds.x,
+                    region.bounds.width,
+                    bounds.x,
+                    bounds.width,
+                    region.max_offset_x(),
+                ),
+                current.y,
+            ),
+        };
+        self.store_scroll_offset(&region.id, next)
     }
 
     fn raw(&mut self, kind: RawInputKind) -> RawInputEvent {
@@ -1687,6 +1844,59 @@ fn is_zero_f32(value: &f32) -> bool {
     value.abs() <= f32::EPSILON
 }
 
+fn finite_delta(value: f32) -> f32 {
+    if value.is_finite() { value } else { 0.0 }
+}
+
+fn focus_auto_scroll_offset(
+    policy: RenderFocusAutoScrollPolicy,
+    current: f32,
+    viewport_start: f32,
+    viewport_extent: f32,
+    target_start: f32,
+    target_extent: f32,
+    max_offset: f32,
+) -> f32 {
+    match policy {
+        RenderFocusAutoScrollPolicy::Nearest => nearest_offset_for_axis(
+            current,
+            viewport_start,
+            viewport_extent,
+            target_start,
+            target_extent,
+            max_offset,
+        ),
+        RenderFocusAutoScrollPolicy::Start => {
+            (current + target_start - viewport_start).clamp(0.0, max_offset)
+        }
+        RenderFocusAutoScrollPolicy::End => {
+            (current + target_start + target_extent - viewport_start - viewport_extent)
+                .clamp(0.0, max_offset)
+        }
+        RenderFocusAutoScrollPolicy::Disabled => current.clamp(0.0, max_offset),
+    }
+}
+
+fn nearest_offset_for_axis(
+    current: f32,
+    viewport_start: f32,
+    viewport_extent: f32,
+    target_start: f32,
+    target_extent: f32,
+    max_offset: f32,
+) -> f32 {
+    let viewport_end = viewport_start + viewport_extent;
+    let target_end = target_start + target_extent;
+    let desired = if target_start < viewport_start {
+        current + target_start - viewport_start
+    } else if target_end > viewport_end {
+        current + target_end - viewport_end
+    } else {
+        current
+    };
+    desired.clamp(0.0, max_offset)
+}
+
 fn choice_action(
     frame: &PreparedFrame,
     target: &arcweft_presentation::input::InteractionTarget,
@@ -1810,9 +2020,45 @@ mod tests {
                 offset_y: 0.0,
                 axis: RenderScrollAxis::Vertical,
                 overflow: RenderScrollOverflow::Auto,
+                auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
             }],
         })
         .expect("scroll frame prepares")
+    }
+
+    fn horizontal_scroll_frame() -> PreparedFrame {
+        SharedFramePlanner::prepare(&RenderScene {
+            dialogue: None,
+            choices: Vec::new(),
+            text_inputs: Vec::new(),
+            action_buttons: Vec::new(),
+            focus_groups: Vec::new(),
+            focus_navigation: Vec::new(),
+            images: Vec::new(),
+            viewport: RenderViewport {
+                logical_width: 640.0,
+                logical_height: 360.0,
+                physical_width: 640,
+                physical_height: 360,
+                scale_factor: 1.0,
+            },
+            visual_time_millis: 0,
+            preferences: RenderPreferences::default(),
+            interaction: InteractionVisualState::default(),
+            choice_scroll: ChoiceScroll::default(),
+            scroll_regions: vec![RenderScrollRegion {
+                id: "scroll.gallery".to_owned(),
+                bounds: HitRect::new(20.0, 30.0, 100.0, 80.0),
+                content_width: 260.0,
+                content_height: 80.0,
+                offset_x: 0.0,
+                offset_y: 0.0,
+                axis: RenderScrollAxis::Horizontal,
+                overflow: RenderScrollOverflow::Auto,
+                auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+            }],
+        })
+        .expect("horizontal scroll frame prepares")
     }
 
     #[test]
@@ -1829,6 +2075,97 @@ mod tests {
 
         input.wheel(&frame, 300.0);
         assert!(input.scroll_offset_y("scroll.editor").abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn precision_scroll_uses_x_delta_for_horizontal_region() {
+        let frame = horizontal_scroll_frame();
+        let mut input = InputController::default();
+
+        input.pointer_move(&frame, PointerId(0), ViewportPoint::new(30.0, 40.0));
+        let outcome = input.precision_scroll(&frame, -40.0, -5.0);
+
+        assert!(outcome.redraw);
+        assert!((input.scroll_offset_x("scroll.gallery") - 40.0).abs() < f32::EPSILON);
+        assert!(input.scroll_offset_y("scroll.gallery").abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn scroll_region_by_id_scrolls_without_pointer_and_clamps() {
+        let frame = horizontal_scroll_frame();
+        let mut input = InputController::default();
+
+        let outcome = input.scroll_region_by_id(&frame, "scroll.gallery", -400.0, 0.0);
+
+        assert!(outcome.redraw);
+        assert!((input.scroll_offset_x("scroll.gallery") - 160.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn missing_scroll_region_by_id_is_noop() {
+        let frame = horizontal_scroll_frame();
+        let mut input = InputController::default();
+
+        let outcome = input.scroll_region_by_id(&frame, "scroll.missing", -400.0, 0.0);
+
+        assert!(!outcome.redraw);
+        assert!(input.snapshot().scroll_offsets.is_empty());
+    }
+
+    #[test]
+    fn focus_auto_scroll_policy_offsets_are_clamped() {
+        assert!(
+            (focus_auto_scroll_offset(
+                RenderFocusAutoScrollPolicy::Nearest,
+                0.0,
+                30.0,
+                100.0,
+                80.0,
+                80.0,
+                160.0,
+            ) - 30.0)
+                .abs()
+                < f32::EPSILON
+        );
+        assert!(
+            (focus_auto_scroll_offset(
+                RenderFocusAutoScrollPolicy::Start,
+                0.0,
+                30.0,
+                100.0,
+                80.0,
+                80.0,
+                160.0,
+            ) - 50.0)
+                .abs()
+                < f32::EPSILON
+        );
+        assert!(
+            (focus_auto_scroll_offset(
+                RenderFocusAutoScrollPolicy::End,
+                0.0,
+                30.0,
+                100.0,
+                80.0,
+                80.0,
+                160.0,
+            ) - 30.0)
+                .abs()
+                < f32::EPSILON
+        );
+        assert!(
+            (focus_auto_scroll_offset(
+                RenderFocusAutoScrollPolicy::Disabled,
+                24.0,
+                30.0,
+                100.0,
+                80.0,
+                80.0,
+                160.0,
+            ) - 24.0)
+                .abs()
+                < f32::EPSILON
+        );
     }
 
     #[test]

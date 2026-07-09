@@ -17,9 +17,9 @@ use arcweft_presentation::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
-    RenderChoiceItem, RenderControlStyle, RenderPreferences, RenderScene, RenderScrollAxis,
-    RenderScrollOverflow, RenderScrollRegion, RenderTextInputControl, RenderViewport,
-    SharedFramePlanner,
+    RenderChoiceItem, RenderControlStyle, RenderFocusAutoScrollPolicy, RenderPreferences,
+    RenderScene, RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion,
+    RenderTextInputControl, RenderViewport, SharedFramePlanner,
 };
 
 fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
@@ -85,6 +85,7 @@ fn frame_with_containing_scroll_region() -> arcweft_render_wgpu::geometry::Prepa
             offset_y: 0.0,
             axis: RenderScrollAxis::Vertical,
             overflow: RenderScrollOverflow::Auto,
+            auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
         }],
     })
     .expect("scroll frame plans")
@@ -119,6 +120,7 @@ fn frame_with_horizontal_scroll_region() -> arcweft_render_wgpu::geometry::Prepa
             offset_y: 0.0,
             axis: RenderScrollAxis::Horizontal,
             overflow: RenderScrollOverflow::Auto,
+            auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
         }],
     })
     .expect("horizontal scroll frame plans")
@@ -216,13 +218,13 @@ fn keyboard_focus_navigation_activates_the_focused_choice() {
 }
 
 #[test]
-fn wheel_input_does_not_move_choice_scroll_state() {
+fn wheel_input_without_scroll_region_is_noop_for_choice_scroll_state() {
     let frame = frame();
     let mut input = InputController::default();
     let before = input.choice_scroll();
     let outcome = input.wheel(&frame, 180.0);
 
-    assert!(outcome.redraw);
+    assert!(!outcome.redraw);
     assert_eq!(input.choice_scroll(), before);
 }
 

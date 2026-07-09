@@ -576,6 +576,8 @@ impl ViewProgramResource {
                         | ViewElementKind::Scroll
                         | ViewElementKind::Row
                         | ViewElementKind::Column
+                        | ViewElementKind::LazyRow
+                        | ViewElementKind::LazyColumn
                         | ViewElementKind::Stack => RuntimeStyleBinding::None,
                     };
                     let target = match binding {
@@ -1105,6 +1107,8 @@ fn runtime_element_label(element: ViewElementKind) -> &'static str {
         ViewElementKind::Scroll => "scroll",
         ViewElementKind::Row => "row",
         ViewElementKind::Column => "column",
+        ViewElementKind::LazyRow => "lazy_row",
+        ViewElementKind::LazyColumn => "lazy_column",
         ViewElementKind::Stack => "stack",
         ViewElementKind::Button => "button",
         ViewElementKind::TextField => "text_field",

@@ -12,12 +12,12 @@ use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, InteractionVisualState, RenderActionButton,
     RenderActionButtonAction, RenderChoiceItem, RenderControlFilter, RenderControlFilterList,
     RenderControlShadow, RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
-    RenderDialogue, RenderFocusGroup, RenderFocusGroupPolicy, RenderFocusInitialPolicy,
-    RenderFocusNavigation, RenderFocusNavigationEdge, RenderFocusSkipPolicy,
-    RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily, RenderImage,
-    RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
-    RenderScrollRegion, RenderTextInputControl, RenderTextSlant, RenderTextWeight, RenderViewport,
-    SharedFramePlanContext, SharedFramePlanner,
+    RenderDialogue, RenderFocusAutoScrollPolicy, RenderFocusGroup, RenderFocusGroupPolicy,
+    RenderFocusInitialPolicy, RenderFocusNavigation, RenderFocusNavigationEdge,
+    RenderFocusSkipPolicy, RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily,
+    RenderImage, RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
+    RenderScrollOverflow, RenderScrollRegion, RenderTextInputControl, RenderTextSlant,
+    RenderTextWeight, RenderViewport, SharedFramePlanContext, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -423,6 +423,7 @@ fn scroll_regions_survive_frame_planning_and_viewport_mapping() {
             offset_y: 90.0,
             axis: RenderScrollAxis::Vertical,
             overflow: RenderScrollOverflow::Auto,
+            auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
         }],
         ..scene()
     })
@@ -463,6 +464,7 @@ fn hidden_scroll_region_reports_no_scroll_range() {
         offset_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Hidden,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     };
 
     assert!(region.max_offset_y().abs() < f32::EPSILON);
@@ -493,6 +495,7 @@ fn scroll_region_offsets_and_clips_owned_text_controls() {
         offset_y: 60.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -536,6 +539,7 @@ fn horizontal_scroll_region_offsets_and_clips_owned_text_controls() {
         offset_y: 0.0,
         axis: RenderScrollAxis::Horizontal,
         overflow: RenderScrollOverflow::Auto,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -571,6 +575,7 @@ fn scroll_region_offsets_and_clips_owned_images() {
         offset_y: 60.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -609,6 +614,7 @@ fn scroll_region_drops_images_outside_viewport() {
         offset_y: 60.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -639,6 +645,7 @@ fn scroll_region_offsets_and_clips_owned_action_buttons() {
         offset_y: 60.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -701,6 +708,7 @@ fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
         offset_y: 60.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");

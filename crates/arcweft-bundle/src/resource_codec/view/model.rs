@@ -128,6 +128,8 @@ pub enum ViewElementKind {
     Scroll,
     Row,
     Column,
+    LazyRow,
+    LazyColumn,
     Stack,
     Button,
     TextField,
@@ -146,6 +148,8 @@ impl ViewElementKind {
             | Self::Scroll
             | Self::Row
             | Self::Column
+            | Self::LazyRow
+            | Self::LazyColumn
             | Self::Stack
             | Self::Button => None,
         }
@@ -395,6 +399,18 @@ pub struct ViewScrollRegionResource {
     pub axis: ViewScrollAxis,
     #[serde(default, skip_serializing_if = "ViewScrollOverflowPolicy::is_default")]
     pub overflow: ViewScrollOverflowPolicy,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewScrollIndicatorsPolicy::is_default"
+    )]
+    pub indicators: ViewScrollIndicatorsPolicy,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewScrollOverscrollPolicy::is_default"
+    )]
+    pub overscroll: ViewScrollOverscrollPolicy,
+    #[serde(default, skip_serializing_if = "ViewFocusAutoScrollPolicy::is_default")]
+    pub auto_scroll_focus: ViewFocusAutoScrollPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
@@ -412,6 +428,18 @@ pub struct ViewRuntimeScrollRegion {
     pub axis: ViewScrollAxis,
     #[serde(default, skip_serializing_if = "ViewScrollOverflowPolicy::is_default")]
     pub overflow: ViewScrollOverflowPolicy,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewScrollIndicatorsPolicy::is_default"
+    )]
+    pub indicators: ViewScrollIndicatorsPolicy,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewScrollOverscrollPolicy::is_default"
+    )]
+    pub overscroll: ViewScrollOverscrollPolicy,
+    #[serde(default, skip_serializing_if = "ViewFocusAutoScrollPolicy::is_default")]
+    pub auto_scroll_focus: ViewFocusAutoScrollPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -429,6 +457,35 @@ pub enum ViewScrollAxis {
     Horizontal,
 }
 
+impl ViewScrollAxis {
+    #[must_use]
+    pub fn from_author_symbol(value: &str) -> Option<Self> {
+        match normalized_author_symbol(value).as_str() {
+            "vertical" | "y" | "block" => Some(Self::Vertical),
+            "horizontal" | "x" | "inline" => Some(Self::Horizontal),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_unsupported_dual_axis_symbol(value: &str) -> bool {
+        matches!(
+            normalized_author_symbol(value).as_str(),
+            "both" | "xy" | "yx" | "all" | "2d" | "both-axes"
+        )
+    }
+
+    #[must_use]
+    pub const fn scrolls_x(self) -> bool {
+        matches!(self, Self::Horizontal)
+    }
+
+    #[must_use]
+    pub const fn scrolls_y(self) -> bool {
+        matches!(self, Self::Vertical)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewScrollOverflowPolicy {
@@ -436,6 +493,34 @@ pub enum ViewScrollOverflowPolicy {
     Auto,
     Scroll,
     Hidden,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewScrollIndicatorsPolicy {
+    #[default]
+    Auto,
+    Visible,
+    Hidden,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewScrollOverscrollPolicy {
+    #[default]
+    Clamp,
+    Contain,
+    Elastic,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewFocusAutoScrollPolicy {
+    #[default]
+    Nearest,
+    Start,
+    End,
+    Disabled,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1562,6 +1647,9 @@ impl ViewScrollRegionResource {
             content_height_milli,
             axis,
             overflow: ViewScrollOverflowPolicy::default(),
+            indicators: ViewScrollIndicatorsPolicy::default(),
+            overscroll: ViewScrollOverscrollPolicy::default(),
+            auto_scroll_focus: ViewFocusAutoScrollPolicy::default(),
             source: None,
         }
     }
@@ -1569,6 +1657,24 @@ impl ViewScrollRegionResource {
     #[must_use]
     pub const fn with_overflow(mut self, overflow: ViewScrollOverflowPolicy) -> Self {
         self.overflow = overflow;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_indicators(mut self, indicators: ViewScrollIndicatorsPolicy) -> Self {
+        self.indicators = indicators;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_overscroll(mut self, overscroll: ViewScrollOverscrollPolicy) -> Self {
+        self.overscroll = overscroll;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_auto_scroll_focus(mut self, policy: ViewFocusAutoScrollPolicy) -> Self {
+        self.auto_scroll_focus = policy;
         self
     }
 
@@ -1586,6 +1692,9 @@ impl ViewScrollRegionResource {
             content_height_milli: self.content_height_milli,
             axis: self.axis,
             overflow: self.overflow,
+            indicators: self.indicators,
+            overscroll: self.overscroll,
+            auto_scroll_focus: self.auto_scroll_focus,
         }
     }
 }
@@ -1598,6 +1707,65 @@ impl ViewScrollOverflowPolicy {
     pub const fn scroll_enabled(self) -> bool {
         matches!(self, Self::Auto | Self::Scroll)
     }
+}
+
+impl ViewScrollIndicatorsPolicy {
+    pub const fn is_default(&self) -> bool {
+        matches!(self, Self::Auto)
+    }
+
+    #[must_use]
+    pub fn from_author_symbol(value: &str) -> Option<Self> {
+        match normalized_author_symbol(value).as_str() {
+            "auto" => Some(Self::Auto),
+            "visible" | "show" | "shown" | "always" => Some(Self::Visible),
+            "hidden" | "hide" | "none" | "never" => Some(Self::Hidden),
+            _ => None,
+        }
+    }
+}
+
+impl ViewScrollOverscrollPolicy {
+    pub const fn is_default(&self) -> bool {
+        matches!(self, Self::Clamp)
+    }
+
+    #[must_use]
+    pub fn from_author_symbol(value: &str) -> Option<Self> {
+        match normalized_author_symbol(value).as_str() {
+            "clamp" | "none" => Some(Self::Clamp),
+            "contain" | "contained" => Some(Self::Contain),
+            "elastic" | "bounce" => Some(Self::Elastic),
+            _ => None,
+        }
+    }
+}
+
+impl ViewFocusAutoScrollPolicy {
+    pub const fn is_default(&self) -> bool {
+        matches!(self, Self::Nearest)
+    }
+
+    #[must_use]
+    pub fn from_author_symbol(value: &str) -> Option<Self> {
+        match normalized_author_symbol(value).as_str() {
+            "nearest" | "auto" => Some(Self::Nearest),
+            "start" | "leading" => Some(Self::Start),
+            "end" | "trailing" => Some(Self::End),
+            "disabled" | "disable" | "none" | "off" | "false" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+fn normalized_author_symbol(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim_start_matches('.')
+        .replace('_', "-")
+        .to_ascii_lowercase()
 }
 
 impl ViewLayoutBoundsKind {

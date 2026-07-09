@@ -5,16 +5,17 @@ use arcweft_bundle::resource_codec::view::{
     ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp, StyleSourceIdentity,
     StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride, TextAssistPolicy,
     TextCapitalization, ViewAwaitBranchSpan, ViewChildSpan, ViewElementKind, ViewElementState,
-    ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
-    ViewLayoutBoundsResource, ViewLogicalRect, ViewObserveClassification, ViewProgramInstruction,
-    ViewProgramResource, ViewResourceBudget, ViewResourceCompatibility, ViewRuntimeTextBlockBounds,
-    ViewScrollAxis, ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewSecureInputPolicy,
-    ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStateSchemaHashRef, ViewStyleDeclaration,
-    ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken,
-    ViewStyleValue, ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy,
-    ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
-    ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults, ViewThemeResource,
-    migrated_view_section_compatibility,
+    ViewFocusAutoScrollPolicy, ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose,
+    ViewInputResource, ViewLayoutBoundsResource, ViewLogicalRect, ViewObserveClassification,
+    ViewProgramInstruction, ViewProgramResource, ViewResourceBudget, ViewResourceCompatibility,
+    ViewRuntimeTextBlockBounds, ViewScrollAxis, ViewScrollIndicatorsPolicy,
+    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
+    ViewSecureInputPolicy, ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStateSchemaHashRef,
+    ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewTextBlockResource, ViewTextResource,
+    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
+    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
+    ViewThemeResource, migrated_view_section_compatibility,
 };
 use arcweft_bundle::resource_codec::{
     DigestRef, FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField,
@@ -194,6 +195,48 @@ fn view_program_scroll_regions_reject_pre_axis_payload_shape() {
             "scroll regions must reject payloads missing `{removed_field}`",
         );
     }
+}
+
+#[test]
+fn view_program_scroll_region_policy_defaults_are_round_tripped() {
+    let bytes = fixture_program()
+        .encode_canonical_section()
+        .expect("program encodes");
+    let decoded = ViewProgramResource::decode_canonical_section(&bytes).expect("program decodes");
+    let region = decoded.scroll_regions.first().expect("scroll region");
+    let runtime = region.runtime_scroll_region();
+
+    assert_eq!(region.indicators, ViewScrollIndicatorsPolicy::Auto);
+    assert_eq!(region.overscroll, ViewScrollOverscrollPolicy::Clamp);
+    assert_eq!(region.auto_scroll_focus, ViewFocusAutoScrollPolicy::Nearest);
+    assert_eq!(runtime.indicators, ViewScrollIndicatorsPolicy::Auto);
+    assert_eq!(runtime.overscroll, ViewScrollOverscrollPolicy::Clamp);
+    assert_eq!(
+        runtime.auto_scroll_focus,
+        ViewFocusAutoScrollPolicy::Nearest
+    );
+}
+
+#[test]
+fn view_program_scroll_region_policy_values_are_preserved() {
+    let mut program = fixture_program();
+    program.scroll_regions[0] = program.scroll_regions[0]
+        .clone()
+        .with_indicators(ViewScrollIndicatorsPolicy::Visible)
+        .with_overscroll(ViewScrollOverscrollPolicy::Elastic)
+        .with_auto_scroll_focus(ViewFocusAutoScrollPolicy::End);
+
+    let bytes = program.encode_canonical_section().expect("program encodes");
+    let decoded = ViewProgramResource::decode_canonical_section(&bytes).expect("program decodes");
+    let region = decoded.scroll_regions.first().expect("scroll region");
+    let runtime = region.runtime_scroll_region();
+
+    assert_eq!(region.indicators, ViewScrollIndicatorsPolicy::Visible);
+    assert_eq!(region.overscroll, ViewScrollOverscrollPolicy::Elastic);
+    assert_eq!(region.auto_scroll_focus, ViewFocusAutoScrollPolicy::End);
+    assert_eq!(runtime.indicators, ViewScrollIndicatorsPolicy::Visible);
+    assert_eq!(runtime.overscroll, ViewScrollOverscrollPolicy::Elastic);
+    assert_eq!(runtime.auto_scroll_focus, ViewFocusAutoScrollPolicy::End);
 }
 
 #[test]

@@ -351,6 +351,109 @@ flow test {
 }
 
 #[test]
+fn view_scroll_lowers_policy_options_from_authoring() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view PolicyScroll() {
+  Scroll(id = @scroll:.policy, width = 180px, height = 96px, indicators = .visible, overscroll = .elastic, auto_scroll_focus = .end) {
+    Text("One")
+  }
+}
+
+flow test {
+  view(@view:.PolicyScroll)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+
+    let program = sidecars.program.expect("program sidecar");
+    assert_eq!(program.scroll_regions.len(), 1);
+    let region = &program.scroll_regions[0];
+    assert_eq!(region.public_id, "scroll.policy");
+    assert_eq!(
+        region.indicators,
+        arcweft_bundle::resource_codec::ViewScrollIndicatorsPolicy::Visible
+    );
+    assert_eq!(
+        region.overscroll,
+        arcweft_bundle::resource_codec::ViewScrollOverscrollPolicy::Elastic
+    );
+    assert_eq!(
+        region.auto_scroll_focus,
+        arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy::End
+    );
+}
+
+#[test]
+fn view_scroll_rejects_both_axis_authoring() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view BothAxisScroll() {
+  Scroll(axis = .both, width = 120px, height = 72px) {
+    Text("One")
+  }
+}
+
+flow test {
+  view(@view:.BothAxisScroll)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+
+    assert!(collect_bundle_dsl_view_resources(&hir, &[]).is_err());
+}
+
+#[test]
+fn view_lazy_row_and_column_lower_to_typed_eager_elements() {
+    use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramInstruction};
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view LazyList() {
+  Scroll(width = 240px, height = 120px) {
+    LazyRow {
+      Button(@button:.one, label = "One")
+      Button(@button:.two, label = "Two")
+    }
+    LazyColumn {
+      Text("A")
+      Text("B")
+    }
+  }
+}
+
+flow test {
+  view(@view:.LazyList)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        ViewProgramInstruction::OpenElement {
+            element: ViewElementKind::LazyRow,
+            ..
+        }
+    )));
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        ViewProgramInstruction::OpenElement {
+            element: ViewElementKind::LazyColumn,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn view_style_rule_rejects_interactive_overflow_on_non_scroll_element() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"

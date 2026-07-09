@@ -3,11 +3,14 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSelectionPolicy,
 };
 use arcweft_bundle::resource_codec::{
+    ViewFocusAutoScrollPolicy, ViewScrollAxis, ViewScrollIndicatorsPolicy,
+    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
+};
+use arcweft_bundle::resource_codec::{
     ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion,
     ViewRuntimeScrollRegionBounds, ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
     ViewRuntimeSurfaceBounds, ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds,
 };
-use arcweft_bundle::resource_codec::{ViewScrollAxis, ViewScrollOverflowPolicy};
 use arcweft_player_scene::{
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest},
     images::BundleImageCatalog,
@@ -127,6 +130,9 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
         content_height_milli: 360_000,
         axis: ViewScrollAxis::Vertical,
         overflow: ViewScrollOverflowPolicy::Auto,
+        indicators: ViewScrollIndicatorsPolicy::Auto,
+        overscroll: ViewScrollOverscrollPolicy::Clamp,
+        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -286,6 +292,9 @@ fn hidden_overflow_scroll_region_keeps_offset_at_zero() {
         content_height_milli: 360_000,
         axis: ViewScrollAxis::Vertical,
         overflow: ViewScrollOverflowPolicy::Hidden,
+        indicators: ViewScrollIndicatorsPolicy::Auto,
+        overscroll: ViewScrollOverscrollPolicy::Clamp,
+        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -335,6 +344,9 @@ fn horizontal_scroll_region_tracks_x_offset_and_snapshot() {
         content_height_milli: 120_000,
         axis: ViewScrollAxis::Horizontal,
         overflow: ViewScrollOverflowPolicy::Auto,
+        indicators: ViewScrollIndicatorsPolicy::Auto,
+        overscroll: ViewScrollOverscrollPolicy::Clamp,
+        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -395,6 +407,9 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         content_height_milli: 180_000,
         axis: ViewScrollAxis::Vertical,
         overflow: ViewScrollOverflowPolicy::Auto,
+        indicators: ViewScrollIndicatorsPolicy::Auto,
+        overscroll: ViewScrollOverscrollPolicy::Clamp,
+        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
     });
     presentation.text_blocks.push(ViewRuntimeTextBlock {
         public_id: "text.block.NotesPanel.0".to_owned(),
