@@ -4,10 +4,8 @@ use arcweft_agent_protocol::{
     verified_effects::VerifiedEffectSummary,
 };
 use arcweft_lang_sema::{
-    effect_analysis::EffectAnalysisReport,
-    effect_model::CallableId,
-    effect_row::{EffectRowCloseError, EffectSubstitution},
-    effects::EffectSet,
+    effect_analysis::EffectAnalysisReport, effect_model::CallableId,
+    effect_row::EffectRowCloseError, effects::EffectSet,
 };
 use thiserror::Error;
 
@@ -44,7 +42,6 @@ pub fn build_verified_effect_summary(
     }
     let rows = report
         .closed_effect_rows()
-        .resolve_closed(&EffectSubstitution::new())
         .map_err(|source| VerifiedEffectBuildError::InvalidRows { source })?;
     let summary =
         rows.summary(callable)

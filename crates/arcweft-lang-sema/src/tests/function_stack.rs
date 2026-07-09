@@ -1409,19 +1409,17 @@ effects { }
         "closure creation should stay effect-free for the caller: {:?}",
         report.diagnostics
     );
-    let rows = report.effects.closed_effect_rows();
-    let empty_substitution = crate::effect_row::EffectSubstitution::new();
+    let rows = report
+        .effects
+        .closed_effect_rows()
+        .expect("closed effect-row report resolves");
     let flow_row = rows
         .summary(&crate::effect_model::CallableId::new(
             "flow.closure_row_projection",
         ))
         .expect("flow row is projected");
     assert!(
-        flow_row
-            .inferred()
-            .resolve(&empty_substitution)
-            .expect("closed flow row resolves")
-            .is_empty(),
+        flow_row.inferred().is_empty(),
         "closure creation must not add body effects to caller row: {flow_row:?}"
     );
     let closure_row = rows
@@ -1430,11 +1428,7 @@ effects { }
         .map(|(_, row)| row)
         .expect("closure synthetic row is projected");
     assert_eq!(
-        closure_row
-            .inferred()
-            .resolve(&empty_substitution)
-            .expect("closed closure row resolves")
-            .to_labels(),
+        closure_row.inferred().to_labels(),
         vec!["fs.read"],
         "closure body effects should live on the closure row"
     );
@@ -1481,17 +1475,14 @@ effects { }
         report.diagnostics
     );
 
-    let rows = report.effects.closed_effect_rows();
-    let empty_substitution = crate::effect_row::EffectSubstitution::new();
+    let rows = report
+        .effects
+        .closed_effect_rows()
+        .expect("closed effect-row report resolves");
     let closure_rows = rows
         .summaries()
         .filter(|(callable, _)| callable.as_str().starts_with("closure.expr."))
-        .map(|(_, row)| {
-            row.inferred()
-                .resolve(&empty_substitution)
-                .expect("closed closure row resolves")
-                .to_labels()
-        })
+        .map(|(_, row)| row.inferred().to_labels())
         .collect::<Vec<_>>();
     assert!(
         closure_rows

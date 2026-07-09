@@ -25,6 +25,11 @@ boundary:
 The Agent verified-effects builder now consumes this closed boundary instead
 of resolving `EffectRow` internals itself.
 
+A later report-boundary follow-up moved the default row-substitution state onto
+`EffectAnalysisReport`, so downstream compiler/LSP consumers call
+`EffectAnalysisReport::closed_effect_rows()` directly instead of constructing
+an empty `EffectSubstitution`.
+
 ## Evidence
 
 Unit coverage verifies that:

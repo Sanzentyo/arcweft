@@ -6,7 +6,10 @@ use crate::{
         EffectTraceStep,
     },
     effect_model::{CallTarget, CallableId, EffectProgram},
-    effect_row::{EffectRowReport, EffectRowSummary},
+    effect_row::{
+        ClosedEffectRowReport, EffectRowCloseError, EffectRowReport, EffectRowSummary,
+        EffectSubstitution,
+    },
     effects::{EffectId, EffectSet},
 };
 
@@ -23,6 +26,7 @@ pub struct EffectSummary {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EffectAnalysisReport {
     summaries: BTreeMap<CallableId, EffectSummary>,
+    row_substitutions: EffectSubstitution,
     diagnostics: Vec<EffectDiagnostic>,
     fixed_point_iterations: usize,
 }
@@ -38,6 +42,7 @@ pub fn analyze_effects(program: &EffectProgram) -> EffectAnalysisReport {
 
     EffectAnalysisReport {
         summaries,
+        row_substitutions: EffectSubstitution::new(),
         diagnostics,
         fixed_point_iterations,
     }
@@ -94,7 +99,7 @@ impl EffectAnalysisReport {
         self.fixed_point_iterations
     }
 
-    pub fn closed_effect_rows(&self) -> EffectRowReport {
+    pub fn effect_rows(&self) -> EffectRowReport {
         EffectRowReport::new(self.summaries.values().map(|summary| {
             EffectRowSummary::closed(
                 summary.callable().clone(),
@@ -103,6 +108,10 @@ impl EffectAnalysisReport {
                 summary.forbidden().clone(),
             )
         }))
+    }
+
+    pub fn closed_effect_rows(&self) -> Result<ClosedEffectRowReport, EffectRowCloseError> {
+        self.effect_rows().resolve_closed(&self.row_substitutions)
     }
 }
 

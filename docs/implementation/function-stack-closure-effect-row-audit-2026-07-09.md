@@ -18,6 +18,9 @@ The Agent verified-effects builder now consumes this projection when lowering
 artifact boundary effect proofs. The closed-boundary follow-up adds
 `ClosedEffectRowReport`, so downstream consumers can accept resolved
 `EffectSet` rows without depending on `EffectRow` tail resolution details.
+`EffectAnalysisReport` now owns current row-substitution resolution, so
+compiler/LSP consumers consume the closed report directly rather than
+constructing `EffectSubstitution` values.
 The LSP hover follow-up consumes that same closed boundary for declaration-name
 effect-row display.
 
@@ -135,6 +138,8 @@ The following 07.8 decisions remain open:
 4. Runtime-plan/verifier/LSP consumers for the closed-row boundary projection.
    Agent artifact verified-effects lowering is the first consumer and now uses
    `ClosedEffectRowReport` rather than resolving `EffectRow` internals itself.
+   This has been hardened so downstream compiler/LSP consumers request the
+   closed report from `EffectAnalysisReport` directly.
    LSP callable declaration hover is the first editor-facing display consumer.
 5. Replacement of path-specific closure/higher-order graph edges with final row
    evidence.

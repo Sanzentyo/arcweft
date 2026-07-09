@@ -6,7 +6,6 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
     check::{analyze_types, validate_typecheck_ready},
     effect_model::CallableId,
-    effect_row::EffectSubstitution,
     effects::EffectSet,
     resolve::{registry_from_hir, validate_hir_references},
 };
@@ -73,11 +72,7 @@ fn callable_effect_row_hover(
     if !report.diagnostics.is_empty() {
         return None;
     }
-    let rows = report
-        .effects
-        .closed_effect_rows()
-        .resolve_closed(&EffectSubstitution::new())
-        .ok()?;
+    let rows = report.effects.closed_effect_rows().ok()?;
     let summary = rows.summary(&callable.id)?;
     Some(Hover {
         contents: HoverContents::Scalar(MarkedString::String(effect_row_hover_text(

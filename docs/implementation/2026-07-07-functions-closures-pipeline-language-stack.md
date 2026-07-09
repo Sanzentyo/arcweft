@@ -1878,6 +1878,13 @@ Agent verified-effects builder now consumes that closed boundary instead of
 resolving `EffectRow` tails directly. Details are recorded in
 `docs/implementation/function-stack-effect-row-closed-boundary-2026-07-09.md`.
 
+The effect-row report-boundary follow-up moves current row-substitution
+ownership onto `EffectAnalysisReport`. Downstream compiler and LSP consumers
+now call `EffectAnalysisReport::closed_effect_rows()` and receive
+`ClosedEffectRowReport` evidence without constructing `EffectSubstitution`
+values themselves. Details are recorded in
+`docs/implementation/function-stack-effect-row-report-boundary-2026-07-09.md`.
+
 The LSP effect-row hover follow-up adds the first editor-facing consumer of
 that closed boundary. Hovering a `flow`, `fn`, or `agent` declaration name now
 shows the callable's inferred row, source upper bound when present, and
