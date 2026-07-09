@@ -161,3 +161,79 @@ Changed Rust file metrics:
 The remaining error-level structural violation is still existing:
 
 - `crates/arcweft-cli/src/app/bundle_view.rs`: 2590 physical LOC.
+
+## 2026-07-10 AWBC Entry Parameter Follow-Up
+
+The structured let-binding cut exposed a second boundary bug in AWBC lowering.
+`FlowOp::LetScope` was semantically correct, but AWBC entry-parameter
+inference collected free locals in the block body and final block value with
+different lexical scopes. For:
+
+```arcw
+let visitor_name = {
+    let name_event = receive action(@action:.feedback.submit_name)
+    name_event.value
+}
+```
+
+the `name_event` local was incorrectly treated as an undeclared entry
+parameter while inferring the entry flow signature. The generated AWBC product
+therefore expected one startup argument, and web/native runtime startup failed
+with:
+
+```text
+AWBC entry expects 1 arguments, received 0
+```
+
+The runtime then produced an empty presentation frame, which made the WebGPU
+player show only the background image.
+
+The fix is in AWBC free-local collection, not in the sample or renderer:
+`LetScope` now collects its body ops and final value expression under one
+temporary value-scope declaration set, then restores the outer declaration set
+before declaring the parent binding pattern. This matches the lowering model
+used by the executable flow: locals introduced by earlier block statements are
+visible to the final block value but do not leak out of the block.
+
+Additional regression coverage:
+
+- `entry_parameter_inference_keeps_let_scope_locals_inside_block_value` checks
+  that both the entry signature and target flow function stay zero-arity, then
+  executes the lowered AWBC entry and returns the block value.
+
+Additional validation:
+
+```bash
+cargo fmt
+cargo test -p arcweft-runtime-plan entry_parameter_inference_keeps_let_scope_locals_inside_block_value -- --nocapture
+cargo test -p arcweft-compiler lower_source_runtime_plan -- --nocapture
+cargo build -p arcweft-cli
+target/debug/arcw.exe check samples/modern-feedback-view/src/main.arcw
+target/debug/arcw.exe bundle samples/modern-feedback-view/src/main.arcw --output web/modern-feedback-view.awfb
+target/debug/arcw.exe run-bundle web/modern-feedback-view.awfb --steps 3 --mode game --max-ops 64 --json
+target/debug/arcw.exe agent observe samples/modern-feedback-view/src/main.arcw --steps 8 --mode game --max-ops 64 --resource observation --json
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+cargo clippy --workspace --all-targets --all-features
+```
+
+Observed results:
+
+- `run-bundle` reaches `dialogue modern_feedback_view.concierge.001` with no
+  `AWBC entry expects` diagnostic.
+- `agent observe` reports status `ok`, final status
+  `dialogue modern_feedback_view.concierge.001`, 2 objects, 2 views, and
+  `action.advance_text.object.dialogue.7.0`.
+- Browser verification on
+  `http://127.0.0.1:4173/?bundle=./modern-feedback-view.awfb&cachebust=codex-entry-scope-fix-001`
+  shows the background and concierge dialogue instead of a solid green frame.
+- Workspace clippy completes successfully, with existing warnings outside this
+  cut still reported.
+- Structural audit summary: 2566 files scanned, 1189 Rust files, 589183 Rust
+  physical LOC, 1 existing error, 152 warnings.
+
+Changed Rust file metrics:
+
+| Path | Crate | Kind | Bytes | Physical LOC | Embedded tests | Responsibilities |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` | `arcweft-runtime-plan` | production | 79548 | 2055 | no | AWBC flow lowering and entry free-local collection |
+| `crates/arcweft-runtime-plan/src/awbc_lower/tests.rs` | `arcweft-runtime-plan` | unit test | 14182 | 397 | no | AWBC lowering and VM regression tests |

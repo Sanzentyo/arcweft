@@ -1797,8 +1797,7 @@ impl EntryParameterCollector {
                 ops,
                 value,
             } => {
-                self.collect_scoped_ops(ops);
-                self.collect_expr(value);
+                self.collect_value_scope_ops(ops, value);
                 self.declare_pattern(pattern);
             }
             FlowOp::Break(Some(value)) | FlowOp::GotoExpr(value) | FlowOp::ReturnExpr(value) => {
@@ -2082,6 +2081,13 @@ impl EntryParameterCollector {
     fn collect_scoped_ops(&mut self, ops: &[FlowOp]) {
         let declared = self.declared.clone();
         self.collect_ops(ops);
+        self.declared = declared;
+    }
+
+    fn collect_value_scope_ops(&mut self, ops: &[FlowOp], value: &RuntimeExpr) {
+        let declared = self.declared.clone();
+        self.collect_ops(ops);
+        self.collect_expr(value);
         self.declared = declared;
     }
 

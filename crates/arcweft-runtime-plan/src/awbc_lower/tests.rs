@@ -9,7 +9,7 @@ use arcweft_core::plan::{
     RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
     RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
 };
-use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
+use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::canonical(value).expect("test flow ID is valid")
@@ -260,6 +260,58 @@ fn generated_awbc_curried_closure_apply_executes_returned_function() {
     assert_eq!(
         run_entry(&report.program, &mut host),
         VmExit::Returned(Some(RuntimeValue::i64(7)))
+    );
+}
+
+#[test]
+fn entry_parameter_inference_keeps_let_scope_locals_inside_block_value() {
+    let main = flow_id("main");
+    let plan = RuntimePlan::new(
+        Some(main.clone()),
+        vec![RuntimeFlow {
+            id: main,
+            ops: vec![
+                FlowOp::LetScope {
+                    pattern: arcweft_core::pattern::RuntimePattern::Ident("result".to_owned()),
+                    ops: vec![FlowOp::Let {
+                        pattern: arcweft_core::pattern::RuntimePattern::Ident("event".to_owned()),
+                        expr: RuntimeExpr::Record(vec![RuntimeFieldExpr {
+                            name: "value".to_owned(),
+                            value: RuntimeExpr::Value(RuntimeValue::String("ok".to_owned())),
+                        }]),
+                    }],
+                    value: RuntimeExpr::Field {
+                        target: Box::new(RuntimeExpr::Local("event".to_owned())),
+                        field: "value".to_owned(),
+                    },
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Local("result".to_owned())),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("plan builds");
+    let report = lower_plan(&plan);
+    let entry = &report.program.entries[0];
+    let entry_signature = &report.program.signatures[entry.signature.index()];
+    assert!(
+        entry_signature.params.is_empty(),
+        "block-local value references must not become entry parameters"
+    );
+    let AwbcEntryTarget::Function(function) = entry.target else {
+        panic!("test entry targets a single flow function");
+    };
+    let function_signature =
+        &report.program.signatures[report.program.functions[function.index()].signature.index()];
+    assert!(
+        function_signature.params.is_empty(),
+        "flow function must stay zero-arity for a normal game entry"
+    );
+
+    let mut host = TestPureHelperHost;
+    assert_eq!(
+        run_entry(&report.program, &mut host),
+        VmExit::Returned(Some(RuntimeValue::String("ok".to_owned())))
     );
 }
 
