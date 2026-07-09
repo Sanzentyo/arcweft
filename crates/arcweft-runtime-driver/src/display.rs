@@ -201,7 +201,8 @@ impl BundlePresentationSnapshot {
     }
 
     pub(crate) fn replace_text_inputs(&mut self, text_inputs: &[ViewRuntimeTextControl]) {
-        let next_text_inputs = text_inputs.to_vec();
+        let next_text_inputs =
+            filter_presentation_text_inputs(text_inputs.to_vec(), &self.presentation_handles);
         if self.text_inputs != next_text_inputs {
             self.revision = self.revision.saturating_add(1);
             self.text_inputs = next_text_inputs;

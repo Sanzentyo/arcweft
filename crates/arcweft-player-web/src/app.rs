@@ -13,7 +13,7 @@ use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
-use arcweft_player_scene::input::{InputController, InputOutcome};
+use arcweft_player_scene::input::{DialogueProgress, InputController, InputOutcome};
 use arcweft_presentation::clipboard::TextClipboardRequest;
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::TextInputKeyDisposition;
@@ -123,6 +123,13 @@ struct WebPlayerOptions {
 struct DialogueVisualClock {
     line: Option<arcweft_core::plan::RuntimeLineId>,
     started_at_millis: u64,
+    completed_line: Option<arcweft_core::plan::RuntimeLineId>,
+}
+
+impl DialogueVisualClock {
+    fn complete_current_line(&mut self) {
+        self.completed_line = self.line.clone();
+    }
 }
 
 impl Default for WebPlayerOptions {
@@ -647,15 +654,22 @@ fn dialogue_visual_time_millis(
     let Some(dialogue) = dialogue else {
         clock.line = None;
         clock.started_at_millis = now_millis;
+        clock.completed_line = None;
         return 0;
     };
     if clock.line.as_ref() != Some(&dialogue.line) {
         clock.line = Some(dialogue.line.clone());
         clock.started_at_millis = now_millis;
+        clock.completed_line = None;
+    }
+    if clock.completed_line.as_ref() == Some(&dialogue.line) {
+        return DIALOGUE_REVEAL_COMPLETE_MILLIS;
     }
     dialogue_visual_time_override_millis()
         .unwrap_or_else(|| now_millis.saturating_sub(clock.started_at_millis))
 }
+
+const DIALOGUE_REVEAL_COMPLETE_MILLIS: u64 = 24 * 60 * 60 * 1_000;
 
 fn dialogue_visual_time_override_millis() -> Option<u64> {
     let window = web_sys::window()?;
@@ -687,12 +701,14 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClip
         text_control_write_backs,
         clipboard_requests,
         diagnostics: _,
-        dialogue_advance,
+        dialogue_progress,
         cancel: _,
         redraw: _,
     } = outcome;
-    if dialogue_advance {
-        state.session.queue_dialogue_advance();
+    match dialogue_progress {
+        DialogueProgress::None => {}
+        DialogueProgress::Reveal => state.dialogue_visual_clock.complete_current_line(),
+        DialogueProgress::Advance => state.session.queue_dialogue_advance(),
     }
     for action in actions {
         if let Err(error) = state.session.queue_semantic_action(&action) {

@@ -149,7 +149,7 @@ fn pointer_activation_on_action_button_does_not_implicitly_advance_dialogue() {
     input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
     let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
-    assert!(!outcome.dialogue_advance);
+    assert!(!outcome.dialogue_progress.advances());
     assert_eq!(outcome.actions().len(), 1);
     assert_eq!(
         outcome.actions()[0].kind().as_str(),

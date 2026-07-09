@@ -66,8 +66,10 @@ fn modern_feedback_view_sample_uses_view_style_and_flow_submit() {
         .expect("modern feedback View source");
 
     assert!(source.contains("pub style modern_feedback_panel"));
-    assert!(source.contains("pub view ModernFeedbackPanel()"));
-    assert!(source.contains("let panel = view(@view:.ModernFeedbackPanel"));
+    assert!(source.contains("pub view ModernFeedbackNamePanel()"));
+    assert!(source.contains("pub view ModernFeedbackBriefPanel()"));
+    assert!(source.contains("let name_panel = view(@view:.ModernFeedbackNamePanel"));
+    assert!(source.contains("let brief_panel = view(@view:.ModernFeedbackBriefPanel"));
     assert!(source.contains("Panel {"));
     assert!(source.contains("pub action feedback.submit_name(value: String)"));
     assert!(source.contains("pub action feedback.submit_brief(value: String)"));

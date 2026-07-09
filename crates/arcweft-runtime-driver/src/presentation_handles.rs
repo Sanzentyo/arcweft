@@ -589,10 +589,16 @@ pub(crate) fn filter_presentation_text_inputs(
         .into_iter()
         .filter(|control| {
             let mut aliases = vec![control.public_id.as_str(), control.target.as_str()];
+            let default_visible = control.view.is_none();
             if let Some(view) = control.view.as_deref() {
                 aliases.push(view);
             }
-            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+            resource_is_render_visible(
+                handles,
+                &RUNTIME_CONTROL_FAMILIES,
+                &aliases,
+                default_visible,
+            )
         })
         .collect()
 }
@@ -605,10 +611,16 @@ pub(crate) fn filter_presentation_action_buttons(
         .into_iter()
         .filter(|control| {
             let mut aliases = vec![control.public_id.as_str(), control.target.as_str()];
+            let default_visible = control.view.is_none();
             if let Some(view) = control.view.as_deref() {
                 aliases.push(view);
             }
-            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+            resource_is_render_visible(
+                handles,
+                &RUNTIME_CONTROL_FAMILIES,
+                &aliases,
+                default_visible,
+            )
         })
         .collect()
 }
@@ -621,10 +633,16 @@ pub(crate) fn filter_presentation_scroll_regions(
         .into_iter()
         .filter(|region| {
             let mut aliases = vec![region.public_id.as_str(), region.target.as_str()];
+            let default_visible = region.view.is_none();
             if let Some(view) = region.view.as_deref() {
                 aliases.push(view);
             }
-            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+            resource_is_render_visible(
+                handles,
+                &RUNTIME_CONTROL_FAMILIES,
+                &aliases,
+                default_visible,
+            )
         })
         .collect()
 }
@@ -637,10 +655,16 @@ pub(crate) fn filter_presentation_text_blocks(
         .into_iter()
         .filter(|block| {
             let mut aliases = vec![block.public_id.as_str(), block.target.as_str()];
+            let default_visible = block.view.is_none();
             if let Some(view) = block.view.as_deref() {
                 aliases.push(view);
             }
-            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+            resource_is_render_visible(
+                handles,
+                &RUNTIME_CONTROL_FAMILIES,
+                &aliases,
+                default_visible,
+            )
         })
         .collect()
 }
@@ -653,10 +677,16 @@ pub(crate) fn filter_presentation_surfaces(
         .into_iter()
         .filter(|surface| {
             let mut aliases = vec![surface.public_id.as_str(), surface.target.as_str()];
+            let default_visible = surface.view.is_none();
             if let Some(view) = surface.view.as_deref() {
                 aliases.push(view);
             }
-            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+            resource_is_render_visible(
+                handles,
+                &RUNTIME_CONTROL_FAMILIES,
+                &aliases,
+                default_visible,
+            )
         })
         .collect()
 }
@@ -669,10 +699,16 @@ pub(crate) fn filter_presentation_focus_groups(
         .into_iter()
         .filter(|group| {
             let mut aliases = vec![group.public_id.as_str()];
+            let default_visible = group.view.is_none();
             if let Some(view) = group.view.as_deref() {
                 aliases.push(view);
             }
-            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+            resource_is_render_visible(
+                handles,
+                &RUNTIME_CONTROL_FAMILIES,
+                &aliases,
+                default_visible,
+            )
         })
         .collect()
 }
@@ -685,17 +721,23 @@ pub(crate) fn filter_presentation_focus_navigation(
         .into_iter()
         .filter(|target| {
             let mut aliases = vec![target.public_id.as_str()];
+            let default_visible = target.view.is_none();
             if let Some(view) = target.view.as_deref() {
                 aliases.push(view);
             }
-            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
-                && target.group.as_ref().is_none_or(|group| {
-                    resource_is_render_visible(
-                        handles,
-                        &RUNTIME_CONTROL_FAMILIES,
-                        &[group.as_str()],
-                    )
-                })
+            resource_is_render_visible(
+                handles,
+                &RUNTIME_CONTROL_FAMILIES,
+                &aliases,
+                default_visible,
+            ) && target.group.as_ref().is_none_or(|group| {
+                resource_is_render_visible(
+                    handles,
+                    &RUNTIME_CONTROL_FAMILIES,
+                    &[group.as_str()],
+                    true,
+                )
+            })
         })
         .collect()
 }
@@ -739,8 +781,18 @@ fn resource_is_render_visible(
     handles: &[PresentationHandleRecord],
     kinds: &[PresentationHandleKind],
     aliases: &[&str],
+    default_visible: bool,
 ) -> bool {
-    hidden_matching_handle(handles, kinds, aliases).is_none()
+    let mut matched = false;
+    for handle in handles.iter().filter(|handle| {
+        kinds.contains(&handle.kind) && aliases.iter().any(|alias| *alias == handle.resource_id)
+    }) {
+        matched = true;
+        if handle.is_render_visible() {
+            return true;
+        }
+    }
+    !matched && default_visible
 }
 
 fn hidden_matching_handle<'a>(
@@ -748,11 +800,16 @@ fn hidden_matching_handle<'a>(
     kinds: &[PresentationHandleKind],
     aliases: &[&str],
 ) -> Option<&'a PresentationHandleRecord> {
-    handles.iter().find(|handle| {
-        kinds.contains(&handle.kind)
-            && aliases.iter().any(|alias| *alias == handle.resource_id)
-            && !handle.is_render_visible()
-    })
+    let mut hidden = None;
+    for handle in handles.iter().filter(|handle| {
+        kinds.contains(&handle.kind) && aliases.iter().any(|alias| *alias == handle.resource_id)
+    }) {
+        if handle.is_render_visible() {
+            return None;
+        }
+        hidden.get_or_insert(handle);
+    }
+    hidden
 }
 
 fn upsert_image_object(active: &mut Vec<BundleImageObject>, object: BundleImageObject) {
@@ -828,9 +885,65 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::resource_codec::view::{
+        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+        ViewInputPurpose, ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+        ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    };
+    use arcweft_bundle::resource_codec::{
+        ViewRuntimeControlStyle, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
+        ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+    };
 
     fn handle(value: &str) -> PresentationHandleId {
         PresentationHandleId::try_new(value).expect("valid handle id")
+    }
+
+    fn view_handle(
+        id: &str,
+        resource_id: &str,
+        state: PresentationResourceState,
+    ) -> PresentationHandleRecord {
+        PresentationHandleRecord::new(
+            handle(id),
+            PresentationHandleKind::View,
+            resource_id.to_owned(),
+            Some("flow.test".to_owned()),
+            state,
+            None,
+            0,
+        )
+    }
+
+    fn text_control(public_id: &str, view: Option<&str>) -> ViewRuntimeTextControl {
+        ViewRuntimeTextControl {
+            public_id: public_id.to_owned(),
+            target: public_id.to_owned(),
+            view: view.map(str::to_owned),
+            containing_scroll_region: None,
+            session: 1,
+            value: String::new(),
+            selection: ViewRuntimeTextSelection::new(0, 0),
+            options: ViewRuntimeTextControlOptions {
+                purpose: ViewInputPurpose::Text,
+                autocorrect: TextAssistPolicy::PlatformDefault,
+                spellcheck: TextAssistPolicy::PlatformDefault,
+                capitalization: TextCapitalization::None,
+                enter_key: EnterKeyHint::Send,
+                multiline: false,
+                selection_policy: ViewTextSelectionPolicy::Enabled,
+                shortcut_policy: ViewTextShortcutPolicy::Enabled,
+                tab_policy: ViewTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+                secure_policy: ViewSecureInputPolicy::Plain,
+                composition_on_blur: CompositionOnBlurPolicy::Commit,
+            },
+            kind: ViewInputKind::TextField,
+            bounds: ViewRuntimeTextControlBounds::from_px(0, 0, 100, 24),
+            label: None,
+            handlers: ViewRuntimeTextControlHandlers::default(),
+            style: ViewRuntimeControlStyle::default(),
+        }
     }
 
     #[test]
@@ -978,6 +1091,74 @@ mod tests {
         assert_eq!(handles[0].depth_milli, 250);
         assert_eq!(handles[0].created_epoch, 1);
         assert_eq!(handles[0].updated_epoch, 2);
+    }
+
+    #[test]
+    fn view_owned_runtime_controls_require_visible_view_handle() {
+        let controls = vec![
+            text_control("input.global", None),
+            text_control("input.name", Some("view.NamePanel")),
+            text_control("input.brief", Some("view.BriefPanel")),
+        ];
+
+        let without_handles = filter_presentation_text_inputs(controls.clone(), &[]);
+        assert_eq!(
+            without_handles
+                .iter()
+                .map(|control| control.public_id.as_str())
+                .collect::<Vec<_>>(),
+            ["input.global"]
+        );
+
+        let handles = [view_handle(
+            "handle.flow.test.name",
+            "view.NamePanel",
+            PresentationResourceState::Mounted,
+        )];
+        let mounted_name = filter_presentation_text_inputs(controls.clone(), &handles);
+        assert_eq!(
+            mounted_name
+                .iter()
+                .map(|control| control.public_id.as_str())
+                .collect::<Vec<_>>(),
+            ["input.global", "input.name"]
+        );
+
+        let handles = [view_handle(
+            "handle.flow.test.name",
+            "view.NamePanel",
+            PresentationResourceState::Released,
+        )];
+        let released_name = filter_presentation_text_inputs(controls, &handles);
+        assert_eq!(
+            released_name
+                .iter()
+                .map(|control| control.public_id.as_str())
+                .collect::<Vec<_>>(),
+            ["input.global"]
+        );
+    }
+
+    #[test]
+    fn mounted_handle_keeps_resource_visible_after_retained_tombstone() {
+        let controls = vec![text_control("input.name", Some("view.NamePanel"))];
+        let handles = [
+            view_handle(
+                "handle.flow.old.name",
+                "view.NamePanel",
+                PresentationResourceState::Released,
+            ),
+            view_handle(
+                "handle.flow.new.name",
+                "view.NamePanel",
+                PresentationResourceState::Mounted,
+            ),
+        ];
+
+        let visible = filter_presentation_text_inputs(controls, &handles);
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].public_id, "input.name");
     }
 
     #[test]

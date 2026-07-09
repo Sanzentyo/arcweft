@@ -192,9 +192,39 @@ pub struct InputOutcome {
     pub text_control_write_backs: Vec<TextControlWriteBack>,
     pub clipboard_requests: Vec<TextClipboardRequest>,
     pub diagnostics: Vec<InputDiagnostic>,
-    pub dialogue_advance: bool,
+    pub dialogue_progress: DialogueProgress,
     pub cancel: bool,
     pub redraw: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DialogueProgress {
+    #[default]
+    None,
+    Reveal,
+    Advance,
+}
+
+impl DialogueProgress {
+    pub const fn reveals(self) -> bool {
+        matches!(self, Self::Reveal)
+    }
+
+    pub const fn advances(self) -> bool {
+        matches!(self, Self::Advance)
+    }
+
+    pub const fn redraws(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Reveal, _) | (_, Self::Reveal) => Self::Reveal,
+            (Self::Advance, _) | (_, Self::Advance) => Self::Advance,
+            (Self::None, Self::None) => Self::None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -265,7 +295,7 @@ impl InputOutcome {
             text_control_write_backs: Vec::new(),
             clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),
-            dialogue_advance: false,
+            dialogue_progress: DialogueProgress::None,
             cancel: false,
             redraw,
         }
@@ -285,7 +315,7 @@ impl InputOutcome {
             .extend(other.text_control_write_backs);
         self.clipboard_requests.extend(other.clipboard_requests);
         self.diagnostics.extend(other.diagnostics);
-        self.dialogue_advance |= other.dialogue_advance;
+        self.dialogue_progress = self.dialogue_progress.merge(other.dialogue_progress);
         self.cancel |= other.cancel;
         self.redraw |= other.redraw;
     }
@@ -934,7 +964,7 @@ impl InputController {
                 text_control_write_backs: Vec::new(),
                 clipboard_requests: Vec::new(),
                 diagnostics: Vec::new(),
-                dialogue_advance: false,
+                dialogue_progress: DialogueProgress::None,
                 cancel: false,
                 redraw: self.ime_composing,
             };
@@ -956,7 +986,7 @@ impl InputController {
                 text_control_write_backs: Vec::new(),
                 clipboard_requests: Vec::new(),
                 diagnostics: Vec::new(),
-                dialogue_advance: false,
+                dialogue_progress: DialogueProgress::None,
                 cancel: false,
                 redraw: self.ime_composing,
             };
@@ -1039,10 +1069,13 @@ impl InputController {
     }
 
     fn dialogue_advance_from_keyboard(&self, frame: &PreparedFrame) -> InputOutcome {
-        let dialogue_advance = self.dialogue_can_advance_from_unfocused_input(frame);
+        let dialogue_progress = dialogue_progress_for_frame(
+            frame,
+            self.dialogue_can_advance_from_unfocused_input(frame),
+        );
         InputOutcome {
-            dialogue_advance,
-            redraw: dialogue_advance,
+            dialogue_progress,
+            redraw: dialogue_progress.redraws(),
             ..InputOutcome::default()
         }
     }
@@ -1165,13 +1198,16 @@ impl InputController {
         );
         let raw = self.raw(RawInputKind::Text(input));
         let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
+        let dialogue_progress = dialogue_progress_for_frame(
+            frame,
+            submitted_runtime_text_control && self.dialogue_can_advance_from_unfocused_input(frame),
+        );
         Ok(InputOutcome {
             actions: Vec::new(),
             text_control_write_backs,
             clipboard_requests,
             diagnostics: Vec::new(),
-            dialogue_advance: submitted_runtime_text_control
-                && self.dialogue_can_advance_from_unfocused_input(frame),
+            dialogue_progress,
             cancel: false,
             redraw: true,
         })
@@ -1230,7 +1266,7 @@ impl InputController {
             text_control_write_backs,
             clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),
-            dialogue_advance: false,
+            dialogue_progress: DialogueProgress::None,
             cancel: false,
             redraw,
         })
@@ -1434,7 +1470,7 @@ impl InputController {
             text_control_write_backs,
             clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),
-            dialogue_advance: false,
+            dialogue_progress: DialogueProgress::None,
             cancel: false,
             redraw: true,
         }
@@ -1881,15 +1917,29 @@ fn activation_outcome(
     diagnostics: Vec<InputDiagnostic>,
     advances_dialogue: bool,
 ) -> InputOutcome {
-    let dialogue_advance = advances_dialogue && frame.has_dialogue() && frame.choices.is_empty();
+    let dialogue_progress = dialogue_progress_for_frame(
+        frame,
+        advances_dialogue && frame.has_dialogue() && frame.choices.is_empty(),
+    );
     InputOutcome {
         actions,
         text_control_write_backs,
         clipboard_requests: Vec::new(),
         diagnostics,
-        dialogue_advance,
+        dialogue_progress,
         cancel: false,
         redraw: true,
+    }
+}
+
+fn dialogue_progress_for_frame(frame: &PreparedFrame, requested: bool) -> DialogueProgress {
+    if !requested {
+        return DialogueProgress::None;
+    }
+    if frame.has_revealing_dialogue() {
+        DialogueProgress::Reveal
+    } else {
+        DialogueProgress::Advance
     }
 }
 
@@ -2060,7 +2110,20 @@ mod tests {
         }
     }
 
+    const REVEALED_DIALOGUE_MILLIS: u64 = 60_000;
+
     fn scene_with_dialogue(control: RenderTextInputControl) -> RenderScene {
+        scene_with_dialogue_at(control, 0)
+    }
+
+    fn scene_with_revealed_dialogue(control: RenderTextInputControl) -> RenderScene {
+        scene_with_dialogue_at(control, REVEALED_DIALOGUE_MILLIS)
+    }
+
+    fn scene_with_dialogue_at(
+        control: RenderTextInputControl,
+        visual_time_millis: u64,
+    ) -> RenderScene {
         RenderScene {
             dialogue: Some(RenderDialogue {
                 speaker: "narrator".to_owned(),
@@ -2068,6 +2131,7 @@ mod tests {
                 base_styles: Vec::new(),
                 text_runs: Vec::new(),
             }),
+            visual_time_millis,
             ..scene(control)
         }
     }
@@ -2326,8 +2390,8 @@ mod tests {
         let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
         let up = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
-        assert!(!down.dialogue_advance);
-        assert!(!up.dialogue_advance);
+        assert!(!down.dialogue_progress.advances());
+        assert!(!up.dialogue_progress.advances());
     }
 
     #[test]
@@ -2365,8 +2429,8 @@ mod tests {
         let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
         let up = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
-        assert!(!down.dialogue_advance);
-        assert!(!up.dialogue_advance);
+        assert!(!down.dialogue_progress.advances());
+        assert!(!up.dialogue_progress.advances());
         assert!(input.focused_text_editor().is_none());
         assert_eq!(input.interaction().focus().target(), Some(&button_target));
     }
@@ -2383,6 +2447,29 @@ mod tests {
             SemanticRole::TextField,
             HitRect::new(20.0, 30.0, 220.0, 32.0),
         );
+        let frame = SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control)).unwrap();
+        let mut input = InputController::default();
+        let position = ViewportPoint::new(500.0, 80.0);
+
+        let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        let up = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+        assert!(!down.dialogue_progress.advances());
+        assert!(up.dialogue_progress.advances());
+    }
+
+    #[test]
+    fn pointer_activation_on_revealing_dialogue_completes_reveal_before_advance() {
+        let target = target("text_input.blank_reveal");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(70),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
         let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control)).unwrap();
         let mut input = InputController::default();
         let position = ViewportPoint::new(500.0, 80.0);
@@ -2390,8 +2477,10 @@ mod tests {
         let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
         let up = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
-        assert!(!down.dialogue_advance);
-        assert!(up.dialogue_advance);
+        assert!(!down.dialogue_progress.reveals());
+        assert!(!down.dialogue_progress.advances());
+        assert!(up.dialogue_progress.reveals());
+        assert!(!up.dialogue_progress.advances());
     }
 
     #[test]
@@ -2406,12 +2495,34 @@ mod tests {
             SemanticRole::TextField,
             HitRect::new(20.0, 30.0, 220.0, 32.0),
         );
+        let frame =
+            SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control.clone())).unwrap();
+        let mut input = InputController::default();
+
+        let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
+
+        assert!(outcome.dialogue_progress.advances());
+    }
+
+    #[test]
+    fn enter_without_view_control_focus_completes_dialogue_reveal_before_advance() {
+        let target = target("text_input.unfocused_enter_reveal");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(71),
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
         let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
         let mut input = InputController::default();
 
         let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
 
-        assert!(outcome.dialogue_advance);
+        assert!(outcome.dialogue_progress.reveals());
+        assert!(!outcome.dialogue_progress.advances());
     }
 
     #[test]
@@ -2434,7 +2545,7 @@ mod tests {
 
         let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
 
-        assert!(!outcome.dialogue_advance);
+        assert!(!outcome.dialogue_progress.advances());
     }
 
     #[test]
@@ -2449,18 +2560,18 @@ mod tests {
             SemanticRole::TextField,
             HitRect::new(20.0, 30.0, 220.0, 32.0),
         );
-        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control)).unwrap();
+        let frame = SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control)).unwrap();
         let mut input = InputController::default();
 
         let unfocused = input.keyboard(&frame, "Backspace", KeyPhase::Down);
-        assert!(unfocused.dialogue_advance);
+        assert!(unfocused.dialogue_progress.advances());
 
         let position = ViewportPoint::new(30.0, 40.0);
         input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
         input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
         let focused = input.keyboard(&frame, "Backspace", KeyPhase::Down);
 
-        assert!(!focused.dialogue_advance);
+        assert!(!focused.dialogue_progress.advances());
     }
 
     #[test]
@@ -2475,7 +2586,8 @@ mod tests {
             SemanticRole::TextField,
             HitRect::new(20.0, 30.0, 220.0, 32.0),
         );
-        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
+        let frame =
+            SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control.clone())).unwrap();
         let mut input = InputController::default();
 
         let text_position = ViewportPoint::new(30.0, 40.0);
@@ -2508,8 +2620,8 @@ mod tests {
             blank_position,
             InputPointerModifiers::NONE,
         );
-        assert!(!blank.dialogue_advance);
-        assert!(!blank_up.dialogue_advance);
+        assert!(!blank.dialogue_progress.advances());
+        assert!(!blank_up.dialogue_progress.advances());
         assert!(input.interaction().focus().target().is_none());
         assert!(input.focused_text_editor().is_none());
 
@@ -2525,11 +2637,11 @@ mod tests {
             blank_position,
             InputPointerModifiers::NONE,
         );
-        assert!(!second_down.dialogue_advance);
-        assert!(second_up.dialogue_advance);
+        assert!(!second_down.dialogue_progress.advances());
+        assert!(second_up.dialogue_progress.advances());
 
         let advance = input.keyboard(&frame, "Backspace", KeyPhase::Down);
-        assert!(advance.dialogue_advance);
+        assert!(advance.dialogue_progress.advances());
     }
 
     #[test]
@@ -2653,7 +2765,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(!outcome.dialogue_advance);
+        assert!(!outcome.dialogue_progress.advances());
         assert_eq!(outcome.text_control_write_backs().len(), 1);
         assert!(outcome.text_control_write_backs()[0].is_submit());
     }

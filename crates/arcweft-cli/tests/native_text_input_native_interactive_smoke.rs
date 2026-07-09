@@ -92,7 +92,8 @@ fn seq06_16_3_submit_samples_share_player_backed_semantic_action_routes() {
 
     let modern = read(root.join("samples/modern-feedback-view/src/main.arcw"));
     for required in [
-        "let panel = view(@view:.ModernFeedbackPanel",
+        "let name_panel = view(@view:.ModernFeedbackNamePanel",
+        "let brief_panel = view(@view:.ModernFeedbackBriefPanel",
         "pub action feedback.submit_name(value: String)",
         "pub action feedback.submit_brief(value: String)",
         "\"Noto Emoji\"",

@@ -22,7 +22,8 @@ use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
 use arcweft_player_scene::input::{
-    InputController, InputControllerSnapshot, InputControllerSnapshotError, InputOutcome,
+    DialogueProgress, InputController, InputControllerSnapshot, InputControllerSnapshotError,
+    InputOutcome,
 };
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::{
@@ -324,6 +325,13 @@ impl NativePlayerSessionSaveSchema {
 struct DialogueVisualClock {
     line: Option<arcweft_core::plan::RuntimeLineId>,
     started_at_millis: u64,
+    completed_line: Option<arcweft_core::plan::RuntimeLineId>,
+}
+
+impl DialogueVisualClock {
+    fn complete_current_line(&mut self) {
+        self.completed_line = self.line.clone();
+    }
 }
 
 fn run_shared_scene_window(
@@ -1190,12 +1198,14 @@ impl NativeSceneState {
             text_control_write_backs,
             clipboard_requests,
             diagnostics: _,
-            dialogue_advance,
+            dialogue_progress,
             cancel: _,
             redraw: _,
         } = outcome;
-        if dialogue_advance {
-            self.runtime.session_mut().queue_dialogue_advance();
+        match dialogue_progress {
+            DialogueProgress::None => {}
+            DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_line(),
+            DialogueProgress::Advance => self.runtime.session_mut().queue_dialogue_advance(),
         }
         for action in actions {
             self.runtime.session_mut().queue_semantic_action(&action)?;
@@ -1224,12 +1234,14 @@ impl NativeSceneState {
                 text_control_write_backs,
                 clipboard_requests,
                 diagnostics: _,
-                dialogue_advance,
+                dialogue_progress,
                 cancel: _,
                 redraw: _,
             } = outcome;
-            if dialogue_advance {
-                self.runtime.session_mut().queue_dialogue_advance();
+            match dialogue_progress {
+                DialogueProgress::None => {}
+                DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_line(),
+                DialogueProgress::Advance => self.runtime.session_mut().queue_dialogue_advance(),
             }
             for action in actions {
                 self.runtime.session_mut().queue_semantic_action(&action)?;
@@ -1693,14 +1705,21 @@ fn dialogue_visual_time_millis(
     let Some(dialogue) = dialogue else {
         clock.line = None;
         clock.started_at_millis = elapsed_millis;
+        clock.completed_line = None;
         return 0;
     };
     if clock.line.as_ref() != Some(&dialogue.line) {
         clock.line = Some(dialogue.line.clone());
         clock.started_at_millis = elapsed_millis;
+        clock.completed_line = None;
+    }
+    if clock.completed_line.as_ref() == Some(&dialogue.line) {
+        return DIALOGUE_REVEAL_COMPLETE_MILLIS;
     }
     elapsed_millis.saturating_sub(clock.started_at_millis)
 }
+
+const DIALOGUE_REVEAL_COMPLETE_MILLIS: u64 = 24 * 60 * 60 * 1_000;
 
 #[cfg(test)]
 mod tests {

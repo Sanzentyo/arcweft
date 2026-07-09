@@ -548,6 +548,13 @@ pub struct RenderStyledParagraph {
     pub visual_time_millis: u64,
 }
 
+impl RenderStyledParagraph {
+    #[must_use]
+    pub fn reveal_complete(&self) -> bool {
+        self.reveal.visible_end >= self.text.len()
+    }
+}
+
 /// One typed style span inside a renderer-owned paragraph.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderStyledTextSpan {
@@ -703,6 +710,7 @@ pub struct PreparedFrame {
     pub focus_graph: PreparedFocusGraph,
     view_scenes: Vec<PreparedViewScene>,
     dialogue_present: bool,
+    dialogue_reveal_complete: bool,
     interaction: InteractionVisualState,
     focused_text_input: Option<PreparedTextInputTarget>,
 }
@@ -903,6 +911,16 @@ impl PreparedFrame {
     #[must_use]
     pub const fn has_dialogue(&self) -> bool {
         self.dialogue_present
+    }
+
+    #[must_use]
+    pub const fn dialogue_reveal_complete(&self) -> bool {
+        self.dialogue_reveal_complete
+    }
+
+    #[must_use]
+    pub const fn has_revealing_dialogue(&self) -> bool {
+        self.dialogue_present && !self.dialogue_reveal_complete
     }
 
     #[must_use]
@@ -1245,6 +1263,7 @@ impl SharedFramePlanContext {
         )];
         let mut text = Vec::new();
         let mut styled_paragraphs = Vec::new();
+        let dialogue_paragraph_start = styled_paragraphs.len();
         push_dialogue_panel(
             scene,
             &mut rectangles,
@@ -1252,6 +1271,11 @@ impl SharedFramePlanContext {
             &mut styled_paragraphs,
             &palette,
         );
+        let dialogue_present = scene.dialogue.is_some();
+        let dialogue_reveal_complete = !dialogue_present
+            || styled_paragraphs[dialogue_paragraph_start..]
+                .iter()
+                .all(RenderStyledParagraph::reveal_complete);
 
         let mut semantics = SemanticTree::default();
         let action = RenderActionKind::ChoiceSelect.public_id()?;
@@ -1303,7 +1327,8 @@ impl SharedFramePlanContext {
                 scene.focus_navigation.clone(),
             ),
             view_scenes: Vec::new(),
-            dialogue_present: scene.dialogue.is_some(),
+            dialogue_present,
+            dialogue_reveal_complete,
             interaction: scene.interaction.clone(),
             focused_text_input: runtime_controls.focused_text_input,
         })
