@@ -25,7 +25,7 @@ pub trait RuntimeExecutor {
 
 /// Runtime executor backed by the built-in Arcweft VM.
 #[derive(Clone, Debug, PartialEq)]
-pub struct VmExecutor {
+pub(crate) struct VmExecutor {
     engine: Engine,
 }
 
@@ -35,7 +35,7 @@ pub struct VmExecutor {
 /// shape analysis. Generated dispatch can replace that backend without changing
 /// host-facing executor selection.
 #[derive(Clone, Debug, PartialEq)]
-pub struct AotExecutor {
+pub(crate) struct AotExecutor {
     program: AotProgram,
     vm: VmExecutor,
     fast_path_ops: usize,
@@ -43,14 +43,13 @@ pub struct AotExecutor {
 
 /// Runtime executor backed by a bytecode bundle.
 #[derive(Clone, Debug, PartialEq)]
-pub struct BytecodeVmExecutor {
-    program: BytecodeProgram,
+pub(crate) struct BytecodeVmExecutor {
     vm: VmExecutor,
 }
 
 /// Runtime executor backed by canonical product AWBC.
 #[derive(Clone, Debug, PartialEq)]
-pub struct AwbcProductExecutor {
+pub(crate) struct AwbcProductExecutor {
     vm: AwbcProductStepExecutor,
 }
 
@@ -120,35 +119,21 @@ enum ArcweftRuntimeExecutorInner {
 }
 
 impl VmExecutor {
-    pub fn new(plan: RuntimePlan) -> Self {
+    pub(crate) fn new(plan: RuntimePlan) -> Self {
         Self {
             engine: Engine::new(plan),
         }
     }
 
-    pub const fn engine(&self) -> &Engine {
+    pub(crate) const fn engine(&self) -> &Engine {
         &self.engine
     }
 
-    pub const fn engine_mut(&mut self) -> &mut Engine {
+    pub(crate) const fn engine_mut(&mut self) -> &mut Engine {
         &mut self.engine
     }
 
-    pub fn into_engine(self) -> Engine {
-        self.engine
-    }
-
-    pub fn step_with_pure_backend(
-        &mut self,
-        input: RuntimeStepInput,
-        options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
-        self.engine
-            .step_with_pure_backend(input, options, pure_backend)
-    }
-
-    pub fn step_with_root_bindings_and_pure_backend(
+    pub(crate) fn step_with_root_bindings_and_pure_backend(
         &mut self,
         input: RuntimeStepInput,
         root_bindings: &[RuntimeBinding],
@@ -165,7 +150,7 @@ impl VmExecutor {
 }
 
 impl AotExecutor {
-    pub fn new(plan: RuntimePlan) -> Self {
+    pub(crate) fn new(plan: RuntimePlan) -> Self {
         let program = AotProgram::from_runtime_plan(&plan);
         let vm = VmExecutor::new(plan);
         Self {
@@ -175,41 +160,16 @@ impl AotExecutor {
         }
     }
 
-    pub fn from_parts(program: AotProgram, plan: RuntimePlan) -> Self {
-        let vm = VmExecutor::new(plan);
-        Self {
-            program,
-            vm,
-            fast_path_ops: 0,
-        }
-    }
-
-    pub const fn program(&self) -> &AotProgram {
+    #[cfg(test)]
+    pub(crate) const fn program(&self) -> &AotProgram {
         &self.program
     }
 
-    pub const fn vm(&self) -> &VmExecutor {
-        &self.vm
-    }
-
-    pub const fn fast_path_ops(&self) -> usize {
+    pub(crate) const fn fast_path_ops(&self) -> usize {
         self.fast_path_ops
     }
 
-    pub fn into_program(self) -> AotProgram {
-        self.program
-    }
-
-    pub fn step_with_pure_backend(
-        &mut self,
-        input: RuntimeStepInput,
-        options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
-        self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
-    }
-
-    pub fn step_with_root_bindings_and_pure_backend(
+    pub(crate) fn step_with_root_bindings_and_pure_backend(
         &mut self,
         input: RuntimeStepInput,
         root_bindings: &[RuntimeBinding],
@@ -244,47 +204,19 @@ impl AotExecutor {
 }
 
 impl BytecodeVmExecutor {
-    pub fn new(program: BytecodeProgram) -> Result<Self, RuntimePlanError> {
-        let vm = VmExecutor::new(program.clone().into_runtime_plan()?);
-        Ok(Self { program, vm })
+    pub(crate) fn new(program: BytecodeProgram) -> Result<Self, RuntimePlanError> {
+        Ok(Self {
+            vm: VmExecutor::new(program.into_runtime_plan()?),
+        })
     }
 
-    pub fn from_parts(program: BytecodeProgram, plan: RuntimePlan) -> Self {
+    pub(crate) fn from_runtime_plan(plan: RuntimePlan) -> Self {
         Self {
-            program,
             vm: VmExecutor::new(plan),
         }
     }
 
-    pub fn from_runtime_plan(plan: RuntimePlan) -> Self {
-        Self {
-            program: BytecodeProgram::from_runtime_plan(plan.clone()),
-            vm: VmExecutor::new(plan),
-        }
-    }
-
-    pub const fn program(&self) -> &BytecodeProgram {
-        &self.program
-    }
-
-    pub const fn vm(&self) -> &VmExecutor {
-        &self.vm
-    }
-
-    pub fn into_program(self) -> BytecodeProgram {
-        self.program
-    }
-
-    pub fn step_with_pure_backend(
-        &mut self,
-        input: RuntimeStepInput,
-        options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
-        self.vm.step_with_pure_backend(input, options, pure_backend)
-    }
-
-    pub fn step_with_root_bindings_and_pure_backend(
+    pub(crate) fn step_with_root_bindings_and_pure_backend(
         &mut self,
         input: RuntimeStepInput,
         root_bindings: &[RuntimeBinding],
@@ -302,11 +234,11 @@ impl BytecodeVmExecutor {
 
 impl AwbcProductExecutor {
     #[must_use]
-    pub fn snapshot(&self) -> AwbcProductExecutorSnapshot {
+    pub(crate) fn snapshot(&self) -> AwbcProductExecutorSnapshot {
         self.vm.snapshot()
     }
 
-    pub fn restore_snapshot(
+    pub(crate) fn restore_snapshot(
         &mut self,
         snapshot: AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
@@ -365,32 +297,6 @@ impl ArcweftRuntimeExecutor {
                 ))
             }
         })
-    }
-
-    pub fn from_bytecode_parts(
-        program: BytecodeProgram,
-        plan: RuntimePlan,
-        tier: ArcweftExecutionTier,
-    ) -> Self {
-        match tier {
-            ArcweftExecutionTier::StructuredVm | ArcweftExecutionTier::AwbcProduct => {
-                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredVm(
-                    BytecodeVmExecutor::from_parts(program, plan),
-                ))
-            }
-            ArcweftExecutionTier::StructuredAot => {
-                let _ = program;
-                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredAot(
-                    AotExecutor::new(plan),
-                ))
-            }
-        }
-    }
-
-    pub fn from_aot_parts(program: AotProgram, plan: RuntimePlan) -> Self {
-        Self::from_inner(ArcweftRuntimeExecutorInner::StructuredAot(
-            AotExecutor::from_parts(program, plan),
-        ))
     }
 
     pub const fn tier(&self) -> ArcweftExecutionTier {

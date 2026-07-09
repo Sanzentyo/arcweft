@@ -1,5 +1,5 @@
 use arcweft_core::engine::{FlowExit, FlowFiberStatus};
-use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
+use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{RuntimePlan, RuntimeRouteBindingSource, RuntimeRouteSpec};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -151,7 +151,8 @@ fn run_route_flow(
     let mut plan = plan.clone();
     plan.entry_flow = Some(route.target.clone());
     let mut pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-    let mut executor = VmExecutor::new(plan);
+    let mut executor =
+        ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::StructuredVm);
     let result = executor.step_with_pure_backend(
         RuntimeStepInput {
             bindings: request_bindings(request, route, params),

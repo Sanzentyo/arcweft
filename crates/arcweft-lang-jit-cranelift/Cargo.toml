@@ -14,3 +14,12 @@ thiserror.workspace = true
 
 [lib]
 path = "src/lib.rs"
+
+# Native calls are isolated in `native_call`; every other module is checked as
+# safe Rust by the compiler instead of by repository-text scanning.
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

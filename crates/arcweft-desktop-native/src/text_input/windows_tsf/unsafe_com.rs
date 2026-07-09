@@ -4,6 +4,7 @@
 //! replay, capture, or Agent observation data.
 
 #![cfg(target_os = "windows")]
+#![allow(unsafe_code)]
 #![allow(clippy::inline_always, clippy::ref_as_ptr)]
 
 use crate::text_input::windows_tsf::geometry::{

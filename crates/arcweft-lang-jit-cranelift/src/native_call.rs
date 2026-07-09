@@ -1,3 +1,7 @@
+//! Audited function-pointer boundary for invoking code emitted by Cranelift.
+
+#![allow(unsafe_code)]
+
 use arcweft_core::value::{RuntimeISizeValue, RuntimeUSizeValue};
 use std::mem;
 

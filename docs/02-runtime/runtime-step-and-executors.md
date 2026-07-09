@@ -26,47 +26,43 @@ pub struct RuntimeStepResult {
 }
 ```
 
-`Engine` implements `RuntimeExecutor` directly. `VmExecutor` is the current
-semantic executor wrapper used by CLI tooling; it delegates to `Engine` and keeps
-the VM as the source of truth. `BytecodeProgram` is the pure data bundle between
-runtime-plan lowering and VM/AOT/JIT execution. `BytecodeVmExecutor` executes a
-bytecode bundle through the semantic VM so bytecode generation can be tested
-before a separate dispatch loop exists. `AotExecutor` also implements
-`RuntimeExecutor` today, but its Phase 2 implementation deliberately delegates to
-`VmExecutor` so the public AOT boundary can be tested without creating a second
-semantic engine.
+`Engine` implements `RuntimeExecutor` directly inside the core. Application
+crates construct `ArcweftRuntimeExecutor`, selecting a typed
+`ArcweftExecutionTier`; they do not construct the concrete VM, bytecode, AOT, or
+product-AWBC executors. Those concrete executors are core-internal implementation
+details, which keeps host wiring independent of backend reshaping.
 
-Snapshot/restore remains a future shared contract. It must use executor-neutral
-data when added so VM, AOT, replay, and LSP tooling can compare equivalent
-runtime states.
+`BytecodeProgram` remains the pure data bundle between runtime-plan lowering and
+VM/AOT/JIT execution. Structured VM and AOT tiers use the same semantic state
+machine, while the product tier owns the canonical AWBC executor. Snapshot and
+restore are exposed through the facade only for tiers with a defined typed
+snapshot contract; unsupported tiers return a structured error.
 
 ## Executors
 
 ```rust
-pub struct VmExecutor {
-    engine: Engine,
+pub enum ArcweftExecutionTier {
+    StructuredVm,
+    StructuredAot,
+    AwbcProduct,
 }
 
-pub struct AotExecutor {
-    vm: VmExecutor,
+pub struct ArcweftRuntimeExecutor {
+    inner: ArcweftRuntimeExecutorInner,
 }
 
-pub struct BytecodeVmExecutor {
-    program: BytecodeProgram,
-    vm: VmExecutor,
-}
-
-pub struct HybridExecutor {
-    vm: VmExecutor,
-    pure_cache: PureFunctionBackend,
+enum ArcweftRuntimeExecutorInner {
+    StructuredVm(BytecodeVmExecutor),
+    StructuredAot(AotExecutor),
+    AwbcProduct(Box<AwbcProductExecutor>),
 }
 ```
 
-All executors use the same `RuntimeStepInput`, `RuntimeStepOptions`, and
-`RuntimeStepResult`. VM, bytecode VM, and the current AOT executor can also be
-stepped with an adapter-provided `RuntimePureCallBackend`; this keeps pure
-helper acceleration outside `arcweft-core` while allowing ordinary flow code to
-benefit from AOT/JIT pure helpers automatically.
+All tiers use the same `RuntimeStepInput`, `RuntimeStepOptions`, and
+`RuntimeStepResult`. The facade can also be stepped with an adapter-provided
+`RuntimePureCallBackend`; this keeps pure helper acceleration outside
+`arcweft-core` while allowing ordinary flow code to benefit from AOT/JIT pure
+helpers automatically.
 
 `RuntimeStepStats.pure` reports per-step pure helper calls, batch calls, batch
 item counts, JIT/AOT/VM call counts, fixed-stack argument packs, copied
