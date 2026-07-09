@@ -129,6 +129,56 @@ flow test {
 }
 
 #[test]
+fn receive_action_inside_let_block_lowers_to_scope_value() {
+    let tree = parse_ok(
+        r"
+pub action feedback.submit(value: String)
+
+flow test {
+  let submitted = {
+    let event = receive action(@action:.feedback.submit)
+    event.value
+  }
+  return submitted
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("HIR lowers");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+    let flow = &plan.flows[0];
+
+    let FlowOp::LetScope {
+        pattern,
+        ops,
+        value,
+    } = &flow.ops[0]
+    else {
+        panic!("expected block let to lower to a flow scope");
+    };
+
+    assert_eq!(pattern, &RuntimePattern::Ident("submitted".to_owned()));
+    let FlowOp::HostCall {
+        binding: Some(RuntimePattern::Ident(binding)),
+        target,
+    } = &ops[0]
+    else {
+        panic!("expected receive action inside scope body");
+    };
+    assert_eq!(binding, "event");
+    assert_eq!(target.public_id, "view.action.await");
+    assert!(matches!(
+        value,
+        RuntimeExpr::Field { target, field }
+            if field == "value"
+                && matches!(target.as_ref(), RuntimeExpr::Local(name) if name == "event")
+    ));
+    assert!(matches!(
+        &flow.ops[1],
+        FlowOp::ReturnExpr(RuntimeExpr::Local(name)) if name == "submitted"
+    ));
+}
+
+#[test]
 fn canonical_log_signal_metric_are_ordinary_calls() {
     assert!(matches!(
         parse_expr(r#"log.info("selected {id:?}", id = selected.id)"#)
@@ -955,7 +1005,11 @@ flow @flow.line_handles line_handles {
     assert_eq!(plan.line_task_groups.len(), 1);
     assert!(matches!(
         &plan.flows[0].ops[0],
-        FlowOp::Dialogue { task_group: 0, .. }
+        FlowOp::Dialogue {
+            line,
+            task_group: 0,
+            ..
+        } if line.canonical_label() == "line_handles.dialogue.0"
     ));
     assert!(matches!(
         &plan.flows[0].ops[1],

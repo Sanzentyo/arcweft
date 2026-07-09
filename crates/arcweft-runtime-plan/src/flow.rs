@@ -3,12 +3,18 @@
 mod closure_metadata;
 mod pure_helpers;
 mod record_projection;
+mod syntax_helpers;
 
 pub use closure_metadata::{RuntimeClosureCapture, RuntimeClosureCaptureInventory};
 
+pub(crate) use self::syntax_helpers::sanitize_task_id_part;
 use self::{
     pure_helpers::runtime_pure_helper_inventory,
     record_projection::rewrite_known_record_projections_in_op,
+    syntax_helpers::{
+        agent_task_name, dialogue_call_parts, flow_runtime_id, method_name, parallel_limit,
+        selected_call_parts, split_capability_operation, traverse_callee,
+    },
 };
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{
@@ -52,9 +58,8 @@ use arcweft_lang_hir::syntax::ast::{
     flow::{
         AuthoredExpr, AwaitBranchKind, FlowItem, ScopeExprBlock, Stmt, StmtMatchArm, ThreadBlock,
     },
-    ids::{EntityRef, EntityRefSyntax},
+    ids::EntityRefSyntax,
     items::{EntryItem, EntryKind, FunctionKind},
-    line_plan::LinePlan,
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
@@ -1648,15 +1653,14 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         pattern: &Pattern,
         scope: &HirScopeExpr,
     ) -> FlowOp {
-        FlowOp::LetScope {
-            pattern: lower_runtime_pattern(pattern),
-            ops: self.lower_flow_stmt_list(flow_id, flow_index, scope.statements()),
-            value: scope
-                .value()
-                .map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
-                    self.lower_runtime_expr(value)
-                }),
-        }
+        self.lower_let_scope_parts(
+            flow_id,
+            flow_index,
+            pattern,
+            None,
+            scope.statements(),
+            scope.value(),
+        )
     }
 
     fn lower_match_block(
@@ -1714,7 +1718,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         let line = dialogue.id().map_or_else(
             || {
                 RuntimeLineId::canonical(&format!(
-                    "{}.line.{task_group}",
+                    "{}.dialogue.{task_group}",
                     flow_id.canonical_label()
                 ))
                 .expect("generated dialogue line ID is valid")
@@ -1976,15 +1980,14 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         pattern: &Pattern,
         scope: &ScopeExprBlock,
     ) -> Vec<FlowOp> {
-        vec![FlowOp::LetScope {
-            pattern: lower_runtime_pattern(pattern),
-            ops: self.lower_flow_stmt_list(flow_id, flow_index, scope.statements()),
-            value: scope
-                .value()
-                .map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
-                    self.lower_runtime_expr(value)
-                }),
-        }]
+        vec![self.lower_let_scope_parts(
+            flow_id,
+            flow_index,
+            pattern,
+            None,
+            scope.statements(),
+            scope.value(),
+        )]
     }
 
     fn lower_action_receive_stmt(&mut self, pattern: &Pattern, action: &Expr) -> Vec<FlowOp> {
@@ -2205,6 +2208,15 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         } else if let Some(ops) = self.lower_presentation_handle_let(flow_id, pattern, expr) {
             self.record_function_local_binding(pattern, None);
             ops
+        } else if let Expr::Block { statements, value } = expr {
+            vec![self.lower_let_scope_parts(
+                flow_id,
+                flow_index,
+                pattern,
+                ty,
+                statements,
+                value.as_deref(),
+            )]
         } else {
             let expr = self.lower_runtime_expr_with_expected_type(ty, expr);
             let arity = self.runtime_expr_function_arity(&expr);
@@ -2214,6 +2226,48 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
                 expr,
             }]
         }
+    }
+
+    fn lower_let_scope_parts(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        expected_ty: Option<&TypeRef>,
+        statements: &[Stmt],
+        value: Option<&Expr>,
+    ) -> FlowOp {
+        let (ops, value, arity) =
+            self.lower_flow_scope_body(flow_id, flow_index, statements, expected_ty, value);
+        self.record_function_local_binding(pattern, arity);
+        FlowOp::LetScope {
+            pattern: lower_runtime_pattern(pattern),
+            ops,
+            value,
+        }
+    }
+
+    fn lower_flow_scope_body(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        statements: &[Stmt],
+        expected_ty: Option<&TypeRef>,
+        value: Option<&Expr>,
+    ) -> (Vec<FlowOp>, RuntimeExpr, Option<usize>) {
+        self.presentation_handle_scopes.push(BTreeMap::new());
+        self.function_local_scopes.push(BTreeMap::new());
+        let ops = statements
+            .iter()
+            .flat_map(|statement| self.lower_flow_stmt(flow_id, flow_index, statement))
+            .collect();
+        let value = value.map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
+            self.lower_runtime_expr_with_expected_type(expected_ty, value)
+        });
+        let arity = self.runtime_expr_function_arity(&value);
+        self.function_local_scopes.pop();
+        self.presentation_handle_scopes.pop();
+        (ops, value, arity)
     }
 
     fn lower_stmt_match_arms(
@@ -2277,14 +2331,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         flow_index: usize,
         statements: &[Stmt],
     ) -> Vec<FlowOp> {
-        self.presentation_handle_scopes.push(BTreeMap::new());
-        self.function_local_scopes.push(BTreeMap::new());
-        let ops = statements
-            .iter()
-            .flat_map(|statement| self.lower_flow_stmt(flow_id, flow_index, statement))
-            .collect();
-        self.function_local_scopes.pop();
-        self.presentation_handle_scopes.pop();
+        let (ops, _, _) = self.lower_flow_scope_body(flow_id, flow_index, statements, None, None);
         ops
     }
 
@@ -2382,103 +2429,6 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
                 .map(|error| RuntimePlanLowerError::new(error.message().to_owned())),
         );
     }
-}
-
-fn dialogue_call_parts(expr: &Expr) -> Option<(&Expr, &str, Option<&LinePlan>)> {
-    match expr {
-        Expr::DialogueCall {
-            callee,
-            content,
-            plan,
-        } => Some((callee.as_ref(), content.as_str(), plan.as_ref())),
-        Expr::Try { expr } => dialogue_call_parts(expr),
-        _ => None,
-    }
-}
-
-pub(crate) fn sanitize_task_id_part(name: &str) -> String {
-    name.chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-fn agent_task_name(expr: &Expr) -> String {
-    expr_label(expr)
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '_' {
-                ch
-            } else {
-                '.'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('.')
-        .to_owned()
-}
-
-fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
-    FlowRuntimeId::from_runtime_target_value(id.body()).expect("HIR flow ID should be valid")
-}
-
-fn method_name(method: &str) -> &str {
-    method.split_once('<').map_or(method, |(name, _)| name)
-}
-
-fn selected_call_parts(
-    expr: &Expr,
-) -> Option<(&Expr, &str, &[arcweft_lang_hir::syntax::expr::CallArg])> {
-    let Expr::Call { callee, args } = expr else {
-        return None;
-    };
-    let Expr::Select(select) = callee.as_ref() else {
-        return None;
-    };
-    Some((select.target(), select.member().as_str(), args.as_slice()))
-}
-
-fn traverse_callee(args: &[arcweft_lang_hir::syntax::expr::CallArg]) -> Result<&Expr, String> {
-    let [arg] = args else {
-        return Err("traverse(...) requires exactly one positional task function".to_owned());
-    };
-    if arg.name().is_some() || arg.is_spread() {
-        return Err("traverse(...) task function must be a positional argument".to_owned());
-    }
-    Ok(arg.value())
-}
-
-fn split_capability_operation(name: &str) -> Result<(String, String), String> {
-    name.rsplit_once('.').map_or_else(
-        || {
-            Err(format!(
-                "traverse task function `{name}` must be capability-qualified"
-            ))
-        },
-        |(capability, operation)| Ok((capability.to_owned(), operation.to_owned())),
-    )
-}
-
-fn parallel_limit(args: &[arcweft_lang_hir::syntax::expr::CallArg]) -> Result<usize, String> {
-    let [arg] = args else {
-        return Err("parallel(...) requires exactly `limit = N`".to_owned());
-    };
-    if arg.name() != Some("limit") || arg.is_spread() {
-        return Err("parallel(...) requires a named `limit = N` argument".to_owned());
-    }
-    let Expr::Literal(arcweft_lang_hir::syntax::expr::Literal::Int { value, .. }) = arg.value()
-    else {
-        return Err("parallel limit must be an integer literal".to_owned());
-    };
-    usize::try_from(*value)
-        .ok()
-        .filter(|value| *value > 0)
-        .ok_or_else(|| "parallel limit must be greater than zero".to_owned())
 }
 
 #[cfg(test)]

@@ -226,24 +226,21 @@ flow modern_feedback_view {
     player_viewport(width = 1280px, height = 720px, fit = contain)
     image(@image.glass_bg)
 
-    {
+    concierge:
+        Welcome to the Modern Feedback View sample. This is a translucent one-line view panel with a normal Arcweft flow.[p]
+        Fill the name field, then submit it with Enter, IME send, or the Continue button.
+
+    let visitor_name = {
         let name_panel = view(@view:.ModernFeedbackNamePanel)
-
-        concierge:
-            Welcome to the Modern Feedback View sample. This is a translucent one-line view panel with a normal Arcweft flow.[p]
-            Fill the name field, then submit it with Enter, IME send, or the Continue button.
-
-        concierge:
-            This name panel stays alive only while the flow is waiting for the submitted name.
         
         let name_event = receive action(@action:.feedback.submit_name)
-        let visitor_name = name_event.value
+        name_event.value
+    }
         
-        if visitor_name == "" {
-            concierge: We will keep the greeting anonymous for now.
-        } else {
-            concierge: Nice to meet you, #[visitor_name].
-        }
+    if visitor_name == "" {
+        concierge: We will keep the greeting anonymous for now.
+    } else {
+        concierge: Nice to meet you, #[visitor_name].
     }
 
     {
@@ -262,7 +259,9 @@ flow modern_feedback_view {
             concierge: Captured the view-backed brief. The next runtime step can branch into a planning route.
         }
         concierge: The submitted brief was: #[brief]
-
-        return brief
     }
+
+    concierge: This is the end of the modern_feedback flow. Returning to the beginning.
+
+    goto @flow:.modern_feedback_view
 }

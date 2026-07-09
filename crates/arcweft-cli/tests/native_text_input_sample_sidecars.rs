@@ -84,10 +84,11 @@ fn modern_feedback_view_sample_uses_view_style_and_flow_submit() {
         source
             .contains("action.invoke(@action:.feedback.submit_brief, value = product_brief.text)")
     );
+    assert!(source.contains("let visitor_name = {"));
     assert!(source.contains("let name_event = receive action(@action:.feedback.submit_name)"));
-    assert!(source.contains("let visitor_name = name_event.value"));
+    assert!(source.contains("name_event.value"));
     assert!(source.contains("let brief_event = receive action(@action:.feedback.submit_brief)"));
     assert!(source.contains("let brief = brief_event.value"));
+    assert!(source.contains("goto @flow:.modern_feedback_view"));
     assert!(!source.contains("panel.close()"));
-    assert!(source.contains("return brief"));
 }
