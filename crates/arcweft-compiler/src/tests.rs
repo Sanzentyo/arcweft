@@ -395,13 +395,8 @@ flow @flow.main main {
     let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(
         &hir,
-        &TypeCheckEnv::standard().with_symbol(
-            "f",
-            TypeKind::Function {
-                params: vec![TypeKind::I64],
-                return_type: Box::new(TypeKind::Bool),
-            },
-        ),
+        &TypeCheckEnv::standard()
+            .with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool)),
     );
     assert!(typecheck.diagnostics.is_empty());
 
@@ -447,13 +442,8 @@ flow @flow.main main {
     let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(
         &hir,
-        &TypeCheckEnv::standard().with_symbol(
-            "f",
-            TypeKind::Function {
-                params: vec![TypeKind::I64],
-                return_type: Box::new(TypeKind::Bool),
-            },
-        ),
+        &TypeCheckEnv::standard()
+            .with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool)),
     );
     assert!(
         !typecheck.typed_lowering_evidence.is_empty(),
@@ -486,10 +476,7 @@ flow @flow.main main {
 "#,
     );
     let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let predicate = TypeKind::Function {
-        params: vec![TypeKind::I64],
-        return_type: Box::new(TypeKind::Bool),
-    };
+    let predicate = TypeKind::function([TypeKind::I64], TypeKind::Bool);
     let typecheck = arcweft_lang_sema::check::analyze_types(
         &hir,
         &TypeCheckEnv::standard().with_function_signature(
@@ -3385,10 +3372,7 @@ pub source @source.values: Source<i64, String> {
 ",
     );
     let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let function_ty = TypeKind::Function {
-        params: vec![TypeKind::I64],
-        return_type: Box::new(TypeKind::I64),
-    };
+    let function_ty = TypeKind::function([TypeKind::I64], TypeKind::I64);
     let source_ty = TypeKind::Source {
         item: Box::new(TypeKind::I64),
         error: Box::new(TypeKind::String),

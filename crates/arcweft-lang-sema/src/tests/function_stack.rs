@@ -1472,6 +1472,69 @@ effects { }
 }
 
 #[test]
+fn closure_effect_callable_evidence_joins_type_judgment_to_closed_row() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_row_join closure_row_join
+effects { }
+{
+    let later = |path: String| -> String {
+        adapter.read_text(path = path)
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure effect callable fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure effect callable fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "closure creation should stay effect-free for the caller: {:?}",
+        report.diagnostics
+    );
+    let (expression_id, callable) = report
+        .typed_lowering_evidence
+        .iter()
+        .find_map(|evidence| {
+            let TypedLoweringEvidenceKind::FunctionEffectCallable { callable } = &evidence.kind
+            else {
+                return None;
+            };
+            callable
+                .as_str()
+                .starts_with("closure.expr.")
+                .then(|| (evidence.expression_id, callable.clone()))
+        })
+        .expect("closure expression should export effect-callable evidence");
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.subject,
+                TypeJudgmentSubject::Expr {
+                    id,
+                    kind: "closure"
+                } if *id == expression_id && matches!(judgment.ty, TypeKind::Function { .. })
+            )
+        }),
+        "closure effect-callable evidence should be keyed to the closure expression judgment"
+    );
+
+    let rows = report
+        .effects
+        .closed_effect_rows()
+        .expect("closed effect-row report resolves");
+    let closure_row = rows
+        .summary(&callable)
+        .expect("closure evidence callable should have a closed row summary");
+    assert_eq!(
+        closure_row.inferred().to_labels(),
+        vec!["fs.read"],
+        "closure evidence callable should point at the closure body effect row"
+    );
+}
+
+#[test]
 fn borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary() {
     let tree = parse_ok(
         r#"

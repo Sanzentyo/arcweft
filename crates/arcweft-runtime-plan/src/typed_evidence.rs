@@ -37,6 +37,8 @@ pub enum RuntimeTypedLoweringEvidenceKind {
     FunctionValueReference { callee: String },
     /// A direct named function signature call returned a partial function.
     SignaturePartialCall { callee: String, arg_count: usize },
+    /// A function-valued expression owns a callable used by effect-row reports.
+    FunctionEffectCallable { callable: String },
     /// A method-call expression resolved as data-last callable fallback.
     DataLastMethodFallback {
         method: String,

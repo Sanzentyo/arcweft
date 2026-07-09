@@ -148,6 +148,11 @@ fn runtime_typed_lowering_evidence(
                 callee: callee.clone(),
                 arg_count: *arg_count,
             },
+            TypedLoweringEvidenceKind::FunctionEffectCallable { callable } => {
+                RuntimeTypedLoweringEvidenceKind::FunctionEffectCallable {
+                    callable: callable.as_str().to_owned(),
+                }
+            }
             TypedLoweringEvidenceKind::DataLastMethodFallback {
                 method,
                 arg_count,

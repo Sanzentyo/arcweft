@@ -264,6 +264,8 @@ pub enum TypedLoweringEvidenceKind {
         result_ty: TypeKind,
         arg_count: usize,
     },
+    /// A function-valued expression owns a callable used by effect-row reports.
+    FunctionEffectCallable { callable: CallableId },
     /// A method-call expression resolved through data-last callable fallback.
     DataLastMethodFallback {
         method: String,
