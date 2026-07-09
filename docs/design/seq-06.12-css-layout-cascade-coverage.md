@@ -61,7 +61,7 @@ it emits diagnostics instead.
 Layer order for this cut:
 
 ```text
-ArcweftBase < ArcweftComponent < CssReset < CssBase < CssComponent < CssInline
+ArcweftBase < ArcweftView < CssReset < CssBase < CssView < CssInline
 ```
 
 This intentionally makes CSS author layers able to override Arcweft base data,
@@ -137,7 +137,7 @@ The schema fields mirror the Rust types:
       "value": "12px",
       "winner": {
         "selector": ".aw-panel > .aw-row",
-        "layer": "CssComponent",
+        "layer": "CssView",
         "specificity": { "ids": 0, "classes": 2, "elements": 0 },
         "source_order": 7,
         "important": false

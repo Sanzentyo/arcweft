@@ -10,6 +10,8 @@
     ".aw-row:nth-child(2)",
     "display: grid",
     "grid-template-columns: 1fr 1fr",
+    "overflow-y: auto",
+    "color: var(--missing-token)",
     "@media (prefers-color-scheme: dark)",
     "@media (min-width: 840px)",
     "@container card (width > 320px)"

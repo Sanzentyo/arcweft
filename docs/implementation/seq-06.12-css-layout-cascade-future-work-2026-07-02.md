@@ -3,7 +3,7 @@
 1. Bind seq06.11 retained interaction state into CSS pseudo-state evaluation for
    `:hover`, `:focus`, `:active`, and `:disabled` in normal player frames.
 2. Lower CSS custom properties into `StyleTokenBinding` only after defining the
-   precedence model between Arcweft tokens, CSS variables, and component-local
+   precedence model between Arcweft tokens, CSS variables, and View-local
    style patches.
 3. Extract full Takumi computed style snapshots instead of coverage-only
    declaration evidence.

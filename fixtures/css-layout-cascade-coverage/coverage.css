@@ -1,4 +1,4 @@
-@layer reset, base, component;
+@layer reset, base, view;
 
 .aw-screen {
   display: block;
@@ -48,6 +48,14 @@
 .aw-grid-probe {
   display: grid;
   grid-template-columns: 1fr 1fr;
+}
+
+.aw-scroll-probe {
+  overflow-y: auto;
+}
+
+.aw-token-probe {
+  color: var(--missing-token);
 }
 
 @media (prefers-color-scheme: dark) {

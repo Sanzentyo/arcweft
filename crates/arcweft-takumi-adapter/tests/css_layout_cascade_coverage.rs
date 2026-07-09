@@ -1,7 +1,7 @@
 use arcweft_takumi_adapter::{
-    CssCascadeLayer, CssCascadePriority, CssCoverageReport, CssCoverageStatus,
-    CssInvalidationClass, CssMatchedDeclaration, CssSelectorCoverage, CssSpecificity,
-    TakumiDiagnosticCode, winning_declaration,
+    CSS_COVERAGE_MATRIX, CssCascadeLayer, CssCascadePriority, CssCoverageFeature,
+    CssCoverageReport, CssCoverageStatus, CssInvalidationClass, CssMatchedDeclaration,
+    CssSelectorCoverage, CssSpecificity, TakumiDiagnosticCode, winning_declaration,
 };
 
 #[test]
@@ -85,6 +85,10 @@ fn css_layout_cascade_custom_property_resolution_is_either_represented_or_diagno
         missing.diagnostics()[0].code(),
         TakumiDiagnosticCode::UnresolvedCssVariable
     );
+    assert!(ok.declarations().iter().any(|declaration| {
+        declaration.property() == "--accent"
+            && declaration.status() == CssCoverageStatus::ProductDataOnly
+    }));
 }
 
 #[test]
@@ -126,4 +130,52 @@ fn css_layout_cascade_layout_and_paint_invalidation_classes_are_exposed() {
 
     assert_eq!(opacity.invalidation(), CssInvalidationClass::PaintOnly);
     assert_eq!(gap.invalidation(), CssInvalidationClass::LayoutScene);
+}
+
+#[test]
+fn css_layout_cascade_flex_gap_padding_fixture_is_supported_but_grid_is_not() {
+    let report = CssCoverageReport::analyze_css(include_str!(
+        "../../../fixtures/css-layout-cascade-coverage/coverage.css"
+    ));
+
+    assert!(report.declarations().iter().any(|declaration| {
+        declaration.property() == "display"
+            && declaration.value() == "flex"
+            && declaration.status() == CssCoverageStatus::SupportedNow
+    }));
+    assert!(report.declarations().iter().any(|declaration| {
+        declaration.property() == "gap"
+            && declaration.invalidation() == CssInvalidationClass::LayoutScene
+    }));
+    assert!(report.declarations().iter().any(|declaration| {
+        declaration.property() == "padding"
+            && declaration.invalidation() == CssInvalidationClass::LayoutScene
+    }));
+    assert!(report.declarations().iter().any(|declaration| {
+        declaration.property() == "grid-template-columns"
+            && declaration.status() == CssCoverageStatus::StructuredDiagnostic
+    }));
+}
+
+#[test]
+fn css_layout_cascade_matrix_keeps_future_work_explicit() {
+    assert!(CSS_COVERAGE_MATRIX.iter().any(|row| {
+        row.feature() == CssCoverageFeature::GridLayout
+            && row.status() == CssCoverageStatus::StructuredDiagnostic
+    }));
+    assert!(CSS_COVERAGE_MATRIX.iter().any(|row| {
+        row.feature() == CssCoverageFeature::ContainerQuery
+            && row.status() == CssCoverageStatus::IntentionallyRejected
+    }));
+}
+
+#[test]
+fn css_layout_cascade_visual_smoke_manifest_names_two_sizes_and_hidpi() {
+    let manifest =
+        include_str!("../../../fixtures/css-layout-cascade-coverage/visual-smoke-manifest.json");
+
+    assert!(manifest.contains("\"default\""));
+    assert!(manifest.contains("\"compact\""));
+    assert!(manifest.contains("\"hidpi\""));
+    assert!(manifest.contains("\"scale\": 2.0"));
 }

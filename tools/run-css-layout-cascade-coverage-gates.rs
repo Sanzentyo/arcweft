@@ -55,6 +55,16 @@ fn check_fixture_set(fixtures: &Path) -> Result<(), Box<dyn Error>> {
     require_contains(&css, "grid-template-columns", "coverage.css grid diagnostic probe")?;
     require_contains(&css, "@container", "coverage.css container diagnostic probe")?;
     require_contains(&css, "::before", "coverage.css pseudo-element diagnostic probe")?;
+    require_contains(
+        &css,
+        "overflow-y: auto",
+        "coverage.css interactive overflow diagnostic probe",
+    )?;
+    require_contains(
+        &css,
+        "var(--missing-token)",
+        "coverage.css unresolved variable diagnostic probe",
+    )?;
 
     for checkpoint in ["default", "compact", "hidpi"] {
         let json = read_required(fixtures.join(format!("computed-style-{checkpoint}.json")))?;

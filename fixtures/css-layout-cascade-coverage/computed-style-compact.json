@@ -8,7 +8,7 @@
       "value": "640px",
       "winner": {
         "selector": ".aw-screen .aw-panel",
-        "layer": "CssComponent",
+        "layer": "CssView",
         "specificity": { "ids": 0, "classes": 2, "elements": 0 },
         "source_order": 2,
         "important": false
@@ -21,7 +21,7 @@
       "value": "12px",
       "winner": {
         "selector": ".aw-panel > .aw-row[data-aw-part=\"2\"]",
-        "layer": "CssComponent",
+        "layer": "CssView",
         "specificity": { "ids": 0, "classes": 3, "elements": 0 },
         "source_order": 3,
         "important": false

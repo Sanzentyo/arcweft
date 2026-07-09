@@ -1,10 +1,10 @@
 //! Renderer-owned `glyphon::FontSystem` construction.
 //!
-//! `cosmic-text` uses the FontSystem locale when choosing platform fallback
+//! `cosmic-text` uses the `FontSystem` locale when choosing platform fallback
 //! faces for Han text. Some platform locale APIs report BCP-47 region tags such
 //! as `ja-JP`, while the Windows fallback table currently keys Japanese and
 //! Korean Han fallback by primary language labels (`ja`, `ko`). Normalize the
-//! locale label at FontSystem construction so fallback remains locale-driven
+//! locale label at `FontSystem` construction so fallback remains locale-driven
 //! without hard-coding Arcweft's own family priority list.
 
 use glyphon::FontSystem;
@@ -80,7 +80,7 @@ fn fallback_locale_label(locale: &str) -> Cow<'_, str> {
     let subtags = normalized_separators
         .split('-')
         .skip(1)
-        .map(|part| part.to_ascii_uppercase())
+        .map(str::to_ascii_uppercase)
         .collect::<Vec<_>>();
     if subtags.iter().any(|part| part == "HK") {
         Cow::Borrowed("zh-HK")

@@ -8,7 +8,7 @@
       "value": "block",
       "winner": {
         "selector": ".aw-screen",
-        "layer": "CssComponent",
+        "layer": "CssView",
         "specificity": { "ids": 0, "classes": 1, "elements": 0 },
         "source_order": 1,
         "important": false
@@ -21,7 +21,7 @@
       "value": "12px",
       "winner": {
         "selector": ".aw-screen .aw-panel",
-        "layer": "CssComponent",
+        "layer": "CssView",
         "specificity": { "ids": 0, "classes": 2, "elements": 0 },
         "source_order": 2,
         "important": false
@@ -34,7 +34,7 @@
       "value": "#64d2c8",
       "winner": {
         "selector": ".aw-panel > .aw-title[data-aw-part=\"1\"]:hover",
-        "layer": "CssComponent",
+        "layer": "CssView",
         "specificity": { "ids": 0, "classes": 4, "elements": 0 },
         "source_order": 6,
         "important": false
