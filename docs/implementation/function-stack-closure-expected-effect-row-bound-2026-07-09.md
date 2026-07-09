@@ -37,6 +37,7 @@ punctuation-balanced.
 ```bash
 cargo test -p arcweft-lang-syntax --all-features flow_let_value_continuation_keeps_effect_row_type_ascription_with_closure -- --nocapture
 cargo test -p arcweft-lang-sema --all-features closure_expected_ -- --nocapture
+cargo test -p arcweft-lsp --all-features hover_describes_closure_expression_expected_effect_row_bound -- --nocapture
 ```
 
 ## Remaining Work

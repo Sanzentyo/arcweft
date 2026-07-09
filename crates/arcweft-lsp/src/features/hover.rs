@@ -790,4 +790,50 @@ effects { }
             }
         }
     }
+
+    #[test]
+    fn hover_describes_closure_expression_expected_effect_row_bound() {
+        let source = r"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+flow @flow.opening opening
+effects { }
+{
+    let later: String -> String effects { fs.read } =
+        |path: String| -> String {
+            fs.read_text(path = path)
+        }
+}
+";
+        let mut store = DocumentStore::default();
+        let uri = "file:///closure-effect-row-bound-hover.arcw"
+            .parse()
+            .expect("uri");
+        let document = store.open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
+            },
+            PositionEncoding::Utf16,
+        );
+        let offset = source.find("|path").expect("closure header offset") + 1;
+        let position = document.line_index().position_from_byte_offset(offset);
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let closure_hover = hover(&profile, &document, position).expect("closure effect row hover");
+
+        match closure_hover.contents {
+            HoverContents::Scalar(MarkedString::String(text)) => {
+                assert!(text.contains("effect row for `closure expression`"));
+                assert!(text.contains("inferred: { fs.read }"));
+                assert!(text.contains("upper bound: { fs.read }"));
+            }
+            other => panic!("unexpected hover contents: {other:?}"),
+        }
+    }
 }

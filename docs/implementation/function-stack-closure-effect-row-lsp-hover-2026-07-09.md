@@ -7,6 +7,9 @@ currying/pipeline goal.
 
 - LSP hover now uses closure expression `FunctionEffectCallable` evidence to
   display the closure expression's closed effect row.
+- Closure hover also displays a closed expected-function effect row as the
+  closure expression's upper bound when the closure is checked against a typed
+  function ascription such as `String -> String effects { fs.read }`.
 - The hover is limited to the closure header `|...|` range so body expressions
   keep their own hover behavior and do not masquerade as the closure value.
 - The hover consumes the same `ClosedEffectRowReport` boundary as declaration
@@ -19,6 +22,9 @@ currying/pipeline goal.
   reads through an effectful capability.
 - The same regression verifies that body hover content does not become
   the closure-expression effect-row hover.
+- `hover_describes_closure_expression_expected_effect_row_bound` verifies that
+  the same hover reports `upper bound: { fs.read }` when that row comes from
+  the closure's expected function type.
 
 ## Still Open
 
