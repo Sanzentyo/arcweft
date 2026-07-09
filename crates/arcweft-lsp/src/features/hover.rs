@@ -4,7 +4,10 @@ use crate::features::character_metadata::character_hover_markdown;
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
-    check::{analyze_types, validate_typecheck_ready},
+    check::{
+        TypeCheckReport, TypeJudgmentSubject, TypedLoweringEvidenceKind, analyze_types,
+        validate_typecheck_ready,
+    },
     effect_model::CallableId,
     effects::EffectSet,
     resolve::{registry_from_hir, validate_hir_references},
@@ -37,10 +40,16 @@ pub fn hover(
     if let Some(hover) = effective_dialogue_style_hover(profile, document, offset) {
         return Some(hover);
     }
-    let (word, word_range) = word_at_position_range(document, position)?;
-    if let Some(hover) = callable_effect_row_hover(profile, document, &word, word_range) {
+    let word = word_at_position_range(document, position);
+    if let Some((word, word_range)) = word.as_ref()
+        && let Some(hover) = callable_effect_row_hover(profile, document, word, *word_range)
+    {
         return Some(hover);
     }
+    if let Some(hover) = closure_effect_row_hover(profile, document, offset) {
+        return Some(hover);
+    }
+    let (word, _) = word?;
     if let Some(text) = character_hover_markdown(profile, &word) {
         return Some(Hover {
             contents: HoverContents::Scalar(MarkedString::String(text)),
@@ -48,6 +57,130 @@ pub fn hover(
         });
     }
     profile_hover(&profile.context(), &word)
+}
+
+fn closure_effect_row_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Option<Hover> {
+    if !source_offset_may_be_closure_header(document.text(), offset) {
+        return None;
+    }
+    let parsed = parse_source(document.text().to_owned());
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    let tree = parsed.typed_tree();
+    let hir = lower_to_hir(tree).ok()?;
+    let registry = registry_from_hir(&hir);
+    if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
+    {
+        return None;
+    }
+    let report = analyze_types(&hir, &profile.typecheck_env());
+    if !report.diagnostics.is_empty() {
+        return None;
+    }
+    let rows = report.effects.closed_effect_rows().ok()?;
+    let target = closure_effect_hover_target(&report, document.text(), offset)?;
+    let summary = rows.summary(&target.callable)?;
+    Some(Hover {
+        contents: HoverContents::Scalar(MarkedString::String(effect_row_hover_text(
+            "closure expression",
+            summary.inferred(),
+            summary.upper_bound(),
+            summary.forbidden(),
+        ))),
+        range: Some(
+            document
+                .line_index()
+                .range_from_byte_span(target.header_range.start(), target.header_range.end()),
+        ),
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ClosureEffectHoverTarget {
+    callable: CallableId,
+    header_range: TextRange,
+}
+
+fn closure_effect_hover_target(
+    report: &TypeCheckReport,
+    source: &str,
+    offset: usize,
+) -> Option<ClosureEffectHoverTarget> {
+    report
+        .judgments
+        .iter()
+        .filter_map(|judgment| {
+            let TypeJudgmentSubject::Expr {
+                id,
+                kind: "closure",
+            } = &judgment.subject
+            else {
+                return None;
+            };
+            let id = *id;
+            let source_range = judgment.source_range?;
+            let header_range = closure_header_range(source, source_range)?;
+            if offset < header_range.start() || header_range.end() < offset {
+                return None;
+            }
+            let callable = report.typed_lowering_evidence.iter().find_map(|evidence| {
+                if evidence.expression_id != id {
+                    return None;
+                }
+                let TypedLoweringEvidenceKind::FunctionEffectCallable { callable } = &evidence.kind
+                else {
+                    return None;
+                };
+                Some(callable.clone())
+            })?;
+            Some(ClosureEffectHoverTarget {
+                callable,
+                header_range,
+            })
+        })
+        .min_by_key(|target| target.header_range.end() - target.header_range.start())
+}
+
+fn closure_header_range(source: &str, source_range: TextRange) -> Option<TextRange> {
+    let closure_source = source.get(source_range.as_range())?;
+    let first_pipe = closure_source.find('|')?;
+    let second_pipe = closure_source.get(first_pipe + 1..)?.find('|')? + first_pipe + 1;
+    Some(TextRange::new(
+        source_range.start() + first_pipe,
+        source_range.start() + second_pipe + 1,
+    ))
+}
+
+fn source_offset_may_be_closure_header(source: &str, offset: usize) -> bool {
+    if offset > source.len() {
+        return false;
+    }
+    let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
+    let line_end = source[offset..]
+        .find('\n')
+        .map_or(source.len(), |index| offset + index);
+    let Some(line) = source.get(line_start..line_end) else {
+        return false;
+    };
+    let relative_offset = offset.saturating_sub(line_start);
+    let mut search_start = 0usize;
+    while let Some(first_offset) = line.get(search_start..).and_then(|text| text.find('|')) {
+        let first = search_start + first_offset;
+        let Some(second_offset) = line.get(first + 1..).and_then(|text| text.find('|')) else {
+            return false;
+        };
+        let second = first + 1 + second_offset;
+        if first <= relative_offset && relative_offset <= second + 1 {
+            return true;
+        }
+        search_start = second + 1;
+    }
+    false
 }
 
 fn callable_effect_row_hover(
@@ -610,5 +743,63 @@ effects { fs.read }
             hover(&profile, &document, position).is_none(),
             "body call references should not be treated as callable declarations"
         );
+    }
+
+    #[test]
+    fn hover_describes_closure_expression_closed_effect_row() {
+        let source = r"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+flow @flow.opening opening
+effects { }
+{
+    let later = |path: String| -> String {
+        fs.read_text(path = path)
+    }
+}
+";
+        let mut store = DocumentStore::default();
+        let uri = "file:///closure-effect-row-hover.arcw"
+            .parse()
+            .expect("uri");
+        let document = store.open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
+            },
+            PositionEncoding::Utf16,
+        );
+        let offset = source.find("|path").expect("closure header offset") + 1;
+        let position = document.line_index().position_from_byte_offset(offset);
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let closure_hover = hover(&profile, &document, position).expect("closure effect row hover");
+
+        match closure_hover.contents {
+            HoverContents::Scalar(MarkedString::String(text)) => {
+                assert!(text.contains("effect row for `closure expression`"));
+                assert!(text.contains("inferred: { fs.read }"));
+                assert!(text.contains("upper bound: inferred"));
+            }
+            other => panic!("unexpected hover contents: {other:?}"),
+        }
+
+        let body_offset = source.rfind("fs.read_text").expect("body call offset");
+        let body_position = document.line_index().position_from_byte_offset(body_offset);
+        let body_hover = hover(&profile, &document, body_position);
+        if let Some(body_hover) = body_hover {
+            match body_hover.contents {
+                HoverContents::Scalar(MarkedString::String(text)) => assert!(
+                    !text.contains("effect row for `closure expression`"),
+                    "closure expression hover should stay limited to the closure header: {text}"
+                ),
+                other => panic!("unexpected hover contents: {other:?}"),
+            }
+        }
     }
 }
