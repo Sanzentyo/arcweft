@@ -32,6 +32,10 @@ Updated consumers:
 - function-stack row evidence tests now assert against `ClosedEffectRowReport`
   summaries instead of resolving rows locally.
 
+A later artifact-consumer follow-up also changed Agent verified-effect summary
+building to take `ClosedEffectRowReport` directly instead of the full
+`EffectAnalysisReport`.
+
 ## Remaining Open Work
 
 The final 07.8 model still needs source row syntax, open-row

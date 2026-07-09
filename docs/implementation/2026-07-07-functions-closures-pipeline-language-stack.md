@@ -1885,6 +1885,13 @@ now call `EffectAnalysisReport::closed_effect_rows()` and receive
 values themselves. Details are recorded in
 `docs/implementation/function-stack-effect-row-report-boundary-2026-07-09.md`.
 
+The effect-row artifact-consumer follow-up makes Agent verified-effect summary
+building consume `ClosedEffectRowReport` directly instead of accepting the full
+sema effect-analysis report. The artifact builder still serializes the closed
+inferred row into the legacy `declared` slot and rejects missing callable rows.
+Details are recorded in
+`docs/implementation/function-stack-effect-row-artifact-closed-input-2026-07-09.md`.
+
 The LSP effect-row hover follow-up adds the first editor-facing consumer of
 that closed boundary. Hovering a `flow`, `fn`, or `agent` declaration name now
 shows the callable's inferred row, source upper bound when present, and

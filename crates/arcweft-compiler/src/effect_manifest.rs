@@ -4,8 +4,9 @@ use arcweft_agent_protocol::{
     verified_effects::VerifiedEffectSummary,
 };
 use arcweft_lang_sema::{
-    effect_analysis::EffectAnalysisReport, effect_model::CallableId,
-    effect_row::EffectRowCloseError, effects::EffectSet,
+    effect_model::CallableId,
+    effect_row::{ClosedEffectRowReport, EffectRowCloseError},
+    effects::EffectSet,
 };
 use thiserror::Error;
 
@@ -15,8 +16,6 @@ pub const EFFECT_ANALYSIS_VERSION: u32 = 1;
 /// Failure to construct a verified artifact effect proof.
 #[derive(Debug, Error)]
 pub enum VerifiedEffectBuildError {
-    #[error("effect analysis contains errors; refusing to build an effect proof")]
-    AnalysisFailed,
     #[error("effect analysis report has no summary for `{callable}`")]
     MissingSummary { callable: CallableId },
     #[error("effect analysis row report contains unresolved rows: {source}")]
@@ -28,21 +27,21 @@ pub enum VerifiedEffectBuildError {
     InvalidDigest(#[from] IdentifierError),
 }
 
-/// Creates a schema-v2 effect proof from a successful semantic report.
+impl From<EffectRowCloseError> for VerifiedEffectBuildError {
+    fn from(source: EffectRowCloseError) -> Self {
+        Self::InvalidRows { source }
+    }
+}
+
+/// Creates a schema-v2 effect proof from closed semantic row evidence.
 ///
-/// The builder is fail-closed: it accepts neither a report with diagnostics nor
-/// a missing analyzed node. The legacy `declared` slot is populated with the
-/// closed inferred row, not with the source upper bound.
+/// The builder is fail-closed for a missing analyzed node. The legacy
+/// `declared` slot is populated with the closed inferred row, not with the
+/// source upper bound.
 pub fn build_verified_effect_summary(
     callable: &CallableId,
-    report: &EffectAnalysisReport,
+    rows: &ClosedEffectRowReport,
 ) -> Result<VerifiedEffectSummary, VerifiedEffectBuildError> {
-    if report.has_errors() {
-        return Err(VerifiedEffectBuildError::AnalysisFailed);
-    }
-    let rows = report
-        .closed_effect_rows()
-        .map_err(|source| VerifiedEffectBuildError::InvalidRows { source })?;
     let summary =
         rows.summary(callable)
             .ok_or_else(|| VerifiedEffectBuildError::MissingSummary {
@@ -77,4 +76,60 @@ fn effect_digest(
         hasher.update(bytes);
     }
     StableHash::new(format!("blake3:{}", hasher.finalize().to_hex()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_lang_sema::effect_row::ClosedEffectRowSummary;
+
+    #[test]
+    fn verified_effect_summary_uses_closed_inferred_row() {
+        let callable = CallableId::new("agent.observe_smoke");
+        let inferred = EffectSet::from_labels(["agent.observe"]).expect("valid inferred row");
+        let upper_bound =
+            EffectSet::from_labels(["agent.observe", "agent.capture"]).expect("valid upper row");
+        let rows = ClosedEffectRowReport::new([ClosedEffectRowSummary::new(
+            callable.clone(),
+            inferred,
+            Some(upper_bound),
+            EffectSet::new(),
+        )]);
+
+        let summary =
+            build_verified_effect_summary(&callable, &rows).expect("verified summary builds");
+
+        assert_eq!(
+            summary
+                .declared
+                .iter()
+                .map(EffectCapability::as_str)
+                .collect::<Vec<_>>(),
+            vec!["agent.observe"]
+        );
+        assert_eq!(
+            summary
+                .inferred
+                .iter()
+                .map(EffectCapability::as_str)
+                .collect::<Vec<_>>(),
+            vec!["agent.observe"]
+        );
+        assert!(summary.digest.as_str().starts_with("blake3:"));
+    }
+
+    #[test]
+    fn verified_effect_summary_rejects_missing_callable_row() {
+        let rows = ClosedEffectRowReport::default();
+        let callable = CallableId::new("agent.missing");
+
+        let error =
+            build_verified_effect_summary(&callable, &rows).expect_err("missing row is rejected");
+
+        assert!(matches!(
+            error,
+            VerifiedEffectBuildError::MissingSummary { callable: missing }
+                if missing == callable
+        ));
+    }
 }

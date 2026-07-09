@@ -142,10 +142,12 @@ fn agent_artifact_manifest(
     let agent_id = agent_public_id(agent)?;
     let agent_effect_id =
         arcweft_lang_sema::effect_model::CallableId::new(format!("agent.{}", agent.item().name()));
-    let verified_effects = effect_manifest::build_verified_effect_summary(
-        &agent_effect_id,
-        &typecheck_report.effects,
-    )?;
+    let closed_effect_rows = typecheck_report
+        .effects
+        .closed_effect_rows()
+        .map_err(effect_manifest::VerifiedEffectBuildError::from)?;
+    let verified_effects =
+        effect_manifest::build_verified_effect_summary(&agent_effect_id, &closed_effect_rows)?;
     let declared_effects = verified_effects.inferred.clone();
     Ok(AgentArtifactManifest {
         schema_version: 1,
