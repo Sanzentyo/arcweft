@@ -319,6 +319,23 @@ impl TypeCheckReport {
             Err(self.diagnostics)
         }
     }
+
+    /// Returns the effect-analysis callable owned by a function-valued expression.
+    pub fn function_effect_callable_for_expression(
+        &self,
+        expression_id: TypeExpressionId,
+    ) -> Option<&CallableId> {
+        self.typed_lowering_evidence.iter().find_map(|evidence| {
+            if evidence.expression_id != expression_id {
+                return None;
+            }
+            let TypedLoweringEvidenceKind::FunctionEffectCallable { callable } = &evidence.kind
+            else {
+                return None;
+            };
+            Some(callable)
+        })
+    }
 }
 
 /// Analyzes lowered HIR with an explicit symbol/method environment.

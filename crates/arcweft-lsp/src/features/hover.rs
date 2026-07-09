@@ -4,10 +4,7 @@ use crate::features::character_metadata::character_hover_markdown;
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
-    check::{
-        TypeCheckReport, TypeJudgmentSubject, TypedLoweringEvidenceKind, analyze_types,
-        validate_typecheck_ready,
-    },
+    check::{TypeCheckReport, TypeJudgmentSubject, analyze_types, validate_typecheck_ready},
     effect_model::CallableId,
     effects::EffectSet,
     resolve::{registry_from_hir, validate_hir_references},
@@ -128,16 +125,7 @@ fn closure_effect_hover_target(
             if offset < header_range.start() || header_range.end() < offset {
                 return None;
             }
-            let callable = report.typed_lowering_evidence.iter().find_map(|evidence| {
-                if evidence.expression_id != id {
-                    return None;
-                }
-                let TypedLoweringEvidenceKind::FunctionEffectCallable { callable } = &evidence.kind
-                else {
-                    return None;
-                };
-                Some(callable.clone())
-            })?;
+            let callable = report.function_effect_callable_for_expression(id)?.clone();
             Some(ClosureEffectHoverTarget {
                 callable,
                 header_range,

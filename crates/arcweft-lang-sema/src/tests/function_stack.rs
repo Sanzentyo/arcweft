@@ -1493,20 +1493,24 @@ effects { }
         "closure creation should stay effect-free for the caller: {:?}",
         report.diagnostics
     );
-    let (expression_id, callable) = report
-        .typed_lowering_evidence
+    let expression_id = report
+        .judgments
         .iter()
-        .find_map(|evidence| {
-            let TypedLoweringEvidenceKind::FunctionEffectCallable { callable } = &evidence.kind
+        .find_map(|judgment| {
+            let TypeJudgmentSubject::Expr {
+                id,
+                kind: "closure",
+            } = &judgment.subject
             else {
                 return None;
             };
-            callable
-                .as_str()
-                .starts_with("closure.expr.")
-                .then(|| (evidence.expression_id, callable.clone()))
+            Some(*id)
         })
-        .expect("closure expression should export effect-callable evidence");
+        .expect("closure expression judgment should be recorded");
+    let callable = report
+        .function_effect_callable_for_expression(expression_id)
+        .expect("closure expression should export effect-callable evidence")
+        .clone();
     assert!(
         report.judgments.iter().any(|judgment| {
             matches!(
