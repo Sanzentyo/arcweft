@@ -1,4 +1,7 @@
 use super::*;
+use arcweft_runtime_driver::dialogue::{BundleDialoguePresentation, BundlePresentationInput};
+use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+use arcweft_runtime_driver::session::BundleStepInput;
 
 pub(super) fn agent_observe_command(
     options: &AgentObserveOptions,
@@ -225,7 +228,7 @@ impl<'a> NativeAgentScriptSession<'a> {
 
     fn observe_report(&mut self) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
         if self.observed.is_none() {
-            self.refresh_observation(Vec::new())?;
+            self.refresh_observation(BundleStepInput::default())?;
         }
         self.observed
             .as_ref()
@@ -249,11 +252,11 @@ impl<'a> NativeAgentScriptSession<'a> {
 
     fn refresh_observation(
         &mut self,
-        input_events: Vec<RoutedInputEvent>,
+        step_input: BundleStepInput,
     ) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
         let options = self.options.clone();
         let runtime = self.runtime_state()?;
-        let observed = observe_native_player_runtime(runtime, &options, input_events)
+        let observed = observe_native_player_runtime(runtime, &options, step_input)
             .map_err(|_| NativeAgentScriptSessionError::Observe)?;
         self.observed = Some(NativeAgentObservedSnapshot {
             report: observed.report,
@@ -267,7 +270,7 @@ impl<'a> NativeAgentScriptSession<'a> {
         uri: &str,
     ) -> Result<AgentResource, NativeAgentScriptSessionError> {
         if self.observed.is_none() {
-            self.refresh_observation(Vec::new())?;
+            self.refresh_observation(BundleStepInput::default())?;
         }
         let Some(mut runtime) = self.runtime.take() else {
             return Err(NativeAgentScriptSessionError::ResourceRead);
@@ -291,12 +294,13 @@ impl<'a> NativeAgentScriptSession<'a> {
         result
     }
 
-    fn action_input_events(
+    fn action_step_input(
         &mut self,
         action: AgentAction,
-    ) -> Result<Vec<RoutedInputEvent>, NativeAgentScriptSessionError> {
-        let report = self.observe_report()?;
-        native_agent_action_input_events(report, action)
+    ) -> Result<BundleStepInput, NativeAgentScriptSessionError> {
+        let report = self.observe_report()?.clone();
+        let presentation = self.runtime_state()?.session.presentation();
+        native_agent_action_step_input(&report, presentation, action)
     }
 
     pub(super) fn action_result(
@@ -326,20 +330,36 @@ pub(super) fn native_agent_report_has_action(
     })
 }
 
-pub(super) fn native_agent_action_input_events(
+pub(super) fn native_agent_action_step_input(
     report: &AgentObservationReport,
+    presentation: &BundlePresentationSnapshot,
     action: AgentAction,
-) -> Result<Vec<RoutedInputEvent>, NativeAgentScriptSessionError> {
-    match action {
-        AgentAction::SelectChoice { choice } => {
-            native_agent_select_choice_input_events(report, &choice)
+) -> Result<BundleStepInput, NativeAgentScriptSessionError> {
+    let (presentation_inputs, input_events) = match action {
+        AgentAction::SelectChoice { choice } => (
+            Vec::new(),
+            native_agent_select_choice_input_events(report, &choice)?,
+        ),
+        AgentAction::AdvanceText => (
+            vec![native_agent_advance_text_presentation_input(
+                report,
+                presentation,
+            )?],
+            Vec::new(),
+        ),
+        AgentAction::Invoke(invoke) => (
+            Vec::new(),
+            native_agent_invoke_input_events(report, &invoke.target, &invoke.action)?,
+        ),
+        AgentAction::PointerClick { .. } => {
+            return Err(NativeAgentScriptSessionError::UnsupportedAction);
         }
-        AgentAction::AdvanceText => native_agent_advance_text_input_events(report),
-        AgentAction::Invoke(invoke) => {
-            native_agent_invoke_input_events(report, &invoke.target, &invoke.action)
-        }
-        AgentAction::PointerClick { .. } => Err(NativeAgentScriptSessionError::UnsupportedAction),
-    }
+    };
+    Ok(BundleStepInput {
+        presentation_inputs,
+        input_events,
+        ..BundleStepInput::default()
+    })
 }
 
 pub(super) fn native_agent_select_choice_input_events(
@@ -352,19 +372,25 @@ pub(super) fn native_agent_select_choice_input_events(
         .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
 }
 
-pub(super) fn native_agent_advance_text_input_events(
+pub(super) fn native_agent_advance_text_presentation_input(
     report: &AgentObservationReport,
-) -> Result<Vec<RoutedInputEvent>, NativeAgentScriptSessionError> {
-    report
-        .actions
-        .iter()
-        .any(|candidate| {
-            candidate.enabled
-                && candidate.kind == AgentActionDispatch::Semantic
-                && candidate.action == AgentActionKind::AdvanceText
+    presentation: &BundlePresentationSnapshot,
+) -> Result<BundlePresentationInput, NativeAgentScriptSessionError> {
+    let available = report.actions.iter().any(|candidate| {
+        candidate.enabled
+            && candidate.kind == AgentActionDispatch::Semantic
+            && candidate.action == AgentActionKind::AdvanceText
+    });
+    let target = available
+        .then(|| {
+            presentation
+                .dialogue
+                .as_ref()
+                .and_then(BundleDialoguePresentation::advance_target)
         })
-        .then(|| vec![native_runtime_input_event("advance", None)])
-        .ok_or(NativeAgentScriptSessionError::ActionUnavailable)
+        .flatten()
+        .ok_or(NativeAgentScriptSessionError::ActionUnavailable)?;
+    Ok(BundlePresentationInput::advance_dialogue(target))
 }
 
 pub(super) fn native_agent_invoke_input_events(
@@ -433,14 +459,14 @@ impl AgentSession for NativeAgentScriptSession<'_> {
         {
             return self.observe_report().map(native_agent_observation_envelope);
         }
-        let report = self.refresh_observation(Vec::new())?;
+        let report = self.refresh_observation(BundleStepInput::default())?;
         Ok(native_agent_observation_envelope(report))
     }
 
     fn act(&mut self, action: AgentAction) -> Result<ActionResult, Self::Error> {
         let before = self.observe_report()?.clone();
-        let input_events = self.action_input_events(action)?;
-        let after = self.refresh_observation(input_events)?.clone();
+        let step_input = self.action_step_input(action)?;
+        let after = self.refresh_observation(step_input)?.clone();
         Ok(Self::action_result(&before, &after))
     }
 
@@ -469,7 +495,7 @@ impl AgentSession for NativeAgentScriptSession<'_> {
     fn step_frames(&mut self, count: u32) -> Result<ObservationEnvelope, Self::Error> {
         let additional = usize::try_from(count.max(1)).unwrap_or(usize::MAX);
         self.options.steps = self.options.steps.saturating_add(additional);
-        let report = self.refresh_observation(Vec::new())?;
+        let report = self.refresh_observation(BundleStepInput::default())?;
         Ok(native_agent_observation_envelope(report))
     }
 }

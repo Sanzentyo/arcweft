@@ -8,9 +8,9 @@ use super::{
 };
 use arcweft_glyphon::VerticalGlyphHorizontalAlign;
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextColor, RichTextControl, RichTextDisplayMap, RichTextEffectDescriptor,
-    RichTextEffectPhase, RichTextFontFamily, RichTextNode, RichTextPresentation, RichTextRange,
-    RichTextShaderRef, RichTextStyle, RichTextWritingMode, presentation_from_styles,
+    LineDisplayFrame, RichTextColor, RichTextControl, RichTextEffectDescriptor,
+    RichTextEffectPhase, RichTextFontFamily, RichTextPresentation, RichTextRange,
+    RichTextShaderRef, RichTextStyle, RichTextWritingMode,
 };
 use arcweft_text_layout::{LaidOutText, layout_frame};
 use glyphon::{
@@ -64,7 +64,10 @@ impl WindowPage {
     }
 
     pub(super) fn from_frame(frame: &LineDisplayFrame) -> Vec<Self> {
-        WindowPageBuilder::from_frame(frame)
+        display_stage_ranges(frame)
+            .into_iter()
+            .filter_map(|range| page_from_display_map_range(frame, range))
+            .collect()
     }
 }
 
@@ -105,147 +108,44 @@ impl WindowRichText {
             ruby_annotations: Vec::new(),
         }
     }
-
-    pub(super) fn is_empty(&self) -> bool {
-        self.text.is_empty()
-    }
 }
 
-#[derive(Default)]
-pub(super) struct WindowPageBuilder {
-    pub(super) pages: Vec<WindowPage>,
-    pub(super) current: WindowRichTextBuilder,
-}
-
-impl WindowPageBuilder {
-    pub(super) fn from_frame(frame: &LineDisplayFrame) -> Vec<WindowPage> {
-        if has_display_map(&frame.display_map) {
-            return pages_from_display_map(frame);
-        }
-        let mut builder = Self {
-            current: WindowRichTextBuilder::with_base_styles(frame.base_styles.clone()),
-            ..Self::default()
-        };
-        for node in &frame.nodes {
-            builder.push_node(node);
-        }
-        builder.finish()
-    }
-
-    pub(super) fn push_node(&mut self, node: &RichTextNode) {
-        if let RichTextNode::Control {
-            control: RichTextControl::Page | RichTextControl::LineWait,
-        } = node
-        {
-            self.flush_page();
-            return;
-        }
-        self.current.push_node(node);
-    }
-
-    pub(super) fn flush_page(&mut self) {
-        let base_styles = self.current.base_styles.clone();
-        let current = std::mem::replace(
-            &mut self.current,
-            WindowRichTextBuilder::with_base_styles(base_styles),
-        )
-        .finish();
-        if !current.is_empty() {
-            self.pages.push(WindowPage {
-                rich_text: current,
-                layout_frame: None,
-            });
-        }
-    }
-
-    pub(super) fn finish(mut self) -> Vec<WindowPage> {
-        self.flush_page();
-        self.pages
-    }
-}
-
-pub(super) fn has_display_map(display_map: &RichTextDisplayMap) -> bool {
-    !display_map.text_runs.is_empty()
-        || !display_map.ruby_annotations.is_empty()
-        || !display_map.controls.is_empty()
-}
-
-pub(super) fn pages_from_display_map(frame: &LineDisplayFrame) -> Vec<WindowPage> {
-    display_map_page_ranges(frame)
+/// Completed visual range for every input-gated display stage.
+///
+/// `LineDisplayFrame::stages` owns the control semantics. A line wait therefore
+/// retains the prefix from earlier stages on the same logical page, while a
+/// page wait starts a fresh range. Clear controls move the visible origin but
+/// do not introduce another user-input gate.
+pub(super) fn display_stage_ranges(frame: &LineDisplayFrame) -> Vec<Range<usize>> {
+    let mut page_index = None;
+    let mut display_start = 0;
+    frame
+        .stages()
         .into_iter()
-        .filter_map(|range| page_from_display_map_range(frame, range))
+        .map(|stage| {
+            let text_range = stage.text_range();
+            if page_index != Some(stage.page_index()) {
+                page_index = Some(stage.page_index());
+                display_start = text_range.start;
+            }
+            for marker in stage.controls() {
+                if matches!(marker.control, RichTextControl::Clear) {
+                    display_start = text_range.start.saturating_add(marker.text_offset);
+                }
+            }
+            display_start.min(text_range.end)..text_range.end
+        })
         .collect()
 }
 
-pub(super) fn display_map_page_ranges(frame: &LineDisplayFrame) -> Vec<Range<usize>> {
-    let mut break_offsets = frame
-        .display_map
-        .controls
-        .iter()
-        .filter(|marker| {
-            matches!(
-                marker.control,
-                RichTextControl::Page | RichTextControl::LineWait | RichTextControl::Clear
-            )
-        })
-        .map(|marker| display_map_offset_before_node(frame, marker.node_index))
-        .map(|offset| display_map_offset_after_atomic_ruby_base(frame, offset))
-        .filter(|offset| *offset <= frame.text.len() && frame.text.is_char_boundary(*offset))
-        .collect::<Vec<_>>();
-    break_offsets.sort_unstable();
-    break_offsets.dedup();
-
-    let mut start = 0;
-    let mut ranges = Vec::with_capacity(break_offsets.len() + 1);
-    for end in break_offsets {
-        if start <= end {
-            ranges.push(start..end);
-            start = end;
-        }
-    }
-    ranges.push(start..frame.text.len());
-    ranges
-}
-
-pub(super) fn display_map_offset_after_atomic_ruby_base(
+pub(super) fn display_stage_range_at(
     frame: &LineDisplayFrame,
-    offset: usize,
-) -> usize {
-    let mut adjusted = offset;
-    loop {
-        let Some(range) = frame
-            .display_map
-            .ruby_annotations
-            .iter()
-            .filter_map(|annotation| valid_display_range(annotation.base_range, &frame.text))
-            .find(|range| range.start < adjusted && adjusted < range.end)
-        else {
-            return adjusted;
-        };
-        adjusted = range.end;
-    }
-}
-
-pub(super) fn display_map_non_empty_page_range_at(
-    frame: &LineDisplayFrame,
-    page_index: usize,
+    stage_index: usize,
 ) -> Result<Range<usize>, NativeWindowError> {
-    display_map_page_ranges(frame)
+    display_stage_ranges(frame)
         .into_iter()
-        .filter(|range| !range.is_empty())
-        .nth(page_index)
+        .nth(stage_index)
         .ok_or(NativeWindowError::EmptyPages)
-}
-
-pub(super) fn display_map_offset_before_node(frame: &LineDisplayFrame, node_index: usize) -> usize {
-    frame
-        .display_map
-        .text_runs
-        .iter()
-        .filter(|run| run.node_index < node_index)
-        .map(|run| run.range.end)
-        .max()
-        .unwrap_or(0)
 }
 
 pub(super) fn page_from_display_map_range(
@@ -253,10 +153,6 @@ pub(super) fn page_from_display_map_range(
     page_range: Range<usize>,
 ) -> Option<WindowPage> {
     let text = frame.text.get(page_range.clone())?.to_owned();
-    if text.is_empty() {
-        return None;
-    }
-
     let spans = display_map_spans_for_range(frame, &page_range);
     let spans = if spans.is_empty() {
         vec![WindowTextSpan {
@@ -952,103 +848,6 @@ impl NativeFontFamily {
 pub(super) enum NativeTextWeight {
     Regular,
     Bold,
-}
-
-#[derive(Default)]
-pub(super) struct WindowRichTextBuilder {
-    pub(super) text: String,
-    pub(super) spans: Vec<WindowTextSpan>,
-    pub(super) ruby_annotations: Vec<WindowRubyAnnotation>,
-    pub(super) base_styles: Vec<RichTextStyle>,
-    pub(super) active_styles: Vec<RichTextStyle>,
-}
-
-impl WindowRichTextBuilder {
-    pub(super) fn with_base_styles(base_styles: Vec<RichTextStyle>) -> Self {
-        Self {
-            base_styles,
-            ..Self::default()
-        }
-    }
-
-    pub(super) fn push_node(&mut self, node: &RichTextNode) {
-        match node {
-            RichTextNode::Text { text } => {
-                self.push_text(text, self.current_style());
-            }
-            RichTextNode::Ruby { base, ruby } => {
-                let base_style = self.current_style();
-                let base_range = self.push_text(base, base_style.clone());
-                let presentation = presentation_from_styles(
-                    self.base_styles.iter().chain(self.active_styles.iter()),
-                );
-                let ruby_style = native_ruby_style_from_base(base_style, &presentation);
-                self.ruby_annotations.push(WindowRubyAnnotation {
-                    base_range,
-                    ruby: ruby.clone(),
-                    style: ruby_style,
-                    presentation,
-                });
-            }
-            RichTextNode::StyleStart { style } => self.active_styles.push(style.clone()),
-            RichTextNode::StyleEnd { name } => {
-                if let Some(index) = self
-                    .active_styles
-                    .iter()
-                    .rposition(|style| style.tag_name() == name)
-                {
-                    self.active_styles.remove(index);
-                }
-            }
-            RichTextNode::Control { control } => self.push_control(control),
-            RichTextNode::Interpolation { expr, .. } => {
-                self.push_text(expr, self.current_style());
-            }
-            RichTextNode::HostEvent { .. } => {}
-        }
-    }
-
-    pub(super) fn push_control(&mut self, control: &RichTextControl) {
-        match control {
-            RichTextControl::HardBreak | RichTextControl::Page | RichTextControl::LineWait => {
-                self.push_text("\n", self.current_style());
-            }
-            RichTextControl::Raw { text } => {
-                self.push_text(text, self.current_style());
-            }
-            RichTextControl::TimedWait { .. }
-            | RichTextControl::Clear
-            | RichTextControl::Mark { .. }
-            | RichTextControl::Unknown { .. } => {}
-            RichTextControl::Reset => self.active_styles.clear(),
-        }
-    }
-
-    pub(super) fn push_text(&mut self, text: &str, style: NativeTextStyle) -> Range<usize> {
-        if text.is_empty() {
-            return self.text.len()..self.text.len();
-        }
-        let start = self.text.len();
-        self.text.push_str(text);
-        let range = start..self.text.len();
-        self.spans.push(WindowTextSpan {
-            range: range.clone(),
-            style,
-        });
-        range
-    }
-
-    pub(super) fn current_style(&self) -> NativeTextStyle {
-        native_style_from_styles(self.base_styles.iter().chain(self.active_styles.iter()))
-    }
-
-    pub(super) fn finish(self) -> WindowRichText {
-        WindowRichText {
-            text: self.text,
-            spans: self.spans,
-            ruby_annotations: self.ruby_annotations,
-        }
-    }
 }
 
 pub(super) fn native_style_from_styles<'a>(

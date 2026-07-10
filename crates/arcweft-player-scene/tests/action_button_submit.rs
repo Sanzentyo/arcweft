@@ -112,6 +112,9 @@ fn with_dialogue(mut scene: RenderScene) -> RenderScene {
         text: "Submit the form.".to_owned(),
         base_styles: Vec::new(),
         text_runs: Vec::new(),
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     });
     scene
 }

@@ -101,6 +101,21 @@ separate reviewable commits.
 | 6 | Player-scene milli conversion | Four copies in `action_buttons.rs`, `control_style.rs`, `text_controls.rs`, and `frame.rs`, with one differing signed fallback | One crate-local unit type or numeric owner with explicit overflow policy. |
 | 7 | Renderer viewport clipping | Identical action-button/text-control clipping in `render-wgpu/src/geometry`; a second layout-rect conversion is also duplicated | Move geometry conversions to the existing common geometry owner. |
 | 8 | Bundle kind naming | Structured bundle kind and AWFB artifact kind are both named `BundleKind`, forcing aliases and a conversion helper | Directly rename the two concepts (for example, source bundle vs artifact kind) without compatibility aliases; treat as a medium-size slice after the smaller changes. |
+| 9 | Multiple dialogue display frames | `runtime-driver/src/display.rs::resolve_display_frames` collects every dialogue event, but `BundlePresentationSnapshot::update` selects `resolution.frames.last()` | Either enforce a checked single-frame-per-step invariant or preserve all frames with explicit textbox and ordering semantics; never silently discard earlier frames. |
+| 10 | Stream/source unsupported-statement no-ops | `runtime-plan/src/stream.rs::lower_stream_stmt` and `runtime-plan/src/source.rs::lower_source_stmt` use wildcard `StreamOp::Noop` / `SourceOp::Noop` fallbacks after general statement type checking | Make lowering fallible, report structured unsupported-statement diagnostics, and remove fallback no-ops that erase authored behavior. |
+| 11 | Lossy executable-expression lowering | `runtime-plan/src/expr.rs::lower_runtime_expr` converts unsupported expressions to `RuntimeValue::String(expr_label(expr))`; flow/source/stream callers can fall back to it after strict lowering fails | Use checked lowering in every executable position and propagate one structured runtime-plan error contract instead of changing expression meaning. |
+| 12 | Duplicate dialogue content model | `arcweft-dialogue/src/lib.rs` owns `DialogueTag` and `DialogueContent::parse_lossy`, while the compiler uses syntax/HIR/runtime-plan/render-text types | Audit facade consumers, then remove the duplicate or make one model authoritative without conversion wrappers or compatibility aliases. |
+| 13 | Unowned generic text policies | `arcweft-layout::TextOverflowPolicy::Page` is exercised only by layout contract tests; `ViewTextRevealPolicy` and `reveal_policies` are serialized/merged but have no player consumer | Define and implement a genuine generic View owner or remove the unused variants/bindings. Do not reuse them as aliases for dialogue logical-page or reveal state. |
+
+## Feature boundary found during dialogue playback cleanup
+
+Mark and dialogue host-event dispatch is deliberately not ranked as a cleanup
+slice. `RichTextControl::Mark` and `DialogueHostEvent` remain projected into
+display stages, but exactly-once reveal-time dispatch, capability enforcement,
+cancellation, save/restore, and executor parity require a separately designed
+feature slice. The implemented control boundary and all independent follow-ups
+are recorded in
+[Dialogue control playback — 2026-07-10](dialogue-control-playback-2026-07-10.md).
 
 Do not turn `LocaleText`, `DebugSymbols`, or other planned resource families
 back into codec variants merely to reserve names. Each joins the runtime

@@ -89,13 +89,16 @@ fn bundle_runner_rejects_unverified_bytecode_before_execution() {
     )
     .expect_err("invalid bytecode is rejected before execution");
 
-    assert!(matches!(
-        error,
-        BundleRunnerError::VerifyBytecode(BytecodeVerificationError::UnsupportedAbi {
-            actual,
-            expected,
-        }) if actual == BYTECODE_ABI_VERSION + 1 && expected == BYTECODE_ABI_VERSION
-    ));
+    assert!(
+        matches!(
+            &error,
+            BundleRunnerError::VerifyBytecode(BytecodeVerificationError::UnsupportedAbi {
+                actual,
+                expected,
+            }) if *actual == BYTECODE_ABI_VERSION + 1 && *expected == BYTECODE_ABI_VERSION
+        ),
+        "unexpected invalid-bytecode error: {error:?}"
+    );
 }
 
 #[test]

@@ -5,6 +5,7 @@ use arcweft_render_wgpu::geometry::{
     RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
 };
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
+use arcweft_runtime_driver::dialogue::BundleDialoguePresentation;
 use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
 };
@@ -191,8 +192,14 @@ pub fn prepare_bundle_parity_frame(
         let clock = RuntimeClockStep::from_millis(tick, 16)?;
         let step = session.step_with_clock(clock, BundleStepInput::default());
         let ready = step.presentation.choices.len() == 2 && step.presentation.images.len() == 4;
-        if !ready && step.presentation.dialogue.is_some() {
-            session.queue_dialogue_advance();
+        if !ready
+            && let Some(target) = step
+                .presentation
+                .dialogue
+                .as_ref()
+                .and_then(BundleDialoguePresentation::advance_target)
+        {
+            session.queue_dialogue_advance(target);
         }
         presentation = Some(step.presentation);
         if ready {
@@ -212,7 +219,8 @@ pub fn prepare_bundle_parity_frame(
         dialogue: presentation
             .dialogue
             .as_ref()
-            .map(RenderDialogue::from_display_frame),
+            .and_then(BundleDialoguePresentation::current_stage)
+            .map(RenderDialogue::from_display_stage),
         choices: presentation
             .choices
             .iter()

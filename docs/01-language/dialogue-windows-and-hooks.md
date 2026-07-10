@@ -23,7 +23,6 @@ pub textbox @textbox.main default_textbox {
     layer = @layer.view.dialogue
     position = bottom
     frame = rect(x=80, y=520, w=1120, h=160)
-    page_policy = wait_then_clear
     text_reveal = typewriter(speed=normal)
 }
 ```
@@ -38,6 +37,18 @@ alice: おはよう。[p]
 
 Both update `@textbox.main` by default.
 
+### Logical pages and transition presentation
+
+Dialogue controls own logical-page behavior. `[p]` always waits and closes the
+current logical page, while `[l]` waits and retains it. A terminal `[p]` does
+not create an empty page; its advance releases the line.
+
+A TextBox theme may choose how a closed page leaves and the next page appears,
+for example with an immediate replacement, fade, slide, or scrolling
+animation. That choice is presentation only. It cannot turn `[p]` into append
+behavior, keep the logical page open, or change the line-release rule. TextBox
+manifests do not control logical-page boundaries.
+
 ---
 
 ## Changing the project default
@@ -49,7 +60,6 @@ pub textbox @textbox.main main_textbox {
     layer = @layer.view.dialogue
     position = bottom
     frame = rect(x=72, y=512, w=1136, h=174)
-    page_policy = wait_then_scroll
 }
 
 dialogue defaults {
@@ -74,7 +84,6 @@ pub textbox @textbox.side side_note {
     layer = @layer.view.overlay
     position = right
     frame = rect(x=900, y=80, w=360, h=240)
-    page_policy = append
 }
 ```
 
@@ -146,7 +155,8 @@ Narration uses the built-in narrator style:
 
 ## Global dialogue defaults
 
-The project may declare default hooks, reveal behavior, voice behavior, and text-textbox behavior.
+The project may declare default hooks, reveal behavior, voice behavior, and
+textbox presentation.
 
 ```arcw
 dialogue defaults {
@@ -284,13 +294,17 @@ Text windows expose:
 
 ```text
 - textbox entity ID
+- dialogue occurrence ID
 - current speaker
 - current line ID
 - text key
+- current display-stage index
+- current logical-page index
 - visible text range
 - full rich text
 - bbox / polygon / mask
 - reveal cursor
+- actionable wait state
 - read state
 - active hooks
 - pending voice cue

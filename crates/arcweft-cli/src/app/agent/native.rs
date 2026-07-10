@@ -119,6 +119,7 @@ use arcweft_layout::{
 use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy};
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
 use arcweft_render_text::{LineDisplayFrame, Milli, RichTextParam, RichTextRange};
+use arcweft_runtime_driver::session::BundleStepInput;
 use arcweft_source::SourceName;
 #[cfg(feature = "agent-repl")]
 use arcweft_tooling::agent_repl::AgentReplCellCompletionKind;
@@ -298,7 +299,7 @@ use observe::{
     agent_observe_effective_steps, agent_observe_report_capture_time_millis,
     agent_observe_resource_by_uri,
     agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store,
-    agent_report_capture_time_seconds, native_agent_action_input_events,
+    agent_report_capture_time_seconds, native_agent_action_step_input,
     validate_agent_observe_options,
 };
 use observe_resources::{

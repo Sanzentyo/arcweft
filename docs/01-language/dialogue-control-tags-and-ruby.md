@@ -69,19 +69,19 @@ A module may still define a qualified function such as `my_tags.p`, but it canno
 
 | Name | Meaning |
 |---|---|
-| `p` | page wait / advance and page-break request |
-| `l` | line wait / advance without page clear |
+| `p` | user wait that closes the current logical page |
+| `l` | user wait that keeps the current logical page open |
 | `r` | hard line break |
 | `br` | hard line break tag |
-| `w` | timed wait |
-| `clear` | clear current message text |
-| `er` | erase current message text |
-| `cm` | clear message layer |
+| `w` | automatic timed wait reached during reveal |
+| `clear` | immediately reset displayed text when reached |
+| `er` | alias of `clear` |
+| `cm` | alias of `clear` |
 | `ruby` | ruby annotation |
 | `rt` | ruby text shorthand inside ruby-related tags |
 | `em`, `strong` | emphasis spans |
 | `color`, `font`, `size` | rich text styling spans |
-| `speed` | text reveal speed control |
+| `speed` | reveal rate for subsequent text |
 | `object` | typed text presentation object/proxy span |
 | `reset` | reset text style/reveal modifiers |
 | `voice` | voice cue inside a line |
@@ -194,9 +194,16 @@ alice: おはよう。[l]今日はいい天気だね。[p]
 Meaning:
 
 ```text
-[l]  wait for user advance; keep current page.
-[p]  wait for user advance; request page break according to textbox policy.
+[l]  wait for user advance; then continue revealing on the same logical page.
+[p]  wait for user advance; close the current logical page before later text.
 ```
+
+Logical page boundaries are authored behavior, not a TextBox setting. If more
+content follows a `[p]`, advancing starts that content on a new logical page.
+If `[p]` is the terminal control, it does not manufacture an empty page: the
+advance at that stage releases the line to its continuation. `[l]` never closes
+the logical page, so text visible before the marker remains visible when reveal
+continues.
 
 Line break:
 
@@ -218,12 +225,35 @@ alice: えっと……[w 500ms]なんでもない。[page]
 
 `[page]`, `[wait]`, and `[nl]` normalize to `[p]`, `[l]`, and `[r]`.
 
-`[p]` is not hard-coded to clear the box. It requests a page wait; the active TextBox theme decides whether to clear, scroll, animate, or continue.
+`[w]` begins only after reveal reaches its marker. It pauses automatically for
+the authored duration and then resumes without user input. The duration must be
+positive and use `ms` or `s`, for example `250ms`, `1s`, or `0.5s`. Missing,
+zero, negative, unsupported-unit, sub-millisecond, and overflowing durations
+are compile-time errors.
 
-```toml
-[textbox.page]
-default_policy = "wait_then_clear"
+`[clear]` resets the currently displayed text immediately when reveal reaches
+the marker. It neither waits for input nor closes the logical page; use an
+adjacent `[l]` or `[p]` when a wait is also required. `[er]` and `[cm]`
+normalize to `[clear]`. When `[l]` follows, the next stage retains the
+post-clear display rather than reconstructing text removed before the marker.
+
+```arcw
+alice: 前の表示。[clear]ここから表示を作り直す。[p]
 ```
+
+`[speed ...]` changes the reveal rate for subsequent text. The modifier
+accepts `slow`, `normal`, `fast`, or a numeric rate from 1 through 240
+characters per second with at most three decimal places. Missing, malformed,
+out-of-range, and over-precise rates are compile-time errors. The modifier
+remains active until a later speed/reset boundary or the end of the line.
+
+```arcw
+alice: 通常。[speed slow]ゆっくり。[speed 56]速く。[reset]通常。[p]
+```
+
+TextBox themes may animate or style a logical-page transition, but they do not
+change whether `[p]` closes a page, `[l]` retains it, or a terminal `[p]`
+releases the line.
 
 ---
 

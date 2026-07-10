@@ -4,11 +4,11 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, Milli,
-    RichTextCascadeLayer, RichTextColor, RichTextEffectPhase, RichTextEffectTarget,
-    RichTextFontFamily, RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam,
-    RichTextRubyPosition, RichTextSettingSource, RichTextSourceRange, RichTextStateScope,
-    RichTextStyle, RichTextStyleContribution, RichTextTransformOrigin, RichTextWritingMode,
-    RuntimeLineContext,
+    RichTextCascadeLayer, RichTextColor, RichTextControl, RichTextEffectPhase,
+    RichTextEffectTarget, RichTextFontFamily, RichTextJlreqStrictness, RichTextLayout,
+    RichTextNode, RichTextParam, RichTextRubyPosition, RichTextSettingSource, RichTextSourceRange,
+    RichTextStateScope, RichTextStyle, RichTextStyleContribution, RichTextTransformOrigin,
+    RichTextWritingMode, RuntimeLineContext,
 };
 
 fn line_id(value: &str) -> RuntimeLineId {
@@ -105,6 +105,108 @@ flow @flow.main main {
             }
         )
     }));
+}
+
+#[test]
+fn lowers_typed_dialogue_wait_and_rejects_invalid_duration() {
+    let parsed = parse_source(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[w 0.5s][speed fast]B[p]
+}
+",
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("valid wait fixture lowers");
+    let dialogue = hir
+        .flows()
+        .first()
+        .and_then(|flow| flow.body().first())
+        .and_then(|item| match item {
+            arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+            _ => None,
+        })
+        .expect("dialogue item");
+    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let spec = lower_dialogue_display(line_id("say.wait.valid"), dialogue, &defaults);
+
+    assert!(spec.content.nodes.iter().any(|node| matches!(
+        node,
+        RichTextNode::Control {
+            control: RichTextControl::TimedWait {
+                duration_millis: 500
+            }
+        }
+    )));
+    assert!(spec.content.nodes.iter().any(|node| matches!(
+        node,
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Speed { value }
+        } if value == "56"
+    )));
+
+    let parsed = parse_source(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[w]B[p]
+}
+",
+    );
+    let hir = lower_to_hir(parsed.typed_tree())
+        .expect("invalid wait remains available to lowering diagnostics");
+    let dialogue = hir
+        .flows()
+        .first()
+        .and_then(|flow| flow.body().first())
+        .and_then(|item| match item {
+            arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+            _ => None,
+        })
+        .expect("dialogue item");
+    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let error = lower_dialogue_display_with_speaker_presets(
+        line_id("say.wait.invalid"),
+        dialogue,
+        &defaults,
+        &[],
+    )
+    .expect_err("invalid wait must not become a zero-duration control");
+
+    assert!(error.message().contains("requires a duration"));
+
+    let parsed = parse_source(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[speed warp]B[p]
+}
+",
+    );
+    let hir = lower_to_hir(parsed.typed_tree())
+        .expect("invalid speed remains available to lowering diagnostics");
+    let dialogue = hir
+        .flows()
+        .first()
+        .and_then(|flow| flow.body().first())
+        .and_then(|item| match item {
+            arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+            _ => None,
+        })
+        .expect("dialogue item");
+    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let error = lower_dialogue_display_with_speaker_presets(
+        line_id("say.speed.invalid"),
+        dialogue,
+        &defaults,
+        &[],
+    )
+    .expect_err("invalid speed must not become a default-rate style");
+
+    assert!(error.message().contains("not a supported name"));
 }
 
 fn assert_has_host_event(nodes: &[RichTextNode], predicate: impl Fn(&DialogueHostEvent) -> bool) {

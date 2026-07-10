@@ -91,7 +91,7 @@ impl Engine {
         if self.apply_control_effects(output, pure_backend) {
             return;
         }
-        if input_advances_dialogue(input, &state.line.canonical_label()) {
+        if input.advances_dialogue(&state.line) {
             self.merge_step_output(finish_live_line_task_group(&group), output, pure_backend);
             if self.apply_control_effects(output, pure_backend) {
                 return;
@@ -916,15 +916,6 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Function(_)
         | RuntimeValue::Variant { .. } => super::runtime_value_label(value),
     }
-}
-
-fn input_advances_dialogue(input: &RuntimeStepInput, line: &str) -> bool {
-    input.input_events.iter().any(|event| {
-        matches!(
-            crate::step::input_event_trigger_name(event),
-            Some("advance" | "dialogue.advance")
-        ) && crate::step::input_event_text_payload(event).is_none_or(|value| value == line)
-    })
 }
 
 fn input_choice_selection(input: &RuntimeStepInput) -> Option<(Option<&str>, &str)> {

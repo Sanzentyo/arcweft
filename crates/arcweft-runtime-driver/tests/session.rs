@@ -32,6 +32,11 @@ use arcweft_core::task::{
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
 use arcweft_id::PublicId;
+use arcweft_interaction_model::{
+    id::Identifier,
+    input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
+    payload::InteractionPayload,
+};
 use arcweft_presentation::input::{
     Action, ActionTarget, InteractionTarget as PresentationInteractionTarget,
 };
@@ -41,10 +46,16 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
+use arcweft_runtime_driver::dialogue::{
+    BundleDialoguePresentation, BundlePresentationTransition, DialogueAdvanceRejection,
+    DialogueStageAdvanceKind,
+};
+use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::session::{
     BundleEntryStart, BundleEntryStartError, BundleHotSwapError, BundlePatchReadiness,
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
 };
+use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use arcweft_runtime_driver::swap::SwapCompatibility;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
@@ -56,8 +67,66 @@ fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
 }
 
+fn dialogue_text(presentation: &BundlePresentationSnapshot) -> Option<&str> {
+    presentation
+        .dialogue
+        .as_ref()
+        .and_then(BundleDialoguePresentation::current_stage)
+        .map(arcweft_render_text::LineDisplayStage::text)
+}
+
+fn queue_current_dialogue_advance(session: &mut BundleSession) {
+    let target = session
+        .presentation()
+        .dialogue
+        .as_ref()
+        .and_then(BundleDialoguePresentation::advance_target)
+        .expect("dialogue is waiting for advance");
+    session.queue_dialogue_advance(target);
+}
+
 fn fixture_bundle() -> ArcweftBundle {
     fixture_bundle_with("WebGPU dialogue", false, false)
+}
+
+fn paged_fixture_bundle() -> ArcweftBundle {
+    let mut bundle = fixture_bundle_with("unused", false, false);
+    let line = line_id("line.opening");
+    bundle.display = LineDisplayCatalog::new(vec![LineDisplaySpec {
+        line,
+        callee: "alice".to_owned(),
+        speaker_label: None,
+        text_key: None,
+        window: None,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![
+            RichTextNode::Text {
+                text: "A".to_owned(),
+            },
+            RichTextNode::Control {
+                control: arcweft_render_text::RichTextControl::Page,
+            },
+            RichTextNode::Text {
+                text: "B".to_owned(),
+            },
+            RichTextNode::Control {
+                control: arcweft_render_text::RichTextControl::LineWait,
+            },
+            RichTextNode::Text {
+                text: "C".to_owned(),
+            },
+            RichTextNode::Control {
+                control: arcweft_render_text::RichTextControl::Page,
+            },
+        ]),
+    }]);
+    bundle
 }
 
 fn structured_vm_fixture_bundle() -> ArcweftBundle {
@@ -620,16 +689,9 @@ fn session_requires_explicit_clock_and_exposes_presentation() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(
-        first
-            .presentation
-            .dialogue
-            .as_ref()
-            .map(|frame| frame.text.as_str()),
-        Some("WebGPU dialogue")
-    );
+    assert_eq!(dialogue_text(&first.presentation), Some("WebGPU dialogue"));
 
-    session.queue_dialogue_advance();
+    queue_current_dialogue_advance(&mut session);
     let choice_step = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
         BundleStepInput::default(),
@@ -657,6 +719,201 @@ fn session_requires_explicit_clock_and_exposes_presentation() {
     );
     assert!(second.finished);
     assert!(second.presentation.choices.is_empty());
+}
+
+#[test]
+fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
+    let bundle = paged_fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let first = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let first_dialogue = first.presentation.dialogue.as_ref().expect("dialogue");
+    let first_target = first_dialogue.advance_target().expect("advance target");
+    assert_eq!(dialogue_text(&first.presentation), Some("A"));
+
+    session.queue_dialogue_advance(first_target);
+    let second = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(dialogue_text(&second.presentation), Some("B"));
+    assert!(second.presentation.choices.is_empty());
+    assert!(matches!(
+        second.presentation_transitions.as_slice(),
+        [BundlePresentationTransition::StageAdvanced {
+            advance: DialogueStageAdvanceKind::NextPage,
+            ..
+        }]
+    ));
+
+    let save = session
+        .export_session_save_bytes()
+        .expect("page-stage session save exports");
+    let mut restored =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session restarts");
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect("page-stage session save restores");
+    assert_eq!(dialogue_text(restored.presentation()), Some("B"));
+    session = restored;
+
+    session.queue_dialogue_advance(first_target);
+    let stale = session.step_with_clock(
+        RuntimeClockStep::from_millis(3, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(dialogue_text(&stale.presentation), Some("B"));
+    assert!(matches!(
+        stale.presentation_transitions.as_slice(),
+        [BundlePresentationTransition::DialogueAdvanceRejected {
+            reason: DialogueAdvanceRejection::StaleStage,
+            ..
+        }]
+    ));
+
+    queue_current_dialogue_advance(&mut session);
+    let third = session.step_with_clock(
+        RuntimeClockStep::from_millis(4, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(dialogue_text(&third.presentation), Some("BC"));
+    assert!(third.presentation.choices.is_empty());
+    assert!(matches!(
+        third.presentation_transitions.as_slice(),
+        [BundlePresentationTransition::StageAdvanced {
+            advance: DialogueStageAdvanceKind::ContinuePage,
+            ..
+        }]
+    ));
+
+    let final_target = session
+        .presentation()
+        .dialogue
+        .as_ref()
+        .and_then(BundleDialoguePresentation::advance_target)
+        .expect("final stage is actionable");
+    session.queue_dialogue_advance(final_target);
+    session.queue_dialogue_advance(final_target);
+    let choice = session.step_with_clock(
+        RuntimeClockStep::from_millis(5, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(dialogue_text(&choice.presentation), Some("BC"));
+    assert!(
+        !choice
+            .presentation
+            .dialogue
+            .as_ref()
+            .expect("retained dialogue")
+            .is_waiting_for_advance()
+    );
+    assert_eq!(choice.presentation.choices.len(), 1);
+    assert!(matches!(
+        choice.presentation_transitions.as_slice(),
+        [
+            BundlePresentationTransition::RuntimeLineAdvanceQueued { .. },
+            BundlePresentationTransition::DialogueAdvanceRejected {
+                reason: DialogueAdvanceRejection::NotWaiting,
+                ..
+            }
+        ]
+    ));
+}
+
+#[test]
+fn raw_dialogue_events_cannot_bypass_the_presentation_stage_target() {
+    let bundle = paged_fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let first = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let line = first
+        .presentation
+        .dialogue
+        .as_ref()
+        .expect("dialogue")
+        .frame()
+        .line
+        .public_label()
+        .as_str()
+        .to_owned();
+    let raw_event = |target: &str, name: &str| {
+        RoutedInputEvent::new(
+            InputEpoch::default(),
+            InputSequence::default(),
+            InteractionTarget::new(target).expect("test target"),
+            InputEventKind::Custom {
+                name: Identifier::new(name).expect("test input name"),
+            },
+        )
+        .with_payload(InteractionPayload::Text(line.clone()))
+    };
+
+    let rejected = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput {
+            input_events: vec![
+                raw_event("dialogue-widget", "dialogue.advance"),
+                raw_event("runtime", "advance"),
+            ],
+            ..BundleStepInput::default()
+        },
+    );
+
+    assert_eq!(dialogue_text(&rejected.presentation), Some("A"));
+    assert!(
+        rejected
+            .presentation
+            .dialogue
+            .as_ref()
+            .expect("dialogue remains active")
+            .is_waiting_for_advance()
+    );
+    assert_eq!(rejected.presentation_transitions.len(), 2);
+    assert!(rejected.presentation_transitions.iter().all(|transition| {
+        matches!(
+            transition,
+            BundlePresentationTransition::DialogueAdvanceRejected {
+                target: None,
+                reason: DialogueAdvanceRejection::UntargetedRuntimeInput,
+            }
+        )
+    }));
+}
+
+#[test]
+fn malformed_dialogue_frame_restore_is_rejected_without_mutating_the_session() {
+    let bundle = paged_fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let mut value = serde_json::to_value(&before).expect("snapshot encodes as JSON value");
+    let controls = value
+        .pointer_mut("/presentation/dialogue/frame/display_map/controls")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("dialogue controls are present");
+    controls[1]["text_offset"] = serde_json::json!(0);
+    let invalid = serde_json::from_value(value).expect("structurally typed snapshot decodes");
+
+    let error = session
+        .restore_session_snapshot(invalid)
+        .expect_err("regressing dialogue marker is rejected");
+    assert!(matches!(error, BundleSessionSaveError::Presentation { .. }));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("live session remains valid"),
+        before
+    );
 }
 
 #[test]
@@ -782,15 +1039,11 @@ fn session_receive_action_reached_by_dialogue_advance_uses_same_step_action() {
         BundleStepInput::default(),
     );
     assert_eq!(
-        dialogue
-            .presentation
-            .dialogue
-            .as_ref()
-            .map(|frame| frame.text.as_str()),
+        dialogue_text(&dialogue.presentation),
         Some("Submit the form.")
     );
 
-    session.queue_dialogue_advance();
+    queue_current_dialogue_advance(&mut session);
     let action = Action::new(
         ActionTarget::Runtime,
         PublicId::try_new("action.feedback.submit").expect("action id"),
@@ -878,11 +1131,7 @@ fn session_receive_action_reached_by_dialogue_advance_uses_same_step_text_submit
         BundleStepInput::default(),
     );
     assert_eq!(
-        dialogue
-            .presentation
-            .dialogue
-            .as_ref()
-            .map(|frame| frame.text.as_str()),
+        dialogue_text(&dialogue.presentation),
         Some("Submit the form.")
     );
 
@@ -895,7 +1144,7 @@ fn session_receive_action_reached_by_dialogue_advance_uses_same_step_text_submit
         TextRange::new(TextByteOffset(3), TextByteOffset(3)),
         TextRevision(1),
     );
-    session.queue_dialogue_advance();
+    queue_current_dialogue_advance(&mut session);
     session
         .queue_text_control_write_back(&submit)
         .expect("submit writeback is accepted");
@@ -968,13 +1217,7 @@ fn hot_swap_content_only_updates_future_presentation_without_rebuilding_code() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(
-        step.presentation
-            .dialogue
-            .as_ref()
-            .map(|frame| frame.text.as_str()),
-        Some("New text")
-    );
+    assert_eq!(dialogue_text(&step.presentation), Some("New text"));
 }
 
 #[test]
@@ -1004,7 +1247,7 @@ fn generation_pin_retains_old_bundle_generation_until_handle_drops() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    session.queue_dialogue_advance();
+    queue_current_dialogue_advance(&mut session);
     let _choice = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
         BundleStepInput::default(),
@@ -1046,7 +1289,7 @@ fn active_fiber_pin_retains_old_generation_until_fiber_finishes() {
     assert!(!blocked.finished);
     assert_eq!(session.retired_generation_count(), 1);
 
-    session.queue_dialogue_advance();
+    queue_current_dialogue_advance(&mut session);
     let choice = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
         BundleStepInput::default(),
@@ -1130,13 +1373,7 @@ fn hot_swap_code_compatible_bundle_replaces_runtime_at_quiescent_boundary() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(
-        step.presentation
-            .dialogue
-            .as_ref()
-            .map(|frame| frame.text.as_str()),
-        Some("WebGPU dialogue")
-    );
+    assert_eq!(dialogue_text(&step.presentation), Some("WebGPU dialogue"));
 }
 
 #[test]
@@ -1626,13 +1863,7 @@ fn hot_swap_patch_bytes_materializes_target_and_applies_content_only_swap() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(
-        step.presentation
-            .dialogue
-            .as_ref()
-            .map(|frame| frame.text.as_str()),
-        Some("New text")
-    );
+    assert_eq!(dialogue_text(&step.presentation), Some("New text"));
 }
 
 #[test]

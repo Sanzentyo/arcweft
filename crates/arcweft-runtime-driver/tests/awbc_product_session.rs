@@ -32,6 +32,7 @@ use arcweft_runtime_driver::{
         BundleSessionArtifactIdentity, BundleSessionPendingBlocker, BundleSessionSaveError,
         BundleSessionSnapshot,
     },
+    swap::GenerationId,
 };
 
 #[test]
@@ -83,6 +84,40 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
         .export_session_save_bytes()
         .expect("restored session save exports");
     assert_eq!(save, restored_save);
+}
+
+#[test]
+fn rejected_session_restore_does_not_partially_mutate_the_live_session() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let mut invalid = before.clone();
+    invalid.runtime.source_label = "invalid restore must not leak".to_owned();
+    invalid.runtime.next_step_index = invalid.runtime.next_step_index.saturating_add(99);
+    invalid.runtime.runtime_generation_pin = Some(GenerationId(
+        invalid.generation.active_generation.0.saturating_add(1),
+    ));
+
+    let error = session
+        .restore_session_snapshot(invalid)
+        .expect_err("mismatched generation pin is rejected");
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::GenerationMismatch {
+            field: "runtime_generation_pin",
+            ..
+        }
+    ));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("live session remains valid"),
+        before
+    );
 }
 
 #[test]

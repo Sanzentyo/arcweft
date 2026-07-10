@@ -36,7 +36,6 @@ use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjectProxy};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::task::TaskEvent;
-use arcweft_interaction_model::input::RoutedInputEvent;
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest, PlayerPreparedFrame,
@@ -64,7 +63,8 @@ pub(super) fn agent_player_observation_for_options(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<AgentObservationState, ExitCode> {
     let mut runtime = native_player_runtime_state_for_options(options, adapter_registrars)?;
-    let observed = observe_native_player_runtime(&mut runtime, options, Vec::new())?;
+    let observed =
+        observe_native_player_runtime(&mut runtime, options, BundleStepInput::default())?;
     Ok(AgentObservationState {
         report: observed.report,
         image_frames: observed.image_frames,
@@ -144,11 +144,11 @@ pub(super) fn native_player_runtime_state_for_options(
 pub(super) fn observe_native_player_runtime(
     runtime: &mut NativeAgentRuntimeState,
     options: &AgentObserveOptions,
-    input_events: Vec<RoutedInputEvent>,
+    step_input: BundleStepInput,
 ) -> Result<NativePlayerObservedFrame, ExitCode> {
     let effective_steps = agent_observe_effective_steps(options);
     let force_capture_step = options.capture_step.is_some();
-    let mut pending_input_events = input_events;
+    let mut pending_step_input = step_input;
     let mut diagnostics = Vec::new();
     let mut task_request_count = 0usize;
     let mut last_step = None;
@@ -159,14 +159,9 @@ pub(super) fn observe_native_player_runtime(
                 ExitCode::FAILURE
             })?;
         runtime.next_clock_millis = runtime.next_clock_millis.saturating_add(1);
-        let step = runtime.session.step_with_clock(
-            clock,
-            BundleStepInput {
-                input_events: std::mem::take(&mut pending_input_events),
-                task_events: std::mem::take(&mut runtime.task_events),
-                ..BundleStepInput::default()
-            },
-        );
+        let mut step_input = std::mem::take(&mut pending_step_input);
+        step_input.task_events = std::mem::take(&mut runtime.task_events);
+        let step = runtime.session.step_with_clock(clock, step_input);
         let finished = step.finished;
         diagnostics.extend(
             step.diagnostics
@@ -285,6 +280,7 @@ fn prepare_player_runtime_frame(
                 fit: PlayerFrameFit::raw(),
                 image_time_millis: visual_time_millis,
                 visual_time_millis,
+                dialogue_reveal_complete: false,
                 preferences: RenderPreferences::default(),
             },
         )
@@ -564,14 +560,12 @@ fn player_observed_objects(
 ) -> Vec<AgentObservedObject> {
     let mut objects = Vec::new();
     let view_by_target = player_runtime_view_by_target(presentation);
-    if let Some(dialogue) = &presentation.dialogue {
-        objects.push(agent_textbox_object(
-            step,
-            0,
-            dialogue.clone(),
-            viewport,
-            options,
-        ));
+    if let Some(dialogue) = &presentation.dialogue
+        && let Some(stage) = dialogue.current_stage()
+    {
+        let mut textbox = agent_textbox_object(step, 0, stage.to_frame(), viewport, options);
+        textbox.enabled = dialogue.is_waiting_for_advance();
+        objects.push(textbox);
     }
     objects.extend(
         prepared

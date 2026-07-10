@@ -10,7 +10,7 @@ use arcweft_render_text::{
     RichTextVerticalLatinMode, RichTextWritingMode, parse_milli_token, parse_z_index_token,
 };
 
-use crate::labels::expr_label;
+use crate::{errors::RuntimePlanLowerError, labels::expr_label};
 
 use super::attrs::{
     angle_from_attrs, milli_attr, param_from_value, parse_attrs, transform_angle_attr, trim_quotes,
@@ -23,15 +23,15 @@ pub(crate) fn lower_dialogue_token(
     token: &DialogueToken,
     default_inline_failure_policy: Option<&InlineFailurePolicy>,
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
-) -> Vec<RichTextNode> {
-    match token {
+) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
+    Ok(match token {
         DialogueToken::Text(text) => vec![RichTextNode::Text { text: text.clone() }],
         DialogueToken::Raw(text) => {
             vec![RichTextNode::Control {
                 control: RichTextControl::Raw { text: text.clone() },
             }]
         }
-        DialogueToken::Tag(tag) => lower_tag(tag, text_proxies),
+        DialogueToken::Tag(tag) => return lower_tag(tag, text_proxies),
         DialogueToken::InferredTag(tag) => lower_inferred_tag(tag, text_proxies),
         DialogueToken::Mark(mark) => {
             vec![RichTextNode::Control {
@@ -66,26 +66,29 @@ pub(crate) fn lower_dialogue_token(
         DialogueToken::Escape(ch) => vec![RichTextNode::Text {
             text: ch.to_string(),
         }],
-    }
+    })
 }
 
 fn lower_tag(
     tag: &DialogueTag,
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
-) -> Vec<RichTextNode> {
-    match tag.name() {
-        "p" | "page" => vec![RichTextNode::Control {
+) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
+    Ok(match tag.name() {
+        "p" => vec![RichTextNode::Control {
             control: RichTextControl::Page,
         }],
-        "l" | "wait" => vec![RichTextNode::Control {
+        "l" => vec![RichTextNode::Control {
             control: RichTextControl::LineWait,
         }],
-        "r" | "br" | "nl" => vec![RichTextNode::Control {
+        "r" | "br" => vec![RichTextNode::Control {
             control: RichTextControl::HardBreak,
         }],
         "w" => vec![RichTextNode::Control {
             control: RichTextControl::TimedWait {
-                value: tag.attrs().to_owned(),
+                duration_millis: tag
+                    .wait_duration()
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
+                    .millis(),
             },
         }],
         "clear" | "er" | "cm" => vec![RichTextNode::Control {
@@ -94,8 +97,15 @@ fn lower_tag(
         "reset" => vec![RichTextNode::Control {
             control: RichTextControl::Reset,
         }],
-        "em" | "strong" | "color" | "font" | "size" | "speed" | "i" | "italic" | "oblique"
-        | "slant" => {
+        "speed" => vec![RichTextNode::StyleStart {
+            style: RichTextStyle::Speed {
+                value: tag
+                    .reveal_speed()
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
+                    .canonical_cps(),
+            },
+        }],
+        "em" | "strong" | "color" | "font" | "size" | "i" | "italic" | "oblique" | "slant" => {
             vec![RichTextNode::StyleStart {
                 style: RichTextStyle::from_tag(tag.name(), tag.attrs()),
             }]
@@ -154,7 +164,7 @@ fn lower_tag(
                 attrs: tag.attrs().to_owned(),
             },
         }],
-    }
+    })
 }
 
 fn lower_inferred_tag(

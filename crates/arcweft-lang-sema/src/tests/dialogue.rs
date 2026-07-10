@@ -1,4 +1,5 @@
 use super::support::*;
+use crate::diagnostics::TypeCheckError;
 
 #[test]
 fn parses_reusable_flow_body() {
@@ -456,6 +457,91 @@ fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
             .filter(|token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "p"))
             .count(),
         2
+    );
+}
+
+#[test]
+fn dialogue_wait_duration_is_typed_at_the_language_boundary() {
+    let tokens = parse_dialogue_tokens("[w 125ms][w time=0.5s][w 2s]");
+    let durations = tokens
+        .iter()
+        .filter_map(|token| match token {
+            DialogueToken::Tag(tag) if tag.name() == "w" => {
+                Some(tag.wait_duration().expect("valid wait duration").millis())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(durations, [125, 500, 2_000]);
+
+    let speeds = parse_dialogue_tokens("[speed slow][speed cps=28.5][speed fast]")
+        .into_iter()
+        .filter_map(|token| match token {
+            DialogueToken::Tag(tag) if tag.name() == "speed" => {
+                Some(tag.reveal_speed().expect("valid reveal speed"))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        speeds
+            .iter()
+            .map(|speed| speed.milli_cps())
+            .collect::<Vec<_>>(),
+        [14_000, 28_500, 56_000]
+    );
+    assert_eq!(speeds[1].canonical_cps(), "28.5");
+}
+
+#[test]
+fn typechecker_rejects_invalid_dialogue_waits_and_control_attributes() {
+    let tree = parse_ok(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: A[w]B[w 0ms]C[w 0.0001s]D[p unexpected]E[speed]F[speed 241]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("invalid controls still lower for diagnostics");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("invalid dialogue controls must fail type checking");
+    let messages = errors
+        .iter()
+        .map(TypeCheckError::message)
+        .collect::<Vec<_>>();
+
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("requires a duration"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("greater than zero"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("precision below one millisecond"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("`[p]` does not accept attributes"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("dialogue speed requires"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("between 1 and 240"))
     );
 }
 

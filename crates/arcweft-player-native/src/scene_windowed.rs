@@ -17,6 +17,7 @@ use crate::windowed_runtime::{
 use arcweft_bundle::ArcweftBundle;
 use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_layout::ScalePolicy;
+use arcweft_player_scene::dialogue::{DialogueVisualClock, DialogueVisualClockSnapshot};
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
@@ -32,12 +33,12 @@ use arcweft_presentation::text_input::{
     TextInputGeometrySnapshot, TextInputKeyDisposition, TextInputOperation, TextInputOptions,
     TextInputPrivacy, TextInputPurpose, TextInputSerial, TextRange,
 };
-use arcweft_render_text::LineDisplayFrame;
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedTextInputTarget, RenderPreferences, RenderViewport,
 };
 use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
+use arcweft_runtime_driver::dialogue::BundleDialoguePresentation;
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use arcweft_runtime_host::clipboard_host::SyncTextClipboardHostAdapter;
@@ -192,12 +193,6 @@ enum NativeSceneWindowError {
         #[source]
         source: std::io::Error,
     },
-    #[error("native player session save schema id `{actual}` does not match expected `{expected}`")]
-    NativePlayerSessionSaveSchemaId { actual: String, expected: String },
-    #[error(
-        "native player session save schema version {actual} is not supported; expected {expected}"
-    )]
-    NativePlayerSessionSaveSchemaVersion { actual: u32, expected: u32 },
     #[error("failed to encode native player session save: {message}")]
     NativePlayerSessionSaveEncode { message: String },
     #[error("failed to decode native player session save: {message}")]
@@ -279,59 +274,16 @@ struct NativeSceneState {
     next_tick: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct NativePlayerSessionSaveSchema {
-    id: String,
-    version: u32,
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct NativePlayerSessionSave {
-    schema: NativePlayerSessionSaveSchema,
     runtime_session: Vec<u8>,
     input: InputControllerSnapshot,
+    dialogue_visual_clock: DialogueVisualClockSnapshot,
 }
 
-impl Default for NativePlayerSessionSaveSchema {
-    fn default() -> Self {
-        Self {
-            id: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID.to_owned(),
-            version: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
-        }
-    }
-}
-
-impl NativePlayerSessionSaveSchema {
-    fn validate(&self) -> Result<(), NativeSceneWindowError> {
-        if self.id != NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID {
-            return Err(NativeSceneWindowError::NativePlayerSessionSaveSchemaId {
-                actual: self.id.clone(),
-                expected: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID.to_owned(),
-            });
-        }
-        if self.version != NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION {
-            return Err(
-                NativeSceneWindowError::NativePlayerSessionSaveSchemaVersion {
-                    actual: self.version,
-                    expected: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
-                },
-            );
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct DialogueVisualClock {
-    line: Option<arcweft_core::plan::RuntimeLineId>,
-    started_at_millis: u64,
-    completed_line: Option<arcweft_core::plan::RuntimeLineId>,
-}
-
-impl DialogueVisualClock {
-    fn complete_current_line(&mut self) {
-        self.completed_line = self.line.clone();
-    }
+struct RestoredNativePlayerState {
+    input: InputControllerSnapshot,
+    dialogue_visual_clock: DialogueVisualClockSnapshot,
 }
 
 fn run_shared_scene_window(
@@ -624,7 +576,7 @@ impl NativeSceneState {
             .with_owned_window_driver(owned_window)
             .build();
         let audio = NativeAudioRuntime::from_bundle(&bundle)?;
-        let (runtime, input) =
+        let (runtime, input, dialogue_visual_clock) =
             restored_windowed_runtime_and_input(&bundle, backend, options.session_load.as_deref())?;
         let text_input = NativeTextInputBridge::new(options.text_input.clone());
         Ok(Self {
@@ -650,7 +602,7 @@ impl NativeSceneState {
             session_save_out: options.session_save_out.clone(),
             session_save_on_exit_completed: false,
             prepared: None,
-            dialogue_visual_clock: DialogueVisualClock::default(),
+            dialogue_visual_clock,
             started_at: Instant::now(),
             next_tick: 1,
         })
@@ -667,7 +619,13 @@ impl NativeSceneState {
         let Some(path) = self.session_save_out.clone() else {
             return Ok(());
         };
-        save_native_player_session(&path, &self.runtime, &self.input)?;
+        save_native_player_session(
+            &path,
+            &self.runtime,
+            &self.input,
+            &self.dialogue_visual_clock,
+            self.elapsed_millis(),
+        )?;
         self.session_save_on_exit_completed = true;
         Ok(())
     }
@@ -748,11 +706,9 @@ impl NativeSceneState {
         let viewport = self.viewport();
         let elapsed = self.elapsed_millis();
         let presentation = self.runtime.session().presentation();
-        let visual_time_millis = dialogue_visual_time_millis(
-            &mut self.dialogue_visual_clock,
-            presentation.dialogue.as_ref(),
-            elapsed,
-        );
+        let dialogue_visual =
+            self.dialogue_visual_clock
+                .progress(presentation.dialogue.as_ref(), elapsed, None);
         Ok(self.frame_planner.prepare(
             &mut self.input,
             PlayerFrameRequest {
@@ -761,7 +717,8 @@ impl NativeSceneState {
                 viewport,
                 fit: self.frame_fit,
                 image_time_millis: elapsed,
-                visual_time_millis,
+                visual_time_millis: dialogue_visual.elapsed_millis(),
+                dialogue_reveal_complete: dialogue_visual.is_complete(),
                 preferences: RenderPreferences::default(),
             },
         )?)
@@ -1202,11 +1159,7 @@ impl NativeSceneState {
             cancel: _,
             redraw: _,
         } = outcome;
-        match dialogue_progress {
-            DialogueProgress::None => {}
-            DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_line(),
-            DialogueProgress::Advance => self.runtime.session_mut().queue_dialogue_advance(),
-        }
+        self.apply_dialogue_progress(dialogue_progress);
         for action in actions {
             self.runtime.session_mut().queue_semantic_action(&action)?;
         }
@@ -1238,11 +1191,7 @@ impl NativeSceneState {
                 cancel: _,
                 redraw: _,
             } = outcome;
-            match dialogue_progress {
-                DialogueProgress::None => {}
-                DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_line(),
-                DialogueProgress::Advance => self.runtime.session_mut().queue_dialogue_advance(),
-            }
+            self.apply_dialogue_progress(dialogue_progress);
             for action in actions {
                 self.runtime.session_mut().queue_semantic_action(&action)?;
             }
@@ -1256,6 +1205,25 @@ impl NativeSceneState {
             }
         }
         Ok(())
+    }
+
+    fn apply_dialogue_progress(&mut self, progress: DialogueProgress) {
+        match progress {
+            DialogueProgress::None => {}
+            DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_stage(),
+            DialogueProgress::Advance => {
+                let target = self
+                    .runtime
+                    .session()
+                    .presentation()
+                    .dialogue
+                    .as_ref()
+                    .and_then(BundleDialoguePresentation::advance_target);
+                if let Some(target) = target {
+                    self.runtime.session_mut().queue_dialogue_advance(target);
+                }
+            }
+        }
     }
 
     fn logical_position(&self, position: PhysicalPosition<f64>) -> ViewportPoint {
@@ -1614,7 +1582,7 @@ fn key_label(key: &Key) -> String {
 fn load_native_player_session_save(
     runtime: &mut WindowedRuntimeOwner,
     path: Option<&Path>,
-) -> Result<Option<InputControllerSnapshot>, NativeSceneWindowError> {
+) -> Result<Option<RestoredNativePlayerState>, NativeSceneWindowError> {
     let Some(path) = path else {
         return Ok(None);
     };
@@ -1634,41 +1602,47 @@ fn load_native_player_session_save(
             message: error.to_string(),
         },
     )?;
-    save.schema.validate()?;
     runtime.session_mut().import_session_save_bytes(
         &save.runtime_session,
         &arcweft_save::SaveDecodeOptions::default(),
     )?;
-    Ok(Some(save.input))
+    Ok(Some(RestoredNativePlayerState {
+        input: save.input,
+        dialogue_visual_clock: save.dialogue_visual_clock,
+    }))
 }
 
 fn restored_windowed_runtime_and_input(
     bundle: &ArcweftBundle,
     backend: NativeDesktopBackend,
     session_load: Option<&Path>,
-) -> Result<(WindowedRuntimeOwner, InputController), NativeSceneWindowError> {
+) -> Result<(WindowedRuntimeOwner, InputController, DialogueVisualClock), NativeSceneWindowError> {
     let mut runtime = WindowedRuntimeOwner::from_bundle_with_desktop_backend(
         bundle,
         BundleSessionOptions::default(),
         backend,
     )?;
-    let input_snapshot = load_native_player_session_save(&mut runtime, session_load)?;
+    let restored = load_native_player_session_save(&mut runtime, session_load)?;
     let mut input = InputController::default();
-    if let Some(snapshot) = input_snapshot {
-        input.restore_snapshot(snapshot)?;
+    let mut dialogue_visual_clock = DialogueVisualClock::default();
+    if let Some(restored) = restored {
+        input.restore_snapshot(restored.input)?;
+        dialogue_visual_clock.restore(restored.dialogue_visual_clock, 0);
     }
-    Ok((runtime, input))
+    Ok((runtime, input, dialogue_visual_clock))
 }
 
 fn save_native_player_session(
     path: &Path,
     runtime: &WindowedRuntimeOwner,
     input: &InputController,
+    dialogue_visual_clock: &DialogueVisualClock,
+    elapsed_millis: u64,
 ) -> Result<(), NativeSceneWindowError> {
     let save = NativePlayerSessionSave {
-        schema: NativePlayerSessionSaveSchema::default(),
         runtime_session: runtime.session().export_session_save_bytes()?,
         input: input.snapshot(),
+        dialogue_visual_clock: dialogue_visual_clock.snapshot(elapsed_millis),
     };
     let bytes = arcweft_save::encode_typed_json_save(
         &save,
@@ -1696,30 +1670,6 @@ fn save_native_player_session(
         source,
     })
 }
-
-fn dialogue_visual_time_millis(
-    clock: &mut DialogueVisualClock,
-    dialogue: Option<&LineDisplayFrame>,
-    elapsed_millis: u64,
-) -> u64 {
-    let Some(dialogue) = dialogue else {
-        clock.line = None;
-        clock.started_at_millis = elapsed_millis;
-        clock.completed_line = None;
-        return 0;
-    };
-    if clock.line.as_ref() != Some(&dialogue.line) {
-        clock.line = Some(dialogue.line.clone());
-        clock.started_at_millis = elapsed_millis;
-        clock.completed_line = None;
-    }
-    if clock.completed_line.as_ref() == Some(&dialogue.line) {
-        return DIALOGUE_REVEAL_COMPLETE_MILLIS;
-    }
-    elapsed_millis.saturating_sub(clock.started_at_millis)
-}
-
-const DIALOGUE_REVEAL_COMPLETE_MILLIS: u64 = 24 * 60 * 60 * 1_000;
 
 #[cfg(test)]
 mod tests {

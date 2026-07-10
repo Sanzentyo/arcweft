@@ -1,3 +1,7 @@
+use crate::dialogue::{
+    BundleDialoguePresentation, BundlePresentationTransition, DialogueAdvanceRejection,
+    DialogueAdvanceTarget, DialogueInstanceId,
+};
 use crate::presentation_handles::{
     PresentationHandleDiagnostic, PresentationHandleRecord, apply_presentation_handle_operations,
     apply_presentation_image_handles, filter_presentation_action_buttons,
@@ -51,7 +55,7 @@ pub struct DisplayResolution {
 #[derive(Clone, Default, Deserialize, PartialEq, Serialize)]
 pub struct BundlePresentationSnapshot {
     pub revision: u64,
-    pub dialogue: Option<LineDisplayFrame>,
+    pub dialogue: Option<BundleDialoguePresentation>,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -117,11 +121,24 @@ impl BundlePresentationSnapshot {
         effects: &[LineEffectRequest],
         resources: BundlePresentationResources<'_>,
     ) -> Vec<PresentationHandleDiagnostic> {
-        let next_dialogue = resolution
-            .frames
-            .last()
-            .cloned()
-            .or_else(|| self.dialogue.clone());
+        let next_dialogue = if let Some(frame) = resolution.frames.last().cloned() {
+            let instance = self.dialogue.as_ref().map_or_else(
+                DialogueInstanceId::default,
+                BundleDialoguePresentation::next_instance,
+            );
+            let waiting_for_advance = status_waits_for_line(status, &frame.line);
+            Some(BundleDialoguePresentation::first(
+                frame,
+                instance,
+                waiting_for_advance,
+            ))
+        } else {
+            self.dialogue.clone().map(|mut dialogue| {
+                let waiting_for_advance = status_waits_for_line(status, &dialogue.frame().line);
+                dialogue.set_waiting_for_advance(waiting_for_advance);
+                dialogue
+            })
+        };
         let next_choices = choices_from_status(status);
         let (handle_operations, mut handle_diagnostics) =
             presentation_handle_operations_from_effects(effects);
@@ -209,6 +226,56 @@ impl BundlePresentationSnapshot {
         }
     }
 
+    pub(crate) fn advance_dialogue(
+        &mut self,
+        target: DialogueAdvanceTarget,
+    ) -> (
+        BundlePresentationTransition,
+        Option<arcweft_core::plan::RuntimeLineId>,
+    ) {
+        let Some(dialogue) = self.dialogue.as_mut() else {
+            return (
+                BundlePresentationTransition::DialogueAdvanceRejected {
+                    target: Some(target),
+                    reason: DialogueAdvanceRejection::NoDialogue,
+                },
+                None,
+            );
+        };
+        if let Err(reason) = dialogue.validate_target(target) {
+            return (
+                BundlePresentationTransition::DialogueAdvanceRejected {
+                    target: Some(target),
+                    reason,
+                },
+                None,
+            );
+        }
+        if let Some((from, to, page, advance)) = dialogue.advance_stage() {
+            self.revision = self.revision.saturating_add(1);
+            return (
+                BundlePresentationTransition::StageAdvanced {
+                    instance: target.instance,
+                    from,
+                    to,
+                    page,
+                    advance,
+                },
+                None,
+            );
+        }
+        let line = dialogue.frame().line.clone();
+        dialogue.set_waiting_for_advance(false);
+        self.revision = self.revision.saturating_add(1);
+        (
+            BundlePresentationTransition::RuntimeLineAdvanceQueued {
+                target,
+                line: line.clone(),
+            },
+            Some(line),
+        )
+    }
+
     #[must_use]
     pub fn redacted_for_observation(&self) -> Self {
         Self {
@@ -220,6 +287,13 @@ impl BundlePresentationSnapshot {
             ..self.clone()
         }
     }
+}
+
+fn status_waits_for_line(
+    status: &FlowFiberStatus,
+    line: &arcweft_core::plan::RuntimeLineId,
+) -> bool {
+    matches!(status, FlowFiberStatus::Dialogue(state) if &state.line == line)
 }
 
 impl fmt::Debug for BundlePresentationSnapshot {

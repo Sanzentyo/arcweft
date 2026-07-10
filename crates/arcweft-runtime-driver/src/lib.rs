@@ -5,6 +5,7 @@
 //! clock, normalized input, and deterministic host-task completions.
 
 pub mod clock;
+pub mod dialogue;
 pub mod display;
 pub mod generation_runtime;
 pub mod presentation_handles;

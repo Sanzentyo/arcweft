@@ -1,7 +1,8 @@
 use arcweft_render_text::{
-    Milli, RichTextColor, RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget,
-    RichTextFontFamily, RichTextParam, RichTextRange, RichTextStateScope, RichTextStyle,
-    RichTextTextRun, RichTextTextSource, presentation_from_styles,
+    Milli, RichTextColor, RichTextControl, RichTextControlMarker, RichTextEffectDescriptor,
+    RichTextEffectPhase, RichTextEffectTarget, RichTextFontFamily, RichTextParam, RichTextRange,
+    RichTextStateScope, RichTextStyle, RichTextTextRun, RichTextTextSource,
+    presentation_from_styles,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderFontFamily,
@@ -52,6 +53,19 @@ fn run(start: usize, end: usize, node_index: usize, styles: Vec<RichTextStyle>) 
     }
 }
 
+fn control(
+    text_offset: usize,
+    node_index: usize,
+    control: RichTextControl,
+) -> RichTextControlMarker {
+    RichTextControlMarker {
+        node_index,
+        text_offset,
+        control,
+        range: None,
+    }
+}
+
 fn color(red: u8, green: u8, blue: u8) -> RichTextStyle {
     RichTextStyle::Color {
         value: RichTextColor::Rgb { red, green, blue },
@@ -84,6 +98,9 @@ fn dialogue_body_text_runs_create_one_styled_paragraph_not_blocks() {
                 }],
             ),
         ],
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     };
 
     let frame = SharedFramePlanner::prepare(&scene(dialogue)).expect("frame plans");
@@ -124,6 +141,9 @@ fn styled_paragraph_preserves_mixed_span_styles() {
             ),
             run(bold_end, text.len(), 2, vec![size(36)]),
         ],
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     };
 
     let frame = SharedFramePlanner::prepare(&scene(dialogue)).expect("frame plans");
@@ -158,6 +178,9 @@ fn typewriter_reveal_keeps_full_paragraph_text_and_ranges() {
         text: text.clone(),
         base_styles: Vec::new(),
         text_runs: vec![text_run],
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     };
     let mut test_scene = scene(dialogue);
     test_scene.visual_time_millis = 250;
@@ -171,6 +194,152 @@ fn typewriter_reveal_keeps_full_paragraph_text_and_ranges() {
         RichTextRange::new(0, paragraph.text.len())
     );
     assert!(paragraph.reveal.visible_end < paragraph.text.len());
+}
+
+#[test]
+fn timed_wait_starts_after_the_marker_is_revealed() {
+    let text = "AB".to_owned();
+    let dialogue = RenderDialogue {
+        speaker: "Guide".to_owned(),
+        text: text.clone(),
+        base_styles: Vec::new(),
+        text_runs: vec![run(
+            0,
+            text.len(),
+            0,
+            vec![RichTextStyle::Speed {
+                value: "10".to_owned(),
+            }],
+        )],
+        controls: vec![control(
+            1,
+            1,
+            RichTextControl::TimedWait {
+                duration_millis: 500,
+            },
+        )],
+        reveal_start: 0,
+        reveal_complete: false,
+    };
+    let mut before_wait_finishes = scene(dialogue.clone());
+    before_wait_finishes.visual_time_millis = 599;
+    let mut after_wait_finishes = scene(dialogue);
+    after_wait_finishes.visual_time_millis = 700;
+
+    let before = SharedFramePlanner::prepare(&before_wait_finishes).expect("frame plans");
+    let after = SharedFramePlanner::prepare(&after_wait_finishes).expect("frame plans");
+
+    assert_eq!(before.styled_paragraphs[0].reveal.visible_end, 1);
+    assert!(!before.styled_paragraphs[0].reveal_complete());
+    assert_eq!(after.styled_paragraphs[0].reveal.visible_end, text.len());
+    assert!(after.styled_paragraphs[0].reveal_complete());
+}
+
+#[test]
+fn reduce_motion_reveals_characters_instantly_but_preserves_wait_and_clear_order() {
+    let text = "AB".to_owned();
+    let dialogue = RenderDialogue {
+        speaker: "Guide".to_owned(),
+        text: text.clone(),
+        base_styles: Vec::new(),
+        text_runs: vec![run(0, text.len(), 0, Vec::new())],
+        controls: vec![
+            control(
+                1,
+                1,
+                RichTextControl::TimedWait {
+                    duration_millis: 500,
+                },
+            ),
+            control(1, 2, RichTextControl::Clear),
+        ],
+        reveal_start: 0,
+        reveal_complete: false,
+    };
+    let mut waiting = scene(dialogue.clone());
+    waiting.preferences.reduce_motion = true;
+    waiting.visual_time_millis = 499;
+    let mut after_wait = scene(dialogue);
+    after_wait.preferences.reduce_motion = true;
+    after_wait.visual_time_millis = 500;
+
+    let waiting = SharedFramePlanner::prepare(&waiting).expect("frame plans");
+    let after_wait = SharedFramePlanner::prepare(&after_wait).expect("frame plans");
+
+    assert_eq!(waiting.styled_paragraphs[0].text, text);
+    assert_eq!(waiting.styled_paragraphs[0].reveal.visible_end, 1);
+    assert!(!waiting.styled_paragraphs[0].reveal_complete());
+    assert_eq!(after_wait.styled_paragraphs[0].text, "B");
+    assert_eq!(after_wait.styled_paragraphs[0].reveal.visible_end, 1);
+    assert!(after_wait.styled_paragraphs[0].reveal_complete());
+}
+
+#[test]
+fn clear_removes_the_revealed_prefix_when_the_timeline_reaches_it() {
+    let text = "AB".to_owned();
+    let dialogue = RenderDialogue {
+        speaker: "Guide".to_owned(),
+        text: text.clone(),
+        base_styles: Vec::new(),
+        text_runs: vec![run(
+            0,
+            text.len(),
+            0,
+            vec![RichTextStyle::Speed {
+                value: "10".to_owned(),
+            }],
+        )],
+        controls: vec![control(1, 1, RichTextControl::Clear)],
+        reveal_start: 0,
+        reveal_complete: false,
+    };
+    let mut at_clear = scene(dialogue.clone());
+    at_clear.visual_time_millis = 100;
+    let mut complete = scene(dialogue);
+    complete.visual_time_millis = 200;
+
+    let at_clear = SharedFramePlanner::prepare(&at_clear).expect("frame plans");
+    let complete = SharedFramePlanner::prepare(&complete).expect("frame plans");
+
+    assert_eq!(at_clear.styled_paragraphs[0].text, "B");
+    assert_eq!(at_clear.styled_paragraphs[0].reveal.visible_end, 0);
+    assert_eq!(complete.styled_paragraphs[0].text, "B");
+    assert_eq!(complete.styled_paragraphs[0].reveal.visible_end, 1);
+    assert!(complete.styled_paragraphs[0].reveal_complete());
+}
+
+#[test]
+fn explicit_reveal_completion_finishes_waits_and_applies_clear() {
+    let text = "AB".to_owned();
+    let dialogue = RenderDialogue {
+        speaker: "Guide".to_owned(),
+        text: text.clone(),
+        base_styles: Vec::new(),
+        text_runs: vec![run(0, text.len(), 0, Vec::new())],
+        controls: vec![
+            control(
+                1,
+                1,
+                RichTextControl::TimedWait {
+                    duration_millis: u64::MAX,
+                },
+            ),
+            control(1, 2, RichTextControl::Clear),
+        ],
+        reveal_start: 0,
+        reveal_complete: false,
+    }
+    .with_reveal_complete(true);
+    let mut complete = scene(dialogue);
+    complete.visual_time_millis = 0;
+
+    let frame = SharedFramePlanner::prepare(&complete).expect("frame plans");
+    let paragraph = &frame.styled_paragraphs[0];
+
+    assert_eq!(paragraph.text, "B");
+    assert_eq!(paragraph.reveal.visible_end, 1);
+    assert!(paragraph.reveal_complete());
+    assert!(frame.dialogue_reveal_complete());
 }
 
 #[test]
@@ -197,6 +366,9 @@ fn glyph_transform_effect_is_range_metadata_not_character_blocks() {
         text,
         base_styles: Vec::new(),
         text_runs: vec![text_run],
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     };
 
     let frame = SharedFramePlanner::prepare(&scene(dialogue)).expect("frame plans");
@@ -227,6 +399,9 @@ fn layout_evidence_wraps_across_style_boundaries() {
             run(0, split, 0, vec![color(120, 220, 150)]),
             run(split, text.len(), 1, vec![size(34)]),
         ],
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     };
     let mut test_scene = scene(dialogue);
     test_scene.viewport.logical_width = 360.0;
@@ -272,6 +447,9 @@ fn layout_evidence_records_reveal_state_per_glyph() {
         text,
         base_styles: Vec::new(),
         text_runs: vec![text_run],
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     };
     let mut test_scene = scene(dialogue);
     test_scene.visual_time_millis = 250;
@@ -320,6 +498,9 @@ fn layout_evidence_records_rendered_transform_support() {
         text,
         base_styles: Vec::new(),
         text_runs: vec![text_run],
+        controls: Vec::new(),
+        reveal_start: 0,
+        reveal_complete: false,
     };
 
     let frame = SharedFramePlanner::prepare(&scene(dialogue)).expect("frame plans");

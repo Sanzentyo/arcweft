@@ -1,5 +1,5 @@
 use crate::effect::LineEffectRequest;
-use crate::plan::FlowEvent;
+use crate::plan::{FlowEvent, RuntimeLineId};
 use crate::source::{RuntimeSourceEvent, SourceId};
 use crate::stream::RuntimeStreamEvent;
 use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
@@ -7,9 +7,13 @@ use crate::time::{LogicalDuration, TickId};
 use crate::value::{RuntimeBinding, RuntimePayload};
 use arcweft_interaction_model::{
     audio::{AudioCommandEnvelope, AudioEvent},
-    input::{InputEventKind, RoutedInputEvent},
+    id::Identifier,
+    input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
 };
+
+const RUNTIME_INPUT_TARGET: &str = "runtime";
+const DIALOGUE_ADVANCE_INPUT: &str = "dialogue.advance";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeStepInput {
@@ -421,6 +425,34 @@ pub struct RuntimeDiagnosticSource {
 }
 
 impl RuntimeStepInput {
+    /// Builds the canonical line-targeted core input emitted after a
+    /// presentation layer has validated its own occurrence/stage target.
+    ///
+    /// Interactive hosts using `arcweft-runtime-driver` should queue its typed
+    /// dialogue presentation input instead of constructing this lower-level
+    /// event directly.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if Arcweft's compile-time canonical runtime target or input
+    /// name stops satisfying the interaction identifier invariants.
+    #[must_use]
+    pub fn dialogue_advance_event(line: &RuntimeLineId) -> RoutedInputEvent {
+        RoutedInputEvent::new(
+            InputEpoch::default(),
+            InputSequence::default(),
+            InteractionTarget::new(RUNTIME_INPUT_TARGET)
+                .expect("static runtime input target is non-empty"),
+            InputEventKind::Custom {
+                name: Identifier::new(DIALOGUE_ADVANCE_INPUT)
+                    .expect("static dialogue input name is non-empty"),
+            },
+        )
+        .with_payload(InteractionPayload::Text(
+            line.public_label().as_str().to_owned(),
+        ))
+    }
+
     pub fn as_view(&self) -> RuntimeStepInputRef<'_> {
         RuntimeStepInputRef {
             tick: self.tick,
@@ -432,6 +464,23 @@ impl RuntimeStepInput {
             source_events: self.source_events.as_slice(),
             host_call_results: self.host_call_results.as_slice(),
         }
+    }
+
+    /// Whether this step contains a targeted advance for the active line.
+    #[must_use]
+    pub fn advances_dialogue(&self, line: &RuntimeLineId) -> bool {
+        self.advances_dialogue_label(line.public_label().as_str())
+    }
+
+    pub(crate) fn advances_dialogue_label(&self, line: &str) -> bool {
+        self.input_events.iter().any(|event| {
+            event.target.as_str() == RUNTIME_INPUT_TARGET
+                && input_event_trigger_name(event) == Some(DIALOGUE_ADVANCE_INPUT)
+                && matches!(
+                    event.payload.as_ref(),
+                    Some(InteractionPayload::Text(value)) if value == line
+                )
+        })
     }
 }
 

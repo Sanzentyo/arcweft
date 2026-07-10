@@ -1011,7 +1011,7 @@ fn native_measurement_uses_shaped_horizontal_latin_spacing() {
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
         .expect("frame resolves");
-    let page_range = display_map_non_empty_page_range_at(&frame, 0).expect("page range");
+    let page_range = display_stage_range_at(&frame, 0).expect("stage range");
     let page_layout = layout_page_range(
         &frame,
         page_range,
@@ -3021,7 +3021,7 @@ fn native_layout_reports_text_run_and_ruby_element_bounds() {
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
         .expect("frame resolves");
-    let page_range = display_map_non_empty_page_range_at(&frame, 0).expect("page range");
+    let page_range = display_stage_range_at(&frame, 0).expect("stage range");
     let page_layout = layout_page_range(
         &frame,
         page_range,
@@ -3780,7 +3780,7 @@ fn native_debug_ruby_capture_applies_typewriter_visibility() {
         fallback_bbox: ruby.bbox,
         color: [255, 255, 255, 255],
     };
-    let page_range = display_map_non_empty_page_range_at(&frame, 0).expect("page range");
+    let page_range = display_stage_range_at(&frame, 0).expect("stage range");
     let page = page_from_display_map_range(&frame, page_range.clone()).expect("page");
     let debug_rich_text =
         debug_rich_text_for_regions(&frame, &page_range, &page.rich_text, &[region])
@@ -3820,7 +3820,7 @@ fn native_debug_ruby_capture_applies_typewriter_visibility() {
 }
 
 #[test]
-fn window_pages_split_on_display_map_page_line_wait_and_clear_controls() {
+fn window_pages_project_authoritative_display_stages() {
     let spec = LineDisplaySpec {
         line: line_id("say.test.002"),
         callee: "alice".to_owned(),
@@ -3851,25 +3851,38 @@ fn window_pages_split_on_display_map_page_line_wait_and_clear_controls() {
                 text: "three".to_owned(),
             },
             RichTextNode::Control {
-                control: RichTextControl::Clear,
+                control: RichTextControl::Page,
             },
             RichTextNode::Text {
                 text: "four".to_owned(),
             },
+            RichTextNode::Control {
+                control: RichTextControl::Clear,
+            },
+            RichTextNode::Text {
+                text: "five".to_owned(),
+            },
         ]),
     };
-    let mut frame = spec
+    let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
         .expect("frame resolves");
-    frame.nodes.clear();
 
     let pages = WindowPage::from_frame(&frame);
 
     assert_eq!(pages.len(), 4);
     assert_eq!(pages[0].rich_text.text, "one");
     assert_eq!(pages[1].rich_text.text, "two");
-    assert_eq!(pages[2].rich_text.text, "three");
-    assert_eq!(pages[3].rich_text.text, "four");
+    assert_eq!(pages[2].rich_text.text, "twothree");
+    assert_eq!(pages[3].rich_text.text, "five");
+    assert_eq!(
+        frame
+            .stages()
+            .into_iter()
+            .map(arcweft_render_text::LineDisplayStage::page_index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 1, 2]
+    );
     assert!(pages.iter().all(|page| {
         page.rich_text
             .spans
@@ -3879,59 +3892,51 @@ fn window_pages_split_on_display_map_page_line_wait_and_clear_controls() {
 }
 
 #[test]
-fn display_map_page_ranges_do_not_split_ruby_base_ranges() {
-    let frame = LineDisplayFrame {
+fn line_wait_stage_retains_atomic_ruby_on_the_same_page() {
+    let spec = LineDisplaySpec {
         line: line_id("say.test.page.ruby.atomic"),
         callee: "alice".to_owned(),
         speaker_label: None,
-        text: "ABCDE".to_owned(),
+        text_key: None,
+        window: None,
+        voice: None,
+        look: None,
+        style: None,
         base_styles: Vec::new(),
         default_inline_failure_policy: None,
         style_contributions: Vec::new(),
-        nodes: Vec::new(),
-        display_map: arcweft_render_text::RichTextDisplayMap {
-            text_runs: vec![
-                arcweft_render_text::RichTextTextRun {
-                    range: RichTextRange::new(0, 2),
-                    source: arcweft_render_text::RichTextTextSource::Text,
-                    node_index: 0,
-                    styles: Vec::new(),
-                    presentation: RichTextPresentation::default(),
-                },
-                arcweft_render_text::RichTextTextRun {
-                    range: RichTextRange::new(2, 5),
-                    source: arcweft_render_text::RichTextTextSource::Text,
-                    node_index: 2,
-                    styles: Vec::new(),
-                    presentation: RichTextPresentation::default(),
-                },
-            ],
-            ruby_annotations: vec![arcweft_render_text::RichTextRubyAnnotation {
-                base_range: RichTextRange::new(1, 4),
-                ruby: "ruby".to_owned(),
-                node_index: 1,
-                styles: Vec::new(),
-                presentation: RichTextPresentation::default(),
-            }],
-            controls: vec![arcweft_render_text::RichTextControlMarker {
-                node_index: 2,
-                control: RichTextControl::Page,
-                range: None,
-            }],
-            host_events: Vec::new(),
-        },
-        host_events: Vec::new(),
-        inline_failures: Vec::new(),
-        unresolved: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![
+            RichTextNode::Ruby {
+                base: "夢".to_owned(),
+                ruby: "ゆめ".to_owned(),
+            },
+            RichTextNode::Control {
+                control: RichTextControl::LineWait,
+            },
+            RichTextNode::Text {
+                text: "続".to_owned(),
+            },
+        ]),
     };
+    let frame = spec
+        .resolve_frame(&RuntimeLineContext::default())
+        .expect("frame resolves");
 
-    assert_eq!(display_map_page_ranges(&frame), vec![0..4, 4..5]);
+    assert_eq!(
+        display_stage_ranges(&frame),
+        vec![0.."夢".len(), 0.."夢続".len()]
+    );
     let pages = WindowPage::from_frame(&frame);
     assert_eq!(pages.len(), 2);
-    assert_eq!(pages[0].rich_text.text, "ABCD");
+    assert_eq!(pages[0].rich_text.text, "夢");
+    assert_eq!(pages[1].rich_text.text, "夢続");
     assert_eq!(pages[0].rich_text.ruby_annotations.len(), 1);
-    assert_eq!(pages[0].rich_text.ruby_annotations[0].base_range, 1..4);
-    assert!(pages[1].rich_text.ruby_annotations.is_empty());
+    assert_eq!(pages[1].rich_text.ruby_annotations.len(), 1);
+    assert_eq!(
+        pages[1].rich_text.ruby_annotations[0].base_range,
+        0.."夢".len()
+    );
 }
 
 #[test]

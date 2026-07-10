@@ -263,6 +263,27 @@ impl TypeChecker<'_> {
                         "local dialogue `[hook ...]` syntax was removed; use `[mark .name]` with `with: on mark(.name):`".to_owned(),
                     ));
                 }
+                DialogueToken::Tag(tag) if tag.name() == "w" => {
+                    if let Err(error) = tag.wait_duration() {
+                        self.errors.push(TypeCheckError::new(error.to_string()));
+                    }
+                }
+                DialogueToken::Tag(tag) if tag.name() == "speed" => {
+                    if let Err(error) = tag.reveal_speed() {
+                        self.errors.push(TypeCheckError::new(error.to_string()));
+                    }
+                }
+                DialogueToken::Tag(tag)
+                    if matches!(
+                        tag.name(),
+                        "p" | "l" | "r" | "clear" | "er" | "cm" | "reset"
+                    ) && !tag.attrs().trim().is_empty() =>
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "dialogue control `[{}]` does not accept attributes",
+                        tag.name()
+                    )));
+                }
                 DialogueToken::Tag(_)
                 | DialogueToken::Text(_)
                 | DialogueToken::Raw(_)

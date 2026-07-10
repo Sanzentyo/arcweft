@@ -30,6 +30,44 @@ fn runtime_step_input_ref_borrows_adapter_owned_events() {
 }
 
 #[test]
+fn dialogue_advance_requires_the_exact_public_line_target() {
+    let line = super::line_id("say.opening.001");
+    let untargeted = RuntimeStepInput {
+        input_events: vec![super::input_event("dialogue.advance", None)],
+        ..RuntimeStepInput::default()
+    };
+    let wrong_line = RuntimeStepInput {
+        input_events: vec![super::input_event("dialogue.advance", Some("say.other"))],
+        ..RuntimeStepInput::default()
+    };
+    let targeted = RuntimeStepInput {
+        input_events: vec![super::dialogue_advance(&line)],
+        ..RuntimeStepInput::default()
+    };
+    let mut wrong_input_target_event = super::dialogue_advance(&line);
+    wrong_input_target_event.target =
+        arcweft_interaction_model::input::InteractionTarget::new("dialogue-widget")
+            .expect("test target");
+    let wrong_input_target = RuntimeStepInput {
+        input_events: vec![wrong_input_target_event],
+        ..RuntimeStepInput::default()
+    };
+    let removed_alias = RuntimeStepInput {
+        input_events: vec![super::input_event(
+            "advance",
+            Some(line.public_label().as_str()),
+        )],
+        ..RuntimeStepInput::default()
+    };
+
+    assert!(!untargeted.advances_dialogue(&line));
+    assert!(!wrong_line.advances_dialogue(&line));
+    assert!(!wrong_input_target.advances_dialogue(&line));
+    assert!(!removed_alias.advances_dialogue(&line));
+    assert!(targeted.advances_dialogue(&line));
+}
+
+#[test]
 fn runtime_step_output_sink_scopes_mutation_without_taking_output() {
     let mut output = RuntimeStepOutput::default();
     {

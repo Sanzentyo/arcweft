@@ -220,6 +220,7 @@ mod tests {
             spans: Vec::new(),
             reveal: RenderTextReveal {
                 visible_end: text.len(),
+                complete: true,
             },
             glyph_transforms: Vec::new(),
             visual_time_millis: 0,

@@ -59,7 +59,6 @@ mod effect_execution;
 mod effects;
 mod renderer;
 mod visual_layout;
-mod window_loop;
 mod window_page;
 
 use effect_execution::NativeEffectExecution;
@@ -80,13 +79,12 @@ use effects::{
 use renderer::{
     NativeOffscreenTextRenderer, NativeRenderLayout, NativeRenderTarget,
     apply_shaped_horizontal_origins_to_placements, clear_transparent_rgb, fill_native_rect,
-    glyph_presentation_affine, key_advances_page, key_closes_window, native_frame_content_stats,
-    native_image_rect_for_layout, native_image_transform_milli, native_text_font_features,
-    prepare_window_text_buffers, presentation_affine, readback_texture_rgba,
-    recolor_image_debug_quad, redraw, render_image_quads_texture, request_capture_device,
-    rounded_u8, shaped_horizontal_glyph_metrics, solid_rgba, surface_extent_f32,
-    typewriter_cursor_opacity, typewriter_visible_count, usize_to_f32_saturating,
-    vertical_ruby_glyph_horizontal_align,
+    glyph_presentation_affine, native_frame_content_stats, native_image_rect_for_layout,
+    native_image_transform_milli, native_text_font_features, prepare_window_text_buffers,
+    presentation_affine, readback_texture_rgba, recolor_image_debug_quad,
+    render_image_quads_texture, request_capture_device, rounded_u8,
+    shaped_horizontal_glyph_metrics, solid_rgba, surface_extent_f32, typewriter_cursor_opacity,
+    typewriter_visible_count, usize_to_f32_saturating, vertical_ruby_glyph_horizontal_align,
 };
 use visual_layout::{
     NativePageLayout, glyph_orientation_degrees, layout_page_range,
@@ -95,20 +93,15 @@ use visual_layout::{
     native_text_layout_config, native_text_layout_config_at, page_local_layout_frame,
     visual_page_from_range,
 };
-pub use window_loop::{
-    NativeWindowLoopControl, NativeWindowLoopDriver, NativeWindowLoopInput,
-    run_driven_frames_window,
-};
 use window_page::{
     Application, NATIVE_GLYPHAREA_BASELINE_OFFSET, NATIVE_TEXT_LEFT, NATIVE_TEXT_TOP,
     NativeTextOrigin, NativeTextStyle, RubyGlyphPlacement, WindowPage, WindowRichText,
     WindowRubyBuffer, WindowState, build_ruby_buffers, color_rich_text_for_regions,
     color_selected_text_ranges, debug_rich_text_for_regions, debug_selected_text_ranges,
-    display_map_non_empty_page_range_at, display_map_page_ranges, intersect_display_range,
-    native_float_bbox, page_from_display_map_range, post_process_effects_for_page,
-    post_process_effects_for_regions, post_process_shaders_for_page,
-    post_process_shaders_for_regions, run_pages_window, text_line_start_offsets,
-    valid_display_range,
+    display_stage_range_at, display_stage_ranges, intersect_display_range, native_float_bbox,
+    page_from_display_map_range, post_process_effects_for_page, post_process_effects_for_regions,
+    post_process_shaders_for_page, post_process_shaders_for_regions, run_pages_window,
+    text_line_start_offsets, valid_display_range,
 };
 
 /// Native player window error.
@@ -118,8 +111,6 @@ pub enum NativeWindowError {
     EventLoop(String),
     #[error("no display pages were provided")]
     EmptyPages,
-    #[error("event-loop window driver failed: {0}")]
-    Driver(String),
     #[error("readback failed: {0}")]
     Readback(String),
     #[error("text layout failed: {0}")]
@@ -1347,7 +1338,7 @@ fn measure_frame_elements_at_page_with_effects(
     motion_registry: Option<&mut RichTextMotionRegistry>,
     state: &mut RichTextStateStore,
 ) -> Result<Vec<NativeFrameElementBounds>, NativeWindowError> {
-    let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+    let page_range = display_stage_range_at(frame, viewport.page_index)?;
     let mut effects = NativeEffectExecution::new(registry, shader_registry, motion_registry, state);
     let page_layout = layout_page_range(
         frame,
@@ -1471,7 +1462,7 @@ fn visual_plan_from_frame_with_effects(
 ) -> NativeVisualPlan {
     let mut effects = NativeEffectExecution::new(registry, shader_registry, motion_registry, state);
     let mut pages = Vec::new();
-    let page_ranges = display_map_page_ranges(frame)
+    let page_ranges = display_stage_ranges(frame)
         .into_iter()
         .enumerate()
         .collect::<Vec<_>>();

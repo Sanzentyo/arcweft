@@ -8,6 +8,7 @@ use crate::runtime_text_input::{
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_layout::ScalePolicy;
+use arcweft_player_scene::dialogue::DialogueVisualClock;
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
@@ -117,19 +118,6 @@ struct BrowserApp {
 struct WebPlayerOptions {
     frame_fit: PlayerFrameFit,
     additional_font_bytes: Vec<Vec<u8>>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct DialogueVisualClock {
-    line: Option<arcweft_core::plan::RuntimeLineId>,
-    started_at_millis: u64,
-    completed_line: Option<arcweft_core::plan::RuntimeLineId>,
-}
-
-impl DialogueVisualClock {
-    fn complete_current_line(&mut self) {
-        self.completed_line = self.line.clone();
-    }
 }
 
 impl Default for WebPlayerOptions {
@@ -624,10 +612,10 @@ fn prepare_web_player_frame(
     host_millis: u64,
 ) -> Result<arcweft_render_wgpu::geometry::PreparedFrame, WebPlayerError> {
     let presentation = state.session.presentation();
-    let visual_time_millis = dialogue_visual_time_millis(
-        &mut state.dialogue_visual_clock,
+    let dialogue_visual = state.dialogue_visual_clock.progress(
         presentation.dialogue.as_ref(),
         host_millis,
+        dialogue_visual_time_override_millis(),
     );
     Ok(state
         .frame_planner
@@ -639,37 +627,13 @@ fn prepare_web_player_frame(
                 viewport,
                 fit: state.frame_fit,
                 image_time_millis: host_millis,
-                visual_time_millis,
+                visual_time_millis: dialogue_visual.elapsed_millis(),
+                dialogue_reveal_complete: dialogue_visual.is_complete(),
                 preferences: RenderPreferences::default(),
             },
         )?
         .frame)
 }
-
-fn dialogue_visual_time_millis(
-    clock: &mut DialogueVisualClock,
-    dialogue: Option<&arcweft_render_text::LineDisplayFrame>,
-    now_millis: u64,
-) -> u64 {
-    let Some(dialogue) = dialogue else {
-        clock.line = None;
-        clock.started_at_millis = now_millis;
-        clock.completed_line = None;
-        return 0;
-    };
-    if clock.line.as_ref() != Some(&dialogue.line) {
-        clock.line = Some(dialogue.line.clone());
-        clock.started_at_millis = now_millis;
-        clock.completed_line = None;
-    }
-    if clock.completed_line.as_ref() == Some(&dialogue.line) {
-        return DIALOGUE_REVEAL_COMPLETE_MILLIS;
-    }
-    dialogue_visual_time_override_millis()
-        .unwrap_or_else(|| now_millis.saturating_sub(clock.started_at_millis))
-}
-
-const DIALOGUE_REVEAL_COMPLETE_MILLIS: u64 = 24 * 60 * 60 * 1_000;
 
 fn dialogue_visual_time_override_millis() -> Option<u64> {
     let window = web_sys::window()?;
@@ -707,8 +671,18 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClip
     } = outcome;
     match dialogue_progress {
         DialogueProgress::None => {}
-        DialogueProgress::Reveal => state.dialogue_visual_clock.complete_current_line(),
-        DialogueProgress::Advance => state.session.queue_dialogue_advance(),
+        DialogueProgress::Reveal => state.dialogue_visual_clock.complete_current_stage(),
+        DialogueProgress::Advance => {
+            let target = state
+                .session
+                .presentation()
+                .dialogue
+                .as_ref()
+                .and_then(|dialogue| dialogue.advance_target());
+            if let Some(target) = target {
+                state.session.queue_dialogue_advance(target);
+            }
+        }
     }
     for action in actions {
         if let Err(error) = state.session.queue_semantic_action(&action) {

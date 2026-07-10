@@ -17,6 +17,7 @@ use arcweft_render_wgpu::geometry::{
     RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight, RenderViewport,
     SharedFramePlanContext, SharedFramePlanStats,
 };
+use arcweft_runtime_driver::dialogue::BundleDialoguePresentation;
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -33,6 +34,7 @@ pub struct PlayerFrameRequest<'a> {
     pub fit: PlayerFrameFit,
     pub image_time_millis: u64,
     pub visual_time_millis: u64,
+    pub dialogue_reveal_complete: bool,
     pub preferences: RenderPreferences,
 }
 
@@ -166,7 +168,11 @@ impl PlayerFramePlanner {
                 .presentation
                 .dialogue
                 .as_ref()
-                .map(RenderDialogue::from_display_frame),
+                .and_then(BundleDialoguePresentation::current_stage)
+                .map(|stage| {
+                    RenderDialogue::from_display_stage(stage)
+                        .with_reveal_complete(request.dialogue_reveal_complete)
+                }),
             choices: request
                 .presentation
                 .choices
@@ -448,6 +454,12 @@ impl PlayerFramePlannerState {
         input: &InputController,
     ) -> Result<PreparedFrame, PlayerFrameError> {
         let mut frame = self.shared.prepare(scene)?;
+        frame.set_dialogue_advance_available(
+            presentation
+                .dialogue
+                .as_ref()
+                .is_some_and(BundleDialoguePresentation::is_waiting_for_advance),
+        );
         frame
             .text
             .extend(render_text_blocks(input, scene, &presentation.text_blocks));

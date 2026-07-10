@@ -58,6 +58,9 @@ fn scene_with_dialogue_at(control: RenderTextInputControl, visual_time_millis: u
             text: "click dialogue to advance".to_owned(),
             base_styles: Vec::new(),
             text_runs: Vec::new(),
+            controls: Vec::new(),
+            reveal_start: 0,
+            reveal_complete: false,
         }),
         visual_time_millis,
         ..scene(control)

@@ -815,7 +815,7 @@ impl AwbcProductStepExecutor {
             return self.resume_at(resume, output);
         }
         let line = self.content_public_id(content);
-        if input_advances_dialogue(input, &line) {
+        if input.advances_dialogue_label(&line) {
             self.cleanup_dialogue(group, output);
             self.active_dialogue = None;
             return self.resume_at(resume, output);
@@ -2454,15 +2454,6 @@ fn entry_argument_diagnostic(error: &FiberStateError) -> RuntimeDiagnostic {
         _ => RuntimeDiagnosticCategory::Internal,
     };
     RuntimeDiagnostic::categorized(category, error.to_string())
-}
-
-fn input_advances_dialogue(input: &RuntimeStepInput, line: &str) -> bool {
-    input.input_events.iter().any(|event| {
-        matches!(
-            input_event_trigger_name(event),
-            Some("advance" | "dialogue.advance")
-        ) && input_event_text_payload(event).is_none_or(|value| value == line)
-    })
 }
 
 fn input_choice_selection(input: &RuntimeStepInput) -> Option<(Option<&str>, &str)> {

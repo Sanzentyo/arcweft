@@ -82,6 +82,7 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
+            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )
@@ -149,6 +150,7 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
         fit: PlayerFrameFit::raw(),
         image_time_millis: 0,
         visual_time_millis: 0,
+        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
 
@@ -235,6 +237,7 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
         fit: PlayerFrameFit::raw(),
         image_time_millis: 0,
         visual_time_millis: 0,
+        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
 
@@ -311,6 +314,7 @@ fn hidden_overflow_scroll_region_keeps_offset_at_zero() {
         fit: PlayerFrameFit::raw(),
         image_time_millis: 0,
         visual_time_millis: 0,
+        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
 
@@ -363,6 +367,7 @@ fn horizontal_scroll_region_tracks_x_offset_and_snapshot() {
         fit: PlayerFrameFit::raw(),
         image_time_millis: 0,
         visual_time_millis: 0,
+        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
 
@@ -436,6 +441,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         fit: PlayerFrameFit::raw(),
         image_time_millis: 0,
         visual_time_millis: 0,
+        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
 

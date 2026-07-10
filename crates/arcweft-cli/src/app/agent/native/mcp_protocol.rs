@@ -762,8 +762,6 @@ pub(super) fn agent_mcp_call_action(
             .to_owned()
     })?;
     let action = agent_mcp_action_argument(arguments, &before)?;
-    let input_events = native_agent_action_input_events(&before, action.clone())
-        .map_err(|error| error.to_string())?;
     let options = state
         .observe_options
         .clone()
@@ -773,7 +771,10 @@ pub(super) fn agent_mcp_call_action(
             .runtime
             .as_mut()
             .ok_or_else(|| "arcweft.action requires an active native runtime session".to_owned())?;
-        agent_mcp_observe_runtime(runtime, &options, input_events, adapter_registrars)?
+        let step_input =
+            native_agent_action_step_input(&before, runtime.session.presentation(), action.clone())
+                .map_err(|error| error.to_string())?;
+        agent_mcp_observe_runtime(runtime, &options, step_input, adapter_registrars)?
     };
     let result = NativeAgentScriptSession::action_result(&before, &frame.report);
     let value = serde_json::json!({
@@ -821,7 +822,12 @@ pub(super) fn agent_mcp_call_step_frames(
         let runtime = state.runtime.as_mut().ok_or_else(|| {
             "arcweft.session.step_frames requires an active native runtime session".to_owned()
         })?;
-        agent_mcp_observe_runtime(runtime, &options, Vec::new(), adapter_registrars)?
+        agent_mcp_observe_runtime(
+            runtime,
+            &options,
+            BundleStepInput::default(),
+            adapter_registrars,
+        )?
     };
     let value = serde_json::json!({
         "count": count,
@@ -874,7 +880,12 @@ pub(super) fn agent_mcp_call_wait(
             let runtime = state.runtime.as_mut().ok_or_else(|| {
                 "arcweft.wait requires an active native runtime session".to_owned()
             })?;
-            agent_mcp_observe_runtime(runtime, &options, Vec::new(), adapter_registrars)?
+            agent_mcp_observe_runtime(
+                runtime,
+                &options,
+                BundleStepInput::default(),
+                adapter_registrars,
+            )?
         };
         let matched = agent_mcp_predicate_matches(&predicate, &frame.report);
         let summary =

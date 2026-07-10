@@ -1734,13 +1734,15 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             },
         );
         let active_speaker_presets = self.active_speaker_presets();
-        self.line_display_catalog
-            .push(lower_dialogue_display_with_speaker_presets(
-                line.clone(),
-                dialogue,
-                &self.display_defaults,
-                &active_speaker_presets,
-            ));
+        match lower_dialogue_display_with_speaker_presets(
+            line.clone(),
+            dialogue,
+            &self.display_defaults,
+            &active_speaker_presets,
+        ) {
+            Ok(display) => self.line_display_catalog.push(display),
+            Err(error) => self.errors.push(error),
+        }
         let _ = flow_index;
         FlowOp::Dialogue { line, task_group }
     }

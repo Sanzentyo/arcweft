@@ -750,6 +750,9 @@ fn dialogue_surface_styles_are_preserved_for_styled_paragraph() {
                 },
             ],
             text_runs: Vec::new(),
+            controls: Vec::new(),
+            reveal_start: 0,
+            reveal_complete: false,
         }),
         visual_time_millis: 5_000,
         ..scene()

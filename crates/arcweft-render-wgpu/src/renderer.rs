@@ -2344,7 +2344,10 @@ mod tests {
                 slant: RenderTextSlant::Upright,
             },
             spans: Vec::new(),
-            reveal: RenderTextReveal { visible_end: 10 },
+            reveal: RenderTextReveal {
+                visible_end: 10,
+                complete: true,
+            },
             glyph_transforms: Vec::new(),
             visual_time_millis: 0,
         };
@@ -2391,6 +2394,7 @@ mod tests {
             }],
             reveal: RenderTextReveal {
                 visible_end: brief_end,
+                complete: true,
             },
             glyph_transforms: vec![RenderGlyphTransformSpan {
                 range: RichTextRange::new(brief_start, brief_end),

@@ -13,6 +13,7 @@ use arcweft_core::awbc::fiber::{
     FiberStreamState, FiberSuspensionReason, FiberTerminalValue,
 };
 use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
+use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 use arcweft_core::value::{RuntimeIterator, RuntimeSeq, RuntimeValue};
 use serde::{Deserialize, Serialize};
@@ -81,6 +82,7 @@ pub struct BundleSessionExecutorSnapshot {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BundleSessionPendingBlocker {
+    PendingPresentationInputs { count: usize },
     PendingInputEvents { count: usize },
     PendingTextControlWriteBacks { count: usize },
     PendingHostCallResults { count: usize },
@@ -134,6 +136,27 @@ impl From<ArcweftRuntimeExecutorSnapshotError> for BundleSessionSaveError {
 pub(crate) fn validate_presentation_snapshot(
     snapshot: &BundlePresentationSnapshot,
 ) -> Result<(), BundleSessionSaveError> {
+    if let Some(dialogue) = &snapshot.dialogue {
+        dialogue
+            .frame()
+            .validate()
+            .map_err(|error| BundleSessionSaveError::Presentation {
+                message: format!(
+                    "dialogue occurrence {} has an invalid display frame: {error}",
+                    dialogue.instance().get(),
+                ),
+            })?;
+        if dialogue.current_stage().is_none() {
+            return Err(BundleSessionSaveError::Presentation {
+                message: format!(
+                    "dialogue occurrence {} has out-of-range stage {} for {} stage(s)",
+                    dialogue.instance().get(),
+                    dialogue.stage_index().get(),
+                    dialogue.frame().stage_count(),
+                ),
+            });
+        }
+    }
     let mut ids = BTreeSet::new();
     for handle in &snapshot.presentation_handles {
         if !ids.insert(handle.id.as_str().to_owned()) {
@@ -156,6 +179,48 @@ pub(crate) fn validate_presentation_snapshot(
                     handle.id, handle.updated_epoch, snapshot.presentation_handle_epoch
                 ),
             });
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_presentation_runtime_status(
+    snapshot: &BundlePresentationSnapshot,
+    status: &FlowFiberStatus,
+) -> Result<(), BundleSessionSaveError> {
+    match status {
+        FlowFiberStatus::Dialogue(state) => {
+            let Some(dialogue) = &snapshot.dialogue else {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: format!(
+                        "runtime waits for dialogue `{}` but the presentation has no dialogue",
+                        state.line
+                    ),
+                });
+            };
+            if dialogue.frame().line != state.line || !dialogue.is_waiting_for_advance() {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: format!(
+                        "runtime waits for dialogue `{}` but presentation occurrence {} retains `{}` with waiting={}",
+                        state.line,
+                        dialogue.instance().get(),
+                        dialogue.frame().line,
+                        dialogue.is_waiting_for_advance(),
+                    ),
+                });
+            }
+        }
+        _ => {
+            if let Some(dialogue) = &snapshot.dialogue
+                && dialogue.is_waiting_for_advance()
+            {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: format!(
+                        "presentation occurrence {} is actionable while runtime status is {status:?}",
+                        dialogue.instance().get(),
+                    ),
+                });
+            }
         }
     }
     Ok(())

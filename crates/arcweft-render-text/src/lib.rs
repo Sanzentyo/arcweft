@@ -6,8 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+mod playback;
 mod rich_effects;
 
+pub use playback::{LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd};
 pub use rich_effects::{
     Milli, RichTextAngle, RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget,
     RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextObjectProxy,
@@ -278,7 +280,7 @@ pub enum RichTextControl {
     Page,
     LineWait,
     HardBreak,
-    TimedWait { value: String },
+    TimedWait { duration_millis: u64 },
     Clear,
     Reset,
     Mark { name: String },
@@ -392,6 +394,8 @@ pub struct RichTextRubyAnnotation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextControlMarker {
     pub node_index: usize,
+    /// UTF-8 byte offset immediately before this control executes.
+    pub text_offset: usize,
     pub control: RichTextControl,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<RichTextRange>,
@@ -401,6 +405,8 @@ pub struct RichTextControlMarker {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextHostEventMarker {
     pub node_index: usize,
+    /// UTF-8 byte offset at which this event becomes reachable.
+    pub text_offset: usize,
     pub event_index: usize,
     pub event: DialogueHostEvent,
 }
@@ -779,6 +785,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
         node_index: usize,
         node: &RichTextNode,
     ) {
+        let text_offset = self.text.len();
         let range = push_control_text(
             &mut self.text,
             &mut self.display_map,
@@ -789,6 +796,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
         );
         self.display_map.controls.push(RichTextControlMarker {
             node_index,
+            text_offset,
             control: control.clone(),
             range,
         });
@@ -853,6 +861,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
         self.host_events.push(event.clone());
         self.display_map.host_events.push(RichTextHostEventMarker {
             node_index,
+            text_offset: self.text.len(),
             event_index,
             event: event.clone(),
         });
@@ -1327,11 +1336,13 @@ mod tests {
             vec![
                 RichTextControlMarker {
                     node_index: 3,
+                    text_offset: 9,
                     control: RichTextControl::HardBreak,
                     range: Some(RichTextRange::new(9, 10)),
                 },
                 RichTextControlMarker {
                     node_index: 4,
+                    text_offset: 10,
                     control: RichTextControl::Raw {
                         text: "[p]".to_owned()
                     },
@@ -1691,6 +1702,7 @@ mod tests {
             frame.display_map.controls,
             vec![RichTextControlMarker {
                 node_index: 2,
+                text_offset: 4,
                 control: RichTextControl::Reset,
                 range: None,
             }]

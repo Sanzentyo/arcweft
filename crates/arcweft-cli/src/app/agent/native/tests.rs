@@ -15,8 +15,7 @@ use super::mcp_protocol::{
 use super::mcp_rag::{AgentMcpRagCandidate, agent_mcp_rag_context_pack_from_candidates};
 use super::mcp_resources::agent_mcp_capture_time_seconds;
 use super::observe::{
-    NativeAgentScriptSessionError, native_agent_advance_text_input_events,
-    native_agent_invoke_input_events, native_runtime_input_event,
+    NativeAgentScriptSessionError, native_agent_invoke_input_events, native_runtime_input_event,
     validate_agent_observe_output_extension,
 };
 use super::repl::{
@@ -291,28 +290,6 @@ fn mcp_capture_time_prefers_explicit_time_then_capture_step_then_report_time() {
         .expect("default capture time is valid"),
         60.0,
     );
-}
-
-#[test]
-fn native_agent_advance_text_requires_enabled_semantic_action() {
-    let mut report = test_agent_observation_report(None);
-    report.actions.push(AgentActionTarget {
-        id: "action.advance_text.object.dialogue.0.0".to_owned(),
-        target: "object.dialogue.0.0".to_owned(),
-        action: AgentActionKind::AdvanceText,
-        kind: AgentActionDispatch::Semantic,
-        enabled: false,
-    });
-
-    assert!(matches!(
-        native_agent_advance_text_input_events(&report),
-        Err(NativeAgentScriptSessionError::ActionUnavailable)
-    ));
-
-    report.actions[0].enabled = true;
-    let events = native_agent_advance_text_input_events(&report)
-        .expect("enabled semantic advance_text action dispatches");
-    assert_eq!(events, vec![native_runtime_input_event("advance", None)]);
 }
 
 #[test]

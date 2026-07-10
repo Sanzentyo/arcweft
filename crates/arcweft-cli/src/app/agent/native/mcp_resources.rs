@@ -262,8 +262,9 @@ pub(super) fn agent_mcp_run_observation(
     validate_agent_observe_options(&options).map_err(|_| "invalid observe options".to_owned())?;
     let mut runtime = native_player_runtime_state_for_options(&options, adapter_registrars)
         .map_err(|_| "failed to initialize player-backed MCP observe runtime".to_owned())?;
-    let mut observed = observe_native_player_runtime(&mut runtime, &options, Vec::new())
-        .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
+    let mut observed =
+        observe_native_player_runtime(&mut runtime, &options, BundleStepInput::default())
+            .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
     let image_output = agent_observe_image_output(
         &mut observed.report,
         &options,
@@ -283,10 +284,10 @@ pub(super) fn agent_mcp_run_observation(
 pub(super) fn agent_mcp_observe_runtime(
     runtime: &mut NativeAgentRuntimeState,
     options: &AgentObserveOptions,
-    input_events: Vec<RoutedInputEvent>,
+    step_input: BundleStepInput,
     _adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<AgentMcpFrame, String> {
-    let mut observed = observe_native_player_runtime(runtime, options, input_events)
+    let mut observed = observe_native_player_runtime(runtime, options, step_input)
         .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
     let image_output = agent_observe_image_output(
         &mut observed.report,

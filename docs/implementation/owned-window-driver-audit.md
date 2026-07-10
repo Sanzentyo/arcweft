@@ -18,9 +18,9 @@ installed for the windowed `.awfb` path after winit creates the primary window.
 | Requirement | Evidence |
 | --- | --- |
 | Headless native backend has no owned-window driver | `run_bundle_headless` still registers `NativeDesktopBackend::builder().build()` without `with_owned_window_driver`. |
-| Windowed `.awfb` path installs the driver after window creation | `run_driven_frames_window` creates the winit window, then calls `NativeWindowLoopDriver::attach_window`; `BundleWindowDriver::attach_window` installs `WinitOwnedWindowDriver`. |
-| Runtime advances from the event loop one step at a time | `BundleRunnerSession::step` executes at most one runtime step; `BundleWindowDriver::event_loop_turn` calls it once per turn when not waiting for presentation advance. |
-| Host-main-thread requests are pumped while presentation is paused | `BundleWindowDriver::event_loop_turn` calls `BundleRunnerSession::pump_main_thread` before checking `waiting_for_advance`. |
+| Windowed `.awfb` path installs the driver after window creation | `NativeSceneState::new` creates the winit window, constructs `WinitOwnedWindowDriver`, and installs it in `NativeDesktopBackend` before creating `WindowedRuntimeOwner`. |
+| Runtime advances from the event loop one step at a time | `NativeSceneState::redraw` calls `step_runtime` once; `step_runtime` submits one `WindowedRuntimeOwner::step_with_clock` call. Dialogue stages are consumed through the runtime-driver presentation cursor before the final line advance reaches the VM. |
+| Host-main-thread requests are pumped while presentation is paused | `NativeSceneState::redraw` calls `WindowedRuntimeOwner::pump_main_thread` before each runtime step, including while the VM remains suspended on dialogue. |
 | Native handles do not cross runtime/Sans I/O boundaries | The driver exposes only `WindowId("owned:primary")`; no winit id or OS handle is serialized into `WindowSnapshot`. |
 | Owned window requests are implemented | `WinitOwnedWindowDriver::execute_window` handles `List`, `Get`, `SetTitle`, `SetVisible`, `SetMode`, `SetBounds`, `RequestFocus`, and `RequestClose`. |
 | Owned cursor requests are implemented | `WinitOwnedWindowDriver::execute_cursor` handles `SetIcon`, `SetVisible`, `SetGrab`, and `SetPosition`. |

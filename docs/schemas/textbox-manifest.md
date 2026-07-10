@@ -14,7 +14,6 @@ A TextBox is the target object for dialogue output. If no target is specified, `
     "rect": [80, 520, 1120, 160],
     "safe_area": true
   },
-  "page_policy": "wait_then_clear",
   "reveal": {
     "mode": "typewriter",
     "chars_per_second": 40
@@ -27,6 +26,12 @@ A TextBox is the target object for dialogue output. If no target is specified, `
   }
 }
 ```
+
+Logical-page behavior is not a manifest option. Dialogue controls define the
+state transition: `[p]` closes a logical page after its user wait, `[l]` keeps
+that page open after its user wait, and a terminal `[p]` releases the line
+without creating an empty page. `theme` may select the visual transition
+between logical pages, but it cannot change those semantics.
 
 ## Built-ins
 
@@ -41,8 +46,11 @@ textbox.system  system/debug message textbox
 A TextBox runtime state contains:
 
 ```text
+dialogue_occurrence_id
 current_line_id
 speaker
+display_stage_index
+logical_page_index
 visible_text_range
 full_rich_text
 reveal_cursor

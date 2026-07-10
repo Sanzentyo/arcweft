@@ -1,4 +1,8 @@
 use crate::clock::RuntimeClockStep;
+use crate::dialogue::{
+    BundlePresentationInput, BundlePresentationTransition, DialogueAdvanceRejection,
+    DialogueAdvanceTarget,
+};
 use crate::display::{
     BundlePresentationResources, BundlePresentationSnapshot, DisplayResolution,
     resolve_display_frames,
@@ -10,8 +14,8 @@ use crate::session_save::{
     BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
     BundleSessionArtifactIdentity, BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot,
     BundleSessionPendingBlocker, BundleSessionRuntimeSnapshot, BundleSessionSaveError,
-    BundleSessionSnapshot, digest_label, validate_presentation_snapshot,
-    validate_product_awbc_runtime_values,
+    BundleSessionSnapshot, digest_label, validate_presentation_runtime_status,
+    validate_presentation_snapshot, validate_product_awbc_runtime_values,
 };
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
@@ -93,10 +97,19 @@ impl Default for BundleSessionOptions {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BundleStepInput {
     pub bindings: Vec<RuntimeBinding>,
+    pub presentation_inputs: Vec<BundlePresentationInput>,
     pub input_events: Vec<RoutedInputEvent>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
+}
+
+/// Runtime-ready input after pending host work and presentation routing are resolved.
+struct PreparedBundleStepInput {
+    runtime: RuntimeStepInput,
+    routed_input_events: Vec<RoutedInputEvent>,
+    presentation_transitions: Vec<BundlePresentationTransition>,
+    text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
 }
 
 /// One deterministic VM step plus the host work and presentation state it emitted.
@@ -113,6 +126,7 @@ pub struct BundleSessionStep {
     pub observations: RuntimeObservationState,
     pub flow_events: Vec<FlowEvent>,
     pub line_effects: Vec<LineEffectRequest>,
+    pub presentation_transitions: Vec<BundlePresentationTransition>,
     pub presentation: BundlePresentationSnapshot,
     pub text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pub audio_commands: Vec<AudioCommandEnvelope>,
@@ -177,6 +191,7 @@ pub struct BundleSession {
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
+    pending_presentation_inputs: Vec<BundlePresentationInput>,
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pending_host_call_results: Vec<RuntimeHostCallResult>,
     waiting_action_receive_calls: Vec<PendingActionReceiveCall>,
@@ -348,7 +363,6 @@ impl RuntimeInputTargetKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RuntimeInputKind {
-    Advance,
     Choice,
     ActionInvoke,
 }
@@ -356,7 +370,6 @@ enum RuntimeInputKind {
 impl RuntimeInputKind {
     const fn as_str(self) -> &'static str {
         match self {
-            Self::Advance => "advance",
             Self::Choice => "choice",
             Self::ActionInvoke => "action.invoke",
         }
@@ -475,6 +488,7 @@ impl BundleSession {
             focus_navigation,
             options,
             pending_input_events: Vec::new(),
+            pending_presentation_inputs: Vec::new(),
             pending_text_control_write_backs: Vec::new(),
             pending_host_call_results: Vec::new(),
             waiting_action_receive_calls: Vec::new(),
@@ -623,14 +637,10 @@ impl BundleSession {
         );
     }
 
-    /// Queues the standard semantic advance input for the active dialogue line.
-    pub fn queue_dialogue_advance(&mut self) {
-        self.queue_input(RoutedInputEvent::new(
-            InputEpoch::default(),
-            InputSequence::default(),
-            RuntimeInputTargetKind::Runtime.target(),
-            RuntimeInputKind::Advance.event_kind(),
-        ));
+    /// Queues a stale-safe advance for the observed dialogue occurrence/stage.
+    pub fn queue_dialogue_advance(&mut self, target: DialogueAdvanceTarget) {
+        self.pending_presentation_inputs
+            .push(BundlePresentationInput::advance_dialogue(target));
     }
 
     pub fn queue_text_control_write_back(
@@ -759,6 +769,7 @@ impl BundleSession {
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
+                self.pending_presentation_inputs.clear();
                 self.pending_host_call_results.clear();
                 self.waiting_action_receive_calls.clear();
                 self.presentation = BundlePresentationSnapshot::default();
@@ -907,28 +918,18 @@ impl BundleSession {
     pub fn step_with_clock(
         &mut self,
         clock: RuntimeClockStep,
-        mut input: BundleStepInput,
+        input: BundleStepInput,
     ) -> BundleSessionStep {
         self.swap.enter_runtime_step();
-        input.task_events.extend(self.tasks.drain_task_events());
-        let task_events = self.tasks.apply_task_events(input.task_events);
-        self.release_completed_task_generation_pins(&task_events);
-        input.input_events.append(&mut self.pending_input_events);
-        let step_input_events = input.input_events.clone();
-        let text_control_write_backs = std::mem::take(&mut self.pending_text_control_write_backs);
-        let runtime_input = RuntimeStepInput {
-            tick: clock.tick(),
-            dt: clock.dt(),
-            bindings: input.bindings,
-            input_events: input.input_events,
-            task_events,
-            audio_events: input.audio_events,
-            source_events: input.source_events,
-            host_call_results: std::mem::take(&mut self.pending_host_call_results),
-        };
+        let PreparedBundleStepInput {
+            runtime,
+            routed_input_events,
+            presentation_transitions,
+            text_control_write_backs,
+        } = self.prepare_step_input(clock, input);
         let mut pure_backend = VmRuntimePureCallBackend::default();
         let result = self.executor.step_with_root_bindings_and_pure_backend(
-            runtime_input,
+            runtime,
             &self.options.root_bindings,
             RuntimeStepOptions {
                 mode: self.options.mode,
@@ -949,6 +950,11 @@ impl BundleSession {
             .into_iter()
             .map(|diagnostic| diagnostic.message)
             .collect::<Vec<_>>();
+        diagnostics.extend(
+            presentation_transitions
+                .iter()
+                .filter_map(presentation_transition_diagnostic),
+        );
         diagnostics.extend(display.diagnostics.iter().cloned());
         diagnostics.extend(
             self.runtime_control_style_diagnostics
@@ -967,7 +973,7 @@ impl BundleSession {
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
         self.capture_view_host_calls(
             output.requests.host_calls,
-            &step_input_events,
+            &routed_input_events,
             &text_control_write_backs,
             &mut diagnostics,
         );
@@ -1002,6 +1008,7 @@ impl BundleSession {
             observations,
             flow_events,
             line_effects,
+            presentation_transitions,
             presentation: self.presentation.clone(),
             text_control_write_backs,
             audio_commands,
@@ -1010,6 +1017,71 @@ impl BundleSession {
             source_close: output.requests.source_close,
             finished,
         }
+    }
+
+    fn prepare_step_input(
+        &mut self,
+        clock: RuntimeClockStep,
+        mut input: BundleStepInput,
+    ) -> PreparedBundleStepInput {
+        input.task_events.extend(self.tasks.drain_task_events());
+        let task_events = self.tasks.apply_task_events(input.task_events);
+        self.release_completed_task_generation_pins(&task_events);
+        input.input_events.append(&mut self.pending_input_events);
+        input
+            .presentation_inputs
+            .append(&mut self.pending_presentation_inputs);
+        let presentation_transitions =
+            self.route_presentation_inputs(input.presentation_inputs, &mut input.input_events);
+        let routed_input_events = input.input_events.clone();
+        let text_control_write_backs = std::mem::take(&mut self.pending_text_control_write_backs);
+        PreparedBundleStepInput {
+            runtime: RuntimeStepInput {
+                tick: clock.tick(),
+                dt: clock.dt(),
+                bindings: input.bindings,
+                input_events: input.input_events,
+                task_events,
+                audio_events: input.audio_events,
+                source_events: input.source_events,
+                host_call_results: std::mem::take(&mut self.pending_host_call_results),
+            },
+            routed_input_events,
+            presentation_transitions,
+            text_control_write_backs,
+        }
+    }
+
+    fn route_presentation_inputs(
+        &mut self,
+        inputs: Vec<BundlePresentationInput>,
+        runtime_inputs: &mut Vec<RoutedInputEvent>,
+    ) -> Vec<BundlePresentationTransition> {
+        let mut transitions = Vec::new();
+        runtime_inputs.retain(|event| {
+            if runtime_input_is_untargeted_dialogue_advance(event) {
+                transitions.push(BundlePresentationTransition::DialogueAdvanceRejected {
+                    target: None,
+                    reason: DialogueAdvanceRejection::UntargetedRuntimeInput,
+                });
+                false
+            } else {
+                true
+            }
+        });
+
+        for input in inputs {
+            match input {
+                BundlePresentationInput::AdvanceDialogue { target } => {
+                    let (transition, runtime_line) = self.presentation.advance_dialogue(target);
+                    if let Some(line) = runtime_line {
+                        runtime_inputs.push(RuntimeStepInput::dialogue_advance_event(&line));
+                    }
+                    transitions.push(transition);
+                }
+            }
+        }
+        transitions
     }
 
     pub fn is_finished(&self) -> bool {
@@ -1154,6 +1226,7 @@ impl BundleSession {
         self.activate_runtime(runtime);
         self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         self.pending_input_events.clear();
+        self.pending_presentation_inputs.clear();
         self.presentation = BundlePresentationSnapshot::default();
         self.retire_unused_generations();
         Ok(StartedForegroundEntry { generation, entry })
@@ -1165,6 +1238,7 @@ impl BundleSession {
             return Err(BundleSessionSaveError::NonQuiescent { blockers });
         }
         validate_presentation_snapshot(&self.presentation)?;
+        validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
         let active = self.active_generation();
         let executor = match self.executor.snapshot()? {
             ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) => {
@@ -1238,20 +1312,21 @@ impl BundleSession {
                 actual: format!("{active_generation:?}"),
             });
         }
-        validate_product_awbc_runtime_values(&state)?;
-        let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
-        self.executor.restore_snapshot(executor_snapshot)?;
-        self.source_label = snapshot.runtime.source_label;
-        self.next_step_index = usize::try_from(snapshot.runtime.next_step_index).map_err(|_| {
+        let BundleSessionRuntimeSnapshot {
+            source_label,
+            next_step_index,
+            next_task_sequence,
+            next_generation_id,
+            runtime_generation_pin,
+        } = snapshot.runtime;
+        let next_step_index = usize::try_from(next_step_index).map_err(|_| {
             BundleSessionSaveError::CounterOutOfRange {
                 field: "next_step_index",
-                value: snapshot.runtime.next_step_index,
+                value: next_step_index,
             }
         })?;
-        self.next_task_sequence = snapshot.runtime.next_task_sequence;
-        self.next_generation_id = snapshot.runtime.next_generation_id;
-        self.runtime_generation_pin = match snapshot.runtime.runtime_generation_pin {
-            Some(id) if id == active_generation => Some(self.swap.pin_active_generation()),
+        let restore_runtime_generation_pin = match runtime_generation_pin {
+            Some(id) if id == active_generation => true,
             Some(id) => {
                 return Err(BundleSessionSaveError::GenerationMismatch {
                     field: "runtime_generation_pin",
@@ -1259,9 +1334,25 @@ impl BundleSession {
                     actual: format!("{active_generation:?}"),
                 });
             }
-            None => None,
+            None => false,
         };
+        validate_product_awbc_runtime_values(&state)?;
+        let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
+        let mut restored_executor = self.executor.clone();
+        restored_executor.restore_snapshot(executor_snapshot)?;
+        validate_presentation_runtime_status(
+            &snapshot.presentation,
+            &restored_executor.fiber().status,
+        )?;
+        self.source_label = source_label;
+        self.next_step_index = next_step_index;
+        self.next_task_sequence = next_task_sequence;
+        self.next_generation_id = next_generation_id;
+        self.executor = restored_executor;
+        self.runtime_generation_pin =
+            restore_runtime_generation_pin.then(|| self.swap.pin_active_generation());
         self.pending_input_events.clear();
+        self.pending_presentation_inputs.clear();
         self.pending_text_control_write_backs.clear();
         self.pending_host_call_results.clear();
         self.waiting_action_receive_calls.clear();
@@ -1274,6 +1365,11 @@ impl BundleSession {
 
     fn session_save_blockers(&self) -> Vec<BundleSessionPendingBlocker> {
         let mut blockers = Vec::new();
+        if !self.pending_presentation_inputs.is_empty() {
+            blockers.push(BundleSessionPendingBlocker::PendingPresentationInputs {
+                count: self.pending_presentation_inputs.len(),
+            });
+        }
         if !self.pending_input_events.is_empty() {
             blockers.push(BundleSessionPendingBlocker::PendingInputEvents {
                 count: self.pending_input_events.len(),
@@ -1926,4 +2022,22 @@ fn awbc_entry_label(program: &AwbcProgram, entry: AwbcEntryId) -> String {
         .get(entry.index())
         .and_then(|entry| program.strings.get(entry.public_id.index()).cloned())
         .unwrap_or_else(|| format!("entry#{}", entry.0))
+}
+
+fn runtime_input_is_untargeted_dialogue_advance(event: &RoutedInputEvent) -> bool {
+    matches!(
+        &event.event,
+        InputEventKind::Custom { name }
+            if matches!(name.as_str(), "advance" | "dialogue.advance")
+    )
+}
+
+fn presentation_transition_diagnostic(transition: &BundlePresentationTransition) -> Option<String> {
+    let BundlePresentationTransition::DialogueAdvanceRejected { target, reason } = transition
+    else {
+        return None;
+    };
+    Some(format!(
+        "dialogue advance rejected for {target:?}: {reason:?}"
+    ))
 }

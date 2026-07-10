@@ -5,7 +5,7 @@ use super::{
     NativeTextOrigin, NativeWindowError, RichTextEffectDescriptor, RichTextEffectRegistry,
     RichTextMotionRegistry, RichTextShaderRef, RichTextShaderRegistry, RichTextStateStore,
     WindowRichText, clear_transparent_rgb, color_rich_text_for_regions, color_selected_text_ranges,
-    debug_rich_text_for_regions, debug_selected_text_ranges, display_map_non_empty_page_range_at,
+    debug_rich_text_for_regions, debug_selected_text_ranges, display_stage_range_at,
     fill_native_rect, layout_page_range, layout_page_range_with_selected_text,
     measure_frame_elements_at_page_with_effects, native_default_effect_registry,
     native_default_motion_registry, native_default_shader_registry, native_frame_content_stats,
@@ -167,7 +167,7 @@ impl NativeOffscreenCaptureSession {
     ) -> Result<NativeFrameCapture, NativeWindowError> {
         let width = viewport.width.max(1);
         let height = viewport.height.max(1);
-        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let page_range = display_stage_range_at(frame, viewport.page_index)?;
         let page_layout = layout_page_range(
             frame,
             page_range.clone(),
@@ -292,7 +292,7 @@ impl NativeOffscreenCaptureSession {
                 rgba: solid_rgba(width, height, background),
                 diagnostics: Vec::new(),
             });
-        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let page_range = display_stage_range_at(frame, viewport.page_index)?;
         let post_process_effects = post_process_effects_for_regions(frame, &page_range, regions);
         let post_process_shaders = post_process_shaders_for_regions(frame, &page_range, regions);
         let line_label = frame.line.public_label().into_string();
@@ -428,7 +428,7 @@ impl NativeOffscreenCaptureSession {
             left: viewport.left,
             top: viewport.top,
         };
-        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let page_range = display_stage_range_at(frame, viewport.page_index)?;
         let selected_text = debug_selected_text_ranges(frame, &page_range, regions)
             .into_iter()
             .map(|(range, _)| range)
@@ -486,7 +486,7 @@ impl NativeOffscreenCaptureSession {
             left: viewport.left,
             top: viewport.top,
         };
-        let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
+        let page_range = display_stage_range_at(frame, viewport.page_index)?;
         let selected_text = color_selected_text_ranges(frame, &page_range, regions);
         let page_layout = layout_page_range_with_selected_text(
             frame,

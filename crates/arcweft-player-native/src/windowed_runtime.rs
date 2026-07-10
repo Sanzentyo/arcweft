@@ -768,7 +768,10 @@ mod tests {
             step.presentation
                 .dialogue
                 .as_ref()
-                .map(|frame| frame.text.as_str()),
+                .and_then(
+                    arcweft_runtime_driver::dialogue::BundleDialoguePresentation::current_stage,
+                )
+                .map(arcweft_render_text::LineDisplayStage::text),
             Some("Old text")
         );
         assert_eq!(rendered_rgba(&owner), old_rgba);

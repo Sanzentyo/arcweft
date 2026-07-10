@@ -3,6 +3,7 @@ use super::ids::{EntityRef, EntityRefSyntax, IdRef};
 use super::items::Attribute;
 use super::line_plan::LinePlan;
 use crate::expr::Expr;
+use thiserror::Error;
 
 /// Parsed dialogue content.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +41,50 @@ pub struct DialogueExpr {
 pub struct DialogueTag {
     name: String,
     attrs: String,
+}
+
+/// Positive duration accepted by the `[w ...]` dialogue control.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DialogueWaitDuration {
+    millis: u64,
+}
+
+/// Positive dialogue reveal rate in thousandths of a character per second.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DialogueRevealSpeed {
+    milli_cps: u32,
+}
+
+/// Invalid surface duration attached to a `[w ...]` control.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum DialogueWaitDurationError {
+    #[error("dialogue wait requires a duration such as `500ms` or `0.5s`")]
+    Missing,
+    #[error("dialogue wait duration `{value}` must use `ms` or `s`")]
+    UnsupportedUnit { value: String },
+    #[error("dialogue wait duration `{value}` is not a non-negative decimal")]
+    InvalidNumber { value: String },
+    #[error("dialogue wait duration `{value}` has precision below one millisecond")]
+    SubMillisecondPrecision { value: String },
+    #[error("dialogue wait duration must be greater than zero")]
+    Zero,
+    #[error("dialogue wait duration `{value}` exceeds the supported millisecond range")]
+    Overflow { value: String },
+}
+
+/// Invalid value attached to a `[speed ...]` dialogue modifier.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum DialogueRevealSpeedError {
+    #[error("dialogue speed requires `slow`, `normal`, `fast`, or a characters-per-second value")]
+    Missing,
+    #[error("dialogue speed `{value}` is not a supported name or positive decimal")]
+    InvalidNumber { value: String },
+    #[error(
+        "dialogue speed `{value}` has precision below one thousandth of a character per second"
+    )]
+    ExcessPrecision { value: String },
+    #[error("dialogue speed `{value}` must be between 1 and 240 characters per second")]
+    OutOfRange { value: String },
 }
 
 /// Zero-width marker emitted by `[mark .name]` inside dialogue text.
@@ -210,6 +255,208 @@ impl DialogueTag {
     pub fn attrs(&self) -> &str {
         &self.attrs
     }
+
+    /// Parses the positional or `time=` duration of a `[w ...]` tag.
+    pub fn wait_duration(&self) -> Result<DialogueWaitDuration, DialogueWaitDurationError> {
+        let attrs = self.attrs.trim();
+        if attrs.is_empty() {
+            return Err(DialogueWaitDurationError::Missing);
+        }
+        let value = attrs.strip_prefix("time=").unwrap_or(attrs).trim();
+        if value.is_empty() || value.split_whitespace().count() != 1 {
+            return Err(DialogueWaitDurationError::InvalidNumber {
+                value: value.to_owned(),
+            });
+        }
+        let millis = if let Some(number) = value.strip_suffix("ms") {
+            parse_wait_integer(number, value)?
+        } else if let Some(number) = value.strip_suffix('s') {
+            parse_wait_seconds(number, value)?
+        } else {
+            return Err(DialogueWaitDurationError::UnsupportedUnit {
+                value: value.to_owned(),
+            });
+        };
+        if millis == 0 {
+            return Err(DialogueWaitDurationError::Zero);
+        }
+        Ok(DialogueWaitDuration { millis })
+    }
+
+    /// Parses the named or numeric rate of a `[speed ...]` tag.
+    pub fn reveal_speed(&self) -> Result<DialogueRevealSpeed, DialogueRevealSpeedError> {
+        let attrs = self.attrs.trim();
+        if attrs.is_empty() {
+            return Err(DialogueRevealSpeedError::Missing);
+        }
+        let value = attrs
+            .strip_prefix("cps=")
+            .or_else(|| attrs.strip_prefix("speed="))
+            .unwrap_or(attrs)
+            .trim();
+        if value.is_empty() || value.split_whitespace().count() != 1 {
+            return Err(DialogueRevealSpeedError::InvalidNumber {
+                value: value.to_owned(),
+            });
+        }
+        let milli_cps = match value {
+            "slow" => 14_000,
+            "normal" => 28_000,
+            "fast" => 56_000,
+            _ => parse_reveal_speed_milli(value)?,
+        };
+        if !(1_000..=240_000).contains(&milli_cps) {
+            return Err(DialogueRevealSpeedError::OutOfRange {
+                value: value.to_owned(),
+            });
+        }
+        Ok(DialogueRevealSpeed { milli_cps })
+    }
+}
+
+impl DialogueWaitDuration {
+    #[must_use]
+    pub const fn millis(self) -> u64 {
+        self.millis
+    }
+}
+
+impl DialogueRevealSpeed {
+    #[must_use]
+    pub const fn milli_cps(self) -> u32 {
+        self.milli_cps
+    }
+
+    /// Canonical decimal consumed by the render-text style boundary.
+    #[must_use]
+    pub fn canonical_cps(self) -> String {
+        let whole = self.milli_cps / 1_000;
+        let fraction = self.milli_cps % 1_000;
+        if fraction == 0 {
+            return whole.to_string();
+        }
+        let fraction = format!("{fraction:03}");
+        format!("{whole}.{}", fraction.trim_end_matches('0'))
+    }
+}
+
+fn parse_reveal_speed_milli(value: &str) -> Result<u32, DialogueRevealSpeedError> {
+    let (whole, fraction) = match value.split_once('.') {
+        Some((_, "")) => {
+            return Err(DialogueRevealSpeedError::InvalidNumber {
+                value: value.to_owned(),
+            });
+        }
+        Some(parts) => parts,
+        None => (value, ""),
+    };
+    if whole.is_empty()
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(DialogueRevealSpeedError::InvalidNumber {
+            value: value.to_owned(),
+        });
+    }
+    if fraction.len() > 3 {
+        return Err(DialogueRevealSpeedError::ExcessPrecision {
+            value: value.to_owned(),
+        });
+    }
+    let whole = whole
+        .parse::<u32>()
+        .ok()
+        .and_then(|whole| whole.checked_mul(1_000))
+        .ok_or_else(|| DialogueRevealSpeedError::OutOfRange {
+            value: value.to_owned(),
+        })?;
+    let fraction = if fraction.is_empty() {
+        0
+    } else {
+        let scale = match fraction.len() {
+            1 => 100,
+            2 => 10,
+            _ => 1,
+        };
+        fraction
+            .parse::<u32>()
+            .map_err(|_| DialogueRevealSpeedError::InvalidNumber {
+                value: value.to_owned(),
+            })?
+            * scale
+    };
+    whole
+        .checked_add(fraction)
+        .ok_or_else(|| DialogueRevealSpeedError::OutOfRange {
+            value: value.to_owned(),
+        })
+}
+
+fn parse_wait_integer(number: &str, source: &str) -> Result<u64, DialogueWaitDurationError> {
+    if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(DialogueWaitDurationError::InvalidNumber {
+            value: source.to_owned(),
+        });
+    }
+    number
+        .parse::<u64>()
+        .map_err(|_| DialogueWaitDurationError::Overflow {
+            value: source.to_owned(),
+        })
+}
+
+fn parse_wait_seconds(number: &str, source: &str) -> Result<u64, DialogueWaitDurationError> {
+    let (seconds, fraction) = match number.split_once('.') {
+        Some((_, "")) => {
+            return Err(DialogueWaitDurationError::InvalidNumber {
+                value: source.to_owned(),
+            });
+        }
+        Some((seconds, fraction)) => (seconds, fraction),
+        None => (number, ""),
+    };
+    if seconds.is_empty()
+        || !seconds.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(DialogueWaitDurationError::InvalidNumber {
+            value: source.to_owned(),
+        });
+    }
+    if fraction.len() > 3 {
+        return Err(DialogueWaitDurationError::SubMillisecondPrecision {
+            value: source.to_owned(),
+        });
+    }
+    let whole = seconds
+        .parse::<u64>()
+        .map_err(|_| DialogueWaitDurationError::Overflow {
+            value: source.to_owned(),
+        })?
+        .checked_mul(1_000)
+        .ok_or_else(|| DialogueWaitDurationError::Overflow {
+            value: source.to_owned(),
+        })?;
+    let fractional = if fraction.is_empty() {
+        0
+    } else {
+        let scale = match fraction.len() {
+            1 => 100,
+            2 => 10,
+            _ => 1,
+        };
+        fraction
+            .parse::<u64>()
+            .map_err(|_| DialogueWaitDurationError::InvalidNumber {
+                value: source.to_owned(),
+            })?
+            * scale
+    };
+    whole
+        .checked_add(fractional)
+        .ok_or_else(|| DialogueWaitDurationError::Overflow {
+            value: source.to_owned(),
+        })
 }
 
 impl LineMark {

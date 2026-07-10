@@ -847,7 +847,10 @@ fn activation_outcome(
 ) -> InputOutcome {
     let dialogue_progress = dialogue_progress_for_frame(
         frame,
-        advances_dialogue && frame.has_dialogue() && frame.choices.is_empty(),
+        advances_dialogue
+            && frame.has_dialogue()
+            && frame.dialogue_advance_available()
+            && frame.choices.is_empty(),
     );
     InputOutcome {
         actions,

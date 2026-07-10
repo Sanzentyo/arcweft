@@ -5,6 +5,7 @@ use arcweft_render_text::{
     RichTextStyle, RichTextStyleContribution,
 };
 
+use crate::errors::RuntimePlanLowerError;
 use crate::labels::expr_label;
 
 use super::contributions::{
@@ -25,6 +26,7 @@ pub(crate) fn lower_dialogue_display(
     defaults: &DialogueDisplayDefaults,
 ) -> LineDisplaySpec {
     lower_dialogue_display_with_speaker_presets(line, dialogue, defaults, &[])
+        .expect("test dialogue fixture has valid render controls")
 }
 
 pub(crate) fn lower_dialogue_display_with_speaker_presets(
@@ -32,14 +34,22 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
-) -> LineDisplaySpec {
+) -> Result<LineDisplaySpec, RuntimePlanLowerError> {
     let default_inline_failure_policy =
         lower_effective_inline_failure_policy(dialogue, defaults, speaker_presets);
     let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
     let character_callee = preset_chain
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
-    LineDisplaySpec {
+    let mut content = Vec::new();
+    for token in dialogue.content().tokens() {
+        content.extend(lower_dialogue_token(
+            token,
+            default_inline_failure_policy.as_ref(),
+            &defaults.text_proxies,
+        )?);
+    }
+    Ok(LineDisplaySpec {
         line,
         callee: dialogue.callee().to_owned(),
         speaker_label: defaults
@@ -65,21 +75,8 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
                 value: expr_label(arg.value()),
             })
             .collect(),
-        content: RichTextDocument::new(
-            dialogue
-                .content()
-                .tokens()
-                .iter()
-                .flat_map(|token| {
-                    lower_dialogue_token(
-                        token,
-                        default_inline_failure_policy.as_ref(),
-                        &defaults.text_proxies,
-                    )
-                })
-                .collect(),
-        ),
-    }
+        content: RichTextDocument::new(content),
+    })
 }
 
 fn lower_effective_dialogue_base_styles(
