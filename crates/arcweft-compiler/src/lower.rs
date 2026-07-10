@@ -134,10 +134,14 @@ fn runtime_typed_lowering_evidence(
                 }
             }
             TypedLoweringEvidenceKind::FunctionValueCall {
-                callee, arg_count, ..
+                callee,
+                arg_count,
+                partial,
+                ..
             } => RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
                 callee: callee.clone(),
                 arg_count: *arg_count,
+                partial: *partial,
             },
             TypedLoweringEvidenceKind::ExpectedFunctionValue { arity, .. } => {
                 RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: *arity }

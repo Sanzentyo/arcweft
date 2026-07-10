@@ -528,7 +528,7 @@ impl ThreadModifier {
 /// `await expr with ...` or `try await expr with ...` wait-view syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AwaitWith {
-    expr: Expr,
+    expr: AuthoredExpr,
     applies_try: bool,
     branches: Vec<AwaitBranch>,
 }
@@ -996,7 +996,11 @@ impl BorrowBlock {
 }
 
 impl AwaitWith {
-    pub(crate) const fn new(expr: Expr, applies_try: bool, branches: Vec<AwaitBranch>) -> Self {
+    pub(crate) const fn new(
+        expr: AuthoredExpr,
+        applies_try: bool,
+        branches: Vec<AwaitBranch>,
+    ) -> Self {
         Self {
             expr,
             applies_try,
@@ -1005,6 +1009,10 @@ impl AwaitWith {
     }
 
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 

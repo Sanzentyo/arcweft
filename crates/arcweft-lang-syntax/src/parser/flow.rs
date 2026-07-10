@@ -12,6 +12,7 @@ use super::{
     parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
     parse_line_plan_attachment, parse_scope_head, parse_stmt_lines, parse_stmt_with_stats_and_base,
     parse_thread_block, parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head,
+    split_top_level_keyword_once,
 };
 use std::borrow::Cow;
 use std::ops::Range;
@@ -650,10 +651,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_await_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
+        let trimmed_start = line.start + slice_offset(&line.text, trimmed);
+        let range = TextRange::new(trimmed_start, trimmed_start + trimmed.len());
         if trimmed.contains('{') {
             let (head, body, _, ok) = self.take_brace_block();
             if ok {
-                let range = TextRange::new(line.start, line.end);
                 let await_with =
                     parse_await_with(&format!("{head} {{ {body} }}"), range, &mut self.errors);
                 return Some(FlowItem::AwaitWith(await_with));
@@ -661,15 +663,10 @@ impl<'a> Parser<'a> {
         } else if trimmed.ends_with("with:") {
             self.index += 1;
             let body_range = self.take_indented_line_range(indentation(&line.text) + 1);
-            let range = TextRange::new(line.start, line.end);
             let await_with = self.parse_await_with_line_range(trimmed, range, body_range);
             return Some(FlowItem::AwaitWith(await_with));
         } else {
-            let await_with = parse_await_with(
-                trimmed,
-                TextRange::new(line.start, line.end),
-                &mut self.errors,
-            );
+            let await_with = parse_await_with(trimmed, range, &mut self.errors);
             self.index += 1;
             return Some(FlowItem::AwaitWith(await_with));
         }
@@ -777,10 +774,11 @@ fn split_inline_flow_contracts(
     signature_tail: &str,
 ) -> (String, Vec<crate::ast::flow::ContractClause>) {
     let trimmed = signature_tail.trim();
-    if let Some(rest) = trimmed.strip_prefix("effects ") {
+    let (signature, effects) = split_top_level_keyword_once(trimmed, "effects");
+    if let Some(effects) = effects {
         return (
-            String::new(),
-            parse_contract_clause(&format!("effects {rest}"))
+            signature.trim_end().to_owned(),
+            parse_contract_clause(&format!("effects {effects}"))
                 .into_iter()
                 .collect(),
         );

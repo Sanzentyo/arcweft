@@ -139,7 +139,7 @@ fn lower_await_with(
         })
         .collect::<Result<Vec<_>, HirLowerError>>()?;
     Ok(HirAwait {
-        expr: await_with.expr().clone(),
+        expr: await_with.expr_authored().clone(),
         applies_try: await_with.applies_try(),
         branches,
     })

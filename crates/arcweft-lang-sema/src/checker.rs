@@ -61,6 +61,8 @@ pub mod source_ranges;
 pub mod stmt;
 pub mod suspension;
 
+pub use module::analyze_types;
+
 use helpers::{
     await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
     entity_kind_for_decl, entity_syntax_kind, expr_path_label, ident_pattern_name,
@@ -170,6 +172,10 @@ fn closure_effect_callable_id(expression_id: TypeExpressionId) -> CallableId {
     CallableId::new(format!("closure.expr.{}", expression_id.index()))
 }
 
+fn function_callable_id(function_name: &str) -> CallableId {
+    CallableId::new(format!("fn.{function_name}"))
+}
+
 fn function_return_effect_callable_id(function_name: &str) -> CallableId {
     CallableId::new(format!("fn.{function_name}.return"))
 }
@@ -251,6 +257,8 @@ pub enum TypedLoweringEvidenceKind {
         callee_ty: TypeKind,
         result_ty: TypeKind,
         arg_count: usize,
+        /// Whether this call supplied fewer arguments than the current call group.
+        partial: bool,
     },
     /// An expression was checked in a function-typed context.
     ExpectedFunctionValue {
@@ -332,59 +340,6 @@ pub struct TypeCheckReport {
     pub trait_catalog: TraitCatalog,
 }
 
-impl TypeCheckReport {
-    pub fn into_result(self) -> Result<(), Vec<TypeCheckError>> {
-        if self.diagnostics.is_empty() {
-            Ok(())
-        } else {
-            Err(self.diagnostics)
-        }
-    }
-
-    /// Returns the effect-analysis callable owned by a function-valued expression.
-    pub fn function_effect_callable_for_expression(
-        &self,
-        expression_id: TypeExpressionId,
-    ) -> Option<&CallableId> {
-        self.typed_lowering_evidence.iter().find_map(|evidence| {
-            if evidence.expression_id != expression_id {
-                return None;
-            }
-            let TypedLoweringEvidenceKind::FunctionEffectCallable { callable } = &evidence.kind
-            else {
-                return None;
-            };
-            Some(callable)
-        })
-    }
-}
-
-/// Analyzes lowered HIR with an explicit symbol/method environment.
-pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
-    let mut checker = TypeChecker::new(env);
-    checker.check_module(module);
-    checker.apply_pending_higher_order_effect_calls();
-    let effects = std::mem::take(&mut checker.effect_collector).finish();
-    checker
-        .errors
-        .extend(effects.errors().cloned().map(TypeCheckError::effect));
-    checker
-        .warnings
-        .extend(effects.warnings().cloned().map(TypeCheckWarning::effect));
-    TypeCheckReport {
-        diagnostics: checker.errors,
-        warnings: checker.warnings,
-        stats: checker.stats,
-        judgments: checker.judgments,
-        typed_lowering_evidence: checker.typed_lowering_evidence,
-        closure_captures: checker.closure_captures,
-        numeric_fallbacks: checker.numeric_fallbacks,
-        effects,
-        for_iteration_evidence: checker.for_iteration_evidence,
-        trait_catalog: checker.trait_catalog,
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForIterationEvidence {
     pub family: ForIterationEvidenceFamily,
@@ -438,6 +393,7 @@ struct TypeChecker<'a> {
     global_functions: HashMap<String, TypeKind>,
     global_function_signatures: HashMap<String, FunctionSignature>,
     global_function_effects: HashMap<String, Vec<String>>,
+    ordinary_source_functions: HashSet<String>,
     global_type_aliases: HashMap<String, TypeKind>,
     action_signatures: HashMap<String, ActionSignature>,
     nominal_fields: HashMap<String, HashMap<String, TypeKind>>,
@@ -476,7 +432,7 @@ struct TypeChecker<'a> {
     closure_effect_callables_by_expr: HashMap<ExprNodeKey, CallableId>,
     last_checked_closure_effect_callable: Option<CallableId>,
     function_return_effect_callables: HashMap<String, CallableId>,
-    local_callable_signatures: HashMap<String, FunctionSignature>,
+    local_callable_signatures: HashMap<String, SourceCallableSignature>,
     local_curried_signature_calls: HashMap<String, CurriedSignatureCallValue>,
     last_checked_curried_signature_call: Option<CurriedSignatureCallValue>,
     local_higher_order_param_aliases: HashMap<String, String>,
@@ -595,9 +551,24 @@ struct LocalBindingSnapshotEntry {
     name: String,
     previous_ty: Option<TypeKind>,
     previous_function_effect: Option<CallableId>,
-    previous_callable_signature: Option<FunctionSignature>,
+    previous_callable_signature: Option<SourceCallableSignature>,
     previous_curried_signature_call: Option<CurriedSignatureCallValue>,
     previous_higher_order_param_alias: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct SourceCallableSignature {
+    source_name: String,
+    signature: FunctionSignature,
+}
+
+impl SourceCallableSignature {
+    fn new(source_name: impl Into<String>, signature: FunctionSignature) -> Self {
+        Self {
+            source_name: source_name.into(),
+            signature,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -633,6 +604,7 @@ struct CurriedSignatureCallValue {
     function_name: String,
     remaining_group_index: usize,
     group_arg_offset: usize,
+    current_group_params: Option<Vec<FunctionParam>>,
     pending_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
 }
 
@@ -704,6 +676,7 @@ impl TypeChecker<'_> {
             global_functions: HashMap::new(),
             global_function_signatures: HashMap::new(),
             global_function_effects: HashMap::new(),
+            ordinary_source_functions: HashSet::new(),
             global_type_aliases: HashMap::new(),
             action_signatures: HashMap::new(),
             nominal_fields: HashMap::new(),
@@ -815,7 +788,7 @@ impl TypeChecker<'_> {
             .insert(name.to_owned(), callable);
     }
 
-    fn bind_local_callable_signature(&mut self, name: &str, signature: FunctionSignature) {
+    fn bind_local_callable_signature(&mut self, name: &str, signature: SourceCallableSignature) {
         self.local_callable_signatures
             .insert(name.to_owned(), signature);
     }
@@ -966,7 +939,7 @@ impl TypeChecker<'_> {
         &mut self,
         expression_id: TypeExpressionId,
         upper_bound: Option<EffectSet>,
-    ) -> (CallableId, Option<CallableId>) {
+    ) -> (CallableId, EffectRow, Option<CallableId>) {
         let id = closure_effect_callable_id(expression_id);
         let source_name = id.as_str().to_owned();
         let contract = upper_bound.map_or_else(EffectContract::inferred, EffectContract::bounded);
@@ -979,8 +952,9 @@ impl TypeChecker<'_> {
         ) {
             self.errors.push(TypeCheckError::new(error.to_string()));
         }
+        let inferred_row = self.effect_collector.ensure_inferred_effect_row(&id);
         let previous = self.effect_collector.enter(id.clone());
-        (id, previous)
+        (id, inferred_row, previous)
     }
 
     fn restore_effect_callable(&mut self, previous: Option<CallableId>) {
@@ -1151,26 +1125,6 @@ impl TypeChecker<'_> {
         self.last_checked_closure_effect_callable = None;
     }
 
-    fn record_pending_higher_order_signature_arg_effect_call(
-        &mut self,
-        function_name: &str,
-        param: &FunctionParam,
-        value: &Expr,
-        actual: Option<&TypeKind>,
-    ) {
-        let args = self.higher_order_signature_arg_effect_calls(param, value, actual);
-        let Some(caller) = self.effect_collector.current_callable() else {
-            return;
-        };
-        self.pending_higher_order_effect_calls
-            .extend(args.into_iter().map(|arg| PendingHigherOrderEffectCall {
-                caller: caller.clone(),
-                callee_function: function_name.to_owned(),
-                param_name: arg.param_name,
-                effect_callable: arg.effect_callable,
-            }));
-    }
-
     fn higher_order_signature_arg_effect_calls(
         &mut self,
         param: &FunctionParam,
@@ -1214,6 +1168,7 @@ impl TypeChecker<'_> {
         result_ty: &TypeKind,
         has_next_group_metadata: bool,
         exact_group_call: bool,
+        pending_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
     ) {
         self.last_checked_curried_signature_call = (has_next_group_metadata
             && exact_group_call
@@ -1222,7 +1177,8 @@ impl TypeChecker<'_> {
             function_name: function_name.to_owned(),
             remaining_group_index: next_group_index,
             group_arg_offset: 0,
-            pending_higher_order_args: Vec::new(),
+            current_group_params: None,
+            pending_higher_order_args,
         });
     }
 
@@ -1246,6 +1202,7 @@ impl TypeChecker<'_> {
         ) {
             self.errors.push(TypeCheckError::new(error.to_string()));
         }
+        self.effect_collector.ensure_inferred_effect_row(&id);
         self.function_return_effect_callables
             .insert(function_name.to_owned(), id);
     }
@@ -1283,13 +1240,10 @@ impl TypeChecker<'_> {
             self.last_checked_closure_effect_callable = None;
             return;
         }
-        if let Some(callable) = self
+        self.last_checked_closure_effect_callable = self
             .function_return_effect_callables
             .get(function_name)
-            .cloned()
-        {
-            self.last_checked_closure_effect_callable = Some(callable);
-        }
+            .cloned();
     }
 
     fn record_pending_curried_higher_order_arg_effect_calls(
@@ -1398,7 +1352,11 @@ impl TypeChecker<'_> {
         }
         match expr {
             Expr::Closure { .. } => self.last_checked_closure_effect_callable.clone(),
-            Expr::Path(path) => self.local_function_effects.get(path.as_label()).cloned(),
+            Expr::Path(path) => self
+                .local_function_effects
+                .get(path.as_label())
+                .cloned()
+                .or_else(|| self.source_function_effect_callable(path.as_label())),
             Expr::Call { callee, args } => {
                 if let Some(callable) = self.last_checked_closure_effect_callable.clone() {
                     return Some(callable);
@@ -1434,7 +1392,18 @@ impl TypeChecker<'_> {
             Expr::Path(path) => self
                 .local_curried_signature_calls
                 .get(path.as_label())
-                .cloned(),
+                .cloned()
+                .or_else(|| {
+                    let name = path.as_label();
+                    let signature = self.function_signature(name)?;
+                    (signature.remaining_call_groups() > 0).then(|| CurriedSignatureCallValue {
+                        function_name: name.to_owned(),
+                        remaining_group_index: 0,
+                        group_arg_offset: 0,
+                        current_group_params: None,
+                        pending_higher_order_args: Vec::new(),
+                    })
+                }),
             _ => None,
         }
     }
@@ -1443,7 +1412,7 @@ impl TypeChecker<'_> {
         &self,
         expr: &Expr,
         ty: &TypeKind,
-    ) -> Option<FunctionSignature> {
+    ) -> Option<SourceCallableSignature> {
         if !matches!(ty, TypeKind::Function { .. }) {
             return None;
         }
@@ -1454,7 +1423,11 @@ impl TypeChecker<'_> {
         self.local_callable_signatures
             .get(name)
             .cloned()
-            .or_else(|| self.function_signature(name).cloned())
+            .or_else(|| {
+                self.function_signature(name)
+                    .cloned()
+                    .map(|signature| SourceCallableSignature::new(name, signature))
+            })
     }
 
     fn higher_order_param_alias_for_function_expr(
@@ -1585,13 +1558,16 @@ impl TypeChecker<'_> {
             .or_else(|| self.env.function_signature(name))
     }
 
-    fn function_value_type(&self, name: &str) -> Option<TypeKind> {
-        self.function_signature(name).and_then(|signature| {
+    fn function_value_type(&mut self, name: &str) -> Option<TypeKind> {
+        let signature = self.function_signature(name)?.clone();
+        if self.uses_final_group_effect_timing(name) {
             signature.function_value_type_with_effects(self.function_effect_row(name))
-        })
+        } else {
+            signature.function_value_type()
+        }
     }
 
-    fn function_effect_row(&self, name: &str) -> EffectRow {
+    fn function_effect_row(&mut self, name: &str) -> EffectRow {
         let effects = self
             .global_function_effects
             .get(name)
@@ -1604,9 +1580,25 @@ impl TypeChecker<'_> {
                         .collect()
                 })
             });
-        effects
-            .and_then(|effects| EffectSet::from_labels(effects).ok())
-            .map_or_else(EffectRow::unknown, EffectRow::closed)
+        if let Some(effects) = effects.and_then(|effects| EffectSet::from_labels(effects).ok()) {
+            return EffectRow::closed(effects);
+        }
+        if let Some(row) = self
+            .effect_collector
+            .inferred_effect_row(&function_callable_id(name))
+        {
+            return row;
+        }
+        EffectRow::unknown()
+    }
+
+    fn source_function_effect_callable(&self, name: &str) -> Option<CallableId> {
+        self.effect_collector.registered_callable(name).cloned()
+    }
+
+    fn uses_final_group_effect_timing(&self, function_name: &str) -> bool {
+        !self.global_function_signatures.contains_key(function_name)
+            || self.ordinary_source_functions.contains(function_name)
     }
 
     fn nominal_field_type(&self, receiver: &TypeKind, field: &str) -> Option<TypeKind> {
@@ -2360,6 +2352,13 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
             },
         ) => expected_len == actual_len && types_compatible(expected_item, actual_item),
         (TypeKind::Range(expected), TypeKind::Range(actual)) => types_compatible(expected, actual),
+        (TypeKind::Tuple(expected), TypeKind::Tuple(actual)) => {
+            expected.len() == actual.len()
+                && expected
+                    .iter()
+                    .zip(actual)
+                    .all(|(expected, actual)| types_compatible(expected, actual))
+        }
         (
             TypeKind::Function {
                 params: expected_params,

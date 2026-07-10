@@ -105,7 +105,6 @@ impl Engine {
                 true
             }
             StreamOp::Return => false,
-            StreamOp::Noop => true,
         }
     }
 

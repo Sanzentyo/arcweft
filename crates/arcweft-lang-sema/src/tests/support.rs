@@ -113,3 +113,54 @@ pub(super) fn selected_call_args(expr: &Expr) -> Option<&[CallArg]> {
     };
     matches!(callee.as_ref(), Expr::Select(_)).then_some(args.as_slice())
 }
+
+pub(super) fn borrow_capture_env() -> TypeCheckEnv {
+    TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            pixel_borrow_ty(),
+        )
+        .with_function("load_avatar", load_avatar_need_ty())
+}
+
+pub(super) fn borrow_capture_read_text_env() -> TypeCheckEnv {
+    borrow_capture_env()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()])
+}
+
+pub(super) fn read_text_env() -> TypeCheckEnv {
+    TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()])
+}
+
+pub(super) fn pixel_borrow_ty() -> TypeKind {
+    TypeKind::BorrowRef {
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+            "Rgba8".to_owned(),
+        )))),
+    }
+}
+
+pub(super) fn load_avatar_need_ty() -> TypeKind {
+    TypeKind::Need {
+        ready: Box::new(TypeKind::Unit),
+        error: Box::new(TypeKind::Named("AssetError".to_owned())),
+    }
+}

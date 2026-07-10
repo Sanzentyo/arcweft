@@ -696,31 +696,20 @@ impl TypeChecker<'_> {
         {
             let signature = self.function_signature(&name).cloned();
             self.check_virtual_path_call(&name, args);
-            self.check_function_effects(&name);
             if let Some(signature) = signature.filter(FunctionSignature::checks_args) {
-                if let Some(partial_ty) = self.check_partial_signature_call(
+                return Some(self.check_named_signature_call(
                     expression_id,
                     &name,
+                    ty,
                     &signature,
                     args,
                     expected,
-                ) {
-                    return Some(partial_ty);
-                }
-                self.check_signature_call_args(&name, &signature, args);
-                self.record_curried_signature_result(
-                    &name,
-                    1,
-                    &ty,
-                    signature.remaining_param_group(0).is_some(),
-                    Self::signature_call_supplies_current_group(&signature, args),
-                );
-                self.record_function_return_effect_result(&name, &ty);
-            } else {
-                self.check_untyped_function_args(&name, args);
-                self.last_checked_curried_signature_call = None;
-                self.record_function_return_effect_result(&name, &ty);
+                ));
             }
+            self.check_untyped_function_args(&name, args);
+            self.check_function_effects(&name);
+            self.last_checked_curried_signature_call = None;
+            self.record_function_return_effect_result(&name, &ty);
             return Some(ty);
         }
         if let Expr::Path(name) = callee {
@@ -1001,12 +990,19 @@ impl TypeChecker<'_> {
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
-            self.check_typed_method_call(&receiver_type, method_name, args, expression_id)
+            self.check_typed_method_call(
+                select.target(),
+                &receiver_type,
+                method_name,
+                args,
+                expression_id,
+            )
         })
     }
 
     fn check_typed_method_call(
         &mut self,
+        receiver: &Expr,
         receiver_type: &TypeKind,
         method_name: &str,
         args: &[CallArg],
@@ -1021,9 +1017,13 @@ impl TypeChecker<'_> {
             TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
             TraitMethodCallOutcome::Rejected => return None,
         }
-        if let Some(return_type) =
-            self.check_data_last_method_fallback(receiver_type, method_name, args, expression_id)
-        {
+        if let Some(return_type) = self.check_data_last_method_fallback(
+            receiver,
+            receiver_type,
+            method_name,
+            args,
+            expression_id,
+        ) {
             return Some(return_type);
         }
         self.check_untyped_method_args(args);

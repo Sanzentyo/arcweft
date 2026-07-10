@@ -172,6 +172,10 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
 
 The required source headers are `from`, `backpressure`, `replay`, and
 `privacy`. `privacy = private` is incompatible with `replay = full`.
+Each is singular; a duplicate header is an error rather than a first/last-wins
+override. `backpressure = bounded(...)` requires both a positive integer
+`capacity` and an explicit `overflow` policy. Runtime lowering does not invent
+queue capacity or overflow defaults for recovered or incomplete source.
 
 ## `yield` is a suspension boundary
 

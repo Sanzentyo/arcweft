@@ -1,7 +1,7 @@
 use arcweft_core::{
     effect::{
-        LineEffectRequest, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall, RuntimeLog,
-        RuntimeWaitTarget,
+        LineEffectRequest, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
+        RuntimeEffectExpr, RuntimeLog, RuntimeWaitTarget,
     },
     line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
     pattern::RuntimePattern,
@@ -24,6 +24,7 @@ use arcweft_lang_syntax::{
     parser::{ParseOptions, SourceDialect, parse_document, parse_source},
 };
 use arcweft_runtime_plan::{
+    errors::{RuntimeHostRequestArgument, RuntimePlanLowerContext},
     flow::{
         RuntimePlanLowerOptions, lower_agent_controller_plan_with_stats, lower_runtime_plan,
         lower_runtime_plan_with_options, lower_runtime_plan_with_stats,
@@ -1127,6 +1128,397 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn runtime_plan_rejects_unsupported_stream_statement_instead_of_noop() {
+    let tree = parse_ok(
+        r#"
+stream fn invalid(values: Stream<i64, String>) -> Stream<i64, String> {
+    log.info("not executable here")
+    yield 1i64
+}
+
+flow @flow.main main {
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("unsupported stream fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("unsupported stream statement is rejected");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.context(),
+            Some(RuntimePlanLowerContext::Statement {
+                owner, path, kind, ..
+            })
+                if owner == "stream function `invalid`"
+                    && path == &["0".to_owned()]
+                    && kind == "expression"
+        )
+    }));
+}
+
+#[test]
+fn runtime_plan_rejects_discarded_stream_final_value() {
+    let tree = parse_ok(
+        r#"
+stream fn invalid(values: Stream<i64, String>) -> Stream<i64, String> {
+    log.info("must not disappear")
+}
+
+flow @flow.main main {
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("stream final-value fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("stream final value is rejected");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.context(),
+            Some(RuntimePlanLowerContext::Expression {
+                owner,
+                path,
+                statement_kind,
+                role,
+                ..
+            }) if owner == "stream function `invalid`"
+                && path == &["body.value".to_owned()]
+                && statement_kind == "body"
+                && role == "final value"
+        ) && error
+            .reason()
+            .contains("cannot end with a value expression")
+    }));
+}
+
+#[test]
+fn runtime_plan_rejects_unsupported_source_statement_instead_of_noop() {
+    let tree = parse_ok(
+        r#"
+pub source @source.invalid: Source<i64, String> {
+    from capture.microphone(@capture.player_microphone)
+    backpressure = latest
+    replay = none
+    privacy = transient
+
+    on item value => { let copy = value }
+}
+
+flow @flow.main main {
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("unsupported source fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("unsupported source statement is rejected");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.context(),
+            Some(RuntimePlanLowerContext::Statement {
+                owner, path, kind, ..
+            })
+                if owner == "source `source.invalid` handler `item`"
+                    && path == &["0".to_owned()]
+                    && kind == "let"
+        )
+    }));
+}
+
+#[test]
+fn stream_expression_failure_preserves_role_and_authored_range() {
+    let source = r#"
+stream fn invalid(values: Stream<i64, String>) -> Stream<i64, String> {
+    yield await next
+}
+
+flow @flow.main main {
+    return "done"
+}
+"#;
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("stream expression fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("stream await expression is rejected");
+    let error = errors
+        .iter()
+        .find(|error| {
+            matches!(
+                error.context(),
+                Some(RuntimePlanLowerContext::Expression {
+                    owner,
+                    path,
+                    statement_kind,
+                    role,
+                    ..
+                }) if owner == "stream function `invalid`"
+                    && path == &["0".to_owned()]
+                    && statement_kind == "yield"
+                    && role == "value"
+            )
+        })
+        .expect("yield expression error retains structured context");
+    let range = error
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("yield expression retains authored range");
+    assert_eq!(&source[range.as_range()], "await next");
+    assert!(error.reason().contains("suspension-aware"));
+}
+
+#[test]
+fn source_header_expression_failure_is_not_stringified() {
+    let source = r#"
+pub source @source.invalid: Source<i64, String> {
+    from _
+    backpressure = latest
+    replay = none
+    privacy = transient
+
+    on item value => yield value
+}
+
+flow @flow.main main {
+    return "done"
+}
+"#;
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("source header fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("unsupported source header is rejected");
+    let error = errors
+        .iter()
+        .find(|error| {
+            matches!(
+                error.context(),
+                Some(RuntimePlanLowerContext::Expression {
+                    owner,
+                    path,
+                    statement_kind,
+                    role,
+                    ..
+                }) if owner == "source `source.invalid`"
+                    && path == &["header.from".to_owned()]
+                    && statement_kind == "header"
+                    && role == "from"
+            ) && error
+                .reason()
+                .contains("unsupported runtime value expression")
+        })
+        .expect("source from error retains structured context");
+    let range = error
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("source from error retains authored range");
+    assert_eq!(&source[range.as_range()], "_");
+    assert_eq!(
+        error
+            .diagnostic()
+            .span()
+            .expect("diagnostic projects the authored range")
+            .range()
+            .as_range(),
+        range.as_range()
+    );
+}
+
+#[test]
+fn source_handler_expression_failure_retains_absolute_authored_range() {
+    let source = r#"
+pub source @source.invalid: Source<i64, String> {
+    from capture.values()
+    backpressure = latest
+    replay = none
+    privacy = transient
+
+    on item value => {
+        yield await next
+    }
+}
+
+flow @flow.main main {
+    return "done"
+}
+"#;
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("source handler fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("source handler await is rejected");
+    let error = errors
+        .iter()
+        .find(|error| {
+            matches!(
+                error.context(),
+                Some(RuntimePlanLowerContext::Expression {
+                    owner,
+                    path,
+                    statement_kind,
+                    role,
+                    ..
+                }) if owner == "source `source.invalid` handler `item`"
+                    && path == &["0".to_owned()]
+                    && statement_kind == "yield"
+                    && role == "value"
+            )
+        })
+        .expect("source handler failure retains structured context");
+    let range = error
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("source handler failure retains authored range");
+    assert_eq!(&source[range.as_range()], "await next");
+    assert_eq!(
+        error
+            .diagnostic()
+            .span()
+            .expect("diagnostic projects the handler range")
+            .range()
+            .as_range(),
+        range.as_range()
+    );
+}
+
+#[test]
+fn source_bounded_policy_distinguishes_missing_and_unknown_overflow() {
+    let missing_source = r#"
+pub source @source.missing: Source<i64, String> {
+    from capture.values()
+    backpressure = bounded(capacity = 8)
+    replay = none
+    privacy = transient
+}
+
+flow @flow.main main { return "done" }
+"#;
+    let missing_hir = lower_to_hir(&parse_ok(missing_source)).expect("missing fixture lowers");
+    let missing_errors =
+        lower_runtime_plan(&missing_hir).expect_err("missing overflow is rejected");
+    let missing = missing_errors
+        .iter()
+        .find(|error| error.reason().contains("requires an `overflow` option"))
+        .expect("missing overflow has a dedicated diagnostic");
+    let missing_range = missing
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("missing overflow anchors to the bounded policy");
+    assert_eq!(
+        &missing_source[missing_range.as_range()],
+        "bounded(capacity = 8)"
+    );
+
+    let unknown_source = r#"
+pub source @source.unknown: Source<i64, String> {
+    from capture.values()
+    backpressure = bounded(capacity = 8, overflow = legacy)
+    replay = none
+    privacy = transient
+}
+
+flow @flow.main main { return "done" }
+"#;
+    let unknown_hir = lower_to_hir(&parse_ok(unknown_source)).expect("unknown fixture lowers");
+    let unknown_errors =
+        lower_runtime_plan(&unknown_hir).expect_err("unknown overflow is rejected");
+    let unknown = unknown_errors
+        .iter()
+        .find(|error| {
+            error
+                .reason()
+                .contains("unknown source overflow policy `legacy`")
+        })
+        .expect("unknown overflow has a spelling diagnostic");
+    let unknown_range = unknown
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("unknown overflow retains the authored value range");
+    assert_eq!(&unknown_source[unknown_range.as_range()], "legacy");
+}
+
+#[test]
+fn source_duplicate_header_is_rejected_at_second_value() {
+    let source = r#"
+pub source @source.duplicate: Source<i64, String> {
+    from capture.values()
+    backpressure = latest
+    replay = none
+    privacy = transient
+    privacy = recordable
+}
+
+flow @flow.main main { return "done" }
+"#;
+    let hir = lower_to_hir(&parse_ok(source)).expect("duplicate source fixture lowers");
+
+    let errors = lower_runtime_plan(&hir).expect_err("duplicate header is rejected");
+    let duplicate = errors
+        .iter()
+        .find(|error| {
+            error
+                .reason()
+                .contains("source header `privacy` may appear only once")
+        })
+        .expect("duplicate header has a structured diagnostic");
+    let range = duplicate
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("duplicate header retains the second value range");
+    assert_eq!(&source[range.as_range()], "recordable");
+}
+
+#[test]
+fn source_runtime_policy_rejects_private_full_replay() {
+    let source = r#"
+pub source @source.private: Source<i64, String> {
+    from capture.values()
+    backpressure = latest
+    replay = full
+    privacy = private
+}
+
+flow @flow.main main { return "done" }
+"#;
+    let hir = lower_to_hir(&parse_ok(source)).expect("private source fixture lowers");
+
+    let errors = lower_runtime_plan(&hir).expect_err("private full replay is rejected");
+    let incompatible = errors
+        .iter()
+        .find(|error| {
+            error
+                .reason()
+                .contains("`privacy = private` is incompatible with `replay = full`")
+        })
+        .expect("runtime policy boundary rechecks privacy/replay compatibility");
+    let range = incompatible
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("incompatibility anchors to the privacy policy");
+    assert_eq!(&source[range.as_range()], "private");
+}
+
+#[test]
+fn stream_unit_return_remains_executable() {
+    let tree = parse_ok(
+        r#"
+stream fn finite(values: Stream<i64, String>) -> Stream<i64, String> {
+    return ()
+}
+
+flow @flow.main main {
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("stream return fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("unit stream return lowers");
+    assert!(matches!(
+        plan.stream_plans[0].ops.as_slice(),
+        [StreamOp::Return]
+    ));
+}
+
+#[test]
 fn runtime_plan_lowers_range_for_source_as_runtime_range_expr() {
     let tree = parse_ok(
         r"
@@ -1327,6 +1719,74 @@ flow @flow.loading loading {
     assert_eq!(target.request.operation, "write");
     assert_eq!(target.request.args.len(), 1);
     assert!(target.request.args[0].is_spread());
+}
+
+#[test]
+fn host_request_failure_retains_flow_owner_path_and_await_target_range() {
+    let source = r"
+flow @flow.loading loading {
+    try await fs.read_text(try next) with { pending p => progress.set(p.ratio) }
+}
+";
+    let hir = lower_to_hir(&parse_ok(source)).expect("invalid host argument fixture lowers");
+
+    let errors = lower_runtime_plan(&hir).expect_err("try argument is not a pure host value");
+    let error = errors
+        .iter()
+        .find(|error| {
+            matches!(
+                error.context(),
+                Some(RuntimePlanLowerContext::HostRequestArgument {
+                    owner,
+                    path,
+                    capability,
+                    operation,
+                    argument: RuntimeHostRequestArgument::Positional(0),
+                    ..
+                }) if owner == "flow `loading`"
+                    && path == &["0".to_owned()]
+                    && capability == "fs"
+                    && operation == "read_text"
+            )
+        })
+        .expect("host argument error retains structured flow context");
+    let range = error
+        .context()
+        .and_then(RuntimePlanLowerContext::source_range)
+        .expect("host argument error retains the authored await target range");
+    assert_eq!(&source[range.as_range()], "fs.read_text(try next)");
+    assert_eq!(
+        error
+            .diagnostic()
+            .span()
+            .expect("host diagnostic projects the authored range")
+            .range()
+            .as_range(),
+        range.as_range()
+    );
+}
+
+#[test]
+fn let_await_failure_retains_binding_rhs_range() {
+    let source = r"
+flow @flow.loading loading {
+    let contents = try await fs.read_text(try next) with { pending p => progress.set(p.ratio) }
+}
+";
+    let hir = lower_to_hir(&parse_ok(source)).expect("invalid let-await fixture lowers");
+
+    let errors = lower_runtime_plan(&hir).expect_err("try argument is not a pure host value");
+    let range = errors
+        .iter()
+        .find_map(|error| match error.context() {
+            Some(RuntimePlanLowerContext::HostRequestArgument {
+                source_range: Some(range),
+                ..
+            }) => Some(*range),
+            _ => None,
+        })
+        .expect("let-await host failure retains its binding RHS range");
+    assert_eq!(&source[range.as_range()], "fs.read_text(try next)");
 }
 
 #[test]
@@ -1890,33 +2350,49 @@ flow @flow.assertions assertions {
 
     let plan = lower_runtime_plan(&hir).expect("assertion runtime plan lowers");
     let [
-        FlowOp::Effect(ensure),
-        FlowOp::Effect(assert),
-        FlowOp::Effect(debug_assert),
+        FlowOp::EvaluatedEffect(RuntimeEffectExpr::Ensure {
+            condition: ensure_condition,
+            message: ensure_message,
+        }),
+        FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
+            condition: assert_condition,
+            message: assert_message,
+            profile: RuntimeAssertionProfile::Always,
+        }),
+        FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
+            condition: debug_condition,
+            message: debug_message,
+            profile: RuntimeAssertionProfile::DebugOnly,
+        }),
     ] = plan.flows[0].ops.as_slice()
     else {
         panic!("expected three assertion-related effects");
     };
 
     assert!(matches!(
-        ensure,
-        LineEffectRequest::Ensure { condition, message }
-            if condition == "route.is_some()" && message == "\"route missing\""
+        ensure_condition,
+        RuntimeExpr::Call { .. } | RuntimeExpr::MethodCall { .. }
     ));
+    assert_eq!(
+        ensure_message,
+        &RuntimeExpr::Value(RuntimeValue::String("route missing".to_owned()))
+    );
     assert!(matches!(
-        assert,
-        LineEffectRequest::Assert(assertion)
-            if assertion.condition == "state.ready()"
-                && assertion.message == "\"state must be ready\""
-                && assertion.profile == RuntimeAssertionProfile::Always
+        assert_condition,
+        RuntimeExpr::Call { .. } | RuntimeExpr::MethodCall { .. }
     ));
+    assert_eq!(
+        assert_message,
+        &RuntimeExpr::Value(RuntimeValue::String("state must be ready".to_owned()))
+    );
     assert!(matches!(
-        debug_assert,
-        LineEffectRequest::Assert(assertion)
-            if assertion.condition == "cache.consistent()"
-                && assertion.message == "assertion failed"
-                && assertion.profile == RuntimeAssertionProfile::DebugOnly
+        debug_condition,
+        RuntimeExpr::Call { .. } | RuntimeExpr::MethodCall { .. }
     ));
+    assert_eq!(
+        debug_message,
+        &RuntimeExpr::Value(RuntimeValue::String("assertion failed".to_owned()))
+    );
 }
 
 #[test]

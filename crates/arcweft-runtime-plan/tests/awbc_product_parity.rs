@@ -1,7 +1,8 @@
 use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
-    RuntimeEvent, RuntimeField, RuntimeLog, RuntimeWaitTarget,
+    RuntimeEffectExpr, RuntimeEffectFieldExpr, RuntimeEvent, RuntimeField, RuntimeLog,
+    RuntimeWaitTarget,
 };
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
@@ -99,10 +100,6 @@ fn run_parity_with_options(
         .lower()
         .expect("runtime plan lowers to AWBC")
         .program;
-    assert!(
-        awbc.product_step_parity_blockers().is_empty(),
-        "ordinary lowered fixture must have no static product blockers"
-    );
     let mut structured =
         ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::StructuredVm);
     let mut awbc =
@@ -1134,6 +1131,44 @@ fn awbc_product_parity_effect() {
 }
 
 #[test]
+fn awbc_product_parity_evaluated_effect_arguments_and_field_names() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Let {
+                pattern: RuntimePattern::Ident("message".to_owned()),
+                expr: RuntimeExpr::Value(RuntimeValue::String("selected".to_owned())),
+            },
+            FlowOp::Let {
+                pattern: RuntimePattern::Ident("user".to_owned()),
+                expr: RuntimeExpr::Value(RuntimeValue::String("ada".to_owned())),
+            },
+            FlowOp::EvaluatedEffect(RuntimeEffectExpr::Log {
+                level: "info".to_owned(),
+                message: RuntimeExpr::Local("message".to_owned()),
+                fields: vec![RuntimeEffectFieldExpr {
+                    name: "user".to_owned(),
+                    value: RuntimeExpr::Local("user".to_owned()),
+                }],
+            }),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![LineEffectRequest::Log(RuntimeLog {
+            level: "info".to_owned(),
+            message: "selected".to_owned(),
+            fields: vec![RuntimeField {
+                name: "user".to_owned(),
+                value: "ada".to_owned(),
+            }],
+        })]
+    );
+}
+
+#[test]
 fn awbc_product_parity_scope_cleanup_and_cancel() {
     let steps = run_parity(
         flow(vec![
@@ -1389,6 +1424,51 @@ fn awbc_product_parity_source_stream() {
 }
 
 #[test]
+fn awbc_product_parity_source_evaluated_effect_uses_handler_binding() {
+    let source = SourceId("source.effects".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+            Vec::new(),
+            vec![SourcePlan {
+                id: source.clone(),
+                item_ty: "String".to_owned(),
+                error_ty: "SourceError".to_owned(),
+                from: RuntimeExpr::Value(RuntimeValue::String("driver".to_owned())),
+                policy: SourcePolicy::default(),
+                handlers: vec![SourceHandlerPlan::Item {
+                    pattern: RuntimePattern::Ident("message".to_owned()),
+                    ops: vec![SourceOp::EvaluatedEffect(RuntimeEffectExpr::Log {
+                        level: "info".to_owned(),
+                        message: RuntimeExpr::Local("message".to_owned()),
+                        fields: Vec::new(),
+                    })],
+                }],
+            }],
+        ),
+        vec![RuntimeStepInput {
+            source_events: vec![RuntimeSourceEvent {
+                source,
+                sequence: TaskSequence(0),
+                kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                    "source message".to_owned(),
+                ))),
+            }],
+            ..RuntimeStepInput::default()
+        }],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![LineEffectRequest::Log(RuntimeLog {
+            level: "info".to_owned(),
+            message: "source message".to_owned(),
+            fields: Vec::new(),
+        })]
+    );
+}
+
+#[test]
 fn awbc_product_parity_stream_for_next_binds_source_item() {
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![StreamPlan {
@@ -1414,10 +1494,8 @@ fn awbc_product_parity_stream_for_next_binds_source_item() {
     .expect("stream for-next plan lowers")
     .program;
 
-    assert!(
-        awbc.product_step_parity_blockers().is_empty(),
-        "stream for-next binding should produce verified product AWBC"
-    );
+    ArcweftRuntimeExecutor::from_awbc_product(awbc, arcweft_core::awbc::schema::AwbcEntryId(0))
+        .expect("stream for-next binding produces verified product AWBC");
 }
 
 #[test]

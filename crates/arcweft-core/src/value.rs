@@ -1171,6 +1171,8 @@ pub enum RuntimeEvalError {
     MisplacedLoopControl(&'static str),
     #[error("audio command error: {0}")]
     Audio(String),
+    #[error("runtime effect error: {0}")]
+    Effect(String),
     #[error("audio command expected {expected}, found {actual}")]
     AudioValue {
         expected: &'static str,

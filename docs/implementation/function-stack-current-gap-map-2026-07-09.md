@@ -1,5 +1,10 @@
 # Function Stack Current Gap Map - 2026-07-09
 
+> Historical snapshot: this gap map is superseded by
+> `docs/implementation/function-stack-final-state-2026-07-10.md`. Its AWBC and
+> ordinary closure-effect blockers are retained here only as dated audit
+> history, not as current TODOs.
+
 This note is the short current-state map for the active
 function/closure/currying/pipeline goal. It is intentionally smaller than the
 main implementation log and the status rollup: use it to decide what is done,

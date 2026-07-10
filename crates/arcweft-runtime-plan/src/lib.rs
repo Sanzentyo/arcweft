@@ -7,6 +7,7 @@ mod function_values;
 pub mod host_request;
 pub mod labels;
 pub mod line_task;
+mod lowering_context;
 pub mod pattern;
 pub mod pure;
 pub mod render_text;

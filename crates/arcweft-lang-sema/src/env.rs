@@ -178,6 +178,19 @@ impl FunctionSignature {
         &self.return_type
     }
 
+    /// Return type produced after every declared parameter group has been
+    /// applied. Function wrappers introduced by currying are not included.
+    pub fn body_return_type(&self) -> &TypeKind {
+        let mut ty = &self.return_type;
+        for _ in 0..self.remaining_call_groups {
+            let TypeKind::Function { return_type, .. } = ty else {
+                break;
+            };
+            ty = return_type;
+        }
+        ty
+    }
+
     /// Ordered parameters accepted by the callable.
     pub fn params(&self) -> &[FunctionParam] {
         &self.params
@@ -202,20 +215,73 @@ impl FunctionSignature {
 
     /// Type of this callable when referenced as a first-class function value.
     pub fn function_value_type(&self) -> Option<TypeKind> {
-        self.function_value_type_with_effects(EffectRow::unknown())
+        self.checks_args.then(|| {
+            TypeKind::function(
+                self.params.iter().map(|param| param.ty.clone()),
+                self.return_type.clone(),
+            )
+        })
     }
 
     /// Type of this callable when referenced as a function value with a known
     /// effect row.
     pub fn function_value_type_with_effects(&self, effects: EffectRow) -> Option<TypeKind> {
         self.checks_args.then(|| {
+            let return_type = curried_return_type_with_body_effects(
+                self.return_type.clone(),
+                self.remaining_call_groups,
+                &effects,
+            );
+            let invocation_effects = if self.remaining_call_groups == 0 {
+                effects
+            } else {
+                EffectRow::closed(crate::effects::EffectSet::new())
+            };
             TypeKind::function_with_effects(
                 self.params.iter().map(|param| param.ty.clone()),
-                self.return_type.clone(),
-                effects,
+                return_type,
+                invocation_effects,
             )
         })
     }
+
+    pub(crate) fn with_body_effects(mut self, effects: &EffectRow) -> Self {
+        self.return_type = curried_return_type_with_body_effects(
+            self.return_type,
+            self.remaining_call_groups,
+            effects,
+        );
+        self
+    }
+}
+
+fn curried_return_type_with_body_effects(
+    ty: TypeKind,
+    remaining_call_groups: usize,
+    body_effects: &EffectRow,
+) -> TypeKind {
+    if remaining_call_groups == 0 {
+        return ty;
+    }
+    let TypeKind::Function {
+        params,
+        return_type,
+        ..
+    } = ty
+    else {
+        return ty;
+    };
+    let return_type = curried_return_type_with_body_effects(
+        *return_type,
+        remaining_call_groups.saturating_sub(1),
+        body_effects,
+    );
+    let effects = if remaining_call_groups == 1 {
+        body_effects.clone()
+    } else {
+        EffectRow::closed(crate::effects::EffectSet::new())
+    };
+    TypeKind::function_with_effects(params, return_type, effects)
 }
 
 impl FunctionParam {

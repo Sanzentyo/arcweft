@@ -292,7 +292,7 @@ pub struct HirBorrow {
 /// HIR-facing await-with block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirAwait {
-    pub(crate) expr: Expr,
+    pub(crate) expr: AuthoredExpr,
     pub(crate) applies_try: bool,
     pub(crate) branches: Vec<HirAwaitBranch>,
 }
@@ -862,6 +862,10 @@ impl HirBorrow {
 
 impl HirAwait {
     pub const fn expr(&self) -> &Expr {
+        self.expr.expr()
+    }
+
+    pub const fn expr_authored(&self) -> &AuthoredExpr {
         &self.expr
     }
 

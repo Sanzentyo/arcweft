@@ -1129,17 +1129,24 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     ));
     assert!(source.headers().iter().any(|header| matches!(
         header,
-        SourceHeader::Backpressure(SourceBackpressurePolicy::Latest)
+        SourceHeader::Backpressure {
+            policy: SourceBackpressurePolicy::Latest,
+            ..
+        }
     )));
-    assert!(
-        source
-            .headers()
-            .iter()
-            .any(|header| matches!(header, SourceHeader::Replay(SourceReplayPolicy::HashOnly)))
-    );
     assert!(source.headers().iter().any(|header| matches!(
         header,
-        SourceHeader::Privacy(SourcePrivacyPolicy::Transient)
+        SourceHeader::Replay {
+            policy: SourceReplayPolicy::HashOnly,
+            ..
+        }
+    )));
+    assert!(source.headers().iter().any(|header| matches!(
+        header,
+        SourceHeader::Privacy {
+            policy: SourcePrivacyPolicy::Transient,
+            ..
+        }
     )));
     assert!(source.handlers().iter().any(|handler| matches!(
         handler.event(),
@@ -1242,6 +1249,100 @@ pub source @source.bad: Source<Frame, CaptureError> {
         error
             .message()
             .contains("`privacy = private` is incompatible with `replay = full`")
+    }));
+}
+
+#[test]
+fn typecheck_rejects_duplicate_source_headers() {
+    let tree = parse_ok(
+        r"
+pub source @source.duplicate: Source<Frame, CaptureError> {
+    from capture.camera(@capture.face)
+    backpressure = latest
+    replay = none
+    privacy = transient
+    privacy = recordable
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("duplicate source lowers to HIR");
+
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("duplicate header is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("source header `privacy` may appear only once")
+    }));
+}
+
+#[test]
+fn typecheck_rejects_recovered_and_invalid_source_policy_values() {
+    let tree = parse_ok(
+        r"
+pub source @source.missing_overflow: Source<Frame, CaptureError> {
+    from capture.values()
+    backpressure = bounded(capacity = 1)
+    replay = none
+    privacy = transient
+}
+
+pub source @source.unknown_overflow: Source<Frame, CaptureError> {
+    from capture.values()
+    backpressure = bounded(capacity = 1, overflow = legacy)
+    replay = none
+    privacy = transient
+}
+
+pub source @source.invalid_capacity: Source<Frame, CaptureError> {
+    from capture.values()
+    backpressure = bounded(capacity = 0, overflow = error)
+    replay = legacy_replay
+    privacy = legacy_privacy
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("recovered source policies lower to HIR");
+
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("invalid policies are rejected");
+    for expected in [
+        "bounded source policy requires an `overflow` option",
+        "unknown source overflow policy `legacy`",
+        "bounded source capacity must be greater than zero",
+        "unknown source replay policy `legacy_replay`",
+        "unknown source privacy policy `legacy_privacy`",
+    ] {
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains(expected)),
+            "missing semantic policy diagnostic: {expected}"
+        );
+    }
+}
+
+#[test]
+fn typecheck_rejects_statements_outside_source_handlers() {
+    let tree = parse_ok(
+        r"
+pub source @source.direct: Source<Frame, CaptureError> {
+    from capture.values()
+    backpressure = latest
+    replay = none
+    privacy = transient
+    signal.set(@signal.ready, true)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("direct source statement lowers to HIR");
+
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("direct source statements are rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("source body statements must be inside an `on` handler")
     }));
 }
 

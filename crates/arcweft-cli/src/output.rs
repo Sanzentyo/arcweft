@@ -176,7 +176,7 @@ fn count_stream_yields(op: &StreamOp) -> usize {
             .flat_map(|arm| &arm.ops)
             .map(count_stream_yields)
             .sum(),
-        StreamOp::Let { .. } | StreamOp::Close { .. } | StreamOp::Return | StreamOp::Noop => 0,
+        StreamOp::Let { .. } | StreamOp::Close { .. } | StreamOp::Return => 0,
     }
 }
 

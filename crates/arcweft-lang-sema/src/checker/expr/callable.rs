@@ -125,52 +125,31 @@ impl TypeChecker<'_> {
             && curried_group_params
                 .as_ref()
                 .is_some_and(|group| curried_group_arg_offset + params.len() == group.len());
-        self.record_function_value_effect_call(
-            callee,
-            effect_callable,
-            supplied_arg_count,
-            params.len(),
-        );
         if let Some(curried) = curried_signature_call {
-            let has_next_group_metadata = self
-                .function_signature(&curried.function_name)
-                .and_then(|signature| {
-                    signature.remaining_param_group(curried.remaining_group_index)
-                })
-                .is_some();
-            let mut pending_higher_order_args = curried.pending_higher_order_args.clone();
-            pending_higher_order_args.extend(supplied_higher_order_args);
-            if finishes_curried_group {
-                self.record_pending_curried_higher_order_arg_effect_calls(
-                    &curried.function_name,
-                    &pending_higher_order_args,
-                );
-                self.record_curried_signature_result(
-                    &curried.function_name,
-                    curried.remaining_group_index + 1,
-                    &result_ty,
-                    has_next_group_metadata,
-                    true,
-                );
-            } else if fixed_positional_slots
+            let retains_partial_group = fixed_positional_slots
                 && supplied_arg_count < params.len()
                 && curried_group_params.as_ref().is_some_and(|group| {
                     curried.group_arg_offset + supplied_arg_count < group.len()
                 })
-                && matches!(result_ty, TypeKind::Function { .. })
-            {
-                self.last_checked_curried_signature_call = Some(CurriedSignatureCallValue {
-                    function_name: curried.function_name.clone(),
-                    remaining_group_index: curried.remaining_group_index,
-                    group_arg_offset: curried.group_arg_offset + supplied_arg_count,
-                    pending_higher_order_args,
-                });
-            } else {
-                self.last_checked_curried_signature_call = None;
-            }
+                && matches!(result_ty, TypeKind::Function { .. });
+            self.finish_curried_function_value_call(CurriedCallCompletion {
+                value: curried,
+                result_ty: &result_ty,
+                supplied_arg_count,
+                supplied_higher_order_args,
+                completes_group: finishes_curried_group,
+                retains_partial_group,
+            });
         } else {
+            self.record_function_value_effect_call(
+                callee,
+                effect_callable,
+                supplied_arg_count,
+                params.len(),
+            );
             self.last_checked_curried_signature_call = None;
         }
+        let partial = supplied_arg_count < params.len();
         self.record_typed_lowering_evidence(TypedLoweringEvidence {
             expression_id,
             kind: TypedLoweringEvidenceKind::FunctionValueCall {
@@ -178,9 +157,75 @@ impl TypeChecker<'_> {
                 callee_ty,
                 result_ty: result_ty.clone(),
                 arg_count: args.len(),
+                partial,
             },
         });
         result_ty
+    }
+
+    fn finish_curried_function_value_call(&mut self, completion: CurriedCallCompletion<'_>) {
+        let CurriedCallCompletion {
+            value,
+            result_ty,
+            supplied_arg_count,
+            supplied_higher_order_args,
+            completes_group,
+            retains_partial_group,
+        } = completion;
+        let final_group_timing = self.uses_final_group_effect_timing(&value.function_name);
+        let has_next_group = self
+            .function_signature(&value.function_name)
+            .and_then(|signature| signature.remaining_param_group(value.remaining_group_index))
+            .is_some();
+        let mut pending = value.pending_higher_order_args.clone();
+        pending.extend(supplied_higher_order_args);
+
+        if !final_group_timing {
+            self.check_function_effects(&value.function_name);
+            self.record_pending_curried_higher_order_arg_effect_calls(
+                &value.function_name,
+                &pending,
+            );
+            pending.clear();
+        } else if completes_group && !has_next_group {
+            self.check_function_effects(&value.function_name);
+        }
+
+        if completes_group && has_next_group {
+            self.last_checked_closure_effect_callable =
+                self.source_function_effect_callable(&value.function_name);
+            self.record_curried_signature_result(
+                &value.function_name,
+                value.remaining_group_index + 1,
+                result_ty,
+                true,
+                true,
+                pending,
+            );
+        } else if completes_group {
+            if final_group_timing {
+                self.record_pending_curried_higher_order_arg_effect_calls(
+                    &value.function_name,
+                    &pending,
+                );
+                self.record_function_return_effect_result(&value.function_name, result_ty);
+            } else {
+                self.last_checked_closure_effect_callable = None;
+            }
+            self.last_checked_curried_signature_call = None;
+        } else if retains_partial_group {
+            self.last_checked_closure_effect_callable =
+                self.source_function_effect_callable(&value.function_name);
+            self.last_checked_curried_signature_call = Some(CurriedSignatureCallValue {
+                function_name: value.function_name.clone(),
+                remaining_group_index: value.remaining_group_index,
+                group_arg_offset: value.group_arg_offset + supplied_arg_count,
+                current_group_params: value.current_group_params.clone(),
+                pending_higher_order_args: pending,
+            });
+        } else {
+            self.last_checked_curried_signature_call = None;
+        }
     }
 
     fn remaining_curried_group_params(
@@ -188,11 +233,17 @@ impl TypeChecker<'_> {
         curried_signature_call: Option<&CurriedSignatureCallValue>,
     ) -> Option<Vec<FunctionParam>> {
         curried_signature_call.and_then(|curried| {
-            self.function_signature(&curried.function_name)
-                .and_then(|signature| {
-                    signature.remaining_param_group(curried.remaining_group_index - 1)
-                })
-                .map(<[_]>::to_vec)
+            if let Some(params) = &curried.current_group_params {
+                return Some(params.clone());
+            }
+            let signature = self.function_signature(&curried.function_name)?;
+            if curried.remaining_group_index == 0 {
+                Some(signature.params().to_vec())
+            } else {
+                signature
+                    .remaining_param_group(curried.remaining_group_index - 1)
+                    .map(<[_]>::to_vec)
+            }
         })
     }
 
@@ -347,6 +398,15 @@ struct FunctionValueCallCheck {
     supplied_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
     unsupported_arg_syntax: bool,
     arity_mismatch: bool,
+}
+
+struct CurriedCallCompletion<'a> {
+    value: &'a CurriedSignatureCallValue,
+    result_ty: &'a TypeKind,
+    supplied_arg_count: usize,
+    supplied_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
+    completes_group: bool,
+    retains_partial_group: bool,
 }
 
 struct FunctionValueArgSlots<'a> {

@@ -674,30 +674,6 @@ fn score(base: f64, gain: f64) -> f64 {
     }
 
     #[test]
-    fn pure_function_candidate_rejects_removed_int_alias() {
-        let parsed = parse_source(
-            r"
-#[pure]
-fn score(base: Int) -> i64 {
-    base
-}
-",
-        );
-        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
-        let errors = lower_pure_helper_candidates(&hir)
-            .expect_err("removed Int alias is rejected")
-            .into_iter()
-            .collect::<Vec<_>>();
-        assert!(
-            errors
-                .iter()
-                .any(|err| matches!(err, PureHelperLowerError::UnsupportedParameterType { .. }))
-        );
-    }
-
-    #[test]
     fn lowers_simple_statement_body_pure_helper_candidate() {
         let parsed = parse_source(
             r"

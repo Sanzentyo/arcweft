@@ -102,10 +102,8 @@ separate reviewable commits.
 | 7 | Renderer viewport clipping | Identical action-button/text-control clipping in `render-wgpu/src/geometry`; a second layout-rect conversion is also duplicated | Move geometry conversions to the existing common geometry owner. |
 | 8 | Bundle kind naming | Structured bundle kind and AWFB artifact kind are both named `BundleKind`, forcing aliases and a conversion helper | Directly rename the two concepts (for example, source bundle vs artifact kind) without compatibility aliases; treat as a medium-size slice after the smaller changes. |
 | 9 | Multiple dialogue display frames | `runtime-driver/src/display.rs::resolve_display_frames` collects every dialogue event, but `BundlePresentationSnapshot::update` selects `resolution.frames.last()` | Either enforce a checked single-frame-per-step invariant or preserve all frames with explicit textbox and ordering semantics; never silently discard earlier frames. |
-| 10 | Stream/source unsupported-statement no-ops | `runtime-plan/src/stream.rs::lower_stream_stmt` and `runtime-plan/src/source.rs::lower_source_stmt` use wildcard `StreamOp::Noop` / `SourceOp::Noop` fallbacks after general statement type checking | Make lowering fallible, report structured unsupported-statement diagnostics, and remove fallback no-ops that erase authored behavior. |
-| 11 | Lossy executable-expression lowering | `runtime-plan/src/expr.rs::lower_runtime_expr` converts unsupported expressions to `RuntimeValue::String(expr_label(expr))`; flow/source/stream callers can fall back to it after strict lowering fails | Use checked lowering in every executable position and propagate one structured runtime-plan error contract instead of changing expression meaning. |
-| 12 | Duplicate dialogue content model | `arcweft-dialogue/src/lib.rs` owns `DialogueTag` and `DialogueContent::parse_lossy`, while the compiler uses syntax/HIR/runtime-plan/render-text types | Audit facade consumers, then remove the duplicate or make one model authoritative without conversion wrappers or compatibility aliases. |
-| 13 | Unowned generic text policies | `arcweft-layout::TextOverflowPolicy::Page` is exercised only by layout contract tests; `ViewTextRevealPolicy` and `reveal_policies` are serialized/merged but have no player consumer | Define and implement a genuine generic View owner or remove the unused variants/bindings. Do not reuse them as aliases for dialogue logical-page or reveal state. |
+| 10 | Duplicate dialogue content model | `arcweft-dialogue/src/lib.rs` owns `DialogueTag` and `DialogueContent::parse_lossy`, while the compiler uses syntax/HIR/runtime-plan/render-text types | Audit facade consumers, then remove the duplicate or make one model authoritative without conversion wrappers or compatibility aliases. |
+| 11 | Unowned generic text policies | `arcweft-layout::TextOverflowPolicy::Page` is exercised only by layout contract tests; `ViewTextRevealPolicy` and `reveal_policies` are serialized/merged but have no player consumer | Define and implement a genuine generic View owner or remove the unused variants/bindings. Do not reuse them as aliases for dialogue logical-page or reveal state. |
 
 ## Feature boundary found during dialogue playback cleanup
 
@@ -120,6 +118,31 @@ are recorded in
 Do not turn `LocaleText`, `DebugSymbols`, or other planned resource families
 back into codec variants merely to reserve names. Each joins the runtime
 inventory only when its compact codec and AWFB product path are implemented.
+
+## Completed checked executable-lowering cleanup
+
+The stream/source no-op, executable-expression, and host-request loss
+candidates were completed on 2026-07-10. Stream functions and source handlers
+now lower statement lists fallibly, reject every unsupported statement
+explicitly, and attach structured owner, nested statement path, statement
+kind, expression/pattern role, and retained authored expression range to
+`RuntimePlanLowerError`. A stream final body expression is rejected instead of
+being omitted from the plan. Source policies reject missing, raw, invalid, or
+zero-capacity values instead of manufacturing defaults. Syntax owns the
+single-pass typed header inventory shared by sema and runtime-plan lowering;
+duplicate singular headers fail at the second authored range, missing and
+unknown overflow values remain distinct recovery states, and the runtime-plan
+boundary rechecks the documented private/full replay incompatibility.
+
+Checked source/stream expressions and patterns no longer fall back to string
+payloads; `try` and `await` are rejected by pure-value lowering unless a
+suspension/error-aware statement boundary owns them. The ordinary flow return
+path uses the checked error-recording boundary instead of calling the lossy
+label lowerer after failure. Host-request target and argument lowering is now
+fallible too: a non-call target and an unsupported argument produce typed
+target or capability/operation/argument context rather than synthetic
+`await.expr` data or a stringified payload. Implementation evidence is in
+[Checked executable lowering — 2026-07-10](function-stack-checked-executable-lowering-2026-07-10.md).
 
 ## Validation
 

@@ -121,21 +121,19 @@ pages or the shared player reveal state. Audit their real consumers and either
 implement their generic contract or remove the unused variants/bindings; do not
 map them to dialogue progression merely because the labels look related.
 
-### Silent stream/source no-ops
+### Resolved: silent stream/source no-ops
 
-`arcweft-runtime-plan::stream::lower_stream_stmt` and
-`arcweft-runtime-plan::source::lower_source_stmt` still lower unsupported
-statements to `StreamOp::Noop` / `SourceOp::Noop`. A separate lowering-
-correctness slice should return structured errors and remove silent semantic
-loss, with positive and negative compile tests.
+The checked executable-lowering cut now returns structured errors from stream
+and source statement lowering and removed `StreamOp::Noop` / `SourceOp::Noop`
+from the core model. Evidence and focused negative coverage are recorded in
+[Checked executable lowering — 2026-07-10](function-stack-checked-executable-lowering-2026-07-10.md).
 
-### Lossy runtime-expression fallback
+### Resolved: lossy executable-expression fallback
 
-`arcweft-runtime-plan::expr::lower_runtime_expr` can turn an unsupported
-executable expression into `RuntimeValue::String(expr_label(expr))`, and some
-flow/source/stream callers fall back to it after strict lowering fails. Replace
-those paths with checked lowering and structured diagnostics in a coherent
-runtime-plan slice.
+Source, stream, ordinary flow return, effect, and host-request executable
+positions now use checked lowering and structured diagnostics. The lossy label
+lowerer remains only for explicitly non-executable adapter metadata; it is no
+longer an error fallback for these executable positions.
 
 ### Multiple display frames in one step
 

@@ -1458,14 +1458,20 @@ flow @flow.nested_source_ranges nested_source_ranges {
                 (&judgment.subject, &judgment.ty),
                 (
                     TypeJudgmentSubject::Expr { kind, .. },
-                    TypeKind::I64
+                    TypeKind::Function {
+                        params,
+                        return_type,
+                        ..
+                    }
                 ) if *kind == "call"
+                    && params == &[TypeKind::I64]
+                    && matches!(return_type.as_ref(), TypeKind::I64)
                     && judgment
                         .source_range
                         .is_some_and(|range| &source[range.as_range()] == "add(4i64)")
             )
         }),
-        "pipe RHS call expression should keep the authored RHS range"
+        "data-last pipe RHS partial call should keep its authored RHS range"
     );
     assert!(
         report.judgments.iter().any(|judgment| {

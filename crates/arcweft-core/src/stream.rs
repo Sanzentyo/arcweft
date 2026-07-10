@@ -52,7 +52,6 @@ pub enum StreamOp {
         source: RuntimeExpr,
     },
     Return,
-    Noop,
 }
 
 /// One stream `match` arm.

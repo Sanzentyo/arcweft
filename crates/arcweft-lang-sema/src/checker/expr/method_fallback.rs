@@ -5,13 +5,16 @@ use super::{
     CallArg, Expr, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
-use crate::checker::DataLastMethodFallbackArg;
+use crate::checker::{
+    CurriedSignatureCallValue, DataLastMethodFallbackArg, PendingCurriedHigherOrderArg,
+};
 use crate::diagnostics::TypeCheckWarning;
 use crate::env::FunctionParam;
 
 impl TypeChecker<'_> {
     pub(super) fn check_data_last_method_fallback(
         &mut self,
+        receiver: &Expr,
         receiver_type: &TypeKind,
         method_name: &str,
         args: &[CallArg],
@@ -32,7 +35,10 @@ impl TypeChecker<'_> {
             return Some(TypeKind::Named("_".to_owned()));
         }
         let DataLastMethodFallbackCandidate {
-            signature, shape, ..
+            callable_name,
+            signature,
+            shape,
+            ..
         } = candidates.into_iter().next()?;
         if !signature.checks_args() {
             return None;
@@ -60,12 +66,44 @@ impl TypeChecker<'_> {
             ));
             return Some(TypeKind::Named("_".to_owned()));
         }
-        let arg_order = self.check_data_last_fallback_args(method_name, args, call_params);
-        if shape.invokes_body {
-            self.check_function_effects(method_name);
+        let (arg_order, mut pending_higher_order_args) =
+            self.check_data_last_fallback_args(method_name, args, call_params);
+        if let Some(receiver_param) = shape.receiver_param.as_ref() {
+            pending_higher_order_args.extend(self.higher_order_signature_arg_effect_calls(
+                receiver_param,
+                receiver,
+                Some(receiver_type),
+            ));
         }
-        if shape.applies_returned_function {
-            self.record_function_return_effect_result(method_name, signature.return_type());
+        let final_group_timing = self.uses_final_group_effect_timing(&callable_name);
+        self.last_checked_curried_signature_call = None;
+        if !final_group_timing {
+            self.check_function_effects(&callable_name);
+            self.record_pending_curried_higher_order_arg_effect_calls(
+                &callable_name,
+                &pending_higher_order_args,
+            );
+            pending_higher_order_args.clear();
+        } else if shape.invokes_body {
+            self.check_function_effects(&callable_name);
+            self.record_pending_curried_higher_order_arg_effect_calls(
+                &callable_name,
+                &pending_higher_order_args,
+            );
+        }
+        if let Some(stage) = shape.curried_stage {
+            self.last_checked_closure_effect_callable =
+                self.source_function_effect_callable(&callable_name);
+            self.last_checked_curried_signature_call = Some(CurriedSignatureCallValue {
+                function_name: callable_name.clone(),
+                remaining_group_index: stage.remaining_group_index,
+                group_arg_offset: stage.group_arg_offset,
+                current_group_params: None,
+                pending_higher_order_args,
+            });
+        }
+        if final_group_timing && shape.applies_returned_function {
+            self.record_function_return_effect_result(&callable_name, signature.return_type());
             let effect_callable = self.last_checked_closure_effect_callable.take();
             let returned_arity = signature.return_type().function_arity().unwrap_or_default();
             self.record_function_value_effect_call(None, effect_callable, 1, returned_arity);
@@ -123,13 +161,15 @@ impl TypeChecker<'_> {
         // a function alias retains the source signature's parameter groups and
         // names through `local_callable_signatures`.
         if self.locals.contains_key(method_name) {
-            if let Some(signature) = self.local_callable_signatures.get(method_name).cloned()
-                && let Some(shape) = self.data_last_fallback_shape(receiver_type, &signature, args)
+            if let Some(binding) = self.local_callable_signatures.get(method_name).cloned()
+                && let Some(shape) =
+                    self.data_last_fallback_shape(receiver_type, &binding.signature, args)
             {
                 candidates.push(DataLastMethodFallbackCandidate::new(
                     "local",
                     method_name,
-                    signature,
+                    binding.source_name,
+                    binding.signature,
                     shape,
                 ));
             }
@@ -140,6 +180,7 @@ impl TypeChecker<'_> {
         {
             candidates.push(DataLastMethodFallbackCandidate::new(
                 "module",
+                method_name,
                 method_name,
                 signature,
                 shape,
@@ -153,6 +194,7 @@ impl TypeChecker<'_> {
         {
             candidates.push(DataLastMethodFallbackCandidate::new(
                 "environment",
+                method_name,
                 method_name,
                 signature,
                 shape,
@@ -187,13 +229,19 @@ impl TypeChecker<'_> {
         if signature.params().len() == supplied_arg_count + 1 {
             let receiver = signature.params().last()?;
             if self.types_compatible(receiver.ty(), receiver_type) {
+                let has_remaining_groups = signature.remaining_call_groups() != 0;
                 return Some(DataLastFallbackShape {
                     call_param_count: supplied_arg_count,
                     receiver_type: receiver.ty().clone(),
+                    receiver_param: Some(receiver.clone()),
                     receiver_label: receiver.name().unwrap_or("#receiver").to_owned(),
                     result_type: signature.return_type().clone(),
-                    invokes_body: true,
+                    invokes_body: !has_remaining_groups,
                     applies_returned_function: false,
+                    curried_stage: has_remaining_groups.then_some(DataLastCurriedStage {
+                        remaining_group_index: 1,
+                        group_arg_offset: 0,
+                    }),
                 });
             }
         }
@@ -202,17 +250,37 @@ impl TypeChecker<'_> {
         }
         let (receiver_type_expected, result_type) =
             apply_one_function_argument(signature.return_type())?;
-        let returned_function = signature.remaining_call_groups() == 0;
-        let completes_next_group = signature.remaining_call_groups() == 1
-            && signature.return_type().function_arity() == Some(1);
+        let remaining_call_groups = signature.remaining_call_groups();
+        let receiver_param = signature
+            .remaining_param_group(0)
+            .and_then(|group| group.first())
+            .cloned();
+        let returned_function = remaining_call_groups == 0;
+        let next_group_arity = signature.return_type().function_arity()?;
+        let completes_next_group = remaining_call_groups == 1 && next_group_arity == 1;
+        let curried_stage = if remaining_call_groups == 0 || completes_next_group {
+            None
+        } else if next_group_arity == 1 {
+            Some(DataLastCurriedStage {
+                remaining_group_index: 2,
+                group_arg_offset: 0,
+            })
+        } else {
+            Some(DataLastCurriedStage {
+                remaining_group_index: 1,
+                group_arg_offset: 1,
+            })
+        };
         self.types_compatible(&receiver_type_expected, receiver_type)
             .then_some(DataLastFallbackShape {
                 call_param_count: signature.params().len(),
                 receiver_type: receiver_type_expected,
+                receiver_param,
                 receiver_label: "#receiver".to_owned(),
                 result_type,
                 invokes_body: returned_function || completes_next_group,
                 applies_returned_function: returned_function,
+                curried_stage,
             })
     }
 
@@ -221,9 +289,11 @@ impl TypeChecker<'_> {
         method_name: &str,
         args: &[CallArg],
         call_params: &[FunctionParam],
-    ) -> Vec<DataLastMethodFallbackArg> {
-        let mut provided = vec![None; call_params.len()];
-        let mut positional_index = 0usize;
+    ) -> (
+        Vec<DataLastMethodFallbackArg>,
+        Vec<PendingCurriedHigherOrderArg>,
+    ) {
+        let mut state = DataLastArgCheckState::new(call_params.len());
 
         for (arg_index, arg) in args.iter().enumerate() {
             match arg {
@@ -233,8 +303,7 @@ impl TypeChecker<'_> {
                         arg_index,
                         value,
                         call_params,
-                        &mut provided,
-                        &mut positional_index,
+                        &mut state,
                     );
                 }
                 CallArg::Named { name, value } => {
@@ -244,7 +313,7 @@ impl TypeChecker<'_> {
                         name,
                         value,
                         call_params,
-                        &mut provided,
+                        &mut state,
                     );
                 }
                 CallArg::Spread { value } => {
@@ -253,15 +322,14 @@ impl TypeChecker<'_> {
                         arg_index,
                         value,
                         call_params,
-                        &mut provided,
-                        &mut positional_index,
+                        &mut state,
                     );
                 }
             }
         }
 
         for (index, param) in call_params.iter().enumerate() {
-            if provided[index].is_none() && !param.has_default() {
+            if state.provided[index].is_none() && !param.has_default() {
                 let label = param
                     .name()
                     .map_or_else(|| format!("#{index}"), ToOwned::to_owned);
@@ -271,7 +339,8 @@ impl TypeChecker<'_> {
             }
         }
 
-        provided
+        let arg_order = state
+            .provided
             .into_iter()
             .filter_map(|provided| match provided {
                 Some(ProvidedDataLastArg::Source { arg_index }) => {
@@ -280,7 +349,8 @@ impl TypeChecker<'_> {
                 Some(ProvidedDataLastArg::SpreadTail) | None => None,
             })
             .chain(std::iter::once(DataLastMethodFallbackArg::Receiver))
-            .collect()
+            .collect();
+        (arg_order, state.pending_higher_order_args)
     }
 
     fn check_data_last_positional_fallback_arg(
@@ -289,31 +359,29 @@ impl TypeChecker<'_> {
         arg_index: usize,
         value: &Expr,
         call_params: &[FunctionParam],
-        provided: &mut [Option<ProvidedDataLastArg>],
-        positional_index: &mut usize,
+        state: &mut DataLastArgCheckState,
     ) {
-        while *positional_index < provided.len() && provided[*positional_index].is_some() {
-            *positional_index += 1;
+        while state.positional_index < state.provided.len()
+            && state.provided[state.positional_index].is_some()
+        {
+            state.positional_index += 1;
         }
-        let Some(param) = call_params.get(*positional_index) else {
+        let Some(param) = call_params.get(state.positional_index) else {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{method_name}` received too many positional arguments"
             )));
             self.check_expr(value);
             return;
         };
-        provided[*positional_index] = Some(ProvidedDataLastArg::Source { arg_index });
+        state.provided[state.positional_index] = Some(ProvidedDataLastArg::Source { arg_index });
         let label = param
             .name()
-            .map_or_else(|| format!("#{}", *positional_index), ToOwned::to_owned);
-        *positional_index += 1;
+            .map_or_else(|| format!("#{}", state.positional_index), ToOwned::to_owned);
+        state.positional_index += 1;
         let actual = self.expect_signature_arg_type(method_name, &label, value, param.ty());
-        self.record_pending_higher_order_signature_arg_effect_call(
-            method_name,
-            param,
-            value,
-            actual.as_ref(),
-        );
+        state
+            .pending_higher_order_args
+            .extend(self.higher_order_signature_arg_effect_calls(param, value, actual.as_ref()));
     }
 
     fn check_data_last_named_fallback_arg(
@@ -323,7 +391,7 @@ impl TypeChecker<'_> {
         name: &str,
         value: &Expr,
         call_params: &[FunctionParam],
-        provided: &mut [Option<ProvidedDataLastArg>],
+        state: &mut DataLastArgCheckState,
     ) {
         let Some(index) = call_params
             .iter()
@@ -335,20 +403,21 @@ impl TypeChecker<'_> {
             self.check_expr(value);
             return;
         };
-        if provided[index].is_some() {
+        if state.provided[index].is_some() {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{method_name}` argument `{name}` was provided more than once"
             )));
         }
-        provided[index] = Some(ProvidedDataLastArg::Source { arg_index });
+        state.provided[index] = Some(ProvidedDataLastArg::Source { arg_index });
         let actual =
             self.expect_signature_arg_type(method_name, name, value, call_params[index].ty());
-        self.record_pending_higher_order_signature_arg_effect_call(
-            method_name,
-            &call_params[index],
-            value,
-            actual.as_ref(),
-        );
+        state
+            .pending_higher_order_args
+            .extend(self.higher_order_signature_arg_effect_calls(
+                &call_params[index],
+                value,
+                actual.as_ref(),
+            ));
     }
 
     fn check_data_last_spread_fallback_arg(
@@ -357,8 +426,7 @@ impl TypeChecker<'_> {
         arg_index: usize,
         value: &Expr,
         call_params: &[FunctionParam],
-        provided: &mut [Option<ProvidedDataLastArg>],
-        positional_index: &mut usize,
+        state: &mut DataLastArgCheckState,
     ) {
         let Some(slots) = fixed_literal_spread_slots(value) else {
             self.check_expr(value);
@@ -367,17 +435,19 @@ impl TypeChecker<'_> {
         self.reserve_fixed_literal_spread_container_expr(value);
         let mut first_slot = true;
         for slot_value in slots {
-            while *positional_index < provided.len() && provided[*positional_index].is_some() {
-                *positional_index += 1;
+            while state.positional_index < state.provided.len()
+                && state.provided[state.positional_index].is_some()
+            {
+                state.positional_index += 1;
             }
-            let Some(param) = call_params.get(*positional_index) else {
+            let Some(param) = call_params.get(state.positional_index) else {
                 self.errors.push(TypeCheckError::new(format!(
                     "function `{method_name}` received too many spread arguments"
                 )));
                 self.check_fixed_literal_spread_slot(slot_value, None);
                 continue;
             };
-            provided[*positional_index] = Some(if first_slot {
+            state.provided[state.positional_index] = Some(if first_slot {
                 first_slot = false;
                 ProvidedDataLastArg::Source { arg_index }
             } else {
@@ -385,8 +455,8 @@ impl TypeChecker<'_> {
             });
             let label = param
                 .name()
-                .map_or_else(|| format!("#{}", *positional_index), ToOwned::to_owned);
-            *positional_index += 1;
+                .map_or_else(|| format!("#{}", state.positional_index), ToOwned::to_owned);
+            state.positional_index += 1;
             let actual = self.check_fixed_literal_spread_slot(slot_value, Some(param.ty()));
             if let Some(actual) = actual.as_ref()
                 && !self.types_compatible(param.ty(), actual)
@@ -399,11 +469,8 @@ impl TypeChecker<'_> {
                 ));
             }
             if let Some(expr) = slot_value.source_expr() {
-                self.record_pending_higher_order_signature_arg_effect_call(
-                    method_name,
-                    param,
-                    expr,
-                    actual.as_ref(),
+                state.pending_higher_order_args.extend(
+                    self.higher_order_signature_arg_effect_calls(param, expr, actual.as_ref()),
                 );
             }
         }
@@ -416,8 +483,25 @@ enum ProvidedDataLastArg {
     SpreadTail,
 }
 
+struct DataLastArgCheckState {
+    provided: Vec<Option<ProvidedDataLastArg>>,
+    positional_index: usize,
+    pending_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
+}
+
+impl DataLastArgCheckState {
+    fn new(param_count: usize) -> Self {
+        Self {
+            provided: vec![None; param_count],
+            positional_index: 0,
+            pending_higher_order_args: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct DataLastMethodFallbackCandidate {
+    callable_name: String,
     signature: FunctionSignature,
     shape: DataLastFallbackShape,
     label: String,
@@ -427,6 +511,7 @@ impl DataLastMethodFallbackCandidate {
     fn new(
         source: &str,
         method_name: &str,
+        callable_name: impl Into<String>,
         signature: FunctionSignature,
         shape: DataLastFallbackShape,
     ) -> Self {
@@ -435,6 +520,7 @@ impl DataLastMethodFallbackCandidate {
             function_signature_label(&signature)
         );
         Self {
+            callable_name: callable_name.into(),
             signature,
             shape,
             label,
@@ -446,10 +532,18 @@ impl DataLastMethodFallbackCandidate {
 struct DataLastFallbackShape {
     call_param_count: usize,
     receiver_type: TypeKind,
+    receiver_param: Option<FunctionParam>,
     receiver_label: String,
     result_type: TypeKind,
     invokes_body: bool,
     applies_returned_function: bool,
+    curried_stage: Option<DataLastCurriedStage>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DataLastCurriedStage {
+    remaining_group_index: usize,
+    group_arg_offset: usize,
 }
 
 fn function_first_param(ty: &TypeKind) -> Option<&TypeKind> {

@@ -1,5 +1,10 @@
 # Current Work Status - 2026-07-09
 
+> Historical snapshot: the function-stack entry point is now
+> `docs/implementation/function-stack-final-state-2026-07-10.md`. Later commits
+> completed the AWBC apply/snapshot work, the spread contract, numeric and pipe
+> semantics, and the ordinary-function/closure effect-row model.
+
 This note is the current repository map after the latest pushed function-stack
 slice and the current status cleanup. It supersedes the operational pointers in
 `docs/implementation/current-work-status-2026-07-08.md` without rewriting that

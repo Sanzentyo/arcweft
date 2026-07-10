@@ -14,60 +14,25 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> TypeKind {
-        let expected_function = match expected {
-            Some(TypeKind::Function {
-                params,
-                return_type,
-                effects,
-            }) => Some((params.as_slice(), return_type.as_ref(), effects)),
-            _ => None,
-        };
-        if let Some((expected_params, _, _)) = expected_function
-            && expected_params.len() != params.len()
-        {
-            self.errors.push(TypeCheckError::new(format!(
-                "closure expected {} parameter(s), found {}",
-                expected_params.len(),
-                params.len()
-            )));
-        }
-
-        let mut bindings = Vec::new();
-        let mut function_params = Vec::new();
-        for (index, param) in params.iter().enumerate() {
-            let expected_param = expected_function.and_then(|(params, _, _)| params.get(index));
-            let ty = param
-                .ty()
-                .map(type_ref_kind)
-                .or_else(|| expected_param.cloned())
-                .unwrap_or(TypeKind::I64);
-            if let Some(expected_param) = expected_param
-                && !self.types_compatible(expected_param, &ty)
-            {
-                let label = closure_param_label(param);
-                self.errors.push(TypeCheckError::new(format!(
-                    "closure parameter `{label}` expects {}, but expected function parameter is {}",
-                    type_kind_label(&ty),
-                    type_kind_label(expected_param)
-                )));
-            }
-            bindings.extend(pattern_bindings_with_fallback(param.pattern(), &ty));
-            function_params.push(ty);
-        }
+        let expected_function = ExpectedClosureType::from_type(expected);
+        let ClosureParams {
+            bindings,
+            function_params,
+        } = self.check_closure_params(params, expected_function);
         self.push_closure_capture_frame(
             expression_id,
             bindings.iter().map(|(name, _)| name.clone()),
         );
-        let expected_effects = expected_function.map(|(_, _, effects)| effects);
+        let expected_effects = expected_function.map(|expected| expected.effects);
         let expected_effect_bound = expected_effects.and_then(closed_effect_row);
-        let (closure_effect_callable, previous_effect_callable) =
+        let (closure_effect_callable, inferred_effects, previous_effect_callable) =
             self.enter_closure_effect_callable(expression_id, expected_effect_bound);
         let local_snapshot = self.insert_scoped_locals(bindings);
         let declared_return_type = declared_return_type.map(type_ref_kind);
         let inferred_return_type = declared_return_type.is_none()
-            && expected_function.is_none_or(|(_, return_type, _)| is_unknown_type(return_type));
+            && expected_function.is_none_or(|expected| is_unknown_type(expected.return_type));
         if let (Some(expected_return), Some(declared_return_type)) = (
-            expected_function.map(|(_, return_type, _)| return_type),
+            expected_function.map(|expected| expected.return_type),
             declared_return_type.as_ref(),
         ) && !self.types_compatible(expected_return, declared_return_type)
         {
@@ -79,7 +44,7 @@ impl TypeChecker<'_> {
         }
         let expected_return = declared_return_type
             .as_ref()
-            .or_else(|| expected_function.map(|(_, return_type, _)| return_type));
+            .or_else(|| expected_function.map(|expected| expected.return_type));
         self.expected_returns.push(expected_return.cloned());
         self.push_closure_inference_context(inferred_return_type);
         let body_type = self.check_expr_with_expected(body, expected_return);
@@ -112,8 +77,54 @@ impl TypeChecker<'_> {
         TypeKind::function_with_effects(
             function_params,
             return_type,
-            expected_effects.cloned().unwrap_or_else(EffectRow::unknown),
+            expected_effects
+                .filter(|effects| effects.is_known())
+                .cloned()
+                .unwrap_or(inferred_effects),
         )
+    }
+
+    fn check_closure_params(
+        &mut self,
+        params: &[ClosureParam],
+        expected: Option<ExpectedClosureType<'_>>,
+    ) -> ClosureParams {
+        if let Some(expected) = expected
+            && expected.params.len() != params.len()
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "closure expected {} parameter(s), found {}",
+                expected.params.len(),
+                params.len()
+            )));
+        }
+
+        let mut bindings = Vec::new();
+        let mut function_params = Vec::new();
+        for (index, param) in params.iter().enumerate() {
+            let expected_param = expected.and_then(|expected| expected.params.get(index));
+            let ty = param
+                .ty()
+                .map(type_ref_kind)
+                .or_else(|| expected_param.cloned())
+                .unwrap_or(TypeKind::I64);
+            if let Some(expected_param) = expected_param
+                && !self.types_compatible(expected_param, &ty)
+            {
+                let label = closure_param_label(param);
+                self.errors.push(TypeCheckError::new(format!(
+                    "closure parameter `{label}` expects {}, but expected function parameter is {}",
+                    type_kind_label(&ty),
+                    type_kind_label(expected_param)
+                )));
+            }
+            bindings.extend(pattern_bindings_with_fallback(param.pattern(), &ty));
+            function_params.push(ty);
+        }
+        ClosureParams {
+            bindings,
+            function_params,
+        }
     }
 
     pub(super) fn check_vec_map_method_call(
@@ -270,6 +281,36 @@ impl TypeChecker<'_> {
         }
         result
     }
+}
+
+#[derive(Clone, Copy)]
+struct ExpectedClosureType<'a> {
+    params: &'a [TypeKind],
+    return_type: &'a TypeKind,
+    effects: &'a EffectRow,
+}
+
+impl<'a> ExpectedClosureType<'a> {
+    fn from_type(ty: Option<&'a TypeKind>) -> Option<Self> {
+        let Some(TypeKind::Function {
+            params,
+            return_type,
+            effects,
+        }) = ty
+        else {
+            return None;
+        };
+        Some(Self {
+            params,
+            return_type,
+            effects,
+        })
+    }
+}
+
+struct ClosureParams {
+    bindings: Vec<(String, TypeKind)>,
+    function_params: Vec<TypeKind>,
 }
 
 fn is_unknown_type(ty: &TypeKind) -> bool {

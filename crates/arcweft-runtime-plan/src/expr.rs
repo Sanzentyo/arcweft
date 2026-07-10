@@ -1,18 +1,11 @@
 //! Runtime expression and effect-call lowering.
 
 use crate::function_values::RuntimeFunctionValueCandidate;
-use crate::labels::{
-    call_arg_label, duration_expr, entity_ref_label, expr_label, literal_label, named_arg_label,
-    named_arg_value,
-};
+use crate::labels::{call_arg_label, duration_expr, entity_ref_label, expr_label, literal_label};
 use crate::pattern::lower_runtime_pattern;
 use crate::typed_evidence::{
     RuntimeDataLastMethodFallbackArg, RuntimeNumericType, RuntimeTypedExpressionId,
     RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceLookup,
-};
-use arcweft_core::effect::{
-    LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
-    RuntimeEvent, RuntimeField, RuntimeLog,
 };
 use arcweft_core::plan::{RuntimePureHelper, RuntimePureHelperId};
 use arcweft_core::value::{
@@ -34,9 +27,13 @@ use arcweft_lang_hir::syntax::{
 use std::{cell::Cell, collections::BTreeMap, sync::LazyLock};
 
 pub(crate) mod desugar;
+mod effect;
 mod enum_constructor;
 mod named_callable;
 use desugar::{expr_contains_partial_placeholder, substitute_partial_placeholder};
+pub(crate) use effect::{
+    LoweredRuntimeEffect, lower_runtime_effect_strict_with_pure, runtime_call_effect,
+};
 use enum_constructor::{lower_constructor_call, lower_expected_enum_record_constructor};
 use named_callable::{
     PureHelperNamedCallLowering, lower_strict_function_value_named_call,
@@ -224,6 +221,19 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
         expression_id.is_some_and(|expression_id| {
             self.typed_lowering_evidence.is_some_and(|evidence| {
                 evidence.has_function_value_call(expression_id, callee, arg_count)
+            })
+        })
+    }
+
+    fn has_partial_function_value_call_evidence(
+        self,
+        expression_id: Option<RuntimeTypedExpressionId>,
+        callee: Option<&str>,
+        arg_count: usize,
+    ) -> bool {
+        expression_id.is_some_and(|expression_id| {
+            self.typed_lowering_evidence.is_some_and(|evidence| {
+                evidence.has_partial_function_value_call(expression_id, callee, arg_count)
             })
         })
     }
@@ -514,10 +524,9 @@ fn lower_runtime_expr_strict_with_helpers(
         Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers, expression_id),
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
-        Expr::Try { expr } | Expr::Await { expr, .. } => {
-            lower_runtime_expr_strict_with_helpers(expr, helpers)
-        }
-        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers),
+        Expr::Try { .. } => unsupported_runtime_control_value(RuntimeControlValue::Try),
+        Expr::Await { .. } => unsupported_runtime_control_value(RuntimeControlValue::Await),
+        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers, expression_id),
         Expr::Placeholder(Placeholder::PipeLeft) => helpers
             .and_then(RuntimePureHelperLookup::pipe_binding_name)
             .map(RuntimeExpr::Local)
@@ -781,7 +790,7 @@ fn lower_data_last_fallback_first_stage(
 }
 
 fn lower_runtime_pipe_expr(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
-    lower_runtime_pipe_expr_strict(lhs, rhs, Some(empty_runtime_lookup()))
+    lower_runtime_pipe_expr_strict(lhs, rhs, Some(empty_runtime_lookup()), None)
         .unwrap_or_else(|error| RuntimeExpr::Value(RuntimeValue::String(error)))
 }
 
@@ -789,6 +798,7 @@ fn lower_runtime_pipe_expr_strict(
     lhs: &Expr,
     rhs: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
     if rhs.contains_pipe_left() {
         let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
@@ -805,6 +815,8 @@ fn lower_runtime_pipe_expr_strict(
             body: Box::new(body),
         });
     }
+
+    reject_data_last_path_partial_without_runtime_candidate(rhs, helpers, expression_id)?;
 
     // Reserve the outer binding before constructing the RHS. Nested pipes in a
     // returned closure then receive a deeper impossible-to-author name instead
@@ -1496,11 +1508,33 @@ fn reject_signature_partial_without_helper(
             && helpers.helper(callee).is_none()
             && helpers.function_value_candidate(callee).is_none()
     }) {
-        return Err(format!(
-            "unsupported callable family `signature_partial_without_helper`: function `{callee}` partial application requires executable helper lowering; effectful, suspending, ABI-backed, or otherwise non-helper top-level callable allocation is not implemented"
-        ));
+        return Err(unsupported_signature_partial(callee));
     }
     Ok(())
+}
+
+fn reject_data_last_path_partial_without_runtime_candidate(
+    rhs: &Expr,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
+) -> Result<(), String> {
+    let Expr::Path(path) = rhs else {
+        return Ok(());
+    };
+    let callee = path.as_label();
+    if helpers.is_some_and(|helpers| {
+        helpers.has_partial_function_value_call_evidence(expression_id, None, 1)
+            && helpers.value_expr(callee).is_none()
+    }) {
+        return Err(unsupported_signature_partial(callee));
+    }
+    Ok(())
+}
+
+fn unsupported_signature_partial(callee: &str) -> String {
+    format!(
+        "unsupported callable family `signature_partial_without_helper`: function `{callee}` partial application requires executable helper lowering; effectful, suspending, ABI-backed, or otherwise non-helper top-level callable allocation is not implemented"
+    )
 }
 
 fn lower_strict_named_callee_args(
@@ -1790,6 +1824,24 @@ fn unsupported_strict_runtime_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
         "unsupported runtime value expression `{}`",
         expr_label(expr)
     ))
+}
+
+#[derive(Clone, Copy)]
+enum RuntimeControlValue {
+    Try,
+    Await,
+}
+
+fn unsupported_runtime_control_value(value: RuntimeControlValue) -> Result<RuntimeExpr, String> {
+    let message = match value {
+        RuntimeControlValue::Try => {
+            "try expression requires a runtime error-propagation boundary and cannot lower as a pure value"
+        }
+        RuntimeControlValue::Await => {
+            "await expression requires suspension-aware statement lowering and cannot lower as a pure value"
+        }
+    };
+    Err(message.to_owned())
 }
 
 fn lower_dialogue_call_value(
@@ -2261,136 +2313,6 @@ fn lower_runtime_binary_op(op: BinaryOp) -> Option<RuntimeBinaryOp> {
         BinaryOp::And => RuntimeBinaryOp::And,
         BinaryOp::Or => RuntimeBinaryOp::Or,
         BinaryOp::Implies | BinaryOp::In | BinaryOp::Merge | BinaryOp::Rem => return None,
-    })
-}
-
-fn runtime_call(expr: &Expr) -> RuntimeCall {
-    match expr {
-        Expr::Call { callee, args } => RuntimeCall {
-            callee: expr_label(callee),
-            args: args.iter().map(call_arg_label).collect(),
-        },
-        Expr::Path(path) => RuntimeCall {
-            callee: path.as_label().to_owned(),
-            args: Vec::new(),
-        },
-        Expr::ShortVariant(name) => RuntimeCall {
-            callee: format!(".{name}"),
-            args: Vec::new(),
-        },
-        other => RuntimeCall {
-            callee: expr_label(other),
-            args: Vec::new(),
-        },
-    }
-}
-
-/// Lowers ordinary call syntax into the canonical runtime effect request when
-/// the callee names a built-in effect namespace such as `log.info`.
-pub(crate) fn runtime_call_effect(expr: &Expr) -> LineEffectRequest {
-    if let Some(effect) = crate::audio::lower_audio_call(expr) {
-        return effect;
-    }
-    let call = runtime_call(expr);
-    if let Some(effect) = runtime_control_call(&call) {
-        return effect;
-    }
-    if let Some(log) = runtime_log_call(&call) {
-        return LineEffectRequest::Log(log);
-    }
-    if let Some(write) = runtime_assignment_call(&call, "signal.set") {
-        return LineEffectRequest::SignalWrite(write);
-    }
-    if let Some(write) = runtime_assignment_call(&call, "metric.set") {
-        return LineEffectRequest::MetricWrite(write);
-    }
-    if let Some(event) = runtime_event_call(&call) {
-        return LineEffectRequest::EmitEvent(event);
-    }
-    LineEffectRequest::Call(call)
-}
-
-fn runtime_control_call(call: &RuntimeCall) -> Option<LineEffectRequest> {
-    match call.callee.as_str() {
-        "panic" => Some(LineEffectRequest::Panic(
-            call.args.first().cloned().unwrap_or_default(),
-        )),
-        "fail" => Some(LineEffectRequest::Fail(
-            call.args.first().cloned().unwrap_or_default(),
-        )),
-        "bail" => Some(LineEffectRequest::Bail(
-            call.args.first().cloned().unwrap_or_default(),
-        )),
-        "ensure" => Some(LineEffectRequest::Ensure {
-            condition: call.args.first().cloned().unwrap_or_default(),
-            message: call.args.get(1).cloned().unwrap_or_default(),
-        }),
-        "assert" => Some(LineEffectRequest::Assert(runtime_assertion(
-            call,
-            RuntimeAssertionProfile::Always,
-        ))),
-        "debug_assert" => Some(LineEffectRequest::Assert(runtime_assertion(
-            call,
-            RuntimeAssertionProfile::DebugOnly,
-        ))),
-        _ => None,
-    }
-}
-
-fn runtime_assertion(call: &RuntimeCall, profile: RuntimeAssertionProfile) -> RuntimeAssertion {
-    RuntimeAssertion {
-        condition: call.args.first().cloned().unwrap_or_default(),
-        message: call
-            .args
-            .get(1)
-            .cloned()
-            .unwrap_or_else(|| "assertion failed".to_owned()),
-        profile,
-    }
-}
-
-fn runtime_log_call(call: &RuntimeCall) -> Option<RuntimeLog> {
-    let level = call.callee.strip_prefix("log.")?;
-    let (message, rest) = call.args.split_first()?;
-    Some(RuntimeLog {
-        level: level.to_owned(),
-        message: message.trim_matches('"').to_owned(),
-        fields: rest
-            .iter()
-            .enumerate()
-            .map(|(idx, value)| RuntimeField {
-                name: named_arg_label(value).unwrap_or_else(|| format!("arg{idx}")),
-                value: named_arg_value(value).unwrap_or_else(|| (*value).clone()),
-            })
-            .collect(),
-    })
-}
-
-fn runtime_assignment_call(call: &RuntimeCall, callee: &str) -> Option<RuntimeAssignment> {
-    if call.callee != callee || call.args.len() < 2 {
-        return None;
-    }
-    Some(RuntimeAssignment {
-        target: call.args[0].clone(),
-        value: call.args[1].clone(),
-    })
-}
-
-fn runtime_event_call(call: &RuntimeCall) -> Option<RuntimeEvent> {
-    if call.callee != "event.emit" {
-        return None;
-    }
-    let (event, rest) = call.args.split_first()?;
-    Some(RuntimeEvent {
-        event: event.clone(),
-        fields: rest
-            .iter()
-            .enumerate()
-            .map(|(idx, value)| RuntimeField {
-                name: named_arg_label(value).unwrap_or_else(|| format!("arg{idx}")),
-                value: named_arg_value(value).unwrap_or_else(|| (*value).clone()),
-            })
-            .collect(),
     })
 }
 

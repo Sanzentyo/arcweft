@@ -265,9 +265,6 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 }
             }
             StreamOp::Return => {}
-            StreamOp::Noop => {
-                self.inventory.push_instruction(AwbcInstruction::Nop);
-            }
         }
     }
 
@@ -300,8 +297,7 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 StreamOp::Let { .. }
                 | StreamOp::Yield { .. }
                 | StreamOp::Close { .. }
-                | StreamOp::Return
-                | StreamOp::Noop => {}
+                | StreamOp::Return => {}
             }
         }
     }
@@ -433,6 +429,18 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                         args: Vec::new(),
                     });
             }
+            SourceOp::EvaluatedEffect(effect) => {
+                let args = effect
+                    .argument_exprs()
+                    .into_iter()
+                    .map(|expr| {
+                        AwbcExprLowerer::new(self.inventory, frame, "source.effect").lower(expr)
+                    })
+                    .collect();
+                let effect = self.inventory.intern_evaluated_effect(effect);
+                self.inventory
+                    .push_instruction(AwbcInstruction::EmitEffect { effect, args });
+            }
             SourceOp::SignalWrite(write) => {
                 let effect = self.inventory.intern_effect(
                     &arcweft_core::effect::LineEffectRequest::SignalWrite(write.clone()),
@@ -464,9 +472,6 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                         format!("unknown source plan '{}'", source.0),
                     ));
                 }
-            }
-            SourceOp::Noop => {
-                self.inventory.push_instruction(AwbcInstruction::Nop);
             }
         }
     }

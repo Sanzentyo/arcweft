@@ -5,6 +5,7 @@ use arcweft_bundle::{
     patch::{BundlePatchArtifact, encode_patch_bundle},
 };
 use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_core::effect::RuntimeEffectExpr;
 use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
@@ -1494,6 +1495,16 @@ fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
             "asset.view.logo".to_owned()
         ]
     );
+}
+
+#[test]
+fn evaluated_builtin_effects_are_not_host_tasks_or_static_image_calls() {
+    let plan = plan_with_ops(vec![FlowOp::EvaluatedEffect(RuntimeEffectExpr::Panic(
+        RuntimeExpr::EntityRef("asset.bg.room".to_owned()),
+    ))]);
+
+    assert!(bundle_required_host_calls(&plan).is_empty());
+    assert!(static_image_asset_refs(&plan, &BTreeMap::new()).is_empty());
 }
 
 #[test]

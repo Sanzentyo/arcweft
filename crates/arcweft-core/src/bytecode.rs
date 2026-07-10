@@ -442,6 +442,7 @@ fn verify_flow_op(
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
         | FlowOp::Effect(_)
+        | FlowOp::EvaluatedEffect(_)
         | FlowOp::RegisterCleanup { .. }
         | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope

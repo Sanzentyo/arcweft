@@ -1,10 +1,11 @@
+use super::headers::slice_offset;
 use super::{
     CstLine, FlowItem, ParseError, Parser, RecoverySuggestion, SourceAnchor, SourceName, Stmt,
     SyntaxParseStats, TextRange, find_matching_punctuation, indentation, parse_expr_lossy,
     parse_pattern, parse_stmt, source_line_iter, split_top_level_binding,
     split_top_level_keyword_once,
 };
-use crate::ast::flow::{AwaitBranch, AwaitBranchKind, AwaitWith};
+use crate::ast::flow::{AuthoredExpr, AwaitBranch, AwaitBranchKind, AwaitWith};
 use crate::cst::{
     ArcweftPunctuation, nonempty_trimmed_source_lines, source_line_count,
     split_top_level_arcweft_punctuation_once,
@@ -20,13 +21,19 @@ impl Parser<'_> {
     pub(super) fn parse_let_await_with(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
         let trimmed = start_line.text.trim();
-        let range = TextRange::new(start_line.start, start_line.end);
+        let line_range = TextRange::new(start_line.start, start_line.end);
+        let authored_rest = trimmed.strip_prefix("let")?.trim();
+        let (_, authored_await_head) = split_top_level_binding(authored_rest)?;
+        let authored_await_head = authored_await_head.trim();
+        let authored_start = start_line.start + slice_offset(&start_line.text, authored_await_head);
+        let authored_range =
+            TextRange::new(authored_start, authored_start + authored_await_head.len());
 
         let (head, body) = if has_inline_brace_await_with(trimmed) {
             let (head, body, _, ok) = self.take_brace_block();
             if !ok {
                 self.push_error(
-                    range,
+                    line_range,
                     "unclosed block while parsing await expression binding",
                     ["}"],
                     Some(trimmed),
@@ -55,7 +62,7 @@ impl Parser<'_> {
         let await_head = normalize_let_await_source(await_head.trim(), None);
         let await_with = match body {
             Some(AwaitBody::Lines(body_range)) => {
-                self.parse_await_with_line_range(&await_head, range, body_range)
+                self.parse_await_with_line_range(&await_head, authored_range, body_range)
             }
             Some(AwaitBody::Source(body)) => {
                 let await_source = if body.trim_start().starts_with('{') {
@@ -63,9 +70,9 @@ impl Parser<'_> {
                 } else {
                     format!("{await_head}\n{body}")
                 };
-                parse_await_with(&await_source, range, &mut self.errors)
+                parse_await_with(&await_source, authored_range, &mut self.errors)
             }
-            None => parse_await_with(&await_head, range, &mut self.errors),
+            None => parse_await_with(&await_head, authored_range, &mut self.errors),
         };
 
         Some(Stmt::LetAwait {
@@ -137,7 +144,7 @@ impl Parser<'_> {
             parse_await_branches(inline_branch_part.trim())
         };
         AwaitWith::new(
-            parse_expr_lossy(expr_part.trim_end_matches('?').trim()),
+            authored_await_expr(head, expr_part, range),
             applies_try,
             branches,
         )
@@ -351,9 +358,26 @@ pub(super) fn parse_await_with(
     push_ambiguous_await_question_error(expr_part, range, errors);
 
     AwaitWith::new(
-        parse_expr_lossy(expr_part.trim_end_matches('?').trim()),
+        authored_await_expr(trimmed, expr_part, range),
         applies_try,
         parse_await_branches(branch_part.trim()),
+    )
+}
+
+fn authored_await_expr(source: &str, expr_part: &str, range: TextRange) -> AuthoredExpr {
+    let expression_source = expr_part.trim_end_matches('?').trim();
+    let relative_start = source.find(expression_source).unwrap_or(0);
+    let expression_range = TextRange::new(
+        range.start().saturating_add(relative_start),
+        range
+            .start()
+            .saturating_add(relative_start)
+            .saturating_add(expression_source.len()),
+    );
+    AuthoredExpr::with_source(
+        parse_expr_lossy(expression_source),
+        expression_source.to_owned(),
+        Some(expression_range),
     )
 }
 

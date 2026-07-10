@@ -17,11 +17,16 @@ use crate::labels::expr_label;
 /// still converts malformed recovered syntax to an explicit runtime failure
 /// rather than silently preserving it as a string-dispatched generic call.
 pub(crate) fn lower_audio_call(expr: &Expr) -> Option<LineEffectRequest> {
-    let call = AudioCall::from_expr(expr)?;
-    Some(match call.lower() {
+    lower_audio_call_checked(expr).map(|result| match result {
         Ok(command) => LineEffectRequest::Audio(Box::new(command)),
         Err(message) => LineEffectRequest::Fail(message),
     })
+}
+
+/// Lowers audio syntax without converting malformed executable arguments into
+/// a synthetic runtime failure effect.
+pub(crate) fn lower_audio_call_checked(expr: &Expr) -> Option<Result<RuntimeAudioCommand, String>> {
+    AudioCall::from_expr(expr).map(|call| call.lower())
 }
 
 struct AudioCall<'a> {

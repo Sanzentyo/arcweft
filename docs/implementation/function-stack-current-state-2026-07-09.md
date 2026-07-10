@@ -1,5 +1,10 @@
 # Function Stack Current State - 2026-07-09
 
+> Historical snapshot: the authoritative post-AWBC and post-effect-row state is
+> `docs/implementation/function-stack-final-state-2026-07-10.md`. In particular,
+> the suspension-aware dynamic-apply and persisted-function-snapshot blockers
+> listed below were completed on 2026-07-10.
+
 This is the current entry point for the active
 function/closure/currying/pipeline language-stack goal. It consolidates the
 status rollup, gap map, and request boundaries after the latest pushed

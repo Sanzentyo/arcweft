@@ -8,6 +8,6 @@ entry server @entry.http {
     route GET "/health" -> @flow.health
 }
 
-flow @flow.health(req: HttpRequest) -> HttpResponse effects { http.respond } {
+flow @flow.health() -> HttpResponse effects { http.respond } {
     return http.text(status = 200i32, body = "ok")
 }

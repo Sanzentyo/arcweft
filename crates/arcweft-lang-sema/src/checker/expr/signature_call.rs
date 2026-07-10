@@ -8,9 +8,66 @@ use super::{
     CallArg, Expr, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
+use crate::checker::PendingCurriedHigherOrderArg;
 use crate::env::FunctionParam;
 
 impl TypeChecker<'_> {
+    pub(super) fn check_named_signature_call(
+        &mut self,
+        expression_id: TypeExpressionId,
+        name: &str,
+        result_ty: TypeKind,
+        signature: &FunctionSignature,
+        args: &[CallArg],
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
+        let final_group_timing = self.uses_final_group_effect_timing(name);
+        if !final_group_timing {
+            // Suspending callable kinds retain their pre-07.8 eager graph
+            // behavior until their invocation ABI is specified.
+            self.check_function_effects(name);
+        }
+        if let Some(partial_ty) =
+            self.check_partial_signature_call(expression_id, name, signature, args, expected)
+        {
+            if !final_group_timing {
+                let pending = self
+                    .last_checked_curried_signature_call
+                    .as_mut()
+                    .map(|value| std::mem::take(&mut value.pending_higher_order_args))
+                    .unwrap_or_default();
+                self.record_pending_curried_higher_order_arg_effect_calls(name, &pending);
+            }
+            return partial_ty;
+        }
+
+        let mut pending = self.check_signature_call_args(name, signature, args);
+        let completes_group = Self::signature_call_supplies_current_group(signature, args);
+        if final_group_timing && signature.remaining_call_groups() == 0 && completes_group {
+            self.check_function_effects(name);
+            self.record_pending_curried_higher_order_arg_effect_calls(name, &pending);
+        } else if !final_group_timing {
+            self.record_pending_curried_higher_order_arg_effect_calls(name, &pending);
+            pending.clear();
+        }
+        self.record_curried_signature_result(
+            name,
+            1,
+            &result_ty,
+            signature.remaining_param_group(0).is_some(),
+            completes_group,
+            pending,
+        );
+        if signature.remaining_param_group(0).is_some()
+            && matches!(result_ty, TypeKind::Function { .. })
+        {
+            self.last_checked_closure_effect_callable = self.source_function_effect_callable(name);
+        } else {
+            self.record_function_return_effect_result(name, &result_ty);
+        }
+        result_ty
+    }
+
     pub(super) fn check_untyped_function_args(&mut self, name: &str, args: &[CallArg]) {
         let checked_args = if let Some(spec) = CapabilityFunctionSpec::resolve(name) {
             args.iter()
@@ -29,15 +86,14 @@ impl TypeChecker<'_> {
         name: &str,
         signature: &FunctionSignature,
         args: &[CallArg],
-    ) {
+    ) -> Vec<PendingCurriedHigherOrderArg> {
         let fixed = signature
             .params
             .iter()
             .filter(|param| !param.is_rest())
             .collect::<Vec<_>>();
         let rest = signature.params.iter().find(|param| param.is_rest());
-        let mut provided_fixed = vec![false; fixed.len()];
-        let mut positional_index = 0;
+        let mut state = SignatureArgCheckState::new(fixed.len());
 
         for arg in args {
             match arg {
@@ -45,50 +101,45 @@ impl TypeChecker<'_> {
                     name: arg_name,
                     value,
                 } => {
-                    self.check_named_signature_arg(
-                        name,
-                        arg_name,
-                        value,
-                        &fixed,
-                        rest,
-                        &mut provided_fixed,
-                    );
+                    self.check_named_signature_arg(name, arg_name, value, &fixed, rest, &mut state);
                 }
                 CallArg::Spread { value } => match fixed_literal_spread_slots(value) {
                     Some(slots) if rest.is_none() => {
                         self.reserve_fixed_literal_spread_container_expr(value);
                         for slot_value in slots {
                             self.check_positional_signature_arg_slot(
-                                name,
-                                slot_value,
-                                &fixed,
-                                &mut provided_fixed,
-                                &mut positional_index,
+                                name, slot_value, &fixed, &mut state,
                             );
                         }
                     }
                     Some(_) | None => {
-                        self.check_signature_spread_arg(name, value, rest, &fixed, &provided_fixed);
+                        self.check_signature_spread_arg(
+                            name,
+                            value,
+                            rest,
+                            &fixed,
+                            &state.provided_fixed,
+                        );
                     }
                 },
                 CallArg::Positional(positional) => {
-                    if positional_index < fixed.len() {
+                    if state.positional_index < fixed.len() {
                         self.check_positional_signature_arg_slot(
                             name,
                             FixedLiteralSpreadSlot::Expr(positional),
                             &fixed,
-                            &mut provided_fixed,
-                            &mut positional_index,
+                            &mut state,
                         );
                     } else if let Some(param) = rest {
                         let label = param.name.as_deref().unwrap_or("#rest");
                         let actual =
                             self.expect_signature_arg_type(name, label, positional, &param.ty);
-                        self.record_pending_higher_order_signature_arg_effect_call(
-                            name,
-                            param,
-                            positional,
-                            actual.as_ref(),
+                        state.pending_higher_order_args.extend(
+                            self.higher_order_signature_arg_effect_calls(
+                                param,
+                                positional,
+                                actual.as_ref(),
+                            ),
                         );
                     } else {
                         let message = if signature.remaining_call_groups() > 0 {
@@ -106,7 +157,7 @@ impl TypeChecker<'_> {
         }
 
         for (index, param) in fixed.iter().enumerate() {
-            if !provided_fixed[index] && !param.has_default {
+            if !state.provided_fixed[index] && !param.has_default {
                 let label = param
                     .name
                     .as_deref()
@@ -116,6 +167,7 @@ impl TypeChecker<'_> {
                 )));
             }
         }
+        state.pending_higher_order_args
     }
 
     fn check_positional_signature_arg_slot(
@@ -123,30 +175,26 @@ impl TypeChecker<'_> {
         function_name: &str,
         value: FixedLiteralSpreadSlot<'_>,
         fixed: &[&FunctionParam],
-        provided_fixed: &mut [bool],
-        positional_index: &mut usize,
+        state: &mut SignatureArgCheckState,
     ) {
-        while *positional_index < fixed.len() && provided_fixed[*positional_index] {
-            *positional_index += 1;
+        while state.positional_index < fixed.len() && state.provided_fixed[state.positional_index] {
+            state.positional_index += 1;
         }
-        let Some(param) = fixed.get(*positional_index) else {
+        let Some(param) = fixed.get(state.positional_index) else {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{function_name}` received too many positional arguments"
             )));
             self.check_fixed_literal_spread_slot(value, None);
             return;
         };
-        provided_fixed[*positional_index] = true;
-        let label = signature_param_label(param, *positional_index);
-        *positional_index += 1;
+        state.provided_fixed[state.positional_index] = true;
+        let label = signature_param_label(param, state.positional_index);
+        state.positional_index += 1;
         let actual = self.expect_signature_arg_slot_type(function_name, &label, value, &param.ty);
         if let Some(expr) = value.source_expr() {
-            self.record_pending_higher_order_signature_arg_effect_call(
-                function_name,
-                param,
-                expr,
-                actual.as_ref(),
-            );
+            state
+                .pending_higher_order_args
+                .extend(self.higher_order_signature_arg_effect_calls(param, expr, actual.as_ref()));
         }
     }
 
@@ -195,18 +243,40 @@ impl TypeChecker<'_> {
             return None;
         }
 
+        let mut pending_higher_order_args = Vec::new();
         for (index, (value, param)) in provided.iter().zip(params).enumerate() {
             let Some(value) = value else {
                 continue;
             };
             let label = signature_param_label(param, index);
-            let _ = self.expect_signature_arg_slot_type(name, &label, *value, param.ty());
+            let actual = self.expect_signature_arg_slot_type(name, &label, *value, param.ty());
+            if let Some(expr) = value.source_expr() {
+                pending_higher_order_args.extend(self.higher_order_signature_arg_effect_calls(
+                    param,
+                    expr,
+                    actual.as_ref(),
+                ));
+            }
         }
 
+        let callable_ty = if self.uses_final_group_effect_timing(name) {
+            signature.function_value_type_with_effects(self.function_effect_row(name))
+        } else {
+            signature.function_value_type()
+        }
+        .expect("checked signature partial call owns parameter metadata");
+        let TypeKind::Function {
+            return_type,
+            effects,
+            ..
+        } = callable_ty
+        else {
+            unreachable!("signature function value must retain a function type");
+        };
         let result_ty = TypeKind::function_with_effects(
             missing.iter().map(|index| params[*index].ty().clone()),
-            signature.return_type().clone(),
-            self.function_effect_row(name),
+            *return_type,
+            effects,
         );
         self.record_typed_lowering_evidence(TypedLoweringEvidence {
             expression_id,
@@ -216,6 +286,16 @@ impl TypeChecker<'_> {
                 arg_count: args.len(),
             },
         });
+        self.last_checked_curried_signature_call = Some(super::super::CurriedSignatureCallValue {
+            function_name: name.to_owned(),
+            remaining_group_index: 0,
+            group_arg_offset: 0,
+            current_group_params: Some(
+                missing.iter().map(|index| params[*index].clone()).collect(),
+            ),
+            pending_higher_order_args,
+        });
+        self.last_checked_closure_effect_callable = self.source_function_effect_callable(name);
         Some(result_ty)
     }
 
@@ -334,7 +414,7 @@ impl TypeChecker<'_> {
         value: &Expr,
         fixed: &[&FunctionParam],
         rest: Option<&FunctionParam>,
-        provided_fixed: &mut [bool],
+        state: &mut SignatureArgCheckState,
     ) {
         if rest.and_then(|param| param.name.as_deref()) == Some(arg_name) {
             self.errors.push(TypeCheckError::new(format!(
@@ -353,20 +433,21 @@ impl TypeChecker<'_> {
             self.check_expr(value);
             return;
         };
-        if provided_fixed[index] {
+        if state.provided_fixed[index] {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{function_name}` argument `{arg_name}` was provided more than once"
             )));
         }
-        provided_fixed[index] = true;
+        state.provided_fixed[index] = true;
         let actual =
             self.expect_signature_arg_type(function_name, arg_name, value, &fixed[index].ty);
-        self.record_pending_higher_order_signature_arg_effect_call(
-            function_name,
-            fixed[index],
-            value,
-            actual.as_ref(),
-        );
+        state
+            .pending_higher_order_args
+            .extend(self.higher_order_signature_arg_effect_calls(
+                fixed[index],
+                value,
+                actual.as_ref(),
+            ));
     }
 
     pub(super) fn expect_signature_arg_type(
@@ -446,6 +527,22 @@ impl TypeChecker<'_> {
         );
         self.validate_integer_literal(literal, &ty);
         ty
+    }
+}
+
+struct SignatureArgCheckState {
+    provided_fixed: Vec<bool>,
+    positional_index: usize,
+    pending_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
+}
+
+impl SignatureArgCheckState {
+    fn new(fixed_param_count: usize) -> Self {
+        Self {
+            provided_fixed: vec![false; fixed_param_count],
+            positional_index: 0,
+            pending_higher_order_args: Vec::new(),
+        }
     }
 }
 

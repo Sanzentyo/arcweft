@@ -23,11 +23,11 @@ use crate::awbc::fiber::{
 use crate::awbc::schema::{
     AwbcBackpressurePolicy, AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId,
     AwbcEntryId, AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode,
-    AwbcInstruction, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
-    AwbcLineTaskTrigger, AwbcOverflowPolicy, AwbcPrivacyPolicy, AwbcProgram, AwbcReplayPolicy,
-    AwbcResumePointId, AwbcSourceEventKind, AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId,
-    AwbcTerminator, AwbcTrapCode,
+    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
+    AwbcOverflowPolicy, AwbcPrivacyPolicy, AwbcProgram, AwbcReplayPolicy, AwbcResumePointId,
+    AwbcSourceEventKind, AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode,
 };
+use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{VmError, VmExit, VmHost, VmObservation, VmStepOptions, step_with_host};
 use crate::engine::{
     AwaitManyInFlight, AwaitManyState, AwaitState, ChoiceState, DialogueState, FlowExit, FlowFiber,
@@ -59,37 +59,11 @@ use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
 
-/// Historical family names retained for source compatibility and audits.
-///
-/// Every supported canonical AWBC family is now implemented at this boundary,
-/// so ordinary product programs report an empty blocker inventory.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum AwbcProductStepParityBlocker {
-    EntryArguments,
-    PureHelperCalls,
-    IntrinsicCalls,
-    TrapSourceReporting,
-    ContentEnsures,
-    Effects,
-    TaskStarts,
-    SpawnedFibers,
-    Streams,
-    Sources,
-    Dialogue,
-    Choice,
-    Await,
-    AwaitMany,
-    HostCall,
-    BudgetYield,
-}
-
 /// Product AWBC executor construction failures.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum AwbcProductStepBuildError {
-    #[error("product AWBC runtime-step parity is incomplete: {blockers:?}")]
-    UnsupportedParity {
-        blockers: Vec<AwbcProductStepParityBlocker>,
-    },
+    #[error("product AWBC program failed verification: {message}")]
+    InvalidProgram { message: String },
     #[error("failed to initialize product AWBC fiber state: {message}")]
     FiberState { message: String },
     #[error("failed to restore product AWBC executor snapshot: {message}")]
@@ -115,42 +89,6 @@ impl ProductStepError {
             Self::Type(_) => RuntimeDiagnosticCategory::Type,
             Self::Host(_) => RuntimeDiagnosticCategory::Host,
             Self::Internal(_) => RuntimeDiagnosticCategory::Internal,
-        }
-    }
-}
-
-impl AwbcInstruction {
-    /// All canonical instruction families are projected at the product step boundary.
-    #[must_use]
-    pub const fn product_step_parity_blocker(&self) -> Option<AwbcProductStepParityBlocker> {
-        let _ = self;
-        None
-    }
-}
-
-impl AwbcTerminator {
-    /// All canonical terminator families are projected at the product step boundary.
-    #[must_use]
-    pub const fn product_step_parity_blocker(&self) -> Option<AwbcProductStepParityBlocker> {
-        let _ = self;
-        None
-    }
-}
-
-impl AwbcProgram {
-    /// Returns blockers for the supported product language surface.
-    #[must_use]
-    pub fn product_step_parity_blockers(&self) -> Vec<AwbcProductStepParityBlocker> {
-        let _ = self;
-        Vec::new()
-    }
-
-    pub fn ensure_product_step_parity(&self) -> Result<(), AwbcProductStepBuildError> {
-        let blockers = self.product_step_parity_blockers();
-        if blockers.is_empty() {
-            Ok(())
-        } else {
-            Err(AwbcProductStepBuildError::UnsupportedParity { blockers })
         }
     }
 }
@@ -203,7 +141,11 @@ impl AwbcProductStepExecutor {
         entry: AwbcEntryId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        program.ensure_product_step_parity()?;
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+                message: error.to_string(),
+            })?;
         let fiber = if program.entries.is_empty() {
             FiberState {
                 generation: 0,
@@ -241,7 +183,11 @@ impl AwbcProductStepExecutor {
         function: AwbcFunctionId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        program.ensure_product_step_parity()?;
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+                message: error.to_string(),
+            })?;
         let fiber = FiberState::for_function(&program, entry, function, 0, budget_quantum.max(1))
             .map_err(|error| AwbcProductStepBuildError::FiberState {
             message: error.to_string(),

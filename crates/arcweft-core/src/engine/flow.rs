@@ -444,6 +444,18 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                 }
             }
+            FlowOp::EvaluatedEffect(effect) => {
+                match self.evaluate_effect_expr(&effect, pure_backend) {
+                    Ok(effect) => self.emit_line_effect(effect, output, pure_backend),
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                }
+                if !self.apply_control_effects(output, pure_backend) {
+                    self.advance_if_needed(next_op_index);
+                }
+            }
             FlowOp::RegisterCleanup { key, effect } => {
                 self.register_scope_cleanup(key, effect);
                 self.advance_if_needed(next_op_index);

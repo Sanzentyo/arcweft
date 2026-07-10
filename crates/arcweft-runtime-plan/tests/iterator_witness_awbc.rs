@@ -76,7 +76,6 @@ fn identity_witness_for_executes_on_awbc_product_vm() {
     let plan = counter_identity_witness_plan();
     let program = lower_plan(&plan);
     assert_eq!(program.trait_methods.len(), 1);
-    assert!(program.product_step_parity_blockers().is_empty());
 
     let mut executor = ArcweftRuntimeExecutor::from_awbc_product(program, AwbcEntryId(0))
         .expect("AWBC product executor builds");

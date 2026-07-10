@@ -176,6 +176,8 @@ pub enum AwbcVerifyError {
     DuplicateMapIdentity { entry: usize },
     #[error("AWBC audio payload for effect plan {effect} is malformed: {message}")]
     MalformedAudioPayload { effect: usize, message: String },
+    #[error("AWBC payload for effect plan {effect} is malformed: {message}")]
+    MalformedEffectPayload { effect: usize, message: String },
     #[error("AWBC verifier exceeds `{budget}` budget")]
     BudgetExceeded { budget: &'static str },
     #[error("AWBC semantic invariant failed at {at}: {message}")]

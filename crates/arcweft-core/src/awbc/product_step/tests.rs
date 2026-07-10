@@ -1,8 +1,8 @@
-use super::{AwbcProductStepExecutor, AwbcProductStepParityBlocker};
+use super::AwbcProductStepExecutor;
 use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlock, AwbcBlockId,
-    AwbcChoiceId, AwbcConstant, AwbcContentUnit, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
+    AwbcConstant, AwbcContentUnit, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
     AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
     AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
     AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcProgram, AwbcRegisterId,
@@ -17,13 +17,13 @@ use crate::step::{
 use crate::value::{RuntimePayload, RuntimeValue};
 
 #[test]
-fn empty_product_program_finishes_without_diagnostics() {
+fn minimal_return_program_finishes_without_diagnostics() {
     let mut executor = AwbcProductStepExecutor::for_entry(
-        AwbcProgram::default(),
+        return_program(),
         crate::awbc::schema::AwbcEntryId(0),
         64,
     )
-    .expect("empty product AWBC executor starts");
+    .expect("minimal product AWBC executor starts");
 
     let result = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -32,36 +32,10 @@ fn empty_product_program_finishes_without_diagnostics() {
     assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
 }
 
-#[test]
-fn implemented_instruction_and_terminator_families_have_no_static_blocker() {
-    let instruction = AwbcInstruction::EmitEffect {
-        effect: AwbcEffectPlanId(0),
-        args: Vec::new(),
-    };
-    let terminator = AwbcTerminator::Choice {
-        choice: AwbcChoiceId(0),
-        dst: AwbcRegisterId(0),
-        resume: AwbcResumePointId(0),
-    };
-
-    assert_eq!(instruction.product_step_parity_blocker(), None);
-    assert_eq!(terminator.product_step_parity_blocker(), None);
-}
-
-#[test]
-fn product_program_inventory_is_empty_after_adapter_coverage() {
-    let program = AwbcProgram {
-        instructions: vec![AwbcInstruction::EmitEffect {
-            effect: AwbcEffectPlanId(0),
-            args: Vec::new(),
-        }],
-        ..AwbcProgram::default()
-    };
-
-    assert_eq!(
-        program.product_step_parity_blockers(),
-        Vec::<AwbcProductStepParityBlocker>::new()
-    );
+fn return_program() -> AwbcProgram {
+    let mut program = trap_program(AwbcTrapCode::InternalInvariant, "unused");
+    program.blocks[0].terminator = AwbcTerminator::Return { value: None };
+    program
 }
 
 #[test]
@@ -463,8 +437,37 @@ fn host_call_program() -> AwbcProgram {
 }
 
 fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffectPlanId {
-    let static_args = (0..4)
-        .map(|index| constant_string(program, &format!("arg{index}")))
+    let static_arg_count = match kind {
+        AwbcEffectKind::Audio => 0,
+        AwbcEffectKind::Call
+        | AwbcEffectKind::RegisterHandle
+        | AwbcEffectKind::SignalWrite
+        | AwbcEffectKind::MetricWrite
+        | AwbcEffectKind::Out
+        | AwbcEffectKind::Ensure
+        | AwbcEffectKind::Break => 2,
+        AwbcEffectKind::Log => 4,
+        AwbcEffectKind::EmitEvent | AwbcEffectKind::Assert => 3,
+        AwbcEffectKind::DropHandle
+        | AwbcEffectKind::Wait
+        | AwbcEffectKind::Return
+        | AwbcEffectKind::Goto
+        | AwbcEffectKind::Panic
+        | AwbcEffectKind::Fail
+        | AwbcEffectKind::Bail
+        | AwbcEffectKind::Close
+        | AwbcEffectKind::Select
+        | AwbcEffectKind::Continue => 1,
+    };
+    let static_args = (0..static_arg_count)
+        .map(|index| {
+            let value = if kind == AwbcEffectKind::Assert && index == 2 {
+                "always".to_owned()
+            } else {
+                format!("arg{index}")
+            };
+            constant_string(program, &value)
+        })
         .collect();
     let effect = AwbcEffectPlanId(
         u32::try_from(program.effect_plans.len()).expect("test effect table index fits u32"),

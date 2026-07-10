@@ -69,6 +69,24 @@ impl AwbcEffectKind {
                 })
                 .collect()
         };
+        let dynamic_string = |index: usize| -> String {
+            dynamic_args
+                .get(index)
+                .map(runtime_value_label)
+                .unwrap_or_default()
+        };
+        let dynamic_fields = |static_start: usize, dynamic_start: usize| -> Vec<RuntimeField> {
+            static_args[static_start..]
+                .chunks(2)
+                .zip(&dynamic_args[dynamic_start..])
+                .filter_map(|(pair, value)| {
+                    Some(RuntimeField {
+                        name: runtime_value_label(pair.first()?),
+                        value: runtime_value_label(value),
+                    })
+                })
+                .collect()
+        };
         let mapped = match self {
             Self::RegisterHandle => LineEffectRequest::RegisterHandle {
                 key: string(0),
@@ -118,20 +136,52 @@ impl AwbcEffectKind {
             }),
             Self::Log => LineEffectRequest::Log(RuntimeLog {
                 level: string(0),
-                message: string(1),
-                fields: fields(2),
+                message: if dynamic_args.is_empty() {
+                    string(1)
+                } else {
+                    dynamic_string(0)
+                },
+                fields: if dynamic_args.is_empty() {
+                    fields(2)
+                } else {
+                    dynamic_fields(2, 1)
+                },
             }),
             Self::SignalWrite => LineEffectRequest::SignalWrite(RuntimeAssignment {
-                target: string(0),
-                value: string(1),
+                target: if dynamic_args.is_empty() {
+                    string(0)
+                } else {
+                    dynamic_string(0)
+                },
+                value: if dynamic_args.is_empty() {
+                    string(1)
+                } else {
+                    dynamic_string(1)
+                },
             }),
             Self::MetricWrite => LineEffectRequest::MetricWrite(RuntimeAssignment {
-                target: string(0),
-                value: string(1),
+                target: if dynamic_args.is_empty() {
+                    string(0)
+                } else {
+                    dynamic_string(0)
+                },
+                value: if dynamic_args.is_empty() {
+                    string(1)
+                } else {
+                    dynamic_string(1)
+                },
             }),
             Self::EmitEvent => LineEffectRequest::EmitEvent(RuntimeEvent {
-                event: string(0),
-                fields: fields(1),
+                event: if dynamic_args.is_empty() {
+                    string(0)
+                } else {
+                    dynamic_string(0)
+                },
+                fields: if dynamic_args.is_empty() {
+                    fields(1)
+                } else {
+                    dynamic_fields(1, 1)
+                },
             }),
             Self::Out => LineEffectRequest::Out(LineOutRequest {
                 label: optional_string(0),
@@ -139,17 +189,49 @@ impl AwbcEffectKind {
             }),
             Self::Return => LineEffectRequest::Return(string(0)),
             Self::Goto => LineEffectRequest::Goto(string(0)),
-            Self::Panic => LineEffectRequest::Panic(string(0)),
-            Self::Fail => LineEffectRequest::Fail(string(0)),
-            Self::Bail => LineEffectRequest::Bail(string(0)),
+            Self::Panic => LineEffectRequest::Panic(if dynamic_args.is_empty() {
+                string(0)
+            } else {
+                dynamic_string(0)
+            }),
+            Self::Fail => LineEffectRequest::Fail(if dynamic_args.is_empty() {
+                string(0)
+            } else {
+                dynamic_string(0)
+            }),
+            Self::Bail => LineEffectRequest::Bail(if dynamic_args.is_empty() {
+                string(0)
+            } else {
+                dynamic_string(0)
+            }),
             Self::Ensure => LineEffectRequest::Ensure {
-                condition: string(0),
-                message: string(1),
+                condition: if dynamic_args.is_empty() {
+                    string(0)
+                } else {
+                    dynamic_string(0)
+                },
+                message: if dynamic_args.is_empty() {
+                    string(1)
+                } else {
+                    dynamic_string(1)
+                },
             },
             Self::Assert => LineEffectRequest::Assert(RuntimeAssertion {
-                condition: string(0),
-                message: string(1),
-                profile: RuntimeAssertionProfile::Always,
+                condition: if dynamic_args.is_empty() {
+                    string(0)
+                } else {
+                    dynamic_string(0)
+                },
+                message: if dynamic_args.is_empty() {
+                    string(1)
+                } else {
+                    dynamic_string(1)
+                },
+                profile: if string(2) == "debug_only" {
+                    RuntimeAssertionProfile::DebugOnly
+                } else {
+                    RuntimeAssertionProfile::Always
+                },
             }),
             Self::Close => LineEffectRequest::Close(string(0)),
             Self::Select => LineEffectRequest::Select(string(0)),

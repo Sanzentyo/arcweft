@@ -1,4 +1,4 @@
-use arcweft_core::plan::FlowOp;
+use arcweft_core::plan::{FlowOp, RuntimeMatchArm};
 use arcweft_core::value::{RuntimeExpr, RuntimeExprMatchArm, RuntimeValue};
 use std::sync::Arc;
 
@@ -33,13 +33,7 @@ pub(super) fn rewrite_known_record_projections_in_op(
             rewrite_known_record_projections_in_ops(else_ops, env);
         }
         FlowOp::Match { scrutinee, arms } => {
-            rewrite_known_record_projections_in_expr(scrutinee, env);
-            for arm in arms {
-                if let Some(guard) = &mut arm.guard {
-                    rewrite_known_record_projections_in_expr(guard, env);
-                }
-                rewrite_known_record_projections_in_ops(&mut arm.ops, env);
-            }
+            rewrite_match_projections(scrutinee, arms, env);
         }
         FlowOp::Loop { body }
         | FlowOp::LetLoop { body, .. }
@@ -80,6 +74,11 @@ pub(super) fn rewrite_known_record_projections_in_op(
         FlowOp::HostCall { target, .. } => {
             rewrite_known_record_projections_in_exprs(&mut target.args, env);
         }
+        FlowOp::EvaluatedEffect(effect) => {
+            for expr in effect.argument_exprs_mut() {
+                rewrite_known_record_projections_in_expr(expr, env);
+            }
+        }
         FlowOp::LetScope { ops, value, .. } => {
             rewrite_known_record_projections_in_ops(ops, env);
             rewrite_known_record_projections_in_expr(value, env);
@@ -103,6 +102,18 @@ pub(super) fn rewrite_known_record_projections_in_op(
         | FlowOp::Goto(_)
         | FlowOp::Return(_)
         | FlowOp::Noop => {}
+    }
+}
+
+fn rewrite_match_projections(
+    scrutinee: &mut RuntimeExpr,
+    arms: &mut [RuntimeMatchArm],
+    env: &[(String, Vec<String>)],
+) {
+    rewrite_known_record_projections_in_expr(scrutinee, env);
+    for arm in arms {
+        rewrite_known_record_projections_in_optional_expr(arm.guard.as_mut(), env);
+        rewrite_known_record_projections_in_ops(&mut arm.ops, env);
     }
 }
 

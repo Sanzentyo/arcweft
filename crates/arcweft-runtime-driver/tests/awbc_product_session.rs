@@ -6,12 +6,12 @@ use arcweft_core::{
     awbc::{
         fiber::{FiberScope, FiberScopeCleanup},
         schema::{
-            AwbcBlock, AwbcBlockId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
-            AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout,
-            AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags,
-            AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType, AwbcSafePointKind,
-            AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
-            AwbcTerminator, AwbcTypeId,
+            AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
+            AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+            AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
+            AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType,
+            AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId,
+            AwbcTableRange, AwbcTerminator, AwbcTypeId,
         },
     },
     bytecode::BytecodeProgram,
@@ -606,7 +606,16 @@ fn captured_awbc_runtime_function_value() -> RuntimeValue {
 
 fn minimal_awbc_program(entry: &str) -> AwbcProgram {
     AwbcProgram {
-        strings: vec!["captured".to_owned(), entry.to_owned()],
+        strings: vec![
+            "captured".to_owned(),
+            entry.to_owned(),
+            "zz.debug".to_owned(),
+            "zz.message".to_owned(),
+        ],
+        constants: vec![
+            AwbcConstant::String(AwbcStringId(2)),
+            AwbcConstant::String(AwbcStringId(3)),
+        ],
         runtime_types: vec![AwbcRuntimeType::String, AwbcRuntimeType::Dynamic],
         signatures: vec![
             AwbcSignature {
@@ -685,11 +694,11 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
             target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
         }],
         effect_plans: vec![AwbcEffectPlan {
-            kind: AwbcEffectKind::DropHandle,
+            kind: AwbcEffectKind::Log,
             signature: AwbcSignatureId(2),
             capability: None,
             audio: None,
-            static_args: Vec::new(),
+            static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
             resources: Vec::new(),
         }],
         ..AwbcProgram::default()

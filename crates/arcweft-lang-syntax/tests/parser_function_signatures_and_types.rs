@@ -230,6 +230,27 @@ flow opening(x: i32)(y: i32) {
 }
 
 #[test]
+fn flow_signature_separates_inline_effect_contract_after_return_type() {
+    let parsed = parse_source(
+        r"
+flow health(req: HttpRequest) -> HttpResponse effects { http.respond } {
+  return req
+}
+",
+    );
+
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let Item::Flow(flow) = &parsed.typed_tree().items()[0] else {
+        panic!("expected flow");
+    };
+    assert!(matches!(
+        flow.signature().and_then(|signature| signature.return_type()),
+        Some(TypeRef::Path(path)) if path == "HttpResponse"
+    ));
+    assert_eq!(flow.contracts().len(), 1);
+}
+
+#[test]
 fn function_signatures_reject_trailing_garbage() {
     let error = parse_fn_signature("fn f(x: i32) -> i32 unexpected")
         .expect_err("trailing tokens after return type are rejected");

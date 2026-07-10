@@ -100,15 +100,13 @@ implementation is intentionally concentrated at these boundaries:
 
 ## Blocker disposition
 
-The historical blocker enum remains discoverable for audits, while instruction
-and terminator inherent methods now return no blocker for implemented canonical
-families. This is not by itself proof of parity. The merge/completion gate is the
-differential matrix in the companion test document.
-
-The overlay must not be declared complete merely because
-`product_step_parity_blockers()` is empty. It is complete only after every family
-has passing raw and normalized `RuntimeStepResult` comparison and the decoded
-product source gates remain green.
+The temporary blocker enum and its always-empty instruction, terminator, and
+program inventory APIs were removed after every canonical family gained
+differential coverage. They no longer provide evidence and are not retained as
+compatibility or audit shims. Product-executor construction instead runs the
+canonical AWBC verifier, including effect payload/arity validation, before it
+creates a fiber. Runtime parity remains covered by raw and normalized
+`RuntimeStepResult` comparisons.
 
 ## Structural audit
 

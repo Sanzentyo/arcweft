@@ -5,6 +5,7 @@
 //! corresponding `TypeCheckReport` exists for typed source positions.
 
 use crate::Severity;
+use arcweft_core::effect::RuntimeEffectExpr;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeEntryTarget, RuntimeFlow, RuntimeMatchArm,
     RuntimePlan,
@@ -281,6 +282,7 @@ impl<'a> RuntimeTypeValidator<'a> {
                     self.validate_expr(path, arg);
                 });
             }
+            FlowOp::EvaluatedEffect(effect) => self.validate_evaluated_effect(path, effect),
             FlowOp::Await { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::Effect(_)
@@ -290,6 +292,12 @@ impl<'a> RuntimeTypeValidator<'a> {
             | FlowOp::ExitScope
             | FlowOp::Continue
             | FlowOp::Noop => {}
+        }
+    }
+
+    fn validate_evaluated_effect(&mut self, path: &str, effect: &RuntimeEffectExpr) {
+        for (index, expr) in effect.argument_exprs().into_iter().enumerate() {
+            self.validate_expr(&format!("{path}.effect.arg.{index}"), expr);
         }
     }
 
@@ -780,6 +788,7 @@ fn has_required_type_evidence(types: &TypeCheckReport) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_core::effect::RuntimeEffectExpr;
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
     use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
     use arcweft_lang_sema::check::{
@@ -863,6 +872,38 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.message.contains("arithmetic right operand"))
         );
+    }
+
+    #[test]
+    fn runtime_type_validation_visits_every_evaluated_effect_argument() {
+        let invalid_arithmetic = || RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Bool(false))),
+        };
+        let plan = RuntimePlan {
+            flows: vec![RuntimeFlow {
+                id: flow_id("flow.main"),
+                ops: vec![FlowOp::EvaluatedEffect(RuntimeEffectExpr::Ensure {
+                    condition: invalid_arithmetic(),
+                    message: invalid_arithmetic(),
+                })],
+            }],
+            ..RuntimePlan::default()
+        };
+
+        let report = validate_runtime_plan_types(&plan, &type_report());
+        let paths = report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.path.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            paths,
+            vec!["flow.main.op.0.effect.arg.0", "flow.main.op.0.effect.arg.1"]
+        );
+        assert_eq!(report.stats.expressions, 6);
     }
 
     #[test]

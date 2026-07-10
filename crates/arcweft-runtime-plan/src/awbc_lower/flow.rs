@@ -754,6 +754,16 @@ impl<'a> AwbcFlowLowerer<'a> {
                 self.inventory
                     .push_instruction(AwbcInstruction::EmitEffect { effect, args });
             }
+            FlowOp::EvaluatedEffect(effect) => {
+                let args = effect
+                    .argument_exprs()
+                    .into_iter()
+                    .map(|expr| AwbcExprLowerer::new(self.inventory, frame, path).lower(expr))
+                    .collect();
+                let effect = self.inventory.intern_evaluated_effect(effect);
+                self.inventory
+                    .push_instruction(AwbcInstruction::EmitEffect { effect, args });
+            }
             FlowOp::RegisterCleanup { key, effect } => {
                 let key = self.inventory.intern_string(key);
                 let (effect, args) = self.lower_effect_plan(frame, path, effect);
@@ -1827,6 +1837,12 @@ impl EntryParameterCollector {
             }
             FlowOp::Break(Some(value)) | FlowOp::GotoExpr(value) | FlowOp::ReturnExpr(value) => {
                 self.collect_expr(value);
+            }
+            FlowOp::EvaluatedEffect(effect) => {
+                effect
+                    .argument_exprs()
+                    .into_iter()
+                    .for_each(|expr| self.collect_expr(expr));
             }
             FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
                 self.collect_effect(effect);

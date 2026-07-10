@@ -8,10 +8,26 @@ use super::{
     RuntimeStepOutput,
 };
 use crate::audio::RuntimeAudioCommand;
+use crate::effect::RuntimeEffectExpr;
 use crate::pure::RuntimeCallBackend;
 use crate::value::{RuntimeExpr, RuntimeValue, runtime_value_label};
 
 impl Engine {
+    pub(super) fn evaluate_effect_expr(
+        &mut self,
+        effect: &RuntimeEffectExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<LineEffectRequest, RuntimeEvalError> {
+        let values = effect
+            .argument_exprs()
+            .into_iter()
+            .map(|expr| self.evaluate_expr_with_backend(expr, pure_backend))
+            .collect::<Result<Vec<_>, _>>()?;
+        effect
+            .materialize(&values)
+            .map_err(|error| RuntimeEvalError::Effect(error.to_string()))
+    }
+
     /// Emits one lowered effect while resolving audio at the owning fiber's
     /// evaluation point. This keeps child-fiber bindings available and prevents
     /// host adapters from re-parsing string call labels.

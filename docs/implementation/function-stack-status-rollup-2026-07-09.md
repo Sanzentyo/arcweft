@@ -1,5 +1,11 @@
 # Function Stack Status Rollup - 2026-07-09
 
+> Historical snapshot: use
+> `docs/implementation/function-stack-final-state-2026-07-10.md` for the
+> authoritative completion map. Later work completed suspension-aware AWBC
+> apply, validated AWBC-function snapshots, and the ordinary-function/closure
+> open-row timing model described below as incomplete.
+
 This is the current one-page map for the active function/closure/currying/
 pipeline language-stack goal. It supersedes the "where are we now" role of
 `docs/implementation/function-stack-current-status-2026-07-08.md` while keeping

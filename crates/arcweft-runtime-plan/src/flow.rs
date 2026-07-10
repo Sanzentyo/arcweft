@@ -2,6 +2,7 @@
 
 mod binding;
 mod closure_metadata;
+mod optimizer;
 mod pure_helpers;
 mod record_projection;
 mod syntax_helpers;
@@ -13,7 +14,6 @@ pub(crate) use self::syntax_helpers::sanitize_task_id_part;
 use self::{
     binding::LoweredLetBinding,
     pure_helpers::runtime_pure_helper_inventory,
-    record_projection::rewrite_known_record_projections_in_op,
     syntax_helpers::{
         agent_task_name, dialogue_call_parts, flow_runtime_id, method_name, parallel_limit,
         selected_call_parts, split_capability_operation, traverse_callee,
@@ -22,14 +22,15 @@ use self::{
 };
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{
-    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_expected_type,
-    lower_runtime_expr_strict_with_pure, runtime_call_effect,
+    LoweredRuntimeEffect, RuntimePureHelperLookup, lower_runtime_effect_strict_with_pure,
+    lower_runtime_expr_strict_with_expected_type, lower_runtime_expr_strict_with_pure,
 };
 use crate::function_values::{lower_runtime_function_value_candidates, runtime_function_value_map};
 use crate::host_request::{lower_agent_host_task_request, lower_host_task_request};
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
-use crate::pattern::lower_runtime_pattern;
+use crate::lowering_context::ExecutableLoweringLocation;
+use crate::pattern::lower_runtime_pattern_checked;
 use crate::pure::lower_pure_helper_candidates;
 use crate::render_text::{
     DialogueDisplayDefaults, DialogueSpeakerPreset, lower_dialogue_display_with_speaker_presets,
@@ -52,10 +53,10 @@ use arcweft_core::task::{
     AWAIT_MANY_ITEM_BINDING, AwaitManyTarget, AwaitTarget, HostTaskArgTemplate,
     HostTaskRequestTemplate, NeedId, TaskId,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimeExprMatchArm, RuntimeSeq, RuntimeValue};
+use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use arcweft_lang_hir::model::{
-    HirAgent, HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop,
-    HirMatch, HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
+    HirAgent, HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirFor,
+    HirLoop, HirMatch, HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
@@ -74,7 +75,7 @@ use presentation::{
     presentation_create_args, presentation_explicit_mount_handle_id, presentation_handle_call,
     presentation_handle_id, presentation_mount_call,
 };
-use std::{cell::Cell, collections::BTreeMap, sync::Arc};
+use std::{cell::Cell, collections::BTreeMap};
 
 mod presentation;
 
@@ -284,7 +285,7 @@ pub fn lower_runtime_plan_with_stats_and_options(
             .iter()
             .filter(|function| function.kind() == FunctionKind::Stream)
             .map(|function| lower_stream_function(function, pure_lookup))
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         let source_plans = module
             .declarations()
             .iter()
@@ -305,7 +306,7 @@ pub fn lower_runtime_plan_with_stats_and_options(
     stats.pure_helpers = pure_helpers.len();
     RuntimePlan::new(entry, flows, line_task_groups)
         .map(|plan| {
-            let plan = finalize_runtime_plan(
+            let plan = optimizer::finalize_runtime_plan(
                 plan.with_entries(entries)
                     .with_generation_plans(stream_plans, source_plans)
                     .with_pure_helpers(pure_helpers)
@@ -377,7 +378,7 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
     stats.pure_helpers = pure_helpers.len();
     RuntimePlan::new(Some(entry_flow.clone()), vec![lowered], Vec::new())
         .map(|plan| {
-            let plan = finalize_runtime_plan(
+            let plan = optimizer::finalize_runtime_plan(
                 plan.with_entries(vec![RuntimeEntrySpec {
                     id: entry_id,
                     kind: RuntimeEntryKind::Custom("agent_controller".to_owned()),
@@ -394,814 +395,6 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
             }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
-}
-
-fn finalize_runtime_plan(mut plan: RuntimePlan, stats: &mut RuntimePlanLowerStats) -> RuntimePlan {
-    for flow in &mut plan.flows {
-        stats.optimized_flows += 1;
-        optimize_flow_ops(&mut flow.ops, stats);
-    }
-    stats.pure_call_exprs = plan
-        .flows
-        .iter()
-        .map(|flow| count_flow_ops_pure_calls(&flow.ops))
-        .sum();
-    plan
-}
-
-fn optimize_flow_ops(ops: &mut Vec<FlowOp>, stats: &mut RuntimePlanLowerStats) {
-    stats.optimized_op_slices += 1;
-    for op in ops.iter_mut() {
-        optimize_nested_flow_ops(op, stats);
-    }
-    optimize_known_record_projection_lets(ops);
-    optimize_local_map_sum_lets(ops, stats);
-}
-
-fn optimize_flow_op_slice(ops: &mut [FlowOp], stats: &mut RuntimePlanLowerStats) {
-    stats.optimized_op_slices += 1;
-    for op in ops {
-        optimize_nested_flow_ops(op, stats);
-    }
-}
-
-fn optimize_nested_flow_ops(op: &mut FlowOp, stats: &mut RuntimePlanLowerStats) {
-    match op {
-        FlowOp::LetElse { else_ops, .. } => optimize_flow_ops(else_ops, stats),
-        FlowOp::If {
-            then_ops, else_ops, ..
-        }
-        | FlowOp::IfLet {
-            then_ops, else_ops, ..
-        } => {
-            optimize_flow_ops(then_ops, stats);
-            optimize_flow_ops(else_ops, stats);
-        }
-        FlowOp::Match { arms, .. } => {
-            for arm in arms {
-                optimize_flow_ops(&mut arm.ops, stats);
-            }
-        }
-        FlowOp::Loop { body }
-        | FlowOp::LetLoop { body, .. }
-        | FlowOp::While { body, .. }
-        | FlowOp::WhileLet { body, .. }
-        | FlowOp::Thread { body, .. }
-        | FlowOp::Scope(body)
-        | FlowOp::LetScope { ops: body, .. }
-        | FlowOp::For { body, .. } => optimize_flow_ops(body, stats),
-        FlowOp::LoopNext { body }
-        | FlowOp::WhileNext { body, .. }
-        | FlowOp::WhileLetNext { body, .. }
-        | FlowOp::ForNext { body, .. } => optimize_flow_op_slice(Arc::make_mut(body), stats),
-        FlowOp::Bind(_)
-        | FlowOp::Let { .. }
-        | FlowOp::Dialogue { .. }
-        | FlowOp::Choice { .. }
-        | FlowOp::Await { .. }
-        | FlowOp::AwaitMany { .. }
-        | FlowOp::HostCall { .. }
-        | FlowOp::Break(_)
-        | FlowOp::Continue
-        | FlowOp::Goto(_)
-        | FlowOp::GotoExpr(_)
-        | FlowOp::Return(_)
-        | FlowOp::ReturnExpr(_)
-        | FlowOp::Effect(_)
-        | FlowOp::RegisterCleanup { .. }
-        | FlowOp::CancelCleanup { .. }
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::ExitScopeBind { .. }
-        | FlowOp::Noop => {}
-    }
-}
-
-fn optimize_local_map_sum_lets(ops: &mut Vec<FlowOp>, stats: &mut RuntimePlanLowerStats) {
-    let original = std::mem::take(ops);
-    let mut index = 0;
-    while index < original.len() {
-        if let Some(op) = fuse_sequence_map_sum_window(&original, index, stats) {
-            stats.sequence_map_sum_fusions += 1;
-            ops.push(op);
-            index += 3;
-            continue;
-        }
-        if let Some(op) = fuse_map_sum_window(&original, index, stats) {
-            stats.map_sum_fusions += 1;
-            ops.push(op);
-            index += 2;
-            continue;
-        }
-        if let Some(op) = inline_sequence_map_sum_source_window(&original, index, stats) {
-            stats.sequence_source_inlines += 1;
-            ops.push(op);
-            index += 2;
-            continue;
-        }
-        ops.push(original[index].clone());
-        index += 1;
-    }
-}
-
-fn optimize_known_record_projection_lets(ops: &mut [FlowOp]) {
-    let mut env = Vec::<(String, Vec<String>)>::new();
-    for op in ops {
-        rewrite_known_record_projections_in_op(op, &env);
-        if let Some(name) = runtime_pattern_binding_name_from_op(op).map(str::to_owned) {
-            env.retain(|(candidate, _)| candidate != &name);
-            if let FlowOp::Let { expr, .. } = op
-                && let Some(fields) = record_projection_fields(expr)
-            {
-                env.push((name, fields));
-            }
-        }
-    }
-}
-
-fn record_projection_fields(expr: &RuntimeExpr) -> Option<Vec<String>> {
-    let RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::RecordColumns(records))) = expr else {
-        return None;
-    };
-    Some(
-        records
-            .fields()
-            .iter()
-            .map(|field| field.name.clone())
-            .collect(),
-    )
-}
-
-fn fuse_sequence_map_sum_window(
-    ops: &[FlowOp],
-    index: usize,
-    stats: &mut RuntimePlanLowerStats,
-) -> Option<FlowOp> {
-    let (sequence_name, source_expr) = sequence_let_binding(ops.get(index)?)?;
-    let (_, map_expr) = map_let_binding(ops.get(index + 1)?)?;
-    let (sum_pattern, sum_source) = local_sum_let_binding(ops.get(index + 2)?)?;
-    let (map_source, _) = map_expr_source(map_expr)?;
-    if map_source != sequence_name
-        || sum_source != runtime_pattern_binding_name_from_op(ops.get(index + 1)?)?
-    {
-        return None;
-    }
-    if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
-        return None;
-    }
-    if local_uses_in_op(ops.get(index + 2)?, sum_source, stats) != 1 {
-        return None;
-    }
-    if !local_is_unused_after_op(ops, index + 1, sequence_name, stats) {
-        return None;
-    }
-    if !local_is_unused_after_op(ops, index + 2, sum_source, stats) {
-        return None;
-    }
-    let mut fused_map = map_expr.clone();
-    replace_map_source(&mut fused_map, sequence_name, source_expr)?;
-    Some(FlowOp::Let {
-        pattern: sum_pattern.clone(),
-        expr: RuntimeExpr::Sum {
-            source: Box::new(fused_map),
-        },
-    })
-}
-
-fn fuse_map_sum_window(
-    ops: &[FlowOp],
-    index: usize,
-    stats: &mut RuntimePlanLowerStats,
-) -> Option<FlowOp> {
-    let (sequence_name, map_expr) = map_let_binding(ops.get(index)?)?;
-    let (sum_pattern, sum_source) = local_sum_let_binding(ops.get(index + 1)?)?;
-    if sequence_name != sum_source
-        || !local_is_unused_after_op(ops, index + 1, sequence_name, stats)
-    {
-        return None;
-    }
-    if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
-        return None;
-    }
-    Some(FlowOp::Let {
-        pattern: sum_pattern.clone(),
-        expr: RuntimeExpr::Sum {
-            source: Box::new(map_expr.clone()),
-        },
-    })
-}
-
-fn inline_sequence_map_sum_source_window(
-    ops: &[FlowOp],
-    index: usize,
-    stats: &mut RuntimePlanLowerStats,
-) -> Option<FlowOp> {
-    let (sequence_name, source_expr) = sequence_let_binding(ops.get(index)?)?;
-    if !local_is_unused_after_op(ops, index + 1, sequence_name, stats) {
-        return None;
-    }
-    if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
-        return None;
-    }
-    let mut next = ops.get(index + 1)?.clone();
-    replace_map_sum_source(&mut next, sequence_name, source_expr).then_some(next)
-}
-
-fn sequence_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
-    let FlowOp::Let { pattern, expr } = op else {
-        return None;
-    };
-    is_runtime_sequence_expr(expr)
-        .then(|| runtime_pattern_binding_name(pattern).map(|name| (name, expr)))?
-}
-
-fn is_runtime_sequence_expr(expr: &RuntimeExpr) -> bool {
-    matches!(
-        expr,
-        RuntimeExpr::Value(RuntimeValue::Seq(_) | RuntimeValue::Tuple(_))
-            | RuntimeExpr::RepeatSeq { .. }
-            | RuntimeExpr::BracketSeq(_)
-            | RuntimeExpr::Tuple(_)
-    )
-}
-
-fn replace_map_sum_source(op: &mut FlowOp, sequence_name: &str, source_expr: &RuntimeExpr) -> bool {
-    let FlowOp::Let { expr, .. } = op else {
-        return false;
-    };
-    let RuntimeExpr::Sum { source } = expr else {
-        return false;
-    };
-    let RuntimeExpr::Map { source, .. } = source.as_mut() else {
-        return false;
-    };
-    let RuntimeExpr::Local(name) = source.as_ref() else {
-        return false;
-    };
-    if name != sequence_name {
-        return false;
-    }
-    **source = source_expr.clone();
-    true
-}
-
-fn map_expr_source(expr: &RuntimeExpr) -> Option<(&str, &RuntimeExpr)> {
-    let RuntimeExpr::Map { source, .. } = expr else {
-        return None;
-    };
-    let RuntimeExpr::Local(name) = source.as_ref() else {
-        return None;
-    };
-    Some((name.as_str(), source.as_ref()))
-}
-
-fn replace_map_source(
-    expr: &mut RuntimeExpr,
-    sequence_name: &str,
-    source_expr: &RuntimeExpr,
-) -> Option<()> {
-    let RuntimeExpr::Map { source, .. } = expr else {
-        return None;
-    };
-    let RuntimeExpr::Local(name) = source.as_ref() else {
-        return None;
-    };
-    (name == sequence_name).then(|| {
-        **source = source_expr.clone();
-    })
-}
-
-fn map_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
-    let FlowOp::Let { pattern, expr } = op else {
-        return None;
-    };
-    let RuntimeExpr::Map { .. } = expr else {
-        return None;
-    };
-    runtime_pattern_binding_name(pattern).map(|name| (name, expr))
-}
-
-fn local_sum_let_binding(op: &FlowOp) -> Option<(&arcweft_core::pattern::RuntimePattern, &str)> {
-    let FlowOp::Let { pattern, expr } = op else {
-        return None;
-    };
-    let RuntimeExpr::Sum { source } = expr else {
-        return None;
-    };
-    match source.as_ref() {
-        RuntimeExpr::Local(name) => Some((pattern, name.as_str())),
-        _ => None,
-    }
-}
-
-fn runtime_pattern_binding_name(pattern: &arcweft_core::pattern::RuntimePattern) -> Option<&str> {
-    match pattern {
-        arcweft_core::pattern::RuntimePattern::Ident(name)
-        | arcweft_core::pattern::RuntimePattern::MutIdent(name)
-        | arcweft_core::pattern::RuntimePattern::Typed { name, .. } => Some(name.as_str()),
-        _ => None,
-    }
-}
-
-fn runtime_pattern_binding_name_from_op(op: &FlowOp) -> Option<&str> {
-    let FlowOp::Let { pattern, .. } = op else {
-        return None;
-    };
-    runtime_pattern_binding_name(pattern)
-}
-
-fn local_is_unused_after_op(
-    ops: &[FlowOp],
-    op_index: usize,
-    name: &str,
-    stats: &mut RuntimePlanLowerStats,
-) -> bool {
-    stats.local_use_tail_scans += 1;
-    ops.iter().skip(op_index + 1).all(|op| {
-        stats.local_use_scan_ops += 1;
-        count_flow_op_local_uses_by_name(op, name) == 0
-    })
-}
-
-fn local_uses_in_op(op: &FlowOp, name: &str, stats: &mut RuntimePlanLowerStats) -> usize {
-    stats.local_use_scan_ops += 1;
-    count_flow_op_local_uses_by_name(op, name)
-}
-
-fn count_flow_ops_pure_calls(ops: &[FlowOp]) -> usize {
-    ops.iter().map(count_flow_op_pure_calls).sum()
-}
-
-fn count_flow_op_pure_calls(op: &FlowOp) -> usize {
-    match op {
-        FlowOp::LetElse { expr, else_ops, .. } => {
-            count_runtime_expr_pure_calls(expr) + count_flow_ops_pure_calls(else_ops)
-        }
-        FlowOp::If {
-            condition,
-            then_ops,
-            else_ops,
-        } => {
-            count_runtime_expr_pure_calls(condition)
-                + count_flow_ops_pure_calls(then_ops)
-                + count_flow_ops_pure_calls(else_ops)
-        }
-        FlowOp::IfLet {
-            expr,
-            guard,
-            then_ops,
-            else_ops,
-            ..
-        } => {
-            count_runtime_expr_pure_calls(expr)
-                + guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
-                + count_flow_ops_pure_calls(then_ops)
-                + count_flow_ops_pure_calls(else_ops)
-        }
-        FlowOp::Match { scrutinee, arms } => {
-            count_runtime_expr_pure_calls(scrutinee)
-                + arms
-                    .iter()
-                    .map(|arm| {
-                        arm.guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
-                            + count_flow_ops_pure_calls(&arm.ops)
-                    })
-                    .sum::<usize>()
-        }
-        FlowOp::Loop { body }
-        | FlowOp::LetLoop { body, .. }
-        | FlowOp::Thread { body, .. }
-        | FlowOp::Scope(body) => count_flow_ops_pure_calls(body),
-        FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => count_flow_ops_pure_calls(body),
-        FlowOp::While { condition, body } => {
-            count_runtime_expr_pure_calls(condition) + count_flow_ops_pure_calls(body)
-        }
-        FlowOp::WhileNext { condition, body } => {
-            count_runtime_expr_pure_calls(condition) + count_flow_ops_pure_calls(body)
-        }
-        FlowOp::WhileLet {
-            expr, guard, body, ..
-        } => {
-            count_runtime_expr_pure_calls(expr)
-                + guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
-                + count_flow_ops_pure_calls(body)
-        }
-        FlowOp::WhileLetNext {
-            expr, guard, body, ..
-        } => {
-            count_runtime_expr_pure_calls(expr)
-                + guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
-                + count_flow_ops_pure_calls(body)
-        }
-        FlowOp::For { source, body, .. } => {
-            count_runtime_expr_pure_calls(source) + count_flow_ops_pure_calls(body)
-        }
-        FlowOp::AwaitMany { target, .. } => count_runtime_expr_pure_calls(&target.source),
-        FlowOp::HostCall { target, .. } => {
-            target.args.iter().map(count_runtime_expr_pure_calls).sum()
-        }
-        FlowOp::LetScope { ops, value, .. } => {
-            count_flow_ops_pure_calls(ops) + count_runtime_expr_pure_calls(value)
-        }
-        FlowOp::Let { expr, .. }
-        | FlowOp::Break(Some(expr))
-        | FlowOp::GotoExpr(expr)
-        | FlowOp::ReturnExpr(expr)
-        | FlowOp::ExitScopeBind { expr, .. } => count_runtime_expr_pure_calls(expr),
-        FlowOp::Bind(_)
-        | FlowOp::Dialogue { .. }
-        | FlowOp::Choice { .. }
-        | FlowOp::Await { .. }
-        | FlowOp::Effect(_)
-        | FlowOp::RegisterCleanup { .. }
-        | FlowOp::CancelCleanup { .. }
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::Break(None)
-        | FlowOp::Continue
-        | FlowOp::Goto(_)
-        | FlowOp::Return(_)
-        | FlowOp::Noop => 0,
-    }
-}
-
-fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
-    match expr {
-        RuntimeExpr::PureCall { args, .. } => {
-            1 + args
-                .iter()
-                .map(count_runtime_expr_pure_calls)
-                .sum::<usize>()
-        }
-        RuntimeExpr::Let { expr, body, .. } => {
-            count_runtime_expr_pure_calls(expr) + count_runtime_expr_pure_calls(body)
-        }
-        RuntimeExpr::AssignField {
-            target, expr, body, ..
-        } => {
-            count_runtime_expr_pure_calls(target)
-                + count_runtime_expr_pure_calls(expr)
-                + count_runtime_expr_pure_calls(body)
-        }
-        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
-            items.iter().map(count_runtime_expr_pure_calls).sum()
-        }
-        RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_pure_calls(value),
-        RuntimeExpr::Range { start, end, .. } => {
-            start.as_deref().map_or(0, count_runtime_expr_pure_calls)
-                + end.as_deref().map_or(0, count_runtime_expr_pure_calls)
-        }
-        RuntimeExpr::Record(fields) => fields
-            .iter()
-            .map(|field| count_runtime_expr_pure_calls(&field.value))
-            .sum(),
-        RuntimeExpr::Variant { payload, .. } => {
-            payload.as_deref().map_or(0, count_runtime_expr_pure_calls)
-        }
-        RuntimeExpr::Field { target, .. }
-        | RuntimeExpr::ProjectTuple { target, .. }
-        | RuntimeExpr::ProjectRecord { target, .. }
-        | RuntimeExpr::SpreadArg(target) => count_runtime_expr_pure_calls(target),
-        RuntimeExpr::Call { args, .. } => args.iter().map(count_runtime_expr_pure_calls).sum(),
-        RuntimeExpr::Function { body, .. } => count_runtime_expr_pure_calls(body),
-        RuntimeExpr::Apply { callee, args } => {
-            count_runtime_expr_pure_calls(callee)
-                + args
-                    .iter()
-                    .map(count_runtime_expr_pure_calls)
-                    .sum::<usize>()
-        }
-        RuntimeExpr::MethodCall { receiver, args, .. }
-        | RuntimeExpr::TraitCall { receiver, args, .. } => {
-            count_runtime_expr_pure_calls(receiver)
-                + args
-                    .iter()
-                    .map(count_runtime_expr_pure_calls)
-                    .sum::<usize>()
-        }
-        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
-            count_runtime_expr_pure_calls(source) + count_runtime_expr_pure_calls(body)
-        }
-        RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
-            count_runtime_expr_pure_calls(source)
-        }
-        RuntimeExpr::Binary { lhs, rhs, .. } => {
-            count_runtime_expr_pure_calls(lhs) + count_runtime_expr_pure_calls(rhs)
-        }
-        RuntimeExpr::If {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            count_runtime_expr_pure_calls(condition)
-                + count_runtime_expr_pure_calls(then_expr)
-                + count_runtime_expr_pure_calls(else_expr)
-        }
-        RuntimeExpr::IfLet {
-            expr,
-            guard,
-            then_expr,
-            else_expr,
-            ..
-        } => {
-            count_runtime_expr_pure_calls(expr)
-                + guard.as_deref().map_or(0, count_runtime_expr_pure_calls)
-                + count_runtime_expr_pure_calls(then_expr)
-                + count_runtime_expr_pure_calls(else_expr)
-        }
-        RuntimeExpr::Match { scrutinee, arms } => {
-            count_runtime_expr_pure_calls(scrutinee)
-                + arms
-                    .iter()
-                    .map(|arm| {
-                        arm.guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
-                            + count_runtime_expr_pure_calls(&arm.value)
-                    })
-                    .sum::<usize>()
-        }
-        RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => 0,
-    }
-}
-
-fn count_flow_ops_local_uses_by_name(ops: &[FlowOp], name: &str) -> usize {
-    ops.iter()
-        .map(|op| count_flow_op_local_uses_by_name(op, name))
-        .sum()
-}
-
-fn count_flow_op_local_uses_by_name(op: &FlowOp, name: &str) -> usize {
-    match op {
-        FlowOp::LetElse { expr, else_ops, .. } => {
-            count_runtime_expr_local_uses_by_name(expr, name)
-                + count_flow_ops_local_uses_by_name(else_ops, name)
-        }
-        FlowOp::If {
-            condition,
-            then_ops,
-            else_ops,
-        } => {
-            count_runtime_expr_local_uses_by_name(condition, name)
-                + count_flow_ops_local_uses_by_name(then_ops, name)
-                + count_flow_ops_local_uses_by_name(else_ops, name)
-        }
-        FlowOp::IfLet {
-            expr,
-            guard,
-            then_ops,
-            else_ops,
-            ..
-        } => {
-            count_runtime_expr_local_uses_by_name(expr, name)
-                + count_optional_runtime_expr_local_uses_by_name(guard.as_ref(), name)
-                + count_flow_ops_local_uses_by_name(then_ops, name)
-                + count_flow_ops_local_uses_by_name(else_ops, name)
-        }
-        FlowOp::Match { scrutinee, arms } => {
-            count_runtime_expr_local_uses_by_name(scrutinee, name)
-                + count_match_arms_local_uses_by_name(arms, name)
-        }
-        FlowOp::Loop { body }
-        | FlowOp::LetLoop { body, .. }
-        | FlowOp::Thread { body, .. }
-        | FlowOp::Scope(body) => count_flow_ops_local_uses_by_name(body, name),
-        FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
-            count_flow_ops_local_uses_by_name(body, name)
-        }
-        FlowOp::While { condition, body } => {
-            count_runtime_expr_local_uses_by_name(condition, name)
-                + count_flow_ops_local_uses_by_name(body, name)
-        }
-        FlowOp::WhileNext { condition, body } => {
-            count_runtime_expr_local_uses_by_name(condition, name)
-                + count_flow_ops_local_uses_by_name(body, name)
-        }
-        FlowOp::WhileLet {
-            expr, guard, body, ..
-        } => {
-            count_runtime_expr_local_uses_by_name(expr, name)
-                + count_optional_runtime_expr_local_uses_by_name(guard.as_ref(), name)
-                + count_flow_ops_local_uses_by_name(body, name)
-        }
-        FlowOp::WhileLetNext {
-            expr, guard, body, ..
-        } => {
-            count_runtime_expr_local_uses_by_name(expr, name)
-                + count_optional_runtime_expr_local_uses_by_name(guard.as_ref(), name)
-                + count_flow_ops_local_uses_by_name(body, name)
-        }
-        FlowOp::For { source, body, .. } => {
-            count_runtime_expr_local_uses_by_name(source, name)
-                + count_flow_ops_local_uses_by_name(body, name)
-        }
-        FlowOp::AwaitMany { target, .. } => {
-            count_runtime_expr_local_uses_by_name(&target.source, name)
-        }
-        FlowOp::HostCall { target, .. } => target
-            .args
-            .iter()
-            .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
-            .sum(),
-        FlowOp::LetScope { ops, value, .. } => {
-            count_flow_ops_local_uses_by_name(ops, name)
-                + count_runtime_expr_local_uses_by_name(value, name)
-        }
-        FlowOp::Let { expr, .. }
-        | FlowOp::Break(Some(expr))
-        | FlowOp::GotoExpr(expr)
-        | FlowOp::ReturnExpr(expr)
-        | FlowOp::ExitScopeBind { expr, .. } => count_runtime_expr_local_uses_by_name(expr, name),
-        FlowOp::Bind(_)
-        | FlowOp::Dialogue { .. }
-        | FlowOp::Choice { .. }
-        | FlowOp::Await { .. }
-        | FlowOp::Effect(_)
-        | FlowOp::RegisterCleanup { .. }
-        | FlowOp::CancelCleanup { .. }
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::Break(None)
-        | FlowOp::Continue
-        | FlowOp::Goto(_)
-        | FlowOp::Return(_)
-        | FlowOp::Noop => 0,
-    }
-}
-
-fn count_match_arms_local_uses_by_name(arms: &[RuntimeMatchArm], name: &str) -> usize {
-    arms.iter()
-        .map(|arm| {
-            count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
-                + count_flow_ops_local_uses_by_name(&arm.ops, name)
-        })
-        .sum()
-}
-
-fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usize {
-    match expr {
-        RuntimeExpr::Local(local) => usize::from(local == name),
-        RuntimeExpr::Let { expr, body, .. } => {
-            count_runtime_expr_local_uses_by_name(expr, name)
-                + count_runtime_expr_local_uses_by_name(body, name)
-        }
-        RuntimeExpr::AssignField {
-            target, expr, body, ..
-        } => {
-            count_runtime_expr_local_uses_by_name(target, name)
-                + count_runtime_expr_local_uses_by_name(expr, name)
-                + count_runtime_expr_local_uses_by_name(body, name)
-        }
-        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => items
-            .iter()
-            .map(|item| count_runtime_expr_local_uses_by_name(item, name))
-            .sum(),
-        RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_local_uses_by_name(value, name),
-        RuntimeExpr::Range { start, end, .. } => {
-            count_optional_runtime_expr_local_uses_by_name(start.as_deref(), name)
-                + count_optional_runtime_expr_local_uses_by_name(end.as_deref(), name)
-        }
-        RuntimeExpr::Record(fields) => fields
-            .iter()
-            .map(|field| count_runtime_expr_local_uses_by_name(&field.value, name))
-            .sum(),
-        RuntimeExpr::Variant { payload, .. } => payload.as_deref().map_or(0, |payload| {
-            count_runtime_expr_local_uses_by_name(payload, name)
-        }),
-        RuntimeExpr::Field { target, .. }
-        | RuntimeExpr::ProjectTuple { target, .. }
-        | RuntimeExpr::ProjectRecord { target, .. }
-        | RuntimeExpr::SpreadArg(target) => count_runtime_expr_local_uses_by_name(target, name),
-        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => args
-            .iter()
-            .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
-            .sum(),
-        RuntimeExpr::Function { params, body } => {
-            count_runtime_function_local_uses_by_name(params, body, name)
-        }
-        RuntimeExpr::Apply { callee, args } => {
-            count_runtime_apply_local_uses_by_name(callee, args, name)
-        }
-        RuntimeExpr::MethodCall { receiver, args, .. }
-        | RuntimeExpr::TraitCall { receiver, args, .. } => {
-            count_runtime_expr_local_uses_by_name(receiver, name)
-                + args
-                    .iter()
-                    .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
-                    .sum::<usize>()
-        }
-        RuntimeExpr::Map {
-            source,
-            param,
-            body,
-        }
-        | RuntimeExpr::Filter {
-            source,
-            param,
-            body,
-        } => count_runtime_scoped_body_local_uses_by_name(source, param, body, name),
-        RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
-            count_runtime_expr_local_uses_by_name(source, name)
-        }
-        RuntimeExpr::Binary { lhs, rhs, .. } => {
-            count_runtime_expr_local_uses_by_name(lhs, name)
-                + count_runtime_expr_local_uses_by_name(rhs, name)
-        }
-        RuntimeExpr::If {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            count_runtime_expr_local_uses_by_name(condition, name)
-                + count_runtime_expr_local_uses_by_name(then_expr, name)
-                + count_runtime_expr_local_uses_by_name(else_expr, name)
-        }
-        RuntimeExpr::IfLet {
-            expr,
-            guard,
-            then_expr,
-            else_expr,
-            ..
-        } => count_runtime_if_let_local_uses_by_name(
-            expr,
-            guard.as_deref(),
-            then_expr,
-            else_expr,
-            name,
-        ),
-        RuntimeExpr::Match { scrutinee, arms } => {
-            count_runtime_match_local_uses_by_name(scrutinee, arms, name)
-        }
-        RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => 0,
-    }
-}
-
-fn count_runtime_function_local_uses_by_name(
-    params: &[String],
-    body: &RuntimeExpr,
-    name: &str,
-) -> usize {
-    if params.iter().any(|param| param == name) {
-        0
-    } else {
-        count_runtime_expr_local_uses_by_name(body, name)
-    }
-}
-
-fn count_runtime_apply_local_uses_by_name(
-    callee: &RuntimeExpr,
-    args: &[RuntimeExpr],
-    name: &str,
-) -> usize {
-    count_runtime_expr_local_uses_by_name(callee, name)
-        + args
-            .iter()
-            .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
-            .sum::<usize>()
-}
-
-fn count_runtime_scoped_body_local_uses_by_name(
-    source: &RuntimeExpr,
-    param: &str,
-    body: &RuntimeExpr,
-    name: &str,
-) -> usize {
-    count_runtime_expr_local_uses_by_name(source, name)
-        + if param == name {
-            0
-        } else {
-            count_runtime_expr_local_uses_by_name(body, name)
-        }
-}
-
-fn count_runtime_if_let_local_uses_by_name(
-    expr: &RuntimeExpr,
-    guard: Option<&RuntimeExpr>,
-    then_expr: &RuntimeExpr,
-    else_expr: &RuntimeExpr,
-    name: &str,
-) -> usize {
-    count_runtime_expr_local_uses_by_name(expr, name)
-        + count_optional_runtime_expr_local_uses_by_name(guard, name)
-        + count_runtime_expr_local_uses_by_name(then_expr, name)
-        + count_runtime_expr_local_uses_by_name(else_expr, name)
-}
-
-fn count_runtime_match_local_uses_by_name(
-    scrutinee: &RuntimeExpr,
-    arms: &[RuntimeExprMatchArm],
-    name: &str,
-) -> usize {
-    count_runtime_expr_local_uses_by_name(scrutinee, name)
-        + arms
-            .iter()
-            .map(|arm| {
-                count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
-                    + count_runtime_expr_local_uses_by_name(&arm.value, name)
-            })
-            .sum::<usize>()
-}
-
-fn count_optional_runtime_expr_local_uses_by_name(expr: Option<&RuntimeExpr>, name: &str) -> usize {
-    expr.map_or(0, |expr| count_runtime_expr_local_uses_by_name(expr, name))
 }
 
 fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {
@@ -1309,6 +502,7 @@ pub(crate) fn lower_runtime_flows(
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
         function_local_scopes: Vec::new(),
+        current_location: ExecutableLoweringLocation::root("flow `<pending>`"),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: options.for_iteration_evidence(),
@@ -1351,6 +545,7 @@ fn lower_agent_controller_flow(
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
         function_local_scopes: Vec::new(),
+        current_location: ExecutableLoweringLocation::root("agent `<pending>`"),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: &[],
@@ -1363,9 +558,12 @@ fn lower_agent_controller_flow(
         },
         flow_runtime_id,
     );
+    lowerer.current_location =
+        ExecutableLoweringLocation::root(format!("agent flow `{}`", id.canonical_label()));
     let mut ops = lowerer.lower_flow_stmt_list(&id, 0, agent.item().body_statements());
     if let Some(value) = agent.item().body_value() {
-        if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value.expr()) {
+        if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value.expr(), value.range())
+        {
             ops.append(&mut host_ops);
         } else {
             ops.push(FlowOp::ReturnExpr(lowerer.lower_runtime_expr(value.expr())));
@@ -1386,6 +584,7 @@ struct FlowRuntimeLowerer<'helpers, 'functions, 'evidence> {
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
     presentation_handle_scopes: Vec<BTreeMap<String, PresentationHandleBinding>>,
     function_local_scopes: Vec<BTreeMap<String, usize>>,
+    current_location: ExecutableLoweringLocation,
     errors: Vec<RuntimePlanLowerError>,
     pure_helpers: RuntimePureHelperLookup<'helpers, 'functions, 'static>,
     for_iteration_evidence: &'evidence [RuntimeIteratorEvidence],
@@ -1416,6 +615,43 @@ fn runtime_expr_function_arity(
 }
 
 impl FlowRuntimeLowerer<'_, '_, '_> {
+    fn lower_runtime_pattern(
+        &mut self,
+        pattern: &Pattern,
+        statement_kind: &'static str,
+        role: &'static str,
+        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+    ) -> RuntimePattern {
+        match lower_runtime_pattern_checked(pattern) {
+            Ok(pattern) => pattern,
+            Err(reason) => {
+                self.errors.push(self.current_location.named_pattern_error(
+                    statement_kind,
+                    role,
+                    source_range,
+                    reason,
+                ));
+                RuntimePattern::Discard
+            }
+        }
+    }
+
+    fn lower_stmt_pattern(
+        &mut self,
+        statement: &Stmt,
+        pattern: &Pattern,
+        role: &'static str,
+    ) -> RuntimePattern {
+        match lower_runtime_pattern_checked(pattern) {
+            Ok(pattern) => pattern,
+            Err(reason) => {
+                self.errors
+                    .push(self.current_location.pattern_error(statement, role, reason));
+                RuntimePattern::Discard
+            }
+        }
+    }
+
     fn lower_runtime_expr_result(&self, expr: &Expr) -> Result<RuntimeExpr, String> {
         let function_locals = self.active_function_locals();
         let context = self.pure_helpers.with_function_locals(&function_locals);
@@ -1495,6 +731,8 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             },
             flow_runtime_id,
         );
+        self.current_location =
+            ExecutableLoweringLocation::root(format!("flow `{}`", id.canonical_label()));
         let ops = self.lower_flow_items(&id, flow.body(), index);
         RuntimeFlow { id, ops }
     }
@@ -1505,6 +743,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         items: &[HirFlowItem],
         flow_index: usize,
     ) -> Vec<FlowOp> {
+        let parent_location = self.current_location.clone();
         self.speaker_preset_scopes.push(BTreeMap::new());
         self.presentation_handle_scopes.push(BTreeMap::new());
         self.function_local_scopes.push(BTreeMap::new());
@@ -1512,6 +751,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         self.function_local_scopes.pop();
         self.presentation_handle_scopes.pop();
         self.speaker_preset_scopes.pop();
+        self.current_location = parent_location;
         ops
     }
 
@@ -1522,104 +762,139 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         flow_index: usize,
     ) -> Vec<FlowOp> {
         let mut ops = Vec::new();
-        for item in items {
-            match item {
-                HirFlowItem::Dialogue(dialogue) => {
-                    ops.push(self.lower_runtime_dialogue(flow_id, flow_index, dialogue));
-                }
-                HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
-                    ops.push(self.lower_choice(choice));
-                }
-                HirFlowItem::Await(await_with) => {
-                    ops.push(self.lower_await(None, await_with));
-                }
-                HirFlowItem::LetAwait {
+        let parent_location = self.current_location.clone();
+        for (index, item) in items.iter().enumerate() {
+            self.current_location = parent_location.statement(index);
+            ops.extend(self.lower_flow_item(flow_id, item, flow_index));
+        }
+        self.current_location = parent_location;
+        ops
+    }
+
+    fn lower_flow_item(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        item: &HirFlowItem,
+        flow_index: usize,
+    ) -> Vec<FlowOp> {
+        match item {
+            HirFlowItem::Dialogue(dialogue) => {
+                vec![self.lower_runtime_dialogue(flow_id, flow_index, dialogue)]
+            }
+            HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+                vec![self.lower_choice(choice)]
+            }
+            HirFlowItem::Await(await_with) => vec![self.lower_await(None, await_with)],
+            HirFlowItem::LetAwait {
+                pattern,
+                await_with,
+                ..
+            } => vec![self.lower_await(Some(pattern), await_with)],
+            HirFlowItem::Stmt(stmt) => {
+                self.register_speaker_preset(stmt);
+                self.lower_flow_stmt(flow_id, flow_index, stmt)
+            }
+            HirFlowItem::Thread(thread) => self.lower_hir_thread(thread, flow_id, flow_index),
+            HirFlowItem::Scope(scope) => vec![FlowOp::Scope(self.lower_flow_items(
+                flow_id,
+                scope.body(),
+                flow_index,
+            ))],
+            HirFlowItem::LetScope { pattern, scope } => {
+                vec![self.lower_scope_expr(flow_id, flow_index, pattern, scope)]
+            }
+            other => self.lower_control_flow_item(flow_id, other, flow_index),
+        }
+    }
+
+    fn lower_control_flow_item(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        item: &HirFlowItem,
+        flow_index: usize,
+    ) -> Vec<FlowOp> {
+        match item {
+            HirFlowItem::If(block) => vec![FlowOp::If {
+                condition: self.lower_runtime_expr(block.condition()),
+                then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
+                else_ops: self.lower_flow_items(flow_id, block.else_body(), flow_index),
+            }],
+            HirFlowItem::IfLet(block) => {
+                let pattern = self.lower_runtime_pattern(
+                    block.pattern(),
+                    "if-let",
+                    "binding",
+                    block.expr_authored().range(),
+                );
+                vec![FlowOp::IfLet {
                     pattern,
-                    await_with,
-                    ..
-                } => {
-                    ops.push(self.lower_await(Some(pattern), await_with));
-                }
-                HirFlowItem::Stmt(stmt) => {
-                    self.register_speaker_preset(stmt);
-                    ops.extend(self.lower_flow_stmt(flow_id, flow_index, stmt));
-                }
-                HirFlowItem::Thread(thread) => {
-                    ops.extend(self.lower_hir_thread(thread, flow_id, flow_index));
-                }
-                HirFlowItem::Scope(scope) => {
-                    ops.push(FlowOp::Scope(self.lower_flow_items(
-                        flow_id,
-                        scope.body(),
-                        flow_index,
-                    )));
-                }
-                HirFlowItem::LetScope { pattern, scope } => {
-                    ops.push(self.lower_scope_expr(flow_id, flow_index, pattern, scope));
-                }
-                HirFlowItem::If(block) => {
-                    ops.push(FlowOp::If {
-                        condition: self.lower_runtime_expr(block.condition()),
-                        then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
-                        else_ops: self.lower_flow_items(flow_id, block.else_body(), flow_index),
-                    });
-                }
-                HirFlowItem::IfLet(block) => {
-                    ops.push(FlowOp::IfLet {
-                        pattern: lower_runtime_pattern(block.pattern()),
-                        expr: self.lower_runtime_expr(block.expr()),
-                        guard: self.lower_optional_runtime_expr(block.guard()),
-                        then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
-                        else_ops: self.lower_flow_items(flow_id, block.else_body(), flow_index),
-                    });
-                }
-                HirFlowItem::Match(block) => {
-                    ops.push(self.lower_match_block(flow_id, block, flow_index));
-                }
-                HirFlowItem::Loop(block) => {
-                    ops.push(FlowOp::Loop {
-                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
-                    });
-                }
-                HirFlowItem::LetLoop { pattern, block } => {
-                    ops.push(self.lower_loop_expr(flow_id, pattern, block, flow_index));
-                }
-                HirFlowItem::While(block) => {
-                    ops.push(FlowOp::While {
-                        condition: self.lower_runtime_expr(block.condition()),
-                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
-                    });
-                }
-                HirFlowItem::WhileLet(block) => {
-                    ops.push(FlowOp::WhileLet {
-                        pattern: lower_runtime_pattern(block.pattern()),
-                        expr: self.lower_runtime_expr(block.expr()),
-                        guard: self.lower_optional_runtime_expr(block.guard()),
-                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
-                    });
-                }
-                HirFlowItem::For(block) => {
-                    if let Some(evidence) = self.next_for_iteration_evidence() {
-                        ops.push(FlowOp::For {
-                            pattern: lower_runtime_pattern(block.pattern()),
-                            source: self.lower_runtime_expr(block.source()),
-                            evidence,
-                            body: self.lower_flow_items(flow_id, block.body(), flow_index),
-                        });
-                    } else {
-                        self.errors.push(RuntimePlanLowerError::new(
-                            "missing trait-resolved IntoIterator evidence for `for` source",
-                        ));
-                    }
-                }
-                other => {
-                    self.errors.push(RuntimePlanLowerError::new(format!(
-                        "unsupported flow item for runtime lowering: {other:?}"
-                    )));
-                }
+                    expr: self.lower_runtime_expr(block.expr()),
+                    guard: self.lower_optional_runtime_expr(block.guard()),
+                    then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
+                    else_ops: self.lower_flow_items(flow_id, block.else_body(), flow_index),
+                }]
+            }
+            HirFlowItem::Match(block) => {
+                vec![self.lower_match_block(flow_id, block, flow_index)]
+            }
+            HirFlowItem::Loop(block) => vec![FlowOp::Loop {
+                body: self.lower_flow_items(flow_id, block.body(), flow_index),
+            }],
+            HirFlowItem::LetLoop { pattern, block } => {
+                vec![self.lower_loop_expr(flow_id, pattern, block, flow_index)]
+            }
+            HirFlowItem::While(block) => vec![FlowOp::While {
+                condition: self.lower_runtime_expr(block.condition()),
+                body: self.lower_flow_items(flow_id, block.body(), flow_index),
+            }],
+            HirFlowItem::WhileLet(block) => {
+                let pattern = self.lower_runtime_pattern(
+                    block.pattern(),
+                    "while-let",
+                    "binding",
+                    block.expr_authored().range(),
+                );
+                vec![FlowOp::WhileLet {
+                    pattern,
+                    expr: self.lower_runtime_expr(block.expr()),
+                    guard: self.lower_optional_runtime_expr(block.guard()),
+                    body: self.lower_flow_items(flow_id, block.body(), flow_index),
+                }]
+            }
+            HirFlowItem::For(block) => self.lower_for_flow_item(flow_id, block, flow_index),
+            other => {
+                self.errors.push(RuntimePlanLowerError::new(format!(
+                    "unsupported flow item for runtime lowering: {other:?}"
+                )));
+                Vec::new()
             }
         }
-        ops
+    }
+
+    fn lower_for_flow_item(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        block: &HirFor,
+        flow_index: usize,
+    ) -> Vec<FlowOp> {
+        let Some(evidence) = self.next_for_iteration_evidence() else {
+            self.errors.push(RuntimePlanLowerError::new(
+                "missing trait-resolved IntoIterator evidence for `for` source",
+            ));
+            return Vec::new();
+        };
+        let pattern = self.lower_runtime_pattern(
+            block.pattern(),
+            "for",
+            "binding",
+            block.source_authored().range(),
+        );
+        vec![FlowOp::For {
+            pattern,
+            source: self.lower_runtime_expr(block.source()),
+            evidence,
+            body: self.lower_flow_items(flow_id, block.body(), flow_index),
+        }]
     }
 
     fn register_speaker_preset(&mut self, stmt: &Stmt) {
@@ -1680,7 +955,12 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
                 .arms()
                 .iter()
                 .map(|arm| RuntimeMatchArm {
-                    pattern: lower_runtime_pattern(arm.pattern()),
+                    pattern: self.lower_runtime_pattern(
+                        arm.pattern(),
+                        "match",
+                        "arm",
+                        block.expr_authored().range(),
+                    ),
                     guard: self.lower_optional_runtime_expr(arm.guard()),
                     ops: self.lower_flow_items(flow_id, arm.body(), flow_index),
                 })
@@ -1696,7 +976,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         flow_index: usize,
     ) -> FlowOp {
         FlowOp::LetLoop {
-            pattern: lower_runtime_pattern(pattern),
+            pattern: self.lower_runtime_pattern(pattern, "let-loop", "binding", None),
             body: self.lower_flow_items(flow_id, block.body(), flow_index),
         }
     }
@@ -1791,6 +1071,9 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
     fn lower_await(&mut self, binding: Option<&Pattern>, await_with: &HirAwait) -> FlowOp {
         let label = expr_label(await_with.expr());
         let task_name = sanitize_task_id_part(&label);
+        let source_range = await_with.expr_authored().range();
+        let binding = binding
+            .map(|pattern| self.lower_runtime_pattern(pattern, "await", "binding", source_range));
         let pending = await_with
             .branches()
             .iter()
@@ -1800,23 +1083,40 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         match self.lower_await_many_target(await_with.expr(), &task_name) {
             Ok(Some(target)) => {
                 return FlowOp::AwaitMany {
-                    binding: binding.map(lower_runtime_pattern),
+                    binding,
                     target,
                     pending,
                 };
             }
             Ok(None) => {}
             Err(message) => {
-                self.errors.push(RuntimePlanLowerError::new(message));
+                self.errors
+                    .push(self.current_location.named_expression_error(
+                        "await",
+                        "target",
+                        source_range,
+                        message,
+                    ));
                 return FlowOp::Noop;
             }
         }
+        let request = match lower_host_task_request(await_with.expr()) {
+            Ok(request) => request,
+            Err(error) => {
+                self.errors.push(error.into_runtime_error(
+                    self.current_location.owner(),
+                    self.current_location.path().to_vec(),
+                    source_range,
+                ));
+                return FlowOp::Noop;
+            }
+        };
         FlowOp::Await {
-            binding: binding.map(lower_runtime_pattern),
+            binding,
             target: AwaitTarget::new(
                 NeedId(format!("need.await.{task_name}")),
                 TaskId(format!("task.await.{task_name}")),
-                lower_host_task_request(await_with.expr()),
+                request,
             ),
             pending,
         }
@@ -1884,35 +1184,14 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         flow_index: usize,
         stmt: &Stmt,
     ) -> Vec<FlowOp> {
+        if let Some(binding) = self.lower_binding_flow_stmt(flow_id, flow_index, stmt) {
+            return binding;
+        }
         match stmt {
-            Stmt::Let {
-                pattern, ty, expr, ..
-            } => self.lower_let_stmt(flow_id, flow_index, pattern, ty.as_ref(), expr),
-            Stmt::LetScope { pattern, scope } => {
-                self.lower_let_scope_stmt(flow_id, flow_index, pattern, scope)
-            }
-            Stmt::LetLoop { pattern, block } => vec![FlowOp::LetLoop {
-                pattern: lower_runtime_pattern(pattern),
-                body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
-            }],
-            Stmt::LetActionReceive { pattern, action } => {
-                self.lower_action_receive_stmt(pattern, action.expr())
-            }
-            Stmt::LetElse {
-                pattern,
-                ty,
-                expr,
-                else_body,
-            } => vec![FlowOp::LetElse {
-                pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr_with_expected_type(ty.as_ref(), expr.expr()),
-                else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
-            }],
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr.expr()))],
-            Stmt::Return { expr, .. } => vec![FlowOp::ReturnExpr(
-                self.lower_runtime_expr_result(expr)
-                    .unwrap_or_else(|_| lower_runtime_expr(expr)),
-            )],
+            Stmt::Return { expr, .. } => {
+                vec![FlowOp::ReturnExpr(self.lower_runtime_expr(expr))]
+            }
             Stmt::Assign { target, expr } => self
                 .lower_assignment_stmt(target.expr(), expr.expr())
                 .map_or_else(Vec::new, |expr| {
@@ -1921,11 +1200,9 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
                         expr,
                     }]
                 }),
-            Stmt::Expr { expr, .. } => self
-                .lower_presentation_handle_method(expr)
-                .or_else(|| Self::lower_explicit_presentation_mount(flow_id, expr))
-                .or_else(|| self.lower_agent_host_call_expr(expr))
-                .unwrap_or_else(|| vec![FlowOp::Effect(runtime_call_effect(expr))]),
+            Stmt::Expr {
+                expr, expr_range, ..
+            } => self.lower_effect_statement(flow_id, stmt, expr, *expr_range),
             Stmt::Out { label, expr } => {
                 vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
                     label: label.clone(),
@@ -1949,17 +1226,20 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
                 expr,
                 guard,
                 body,
-            } => vec![FlowOp::WhileLet {
-                pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr(expr.expr()),
-                guard: self.lower_optional_runtime_expr(guard.as_ref().map(AuthoredExpr::expr)),
-                body: self.lower_flow_stmt_list(flow_id, flow_index, body),
-            }],
+            } => {
+                let pattern = self.lower_stmt_pattern(stmt, pattern, "binding");
+                vec![FlowOp::WhileLet {
+                    pattern,
+                    expr: self.lower_runtime_expr(expr.expr()),
+                    guard: self.lower_optional_runtime_expr(guard.as_ref().map(AuthoredExpr::expr)),
+                    body: self.lower_flow_stmt_list(flow_id, flow_index, body),
+                }]
+            }
             Stmt::For {
                 pattern,
                 source,
                 body,
-            } => self.lower_for_stmt(flow_id, flow_index, pattern, source.expr(), body),
+            } => self.lower_for_stmt(flow_id, flow_index, stmt, pattern, source.expr(), body),
             Stmt::Thread(thread) => self.lower_thread_stmt(flow_id, flow_index, thread),
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
                 scrutinee: self.lower_runtime_expr(expr.expr()),
@@ -1977,6 +1257,58 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
                 )));
                 Vec::new()
             }
+        }
+    }
+
+    fn lower_binding_flow_stmt(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        stmt: &Stmt,
+    ) -> Option<Vec<FlowOp>> {
+        match stmt {
+            Stmt::Let {
+                pattern,
+                ty,
+                expr,
+                expr_range,
+                ..
+            } => Some(self.lower_let_stmt(
+                flow_id,
+                flow_index,
+                pattern,
+                ty.as_ref(),
+                expr,
+                *expr_range,
+            )),
+            Stmt::LetScope { pattern, scope } => {
+                Some(self.lower_let_scope_stmt(flow_id, flow_index, pattern, scope))
+            }
+            Stmt::LetLoop { pattern, block } => {
+                let pattern = self.lower_stmt_pattern(stmt, pattern, "binding");
+                Some(vec![FlowOp::LetLoop {
+                    pattern,
+                    body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
+                }])
+            }
+            Stmt::LetActionReceive { pattern, action } => {
+                let pattern = self.lower_stmt_pattern(stmt, pattern, "binding");
+                Some(self.lower_action_receive_stmt(pattern, action.expr()))
+            }
+            Stmt::LetElse {
+                pattern,
+                ty,
+                expr,
+                else_body,
+            } => {
+                let pattern = self.lower_stmt_pattern(stmt, pattern, "binding");
+                Some(vec![FlowOp::LetElse {
+                    pattern,
+                    expr: self.lower_runtime_expr_with_expected_type(ty.as_ref(), expr.expr()),
+                    else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
+                }])
+            }
+            _ => None,
         }
     }
 
@@ -1998,9 +1330,42 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         vec![op]
     }
 
-    fn lower_action_receive_stmt(&mut self, pattern: &Pattern, action: &Expr) -> Vec<FlowOp> {
+    fn lower_effect_statement(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        statement: &Stmt,
+        expr: &Expr,
+        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+    ) -> Vec<FlowOp> {
+        if let Some(ops) = self.lower_presentation_handle_method(expr) {
+            return ops;
+        }
+        if let Some(ops) = Self::lower_explicit_presentation_mount(flow_id, expr) {
+            return ops;
+        }
+        if let Some(ops) = self.lower_agent_host_call_expr(expr, source_range) {
+            return ops;
+        }
+        let function_locals = self.active_function_locals();
+        let helpers = self.pure_helpers.with_function_locals(&function_locals);
+        match lower_runtime_effect_strict_with_pure(expr, helpers) {
+            Ok(LoweredRuntimeEffect::Static(effect)) => vec![FlowOp::Effect(effect)],
+            Ok(LoweredRuntimeEffect::Evaluated(effect)) => vec![FlowOp::EvaluatedEffect(effect)],
+            Err(reason) => {
+                self.errors.push(self.current_location.expression_error(
+                    statement,
+                    "effect",
+                    source_range,
+                    reason,
+                ));
+                Vec::new()
+            }
+        }
+    }
+
+    fn lower_action_receive_stmt(&mut self, pattern: RuntimePattern, action: &Expr) -> Vec<FlowOp> {
         vec![FlowOp::HostCall {
-            binding: Some(lower_runtime_pattern(pattern)),
+            binding: Some(pattern),
             target: RuntimeHostCallTarget::new(
                 "view.action.await",
                 "view.action",
@@ -2040,7 +1405,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             });
         }
         ops.push(FlowOp::Let {
-            pattern: lower_runtime_pattern(pattern),
+            pattern: self.lower_runtime_pattern(pattern, "let", "binding", None),
             expr: RuntimeExpr::Value(RuntimeValue::String(handle_id)),
         });
         Some(ops)
@@ -2181,6 +1546,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         &mut self,
         flow_id: &FlowRuntimeId,
         flow_index: usize,
+        statement: &Stmt,
         pattern: &Pattern,
         source: &Expr,
         body: &[Stmt],
@@ -2191,8 +1557,9 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             ));
             return Vec::new();
         };
+        let pattern = self.lower_stmt_pattern(statement, pattern, "binding");
         vec![FlowOp::For {
-            pattern: lower_runtime_pattern(pattern),
+            pattern,
             source: self.lower_runtime_expr(source),
             evidence,
             body: self.lower_flow_stmt_list(flow_id, flow_index, body),
@@ -2206,8 +1573,9 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         pattern: &Pattern,
         ty: Option<&TypeRef>,
         expr: &Expr,
+        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
     ) -> Vec<FlowOp> {
-        let binding = self.lower_let_binding(flow_id, flow_index, pattern, ty, expr);
+        let binding = self.lower_let_binding(flow_id, flow_index, pattern, ty, expr, source_range);
         self.record_function_local_binding(pattern, binding.function_arity());
         binding.into_ops()
     }
@@ -2219,11 +1587,12 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         pattern: &Pattern,
         ty: Option<&TypeRef>,
         expr: &Expr,
+        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
     ) -> LoweredLetBinding {
         if let Some(ops) = self.lower_dialogue_result_let(flow_id, flow_index, pattern, expr) {
             return LoweredLetBinding::non_function(ops);
         }
-        if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
+        if let Some(op) = self.lower_agent_host_call_let(pattern, expr, source_range) {
             return LoweredLetBinding::non_function(vec![op]);
         }
         if let Some(ops) = self.lower_presentation_handle_let(flow_id, pattern, expr) {
@@ -2236,7 +1605,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         let arity = self.runtime_expr_function_arity(&expr);
         LoweredLetBinding::new(
             vec![FlowOp::Let {
-                pattern: lower_runtime_pattern(pattern),
+                pattern: self.lower_runtime_pattern(pattern, "let", "binding", None),
                 expr,
             }],
             arity,
@@ -2273,7 +1642,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         );
         (
             FlowOp::LetScope {
-                pattern: lower_runtime_pattern(pattern),
+                pattern: self.lower_runtime_pattern(pattern, "let-scope", "binding", None),
                 ops,
                 value,
             },
@@ -2291,10 +1660,13 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
     ) -> (Vec<FlowOp>, RuntimeExpr, Option<usize>) {
         self.presentation_handle_scopes.push(BTreeMap::new());
         self.function_local_scopes.push(BTreeMap::new());
-        let ops = statements
-            .iter()
-            .flat_map(|statement| self.lower_flow_stmt(flow_id, flow_index, statement))
-            .collect();
+        let parent_location = self.current_location.clone();
+        let mut ops = Vec::new();
+        for (index, statement) in statements.iter().enumerate() {
+            self.current_location = parent_location.statement(index);
+            ops.extend(self.lower_flow_stmt(flow_id, flow_index, statement));
+        }
+        self.current_location = parent_location;
         let value = value.map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
             self.lower_runtime_expr_with_expected_type(expected_ty, value)
         });
@@ -2312,7 +1684,7 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
     ) -> Vec<RuntimeMatchArm> {
         arms.iter()
             .map(|arm| RuntimeMatchArm {
-                pattern: lower_runtime_pattern(arm.pattern()),
+                pattern: self.lower_runtime_pattern(arm.pattern(), "match", "arm", None),
                 guard: self.lower_optional_runtime_expr(arm.guard()),
                 ops: self.lower_flow_stmt_list(flow_id, flow_index, arm.body()),
             })
@@ -2386,20 +1758,36 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         Some(vec![
             self.lower_runtime_dialogue(flow_id, flow_index, &dialogue),
             FlowOp::Let {
-                pattern: lower_runtime_pattern(pattern),
+                pattern: self.lower_runtime_pattern(pattern, "let", "binding", None),
                 expr: self.lower_runtime_expr(expr),
             },
         ])
     }
 
-    fn lower_agent_host_call_let(&mut self, pattern: &Pattern, expr: &Expr) -> Option<FlowOp> {
+    fn lower_agent_host_call_let(
+        &mut self,
+        pattern: &Pattern,
+        expr: &Expr,
+        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+    ) -> Option<FlowOp> {
         if !self.agent_controller {
             return None;
         }
-        let request = lower_agent_host_task_request(expr)?;
+        let request = match lower_agent_host_task_request(expr) {
+            Ok(Some(request)) => request,
+            Ok(None) => return None,
+            Err(error) => {
+                self.errors.push(error.into_runtime_error(
+                    self.current_location.owner(),
+                    self.current_location.path().to_vec(),
+                    source_range,
+                ));
+                return Some(FlowOp::Noop);
+            }
+        };
         let task_name = agent_task_name(expr);
         Some(FlowOp::Await {
-            binding: Some(lower_runtime_pattern(pattern)),
+            binding: Some(self.lower_runtime_pattern(pattern, "let", "binding", None)),
             target: AwaitTarget::new(
                 NeedId(format!("need.agent.{task_name}")),
                 TaskId(format!("task.agent.{task_name}")),
@@ -2409,11 +1797,26 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         })
     }
 
-    fn lower_agent_host_call_expr(&mut self, expr: &Expr) -> Option<Vec<FlowOp>> {
+    fn lower_agent_host_call_expr(
+        &mut self,
+        expr: &Expr,
+        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+    ) -> Option<Vec<FlowOp>> {
         if !self.agent_controller {
             return None;
         }
-        let request = lower_agent_host_task_request(expr)?;
+        let request = match lower_agent_host_task_request(expr) {
+            Ok(Some(request)) => request,
+            Ok(None) => return None,
+            Err(error) => {
+                self.errors.push(error.into_runtime_error(
+                    self.current_location.owner(),
+                    self.current_location.path().to_vec(),
+                    source_range,
+                ));
+                return Some(vec![FlowOp::Noop]);
+            }
+        };
         let task_name = agent_task_name(expr);
         Some(vec![FlowOp::Await {
             binding: None,
@@ -2434,9 +1837,11 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
     ) -> Vec<FlowOp> {
         self.presentation_handle_scopes.push(BTreeMap::new());
         self.function_local_scopes.push(BTreeMap::new());
-        let ops = items
-            .iter()
-            .flat_map(|item| match item {
+        let parent_location = self.current_location.clone();
+        let mut ops = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            self.current_location = parent_location.statement(index);
+            ops.extend(match item {
                 FlowItem::Stmt(statement) => self.lower_flow_stmt(flow_id, flow_index, statement),
                 other => {
                     self.errors.push(RuntimePlanLowerError::new(format!(
@@ -2444,8 +1849,9 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
                     )));
                     Vec::new()
                 }
-            })
-            .collect();
+            });
+        }
+        self.current_location = parent_location;
         self.function_local_scopes.pop();
         self.presentation_handle_scopes.pop();
         ops

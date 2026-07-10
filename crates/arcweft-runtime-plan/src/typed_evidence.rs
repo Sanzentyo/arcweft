@@ -33,6 +33,7 @@ pub enum RuntimeTypedLoweringEvidenceKind {
     FunctionValueCall {
         callee: Option<String>,
         arg_count: usize,
+        partial: bool,
     },
     /// An expression was checked in a function-typed expected context.
     ExpectedFunctionValue { arity: usize },
@@ -143,6 +144,27 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
                     RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
                         callee: expected_callee,
                         arg_count: expected_arg_count,
+                        ..
+                    } if expected_arg_count == &arg_count
+                        && expected_callee.as_deref() == callee
+                )
+        })
+    }
+
+    pub(crate) fn has_partial_function_value_call(
+        self,
+        expression_id: RuntimeTypedExpressionId,
+        callee: Option<&str>,
+        arg_count: usize,
+    ) -> bool {
+        self.evidence.iter().any(|evidence| {
+            evidence.expression_id == expression_id
+                && matches!(
+                    &evidence.kind,
+                    RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
+                        callee: expected_callee,
+                        arg_count: expected_arg_count,
+                        partial: true,
                     } if expected_arg_count == &arg_count
                         && expected_callee.as_deref() == callee
                 )

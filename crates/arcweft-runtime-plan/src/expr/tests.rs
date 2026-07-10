@@ -630,7 +630,33 @@ fn strict_runtime_lowers_partial_placeholder_filter_body() {
 }
 
 #[test]
-fn strict_runtime_unwraps_try_around_runtime_method_calls() {
+fn strict_runtime_rejects_try_and_await_without_control_boundaries() {
+    let method_call = Expr::selected_call(
+        Expr::select(Expr::Path("frame".into()), "objects"),
+        "require_role",
+        vec![CallArg::Positional(Expr::Literal(Literal::String(
+            "dialogue_textbox".to_owned(),
+        )))],
+    );
+    let try_expr = Expr::Try {
+        expr: Box::new(method_call.clone()),
+    };
+    let await_expr = Expr::Await {
+        expr: Box::new(method_call),
+        applies_try: false,
+    };
+
+    let try_error =
+        lower_runtime_expr_strict(&try_expr).expect_err("try requires control lowering");
+    let await_error =
+        lower_runtime_expr_strict(&await_expr).expect_err("await requires control lowering");
+
+    assert!(try_error.contains("error-propagation boundary"));
+    assert!(await_error.contains("suspension-aware statement lowering"));
+}
+
+#[test]
+fn lossy_runtime_label_lowering_remains_non_executable() {
     let expr = Expr::Try {
         expr: Box::new(Expr::selected_call(
             Expr::select(Expr::Path("frame".into()), "objects"),
@@ -641,7 +667,7 @@ fn strict_runtime_unwraps_try_around_runtime_method_calls() {
         )),
     };
 
-    let lowered = lower_runtime_expr_strict(&expr).expect("try method call lowers");
+    let lowered = lower_runtime_expr(&expr);
 
     assert!(matches!(
         lowered,

@@ -7,6 +7,7 @@ Source briefs:
 
 Current status index:
 
+- `docs/implementation/function-stack-final-state-2026-07-10.md`
 - `docs/implementation/function-stack-current-state-2026-07-09.md`
 - `docs/implementation/function-stack-status-rollup-2026-07-09.md`
 
@@ -1924,3 +1925,14 @@ heads joined to their following indented closure expression, so multiline
 return-typed closures with balanced function type annotations do not split into
 raw flow-item recovery. Details are recorded in
 `docs/implementation/function-stack-closure-expected-effect-row-bound-2026-07-09.md`.
+
+The checked executable-lowering follow-up removes silent runtime-plan loss at
+the source, stream, ordinary flow-return, and host-request boundaries.
+Source/stream statement lists now reject unsupported statements and checked
+expression/pattern failures with structured authored context; stream final
+values are no longer omitted; pure-value lowering no longer strips `try` or
+`await`; and host targets/arguments no longer become synthetic requests or
+string payloads after checked lowering fails. Source policy recovery values are
+also rejected rather than replaced with executable defaults. Details and
+focused evidence are recorded in
+`docs/implementation/function-stack-checked-executable-lowering-2026-07-10.md`.

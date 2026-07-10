@@ -89,6 +89,7 @@ fn collect_flow_item_source_ranges<'a>(
             collect_flow_item_list_source_ranges(block.body(), source, base, ranges);
         }
         FlowItem::AwaitWith(await_with) => {
+            collect_authored_expr_source_ranges(await_with.expr_authored(), ranges);
             for branch in await_with.branches() {
                 collect_flow_item_list_source_ranges(branch.body(), source, base, ranges);
             }

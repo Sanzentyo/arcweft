@@ -83,7 +83,7 @@ impl TypeChecker<'_> {
         await_with: &arcweft_lang_hir::model::HirAwait,
     ) -> Option<TypeKind> {
         self.reject_active_borrows(SuspensionBoundary::Await);
-        let ty = self.check_expr(await_with.expr());
+        let ty = self.check_authored_expr(await_with.expr_authored());
         let Some(TypeKind::Need { ready, error }) = ty else {
             self.errors.push(TypeCheckError::new(
                 "await expression must have Need<T, E> type".to_owned(),

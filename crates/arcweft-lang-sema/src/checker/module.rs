@@ -3,12 +3,13 @@
 use super::{
     ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FunctionKind,
     FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
-    NominalTypeContext, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
-    choice_output_type, entity_kind_for_decl, entity_syntax_kind, function_param_local_type,
-    function_param_local_type_with_generics, function_signature_type,
-    function_signature_type_with_nominal_types, ident_pattern_name, normalize_choice_type,
-    signature_generic_names, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
-    validate_typecheck_ready,
+    NominalTypeContext, Pattern, Stmt, TypeCheckEnv, TypeCheckError, TypeCheckReport,
+    TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind, TypedLoweringEvidenceKind,
+    YieldContext, choice_output_type, entity_kind_for_decl, entity_syntax_kind,
+    function_callable_id, function_param_local_type, function_param_local_type_with_generics,
+    function_signature_type, function_signature_type_with_nominal_types, ident_pattern_name,
+    normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
+    type_ref_kind_with_generics, validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::effect_model::{
@@ -31,6 +32,75 @@ use arcweft_lang_syntax::types::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+impl TypeCheckReport {
+    pub fn into_result(self) -> Result<(), Vec<TypeCheckError>> {
+        if self.diagnostics.is_empty() {
+            Ok(())
+        } else {
+            Err(self.diagnostics)
+        }
+    }
+
+    /// Returns the effect-analysis callable owned by a function-valued expression.
+    pub fn function_effect_callable_for_expression(
+        &self,
+        expression_id: TypeExpressionId,
+    ) -> Option<&CallableId> {
+        self.typed_lowering_evidence.iter().find_map(|evidence| {
+            if evidence.expression_id != expression_id {
+                return None;
+            }
+            let TypedLoweringEvidenceKind::FunctionEffectCallable { callable } = &evidence.kind
+            else {
+                return None;
+            };
+            Some(callable)
+        })
+    }
+
+    /// Resolves inferred effect-row variables throughout a semantic type.
+    pub fn resolved_type(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, crate::effect_row::EffectRowError> {
+        ty.resolve_effect_rows_with(&mut |row| {
+            if row.tail() == crate::effect_row::EffectRowTail::Unknown {
+                Ok(row.clone())
+            } else {
+                self.effects
+                    .resolve_effect_row(row)
+                    .map(crate::effect_row::EffectRow::closed)
+            }
+        })
+    }
+}
+
+/// Analyzes lowered HIR with an explicit symbol/method environment.
+pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
+    let mut checker = TypeChecker::new(env);
+    checker.check_module(module);
+    checker.apply_pending_higher_order_effect_calls();
+    let effects = std::mem::take(&mut checker.effect_collector).finish();
+    checker
+        .errors
+        .extend(effects.errors().cloned().map(TypeCheckError::effect));
+    checker
+        .warnings
+        .extend(effects.warnings().cloned().map(TypeCheckWarning::effect));
+    TypeCheckReport {
+        diagnostics: checker.errors,
+        warnings: checker.warnings,
+        stats: checker.stats,
+        judgments: checker.judgments,
+        typed_lowering_evidence: checker.typed_lowering_evidence,
+        closure_captures: checker.closure_captures,
+        numeric_fallbacks: checker.numeric_fallbacks,
+        effects,
+        for_iteration_evidence: checker.for_iteration_evidence,
+        trait_catalog: checker.trait_catalog,
+    }
+}
+
 impl TypeChecker<'_> {
     pub(super) fn check_module(&mut self, module: &HirModule) {
         self.stats.flows += module.flows().len();
@@ -52,9 +122,9 @@ impl TypeChecker<'_> {
         self.bind_top_level_type_aliases(module);
         self.bind_top_level_nominal_fields(module);
         self.bind_top_level_nominal_variant_payloads(module);
-        self.bind_top_level_functions(module);
         self.bind_extern_capability_functions(module);
         self.register_effect_callables(module);
+        self.bind_top_level_functions(module);
         self.flow_params = collect_flow_params(module);
 
         self.check_module_agents(module.agents());
@@ -437,14 +507,22 @@ impl TypeChecker<'_> {
                     self.env,
                 ),
             );
+            let signature_type = if function.kind() == FunctionKind::Function {
+                let body_effects = self.function_effect_row(function.name());
+                signature_type.with_body_effects(&body_effects)
+            } else {
+                signature_type
+            };
             self.global_functions.insert(
                 function.name().to_owned(),
                 signature_type.return_type().clone(),
             );
-            self.register_function_return_effect_callable(
-                function.name(),
-                signature_type.return_type(),
-            );
+            if function.kind() == FunctionKind::Function {
+                self.register_function_return_effect_callable(
+                    function.name(),
+                    signature_type.body_return_type(),
+                );
+            }
             self.global_function_signatures
                 .insert(function.name().to_owned(), signature_type);
         }
@@ -460,7 +538,7 @@ impl TypeChecker<'_> {
                 &mut self.errors,
             );
             let source_name = format!("agent.{}", item.name());
-            self.register_effect_callable(
+            let _ = self.register_effect_callable(
                 &source_name,
                 CallableId::new(format!("agent.{}", item.name())),
                 CallableKind::Agent,
@@ -476,7 +554,7 @@ impl TypeChecker<'_> {
                     flow.has_attribute("pure"),
                     &mut self.errors,
                 );
-                self.register_effect_callable(
+                let _ = self.register_effect_callable(
                     name,
                     flow_callable_id(name),
                     CallableKind::Flow,
@@ -495,13 +573,23 @@ impl TypeChecker<'_> {
                 function.has_attribute("pure"),
                 &mut self.errors,
             );
-            self.register_effect_callable(
+            if let Some(effects) = contract.upper_bound() {
+                self.global_function_effects
+                    .insert(function.name().to_owned(), effects.to_labels());
+            }
+            let callable = function_callable_id(function.name());
+            let registered = self.register_effect_callable(
                 function.name(),
-                function_callable_id(function.name()),
+                callable.clone(),
                 CallableKind::Function,
                 effect_visibility_from_syntax(function.visibility()),
                 contract,
             );
+            if registered && function.kind() == FunctionKind::Function {
+                self.ordinary_source_functions
+                    .insert(function.name().to_owned());
+                self.effect_collector.ensure_inferred_effect_row(&callable);
+            }
         }
     }
 
@@ -512,13 +600,15 @@ impl TypeChecker<'_> {
         kind: CallableKind,
         visibility: EffectVisibility,
         contract: EffectContract,
-    ) {
+    ) -> bool {
         if let Err(error) =
             self.effect_collector
                 .register_callable(source_name, id, kind, visibility, contract)
         {
             self.errors.push(TypeCheckError::new(error.to_string()));
+            return false;
         }
+        true
     }
 
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
@@ -1564,10 +1654,6 @@ fn entry_item_flow_target(item: &EntryItem) -> Option<&arcweft_lang_syntax::ast:
         EntryItem::Goto(target) | EntryItem::Route { target, .. } => Some(target),
         EntryItem::Option { .. } | EntryItem::Raw(_) => None,
     }
-}
-
-fn function_callable_id(name: &str) -> CallableId {
-    CallableId::new(format!("fn.{name}"))
 }
 
 fn flow_callable_id(name: &str) -> CallableId {

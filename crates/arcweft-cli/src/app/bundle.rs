@@ -1249,6 +1249,7 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
         | FlowOp::Effect(_)
+        | FlowOp::EvaluatedEffect(_)
         | FlowOp::RegisterCleanup { .. }
         | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
@@ -1714,6 +1715,7 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         | FlowOp::GotoExpr(_)
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
+        | FlowOp::EvaluatedEffect(_)
         | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope

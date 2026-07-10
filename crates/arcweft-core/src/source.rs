@@ -1,4 +1,4 @@
-use crate::effect::{LineEffectRequest, RuntimeAssignment, RuntimeLog};
+use crate::effect::{LineEffectRequest, RuntimeAssignment, RuntimeEffectExpr, RuntimeLog};
 use crate::pattern::RuntimePattern;
 use crate::task::TaskSequence;
 use crate::value::{RuntimeExpr, RuntimePayload};
@@ -46,10 +46,10 @@ pub enum SourceHandlerPlan {
 pub enum SourceOp {
     Yield(RuntimeExpr),
     Effect(LineEffectRequest),
+    EvaluatedEffect(RuntimeEffectExpr),
     SignalWrite(RuntimeAssignment),
     Log(RuntimeLog),
     Close(SourceId),
-    Noop,
 }
 
 /// One deterministic operation in a lowered flow program.

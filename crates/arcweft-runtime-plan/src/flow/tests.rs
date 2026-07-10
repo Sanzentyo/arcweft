@@ -49,7 +49,7 @@ fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
     ];
     let mut stats = RuntimePlanLowerStats::default();
 
-    optimize_flow_ops(&mut ops, &mut stats);
+    optimizer::optimize_flow_ops(&mut ops, &mut stats);
 
     assert!(matches!(
         &ops[1],

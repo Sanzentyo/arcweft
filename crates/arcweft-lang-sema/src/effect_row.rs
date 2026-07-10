@@ -180,6 +180,23 @@ impl EffectRowSummary {
         }
     }
 
+    /// Records an inferred callable row whose residual tail is closed by the
+    /// owning analysis substitution after fixed-point propagation.
+    pub fn open_inferred(
+        callable: CallableId,
+        inferred: EffectSet,
+        tail: EffectVar,
+        upper_bound: Option<EffectSet>,
+        forbidden: EffectSet,
+    ) -> Self {
+        Self {
+            callable,
+            inferred: EffectRow::open(inferred, tail),
+            upper_bound: upper_bound.map(EffectRow::closed),
+            forbidden: EffectRow::closed(forbidden),
+        }
+    }
+
     pub const fn callable(&self) -> &CallableId {
         &self.callable
     }
@@ -324,6 +341,11 @@ impl EffectSubstitution {
                 Ok(())
             }
         }
+    }
+
+    pub(crate) fn close_fresh_inferred_tail(&mut self, variable: EffectVar) {
+        let previous = self.0.insert(variable, EffectSet::new());
+        debug_assert!(previous.is_none(), "fresh effect-row tail was reused");
     }
 
     pub fn get(&self, variable: EffectVar) -> Option<&EffectSet> {

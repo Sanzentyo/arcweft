@@ -632,7 +632,7 @@ flow opening {
     }
 
     #[test]
-    fn hover_describes_callable_closed_effect_row() {
+    fn hover_describes_closed_flow_and_inferred_function_effect_rows() {
         let source = r#"
 extern capability fs {
     fn read_text(path: String) -> String effects { fs.read }
@@ -685,7 +685,7 @@ effects { fs.read }
         match function_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
                 assert!(text.contains("effect row for `load_story`"));
-                assert!(text.contains("inferred: { fs.read }"));
+                assert!(text.contains("inferred: { fs.read | e"));
                 assert!(text.contains("upper bound: { fs.read }"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
@@ -735,7 +735,7 @@ effects { fs.read }
     }
 
     #[test]
-    fn hover_describes_closure_expression_closed_effect_row() {
+    fn hover_describes_closure_expression_inferred_open_effect_row() {
         let source = r"
 extern capability fs {
     fn read_text(path: String) -> String effects { fs.read }
@@ -772,7 +772,7 @@ effects { }
         match closure_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
                 assert!(text.contains("effect row for `closure expression`"));
-                assert!(text.contains("inferred: { fs.read }"));
+                assert!(text.contains("inferred: { fs.read | e"));
                 assert!(text.contains("upper bound: inferred"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
@@ -831,7 +831,7 @@ effects { }
         match closure_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
                 assert!(text.contains("effect row for `closure expression`"));
-                assert!(text.contains("inferred: { fs.read }"));
+                assert!(text.contains("inferred: { fs.read | e"));
                 assert!(text.contains("upper bound: { fs.read }"));
             }
             other => panic!("unexpected hover contents: {other:?}"),

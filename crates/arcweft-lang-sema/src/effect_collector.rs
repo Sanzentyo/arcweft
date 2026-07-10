@@ -12,6 +12,7 @@ use crate::{
         CallEdge, CallableFacts, CallableId, CallableKind, DuplicateCallableError, EffectContract,
         EffectProgram, EffectSite, ExternalCallable, Visibility,
     },
+    effect_row::{EffectRow, EffectVar, EffectVarSupply},
     effects::{EffectId, EffectSet},
 };
 
@@ -21,6 +22,8 @@ pub struct EffectCollector {
     program: EffectProgram,
     current: Option<CallableId>,
     known: BTreeMap<String, CallableId>,
+    inferred_rows: BTreeMap<CallableId, EffectVar>,
+    effect_vars: EffectVarSupply,
 }
 
 impl EffectCollector {
@@ -31,6 +34,8 @@ impl EffectCollector {
             }),
             current: None,
             known: BTreeMap::new(),
+            inferred_rows: BTreeMap::new(),
+            effect_vars: EffectVarSupply::default(),
         }
     }
 
@@ -47,6 +52,29 @@ impl EffectCollector {
             .insert(CallableFacts::new(id.clone(), kind, visibility).with_contract(contract))?;
         self.known.insert(source_name, id);
         Ok(())
+    }
+
+    /// Allocates the open row owned by a callable whose value semantics are
+    /// defined by the ordinary function/closure inference model.
+    pub(crate) fn ensure_inferred_effect_row(&mut self, callable: &CallableId) -> EffectRow {
+        let tail = *self
+            .inferred_rows
+            .entry(callable.clone())
+            .or_insert_with(|| self.effect_vars.fresh());
+        EffectRow::open(EffectSet::new(), tail)
+    }
+
+    /// Returns the fresh open row owned by an analyzable function body.
+    pub fn inferred_effect_row(&self, callable: &CallableId) -> Option<EffectRow> {
+        self.inferred_rows
+            .get(callable)
+            .copied()
+            .map(|tail| EffectRow::open(EffectSet::new(), tail))
+    }
+
+    /// Returns the registered callable identity for a source-level name.
+    pub(crate) fn registered_callable(&self, source_name: &str) -> Option<&CallableId> {
+        self.known.get(source_name)
     }
 
     pub fn enter(&mut self, id: CallableId) -> Option<CallableId> {
@@ -122,7 +150,7 @@ impl EffectCollector {
     }
 
     pub fn finish(self) -> EffectAnalysisReport {
-        analyze_effects(&self.program)
+        analyze_effects(&self.program, &self.inferred_rows)
     }
 
     fn current_facts_mut(&mut self, id: &CallableId) -> &mut CallableFacts {

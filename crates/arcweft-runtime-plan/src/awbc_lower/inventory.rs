@@ -18,7 +18,7 @@ use arcweft_core::awbc::schema::{
     AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan,
     AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
 };
-use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
+use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
 use arcweft_core::line_task::{
     AudioCleanup, ChildCancelPolicy, ChildJoinPolicy, ChildTaskCleanup, LineChildTask,
     LineCleanupPolicy, LineTaskGroup, LineTaskNode, LineTaskScope, ParallelPolicy,
@@ -749,6 +749,32 @@ impl AwbcInventory {
         id
     }
 
+    pub fn intern_evaluated_effect(&mut self, effect: &RuntimeEffectExpr) -> AwbcEffectPlanId {
+        let descriptor = effect.descriptor();
+        let arg_count = effect.argument_exprs().len();
+        let key = format!("effect:evaluated:{descriptor:?}:{arg_count}");
+        if let Some(id) = self.effects.get(&key).copied() {
+            return id;
+        }
+        let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
+        let kind = effect_kind(&descriptor);
+        let signature =
+            self.intern_signature(vec![self.dynamic_ty(); arg_count], None, AwbcEffectSetId(0));
+        let capability =
+            effect_capability(&descriptor).map(|capability| self.intern_string(capability));
+        let static_args = effect_static_args(self, &descriptor);
+        self.program.effect_plans.push(AwbcEffectPlan {
+            kind,
+            signature,
+            capability,
+            audio: None,
+            static_args,
+            resources: Vec::new(),
+        });
+        self.effects.insert(key, id);
+        id
+    }
+
     pub fn intern_audio_effect(
         &mut self,
         command: AwbcAudioCommand,
@@ -1221,6 +1247,10 @@ fn effect_static_args(
             vec![
                 inventory.constant_string(&assertion.condition),
                 inventory.constant_string(&assertion.message),
+                inventory.constant_string(match assertion.profile {
+                    arcweft_core::effect::RuntimeAssertionProfile::Always => "always",
+                    arcweft_core::effect::RuntimeAssertionProfile::DebugOnly => "debug_only",
+                }),
             ]
         }
         LineEffectRequest::Break { label, value } => vec![

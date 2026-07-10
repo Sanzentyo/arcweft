@@ -68,7 +68,8 @@ fn inferred_let_type_inlay_hints(
             if !emit_resolved_type {
                 return None;
             }
-            Some(let_inlay_for_site(&site, judgment.ty, document))
+            let resolved = report.resolved_type(judgment.ty).ok()?;
+            Some(let_inlay_for_site(&site, &resolved, document))
         })
         .collect::<Vec<_>>();
     if profile.arbitrary_expression_type_inlays() {

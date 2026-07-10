@@ -123,7 +123,8 @@ impl AotLinearOp {
             | FlowOp::Break(_)
             | FlowOp::Continue
             | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_) => None,
+            | FlowOp::GotoExpr(_)
+            | FlowOp::EvaluatedEffect(_) => None,
         }
     }
 }
@@ -249,7 +250,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Break(_)
         | FlowOp::Continue
         | FlowOp::Goto(_)
-        | FlowOp::GotoExpr(_) => false,
+        | FlowOp::GotoExpr(_)
+        | FlowOp::EvaluatedEffect(_) => false,
     }
 }
 
@@ -295,7 +297,7 @@ impl AotOpClass {
             | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
             | FlowOp::Scope(_) => Self::Branch,
-            FlowOp::Effect(_) => Self::Effect,
+            FlowOp::Effect(_) | FlowOp::EvaluatedEffect(_) => Self::Effect,
             FlowOp::Await { .. } | FlowOp::AwaitMany { .. } | FlowOp::HostCall { .. } => {
                 Self::Await
             }
@@ -353,6 +355,7 @@ impl AotProgramStats {
                 | FlowOp::Return(_)
                 | FlowOp::ReturnExpr(_)
                 | FlowOp::Effect(_)
+                | FlowOp::EvaluatedEffect(_)
                 | FlowOp::RegisterCleanup { .. }
                 | FlowOp::CancelCleanup { .. }
                 | FlowOp::EnterScope

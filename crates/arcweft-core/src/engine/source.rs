@@ -124,6 +124,12 @@ impl Engine {
             SourceOp::Effect(effect) => {
                 self.emit_line_effect(effect.clone(), output, pure_backend);
             }
+            SourceOp::EvaluatedEffect(effect) => {
+                match self.evaluate_effect_expr(effect, pure_backend) {
+                    Ok(effect) => self.emit_line_effect(effect, output, pure_backend),
+                    Err(error) => Self::diagnose_runtime_error(error, output),
+                }
+            }
             SourceOp::SignalWrite(write) => self.emit_line_effect(
                 LineEffectRequest::SignalWrite(write.clone()),
                 output,
@@ -133,7 +139,6 @@ impl Engine {
                 self.emit_line_effect(LineEffectRequest::Log(log.clone()), output, pure_backend);
             }
             SourceOp::Close(target) => self.close_source(target, output),
-            SourceOp::Noop => {}
         }
     }
 

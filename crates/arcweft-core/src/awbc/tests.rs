@@ -48,6 +48,13 @@ fn minimal_program() -> AwbcProgram {
 #[test]
 fn fiber_snapshot_rejects_stale_functions_in_cleanup_arguments() {
     let mut program = minimal_program();
+    program
+        .strings
+        .extend(["zz.debug".to_owned(), "zz.message".to_owned()]);
+    program.constants.extend([
+        AwbcConstant::String(AwbcStringId(1)),
+        AwbcConstant::String(AwbcStringId(2)),
+    ]);
     let dynamic_type = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
@@ -62,7 +69,7 @@ fn fiber_snapshot_rejects_stale_functions_in_cleanup_arguments() {
         signature: AwbcSignatureId(1),
         capability: None,
         audio: None,
-        static_args: Vec::new(),
+        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
         resources: Vec::new(),
     });
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
@@ -372,6 +379,84 @@ fn verifier_rejects_non_audio_effect_with_typed_audio_payload() {
         program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
         Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
     ));
+}
+
+#[test]
+fn verifier_rejects_effect_static_argument_shape_that_product_mapping_cannot_read() {
+    let mut program = minimal_program();
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Log,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: None,
+        static_args: Vec::new(),
+        resources: Vec::new(),
+    });
+
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
+    ));
+}
+
+#[test]
+fn verifier_rejects_evaluated_effect_signature_with_wrong_arity() {
+    let mut program = minimal_program();
+    program
+        .constants
+        .push(AwbcConstant::String(AwbcStringId(0)));
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(0)],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::SignalWrite,
+        signature: AwbcSignatureId(1),
+        capability: None,
+        audio: None,
+        static_args: vec![AwbcConstantId(0), AwbcConstantId(0)],
+        resources: Vec::new(),
+    });
+
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
+    ));
+}
+
+#[test]
+fn verifier_rejects_unknown_assert_profile_instead_of_defaulting_it() {
+    let mut program = minimal_program();
+    program.strings.extend([
+        "profile.condition".to_owned(),
+        "profile.message".to_owned(),
+        "sometimes".to_owned(),
+    ]);
+    program.constants.extend([
+        AwbcConstant::String(AwbcStringId(1)),
+        AwbcConstant::String(AwbcStringId(2)),
+        AwbcConstant::String(AwbcStringId(3)),
+    ]);
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Assert,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: None,
+        static_args: vec![AwbcConstantId(0), AwbcConstantId(1), AwbcConstantId(2)],
+        resources: Vec::new(),
+    });
+
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("unknown assert profile must be rejected");
+    assert!(
+        matches!(
+            error,
+            AwbcVerifyError::MalformedEffectPayload { effect: 0, .. }
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]

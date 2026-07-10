@@ -4,11 +4,14 @@
 //! call shapes and emits data-only requests. Host adapters decide whether and
 //! how those requests are executed.
 
+use crate::errors::{RuntimeHostRequestArgument, RuntimePlanLowerContext, RuntimePlanLowerError};
 use crate::expr::lower_runtime_expr_strict;
 use crate::labels::{entity_ref_label, expr_label};
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
+use arcweft_lang_hir::syntax::ast::common::TextRange;
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal};
+use thiserror::Error;
 
 const AGENT_NAMED_ARGS_VARIANT: &str = "named_args";
 
@@ -18,52 +21,116 @@ struct CallParts<'a> {
     args: &'a [CallArg],
 }
 
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum HostRequestLowerError {
+    #[error("await target is not a host capability call: `{expression}`")]
+    UnsupportedTarget { expression: String },
+    #[error("host request `{capability}.{operation}` argument `{argument}`: {reason}")]
+    Argument {
+        capability: String,
+        operation: String,
+        argument: RuntimeHostRequestArgument,
+        reason: String,
+    },
+}
+
+impl From<HostRequestLowerError> for RuntimePlanLowerError {
+    fn from(error: HostRequestLowerError) -> Self {
+        error.into_runtime_error("host request", Vec::new(), None)
+    }
+}
+
+impl HostRequestLowerError {
+    pub(crate) fn into_runtime_error(
+        self,
+        owner: impl Into<String>,
+        path: impl Into<Vec<String>>,
+        source_range: Option<TextRange>,
+    ) -> RuntimePlanLowerError {
+        let owner = owner.into();
+        let path = path.into();
+        match self {
+            HostRequestLowerError::UnsupportedTarget { expression } => {
+                RuntimePlanLowerError::in_context(
+                    RuntimePlanLowerContext::host_request_target(
+                        owner,
+                        path,
+                        expression,
+                        source_range,
+                    ),
+                    "await target must be a capability call",
+                )
+            }
+            HostRequestLowerError::Argument {
+                capability,
+                operation,
+                argument,
+                reason,
+            } => RuntimePlanLowerError::in_context(
+                RuntimePlanLowerContext::host_request_argument(
+                    owner,
+                    path,
+                    capability,
+                    operation,
+                    argument,
+                    source_range,
+                ),
+                reason,
+            ),
+        }
+    }
+}
+
 /// Lowers an awaited expression to a runtime-evaluable task request template.
-pub(crate) fn lower_host_task_request(expr: &Expr) -> HostTaskRequestTemplate {
-    let Some(call) = call_parts(expr) else {
-        return HostTaskRequestTemplate::new(
-            "await",
-            "expr",
-            [HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                RuntimeValue::String(expr_label(expr)),
-            ))],
-        );
-    };
-    HostTaskRequestTemplate::new(
+pub(crate) fn lower_host_task_request(
+    expr: &Expr,
+) -> Result<HostTaskRequestTemplate, HostRequestLowerError> {
+    let call = call_parts(expr).ok_or_else(|| HostRequestLowerError::UnsupportedTarget {
+        expression: expr_label(expr),
+    })?;
+    let args = call
+        .args
+        .iter()
+        .enumerate()
+        .map(|(index, arg)| lower_arg_template(&call, index, arg))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(HostTaskRequestTemplate::new(
         call.capability.clone(),
         call.operation.clone(),
-        call.args.iter().map(lower_arg_template),
-    )
+        args,
+    ))
 }
 
 /// Lowers an Agent Prelude call expression to a Custom host task template.
 ///
 /// Named arguments are preserved as a trailing runtime record payload because
 /// the generic `HostTaskRequest::Custom` shape carries positional payloads.
-pub(crate) fn lower_agent_host_task_request(expr: &Expr) -> Option<HostTaskRequestTemplate> {
-    let call = agent_call_parts(expr)?;
+pub(crate) fn lower_agent_host_task_request(
+    expr: &Expr,
+) -> Result<Option<HostTaskRequestTemplate>, HostRequestLowerError> {
+    let Some(call) = agent_call_parts(expr) else {
+        return Ok(None);
+    };
     if call.operation == "wait" {
-        return Some(lower_agent_wait_task_request(call));
+        return lower_agent_wait_task_request(call).map(Some);
     }
     let mut positional = Vec::new();
     let mut named = Vec::new();
-    for arg in call.args {
+    for (index, arg) in call.args.iter().enumerate() {
+        let value = lower_agent_host_arg_expr(arg.value())
+            .map_err(|reason| host_argument_error(&call, index, arg, reason))?;
         match arg {
-            CallArg::Positional(value) => {
-                positional.push(HostTaskArgTemplate::positional(lower_agent_host_arg_expr(
-                    value,
-                )));
+            CallArg::Positional(_) => {
+                positional.push(HostTaskArgTemplate::positional(value));
             }
-            CallArg::Named { name, value } => {
+            CallArg::Named { name, .. } => {
                 named.push(RuntimeFieldExpr {
                     name: name.clone(),
-                    value: lower_agent_host_arg_expr(value),
+                    value,
                 });
             }
-            CallArg::Spread { value } => {
-                positional.push(HostTaskArgTemplate::spread(lower_agent_host_arg_expr(
-                    value,
-                )));
+            CallArg::Spread { .. } => {
+                positional.push(HostTaskArgTemplate::spread(value));
             }
         }
     }
@@ -72,45 +139,51 @@ pub(crate) fn lower_agent_host_task_request(expr: &Expr) -> Option<HostTaskReque
             named,
         )));
     }
-    Some(HostTaskRequestTemplate::new(
+    Ok(Some(HostTaskRequestTemplate::new(
         "agent",
         call.operation,
         positional,
-    ))
+    )))
 }
 
-fn lower_agent_wait_task_request(call: CallParts<'_>) -> HostTaskRequestTemplate {
+fn lower_agent_wait_task_request(
+    call: CallParts<'_>,
+) -> Result<HostTaskRequestTemplate, HostRequestLowerError> {
     let mut positional = Vec::new();
     let mut named = Vec::new();
     let mut positional_index = 0usize;
-    for arg in call.args {
+    for (index, arg) in call.args.iter().enumerate() {
         match arg {
             CallArg::Positional(value) => {
                 let lowered = if positional_index == 0 {
                     lower_agent_predicate_expr(value)
-                        .unwrap_or_else(|| lower_agent_host_arg_expr(value))
+                        .map_err(|reason| host_argument_error(&call, index, arg, reason))?
+                        .map_or_else(|| lower_agent_host_arg_expr(value), Ok)
                 } else {
                     lower_agent_host_arg_expr(value)
-                };
+                }
+                .map_err(|reason| host_argument_error(&call, index, arg, reason))?;
                 positional.push(HostTaskArgTemplate::positional(lowered));
                 positional_index += 1;
             }
             CallArg::Named { name, value } => {
                 let lowered = if name == "predicate" {
                     lower_agent_predicate_expr(value)
-                        .unwrap_or_else(|| lower_agent_host_arg_expr(value))
+                        .map_err(|reason| host_argument_error(&call, index, arg, reason))?
+                        .map_or_else(|| lower_agent_host_arg_expr(value), Ok)
                 } else {
                     lower_agent_host_arg_expr(value)
-                };
+                }
+                .map_err(|reason| host_argument_error(&call, index, arg, reason))?;
                 named.push(RuntimeFieldExpr {
                     name: name.clone(),
                     value: lowered,
                 });
             }
             CallArg::Spread { value } => {
-                positional.push(HostTaskArgTemplate::spread(lower_agent_host_arg_expr(
-                    value,
-                )));
+                let value = lower_agent_host_arg_expr(value)
+                    .map_err(|reason| host_argument_error(&call, index, arg, reason))?;
+                positional.push(HostTaskArgTemplate::spread(value));
             }
         }
     }
@@ -119,7 +192,11 @@ fn lower_agent_wait_task_request(call: CallParts<'_>) -> HostTaskRequestTemplate
             named,
         )));
     }
-    HostTaskRequestTemplate::new("agent", call.operation, positional)
+    Ok(HostTaskRequestTemplate::new(
+        "agent",
+        call.operation,
+        positional,
+    ))
 }
 
 fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
@@ -192,17 +269,40 @@ fn agent_compare_op(method: &str) -> Option<&'static str> {
     })
 }
 
-fn lower_arg_template(arg: &CallArg) -> HostTaskArgTemplate {
-    match arg {
-        CallArg::Named { name, value } => {
-            HostTaskArgTemplate::named(name.clone(), lower_host_arg_expr(value))
-        }
-        CallArg::Spread { value } => HostTaskArgTemplate::spread(lower_host_arg_expr(value)),
-        CallArg::Positional(value) => HostTaskArgTemplate::positional(lower_host_arg_expr(value)),
+fn lower_arg_template(
+    call: &CallParts<'_>,
+    index: usize,
+    arg: &CallArg,
+) -> Result<HostTaskArgTemplate, HostRequestLowerError> {
+    let value = lower_host_arg_expr(arg.value())
+        .map_err(|reason| host_argument_error(call, index, arg, reason))?;
+    Ok(match arg {
+        CallArg::Named { name, .. } => HostTaskArgTemplate::named(name.clone(), value),
+        CallArg::Spread { .. } => HostTaskArgTemplate::spread(value),
+        CallArg::Positional(_) => HostTaskArgTemplate::positional(value),
+    })
+}
+
+fn host_argument_error(
+    call: &CallParts<'_>,
+    index: usize,
+    arg: &CallArg,
+    reason: String,
+) -> HostRequestLowerError {
+    let argument = match arg {
+        CallArg::Positional(_) => RuntimeHostRequestArgument::Positional(index),
+        CallArg::Named { name, .. } => RuntimeHostRequestArgument::Named(name.clone()),
+        CallArg::Spread { .. } => RuntimeHostRequestArgument::Spread(index),
+    };
+    HostRequestLowerError::Argument {
+        capability: call.capability.clone(),
+        operation: call.operation.clone(),
+        argument,
+        reason,
     }
 }
 
-fn lower_host_arg_expr(expr: &Expr) -> RuntimeExpr {
+fn lower_host_arg_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
     match expr {
         Expr::Call { callee, args }
             if matches!(
@@ -210,54 +310,53 @@ fn lower_host_arg_expr(expr: &Expr) -> RuntimeExpr {
                 "path.save" | "path.asset" | "path.temp" | "path.export"
             ) && args.len() == 1 =>
         {
-            RuntimeExpr::Call {
+            Ok(RuntimeExpr::Call {
                 callee: RuntimeCallTarget::from_label(expr_label(callee)),
-                args: vec![lower_host_arg_expr(args[0].value())],
-            }
+                args: vec![lower_host_arg_expr(args[0].value())?],
+            })
         }
-        other => lower_runtime_expr_strict(other)
-            .unwrap_or_else(|_| RuntimeExpr::Value(RuntimeValue::String(expr_label(other)))),
+        other => lower_runtime_expr_strict(other),
     }
 }
 
-fn lower_agent_host_arg_expr(expr: &Expr) -> RuntimeExpr {
+fn lower_agent_host_arg_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
     match expr {
         Expr::Call { callee, args } if expr_label(callee) == "viewport_point" => {
             lower_agent_viewport_point_expr(args)
         }
-        Expr::ShortVariant(name) => RuntimeExpr::Value(RuntimeValue::String(name.to_string())),
+        Expr::ShortVariant(name) => Ok(RuntimeExpr::Value(RuntimeValue::String(name.to_string()))),
         _ => lower_host_arg_expr(expr),
     }
 }
 
-fn lower_agent_viewport_point_expr(args: &[CallArg]) -> RuntimeExpr {
+fn lower_agent_viewport_point_expr(args: &[CallArg]) -> Result<RuntimeExpr, String> {
     let mut fields = Vec::new();
     for (index, arg) in args.iter().enumerate() {
         match arg {
             CallArg::Positional(value) if index == 0 => {
-                fields.push(runtime_field_expr("x", lower_agent_host_arg_expr(value)));
+                fields.push(runtime_field_expr("x", lower_agent_host_arg_expr(value)?));
             }
             CallArg::Positional(value) if index == 1 => {
-                fields.push(runtime_field_expr("y", lower_agent_host_arg_expr(value)));
+                fields.push(runtime_field_expr("y", lower_agent_host_arg_expr(value)?));
             }
             CallArg::Named { name, value } if name == "x" || name == "y" => {
-                fields.push(runtime_field_expr(name, lower_agent_host_arg_expr(value)));
+                fields.push(runtime_field_expr(name, lower_agent_host_arg_expr(value)?));
             }
             CallArg::Positional(value) => {
                 fields.push(runtime_field_expr(
                     &format!("extra_{index}"),
-                    lower_agent_host_arg_expr(value),
+                    lower_agent_host_arg_expr(value)?,
                 ));
             }
             CallArg::Named { value, .. } | CallArg::Spread { value } => {
                 fields.push(runtime_field_expr(
                     &format!("extra_{index}"),
-                    lower_agent_host_arg_expr(value.as_ref()),
+                    lower_agent_host_arg_expr(value.as_ref())?,
                 ));
             }
         }
     }
-    runtime_record_expr(fields)
+    Ok(runtime_record_expr(fields))
 }
 
 fn agent_named_args_expr(fields: Vec<RuntimeFieldExpr>) -> RuntimeExpr {
@@ -268,77 +367,87 @@ fn agent_named_args_expr(fields: Vec<RuntimeFieldExpr>) -> RuntimeExpr {
     }
 }
 
-fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
+fn lower_agent_predicate_expr(expr: &Expr) -> Result<Option<RuntimeExpr>, String> {
     match expr {
         Expr::Call { callee, args }
             if selected_callee_method(callee)
                 .and_then(agent_compare_op)
                 .is_some() =>
         {
-            let receiver = selected_callee_receiver(callee)?;
-            let method = selected_callee_method(callee)?;
+            let receiver = selected_callee_receiver(callee)
+                .ok_or_else(|| "agent comparison is missing its receiver".to_owned())?;
+            let method = selected_callee_method(callee)
+                .ok_or_else(|| "agent comparison is missing its method".to_owned())?;
             let [CallArg::Positional(value)] = args.as_slice() else {
-                return None;
+                return Err("agent comparison requires one positional value".to_owned());
             };
-            Some(runtime_record_expr([
+            Ok(Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr("compare")),
                 runtime_field_expr("probe", lower_agent_probe_expr(receiver)?),
-                runtime_field_expr("op", runtime_string_expr(agent_compare_op(method)?)),
-                runtime_field_expr("value", lower_agent_host_arg_expr(value)),
-            ]))
+                runtime_field_expr(
+                    "op",
+                    runtime_string_expr(
+                        agent_compare_op(method)
+                            .ok_or_else(|| "unsupported agent comparison method".to_owned())?,
+                    ),
+                ),
+                runtime_field_expr("value", lower_agent_host_arg_expr(value)?),
+            ])))
         }
         Expr::Call { callee, args } if expr_label(callee) == "exists" => {
             let [CallArg::Positional(probe)] = args.as_slice() else {
-                return None;
+                return Err("exists(...) requires one positional probe".to_owned());
             };
-            Some(runtime_record_expr([
+            Ok(Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr("exists")),
                 runtime_field_expr("probe", lower_agent_probe_expr(probe)?),
-            ]))
+            ])))
         }
         Expr::Call { callee, args } if expr_label(callee) == "action_enabled" => {
             let [CallArg::Positional(target)] = args.as_slice() else {
-                return None;
+                return Err("action_enabled(...) requires one positional target".to_owned());
             };
-            Some(runtime_record_expr([
+            Ok(Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr("action_enabled")),
                 runtime_field_expr(
                     "target",
                     RuntimeExpr::Field {
-                        target: Box::new(lower_agent_host_arg_expr(target)),
+                        target: Box::new(lower_agent_host_arg_expr(target)?),
                         field: "target".to_owned(),
                     },
                 ),
-            ]))
+            ])))
         }
         Expr::Call { callee, args } if matches!(expr_label(callee).as_str(), "all" | "any") => {
             let kind = expr_label(callee);
             let predicates = lower_agent_predicate_args(args)?;
-            Some(runtime_record_expr([
+            Ok(Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr(&kind)),
                 runtime_field_expr("predicates", RuntimeExpr::Tuple(predicates)),
-            ]))
+            ])))
         }
         Expr::Call { callee, args } if expr_label(callee) == "not" => {
             let [CallArg::Positional(predicate)] = args.as_slice() else {
-                return None;
+                return Err("not(...) requires one positional predicate".to_owned());
             };
-            Some(runtime_record_expr([
+            let predicate = lower_agent_predicate_expr(predicate)?
+                .ok_or_else(|| "not(...) argument is not an Agent predicate".to_owned())?;
+            Ok(Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr("not")),
-                runtime_field_expr("predicate", lower_agent_predicate_expr(predicate)?),
-            ]))
+                runtime_field_expr("predicate", predicate),
+            ])))
         }
         Expr::Call { callee, args }
             if selected_callee_method(callee) == Some("has_error")
                 && selected_callee_receiver(callee).is_some_and(is_agent_diagnostics_call)
                 && args.is_empty() =>
         {
-            Some(runtime_record_expr([runtime_field_expr(
+            Ok(Some(runtime_record_expr([runtime_field_expr(
                 "kind",
                 runtime_string_expr("diagnostics_has_error"),
-            )]))
+            )])))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -363,49 +472,67 @@ fn is_agent_diagnostics_call(expr: &Expr) -> bool {
     )
 }
 
-fn lower_agent_predicate_args(args: &[CallArg]) -> Option<Vec<RuntimeExpr>> {
+fn lower_agent_predicate_args(args: &[CallArg]) -> Result<Vec<RuntimeExpr>, String> {
     if let [CallArg::Positional(Expr::BracketSeq(items))] = args {
-        return items.iter().map(lower_agent_predicate_expr).collect();
+        return items
+            .iter()
+            .map(|item| {
+                lower_agent_predicate_expr(item)?
+                    .ok_or_else(|| "all/any sequence item is not an Agent predicate".to_owned())
+            })
+            .collect();
     }
     args.iter()
         .map(|arg| match arg {
-            CallArg::Positional(value) => lower_agent_predicate_expr(value),
-            CallArg::Named { .. } | CallArg::Spread { .. } => None,
+            CallArg::Positional(value) => lower_agent_predicate_expr(value)?
+                .ok_or_else(|| "all/any argument is not an Agent predicate".to_owned()),
+            CallArg::Named { .. } | CallArg::Spread { .. } => {
+                Err("all/any predicates must be positional".to_owned())
+            }
         })
         .collect()
 }
 
-fn lower_agent_probe_expr(expr: &Expr) -> Option<RuntimeExpr> {
+fn lower_agent_probe_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
     match expr {
         Expr::Call { callee, args }
             if matches!(expr_label(callee).as_str(), "signal" | "metric") =>
         {
             let [CallArg::Positional(target)] = args.as_slice() else {
-                return None;
+                return Err("signal/metric probe requires one positional target".to_owned());
             };
-            Some(runtime_record_expr([
+            Ok(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr(&expr_label(callee))),
-                runtime_field_expr("target", runtime_string_expr(&agent_id_label(target)?)),
+                runtime_field_expr(
+                    "target",
+                    runtime_string_expr(
+                        &agent_id_label(target)
+                            .ok_or_else(|| "invalid signal/metric probe target".to_owned())?,
+                    ),
+                ),
             ]))
         }
         Expr::Call { callee, args }
             if matches!(expr_label(callee).as_str(), "state" | "observation") =>
         {
             let [CallArg::Positional(path)] = args.as_slice() else {
-                return None;
+                return Err("state/observation probe requires one path".to_owned());
             };
             let probe_kind = expr_label(callee);
             let constructor = match probe_kind.as_str() {
                 "state" => "state_path",
                 "observation" => "observation_path",
-                _ => return None,
+                _ => return Err("unknown Agent probe kind".to_owned()),
             };
-            Some(runtime_record_expr([
+            Ok(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr(&probe_kind)),
                 runtime_field_expr("path", lower_agent_path_expr(path, constructor)?),
             ]))
         }
-        _ => None,
+        _ => Err(format!(
+            "unsupported Agent probe expression `{}`",
+            expr_label(expr)
+        )),
     }
 }
 
@@ -418,15 +545,15 @@ fn agent_id_label(expr: &Expr) -> Option<String> {
     }
 }
 
-fn lower_agent_path_expr(expr: &Expr, constructor: &str) -> Option<RuntimeExpr> {
+fn lower_agent_path_expr(expr: &Expr, constructor: &str) -> Result<RuntimeExpr, String> {
     match expr {
         Expr::Call { callee, args } if expr_label(callee) == constructor => {
             let [CallArg::Positional(path)] = args.as_slice() else {
-                return None;
+                return Err(format!("{constructor}(...) requires one positional path"));
             };
-            Some(lower_agent_host_arg_expr(path))
+            lower_agent_host_arg_expr(path)
         }
-        _ => Some(lower_agent_host_arg_expr(expr)),
+        _ => lower_agent_host_arg_expr(expr),
     }
 }
 
@@ -443,4 +570,90 @@ fn runtime_field_expr(name: &str, value: RuntimeExpr) -> RuntimeFieldExpr {
 
 fn runtime_string_expr(value: &str) -> RuntimeExpr {
     RuntimeExpr::Value(RuntimeValue::String(value.to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HostRequestLowerError, lower_host_task_request};
+    use crate::errors::{
+        RuntimeHostRequestArgument, RuntimePlanLowerContext, RuntimePlanLowerError,
+    };
+    use arcweft_core::task::HostTaskArgTemplate;
+    use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr};
+    use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal, Placeholder};
+
+    #[test]
+    fn host_request_rejects_non_call_target_instead_of_synthesizing_payload() {
+        let error = lower_host_task_request(&Expr::Path("pending_value".into()))
+            .expect_err("a non-call await target must be rejected");
+        assert_eq!(
+            error,
+            HostRequestLowerError::UnsupportedTarget {
+                expression: "pending_value".to_owned(),
+            }
+        );
+        let runtime_error = RuntimePlanLowerError::from(error);
+        assert!(matches!(
+            runtime_error.context(),
+            Some(RuntimePlanLowerContext::HostRequestTarget { expression, .. })
+                if expression == "pending_value"
+        ));
+    }
+
+    #[test]
+    fn host_request_rejects_unlowerable_argument_with_typed_slot_context() {
+        let request = Expr::Call {
+            callee: Box::new(Expr::Path("storage.write".into())),
+            args: vec![CallArg::Positional(Expr::Placeholder(Placeholder::Partial))],
+        };
+
+        let error = lower_host_task_request(&request)
+            .expect_err("an executable host argument must not become a string label");
+        let HostRequestLowerError::Argument {
+            capability,
+            operation,
+            argument,
+            reason,
+        } = error
+        else {
+            panic!("expected an argument error");
+        };
+        assert_eq!(capability, "storage");
+        assert_eq!(operation, "write");
+        assert_eq!(argument, RuntimeHostRequestArgument::Positional(0));
+        assert!(
+            reason.contains("unsupported runtime value expression"),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn host_request_preserves_supported_typed_path_constructor() {
+        let save_path = Expr::Call {
+            callee: Box::new(Expr::Path("path.save".into())),
+            args: vec![CallArg::Positional(Expr::Literal(Literal::String(
+                "slot-a".to_owned(),
+            )))],
+        };
+        let request = Expr::Call {
+            callee: Box::new(Expr::Path("storage.write".into())),
+            args: vec![CallArg::Named {
+                name: "path".to_owned(),
+                value: Box::new(save_path),
+            }],
+        };
+
+        let lowered = lower_host_task_request(&request).expect("typed path argument lowers");
+        assert_eq!(lowered.capability.0, "storage");
+        assert_eq!(lowered.operation, "write");
+        assert!(matches!(
+            lowered.args.as_slice(),
+            [HostTaskArgTemplate::Named {
+                name,
+                value: RuntimeExpr::Call { callee, args },
+            }] if name == "path"
+                && callee == &RuntimeCallTarget::from_label("path.save")
+                && matches!(args.as_slice(), [RuntimeExpr::Value(_)])
+        ));
+    }
 }

@@ -207,6 +207,101 @@ impl EntityType {
 impl TypeKind {
     pub const ACTION_EVENT_TYPE_NAME: &'static str = "ActionEvent";
 
+    pub(crate) fn resolve_effect_rows_with<E>(
+        &self,
+        resolve: &mut impl FnMut(&EffectRow) -> Result<EffectRow, E>,
+    ) -> Result<Self, E> {
+        let resolved = match self {
+            Self::Range(inner) => Self::Range(Box::new(inner.resolve_effect_rows_with(resolve)?)),
+            Self::IteratorState { family, item } => Self::IteratorState {
+                family: *family,
+                item: Box::new(item.resolve_effect_rows_with(resolve)?),
+            },
+            Self::Ref(entity) => Self::Ref(EntityType::new(
+                entity.kind().clone(),
+                entity
+                    .value()
+                    .map(|value| value.resolve_effect_rows_with(resolve))
+                    .transpose()?,
+            )),
+            Self::Probe(inner) => Self::Probe(Box::new(inner.resolve_effect_rows_with(resolve)?)),
+            Self::Vec(inner) => Self::Vec(Box::new(inner.resolve_effect_rows_with(resolve)?)),
+            Self::Array { item, len } => Self::Array {
+                item: Box::new(item.resolve_effect_rows_with(resolve)?),
+                len: len.clone(),
+            },
+            Self::Slice(inner) => Self::Slice(Box::new(inner.resolve_effect_rows_with(resolve)?)),
+            Self::Seq(inner) => Self::Seq(Box::new(inner.resolve_effect_rows_with(resolve)?)),
+            Self::Map { kind, key, value } => Self::Map {
+                kind: *kind,
+                key: Box::new(key.resolve_effect_rows_with(resolve)?),
+                value: Box::new(value.resolve_effect_rows_with(resolve)?),
+            },
+            Self::BorrowRef { lifetime, inner } => Self::BorrowRef {
+                lifetime: lifetime.clone(),
+                inner: Box::new(inner.resolve_effect_rows_with(resolve)?),
+            },
+            Self::Need { ready, error } => Self::Need {
+                ready: Box::new(ready.resolve_effect_rows_with(resolve)?),
+                error: Box::new(error.resolve_effect_rows_with(resolve)?),
+            },
+            Self::Stream { item, error } => Self::Stream {
+                item: Box::new(item.resolve_effect_rows_with(resolve)?),
+                error: Box::new(error.resolve_effect_rows_with(resolve)?),
+            },
+            Self::Source { item, error } => Self::Source {
+                item: Box::new(item.resolve_effect_rows_with(resolve)?),
+                error: Box::new(error.resolve_effect_rows_with(resolve)?),
+            },
+            Self::Result { ok, error } => Self::Result {
+                ok: Box::new(ok.resolve_effect_rows_with(resolve)?),
+                error: Box::new(error.resolve_effect_rows_with(resolve)?),
+            },
+            Self::Option(inner) => Self::Option(Box::new(inner.resolve_effect_rows_with(resolve)?)),
+            Self::ThreadHandle(inner) => {
+                Self::ThreadHandle(Box::new(inner.resolve_effect_rows_with(resolve)?))
+            }
+            Self::Shared(inner) => Self::Shared(Box::new(inner.resolve_effect_rows_with(resolve)?)),
+            Self::Function {
+                params,
+                return_type,
+                effects,
+            } => Self::Function {
+                params: params
+                    .iter()
+                    .map(|param| param.resolve_effect_rows_with(resolve))
+                    .collect::<Result<_, _>>()?,
+                return_type: Box::new(return_type.resolve_effect_rows_with(resolve)?),
+                effects: resolve(effects)?,
+            },
+            Self::Projection {
+                subject,
+                trait_name,
+                assoc,
+            } => Self::Projection {
+                subject: Box::new(subject.resolve_effect_rows_with(resolve)?),
+                trait_name: trait_name.clone(),
+                assoc: assoc.clone(),
+            },
+            Self::Tuple(items) => Self::Tuple(
+                items
+                    .iter()
+                    .map(|item| item.resolve_effect_rows_with(resolve))
+                    .collect::<Result<_, _>>()?,
+            ),
+            Self::Choice(alternatives) => Self::Choice(
+                alternatives
+                    .iter()
+                    .map(|alternative| alternative.resolve_effect_rows_with(resolve))
+                    .collect::<Result<_, _>>()?,
+            ),
+            // Every remaining variant is a leaf: it contains neither a nested
+            // `TypeKind` nor an `EffectRow`, so resolution is identity.
+            _ => self.clone(),
+        };
+        Ok(resolved)
+    }
+
     /// Returns the canonical Arcweft surface spelling for this semantic type.
     ///
     /// This is intended for diagnostics and tooling displays, not for stable

@@ -1,4 +1,4 @@
-use crate::effect::LineEffectRequest;
+use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::RuntimePattern;
 use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
@@ -560,6 +560,7 @@ pub enum FlowOp {
     Return(String),
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
+    EvaluatedEffect(RuntimeEffectExpr),
     RegisterCleanup {
         key: String,
         effect: LineEffectRequest,
