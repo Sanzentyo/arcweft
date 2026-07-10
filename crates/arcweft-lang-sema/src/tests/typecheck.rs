@@ -1,5 +1,6 @@
 use super::support::*;
 use crate::check::{ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport};
+use arcweft_data::DataFormat;
 
 #[test]
 fn typechecks_flow_signature_parameters_as_locals() {
@@ -294,6 +295,28 @@ flow @flow.opening opening {
     let hir = lower_to_hir(&tree).expect("data codec fixture lowers");
     validate_typecheck_ready(&hir).expect("data codec fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("data codec builtins typecheck");
+}
+
+#[test]
+fn typechecks_every_authoritative_data_format_variant() {
+    for format in DataFormat::ALL {
+        let variant = format.variant_name();
+        let source = format!(
+            r#"
+flow formats {{
+    let short: Bytes = data.encode(["hello"], .{variant})
+    let qualified: Bytes = data.encode(["hello"], DataFormat.{variant})
+}}
+"#
+        );
+        let tree = parse_ok(&source);
+        let hir = lower_to_hir(&tree)
+            .unwrap_or_else(|errors| panic!("DataFormat.{variant} lowers: {errors:?}"));
+        validate_typecheck_ready(&hir)
+            .unwrap_or_else(|errors| panic!("DataFormat.{variant} is typecheck-ready: {errors:?}"));
+        typecheck_hir(&hir, &TypeCheckEnv::standard())
+            .unwrap_or_else(|errors| panic!("DataFormat.{variant} typechecks: {errors:?}"));
+    }
 }
 
 #[test]

@@ -28,6 +28,10 @@ let shape: DataShape = data.shape(value)
 let shaped: AgentValue = data.decode(bytes, .Json, shape)
 ```
 
+`arcweft-data::DataFormat::ALL` is the authoritative format inventory. Semantic
+registration and tooling completion consume it directly, so adding a format no
+longer requires a separately maintained list in the language layer.
+
 Runtime execution handles `Json`, `Toml`, `Yaml`, `MessagePack`, `Cbor`, and
 `Avro` through the external pure-call adapter boundary. `Avro` uses an Arcweft
 dynamic-value envelope so DSL calls can round-trip without a source-level Avro

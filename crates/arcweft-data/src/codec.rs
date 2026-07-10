@@ -21,6 +21,24 @@ pub enum DataFormat {
 }
 
 impl DataFormat {
+    /// Every built-in format in stable source-facing order.
+    ///
+    /// Consumers that enumerate formats should use this authoritative list
+    /// instead of maintaining a parallel inventory.
+    pub const ALL: [Self; 10] = [
+        Self::Json,
+        Self::Toml,
+        Self::Yaml,
+        Self::MessagePack,
+        Self::Cbor,
+        Self::Avro,
+        Self::Csv,
+        Self::ArrowIpc,
+        Self::Parquet,
+        Self::ArcweftBinary,
+    ];
+
+    /// Stable codec identifier used by codec registries and adapters.
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
@@ -37,6 +55,7 @@ impl DataFormat {
         }
     }
 
+    /// Canonical media type for the format.
     #[must_use]
     pub const fn media_type(self) -> &'static str {
         match self {
@@ -53,6 +72,7 @@ impl DataFormat {
         }
     }
 
+    /// Arcweft source variant name, without the `DataFormat.` prefix.
     #[must_use]
     pub const fn variant_name(self) -> &'static str {
         match self {
@@ -69,36 +89,18 @@ impl DataFormat {
         }
     }
 
+    /// Resolves a canonical Arcweft source variant name.
+    #[must_use]
     pub fn from_variant_name(value: &str) -> Option<Self> {
-        Some(match value {
-            "Json" => Self::Json,
-            "Toml" => Self::Toml,
-            "Yaml" => Self::Yaml,
-            "MessagePack" => Self::MessagePack,
-            "Cbor" => Self::Cbor,
-            "Avro" => Self::Avro,
-            "Csv" => Self::Csv,
-            "ArrowIpc" => Self::ArrowIpc,
-            "Parquet" => Self::Parquet,
-            "ArcweftBinary" => Self::ArcweftBinary,
-            _ => return None,
-        })
+        Self::ALL
+            .into_iter()
+            .find(|format| format.variant_name() == value)
     }
 
+    /// Resolves a canonical codec identifier.
+    #[must_use]
     pub fn from_id(value: &str) -> Option<Self> {
-        Some(match value {
-            "json" => Self::Json,
-            "toml" => Self::Toml,
-            "yaml" | "yml" => Self::Yaml,
-            "msgpack" | "messagepack" => Self::MessagePack,
-            "cbor" => Self::Cbor,
-            "avro" => Self::Avro,
-            "csv" => Self::Csv,
-            "arrow-ipc" | "arrow" => Self::ArrowIpc,
-            "parquet" => Self::Parquet,
-            "arcweft-binary" | "arcweft_binary" => Self::ArcweftBinary,
-            _ => return None,
-        })
+        Self::ALL.into_iter().find(|format| format.id() == value)
     }
 }
 

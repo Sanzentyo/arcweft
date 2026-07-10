@@ -1,6 +1,7 @@
 use crate::effect_row::EffectRow;
 use crate::types::{EntityKind, EntityType, TypeKind};
 use arcweft_character::manifest::CharacterManifest;
+use arcweft_data::DataFormat;
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -489,7 +490,7 @@ impl TypeCheckEnv {
         self.with_function("fmt", TypeKind::DisplayText)
             .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
             .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
-            .with_data_format_symbols()
+            .with_data_format_builtins()
             .with_content_functions()
             .with_function_signature(
                 "view",
@@ -507,7 +508,6 @@ impl TypeCheckEnv {
                     ],
                 ),
             )
-            .with_enum_variants(TypeKind::DataFormat, data_format_variant_names())
             .with_function_signature(
                 "data.encode",
                 FunctionSignature::new(
@@ -573,13 +573,20 @@ impl TypeCheckEnv {
         .with_function_effects("content.release", ["content.release"])
     }
 
+    /// Registers qualified values and expected-type shorthand from the owning
+    /// data-format inventory.
     #[must_use]
-    fn with_data_format_symbols(self) -> Self {
-        data_format_variant_names()
-            .into_iter()
-            .fold(self, |env, variant| {
-                env.with_symbol(format!("DataFormat.{variant}"), TypeKind::DataFormat)
-            })
+    fn with_data_format_builtins(self) -> Self {
+        let env = self.with_enum_variants(
+            TypeKind::DataFormat,
+            DataFormat::ALL.map(DataFormat::variant_name),
+        );
+        DataFormat::ALL.into_iter().fold(env, |env, format| {
+            env.with_symbol(
+                format!("DataFormat.{}", format.variant_name()),
+                TypeKind::DataFormat,
+            )
+        })
     }
 
     /// Registers the unit variants available for an enum-like type.
@@ -961,21 +968,6 @@ impl TypeCheckEnv {
     pub(crate) fn rust_package(&self, package: &str) -> Option<&RustPackageExports> {
         self.rust_packages.get(package)
     }
-}
-
-fn data_format_variant_names() -> [&'static str; 10] {
-    [
-        "Json",
-        "Toml",
-        "Yaml",
-        "MessagePack",
-        "Cbor",
-        "Avro",
-        "Csv",
-        "ArrowIpc",
-        "Parquet",
-        "ArcweftBinary",
-    ]
 }
 
 fn normalize_function_signature(mut signature: FunctionSignature) -> FunctionSignature {

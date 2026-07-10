@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-character = { path = "../arcweft-character" }
+arcweft-data.workspace = true
 arcweft-id = { path = "../arcweft-id" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }

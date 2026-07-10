@@ -215,19 +215,14 @@ fn decode_runtime_data_with_shape(
 fn data_format_arg(label: &str, value: &RuntimeValue) -> Result<DataFormat, RuntimeEvalError> {
     match value {
         RuntimeValue::Variant {
-            path: Some(path),
+            path,
             name,
             payload: None,
-        } if path == "DataFormat" => DataFormat::from_variant_name(name).ok_or_else(|| {
-            data_runtime_error(label, format!("unknown DataFormat variant `{name}`"))
-        }),
-        RuntimeValue::Variant {
-            path: None,
-            name,
-            payload: None,
-        } => DataFormat::from_variant_name(name).ok_or_else(|| {
-            data_runtime_error(label, format!("unknown DataFormat variant `{name}`"))
-        }),
+        } if path.as_deref().is_none_or(|path| path == "DataFormat") => {
+            DataFormat::from_variant_name(name).ok_or_else(|| {
+                data_runtime_error(label, format!("unknown DataFormat variant `{name}`"))
+            })
+        }
         other => Err(data_runtime_error(
             label,
             format!(

@@ -876,6 +876,7 @@ name = "arcweft-lang-sema"
 version = "0.1.0"
 dependencies = [
  "arcweft-character",
+ "arcweft-data",
  "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
