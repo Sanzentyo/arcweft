@@ -61,6 +61,12 @@ pub struct WebTextInputCommandIntent {
     suppressed_during_composition: bool,
 }
 
+/// Keyboard modifiers attached to one Web text-input command candidate.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WebTextInputKeyModifiers {
+    bits: u8,
+}
+
 #[cfg_attr(test, derive(Debug, PartialEq))]
 #[cfg(target_arch = "wasm32")]
 struct TextUpdatePayload {
@@ -137,11 +143,13 @@ impl WebTextInputCommandIntent {
         }
     }
 
+    #[must_use]
     pub const fn selecting(mut self, selecting: bool) -> Self {
         self.selecting = selecting;
         self
     }
 
+    #[must_use]
     pub const fn suppressed_during_composition(mut self) -> Self {
         self.suppressed_during_composition = true;
         self
@@ -160,15 +168,49 @@ impl WebTextInputCommandIntent {
     }
 }
 
+impl WebTextInputKeyModifiers {
+    const CONTROL: u8 = 1 << 0;
+    const META: u8 = 1 << 1;
+    const ALT: u8 = 1 << 2;
+    const SHIFT: u8 = 1 << 3;
+
+    #[must_use]
+    pub const fn with_control(mut self) -> Self {
+        self.bits |= Self::CONTROL;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_meta(mut self) -> Self {
+        self.bits |= Self::META;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_alt(mut self) -> Self {
+        self.bits |= Self::ALT;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_shift(mut self) -> Self {
+        self.bits |= Self::SHIFT;
+        self
+    }
+
+    const fn contains(self, flag: u8) -> bool {
+        self.bits & flag != 0
+    }
+}
+
 pub fn command_intent_for_key_event(
     key: &str,
-    ctrl_key: bool,
-    meta_key: bool,
-    alt_key: bool,
-    shift_key: bool,
+    modifiers: WebTextInputKeyModifiers,
 ) -> Option<WebTextInputCommandIntent> {
-    let shortcut = meta_key || ctrl_key;
-    if shortcut && !alt_key {
+    let control = modifiers.contains(WebTextInputKeyModifiers::CONTROL);
+    let alt = modifiers.contains(WebTextInputKeyModifiers::ALT);
+    let shortcut = modifiers.contains(WebTextInputKeyModifiers::META) || control;
+    if shortcut && !alt {
         match key.to_ascii_lowercase().as_str() {
             "a" => {
                 return Some(
@@ -191,11 +233,11 @@ pub fn command_intent_for_key_event(
             _ => {}
         }
     }
-    let selecting = shift_key;
+    let selecting = modifiers.contains(WebTextInputKeyModifiers::SHIFT);
     let name = match key {
-        "ArrowLeft" if alt_key || ctrl_key => "move_word_left",
+        "ArrowLeft" if alt || control => "move_word_left",
         "ArrowLeft" => "move_left",
-        "ArrowRight" if alt_key || ctrl_key => "move_word_right",
+        "ArrowRight" if alt || control => "move_word_right",
         "ArrowRight" => "move_right",
         "ArrowUp" => "move_up",
         "ArrowDown" => "move_down",
@@ -205,9 +247,9 @@ pub fn command_intent_for_key_event(
         "End" => "move_line_end",
         "PageUp" => "move_page_up",
         "PageDown" => "move_page_down",
-        "Backspace" if alt_key || ctrl_key => "delete_word_left",
+        "Backspace" if alt || control => "delete_word_left",
         "Backspace" => "backspace",
-        "Delete" if alt_key || ctrl_key => "delete_word_right",
+        "Delete" if alt || control => "delete_word_right",
         "Delete" => "delete",
         "Enter" => "submit",
         "Escape" => {
@@ -332,10 +374,20 @@ pub fn arcweft_web_text_input_command_for_key_event(
     alt_key: bool,
     shift_key: bool,
 ) -> Result<JsValue, JsValue> {
-    Ok(
-        command_intent_for_key_event(&key, ctrl_key, meta_key, alt_key, shift_key)
-            .map_or(JsValue::NULL, command_intent_to_js),
-    )
+    let mut modifiers = WebTextInputKeyModifiers::default();
+    if ctrl_key {
+        modifiers = modifiers.with_control();
+    }
+    if meta_key {
+        modifiers = modifiers.with_meta();
+    }
+    if alt_key {
+        modifiers = modifiers.with_alt();
+    }
+    if shift_key {
+        modifiers = modifiers.with_shift();
+    }
+    Ok(command_intent_for_key_event(&key, modifiers).map_or(JsValue::NULL, command_intent_to_js))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -500,18 +552,24 @@ mod tests {
     #[test]
     fn key_event_command_intent_is_owned_by_rust() {
         assert_eq!(
-            command_intent_for_key_event("ArrowLeft", true, false, false, true).unwrap(),
+            command_intent_for_key_event(
+                "ArrowLeft",
+                WebTextInputKeyModifiers::default()
+                    .with_control()
+                    .with_shift(),
+            )
+            .unwrap(),
             WebTextInputCommandIntent::new("move_word_left").selecting(true)
         );
         assert_eq!(
-            command_intent_for_key_event("PageDown", false, false, false, false).unwrap(),
+            command_intent_for_key_event("PageDown", WebTextInputKeyModifiers::default()).unwrap(),
             WebTextInputCommandIntent::new("move_page_down")
         );
         assert!(
-            command_intent_for_key_event("c", true, false, false, false)
+            command_intent_for_key_event("c", WebTextInputKeyModifiers::default().with_control(),)
                 .unwrap()
                 .suppressed()
         );
-        assert!(command_intent_for_key_event("z", false, false, false, false).is_none());
+        assert!(command_intent_for_key_event("z", WebTextInputKeyModifiers::default()).is_none());
     }
 }

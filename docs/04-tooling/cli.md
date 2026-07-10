@@ -651,6 +651,10 @@ observation:
   parent display-map element kind, index, byte range, source category, and node
   index.
 - `actions` with a semantic `advance_text` target
+- `scroll_regions` with one authored target per retained Scroll, internal
+  viewport/content metadata, offsets/ranges, and effective policies; matching
+  `actions` entries use semantic `scroll` without creating internal actionable
+  nodes
 - runtime logs, signals, metrics, events, diagnostics, and final fiber status
 
 `--image overlay` embeds the deterministic overlay SVG in JSON. `--image png` and `--image raw-rgba` use the native `wgpu`/`glyphon` offscreen renderer. `--capture color` is the default for PNG/raw and returns the native framebuffer or selected native crop.
@@ -774,7 +778,9 @@ observation, or observes a supplied `source`/`profile` first. `arcweft.act` is
 the same typed action surface under the shorter Agent verb. Clients can pass an
 observed `action_id`, or a direct semantic `kind` with the required target
 fields; direct invoke calls can include a JSON object `args` payload lowered to
-Agent protocol values. The tool returns accepted before/after ticks and state
+Agent protocol values. Direct `scroll` calls use `region`, `delta_x_milli`, and
+`delta_y_milli`; both deltas are checked i32 milli-logical-pixel values and at
+least one must be non-zero. The tool returns accepted before/after ticks and state
 hashes plus the post-action frame summary. It intentionally does not synthesize
 physical pointer actions. `arcweft.session.step_frames` advances the persistent
 native runtime by an explicit frame count and returns the resulting frame

@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
 arcweft-presentation = { path = "../arcweft-presentation" }
+serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 unicode-segmentation.workspace = true
 

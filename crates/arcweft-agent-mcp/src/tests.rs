@@ -836,13 +836,21 @@ fn debug_read_tool_schemas_expose_state_signal_and_log_filters() {
     assert_eq!(action.input_schema, action_alias.input_schema);
     assert_eq!(
         action.input_schema["properties"]["kind"]["enum"],
-        serde_json::json!(["advance_text", "select_choice", "invoke"])
+        serde_json::json!(["advance_text", "select_choice", "invoke", "scroll"])
     );
     assert_eq!(
         action.input_schema["properties"]["action_id"]["type"],
         "string"
     );
     assert_eq!(action.input_schema["properties"]["args"]["type"], "object");
+    assert_eq!(
+        action.input_schema["properties"]["delta_x_milli"]["minimum"],
+        i32::MIN
+    );
+    assert_eq!(
+        action.input_schema["properties"]["delta_y_milli"]["maximum"],
+        i32::MAX
+    );
 
     let step_frames = tools
         .iter()

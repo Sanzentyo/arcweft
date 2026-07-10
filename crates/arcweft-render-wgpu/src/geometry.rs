@@ -24,6 +24,7 @@ pub mod dialogue;
 mod dialogue_timeline;
 mod focus_navigation;
 mod images;
+mod scroll;
 mod text_controls;
 pub use action_buttons::{PreparedActionButton, RenderActionButton, RenderActionButtonAction};
 pub use control_style::{
@@ -44,6 +45,11 @@ pub use focus_navigation::{
     RenderFocusSkipPolicy, RenderFocusTargetResolution, RenderFocusWrapPolicy,
 };
 pub use images::{RenderImage, RenderImageFrame, RenderImageQuad, RenderImageTransformMatrix};
+pub use scroll::{
+    PreparedScrollIndicator, RenderFocusAutoScrollPolicy, RenderScrollAxis,
+    RenderScrollIndicatorsPolicy, RenderScrollOverflow, RenderScrollOverscrollPolicy,
+    RenderScrollRegion,
+};
 pub use text_controls::RenderTextInputControl;
 
 /// Logical viewport shared by visual planning and hit-testing.
@@ -84,102 +90,6 @@ pub struct RenderPreferences {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ChoiceScroll {
     pub offset_y: f32,
-}
-
-/// One scrollable retained View region in logical viewport coordinates.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RenderScrollRegion {
-    pub id: String,
-    pub bounds: HitRect,
-    pub content_width: f32,
-    pub content_height: f32,
-    pub offset_x: f32,
-    pub offset_y: f32,
-    pub axis: RenderScrollAxis,
-    pub overflow: RenderScrollOverflow,
-    pub auto_scroll_focus: RenderFocusAutoScrollPolicy,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RenderScrollAxis {
-    #[default]
-    Vertical,
-    Horizontal,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RenderScrollOverflow {
-    #[default]
-    Auto,
-    Scroll,
-    Hidden,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RenderFocusAutoScrollPolicy {
-    #[default]
-    Nearest,
-    Start,
-    End,
-    Disabled,
-}
-
-impl RenderScrollRegion {
-    #[must_use]
-    pub fn max_offset_x(&self) -> f32 {
-        if self.axis != RenderScrollAxis::Horizontal || !self.overflow.scroll_enabled() {
-            return 0.0;
-        }
-        if self.content_width.is_finite() && self.bounds.width.is_finite() {
-            (self.content_width - self.bounds.width).max(0.0)
-        } else {
-            0.0
-        }
-    }
-
-    #[must_use]
-    pub fn max_offset_y(&self) -> f32 {
-        if self.axis != RenderScrollAxis::Vertical || !self.overflow.scroll_enabled() {
-            return 0.0;
-        }
-        if self.content_height.is_finite() && self.bounds.height.is_finite() {
-            (self.content_height - self.bounds.height).max(0.0)
-        } else {
-            0.0
-        }
-    }
-
-    #[must_use]
-    pub fn clamped_offset_x(&self, offset_x: f32) -> f32 {
-        if offset_x.is_finite() {
-            offset_x.clamp(0.0, self.max_offset_x())
-        } else {
-            0.0
-        }
-    }
-
-    #[must_use]
-    pub fn clamped_offset_y(&self, offset_y: f32) -> f32 {
-        if offset_y.is_finite() {
-            offset_y.clamp(0.0, self.max_offset_y())
-        } else {
-            0.0
-        }
-    }
-
-    #[must_use]
-    pub fn contains(&self, point: arcweft_presentation::input::ViewportPoint) -> bool {
-        point.x >= self.bounds.x
-            && point.x <= self.bounds.x + self.bounds.width
-            && point.y >= self.bounds.y
-            && point.y <= self.bounds.y + self.bounds.height
-    }
-}
-
-impl RenderScrollOverflow {
-    pub const fn scroll_enabled(self) -> bool {
-        matches!(self, Self::Auto | Self::Scroll)
-    }
 }
 
 /// Frame-crossing interaction visuals rendered into the canvas.
@@ -591,6 +501,8 @@ pub struct RenderChoice {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedFrame {
     pub viewport: RenderViewport,
+    pub visual_time_millis: u64,
+    pub preferences: RenderPreferences,
     pub layers: LayerTree,
     pub semantics: SemanticTree,
     pub hits: HitTree,
@@ -606,6 +518,7 @@ pub struct PreparedFrame {
     pub control_filters: Vec<PreparedControlFilter>,
     pub control_paints: Vec<PreparedControlPaint>,
     pub scroll_regions: Vec<RenderScrollRegion>,
+    pub scroll_indicators: Vec<PreparedScrollIndicator>,
     pub focus_graph: PreparedFocusGraph,
     view_scenes: Vec<PreparedViewScene>,
     dialogue_present: bool,
@@ -934,6 +847,12 @@ impl PreparedFrame {
             region.content_height *= mapping.scale_y;
             region.offset_x *= mapping.scale_x;
             region.offset_y *= mapping.scale_y;
+            region.overscroll_x *= mapping.scale_x;
+            region.overscroll_y *= mapping.scale_y;
+        }
+        for indicator in &mut self.scroll_indicators {
+            indicator.track_bounds = mapping.rect(indicator.track_bounds);
+            indicator.thumb_bounds = mapping.rect(indicator.thumb_bounds);
         }
     }
 
@@ -1212,10 +1131,13 @@ impl SharedFramePlanContext {
             &mut control_shadows,
             &mut control_filters,
         )?;
+        let scroll_indicators = scroll::build_scroll_indicators(scene, &mut rectangles, &palette);
         let hits = semantics.to_hit_tree();
 
         Ok(PreparedFrame {
             viewport: scene.viewport,
+            visual_time_millis: scene.visual_time_millis,
+            preferences: scene.preferences,
             layers,
             semantics,
             hits,
@@ -1231,6 +1153,7 @@ impl SharedFramePlanContext {
             control_filters,
             control_paints: runtime_controls.control_paints,
             scroll_regions: scene.scroll_regions.clone(),
+            scroll_indicators,
             focus_graph: PreparedFocusGraph::new(
                 scene.focus_groups.clone(),
                 scene.focus_navigation.clone(),
@@ -1441,8 +1364,8 @@ fn scroll_adjusted_bounds(
         .iter()
         .find(|region| region.id == scroll_region)?;
     let shifted = HitRect::new(
-        bounds.x - region.clamped_offset_x(region.offset_x),
-        bounds.y - region.clamped_offset_y(region.offset_y),
+        bounds.x - region.visual_offset_x(),
+        bounds.y - region.visual_offset_y(),
         bounds.width,
         bounds.height,
     );
@@ -1978,6 +1901,8 @@ struct Palette {
     choice_active: [f32; 4],
     choice_pressed: [f32; 4],
     focus_ring: [f32; 4],
+    scroll_track: [f32; 4],
+    scroll_thumb: [f32; 4],
     speaker_text: [u8; 4],
     dialogue_text: [u8; 4],
     choice_text: [u8; 4],
@@ -1993,6 +1918,8 @@ impl Palette {
                 choice_active: [0.2, 0.2, 0.2, 1.0],
                 choice_pressed: [0.32, 0.32, 0.32, 1.0],
                 focus_ring: [1.0, 1.0, 0.0, 1.0],
+                scroll_track: [0.35, 0.35, 0.35, 0.72],
+                scroll_thumb: [1.0, 1.0, 0.0, 1.0],
                 speaker_text: [255, 255, 0, 255],
                 dialogue_text: [255, 255, 255, 255],
                 choice_text: [255, 255, 255, 255],
@@ -2005,6 +1932,8 @@ impl Palette {
                 choice_active: [0.119, 0.235, 0.153, 1.0],
                 choice_pressed: [0.207, 0.3, 0.164, 1.0],
                 focus_ring: [0.886, 0.914, 0.384, 1.0],
+                scroll_track: [0.04, 0.05, 0.045, 0.55],
+                scroll_thumb: [0.72, 0.78, 0.55, 0.92],
                 speaker_text: [174, 226, 142, 255],
                 dialogue_text: [248, 246, 234, 255],
                 choice_text: [255, 252, 238, 255],

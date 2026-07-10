@@ -463,6 +463,7 @@ dependencies = [
  "arcweft-layout",
  "arcweft-render-text",
  "arcweft-serde-bridge",
+ "arcweft-view",
  "blake3",
  "ciborium",
  "ed25519-dalek",
@@ -1419,6 +1420,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-image",
  "arcweft-presentation",
+ "serde",
  "thiserror 2.0.18",
  "unicode-segmentation",
 ]

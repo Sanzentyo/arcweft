@@ -17,7 +17,8 @@ impl NativeClipboardAdapter {
 
     fn clipboard(&mut self) -> Result<&mut arboard::Clipboard, TextClipboardErrorKind> {
         if self.clipboard.is_none() {
-            self.clipboard = Some(arboard::Clipboard::new().map_err(map_arboard_error)?);
+            self.clipboard =
+                Some(arboard::Clipboard::new().map_err(|error| map_arboard_error(&error))?);
         }
         self.clipboard
             .as_mut()
@@ -31,7 +32,7 @@ impl NativeClipboardAdapter {
         match self.clipboard().and_then(|clipboard| {
             clipboard
                 .set_text(write.text().as_str())
-                .map_err(map_arboard_error)
+                .map_err(|error| map_arboard_error(&error))
         }) {
             Ok(()) => TextClipboardOutcome::WriteCommitted {
                 request_id: request.request_id(),
@@ -41,10 +42,11 @@ impl NativeClipboardAdapter {
     }
 
     fn read_text(&mut self, request: &TextClipboardRequest) -> TextClipboardOutcome {
-        match self
-            .clipboard()
-            .and_then(|clipboard| clipboard.get_text().map_err(map_arboard_error))
-        {
+        match self.clipboard().and_then(|clipboard| {
+            clipboard
+                .get_text()
+                .map_err(|error| map_arboard_error(&error))
+        }) {
             Ok(text) => TextClipboardOutcome::ReadCommitted {
                 request_id: request.request_id(),
                 text: ClipboardText::new(text),
@@ -56,7 +58,7 @@ impl NativeClipboardAdapter {
     fn clear(&mut self, request: &TextClipboardRequest) -> TextClipboardOutcome {
         match self
             .clipboard()
-            .and_then(|clipboard| clipboard.clear().map_err(map_arboard_error))
+            .and_then(|clipboard| clipboard.clear().map_err(|error| map_arboard_error(&error)))
         {
             Ok(()) => TextClipboardOutcome::Cleared {
                 request_id: request.request_id(),
@@ -92,13 +94,13 @@ fn failed(request: &TextClipboardRequest, kind: TextClipboardErrorKind) -> TextC
     }
 }
 
-fn map_arboard_error(error: arboard::Error) -> TextClipboardErrorKind {
+fn map_arboard_error(error: &arboard::Error) -> TextClipboardErrorKind {
     match error {
-        arboard::Error::ContentNotAvailable => TextClipboardErrorKind::UnsupportedFormat,
+        arboard::Error::ContentNotAvailable | arboard::Error::ConversionFailure => {
+            TextClipboardErrorKind::UnsupportedFormat
+        }
         arboard::Error::ClipboardNotSupported => TextClipboardErrorKind::Unavailable,
         arboard::Error::ClipboardOccupied => TextClipboardErrorKind::Busy,
-        arboard::Error::ConversionFailure => TextClipboardErrorKind::UnsupportedFormat,
-        arboard::Error::Unknown { .. } => TextClipboardErrorKind::InternalFailure,
         _ => TextClipboardErrorKind::InternalFailure,
     }
 }

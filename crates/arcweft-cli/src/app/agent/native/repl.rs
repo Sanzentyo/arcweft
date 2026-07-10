@@ -691,6 +691,7 @@ pub(super) fn agent_repl_completion_entities(
             }),
             AgentActionKind::AdvanceText
             | AgentActionKind::Invoke
+            | AgentActionKind::Scroll
             | AgentActionKind::PointerClick => None,
         })
         .collect()

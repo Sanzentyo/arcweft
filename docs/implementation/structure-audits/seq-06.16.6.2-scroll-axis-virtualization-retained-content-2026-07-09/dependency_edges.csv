@@ -116,6 +116,7 @@ arcweft-bundle,arcweft-interaction-model,development,crates/arcweft-bundle/Cargo
 arcweft-bundle,arcweft-layout,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,arcweft-render-text,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,arcweft-serde-bridge,normal,crates/arcweft-bundle/Cargo.toml
+arcweft-bundle,arcweft-view,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,blake3,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,ciborium,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,ed25519-dalek,normal,crates/arcweft-bundle/Cargo.toml
@@ -325,6 +326,7 @@ arcweft-lang-jit-cranelift,cranelift,normal,crates/arcweft-lang-jit-cranelift/Ca
 arcweft-lang-jit-cranelift,cranelift-object,normal,crates/arcweft-lang-jit-cranelift/Cargo.toml
 arcweft-lang-jit-cranelift,thiserror,normal,crates/arcweft-lang-jit-cranelift/Cargo.toml
 arcweft-lang-sema,arcweft-character,normal,crates/arcweft-lang-sema/Cargo.toml
+arcweft-lang-sema,arcweft-data,normal,crates/arcweft-lang-sema/Cargo.toml
 arcweft-lang-sema,arcweft-id,normal,crates/arcweft-lang-sema/Cargo.toml
 arcweft-lang-sema,arcweft-lang-hir,normal,crates/arcweft-lang-sema/Cargo.toml
 arcweft-lang-sema,arcweft-lang-syntax,normal,crates/arcweft-lang-sema/Cargo.toml
@@ -639,5 +641,6 @@ arcweft-verify-z3,thiserror,normal,crates/arcweft-verify-z3/Cargo.toml
 arcweft-view,arcweft-id,normal,crates/arcweft-view/Cargo.toml
 arcweft-view,arcweft-image,normal,crates/arcweft-view/Cargo.toml
 arcweft-view,arcweft-presentation,normal,crates/arcweft-view/Cargo.toml
+arcweft-view,serde,normal,crates/arcweft-view/Cargo.toml
 arcweft-view,thiserror,normal,crates/arcweft-view/Cargo.toml
 arcweft-view,unicode-segmentation,normal,crates/arcweft-view/Cargo.toml

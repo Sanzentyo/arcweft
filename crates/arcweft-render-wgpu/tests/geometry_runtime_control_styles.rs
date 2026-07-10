@@ -391,8 +391,8 @@ fn text_control_uses_authored_font_metrics() {
         .find(|text| text.text == "hello")
         .expect("input text block exists");
 
-    assert_eq!(input_text.font_size, 18.0);
-    assert_eq!(input_text.line_height, 24.0);
+    assert!((input_text.font_size - 18.0).abs() < f32::EPSILON);
+    assert!((input_text.line_height - 24.0).abs() < f32::EPSILON);
 }
 
 #[test]

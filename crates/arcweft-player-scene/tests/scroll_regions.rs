@@ -20,7 +20,9 @@ use arcweft_player_scene::{
     },
 };
 use arcweft_presentation::input::{PointerId, ViewportPoint};
-use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
+use arcweft_render_wgpu::geometry::{
+    RenderPreferences, RenderScrollIndicatorsPolicy, RenderScrollOverscrollPolicy, RenderViewport,
+};
 use arcweft_render_wgpu::view_scene::{ViewPaintNode, ViewPrimitive};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 
@@ -169,6 +171,9 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
     assert!((region.content_height - 360.0).abs() < f32::EPSILON);
     assert!(region.offset_x.abs() < f32::EPSILON);
     assert!(region.offset_y.abs() < f32::EPSILON);
+    assert_eq!(region.indicators, RenderScrollIndicatorsPolicy::Auto);
+    assert_eq!(region.overscroll, RenderScrollOverscrollPolicy::Clamp);
+    assert!(prepared.frame.scroll_indicators.is_empty());
 
     input.pointer_move(
         &prepared.frame,
@@ -184,6 +189,11 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
         .first()
         .expect("scroll region");
     assert!((region.offset_y - 90.0).abs() < f32::EPSILON);
+    assert_eq!(prepared.frame.scroll_indicators.len(), 1);
+    assert_eq!(
+        prepared.frame.scroll_indicators[0].region_id,
+        "scroll.feedback.body"
+    );
 
     let snapshot = input.snapshot();
     assert_eq!(

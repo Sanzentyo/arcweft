@@ -119,6 +119,9 @@ impl InputController {
     ) -> InputOutcome {
         match action {
             NormalizedControllerAction::Move(direction) => self.move_focus(frame, direction),
+            NormalizedControllerAction::Scroll { delta_x, delta_y } => {
+                self.precision_scroll(frame, delta_x, delta_y)
+            }
             NormalizedControllerAction::Confirm => self.activate_focused(frame),
             NormalizedControllerAction::Cancel => InputOutcome::cancel(),
         }

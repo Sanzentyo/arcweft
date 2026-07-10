@@ -71,8 +71,9 @@ use arcweft_agent_protocol::observation::AgentObservationReport;
 use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
 use arcweft_agent_protocol::presentation::AgentPresentationTreeQuery;
 use arcweft_agent_protocol::protocol::{
-    ActionResult, AgentAction, AgentInvokeAction, AgentSessionInfo, CaptureFormat, CaptureRequest,
-    CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest,
+    ActionResult, AgentAction, AgentInvokeAction, AgentScrollAction, AgentSessionInfo,
+    CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget, ObservationEnvelope,
+    ObserveRequest,
 };
 use arcweft_agent_protocol::proxy::{
     AgentPresentationObjectProxyParamQuery, AgentPresentationObjectProxyRef,
@@ -299,7 +300,7 @@ use observe::{
     agent_observe_effective_steps, agent_observe_report_capture_time_millis,
     agent_observe_resource_by_uri,
     agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store,
-    agent_report_capture_time_seconds, native_agent_action_step_input,
+    agent_report_capture_time_seconds, native_agent_action_step_input, native_agent_scroll_region,
     validate_agent_observe_options,
 };
 use observe_resources::{
@@ -314,9 +315,10 @@ use player_observation::{
 use repl::agent_repl_command;
 use runtime_observation::{
     AgentImageOutput, AgentRasterCapture, agent_action_targets,
-    agent_action_targets_for_runtime_status, agent_action_targets_for_semantics, agent_image_kind,
-    agent_image_scope_for_capture_scope, agent_native_visual_diagnostics,
-    agent_observe_image_output, agent_observe_layout_scene_graph, dedupe_agent_action_targets,
+    agent_action_targets_for_runtime_status, agent_action_targets_for_scroll_regions,
+    agent_action_targets_for_semantics, agent_image_kind, agent_image_scope_for_capture_scope,
+    agent_native_visual_diagnostics, agent_observe_image_output, agent_observe_layout_scene_graph,
+    agent_observed_scroll_regions, dedupe_agent_action_targets,
 };
 
 pub(super) fn agent_command(

@@ -119,11 +119,20 @@ pub enum AgentAction {
         choice: PublicId,
     },
     Invoke(Box<AgentInvokeAction>),
+    Scroll(AgentScrollAction),
     PointerClick {
         x: u32,
         y: u32,
         button: PointerButton,
     },
+}
+
+/// Region-addressed semantic scroll input in milli logical pixels.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentScrollAction {
+    pub region: String,
+    pub delta_x_milli: i32,
+    pub delta_y_milli: i32,
 }
 
 /// Semantic invocation action payload.
@@ -305,6 +314,31 @@ mod tests {
                     }
                 }
             })
+        );
+    }
+
+    #[test]
+    fn scroll_action_uses_region_addressed_milli_pixel_wire_shape() {
+        let action = AgentAction::Scroll(AgentScrollAction {
+            region: "scroll.Inventory.0".to_owned(),
+            delta_x_milli: 0,
+            delta_y_milli: -90_000,
+        });
+
+        let value = serde_json::to_value(&action).expect("serializes scroll action");
+
+        assert_eq!(
+            value,
+            json!({
+                "kind": "scroll",
+                "region": "scroll.Inventory.0",
+                "delta_x_milli": 0,
+                "delta_y_milli": -90000
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<AgentAction>(value).expect("deserializes scroll action"),
+            action
         );
     }
 }

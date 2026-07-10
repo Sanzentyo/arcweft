@@ -2,6 +2,8 @@ use super::runtime_control_style::ViewRuntimeControlStyle;
 use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, DigestRef, SourceRangeRef};
+pub use arcweft_view::program::ViewElementKind;
+use arcweft_view::program::ViewElementTextInputKind;
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -118,42 +120,6 @@ pub enum ViewProgramInstruction {
 pub struct ViewAwaitBranchSpan {
     pub pattern_schema: DigestRef,
     pub body_span: u32,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewElementKind {
-    Panel,
-    Box,
-    Scroll,
-    Row,
-    Column,
-    LazyRow,
-    LazyColumn,
-    Stack,
-    Button,
-    TextField,
-    TextArea,
-    SecureField,
-}
-
-impl ViewElementKind {
-    pub const fn text_input_kind(self) -> Option<ViewInputKind> {
-        match self {
-            Self::TextField => Some(ViewInputKind::TextField),
-            Self::TextArea => Some(ViewInputKind::TextArea),
-            Self::SecureField => Some(ViewInputKind::SecureField),
-            Self::Panel
-            | Self::Box
-            | Self::Scroll
-            | Self::Row
-            | Self::Column
-            | Self::LazyRow
-            | Self::LazyColumn
-            | Self::Stack
-            | Self::Button => None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1324,6 +1290,23 @@ impl ViewInputOptions {
 }
 
 impl ViewInputKind {
+    pub const fn from_element(element: ViewElementKind) -> Option<Self> {
+        match element.text_input_kind() {
+            Some(ViewElementTextInputKind::TextField) => Some(Self::TextField),
+            Some(ViewElementTextInputKind::TextArea) => Some(Self::TextArea),
+            Some(ViewElementTextInputKind::SecureField) => Some(Self::SecureField),
+            None => None,
+        }
+    }
+
+    pub const fn runtime_control_element(self) -> ViewElementKind {
+        match self {
+            Self::TextField => ViewElementKind::TextField,
+            Self::TextArea => ViewElementKind::TextArea,
+            Self::SecureField => ViewElementKind::SecureField,
+        }
+    }
+
     pub const fn is_secure(self) -> bool {
         matches!(self, Self::SecureField)
     }

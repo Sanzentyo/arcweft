@@ -15,6 +15,7 @@ arcweft-data = { workspace = true }
 arcweft-layout.workspace = true
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-serde-bridge = { workspace = true, optional = true }
+arcweft-view = { path = "../arcweft-view" }
 apache-avro = { workspace = true, optional = true }
 blake3.workspace = true
 ciborium = { workspace = true, optional = true }

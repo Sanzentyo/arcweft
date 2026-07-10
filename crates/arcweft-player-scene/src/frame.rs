@@ -13,9 +13,10 @@ use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedFrame, RenderChoiceItem, RenderControlVisualState, RenderDialogue,
     RenderFocusAutoScrollPolicy, RenderFontFamily, RenderPreferences, RenderScene,
-    RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion, RenderTextBlock,
-    RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight, RenderViewport,
-    SharedFramePlanContext, SharedFramePlanStats,
+    RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
+    RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextBlock, RenderTextSelectionPolicy,
+    RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanContext,
+    SharedFramePlanStats,
 };
 use arcweft_runtime_driver::dialogue::BundleDialoguePresentation;
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
@@ -200,7 +201,14 @@ impl PlayerFramePlanner {
                 .presentation
                 .scroll_regions
                 .iter()
-                .map(|region| render_scroll_region(input, region))
+                .map(|region| {
+                    render_scroll_region(
+                        input,
+                        region,
+                        request.visual_time_millis,
+                        request.preferences.reduce_motion,
+                    )
+                })
                 .collect(),
         })
     }
@@ -214,10 +222,12 @@ impl PlayerFramePlanner {
 }
 
 fn render_scroll_region(
-    input: &InputController,
+    input: &mut InputController,
     region: &arcweft_bundle::resource_codec::ViewRuntimeScrollRegion,
+    visual_time_millis: u64,
+    reduce_motion: bool,
 ) -> RenderScrollRegion {
-    RenderScrollRegion {
+    let mut render_region = RenderScrollRegion {
         id: region.public_id.clone(),
         bounds: HitRect::new(
             milli_i32_to_f32(region.bounds.x_milli),
@@ -227,12 +237,19 @@ fn render_scroll_region(
         ),
         content_width: milli_u32_to_f32(region.content_width_milli),
         content_height: milli_u32_to_f32(region.content_height_milli),
-        offset_x: input.scroll_offset_x(&region.public_id),
-        offset_y: input.scroll_offset_y(&region.public_id),
+        offset_x: 0.0,
+        offset_y: 0.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: render_scroll_axis(region.axis),
         overflow: render_scroll_overflow(region.overflow),
+        indicators: render_scroll_indicators_policy(region.indicators),
+        overscroll: render_scroll_overscroll_policy(region.overscroll),
         auto_scroll_focus: render_focus_auto_scroll_policy(region.auto_scroll_focus),
-    }
+        indicator_activity_millis: None,
+    };
+    input.resolve_scroll_region(&mut render_region, visual_time_millis, reduce_motion);
+    render_region
 }
 
 const fn render_scroll_axis(
@@ -256,6 +273,38 @@ fn render_scroll_overflow(
         }
         arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Hidden => {
             RenderScrollOverflow::Hidden
+        }
+    }
+}
+
+const fn render_scroll_indicators_policy(
+    policy: arcweft_bundle::resource_codec::ViewScrollIndicatorsPolicy,
+) -> RenderScrollIndicatorsPolicy {
+    match policy {
+        arcweft_bundle::resource_codec::ViewScrollIndicatorsPolicy::Auto => {
+            RenderScrollIndicatorsPolicy::Auto
+        }
+        arcweft_bundle::resource_codec::ViewScrollIndicatorsPolicy::Visible => {
+            RenderScrollIndicatorsPolicy::Visible
+        }
+        arcweft_bundle::resource_codec::ViewScrollIndicatorsPolicy::Hidden => {
+            RenderScrollIndicatorsPolicy::Hidden
+        }
+    }
+}
+
+const fn render_scroll_overscroll_policy(
+    policy: arcweft_bundle::resource_codec::ViewScrollOverscrollPolicy,
+) -> RenderScrollOverscrollPolicy {
+    match policy {
+        arcweft_bundle::resource_codec::ViewScrollOverscrollPolicy::Clamp => {
+            RenderScrollOverscrollPolicy::Clamp
+        }
+        arcweft_bundle::resource_codec::ViewScrollOverscrollPolicy::Contain => {
+            RenderScrollOverscrollPolicy::Contain
+        }
+        arcweft_bundle::resource_codec::ViewScrollOverscrollPolicy::Elastic => {
+            RenderScrollOverscrollPolicy::Elastic
         }
     }
 }
@@ -377,8 +426,8 @@ fn scroll_adjusted_bounds(
         .iter()
         .find(|region| region.id == scroll_region)?;
     let shifted = HitRect::new(
-        bounds.x - region.clamped_offset_x(region.offset_x),
-        bounds.y - region.clamped_offset_y(region.offset_y),
+        bounds.x - region.visual_offset_x(),
+        bounds.y - region.visual_offset_y(),
         bounds.width,
         bounds.height,
     );

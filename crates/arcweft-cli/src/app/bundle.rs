@@ -607,7 +607,7 @@ fn validate_view_interactive_overflow_style_rules(
             }
             eprintln!(
                 "error[AWF0617 view::interactive_overflow_requires_scroll]: style rule selector `{}` cannot use `{}: {}` as an interactive overflow container; wrap the content in `Scroll {{ ... }}` or move `{}` to the Scroll element",
-                view_style_element_label(element),
+                element.source_name(),
                 normalize_view_style_property(&declaration.property),
                 view_style_value_label(&declaration.value),
                 normalize_view_style_property(&declaration.property)
@@ -694,23 +694,6 @@ fn view_style_value_label(value: &ViewStyleValue) -> String {
 
 fn normalize_view_style_property(value: &str) -> String {
     value.trim().replace('_', "-").to_ascii_lowercase()
-}
-
-fn view_style_element_label(element: ViewElementKind) -> &'static str {
-    match element {
-        ViewElementKind::Panel => "Panel",
-        ViewElementKind::Box => "Box",
-        ViewElementKind::Scroll => "Scroll",
-        ViewElementKind::Row => "Row",
-        ViewElementKind::Column => "Column",
-        ViewElementKind::LazyRow => "LazyRow",
-        ViewElementKind::LazyColumn => "LazyColumn",
-        ViewElementKind::Stack => "Stack",
-        ViewElementKind::Button => "Button",
-        ViewElementKind::TextField => "TextField",
-        ViewElementKind::TextArea => "TextArea",
-        ViewElementKind::SecureField => "SecureField",
-    }
 }
 
 fn id_or_tail_matches(candidate: &str, target: &str) -> bool {
@@ -840,23 +823,11 @@ fn dsl_view_style_environment_predicate(
 }
 
 fn dsl_view_element_kind(value: &str) -> Result<ViewElementKind, ExitCode> {
-    match value {
-        "panel" => Ok(ViewElementKind::Panel),
-        "box" => Ok(ViewElementKind::Box),
-        "scroll" => Ok(ViewElementKind::Scroll),
-        "row" => Ok(ViewElementKind::Row),
-        "column" => Ok(ViewElementKind::Column),
-        "lazy_row" => Ok(ViewElementKind::LazyRow),
-        "lazy_column" => Ok(ViewElementKind::LazyColumn),
-        "stack" => Ok(ViewElementKind::Stack),
-        "button" => Ok(ViewElementKind::Button),
-        "text_field" => Ok(ViewElementKind::TextField),
-        "text_area" => Ok(ViewElementKind::TextArea),
-        "secure_field" => Ok(ViewElementKind::SecureField),
-        other => {
-            eprintln!("error: unknown View style element selector `{other}`");
-            Err(ExitCode::FAILURE)
-        }
+    if let Some(element) = ViewElementKind::from_runtime_label(value) {
+        Ok(element)
+    } else {
+        eprintln!("error: unknown View style element selector `{value}`");
+        Err(ExitCode::FAILURE)
     }
 }
 

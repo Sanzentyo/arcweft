@@ -502,6 +502,7 @@ fn agent_action_kind_label(kind: AgentActionKind) -> &'static str {
         AgentActionKind::AdvanceText => "advance_text",
         AgentActionKind::SelectChoice => "select_choice",
         AgentActionKind::Invoke => "invoke",
+        AgentActionKind::Scroll => "scroll",
         AgentActionKind::PointerClick => "pointer_click",
     }
 }

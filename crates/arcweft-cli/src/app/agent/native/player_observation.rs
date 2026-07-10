@@ -5,14 +5,14 @@ use super::{
     AgentImageFrameStore, AgentObservationState, AgentObserveImageKind, AgentObserveOptions,
     AgentStoredImagePlacement, ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState,
     NativeTaskBridge, agent_action_targets, agent_action_targets_for_runtime_status,
-    agent_action_targets_for_semantics, agent_capture_time_millis,
-    agent_mcp_project_context_from_hir, agent_native_capture_session_for_hir,
-    agent_object_capture_refs_for_page, agent_observe_capture_time_seconds,
-    agent_observe_effective_steps, agent_observe_layout_scene_graph,
-    agent_observe_report_capture_time_millis, agent_observed_layers, agent_observed_views,
-    agent_overlay_svg, agent_textbox_object, dedupe_agent_action_targets, hash_hex,
-    load_and_check_selection, native_host_policy_for_selection, report_path,
-    resolve_source_selection,
+    agent_action_targets_for_scroll_regions, agent_action_targets_for_semantics,
+    agent_capture_time_millis, agent_mcp_project_context_from_hir,
+    agent_native_capture_session_for_hir, agent_object_capture_refs_for_page,
+    agent_observe_capture_time_seconds, agent_observe_effective_steps,
+    agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
+    agent_observed_layers, agent_observed_scroll_regions, agent_observed_views, agent_overlay_svg,
+    agent_textbox_object, dedupe_agent_action_targets, hash_hex, load_and_check_selection,
+    native_host_policy_for_selection, report_path, resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
@@ -132,6 +132,7 @@ pub(super) fn native_player_runtime_state_for_options(
         session,
         images,
         input: InputController::default(),
+        prepared_frame: None,
         source_path: selection.path().to_owned(),
         project_context,
         native_session,
@@ -211,16 +212,18 @@ pub(super) fn observe_native_player_runtime(
         let capture = player_observe_capture_frame(&prepared.frame, &prepared_runtime.fonts)?;
         image_frames.set_full_frame(capture.width, capture.height, capture.rgba);
     }
+    let report = player_observation_report(
+        &runtime.source_path,
+        prepared,
+        &step,
+        objects,
+        diagnostics,
+        task_request_count,
+        options,
+    );
+    runtime.prepared_frame = Some(prepared_runtime.prepared);
     Ok(NativePlayerObservedFrame {
-        report: player_observation_report(
-            &runtime.source_path,
-            prepared,
-            &step,
-            objects,
-            diagnostics,
-            task_request_count,
-            options,
-        ),
+        report,
         image_frames,
     })
 }
@@ -356,11 +359,17 @@ fn player_observation_report(
     let viewport = player_observed_viewport(prepared);
     let object_refs = objects.iter().collect::<Vec<_>>();
     let overlay_svg = agent_overlay_svg(&viewport, &object_refs);
-    let render_hash = hash_hex(overlay_svg.as_bytes());
+    let scroll_regions = agent_observed_scroll_regions(&prepared.frame);
+    let mut render_evidence = overlay_svg.as_bytes().to_vec();
+    render_evidence.extend(
+        serde_json::to_vec(&scroll_regions).expect("finite typed scroll metadata serializes"),
+    );
+    let render_hash = hash_hex(&render_evidence);
     let mut actions = agent_action_targets(&objects);
     actions.extend(agent_action_targets_for_semantics(
         &prepared.frame.semantics,
     ));
+    actions.extend(agent_action_targets_for_scroll_regions(&prepared.frame));
     actions.extend(agent_action_targets_for_runtime_status(&step.fiber_status));
     dedupe_agent_action_targets(&mut actions);
     let layers = agent_observed_layers("cli", step.index, &objects);
@@ -376,12 +385,13 @@ fn player_observation_report(
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
     let state_hash = hash_hex(
         format!(
-            "{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}",
             step.status_label,
             step.index,
             objects.len(),
             step.diagnostics.len(),
-            task_request_count
+            task_request_count,
+            render_hash,
         )
         .as_bytes(),
     );
@@ -404,6 +414,7 @@ fn player_observation_report(
         objects,
         presentation_tree,
         actions,
+        scroll_regions,
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
             children: layers.iter().map(|layer| layer.id.clone()).collect(),

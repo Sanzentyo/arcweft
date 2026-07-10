@@ -167,6 +167,7 @@ pub(super) struct NativeAgentRuntimeState {
     pub(super) session: arcweft_runtime_driver::session::BundleSession,
     pub(super) images: arcweft_player_scene::images::BundleImageCatalog,
     pub(super) input: arcweft_player_scene::input::InputController,
+    pub(super) prepared_frame: Option<arcweft_player_scene::frame::PlayerPreparedFrame>,
     pub(super) source_path: PathBuf,
     pub(super) project_context: AgentMcpProjectContext,
     pub(super) native_session: arcweft_render_native::NativeOffscreenCaptureSession,
@@ -771,9 +772,19 @@ pub(super) fn agent_mcp_call_action(
             .runtime
             .as_mut()
             .ok_or_else(|| "arcweft.action requires an active native runtime session".to_owned())?;
-        let step_input =
-            native_agent_action_step_input(&before, runtime.session.presentation(), action.clone())
-                .map_err(|error| error.to_string())?;
+        let step_input = match &action {
+            AgentAction::Scroll(scroll) => {
+                native_agent_scroll_region(runtime, &before, scroll)
+                    .map_err(|error| error.to_string())?;
+                BundleStepInput::default()
+            }
+            _ => native_agent_action_step_input(
+                &before,
+                runtime.session.presentation(),
+                action.clone(),
+            )
+            .map_err(|error| error.to_string())?,
+        };
         agent_mcp_observe_runtime(runtime, &options, step_input, adapter_registrars)?
     };
     let result = NativeAgentScriptSession::action_result(&before, &frame.report);
@@ -791,6 +802,7 @@ pub(super) fn agent_mcp_call_action(
             "render_hash": frame.report.render_hash,
             "final_status": frame.report.final_status,
             "actions": frame.report.actions,
+            "scroll_regions": frame.report.scroll_regions,
         },
         "resource_count": frame.resources.len(),
     });
@@ -1269,10 +1281,59 @@ pub(super) fn agent_mcp_action_argument(
                 args: Box::new(args),
             })))
         }
+        "scroll" => {
+            let region = arguments
+                .get("region")
+                .and_then(serde_json::Value::as_str)
+                .filter(|region| !region.is_empty())
+                .ok_or_else(|| "arcweft.action kind scroll requires arguments.region".to_owned())?;
+            agent_mcp_scroll_action(arguments, region)
+        }
         _ => Err(format!(
-            "arcweft.action kind must be one of advance_text, select_choice, or invoke: `{kind}`"
+            "arcweft.action kind must be one of advance_text, select_choice, invoke, or scroll: `{kind}`"
         )),
     }
+}
+
+fn agent_mcp_scroll_action(
+    arguments: &serde_json::Value,
+    observed_region: &str,
+) -> Result<AgentAction, String> {
+    if let Some(region) = arguments.get("region") {
+        let region = region
+            .as_str()
+            .filter(|region| !region.is_empty())
+            .ok_or_else(|| {
+                "arcweft.action arguments.region must be a non-empty string".to_owned()
+            })?;
+        if region != observed_region {
+            return Err(format!(
+                "arcweft.action region `{region}` does not match observed action target `{observed_region}`"
+            ));
+        }
+    }
+    let action = AgentScrollAction {
+        region: observed_region.to_owned(),
+        delta_x_milli: agent_mcp_required_i32_argument(arguments, "delta_x_milli")?,
+        delta_y_milli: agent_mcp_required_i32_argument(arguments, "delta_y_milli")?,
+    };
+    if action.delta_x_milli == 0 && action.delta_y_milli == 0 {
+        return Err("arcweft.action scroll delta must not be zero on both axes".to_owned());
+    }
+    Ok(AgentAction::Scroll(action))
+}
+
+fn agent_mcp_required_i32_argument(
+    arguments: &serde_json::Value,
+    name: &str,
+) -> Result<i32, String> {
+    let value = arguments
+        .get(name)
+        .and_then(serde_json::Value::as_i64)
+        .ok_or_else(|| format!("arcweft.action scroll requires integer arguments.{name}"))?;
+    i32::try_from(value).map_err(|_| {
+        format!("arcweft.action arguments.{name} must be in the i32 milli-pixel range")
+    })
 }
 
 pub(super) fn agent_mcp_action_args(
@@ -1334,6 +1395,7 @@ pub(super) fn agent_mcp_action_from_target(
             action: target.id.clone(),
             args: Box::new(agent_mcp_action_args(arguments)?),
         }))),
+        AgentActionKind::Scroll => agent_mcp_scroll_action(arguments, &target.target),
         AgentActionKind::PointerClick => {
             Err("arcweft.action does not synthesize physical pointer_click actions".to_owned())
         }

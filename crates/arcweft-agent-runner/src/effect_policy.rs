@@ -141,7 +141,8 @@ pub fn required_effect_for_request(request: &AgentHostRequest) -> Option<&'stati
             AgentAction::PointerClick { .. } => "agent.act.physical",
             AgentAction::AdvanceText
             | AgentAction::SelectChoice { .. }
-            | AgentAction::Invoke(_) => "agent.act.semantic",
+            | AgentAction::Invoke(_)
+            | AgentAction::Scroll(_) => "agent.act.semantic",
         },
         AgentHostRequest::Capture(_) => "agent.capture",
         AgentHostRequest::ReadResource { .. } => "agent.resource.read",

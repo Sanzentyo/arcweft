@@ -25,7 +25,11 @@ use crate::rich_text::{
     AgentHitRegion, AgentHitRegionKind, AgentRichTextElementKind, AgentRichTextElementRef,
 };
 use crate::session::{AgentAssignment, AgentAudioState};
-use crate::view::AgentViewTree;
+use crate::view::{
+    AgentFocusAutoScrollPolicy, AgentObservedScrollRegion, AgentScrollAxis, AgentScrollContentPart,
+    AgentScrollIndicatorsPolicy, AgentScrollOverflow, AgentScrollOverscrollPolicy,
+    AgentScrollRegionParts, AgentScrollRegionRole, AgentScrollViewportPart, AgentViewTree,
+};
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_layout::{
     CaptureComposition, CaptureCropBounds, CaptureMaskMetadata, CaptureMetadata,
@@ -208,6 +212,7 @@ fn test_mcp_observation_report() -> AgentObservationReport {
         objects: Vec::new(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
+        scroll_regions: Vec::new(),
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
             children: Vec::new(),
@@ -324,6 +329,27 @@ fn test_serialization_observation_report() -> AgentObservationReport {
             action: AgentActionKind::AdvanceText,
             kind: AgentActionDispatch::Semantic,
             enabled: true,
+        }],
+        scroll_regions: vec![AgentObservedScrollRegion {
+            target: "scroll.Inventory.0".to_owned(),
+            role: AgentScrollRegionRole::ScrollRegion,
+            parts: AgentScrollRegionParts {
+                viewport: AgentScrollViewportPart {
+                    internal: true,
+                    bounds: [48.0, 48.0, 420.0, 180.0],
+                },
+                content: AgentScrollContentPart {
+                    internal: true,
+                    size: [420.0, 960.0],
+                    offset: [0.0, 240.0],
+                    max_offset: [0.0, 780.0],
+                },
+            },
+            axis: AgentScrollAxis::Vertical,
+            overflow: AgentScrollOverflow::Auto,
+            indicators: AgentScrollIndicatorsPolicy::Auto,
+            overscroll: AgentScrollOverscrollPolicy::Clamp,
+            auto_scroll_focus: AgentFocusAutoScrollPolicy::Nearest,
         }],
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
@@ -579,6 +605,17 @@ fn observation_report_serializes_stable_snake_case_enums() {
     );
     assert_eq!(json["actions"][0]["action"], "advance_text");
     assert_eq!(json["actions"][0]["kind"], "semantic");
+    assert_eq!(json["scroll_regions"][0]["target"], "scroll.Inventory.0");
+    assert_eq!(json["scroll_regions"][0]["role"], "scroll_region");
+    assert_eq!(
+        json["scroll_regions"][0]["parts"]["viewport"]["internal"],
+        true
+    );
+    assert_eq!(
+        json["scroll_regions"][0]["parts"]["content"]["max_offset"][1],
+        780.0
+    );
+    assert_eq!(json["scroll_regions"][0]["overscroll"], "clamp");
     assert_eq!(json["diagnostics"][0]["severity"], "info");
 }
 

@@ -77,3 +77,41 @@ fn left_stick_dead_zone_and_repeat_are_deterministic() {
         )]
     );
 }
+
+#[test]
+fn right_stick_scroll_is_dead_zone_adjusted_and_time_integrated() {
+    let mut normalizer = ControllerInputNormalizer::default();
+    assert!(
+        normalizer
+            .normalize(ControllerInputChange::Axis {
+                axis: ControllerAxis::RightY,
+                value: 0.675,
+                time_millis: 10,
+            })
+            .is_empty()
+    );
+    let actions = normalizer.normalize(ControllerInputChange::Axis {
+        axis: ControllerAxis::RightY,
+        value: 0.675,
+        time_millis: 110,
+    });
+    let [NormalizedControllerAction::Scroll { delta_x, delta_y }] = actions.as_slice() else {
+        panic!("right-stick sample should normalize to one scroll action");
+    };
+    assert!(delta_x.abs() < f32::EPSILON);
+    assert!((*delta_y + 36.0).abs() < 0.001);
+
+    // A stalled poll is capped, so reconnecting a held stick cannot jump an
+    // arbitrary distance through retained content.
+    assert_eq!(
+        normalizer.normalize(ControllerInputChange::Axis {
+            axis: ControllerAxis::RightY,
+            value: 1.0,
+            time_millis: 10_000,
+        }),
+        vec![NormalizedControllerAction::Scroll {
+            delta_x: 0.0,
+            delta_y: -72.0,
+        }]
+    );
+}

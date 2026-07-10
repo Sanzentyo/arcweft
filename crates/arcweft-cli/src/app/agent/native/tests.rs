@@ -8,9 +8,9 @@ use super::image_mapping::{
     agent_observed_views,
 };
 use super::mcp_protocol::{
-    agent_mcp_call_get_state, agent_mcp_call_log_query, agent_mcp_call_session_info,
-    agent_mcp_call_signal_get, agent_mcp_resource_list, agent_mcp_resource_read,
-    agent_mcp_script_run_options,
+    agent_mcp_action_argument, agent_mcp_call_get_state, agent_mcp_call_log_query,
+    agent_mcp_call_session_info, agent_mcp_call_signal_get, agent_mcp_resource_list,
+    agent_mcp_resource_read, agent_mcp_script_run_options,
 };
 use super::mcp_rag::{AgentMcpRagCandidate, agent_mcp_rag_context_pack_from_candidates};
 use super::mcp_resources::agent_mcp_capture_time_seconds;
@@ -28,7 +28,7 @@ use super::repl_project_binding::agent_repl_reconcile_project_bound_bindings;
 use super::repl_snapshot::agent_repl_serialized_bindings;
 use super::runtime_observation::agent_observe_layout_scene_graph;
 use super::*;
-use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentSessionInfo};
+use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentScrollAction, AgentSessionInfo};
 use arcweft_agent_protocol::{
     presentation::AgentPresentationTree, session::AgentAudioState, view::AgentViewTree,
 };
@@ -115,6 +115,7 @@ fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObser
         objects: Vec::new(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
+        scroll_regions: Vec::new(),
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
             children: Vec::new(),
@@ -324,6 +325,72 @@ fn native_agent_invoke_requires_enabled_semantic_action() {
         native_agent_invoke_input_events(&report, &target, "action.inspect.other"),
         Err(NativeAgentScriptSessionError::ActionUnavailable)
     ));
+}
+
+#[test]
+fn agent_mcp_scroll_action_uses_observed_region_and_checked_i32_deltas() {
+    let mut report = test_agent_observation_report(None);
+    report.actions.push(AgentActionTarget {
+        id: "action.scroll.scroll.Inventory.0".to_owned(),
+        target: "scroll.Inventory.0".to_owned(),
+        action: AgentActionKind::Scroll,
+        kind: AgentActionDispatch::Semantic,
+        enabled: true,
+    });
+
+    let direct = agent_mcp_action_argument(
+        &serde_json::json!({
+            "kind": "scroll",
+            "region": "scroll.Inventory.0",
+            "delta_x_milli": 0,
+            "delta_y_milli": -90000
+        }),
+        &report,
+    )
+    .expect("direct scroll action parses");
+    let observed = agent_mcp_action_argument(
+        &serde_json::json!({
+            "action_id": "action.scroll.scroll.Inventory.0",
+            "delta_x_milli": 0,
+            "delta_y_milli": -90000
+        }),
+        &report,
+    )
+    .expect("observed scroll action parses");
+
+    assert_eq!(
+        direct,
+        AgentAction::Scroll(AgentScrollAction {
+            region: "scroll.Inventory.0".to_owned(),
+            delta_x_milli: 0,
+            delta_y_milli: -90_000,
+        })
+    );
+    assert_eq!(observed, direct);
+    assert!(
+        agent_mcp_action_argument(
+            &serde_json::json!({
+                "kind": "scroll",
+                "region": "scroll.Inventory.0",
+                "delta_x_milli": 2_147_483_648_i64,
+                "delta_y_milli": 0
+            }),
+            &report,
+        )
+        .is_err()
+    );
+    assert!(
+        agent_mcp_action_argument(
+            &serde_json::json!({
+                "kind": "scroll",
+                "region": "scroll.Inventory.0",
+                "delta_x_milli": 0,
+                "delta_y_milli": 0
+            }),
+            &report,
+        )
+        .is_err()
+    );
 }
 
 #[test]

@@ -11,6 +11,7 @@ use crate::{
     ViewProgramId,
 };
 use arcweft_id::PublicId;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewProgram {
@@ -64,18 +65,159 @@ pub struct ViewPartExport {
     pub public_name: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Canonical inventory of built-in Arcweft View elements.
+///
+/// Source parsing, bundle codecs, runtime labels, and element classification
+/// all use this type so adding an element cannot leave a parallel inventory
+/// out of sync.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewElementKind {
-    Surface,
+    Panel,
     Box,
     Scroll,
     Row,
     Column,
+    LazyRow,
+    LazyColumn,
     Stack,
     Button,
     TextField,
     TextArea,
     SecureField,
+}
+
+/// Layout strategy owned by a built-in View container.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ViewElementLayoutKind {
+    Stack,
+    Scroll,
+    Row,
+    Column,
+}
+
+/// Text-input control represented by a built-in View element.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ViewElementTextInputKind {
+    TextField,
+    TextArea,
+    SecureField,
+}
+
+impl ViewElementKind {
+    pub const ALL: [Self; 12] = [
+        Self::Panel,
+        Self::Box,
+        Self::Scroll,
+        Self::Row,
+        Self::Column,
+        Self::LazyRow,
+        Self::LazyColumn,
+        Self::Stack,
+        Self::Button,
+        Self::TextField,
+        Self::TextArea,
+        Self::SecureField,
+    ];
+
+    /// Canonical case-sensitive spelling in Arcweft View source.
+    pub const fn source_name(self) -> &'static str {
+        match self {
+            Self::Panel => "Panel",
+            Self::Box => "Box",
+            Self::Scroll => "Scroll",
+            Self::Row => "Row",
+            Self::Column => "Column",
+            Self::LazyRow => "LazyRow",
+            Self::LazyColumn => "LazyColumn",
+            Self::Stack => "Stack",
+            Self::Button => "Button",
+            Self::TextField => "TextField",
+            Self::TextArea => "TextArea",
+            Self::SecureField => "SecureField",
+        }
+    }
+
+    /// Stable snake-case label used by runtime targets and serialized codecs.
+    pub const fn runtime_label(self) -> &'static str {
+        match self {
+            Self::Panel => "panel",
+            Self::Box => "box",
+            Self::Scroll => "scroll",
+            Self::Row => "row",
+            Self::Column => "column",
+            Self::LazyRow => "lazy_row",
+            Self::LazyColumn => "lazy_column",
+            Self::Stack => "stack",
+            Self::Button => "button",
+            Self::TextField => "text_field",
+            Self::TextArea => "text_area",
+            Self::SecureField => "secure_field",
+        }
+    }
+
+    /// Looks up an exact canonical source spelling without accepting aliases.
+    pub fn from_source_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|element| element.source_name() == value)
+    }
+
+    /// Looks up an exact runtime/codec label without accepting aliases.
+    pub fn from_runtime_label(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|element| element.runtime_label() == value)
+    }
+
+    /// Returns the container layout strategy, or `None` for leaf controls.
+    pub const fn layout_kind(self) -> Option<ViewElementLayoutKind> {
+        match self {
+            Self::Panel | Self::Box | Self::Stack => Some(ViewElementLayoutKind::Stack),
+            Self::Scroll => Some(ViewElementLayoutKind::Scroll),
+            Self::Row | Self::LazyRow => Some(ViewElementLayoutKind::Row),
+            Self::Column | Self::LazyColumn => Some(ViewElementLayoutKind::Column),
+            Self::Button | Self::TextField | Self::TextArea | Self::SecureField => None,
+        }
+    }
+
+    /// Returns the text-input role owned by this element, when applicable.
+    pub const fn text_input_kind(self) -> Option<ViewElementTextInputKind> {
+        match self {
+            Self::TextField => Some(ViewElementTextInputKind::TextField),
+            Self::TextArea => Some(ViewElementTextInputKind::TextArea),
+            Self::SecureField => Some(ViewElementTextInputKind::SecureField),
+            Self::Panel
+            | Self::Box
+            | Self::Scroll
+            | Self::Row
+            | Self::Column
+            | Self::LazyRow
+            | Self::LazyColumn
+            | Self::Stack
+            | Self::Button => None,
+        }
+    }
+
+    /// Whether the element lays out child View nodes.
+    pub const fn is_layout_container(self) -> bool {
+        self.layout_kind().is_some()
+    }
+
+    /// Whether this is one of the lazy-layout vocabulary items.
+    pub const fn is_lazy(self) -> bool {
+        matches!(self, Self::LazyRow | Self::LazyColumn)
+    }
+
+    /// Whether this element owns a text-input control.
+    pub const fn is_text_input(self) -> bool {
+        self.text_input_kind().is_some()
+    }
+
+    /// Whether this element owns an action-button control.
+    pub const fn is_action_control(self) -> bool {
+        matches!(self, Self::Button)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -278,10 +420,11 @@ impl ViewProgram {
 #[cfg(test)]
 mod tests {
     use super::{
-        ViewElementKind, ViewElementSpec, ViewInstruction, ViewPartExport, ViewPartId,
-        ViewProgramBuilder,
+        ViewElementKind, ViewElementLayoutKind, ViewElementSpec, ViewElementTextInputKind,
+        ViewInstruction, ViewPartExport, ViewPartId, ViewProgramBuilder,
     };
     use crate::{ViewId, ViewProgramId};
+    use std::collections::BTreeSet;
 
     #[test]
     fn view_program_builder_preserves_instruction_order_before_fragment_lowering() {
@@ -300,5 +443,53 @@ mod tests {
         assert_eq!(program.instructions().len(), 2);
         assert_eq!(program.exported_parts()[0].public_name, "field");
         assert_eq!(program.state_schema_hash(), 0xCAFE);
+    }
+
+    #[test]
+    fn element_inventory_owns_unique_source_and_runtime_names() {
+        let source_names = ViewElementKind::ALL
+            .into_iter()
+            .map(ViewElementKind::source_name)
+            .collect::<BTreeSet<_>>();
+        let runtime_labels = ViewElementKind::ALL
+            .into_iter()
+            .map(ViewElementKind::runtime_label)
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(source_names.len(), ViewElementKind::ALL.len());
+        assert_eq!(runtime_labels.len(), ViewElementKind::ALL.len());
+        for element in ViewElementKind::ALL {
+            assert_eq!(
+                ViewElementKind::from_source_name(element.source_name()),
+                Some(element)
+            );
+            assert_eq!(
+                ViewElementKind::from_runtime_label(element.runtime_label()),
+                Some(element)
+            );
+        }
+        assert_eq!(ViewElementKind::from_source_name("panel"), None);
+        assert_eq!(ViewElementKind::from_runtime_label("LazyRow"), None);
+    }
+
+    #[test]
+    fn element_inventory_classifies_layout_and_control_roles() {
+        assert_eq!(
+            ViewElementKind::Panel.layout_kind(),
+            Some(ViewElementLayoutKind::Stack)
+        );
+        assert_eq!(
+            ViewElementKind::LazyRow.layout_kind(),
+            Some(ViewElementLayoutKind::Row)
+        );
+        assert!(ViewElementKind::LazyColumn.is_lazy());
+        assert!(ViewElementKind::Scroll.is_layout_container());
+        assert!(ViewElementKind::Button.is_action_control());
+        assert_eq!(
+            ViewElementKind::SecureField.text_input_kind(),
+            Some(ViewElementTextInputKind::SecureField)
+        );
+        assert!(ViewElementKind::TextArea.is_text_input());
+        assert!(!ViewElementKind::Button.is_text_input());
     }
 }

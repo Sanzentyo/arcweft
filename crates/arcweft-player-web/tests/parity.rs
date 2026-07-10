@@ -30,7 +30,8 @@ use arcweft_presentation::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderImage,
-    RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
+    RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
+    RenderScrollIndicatorsPolicy, RenderScrollOverflow, RenderScrollOverscrollPolicy,
     RenderScrollRegion, RenderViewport, SharedFramePlanner,
 };
 use arcweft_render_wgpu::renderer::StyledParagraphEvidenceFontContext;
@@ -214,9 +215,14 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
             content_height: 260.0,
             offset_x: 0.0,
             offset_y: 60.0,
+            overscroll_x: 0.0,
+            overscroll_y: 0.0,
             axis: RenderScrollAxis::Vertical,
             overflow: RenderScrollOverflow::Auto,
+            indicators: RenderScrollIndicatorsPolicy::Auto,
+            overscroll: RenderScrollOverscrollPolicy::Clamp,
             auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+            indicator_activity_millis: None,
         }],
     };
     let prepared = SharedFramePlanner::prepare(&scene).expect("frame prepares");

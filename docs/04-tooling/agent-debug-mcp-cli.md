@@ -85,12 +85,14 @@ matching it against `resources/list`. `capture_resource_count` records how many
 tool-produced capture resources are currently cached in the session.
 `arcweft.action` runs against the same persistent native runtime state as
 `arcweft.observe`. It accepts either an observed `action_id` or direct semantic
-`kind` (`advance_text`, `select_choice`, or `invoke`) with required target
-fields, accepts optional JSON object `args` for direct invoke calls, validates
+`kind` (`advance_text`, `select_choice`, `invoke`, or `scroll`) with required
+target fields, accepts optional JSON object `args` for direct invoke calls, validates
 that the requested semantic action is currently enabled, dispatches the matching
 runtime input, then returns accepted before/after ticks, state hashes, and the
 post-action frame summary. Pointer-click synthesis remains outside the current
-MCP action surface.
+MCP action surface. Scroll accepts an observed `region` plus signed i32
+`delta_x_milli` / `delta_y_milli`, converts them to logical pixels, and routes
+through the same live prepared-frame input controller used by native scrolling.
 When the latest observation generated a selected image, reading that image URI
 through `resources/read` or `arcweft.resource.read` returns the cached image
 bytes and metadata from the same observation. This preserves native framebuffer,

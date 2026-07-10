@@ -1,17 +1,5 @@
 # Structural violations
 
-## error SIZE001 — `crates/arcweft-cli/src/app/bundle_view.rs`
-
-2590 physical LOC exceeds the 2500 LOC error threshold
-
-**Fix:** split by cohesive domain and keep a small facade
-
-## error SIZE001 — `crates/arcweft-player-scene/src/input.rs`
-
-2681 physical LOC exceeds the 2500 LOC error threshold
-
-**Fix:** split by cohesive domain and keep a small facade
-
 ## warning SIZE001 — `crates/arcweft-adt/src/lib.rs`
 
 1486 physical LOC exceeds the 1200 LOC review threshold
@@ -42,24 +30,6 @@ transport-neutral Agent protocol depends on base64
 
 **Fix:** move MCP/base64 resource mapping to arcweft-agent-mcp and model types to arcweft-text-model
 
-## warning TYPE001 — `crates/arcweft-agent-protocol/src/artifact.rs:29`
-
-stringly boundary field: pub kind: String,
-
-**Fix:** replace kind/payload strings with a tagged enum and typed payload
-
-## warning TYPE001 — `crates/arcweft-agent-protocol/src/protocol.rs:43`
-
-stringly boundary field: pub kind: String,
-
-**Fix:** replace kind/payload strings with a tagged enum and typed payload
-
-## warning TYPE001 — `crates/arcweft-agent-protocol/src/protocol.rs:133`
-
-stringly boundary field: pub action: String,
-
-**Fix:** replace kind/payload strings with a tagged enum and typed payload
-
 ## warning SIZE001 — `crates/arcweft-bundle/src/container.rs`
 
 2383 physical LOC exceeds the 1200 LOC review threshold
@@ -74,13 +44,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-bundle/src/lib.rs`
 
-2005 physical LOC exceeds the 1200 LOC review threshold
+2006 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE002 — `crates/arcweft-bundle/src/lib.rs`
 
-facade file has 2005 physical LOC; target is below 250 LOC
+facade file has 2006 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 
@@ -92,7 +62,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-bundle/src/patch.rs`
 
-1536 physical LOC exceeds the 1200 LOC review threshold
+1609 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -122,7 +92,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-bundle/src/resource_codec/view/model.rs`
 
-2270 physical LOC exceeds the 1200 LOC review threshold
+2253 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -134,7 +104,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-bundle/src/resource_codec/view/runtime_control_style.rs`
 
-2081 physical LOC exceeds the 1200 LOC review threshold
+2047 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -152,7 +122,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/mcp_protocol.rs`
 
-1520 physical LOC exceeds the 1200 LOC review threshold
+1593 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -170,13 +140,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/observe.rs`
 
-1330 physical LOC exceeds the 1200 LOC review threshold
+1420 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/player_observation.rs`
 
-1347 physical LOC exceeds the 1200 LOC review threshold
+1358 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -188,13 +158,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/repl.rs`
 
-1476 physical LOC exceeds the 1200 LOC review threshold
+1477 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/tests.rs`
 
-3660 physical LOC exceeds the 2500 LOC review threshold
+3704 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -218,7 +188,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/bundle.rs`
 
-2275 physical LOC exceeds the 1200 LOC review threshold
+2246 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -248,7 +218,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/runtime/run.rs`
 
-1352 physical LOC exceeds the 1200 LOC review threshold
+1331 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -278,13 +248,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs`
 
-6054 physical LOC exceeds the 2500 LOC review threshold
+5848 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs`
 
-6758 physical LOC exceeds the 2500 LOC review threshold
+6564 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -308,7 +278,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/tests/check/cli_runtime_bench.rs`
 
-7942 physical LOC exceeds the 2500 LOC review threshold
+7948 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -326,19 +296,19 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-compiler/src/tests.rs`
 
-5128 physical LOC exceeds the 2500 LOC review threshold
+5406 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-core/src/awbc/fiber.rs`
 
-1378 physical LOC exceeds the 1200 LOC review threshold
+1925 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-core/src/awbc/product_step.rs`
 
-2499 physical LOC exceeds the 1200 LOC review threshold
+2484 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -350,7 +320,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-core/src/awbc/verify/code.rs`
 
-1915 physical LOC exceeds the 1200 LOC review threshold
+1945 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -362,13 +332,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-core/src/awbc/vm.rs`
 
-1592 physical LOC exceeds the 1200 LOC review threshold
+1562 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-core/src/engine/eval.rs`
 
-1549 physical LOC exceeds the 1200 LOC review threshold
+1516 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -380,19 +350,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-core/src/pure.rs`
 
-2130 physical LOC exceeds the 1200 LOC review threshold
+2097 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
-## warning TYPE001 — `crates/arcweft-core/src/step.rs:138`
-
-stringly boundary field: pub kind: String,
-
-**Fix:** replace kind/payload strings with a tagged enum and typed payload
-
 ## warning SIZE001 — `crates/arcweft-core/src/tests/flow.rs`
 
-2552 physical LOC exceeds the 2500 LOC review threshold
+2553 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -404,7 +368,7 @@ stringly boundary field: pub kind: String,
 
 ## warning SIZE001 — `crates/arcweft-core/src/value/sequence_impls.rs`
 
-1553 physical LOC exceeds the 1200 LOC review threshold
+1580 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -452,13 +416,13 @@ facade file has 2153 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/checker.rs`
 
-2352 physical LOC exceeds the 1200 LOC review threshold
+2453 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/checker/expr.rs`
 
-2313 physical LOC exceeds the 1200 LOC review threshold
+2409 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -470,13 +434,13 @@ facade file has 2153 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/checker/module.rs`
 
-1910 physical LOC exceeds the 1200 LOC review threshold
+1860 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/env.rs`
 
-1211 physical LOC exceeds the 1200 LOC review threshold
+1203 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -488,19 +452,19 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/semantic.rs`
 
-2035 physical LOC exceeds the 1200 LOC review threshold
+2046 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/tests/function_stack.rs`
 
-4617 physical LOC exceeds the 2500 LOC review threshold
+4783 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/tests/typecheck.rs`
 
-3982 physical LOC exceeds the 2500 LOC review threshold
+4098 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -524,7 +488,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-lang-syntax/src/expr.rs`
 
-2355 physical LOC exceeds the 1200 LOC review threshold
+2240 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -548,7 +512,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-lang-syntax/src/parser/items.rs`
 
-1393 physical LOC exceeds the 1200 LOC review threshold
+1507 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -572,17 +536,11 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-player-native/src/scene_windowed.rs`
 
-1835 physical LOC exceeds the 1200 LOC review threshold
+1727 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning TEST001 — `crates/arcweft-player-native/src/scene_windowed.rs`
-
-large production file contains an embedded #[cfg(test)] module
-
-**Fix:** move tests to domain-specific child test modules or integration tests
-
-## warning TEST001 — `crates/arcweft-player-scene/src/input.rs`
 
 large production file contains an embedded #[cfg(test)] module
 
@@ -662,13 +620,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-render-native/src/lib.rs`
 
-1500 physical LOC exceeds the 1200 LOC review threshold
+1491 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE002 — `crates/arcweft-render-native/src/lib.rs`
 
-facade file has 1500 physical LOC; target is below 250 LOC
+facade file has 1491 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 
@@ -680,19 +638,37 @@ facade file has 1500 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-render-native/src/tests.rs`
 
-4454 physical LOC exceeds the 2500 LOC review threshold
+4459 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-render-native/src/window_page.rs`
 
-1531 physical LOC exceeds the 1200 LOC review threshold
+1330 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
+## warning SIZE001 — `crates/arcweft-render-text/src/lib.rs`
+
+1711 physical LOC exceeds the 1200 LOC review threshold
+
+**Fix:** review responsibility boundaries before adding more code
+
+## warning SIZE002 — `crates/arcweft-render-text/src/lib.rs`
+
+facade file has 1711 physical LOC; target is below 250 LOC
+
+**Fix:** move implementations to named modules and keep intentional re-exports
+
+## warning TEST001 — `crates/arcweft-render-text/src/lib.rs`
+
+large production file contains an embedded #[cfg(test)] module
+
+**Fix:** move tests to domain-specific child test modules or integration tests
+
 ## warning SIZE001 — `crates/arcweft-render-wgpu/src/geometry.rs`
 
-2395 physical LOC exceeds the 1200 LOC review threshold
+1943 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -710,7 +686,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-render-wgpu/src/renderer.rs`
 
-2209 physical LOC exceeds the 1200 LOC review threshold
+2461 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -752,7 +728,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-runtime-accelerator/src/external.rs`
 
-1260 physical LOC exceeds the 1200 LOC review threshold
+1255 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -800,7 +776,7 @@ facade file has 1285 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-runtime-driver/src/display.rs`
 
-1431 physical LOC exceeds the 1200 LOC review threshold
+1506 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -810,9 +786,21 @@ large production file contains an embedded #[cfg(test)] module
 
 **Fix:** move tests to domain-specific child test modules or integration tests
 
+## warning SIZE001 — `crates/arcweft-runtime-driver/src/presentation_handles.rs`
+
+1212 physical LOC exceeds the 1200 LOC review threshold
+
+**Fix:** review responsibility boundaries before adding more code
+
+## warning TEST001 — `crates/arcweft-runtime-driver/src/presentation_handles.rs`
+
+large production file contains an embedded #[cfg(test)] module
+
+**Fix:** move tests to domain-specific child test modules or integration tests
+
 ## warning SIZE001 — `crates/arcweft-runtime-driver/src/session.rs`
 
-1952 physical LOC exceeds the 1200 LOC review threshold
+2062 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -824,7 +812,7 @@ runtime plan owns display lowering but depends on renderer-named contract owner
 
 ## warning SIZE001 — `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs`
 
-2135 physical LOC exceeds the 1200 LOC review threshold
+2166 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -836,13 +824,13 @@ runtime plan owns display lowering but depends on renderer-named contract owner
 
 ## warning SIZE001 — `crates/arcweft-runtime-plan/src/expr.rs`
 
-2233 physical LOC exceeds the 1200 LOC review threshold
+2441 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-runtime-plan/src/flow.rs`
 
-2485 physical LOC exceeds the 1200 LOC review threshold
+2470 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -890,7 +878,7 @@ facade file has 1927 physical LOC; target is below 250 LOC
 
 ## warning SIZE002 — `crates/arcweft-view/src/lib.rs`
 
-facade file has 1034 physical LOC; target is below 250 LOC
+facade file has 1035 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 
@@ -906,15 +894,8 @@ large production file contains an embedded #[cfg(test)] module
 
 **Fix:** move tests to domain-specific child test modules or integration tests
 
-## warning SIZE001 — `tools/apply-seq04-6-typecheck-gate.rs`
-
-1380 physical LOC exceeds the 1200 LOC review threshold
-
-**Fix:** review responsibility boundaries before adding more code
-
 ## warning SIZE001 — `tools/verify-text-raster-parity.rs`
 
 1627 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
-

@@ -1,0 +1,308 @@
+//! Lowers materialized text, button, and image content into bundle records.
+
+use super::{
+    BundleImageObjectBounds, Expr, Literal, ViewAction, ViewActionButtonActionResource,
+    ViewActionButtonResource, ViewActionPayload, ViewActionPayloadResource, ViewButton,
+    ViewButtonLabel, ViewElementKind, ViewImage, ViewLayoutCursor, ViewLayoutFrame,
+    ViewLoweringState, ViewModifier, ViewProgramInstruction, ViewRuntimeButtonBounds,
+    ViewRuntimeTextBlockBounds, ViewSemanticTarget, ViewSidecarError, ViewText,
+    ViewTextBlockResource, ViewTextSelectionPolicy, ViewTextSourceKind, ViewTextSourceRecord,
+    button_bounds, expr_source, first_part, lower_button_modifiers, lower_modifiers,
+    lower_navigation_target, lower_text_control_payload_field, modifier_label,
+    modifier_layout_length_u32, normalize_entity_ref, normalize_input_payload_ref,
+    symbol_expr_name, text_block_frame, text_control_selection_policy,
+    validate_interactive_overflow_modifiers, view_resource_id,
+};
+
+pub(super) fn lower_text(
+    view_id: &str,
+    text: &ViewText,
+    state: &mut ViewLoweringState,
+    layout: ViewLayoutCursor,
+) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    validate_interactive_overflow_modifiers("Text", text.modifiers(), false)?;
+    let id = next_text_source_id(view_id, state);
+    let text_value = expr_source(text.source());
+    state.text_sources.push(ViewTextSourceRecord {
+        public_id: id.clone(),
+        kind: ViewTextSourceKind::Literal {
+            value: text_value.clone(),
+        },
+        source: None,
+    });
+    state.instructions.push(ViewProgramInstruction::EmitText {
+        text_source: id.clone(),
+        style: None,
+        part: first_part(text.modifiers()),
+        source: None,
+    });
+    lower_modifiers(view_id, text.modifiers(), state);
+    let frame = text_block_frame(&text_value, text.modifiers());
+    let text_block_id = next_text_block_id(view_id, state);
+    let view = Some(view_resource_id(view_id));
+    let scroll_region = state.scroll_stack.last().cloned();
+    let mut text_block = ViewTextBlockResource::new(
+        text_block_id,
+        view,
+        scroll_region,
+        id,
+        ViewRuntimeTextBlockBounds::new(
+            layout.x_milli,
+            layout.y_milli,
+            frame.width_milli,
+            frame.height_milli,
+        ),
+    );
+    text_block.selection_policy = text_block_selection_policy(text.modifiers());
+    state.text_blocks.push(text_block);
+    Ok(frame)
+}
+
+pub(super) fn lower_button(
+    view_id: &str,
+    button: &ViewButton,
+    state: &mut ViewLoweringState,
+    layout: ViewLayoutCursor,
+) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    validate_interactive_overflow_modifiers("Button", button.modifiers(), false)?;
+    let button_id = button
+        .id()
+        .map_or_else(|| next_button_id(view_id, state), normalize_entity_ref);
+    let label_text_source = format!("text.button.label.{button_id}");
+    let label = button_display_label(button, &button_id);
+    state.text_sources.push(ViewTextSourceRecord {
+        public_id: label_text_source.clone(),
+        kind: ViewTextSourceKind::Literal {
+            value: label.clone(),
+        },
+        source: None,
+    });
+    state
+        .instructions
+        .push(ViewProgramInstruction::OpenElement {
+            element: ViewElementKind::Button,
+            target: Some(button_id.clone()),
+            style: None,
+            part: first_part(button.modifiers()),
+            key: None,
+            source: None,
+        });
+    lower_button_modifiers(view_id, button.modifiers(), state);
+    state
+        .instructions
+        .push(ViewProgramInstruction::CloseElement);
+    lower_navigation_target(view_id, &button_id, button.modifiers(), state);
+
+    let action = match button.activation() {
+        Some(ViewAction::ActionInvoke(action)) => ViewActionButtonActionResource::ActionInvoke {
+            action: normalize_entity_ref(action.action()),
+            payload: action.payload().map(lower_action_payload),
+        },
+        Some(ViewAction::Noop) | None => ViewActionButtonActionResource::Noop,
+    };
+    state.action_buttons.push(ViewActionButtonResource {
+        public_id: button_id.clone(),
+        view: Some(view_resource_id(view_id)),
+        containing_scroll_region: state.scroll_stack.last().cloned(),
+        label_text_source: label_text_source.clone(),
+        enabled: button_enabled(button.enabled()),
+        action,
+        bounds: button_bounds(button, layout),
+        style: None,
+        source: None,
+    });
+    state.semantic_targets.push(ViewSemanticTarget {
+        public_id: button_id.clone(),
+        target: button_id,
+        view: Some(view_resource_id(view_id)),
+        label_text_source: Some(label_text_source),
+        source: None,
+    });
+    Ok(ViewLayoutFrame::action_button())
+}
+
+pub(super) fn lower_image(
+    view_id: &str,
+    image: &ViewImage,
+    state: &mut ViewLoweringState,
+    layout: ViewLayoutCursor,
+) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    validate_interactive_overflow_modifiers("Image", image.modifiers(), false)?;
+    state.instructions.push(ViewProgramInstruction::EmitImage {
+        image: expr_source(image.source()),
+        style: None,
+        part: first_part(image.modifiers()),
+        source: None,
+    });
+    lower_modifiers(view_id, image.modifiers(), state);
+    let Some(source_id) = image_source_object_id(image.source()) else {
+        return Ok(ViewLayoutFrame::zero());
+    };
+    let Some(source) = state
+        .source_image_objects
+        .iter()
+        .find(|object| object.id == source_id)
+        .cloned()
+    else {
+        return Ok(ViewLayoutFrame::zero());
+    };
+    let width_milli = modifier_layout_length_u32(image.modifiers(), &["width", "w"])
+        .unwrap_or(source.bounds.width_milli);
+    let height_milli = modifier_layout_length_u32(image.modifiers(), &["height", "h"])
+        .unwrap_or(source.bounds.height_milli);
+    if width_milli == 0 || height_milli == 0 {
+        return Ok(ViewLayoutFrame::zero());
+    }
+    let mut object = source;
+    object.id = next_image_id(view_id, state);
+    object.bounds = BundleImageObjectBounds {
+        x_milli: layout.x_milli,
+        y_milli: layout.y_milli,
+        width_milli,
+        height_milli,
+    };
+    object.placement = None;
+    object.view = Some(view_resource_id(view_id));
+    object.containing_scroll_region = state.scroll_stack.last().cloned();
+    state.image_objects.push(object);
+    Ok(ViewLayoutFrame::new(width_milli, height_milli))
+}
+
+fn next_text_source_id(view_id: &str, state: &mut ViewLoweringState) -> String {
+    let id = format!("text.{view_id}.{}", state.text_counter);
+    state.text_counter += 1;
+    id
+}
+
+fn next_text_block_id(view_id: &str, state: &mut ViewLoweringState) -> String {
+    let id = format!("text.block.{view_id}.{}", state.text_block_counter);
+    state.text_block_counter += 1;
+    id
+}
+
+fn next_button_id(view_id: &str, state: &mut ViewLoweringState) -> String {
+    let id = format!("button.{view_id}.{}", state.button_counter);
+    state.button_counter += 1;
+    id
+}
+
+fn next_image_id(view_id: &str, state: &mut ViewLoweringState) -> String {
+    let id = format!("image.{view_id}.{}", state.image_counter);
+    state.image_counter += 1;
+    id
+}
+
+fn image_source_object_id(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::EntityRef(reference) => {
+            let id = normalize_entity_ref(reference);
+            id.starts_with("image.").then_some(id)
+        }
+        Expr::Literal(Literal::String(value)) | Expr::Raw(value) => {
+            let id = value.trim().trim_matches('"').trim_matches('\'');
+            id.starts_with("image.").then(|| id.to_owned())
+        }
+        Expr::Path(value) => {
+            let id = value.as_label();
+            id.starts_with("image.").then(|| id.to_owned())
+        }
+        _ => None,
+    }
+}
+
+fn lower_action_payload(payload: &ViewActionPayload) -> ViewActionPayloadResource {
+    match payload {
+        ViewActionPayload::LiteralString(value) => ViewActionPayloadResource::LiteralString {
+            value: value.clone(),
+        },
+        ViewActionPayload::TextControlProjection { input, field } => {
+            ViewActionPayloadResource::TextControlProjection {
+                input: normalize_input_payload_ref(input),
+                field: lower_text_control_payload_field(*field),
+            }
+        }
+    }
+}
+
+fn button_label_text(label: &ViewButtonLabel) -> String {
+    match label {
+        ViewButtonLabel::Literal(value) => value.clone(),
+        ViewButtonLabel::Expr(expr) => expr_source(expr),
+        ViewButtonLabel::Empty => String::new(),
+    }
+}
+
+fn button_display_label(button: &ViewButton, button_id: &str) -> String {
+    modifier_label(button.modifiers())
+        .or_else(|| {
+            let value = button_label_text(button.label());
+            (!value.is_empty()).then_some(value)
+        })
+        .unwrap_or_else(|| fallback_label_from_public_id(button_id))
+}
+
+fn fallback_label_from_public_id(public_id: &str) -> String {
+    public_id
+        .rsplit('.')
+        .next()
+        .unwrap_or(public_id)
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn button_enabled(enabled: Option<&Expr>) -> bool {
+    match enabled {
+        Some(Expr::Literal(Literal::Bool(value))) => *value,
+        Some(_) | None => true,
+    }
+}
+
+fn text_block_selection_policy(modifiers: &[ViewModifier]) -> ViewTextSelectionPolicy {
+    modifiers
+        .iter()
+        .find_map(|modifier| match modifier {
+            ViewModifier::Property { name, value }
+                if matches!(
+                    name.as_str(),
+                    "selection" | "selection_policy" | "selectionPolicy"
+                ) =>
+            {
+                symbol_expr_name(value)
+                    .as_deref()
+                    .map(|value| text_control_selection_policy(Some(value)))
+            }
+            ViewModifier::Property { name, value }
+                if matches!(name.as_str(), "selectable" | "user_select" | "userSelect") =>
+            {
+                match value {
+                    Expr::Literal(Literal::Bool(true)) => Some(ViewTextSelectionPolicy::Enabled),
+                    Expr::Literal(Literal::Bool(false)) => Some(ViewTextSelectionPolicy::Disabled),
+                    _ => symbol_expr_name(value)
+                        .as_deref()
+                        .map(|value| text_control_selection_policy(Some(value))),
+                }
+            }
+            _ => None,
+        })
+        .unwrap_or(ViewTextSelectionPolicy::Disabled)
+}
+
+pub(super) fn assign_action_button_bounds(state: &mut ViewLoweringState) {
+    if state.action_buttons.is_empty() {
+        return;
+    }
+    for (fallback_index, button) in state.action_buttons.iter_mut().enumerate() {
+        if button.bounds.width_milli == 0 || button.bounds.height_milli == 0 {
+            button.bounds = ViewRuntimeButtonBounds::default_slot(fallback_index);
+        }
+    }
+}

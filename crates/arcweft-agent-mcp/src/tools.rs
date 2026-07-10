@@ -159,10 +159,13 @@ fn agent_action_tool_descriptor() -> McpToolDescriptor {
                 "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
                 "textbox_height": { "type": "integer", "minimum": 1 },
                 "action_id": { "type": "string", "description": "Observed Agent action target id, such as action.advance_text.object.dialogue.0.0 or action.inspect.pulse." },
-                "kind": { "type": "string", "enum": ["advance_text", "select_choice", "invoke"], "description": "Semantic action kind when action_id is not supplied." },
+                "kind": { "type": "string", "enum": ["advance_text", "select_choice", "invoke", "scroll"], "description": "Semantic action kind when action_id is not supplied." },
                 "target": { "type": "string", "description": "Target public id/object id. Required for select_choice and invoke when action_id is not supplied." },
                 "action": { "type": "string", "description": "Invoke action id. Required for invoke when action_id is not supplied." },
-                "args": { "type": "object", "description": "Optional JSON object payload for invoke actions, lowered to AgentValue records." }
+                "args": { "type": "object", "description": "Optional JSON object payload for invoke actions, lowered to AgentValue records." },
+                "region": { "type": "string", "minLength": 1, "description": "Observed scroll-region target. Required for scroll when action_id is not supplied." },
+                    "delta_x_milli": { "type": "integer", "minimum": -2_147_483_648, "maximum": 2_147_483_647, "description": "Horizontal input delta in milli logical pixels." },
+                    "delta_y_milli": { "type": "integer", "minimum": -2_147_483_648, "maximum": 2_147_483_647, "description": "Vertical input delta in milli logical pixels." }
             },
             "anyOf": [
                 { "required": ["action_id"] },

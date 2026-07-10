@@ -1,4 +1,13 @@
 use super::*;
+use arcweft_agent_protocol::view::{
+    AgentFocusAutoScrollPolicy, AgentObservedScrollRegion, AgentScrollAxis, AgentScrollContentPart,
+    AgentScrollIndicatorsPolicy, AgentScrollOverflow, AgentScrollOverscrollPolicy,
+    AgentScrollRegionParts, AgentScrollRegionRole, AgentScrollViewportPart,
+};
+use arcweft_render_wgpu::geometry::{
+    PreparedFrame, RenderFocusAutoScrollPolicy, RenderScrollAxis, RenderScrollIndicatorsPolicy,
+    RenderScrollOverflow, RenderScrollOverscrollPolicy,
+};
 use std::collections::BTreeSet;
 
 pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serde_json::Value {
@@ -129,6 +138,98 @@ pub(super) fn agent_action_targets_for_semantics(
             })
         })
         .collect()
+}
+
+pub(super) fn agent_action_targets_for_scroll_regions(
+    frame: &PreparedFrame,
+) -> Vec<AgentActionTarget> {
+    frame
+        .scroll_regions
+        .iter()
+        .map(|region| AgentActionTarget {
+            id: format!("action.scroll.{}", region.id),
+            target: region.id.clone(),
+            action: AgentActionKind::Scroll,
+            kind: AgentActionDispatch::Semantic,
+            enabled: region.overflow.scroll_enabled()
+                && match region.axis {
+                    RenderScrollAxis::Vertical => region.max_offset_y() > f32::EPSILON,
+                    RenderScrollAxis::Horizontal => region.max_offset_x() > f32::EPSILON,
+                },
+        })
+        .collect()
+}
+
+pub(super) fn agent_observed_scroll_regions(
+    frame: &PreparedFrame,
+) -> Vec<AgentObservedScrollRegion> {
+    frame
+        .scroll_regions
+        .iter()
+        .map(|region| AgentObservedScrollRegion {
+            target: region.id.clone(),
+            role: AgentScrollRegionRole::ScrollRegion,
+            parts: AgentScrollRegionParts {
+                viewport: AgentScrollViewportPart {
+                    internal: true,
+                    bounds: [
+                        finite_logical_pixel(region.bounds.x),
+                        finite_logical_pixel(region.bounds.y),
+                        finite_logical_pixel(region.bounds.width),
+                        finite_logical_pixel(region.bounds.height),
+                    ],
+                },
+                content: AgentScrollContentPart {
+                    internal: true,
+                    size: [
+                        finite_logical_pixel(region.content_width),
+                        finite_logical_pixel(region.content_height),
+                    ],
+                    offset: [
+                        finite_logical_pixel(region.clamped_offset_x(region.offset_x)),
+                        finite_logical_pixel(region.clamped_offset_y(region.offset_y)),
+                    ],
+                    max_offset: [
+                        finite_logical_pixel(region.max_offset_x()),
+                        finite_logical_pixel(region.max_offset_y()),
+                    ],
+                },
+            },
+            axis: match region.axis {
+                RenderScrollAxis::Vertical => AgentScrollAxis::Vertical,
+                RenderScrollAxis::Horizontal => AgentScrollAxis::Horizontal,
+            },
+            overflow: match region.overflow {
+                RenderScrollOverflow::Auto => AgentScrollOverflow::Auto,
+                RenderScrollOverflow::Scroll => AgentScrollOverflow::Scroll,
+                RenderScrollOverflow::Hidden => AgentScrollOverflow::Hidden,
+            },
+            indicators: match region.indicators {
+                RenderScrollIndicatorsPolicy::Auto => AgentScrollIndicatorsPolicy::Auto,
+                RenderScrollIndicatorsPolicy::Visible => AgentScrollIndicatorsPolicy::Visible,
+                RenderScrollIndicatorsPolicy::Hidden => AgentScrollIndicatorsPolicy::Hidden,
+            },
+            overscroll: match region.overscroll {
+                RenderScrollOverscrollPolicy::Clamp => AgentScrollOverscrollPolicy::Clamp,
+                RenderScrollOverscrollPolicy::Contain => AgentScrollOverscrollPolicy::Contain,
+                RenderScrollOverscrollPolicy::Elastic => AgentScrollOverscrollPolicy::Elastic,
+            },
+            auto_scroll_focus: match region.auto_scroll_focus {
+                RenderFocusAutoScrollPolicy::Nearest => AgentFocusAutoScrollPolicy::Nearest,
+                RenderFocusAutoScrollPolicy::Start => AgentFocusAutoScrollPolicy::Start,
+                RenderFocusAutoScrollPolicy::End => AgentFocusAutoScrollPolicy::End,
+                RenderFocusAutoScrollPolicy::Disabled => AgentFocusAutoScrollPolicy::Disabled,
+            },
+        })
+        .collect()
+}
+
+fn finite_logical_pixel(value: f32) -> f64 {
+    if value.is_finite() {
+        f64::from(value)
+    } else {
+        0.0
+    }
 }
 
 pub(super) fn dedupe_agent_action_targets(actions: &mut Vec<AgentActionTarget>) {
@@ -459,5 +560,119 @@ pub(super) fn agent_image_kind(capture: AgentObserveCaptureKind) -> AgentImageKi
         AgentObserveCaptureKind::Color => AgentImageKind::Color,
         AgentObserveCaptureKind::ObjectId => AgentImageKind::ObjectId,
         AgentObserveCaptureKind::Mask => AgentImageKind::Mask,
+    }
+}
+
+#[cfg(test)]
+mod scroll_observation_tests {
+    use super::{agent_action_targets_for_scroll_regions, agent_observed_scroll_regions};
+    use crate::app::agent::native::observe::dispatch_native_agent_scroll;
+    use arcweft_agent_protocol::{
+        action::AgentActionKind,
+        protocol::AgentScrollAction,
+        view::{AgentScrollAxis, AgentScrollOverscrollPolicy},
+    };
+    use arcweft_player_scene::input::InputController;
+    use arcweft_presentation::hit::HitRect;
+    use arcweft_render_wgpu::geometry::{
+        ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderPreferences,
+        RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
+        RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanner,
+    };
+
+    fn assert_exact_geometry<const N: usize>(actual: [f64; N], expected: [f64; N]) {
+        assert_eq!(actual.map(f64::to_bits), expected.map(f64::to_bits));
+    }
+
+    #[test]
+    fn authored_scroll_is_one_action_target_with_internal_parts_metadata() {
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            dialogue: None,
+            choices: Vec::new(),
+            text_inputs: Vec::new(),
+            action_buttons: Vec::new(),
+            focus_groups: Vec::new(),
+            focus_navigation: Vec::new(),
+            images: Vec::new(),
+            viewport: RenderViewport {
+                logical_width: 1280.0,
+                logical_height: 720.0,
+                physical_width: 1280,
+                physical_height: 720,
+                scale_factor: 1.0,
+            },
+            visual_time_millis: 0,
+            preferences: RenderPreferences::default(),
+            interaction: InteractionVisualState::default(),
+            choice_scroll: ChoiceScroll::default(),
+            scroll_regions: vec![RenderScrollRegion {
+                id: "scroll.Inventory.0".to_owned(),
+                bounds: HitRect::new(48.0, 48.0, 420.0, 180.0),
+                content_width: 420.0,
+                content_height: 960.0,
+                offset_x: 0.0,
+                offset_y: 240.0,
+                overscroll_x: 0.0,
+                overscroll_y: 0.0,
+                axis: RenderScrollAxis::Vertical,
+                overflow: RenderScrollOverflow::Auto,
+                indicators: RenderScrollIndicatorsPolicy::Auto,
+                overscroll: RenderScrollOverscrollPolicy::Contain,
+                auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+                indicator_activity_millis: None,
+            }],
+        })
+        .expect("scroll frame plans");
+
+        let actions = agent_action_targets_for_scroll_regions(&frame);
+        let observed = agent_observed_scroll_regions(&frame);
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, "action.scroll.scroll.Inventory.0");
+        assert_eq!(actions[0].target, "scroll.Inventory.0");
+        assert_eq!(actions[0].action, AgentActionKind::Scroll);
+        assert!(actions[0].enabled);
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].target, actions[0].target);
+        assert_eq!(observed[0].axis, AgentScrollAxis::Vertical);
+        assert_eq!(observed[0].overscroll, AgentScrollOverscrollPolicy::Contain);
+        assert!(observed[0].parts.viewport.internal);
+        assert!(observed[0].parts.content.internal);
+        assert_exact_geometry(
+            observed[0].parts.viewport.bounds,
+            [48.0, 48.0, 420.0, 180.0],
+        );
+        assert_exact_geometry(observed[0].parts.content.size, [420.0, 960.0]);
+        assert_exact_geometry(observed[0].parts.content.offset, [0.0, 240.0]);
+        assert_exact_geometry(observed[0].parts.content.max_offset, [0.0, 780.0]);
+
+        let mut input = InputController::default();
+        assert!(
+            dispatch_native_agent_scroll(
+                &mut input,
+                &frame,
+                &actions,
+                &AgentScrollAction {
+                    region: "scroll.Inventory.0".to_owned(),
+                    delta_x_milli: 0,
+                    delta_y_milli: -90_000,
+                },
+            )
+            .expect("observed enabled scroll action dispatches")
+        );
+        assert!((input.scroll_offset_y("scroll.Inventory.0") - 330.0).abs() < f32::EPSILON);
+        assert!(
+            dispatch_native_agent_scroll(
+                &mut input,
+                &frame,
+                &[],
+                &AgentScrollAction {
+                    region: "scroll.Inventory.0".to_owned(),
+                    delta_x_milli: 0,
+                    delta_y_milli: -1_000,
+                },
+            )
+            .is_err()
+        );
     }
 }

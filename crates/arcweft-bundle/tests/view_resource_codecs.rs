@@ -17,11 +17,25 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
     ViewThemeResource, migrated_view_section_compatibility,
 };
+
 use arcweft_bundle::resource_codec::{
     DigestRef, FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField,
     ResourceWireType, SectionCodecBudget,
 };
 use arcweft_bundle::{BundleVirtualFileRef, BundleVirtualFileSpace};
+
+#[test]
+fn view_element_inventory_owns_codec_tags_and_round_trips() {
+    for element in ViewElementKind::ALL {
+        let authoritative: arcweft_view::ViewElementKind = element;
+        let encoded = serde_json::to_string(&element).expect("element tag encodes");
+        assert_eq!(encoded, format!("\"{}\"", authoritative.runtime_label()));
+        assert_eq!(
+            serde_json::from_str::<ViewElementKind>(&encoded).expect("element tag decodes"),
+            element
+        );
+    }
+}
 
 #[test]
 fn view_resource_compact_sections_round_trip_with_deterministic_bytes() {

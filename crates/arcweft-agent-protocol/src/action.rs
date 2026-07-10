@@ -17,6 +17,7 @@ pub enum AgentActionKind {
     AdvanceText,
     SelectChoice,
     Invoke,
+    Scroll,
     PointerClick,
 }
 

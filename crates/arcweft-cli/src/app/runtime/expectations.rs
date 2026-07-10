@@ -246,7 +246,7 @@ fn expectation_value_label(expr: &Expr) -> Option<String> {
         Expr::Path(path) => Some(path.as_label().to_owned()),
         Expr::ShortVariant(name) => Some(format!(".{name}")),
         Expr::Literal(Literal::Bool(value)) => Some(value.to_string()),
-        Expr::Literal(Literal::Int { value, .. }) => Some(value.to_string()),
+        Expr::Literal(Literal::Int(literal)) => Some(literal.raw().to_owned()),
         Expr::Literal(Literal::Float { raw, .. } | Literal::String(raw)) => Some(raw.clone()),
         _ => None,
     }

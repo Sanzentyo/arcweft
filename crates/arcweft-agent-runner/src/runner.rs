@@ -381,7 +381,8 @@ where
             AgentAction::PointerClick { .. } => RuntimeAgentCapability::ActPhysical,
             AgentAction::AdvanceText
             | AgentAction::SelectChoice { .. }
-            | AgentAction::Invoke(_) => RuntimeAgentCapability::Act,
+            | AgentAction::Invoke(_)
+            | AgentAction::Scroll(_) => RuntimeAgentCapability::Act,
         })?;
         let result = self.session.act(action).map_err(AgentRunError::Session)?;
         self.emit(

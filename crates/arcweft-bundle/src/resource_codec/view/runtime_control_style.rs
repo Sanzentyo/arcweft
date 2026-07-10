@@ -557,28 +557,21 @@ impl ViewProgramResource {
                         .map_or_else(ViewRuntimeControlStyle::default, |frame| {
                             inherited_runtime_text_style(&frame.style)
                         });
-                    let binding = match element {
-                        ViewElementKind::Button => next_action_button_binding(
+                    let binding = if element.is_action_control() {
+                        next_action_button_binding(
                             action_buttons,
                             &mut action_button_cursor,
                             target.as_deref(),
-                        ),
-                        ViewElementKind::TextField
-                        | ViewElementKind::TextArea
-                        | ViewElementKind::SecureField => next_text_control_binding(
+                        )
+                    } else if let Some(kind) = ViewInputKind::from_element(*element) {
+                        next_text_control_binding(
                             text_controls,
                             &mut text_control_cursor,
-                            element.text_input_kind(),
+                            Some(kind),
                             target.as_deref(),
-                        ),
-                        ViewElementKind::Panel
-                        | ViewElementKind::Box
-                        | ViewElementKind::Scroll
-                        | ViewElementKind::Row
-                        | ViewElementKind::Column
-                        | ViewElementKind::LazyRow
-                        | ViewElementKind::LazyColumn
-                        | ViewElementKind::Stack => RuntimeStyleBinding::None,
+                        )
+                    } else {
+                        RuntimeStyleBinding::None
                     };
                     let target = match binding {
                         RuntimeStyleBinding::TextControl(index) => {
@@ -1095,36 +1088,9 @@ fn inherited_runtime_text_style(style: &ViewRuntimeControlStyle) -> ViewRuntimeC
 
 fn runtime_element_target(element: ViewElementKind, part: Option<&str>) -> String {
     part.map_or_else(
-        || format!("element.{}", runtime_element_label(element)),
+        || format!("element.{}", element.runtime_label()),
         str::to_owned,
     )
-}
-
-fn runtime_element_label(element: ViewElementKind) -> &'static str {
-    match element {
-        ViewElementKind::Panel => "panel",
-        ViewElementKind::Box => "box",
-        ViewElementKind::Scroll => "scroll",
-        ViewElementKind::Row => "row",
-        ViewElementKind::Column => "column",
-        ViewElementKind::LazyRow => "lazy_row",
-        ViewElementKind::LazyColumn => "lazy_column",
-        ViewElementKind::Stack => "stack",
-        ViewElementKind::Button => "button",
-        ViewElementKind::TextField => "text_field",
-        ViewElementKind::TextArea => "text_area",
-        ViewElementKind::SecureField => "secure_field",
-    }
-}
-
-impl ViewInputKind {
-    pub const fn runtime_control_element(self) -> ViewElementKind {
-        match self {
-            Self::TextField => ViewElementKind::TextField,
-            Self::TextArea => ViewElementKind::TextArea,
-            Self::SecureField => ViewElementKind::SecureField,
-        }
-    }
 }
 
 fn id_or_tail_matches(candidate: &str, target: &str) -> bool {

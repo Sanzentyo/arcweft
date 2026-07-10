@@ -153,6 +153,8 @@ pub(super) enum NativeAgentScriptSessionError {
     ResourceRead,
     #[error("native Agent Script action is not currently selectable")]
     ActionUnavailable,
+    #[error("native Agent Script scroll delta is outside the finite logical-pixel range")]
+    InvalidScrollDelta,
     #[error("native Agent Script action kind is not supported by the native semantic dispatcher")]
     UnsupportedAction,
 }
@@ -351,7 +353,7 @@ pub(super) fn native_agent_action_step_input(
             Vec::new(),
             native_agent_invoke_input_events(report, &invoke.target, &invoke.action)?,
         ),
-        AgentAction::PointerClick { .. } => {
+        AgentAction::Scroll(_) | AgentAction::PointerClick { .. } => {
             return Err(NativeAgentScriptSessionError::UnsupportedAction);
         }
     };
@@ -360,6 +362,61 @@ pub(super) fn native_agent_action_step_input(
         input_events,
         ..BundleStepInput::default()
     })
+}
+
+pub(super) fn native_agent_scroll_region(
+    runtime: &mut NativeAgentRuntimeState,
+    report: &AgentObservationReport,
+    action: &AgentScrollAction,
+) -> Result<bool, NativeAgentScriptSessionError> {
+    let frame = runtime
+        .prepared_frame
+        .as_ref()
+        .map(|prepared| &prepared.frame)
+        .ok_or(NativeAgentScriptSessionError::Observe)?;
+    dispatch_native_agent_scroll(&mut runtime.input, frame, &report.actions, action)
+}
+
+pub(super) fn dispatch_native_agent_scroll(
+    input: &mut arcweft_player_scene::input::InputController,
+    frame: &arcweft_render_wgpu::geometry::PreparedFrame,
+    actions: &[AgentActionTarget],
+    action: &AgentScrollAction,
+) -> Result<bool, NativeAgentScriptSessionError> {
+    if action.region.is_empty()
+        || (action.delta_x_milli == 0 && action.delta_y_milli == 0)
+        || !actions.iter().any(|candidate| {
+            candidate.enabled
+                && candidate.kind == AgentActionDispatch::Semantic
+                && candidate.action == AgentActionKind::Scroll
+                && candidate.target == action.region
+        })
+    {
+        return Err(NativeAgentScriptSessionError::ActionUnavailable);
+    }
+    let delta_x = agent_scroll_delta_logical_pixels(action.delta_x_milli)?;
+    let delta_y = agent_scroll_delta_logical_pixels(action.delta_y_milli)?;
+    if !frame
+        .scroll_regions
+        .iter()
+        .any(|region| region.id == action.region)
+    {
+        return Err(NativeAgentScriptSessionError::ActionUnavailable);
+    }
+    Ok(input
+        .scroll_region_by_id(frame, &action.region, delta_x, delta_y)
+        .redraw)
+}
+
+fn agent_scroll_delta_logical_pixels(
+    delta_milli: i32,
+) -> Result<f32, NativeAgentScriptSessionError> {
+    use num_traits::ToPrimitive as _;
+
+    (f64::from(delta_milli) / 1_000.0)
+        .to_f32()
+        .filter(|delta| delta.is_finite())
+        .ok_or(NativeAgentScriptSessionError::InvalidScrollDelta)
 }
 
 pub(super) fn native_agent_select_choice_input_events(
@@ -465,7 +522,14 @@ impl AgentSession for NativeAgentScriptSession<'_> {
 
     fn act(&mut self, action: AgentAction) -> Result<ActionResult, Self::Error> {
         let before = self.observe_report()?.clone();
-        let step_input = self.action_step_input(action)?;
+        let step_input = match action {
+            AgentAction::Scroll(action) => {
+                let runtime = self.runtime_state()?;
+                native_agent_scroll_region(runtime, &before, &action)?;
+                BundleStepInput::default()
+            }
+            action => self.action_step_input(action)?,
+        };
         let after = self.refresh_observation(step_input)?.clone();
         Ok(Self::action_result(&before, &after))
     }

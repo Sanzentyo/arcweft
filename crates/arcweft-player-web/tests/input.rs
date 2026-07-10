@@ -18,8 +18,9 @@ use arcweft_presentation::{
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
     RenderChoiceItem, RenderControlStyle, RenderFocusAutoScrollPolicy, RenderPreferences,
-    RenderScene, RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion,
-    RenderTextInputControl, RenderViewport, SharedFramePlanner,
+    RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
+    RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl, RenderViewport,
+    SharedFramePlanner,
 };
 
 fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
@@ -83,9 +84,14 @@ fn frame_with_containing_scroll_region() -> arcweft_render_wgpu::geometry::Prepa
             content_height: 420.0,
             offset_x: 0.0,
             offset_y: 0.0,
+            overscroll_x: 0.0,
+            overscroll_y: 0.0,
             axis: RenderScrollAxis::Vertical,
             overflow: RenderScrollOverflow::Auto,
+            indicators: RenderScrollIndicatorsPolicy::Auto,
+            overscroll: RenderScrollOverscrollPolicy::Clamp,
             auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+            indicator_activity_millis: None,
         }],
     })
     .expect("scroll frame plans")
@@ -118,9 +124,14 @@ fn frame_with_horizontal_scroll_region() -> arcweft_render_wgpu::geometry::Prepa
             content_height: 120.0,
             offset_x: 0.0,
             offset_y: 0.0,
+            overscroll_x: 0.0,
+            overscroll_y: 0.0,
             axis: RenderScrollAxis::Horizontal,
             overflow: RenderScrollOverflow::Auto,
+            indicators: RenderScrollIndicatorsPolicy::Auto,
+            overscroll: RenderScrollOverscrollPolicy::Clamp,
             auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+            indicator_activity_millis: None,
         }],
     })
     .expect("horizontal scroll frame plans")

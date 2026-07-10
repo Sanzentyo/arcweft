@@ -106,11 +106,10 @@ fn agent_repl_serialized_expr_source_and_kind(expr: &Expr) -> Option<(String, &'
 fn agent_repl_serialized_numeric_bracket_seq_source(
     seq: &arcweft_lang_syntax::expr::NumericBracketSeq,
 ) -> String {
-    let suffix = seq.suffix().unwrap_or_default();
     let values = seq
-        .values()
+        .literals()
         .iter()
-        .map(|value| format!("{value}{suffix}"))
+        .map(arcweft_lang_syntax::expr::IntLiteral::raw)
         .collect::<Vec<_>>()
         .join(", ");
     format!("[{values}]")
@@ -156,10 +155,10 @@ fn agent_repl_snapshot_call_args_are_self_contained(args: &[CallArg]) -> bool {
 fn agent_repl_serialized_literal_source(literal: &Literal) -> Option<String> {
     match literal {
         Literal::String(value) => serde_json::to_string(value).ok(),
-        Literal::Char { raw, .. } => Some(raw.clone()),
-        Literal::Int { raw, .. } | Literal::Float { raw, .. } | Literal::UnitNumber { raw, .. } => {
-            Some(raw.clone())
-        }
+        Literal::Char { raw, .. }
+        | Literal::Float { raw, .. }
+        | Literal::UnitNumber { raw, .. } => Some(raw.clone()),
+        Literal::Int(literal) => Some(literal.raw().to_owned()),
         Literal::Bool(value) => Some(value.to_string()),
         Literal::Duration { .. } => None,
     }

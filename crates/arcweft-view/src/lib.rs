@@ -47,10 +47,11 @@ pub use motion::{
 };
 pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{
-    ViewBranch, ViewCall, ViewCustomSpec, ViewElementKind, ViewElementSpec, ViewEventBindingSpec,
-    ViewExpressionId, ViewHandlerProgram, ViewImageSpec, ViewInstruction, ViewInstructionRange,
-    ViewPartExport, ViewPartId, ViewProgram, ViewProgramBuilder, ViewRepeat, ViewSemanticSpec,
-    ViewStableKey, ViewStyleApply, ViewStylePatchId, ViewTextSpec,
+    ViewBranch, ViewCall, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
+    ViewElementTextInputKind, ViewEventBindingSpec, ViewExpressionId, ViewHandlerProgram,
+    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartExport, ViewPartId, ViewProgram,
+    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewStyleApply,
+    ViewStylePatchId, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{

@@ -250,9 +250,11 @@ fn expr_px_milli(expr: &Expr) -> Option<i32> {
                 .map(str::trim)
                 .and_then(|raw| raw.parse::<i32>().ok())
         }
-        Expr::Literal(Literal::Int { value, .. }) => {
-            i32::try_from(value.saturating_mul(1_000)).ok()
-        }
+        Expr::Literal(Literal::Int(literal)) => literal
+            .magnitude()
+            .ok()
+            .and_then(|value| value.checked_mul(1_000))
+            .and_then(|value| i32::try_from(value).ok()),
         Expr::Raw(value) => value
             .trim()
             .strip_suffix("px")

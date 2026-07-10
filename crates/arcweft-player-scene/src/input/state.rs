@@ -15,15 +15,15 @@ impl InputController {
     }
 
     pub fn scroll_offset_y(&self, region_id: &str) -> f32 {
-        self.scroll_offsets
+        self.scroll_states
             .get(region_id)
-            .map_or(0.0, |offset| offset.y)
+            .map_or(0.0, |state| state.offset.y)
     }
 
     pub fn scroll_offset_x(&self, region_id: &str) -> f32 {
-        self.scroll_offsets
+        self.scroll_states
             .get(region_id)
-            .map_or(0.0, |offset| offset.x)
+            .map_or(0.0, |state| state.offset.x)
     }
 
     #[must_use]
@@ -31,13 +31,13 @@ impl InputController {
         InputControllerSnapshot {
             choice_scroll_offset_y: self.choice_scroll.offset_y,
             scroll_offsets: self
-                .scroll_offsets
+                .scroll_states
                 .iter()
-                .filter(|(_, offset)| !offset.is_zero())
-                .map(|(region_id, offset)| InputScrollOffsetSnapshot {
+                .filter(|(_, state)| !state.offset.is_zero())
+                .map(|(region_id, state)| InputScrollOffsetSnapshot {
                     region_id: region_id.clone(),
-                    offset_x: offset.x,
-                    offset_y: offset.y,
+                    offset_x: state.offset.x,
+                    offset_y: state.offset.y,
                 })
                 .collect(),
         }
@@ -58,7 +58,7 @@ impl InputController {
                 offset_y: choice_scroll_offset_y,
             });
         }
-        let scroll_offsets = snapshot.scroll_offsets.into_iter().try_fold(
+        let scroll_states = snapshot.scroll_offsets.into_iter().try_fold(
             BTreeMap::new(),
             |mut offsets, entry| {
                 if entry.region_id.is_empty() {
@@ -80,13 +80,20 @@ impl InputController {
                 }
                 let offset = ScrollOffset::new(entry.offset_x, entry.offset_y);
                 if !offset.is_zero() {
-                    offsets.insert(entry.region_id, offset);
+                    offsets.insert(
+                        entry.region_id,
+                        super::ScrollState {
+                            offset,
+                            ..super::ScrollState::default()
+                        },
+                    );
                 }
                 Ok(offsets)
             },
         )?;
         self.choice_scroll.offset_y = choice_scroll_offset_y;
-        self.scroll_offsets = scroll_offsets;
+        self.scroll_states = scroll_states;
+        self.controller.reset_transient_state();
         Ok(())
     }
 

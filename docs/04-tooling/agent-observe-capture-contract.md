@@ -402,6 +402,26 @@ capture resources.
 
 ---
 
+## Scroll-region observation
+
+`scroll_regions[]` contains one record per authored `Scroll`. The record is the
+only user-facing target and produces at most one semantic `scroll` action in
+`actions[]`. `parts.viewport` and `parts.content` are marked `internal = true`;
+they expose viewport bounds, retained content size, clamped offset, and maximum
+offset without creating duplicate clickable, semantic, or capture targets.
+
+Effective `axis`, `overflow`, `indicators`, `overscroll`, and
+`auto_scroll_focus` policies are typed fields on that same record. Visible
+children continue to appear normally in `objects[]` after scroll offset and
+viewport clipping have been applied.
+
+An Agent scroll action is region-addressed and uses signed i32 milli-logical-
+pixel deltas. Adapters reject missing/disabled region actions, non-integer or
+out-of-i32-range values, and a zero delta on both axes before calling the live
+player input route.
+
+---
+
 ## Diagnostics
 
 Observation diagnostics keep the human-readable `message`, and may also expose

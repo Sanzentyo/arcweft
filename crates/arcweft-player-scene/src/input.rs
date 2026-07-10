@@ -26,7 +26,7 @@ use arcweft_presentation::text_input::{
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
     PreparedSelectableTextBlock, RenderActionButtonAction, RenderFocusAutoScrollPolicy,
-    RenderScrollAxis, RenderScrollRegion, RenderTextInputControl,
+    RenderScrollAxis, RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -270,6 +270,19 @@ struct ScrollOffset {
     y: f32,
 }
 
+/// Shared state for one retained scroll region.
+///
+/// Only `offset` is persisted. Elastic displacement, velocity, and indicator
+/// activity are presentation transients reconstructed from new interactions.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ScrollState {
+    offset: ScrollOffset,
+    overscroll: ScrollOffset,
+    velocity: ScrollOffset,
+    spring_time_millis: Option<u64>,
+    activity_millis: Option<u64>,
+}
+
 impl ScrollOffset {
     const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
@@ -340,7 +353,7 @@ pub struct InputController {
     pending_text_pointer_selection: Option<TextPointerSelectionState>,
     text_block_selection: Option<TextBlockSelectionState>,
     choice_scroll: ChoiceScroll,
-    scroll_offsets: BTreeMap<String, ScrollOffset>,
+    scroll_states: BTreeMap<String, ScrollState>,
     controller: ControllerInputNormalizer,
     window_focused: bool,
     ime_composing: bool,
@@ -356,6 +369,7 @@ impl InputController {
         self.window_focused = focused;
         let mut text_control_write_backs = Vec::new();
         if !focused {
+            self.controller.reset_transient_state();
             if self.ime_composing
                 && let Some(editor) = self.focused_text_editor.as_mut()
             {
@@ -425,20 +439,20 @@ impl InputController {
         frame: &PreparedFrame,
         target: &arcweft_presentation::input::InteractionTarget,
     ) -> bool {
-        let Some(region) = frame.scroll_region_for_target(target) else {
+        let Some(region) = frame.scroll_region_for_target(target).cloned() else {
             return false;
         };
+        self.mark_scroll_activity(&region.id, frame.visual_time_millis);
         let Some(bounds) = frame.target_bounds(target) else {
             return false;
         };
         if region.auto_scroll_focus == RenderFocusAutoScrollPolicy::Disabled {
             return false;
         }
-        let current = self
-            .scroll_offsets
-            .get(&region.id)
-            .copied()
-            .unwrap_or_else(|| ScrollOffset::new(region.offset_x, region.offset_y));
+        let current = self.scroll_states.get(&region.id).map_or_else(
+            || ScrollOffset::new(region.offset_x, region.offset_y),
+            |state| state.offset,
+        );
         let next = match region.axis {
             RenderScrollAxis::Vertical => ScrollOffset::new(
                 current.x,
@@ -465,7 +479,7 @@ impl InputController {
                 current.y,
             ),
         };
-        self.store_scroll_offset(&region.id, next)
+        self.store_scroll_offset(&region.id, next, frame.visual_time_millis)
     }
 
     fn raw(&mut self, kind: RawInputKind) -> RawInputEvent {
@@ -554,14 +568,14 @@ impl InputController {
             .scroll_regions
             .iter()
             .find(|region| region.contains(control_center))
+            .cloned()
         else {
             return false;
         };
-        let current = self
-            .scroll_offsets
-            .get(&region.id)
-            .copied()
-            .unwrap_or_else(|| ScrollOffset::new(region.offset_x, region.offset_y));
+        let current = self.scroll_states.get(&region.id).map_or_else(
+            || ScrollOffset::new(region.offset_x, region.offset_y),
+            |state| state.offset,
+        );
         let next = match region.axis {
             arcweft_render_wgpu::geometry::RenderScrollAxis::Vertical => {
                 if position.y < region.bounds.y + TEXT_DRAG_AUTOSCROLL_EDGE {
@@ -598,15 +612,7 @@ impl InputController {
                 }
             }
         };
-        if next == current {
-            return false;
-        }
-        if next.is_zero() {
-            self.scroll_offsets.remove(&region.id);
-        } else {
-            self.scroll_offsets.insert(region.id.clone(), next);
-        }
-        true
+        next != current && self.store_scroll_offset(&region.id, next, frame.visual_time_millis)
     }
 
     fn apply_or_defer_text_pointer_selection(

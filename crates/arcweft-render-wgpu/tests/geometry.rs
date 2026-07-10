@@ -16,8 +16,9 @@ use arcweft_render_wgpu::geometry::{
     RenderFocusInitialPolicy, RenderFocusNavigation, RenderFocusNavigationEdge,
     RenderFocusSkipPolicy, RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily,
     RenderImage, RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
-    RenderScrollOverflow, RenderScrollRegion, RenderTextInputControl, RenderTextSlant,
-    RenderTextWeight, RenderViewport, SharedFramePlanContext, SharedFramePlanner,
+    RenderScrollIndicatorsPolicy, RenderScrollOverflow, RenderScrollOverscrollPolicy,
+    RenderScrollRegion, RenderTextInputControl, RenderTextSlant, RenderTextWeight, RenderViewport,
+    SharedFramePlanContext, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -421,9 +422,14 @@ fn scroll_regions_survive_frame_planning_and_viewport_mapping() {
             content_height: 480.0,
             offset_x: 0.0,
             offset_y: 90.0,
+            overscroll_x: 0.0,
+            overscroll_y: 0.0,
             axis: RenderScrollAxis::Vertical,
             overflow: RenderScrollOverflow::Auto,
+            indicators: RenderScrollIndicatorsPolicy::Auto,
+            overscroll: RenderScrollOverscrollPolicy::Clamp,
             auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+            indicator_activity_millis: None,
         }],
         ..scene()
     })
@@ -462,13 +468,127 @@ fn hidden_scroll_region_reports_no_scroll_range() {
         content_height: 480.0,
         offset_x: 0.0,
         offset_y: 0.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Hidden,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
     };
 
     assert!(region.max_offset_y().abs() < f32::EPSILON);
     assert!(region.clamped_offset_y(90.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn scroll_indicator_policies_produce_observable_thumb_geometry() {
+    let region = RenderScrollRegion {
+        id: "scroll.story".to_owned(),
+        bounds: HitRect::new(0.0, 0.0, 100.0, 100.0),
+        content_width: 100.0,
+        content_height: 400.0,
+        offset_x: 0.0,
+        offset_y: 150.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Visible,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
+    };
+    let mut visible_scene = scene();
+    visible_scene.scroll_regions = vec![region.clone()];
+    let visible = SharedFramePlanner::prepare(&visible_scene).expect("visible indicator frame");
+
+    let indicator = visible
+        .scroll_indicators
+        .first()
+        .expect("visible policy always prepares an indicator");
+    assert_eq!(indicator.region_id, "scroll.story");
+    assert_eq!(indicator.track_bounds, HitRect::new(91.0, 3.0, 6.0, 94.0));
+    assert!((indicator.thumb_bounds.x - 91.0).abs() < f32::EPSILON);
+    assert!((indicator.thumb_bounds.y - 38.25).abs() < 0.001);
+    assert!((indicator.thumb_bounds.width - 6.0).abs() < f32::EPSILON);
+    assert!((indicator.thumb_bounds.height - 23.5).abs() < 0.001);
+    assert!((indicator.opacity - 1.0).abs() < f32::EPSILON);
+
+    let mut hidden_scene = visible_scene.clone();
+    hidden_scene.scroll_regions[0].indicators = RenderScrollIndicatorsPolicy::Hidden;
+    assert!(
+        SharedFramePlanner::prepare(&hidden_scene)
+            .expect("hidden indicator frame")
+            .scroll_indicators
+            .is_empty()
+    );
+}
+
+#[test]
+fn auto_scroll_indicator_fades_deterministically_and_reduce_motion_skips_fade() {
+    let mut auto_scene = scene();
+    auto_scene.visual_time_millis = 850;
+    auto_scene.scroll_regions = vec![RenderScrollRegion {
+        id: "scroll.story".to_owned(),
+        bounds: HitRect::new(0.0, 0.0, 100.0, 100.0),
+        content_width: 100.0,
+        content_height: 400.0,
+        offset_x: 0.0,
+        offset_y: 0.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: Some(0),
+    }];
+
+    let fading = SharedFramePlanner::prepare(&auto_scene).expect("fading indicator frame");
+    assert!((fading.scroll_indicators[0].opacity - 0.5).abs() < f32::EPSILON);
+
+    auto_scene.preferences.reduce_motion = true;
+    assert!(
+        SharedFramePlanner::prepare(&auto_scene)
+            .expect("reduced motion indicator frame")
+            .scroll_indicators
+            .is_empty()
+    );
+
+    auto_scene.preferences.reduce_motion = false;
+    auto_scene.visual_time_millis = 1_000;
+    assert!(
+        SharedFramePlanner::prepare(&auto_scene)
+            .expect("expired indicator frame")
+            .scroll_indicators
+            .is_empty()
+    );
+}
+
+#[test]
+fn elastic_displacement_affects_visual_offset_but_not_committed_offset() {
+    let region = RenderScrollRegion {
+        id: "scroll.story".to_owned(),
+        bounds: HitRect::new(0.0, 0.0, 100.0, 100.0),
+        content_width: 100.0,
+        content_height: 400.0,
+        offset_x: 0.0,
+        offset_y: 300.0,
+        overscroll_x: 0.0,
+        overscroll_y: 24.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Hidden,
+        overscroll: RenderScrollOverscrollPolicy::Elastic,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: Some(0),
+    };
+
+    assert!((region.offset_y - 300.0).abs() < f32::EPSILON);
+    assert!((region.visual_offset_y() - 324.0).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -493,9 +613,14 @@ fn scroll_region_offsets_and_clips_owned_text_controls() {
         content_height: 240.0,
         offset_x: 0.0,
         offset_y: 60.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -537,9 +662,14 @@ fn horizontal_scroll_region_offsets_and_clips_owned_text_controls() {
         content_height: 80.0,
         offset_x: 160.0,
         offset_y: 0.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: RenderScrollAxis::Horizontal,
         overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -573,9 +703,14 @@ fn scroll_region_offsets_and_clips_owned_images() {
         content_height: 260.0,
         offset_x: 0.0,
         offset_y: 60.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -612,9 +747,14 @@ fn scroll_region_drops_images_outside_viewport() {
         content_height: 360.0,
         offset_x: 0.0,
         offset_y: 60.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -643,9 +783,14 @@ fn scroll_region_offsets_and_clips_owned_action_buttons() {
         content_height: 240.0,
         offset_x: 0.0,
         offset_y: 60.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
@@ -706,9 +851,14 @@ fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
         content_height: 240.0,
         offset_x: 0.0,
         offset_y: 60.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
         axis: RenderScrollAxis::Vertical,
         overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Auto,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
     }];
 
     let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");

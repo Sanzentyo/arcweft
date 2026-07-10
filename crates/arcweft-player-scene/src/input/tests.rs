@@ -8,7 +8,8 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     RenderActionButton, RenderControlStyle, RenderDialogue, RenderPreferences, RenderScene,
-    RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion, RenderViewport, SharedFramePlanner,
+    RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
+    RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanner,
 };
 
 fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
@@ -94,9 +95,14 @@ fn scroll_frame() -> PreparedFrame {
             content_height: 260.0,
             offset_x: 0.0,
             offset_y: 0.0,
+            overscroll_x: 0.0,
+            overscroll_y: 0.0,
             axis: RenderScrollAxis::Vertical,
             overflow: RenderScrollOverflow::Auto,
+            indicators: RenderScrollIndicatorsPolicy::Auto,
+            overscroll: RenderScrollOverscrollPolicy::Clamp,
             auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+            indicator_activity_millis: None,
         }],
     })
     .expect("scroll frame prepares")
@@ -129,12 +135,84 @@ fn horizontal_scroll_frame() -> PreparedFrame {
             content_height: 80.0,
             offset_x: 0.0,
             offset_y: 0.0,
+            overscroll_x: 0.0,
+            overscroll_y: 0.0,
             axis: RenderScrollAxis::Horizontal,
             overflow: RenderScrollOverflow::Auto,
+            indicators: RenderScrollIndicatorsPolicy::Auto,
+            overscroll: RenderScrollOverscrollPolicy::Clamp,
             auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+            indicator_activity_millis: None,
         }],
     })
     .expect("horizontal scroll frame prepares")
+}
+
+fn nested_scroll_frame(
+    child_overscroll: RenderScrollOverscrollPolicy,
+    reduce_motion: bool,
+    visual_time_millis: u64,
+) -> PreparedFrame {
+    SharedFramePlanner::prepare(&RenderScene {
+        dialogue: None,
+        choices: Vec::new(),
+        text_inputs: Vec::new(),
+        action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
+        images: Vec::new(),
+        viewport: RenderViewport {
+            logical_width: 640.0,
+            logical_height: 360.0,
+            physical_width: 640,
+            physical_height: 360,
+            scale_factor: 1.0,
+        },
+        visual_time_millis,
+        preferences: RenderPreferences {
+            reduce_motion,
+            ..RenderPreferences::default()
+        },
+        interaction: InteractionVisualState::default(),
+        choice_scroll: ChoiceScroll::default(),
+        scroll_regions: vec![
+            RenderScrollRegion {
+                id: "scroll.child".to_owned(),
+                bounds: HitRect::new(30.0, 30.0, 180.0, 60.0),
+                content_width: 180.0,
+                content_height: 180.0,
+                offset_x: 0.0,
+                offset_y: 0.0,
+                overscroll_x: 0.0,
+                overscroll_y: 0.0,
+                axis: RenderScrollAxis::Vertical,
+                overflow: RenderScrollOverflow::Auto,
+                indicators: RenderScrollIndicatorsPolicy::Auto,
+                overscroll: child_overscroll,
+                auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+                indicator_activity_millis: None,
+            },
+            // Bundle lowering records nested children before their parent, so
+            // chaining must derive inner-to-outer order from geometry.
+            RenderScrollRegion {
+                id: "scroll.parent".to_owned(),
+                bounds: HitRect::new(10.0, 10.0, 260.0, 180.0),
+                content_width: 260.0,
+                content_height: 500.0,
+                offset_x: 0.0,
+                offset_y: 0.0,
+                overscroll_x: 0.0,
+                overscroll_y: 0.0,
+                axis: RenderScrollAxis::Vertical,
+                overflow: RenderScrollOverflow::Auto,
+                indicators: RenderScrollIndicatorsPolicy::Auto,
+                overscroll: RenderScrollOverscrollPolicy::Clamp,
+                auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+                indicator_activity_millis: None,
+            },
+        ],
+    })
+    .expect("nested scroll frame prepares")
 }
 
 #[test]
@@ -167,6 +245,34 @@ fn precision_scroll_uses_x_delta_for_horizontal_region() {
 }
 
 #[test]
+fn right_stick_analog_scroll_uses_the_shared_pointer_region_route() {
+    let frame = scroll_frame();
+    let mut input = InputController::default();
+    input.pointer_move(&frame, PointerId(0), ViewportPoint::new(30.0, 40.0));
+
+    let first = input.controller(
+        &frame,
+        ControllerInputChange::Axis {
+            axis: crate::controller::ControllerAxis::RightY,
+            value: 1.0,
+            time_millis: 0,
+        },
+    );
+    assert!(!first.redraw);
+    let outcome = input.controller(
+        &frame,
+        ControllerInputChange::Axis {
+            axis: crate::controller::ControllerAxis::RightY,
+            value: 1.0,
+            time_millis: 100,
+        },
+    );
+
+    assert!(outcome.redraw);
+    assert!((input.scroll_offset_y("scroll.editor") - 72.0).abs() < f32::EPSILON);
+}
+
+#[test]
 fn scroll_region_by_id_scrolls_without_pointer_and_clamps() {
     let frame = horizontal_scroll_frame();
     let mut input = InputController::default();
@@ -186,6 +292,72 @@ fn missing_scroll_region_by_id_is_noop() {
 
     assert!(!outcome.redraw);
     assert!(input.snapshot().scroll_offsets.is_empty());
+}
+
+#[test]
+fn clamp_overscroll_chains_unconsumed_delta_to_parent() {
+    let frame = nested_scroll_frame(RenderScrollOverscrollPolicy::Clamp, false, 100);
+    let mut input = InputController::default();
+    input.pointer_move(&frame, PointerId(0), ViewportPoint::new(40.0, 40.0));
+
+    let outcome = input.wheel(&frame, -200.0);
+
+    assert!(outcome.redraw);
+    assert!((input.scroll_offset_y("scroll.child") - 120.0).abs() < f32::EPSILON);
+    assert!((input.scroll_offset_y("scroll.parent") - 80.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn contain_overscroll_stops_scroll_chaining_without_transient_offset() {
+    let frame = nested_scroll_frame(RenderScrollOverscrollPolicy::Contain, false, 100);
+    let mut input = InputController::default();
+    input.pointer_move(&frame, PointerId(0), ViewportPoint::new(40.0, 40.0));
+
+    input.wheel(&frame, -200.0);
+
+    assert!((input.scroll_offset_y("scroll.child") - 120.0).abs() < f32::EPSILON);
+    assert!(input.scroll_offset_y("scroll.parent").abs() < f32::EPSILON);
+    let mut child = frame.scroll_regions[0].clone();
+    input.resolve_scroll_region(&mut child, 100, false);
+    assert!(child.overscroll_y.abs() < f32::EPSILON);
+}
+
+#[test]
+fn elastic_overscroll_is_transient_and_settles_without_changing_snapshot_offset() {
+    let frame = nested_scroll_frame(RenderScrollOverscrollPolicy::Elastic, false, 100);
+    let mut input = InputController::default();
+    input.pointer_move(&frame, PointerId(0), ViewportPoint::new(40.0, 40.0));
+
+    input.wheel(&frame, -200.0);
+
+    assert!((input.scroll_offset_y("scroll.child") - 120.0).abs() < f32::EPSILON);
+    assert!(input.scroll_offset_y("scroll.parent").abs() < f32::EPSILON);
+    let snapshot = input.snapshot();
+    let mut child = frame.scroll_regions[0].clone();
+    input.resolve_scroll_region(&mut child, 100, false);
+    assert!(child.overscroll_y > 0.0);
+    assert!(child.visual_offset_y() > child.offset_y);
+
+    let initial_displacement = child.overscroll_y;
+    input.resolve_scroll_region(&mut child, 350, false);
+    assert!(child.overscroll_y < initial_displacement);
+    input.resolve_scroll_region(&mut child, 1_100, false);
+    assert!(child.overscroll_y.abs() < f32::EPSILON);
+    assert_eq!(input.snapshot(), snapshot);
+}
+
+#[test]
+fn reduce_motion_consumes_elastic_boundary_delta_without_displacement() {
+    let frame = nested_scroll_frame(RenderScrollOverscrollPolicy::Elastic, true, 100);
+    let mut input = InputController::default();
+    input.pointer_move(&frame, PointerId(0), ViewportPoint::new(40.0, 40.0));
+
+    input.wheel(&frame, -200.0);
+
+    let mut child = frame.scroll_regions[0].clone();
+    input.resolve_scroll_region(&mut child, 100, true);
+    assert!(child.overscroll_y.abs() < f32::EPSILON);
+    assert!(input.scroll_offset_y("scroll.parent").abs() < f32::EPSILON);
 }
 
 #[test]
