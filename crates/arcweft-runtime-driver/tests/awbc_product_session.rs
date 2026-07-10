@@ -29,7 +29,7 @@ use arcweft_runtime_driver::{
     session::{BundleSession, BundleSessionOptions, BundleStepInput},
     session_save::{
         BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-        BundleSessionExecutorSnapshot, BundleSessionPendingBlocker, BundleSessionSaveError,
+        BundleSessionArtifactIdentity, BundleSessionPendingBlocker, BundleSessionSaveError,
         BundleSessionSnapshot,
     },
 };
@@ -56,6 +56,18 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
     session.step_with_clock(
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
+    );
+
+    let identity = BundleView::parse(&bytes, ReadBudget::default())
+        .expect("source AWFB parses")
+        .artifact_identity();
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("session snapshot exports")
+            .generation
+            .artifact,
+        BundleSessionArtifactIdentity::AwfbContainer { identity }
     );
 
     let save = session
@@ -163,9 +175,7 @@ fn awbc_save_load_preserves_cleanup_stacks() {
     let bytes = product_awfb_bytes("entry.main");
     let mut session = product_session_from_bytes(&bytes);
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    let BundleSessionExecutorSnapshot::ProductAwbc { state, .. } = &mut snapshot.executor else {
-        panic!("test bundle uses Product AWBC")
-    };
+    let state = &mut snapshot.executor.state;
     let frame = state.fiber.active_frame_mut().expect("active frame");
     frame
         .root_cleanups
@@ -201,9 +211,7 @@ fn session_save_rejects_runtime_function_values() {
     let bytes = product_awfb_bytes("entry.main");
     let mut session = product_session_from_bytes(&bytes);
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    let BundleSessionExecutorSnapshot::ProductAwbc { state, .. } = &mut snapshot.executor else {
-        panic!("test bundle uses Product AWBC")
-    };
+    let state = &mut snapshot.executor.state;
     let frame = state.fiber.active_frame_mut().expect("active frame");
     frame.root_cleanups.push(FiberScopeCleanup {
         key: "handle.function".to_owned(),
@@ -302,28 +310,34 @@ fn save_decode_rejects_same_root_from_a_different_bundle_manifest() {
     assert!(matches!(
         error,
         BundleSessionSaveError::GenerationMismatch {
-            field: "active_container_identity",
+            field: "artifact",
             ..
         }
     ));
 }
 
 #[test]
-fn save_decode_rejects_unsupported_executor_tier() {
-    let bytes = product_awfb_bytes("entry.main");
-    let session = product_session_from_bytes(&bytes);
-    let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    snapshot.executor = BundleSessionExecutorSnapshot::StructuredVm;
-    let save = encode_session_snapshot(&snapshot, BUNDLE_SESSION_SAVE_SCHEMA_VERSION);
-    let mut target = product_session_from_bytes(&bytes);
+fn logical_session_save_rejects_a_different_bundle_manifest() {
+    let source_bundle = product_bundle_with_label("entry.main", "source-session.arcw");
+    let target_bundle = product_bundle_with_label("entry.main", "target-session.arcw");
+    let source = BundleSession::new(&source_bundle, BundleSessionOptions::default())
+        .expect("logical source session starts");
+    let save = source
+        .export_session_save_bytes()
+        .expect("logical source save exports");
+    let mut target = BundleSession::new(&target_bundle, BundleSessionOptions::default())
+        .expect("logical target session starts");
 
     let error = target
         .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
-        .expect_err("Structured VM save restore is unsupported");
+        .expect_err("logical manifest identity mismatch rejects restore");
 
     assert!(matches!(
         error,
-        BundleSessionSaveError::UnsupportedExecutorTier { tier } if tier == "structured_vm"
+        BundleSessionSaveError::GenerationMismatch {
+            field: "artifact",
+            ..
+        }
     ));
 }
 
@@ -400,6 +414,12 @@ fn product_awfb_bytes(entry: &str) -> Vec<u8> {
 }
 
 fn product_awfb_bytes_with_label(entry: &str, source_label: &str) -> Vec<u8> {
+    product_bundle_with_label(entry, source_label)
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("awfb encodes")
+}
+
+fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
     ArcweftBundle::new(
         BundleManifest {
             source_label: source_label.to_owned(),
@@ -426,8 +446,6 @@ fn product_awfb_bytes_with_label(entry: &str, source_label: &str) -> Vec<u8> {
         LineDisplayCatalog::default(),
     )
     .with_product_awbc(minimal_awbc_program(entry))
-    .to_format_bytes(BundleFormat::Awfb)
-    .expect("awfb encodes")
 }
 
 fn view_handle(

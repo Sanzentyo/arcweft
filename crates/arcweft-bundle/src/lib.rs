@@ -2,6 +2,7 @@
 
 pub mod character_package;
 pub mod container;
+pub mod logical_identity;
 pub mod patch;
 mod product;
 pub mod product_awbc;

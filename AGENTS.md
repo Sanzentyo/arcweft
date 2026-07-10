@@ -73,6 +73,14 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Prefer deterministic runtime behavior.
 - Do not use `unsafe` unless isolated in a clearly named crate/module with an explanation.
 - Do not implement speculative full features before creating minimal stable interfaces.
+- Treat unreleased, unused Arcweft APIs and serialized formats as freely
+  replaceable implementation contracts. Move directly to the best final model;
+  do not preserve an inferior shape merely because it existed in the repository.
+- Compatibility work requires evidence of a released artifact, persisted user
+  data, an external consumer, or an explicit compatibility requirement. Without
+  that evidence, do not add deprecated fields, dual readers, aliases, migration
+  shims, or version bumps that only memorialize a discarded provisional format.
+  A corrected unpublished format should become the initial supported version.
 - When parser, compiler, or language-surface work requires broad reshaping, move directly toward the final model instead of preserving temporary compatibility layers.
 - Do not preserve backward compatibility during internal parser/compiler/language-surface refactors. Replace the old model directly and let breakage expose every call site that must be updated.
 - Do not use `deprecated` APIs, compatibility aliases, compatibility modules, wrapper APIs, migration shims, or compatibility shims inside unfinished compiler/parser code.

@@ -8,9 +8,9 @@ use crate::generation_runtime::{
 };
 use crate::session_save::{
     BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-    BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
-    BundleSessionPendingSnapshot, BundleSessionRuntimeSnapshot, BundleSessionSaveError,
-    BundleSessionSaveSchema, BundleSessionSnapshot, digest_label, validate_presentation_snapshot,
+    BundleSessionArtifactIdentity, BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot,
+    BundleSessionPendingBlocker, BundleSessionRuntimeSnapshot, BundleSessionSaveError,
+    BundleSessionSnapshot, digest_label, validate_presentation_snapshot,
     validate_product_awbc_runtime_values,
 };
 use crate::swap::{
@@ -41,7 +41,7 @@ use arcweft_core::bytecode::BytecodeVerificationError;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{
-    ArcweftExecutionTier, ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
+    ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
 };
 use arcweft_core::observation::RuntimeObservationState;
 use arcweft_core::plan::{FlowEvent, RuntimePlanError};
@@ -188,7 +188,7 @@ pub struct BundleSession {
     task_generation_pins: BTreeMap<TaskSequence, Arc<ProgramGeneration>>,
     tasks: RuntimeTaskRegistry,
     next_generation_id: u64,
-    active_container_identity: Option<ArtifactIdentity>,
+    active_artifact_identity: BundleSessionArtifactIdentity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -399,7 +399,16 @@ impl BundleSession {
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
     ) -> Result<Self, BundleSessionError> {
-        Self::new_with_container_identity(bundle, options, None)
+        let identity = bundle.logical_identity().map_err(|error| {
+            BundleSessionError::GenerationFingerprint {
+                message: error.to_string(),
+            }
+        })?;
+        Self::new_with_artifact_identity(
+            bundle,
+            options,
+            BundleSessionArtifactIdentity::LogicalBundle { identity },
+        )
     }
 
     pub fn from_awfb_bytes(
@@ -418,13 +427,19 @@ impl BundleSession {
                     message: error.to_string(),
                 }
             })?;
-        Self::new_with_container_identity(&bundle, options, Some(container_identity))
+        Self::new_with_artifact_identity(
+            &bundle,
+            options,
+            BundleSessionArtifactIdentity::AwfbContainer {
+                identity: container_identity,
+            },
+        )
     }
 
-    fn new_with_container_identity(
+    fn new_with_artifact_identity(
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
-        active_container_identity: Option<ArtifactIdentity>,
+        active_artifact_identity: BundleSessionArtifactIdentity,
     ) -> Result<Self, BundleSessionError> {
         let generation = Arc::new(initial_generation(bundle)?);
         let runtime = build_session_runtime(bundle, &options)?;
@@ -471,7 +486,7 @@ impl BundleSession {
             task_generation_pins: BTreeMap::new(),
             tasks: RuntimeTaskRegistry::default(),
             next_generation_id: 1,
-            active_container_identity,
+            active_artifact_identity,
         })
     }
 
@@ -531,7 +546,7 @@ impl BundleSession {
     }
 
     pub const fn active_container_content_root(&self) -> Option<BundleDigest> {
-        match self.active_container_identity {
+        match self.active_artifact_identity.awfb_container() {
             Some(identity) => Some(identity.content_root),
             None => None,
         }
@@ -539,7 +554,7 @@ impl BundleSession {
 
     /// Returns the logical identity of the active AWFB container, when present.
     pub const fn active_container_artifact_identity(&self) -> Option<ArtifactIdentity> {
-        self.active_container_identity
+        self.active_artifact_identity.awfb_container()
     }
 
     pub const fn presentation(&self) -> &BundlePresentationSnapshot {
@@ -681,13 +696,22 @@ impl BundleSession {
         &mut self,
         bundle: &ArcweftBundle,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
-        self.hot_swap_bundle_with_compatibility_floor(bundle, None, SwapCompatibility::ContentOnly)
+        let identity = bundle.logical_identity().map_err(|error| {
+            BundleSessionError::GenerationFingerprint {
+                message: error.to_string(),
+            }
+        })?;
+        self.hot_swap_bundle_with_compatibility_floor(
+            bundle,
+            BundleSessionArtifactIdentity::LogicalBundle { identity },
+            SwapCompatibility::ContentOnly,
+        )
     }
 
     fn hot_swap_bundle_with_compatibility_floor(
         &mut self,
         bundle: &ArcweftBundle,
-        next_container_identity: Option<ArtifactIdentity>,
+        next_artifact_identity: BundleSessionArtifactIdentity,
         compatibility_floor: SwapCompatibility,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let next_id = GenerationId(self.next_generation_id);
@@ -695,8 +719,7 @@ impl BundleSession {
         let compatibility =
             classify_swap(self.swap.active(), &next_generation).max(compatibility_floor);
         if compatibility == SwapCompatibility::ContentOnly
-            && next_container_identity.is_some()
-            && next_container_identity == self.active_container_identity
+            && next_artifact_identity == self.active_artifact_identity
         {
             return Ok(BundleHotSwapReport {
                 generation: self.active_generation().id,
@@ -760,7 +783,7 @@ impl BundleSession {
         }
         self.retire_unused_generations();
         self.next_generation_id = self.next_generation_id.saturating_add(1);
-        self.active_container_identity = next_container_identity;
+        self.active_artifact_identity = next_artifact_identity;
         Ok(BundleHotSwapReport {
             generation: next_id,
             compatibility: committed,
@@ -777,7 +800,8 @@ impl BundleSession {
         materialized: &PatchMaterializedTarget,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let active_identity = self
-            .active_container_identity
+            .active_artifact_identity
+            .awfb_container()
             .ok_or(BundleHotSwapError::MissingActiveContainerIdentity)?;
         let base_identity = materialized.report().base_artifact;
         if base_identity != active_identity {
@@ -812,7 +836,9 @@ impl BundleSession {
             SwapCompatibility::from_patch_compatibility(materialized.compatibility());
         self.hot_swap_bundle_with_compatibility_floor(
             &target_bundle,
-            Some(actual_identity),
+            BundleSessionArtifactIdentity::AwfbContainer {
+                identity: actual_identity,
+            },
             compatibility_floor,
         )
     }
@@ -846,7 +872,8 @@ impl BundleSession {
             .validate()
             .map_err(BundleHotSwapError::InvalidPatch)?;
         let active_container_identity = self
-            .active_container_identity
+            .active_artifact_identity
+            .awfb_container()
             .ok_or(BundleHotSwapError::MissingActiveContainerIdentity)?;
         if artifact.manifest.base_artifact != active_container_identity {
             return Err(BundleHotSwapError::WrongPatchBaseArtifact {
@@ -1142,18 +1169,16 @@ impl BundleSession {
         let executor = match self.executor.snapshot()? {
             ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) => {
                 validate_product_awbc_runtime_values(&state)?;
-                BundleSessionExecutorSnapshot::ProductAwbc {
+                BundleSessionExecutorSnapshot {
                     generation: active.id,
-                    state: Box::new(state),
+                    state,
                 }
             }
         };
         Ok(BundleSessionSnapshot {
-            schema: BundleSessionSaveSchema::default(),
             generation: BundleSessionGenerationSnapshot {
                 active_generation: active.id,
-                content_root: active.content_root,
-                active_container_identity: self.active_container_identity,
+                artifact: self.active_artifact_identity,
                 bytecode_abi: active.bytecode_abi,
                 adapter_requirements: active.adapter_requirements,
             },
@@ -1166,7 +1191,6 @@ impl BundleSession {
             },
             executor,
             presentation: self.presentation.clone(),
-            pending: BundleSessionPendingSnapshot::quiescent(),
         })
     }
 
@@ -1203,38 +1227,19 @@ impl BundleSession {
         &mut self,
         snapshot: BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
-        snapshot.schema.validate()?;
-        if !snapshot.pending.is_quiescent() {
-            return Err(BundleSessionSaveError::NonQuiescent {
-                blockers: Vec::new(),
-            });
-        }
         self.validate_session_save_generation(&snapshot.generation)?;
         validate_presentation_snapshot(&snapshot.presentation)?;
         let active_generation = self.active_generation().id;
-        let executor_snapshot = match snapshot.executor {
-            BundleSessionExecutorSnapshot::ProductAwbc { generation, state } => {
-                if generation != active_generation {
-                    return Err(BundleSessionSaveError::GenerationMismatch {
-                        field: "executor_generation",
-                        saved: format!("{generation:?}"),
-                        actual: format!("{active_generation:?}"),
-                    });
-                }
-                validate_product_awbc_runtime_values(&state)?;
-                ArcweftRuntimeExecutorSnapshot::AwbcProduct(*state)
-            }
-            BundleSessionExecutorSnapshot::StructuredVm => {
-                return Err(BundleSessionSaveError::UnsupportedExecutorTier {
-                    tier: ArcweftExecutionTier::StructuredVm.as_str().to_owned(),
-                });
-            }
-            BundleSessionExecutorSnapshot::StructuredAot => {
-                return Err(BundleSessionSaveError::UnsupportedExecutorTier {
-                    tier: ArcweftExecutionTier::StructuredAot.as_str().to_owned(),
-                });
-            }
-        };
+        let BundleSessionExecutorSnapshot { generation, state } = snapshot.executor;
+        if generation != active_generation {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "executor_generation",
+                saved: format!("{generation:?}"),
+                actual: format!("{active_generation:?}"),
+            });
+        }
+        validate_product_awbc_runtime_values(&state)?;
+        let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
         self.executor.restore_snapshot(executor_snapshot)?;
         self.source_label = snapshot.runtime.source_label;
         self.next_step_index = usize::try_from(snapshot.runtime.next_step_index).map_err(|_| {
@@ -1317,18 +1322,12 @@ impl BundleSession {
                 actual: format!("{:?}", active.id),
             });
         }
-        if snapshot.content_root != active.content_root {
+        let actual_artifact = self.active_artifact_identity;
+        if snapshot.artifact != actual_artifact {
             return Err(BundleSessionSaveError::GenerationMismatch {
-                field: "content_root",
-                saved: digest_label(&snapshot.content_root),
-                actual: digest_label(&active.content_root),
-            });
-        }
-        if snapshot.active_container_identity != self.active_container_identity {
-            return Err(BundleSessionSaveError::GenerationMismatch {
-                field: "active_container_identity",
-                saved: format!("{:?}", snapshot.active_container_identity),
-                actual: format!("{:?}", self.active_container_identity),
+                field: "artifact",
+                saved: format!("{:?}", snapshot.artifact),
+                actual: format!("{actual_artifact:?}"),
             });
         }
         if snapshot.bytecode_abi != active.bytecode_abi {

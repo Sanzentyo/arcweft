@@ -1,45 +1,63 @@
+//! Typed payload for quiescent bundle-session saves.
+//!
+//! Schema ID and version belong to the outer `arcweft-save` envelope. This
+//! payload contains only restorable runtime state and one unambiguous artifact
+//! binding; it deliberately has no nested schema marker or legacy identity.
+
 use crate::display::BundlePresentationSnapshot;
 use crate::swap::GenerationId;
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
+use arcweft_bundle::logical_identity::LogicalBundleIdentity;
 use arcweft_core::awbc::fiber::{
     FiberAwaitManyState, FiberFrame, FiberScope, FiberScopeCleanup, FiberSourceState, FiberState,
     FiberStreamState, FiberSuspensionReason, FiberTerminalValue,
 };
 use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
-use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutorSnapshotError};
+use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 use arcweft_core::value::{RuntimeIterator, RuntimeSeq, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
 pub const BUNDLE_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.bundle_session";
-pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 2;
-pub const BUNDLE_SESSION_SAVE_CODEC_ID: &str = arcweft_save::TYPED_JSON_CODEC_ID;
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BundleSessionSaveSchema {
-    pub id: String,
-    pub version: u32,
-}
+pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleSessionSnapshot {
-    pub schema: BundleSessionSaveSchema,
     pub generation: BundleSessionGenerationSnapshot,
     pub runtime: BundleSessionRuntimeSnapshot,
     pub executor: BundleSessionExecutorSnapshot,
     pub presentation: BundlePresentationSnapshot,
-    pub pending: BundleSessionPendingSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BundleSessionGenerationSnapshot {
     pub active_generation: GenerationId,
-    pub content_root: BundleDigest,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active_container_identity: Option<ArtifactIdentity>,
+    pub artifact: BundleSessionArtifactIdentity,
     pub bytecode_abi: u32,
     pub adapter_requirements: BundleDigest,
+}
+
+/// Identity required to restore a session against the artifact that created it.
+///
+/// Both variants cover complete state: logical bundle identity includes the
+/// typed manifest and resources, while AWFB identity includes the manifest
+/// digest and section content root. There is no root-only identity variant.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BundleSessionArtifactIdentity {
+    LogicalBundle { identity: LogicalBundleIdentity },
+    AwfbContainer { identity: ArtifactIdentity },
+}
+
+impl BundleSessionArtifactIdentity {
+    #[must_use]
+    pub(crate) const fn awfb_container(self) -> Option<ArtifactIdentity> {
+        match self {
+            Self::AwfbContainer { identity } => Some(identity),
+            Self::LogicalBundle { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -53,20 +71,11 @@ pub struct BundleSessionRuntimeSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(tag = "tier", rename_all = "snake_case")]
-pub enum BundleSessionExecutorSnapshot {
-    ProductAwbc {
-        generation: GenerationId,
-        state: Box<AwbcProductExecutorSnapshot>,
-    },
-    StructuredVm,
-    StructuredAot,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BundleSessionPendingSnapshot {
-    Quiescent,
+pub struct BundleSessionExecutorSnapshot {
+    /// Generation that owns the Product AWBC fiber state.
+    pub generation: GenerationId,
+    /// Current Product AWBC executor state. Other executor tiers cannot be saved.
+    pub state: AwbcProductExecutorSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -82,10 +91,6 @@ pub enum BundleSessionPendingBlocker {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum BundleSessionSaveError {
-    #[error("bundle session save schema id `{actual}` does not match expected `{expected}`")]
-    SchemaId { actual: String, expected: String },
-    #[error("bundle session save schema version {actual} is not supported; expected {expected}")]
-    SchemaVersion { actual: u32, expected: u32 },
     #[error("bundle session save point is not quiescent: {blockers:?}")]
     NonQuiescent {
         blockers: Vec<BundleSessionPendingBlocker>,
@@ -110,56 +115,6 @@ pub enum BundleSessionSaveError {
     Encode { message: String },
     #[error("failed to decode bundle session save: {message}")]
     Decode { message: String },
-}
-
-impl Default for BundleSessionSaveSchema {
-    fn default() -> Self {
-        Self {
-            id: BUNDLE_SESSION_SAVE_SCHEMA_ID.to_owned(),
-            version: BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-        }
-    }
-}
-
-impl BundleSessionSaveSchema {
-    pub fn validate(&self) -> Result<(), BundleSessionSaveError> {
-        if self.id != BUNDLE_SESSION_SAVE_SCHEMA_ID {
-            return Err(BundleSessionSaveError::SchemaId {
-                actual: self.id.clone(),
-                expected: BUNDLE_SESSION_SAVE_SCHEMA_ID.to_owned(),
-            });
-        }
-        if self.version != BUNDLE_SESSION_SAVE_SCHEMA_VERSION {
-            return Err(BundleSessionSaveError::SchemaVersion {
-                actual: self.version,
-                expected: BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-            });
-        }
-        Ok(())
-    }
-}
-
-impl BundleSessionExecutorSnapshot {
-    #[must_use]
-    pub const fn execution_tier(&self) -> ArcweftExecutionTier {
-        match self {
-            Self::ProductAwbc { .. } => ArcweftExecutionTier::AwbcProduct,
-            Self::StructuredVm => ArcweftExecutionTier::StructuredVm,
-            Self::StructuredAot => ArcweftExecutionTier::StructuredAot,
-        }
-    }
-}
-
-impl BundleSessionPendingSnapshot {
-    #[must_use]
-    pub const fn quiescent() -> Self {
-        Self::Quiescent
-    }
-
-    #[must_use]
-    pub const fn is_quiescent(&self) -> bool {
-        matches!(self, Self::Quiescent)
-    }
 }
 
 impl From<ArcweftRuntimeExecutorSnapshotError> for BundleSessionSaveError {
