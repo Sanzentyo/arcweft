@@ -136,7 +136,11 @@ Successful validation included:
   and four image assets
 - reactive manifest/profile AWFB inspection with `ViewProgram`, `ViewStyle`, and
   `ViewText` sections
-- `cargo +nightly -Zscript tools/source-gates/seq06_4j1_native_ime_player_rendered_gates.rs --root .`
+- direct native-capture behavior evidence in
+  `agent_observe_native::native_checked_in_visual_golden_artifacts_are_well_formed`,
+  `agent_observe_native::agent_observe_native_renderer_reports_vertical_lr_ruby_text_combine_geometry`,
+  and
+  `agent_observe_native::agent_observe_native_renderer_reports_vertical_goal_clear_smoke_geometry`
 - ignore-policy checks: `.arcweft/` and generated Zundamon PNGs are ignored;
   required modern/reactive/Web inputs are not
 

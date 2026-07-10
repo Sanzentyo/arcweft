@@ -971,57 +971,7 @@ fn assert_repeated_native_capture_matches_imq_reference(label: &str, source: &st
 }
 
 #[test]
-fn native_checked_in_visual_golden_fixtures_are_well_formed() {
-    assert_native_golden_fixture_source(
-        include_str!("../../../../../tests/fixtures/native_capture/vertical_tutr_golden.arcw"),
-        "[.vertical_rl]",
-        "vertical Tu/Tr golden source should exercise vertical_rl rich text",
-    );
-    assert_native_golden_fixture_source(
-        include_str!(
-            "../../../../../tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw"
-        ),
-        "jlreq=loose",
-        "loose JLREQ golden source should pin the loose preset",
-    );
-    assert_native_golden_fixture_source(
-        include_str!(
-            "../../../../../tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw"
-        ),
-        "jlreq=normal",
-        "normal JLREQ golden source should pin the normal preset",
-    );
-    let vertical_lr_ruby_text_combine_source = include_str!(
-        "../../../../../tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw"
-    );
-    assert_native_golden_fixture_source(
-        vertical_lr_ruby_text_combine_source,
-        "[.vertical_lr]",
-        "vertical_lr ruby/text-combine golden source should exercise vertical_lr rich text",
-    );
-    assert!(
-        vertical_lr_ruby_text_combine_source.contains("|[夢](ゆめ)[r]"),
-        "vertical_lr ruby/text-combine golden source should exercise ruby annotation"
-    );
-    assert!(
-        vertical_lr_ruby_text_combine_source.contains("2026"),
-        "vertical_lr ruby/text-combine golden source should exercise text-combine digits"
-    );
-    let vertical_goal_clear_smoke_source =
-        include_str!("../../../../../tests/fixtures/native_capture/vertical_goal_clear_smoke.arcw");
-    for fragment in [
-        "[.vertical_rl jlreq=strict]",
-        "[.vertical_lr jlreq=strict]",
-        "|[輩](はい)",
-        "|[夢](ゆめ)",
-        "[.typewriter cps=1]2026[/]",
-    ] {
-        assert!(
-            vertical_goal_clear_smoke_source.contains(fragment),
-            "vertical goal-clear smoke fixture should contain `{fragment}`"
-        );
-    }
-
+fn native_checked_in_visual_golden_artifacts_are_well_formed() {
     let tutr = include_bytes!("../../../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
     let loose = include_bytes!(
         "../../../../../tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png"
@@ -1047,21 +997,6 @@ fn native_checked_in_visual_golden_fixtures_are_well_formed() {
         loose.as_slice(),
         normal.as_slice(),
         "loose and normal JLREQ preset visual goldens should capture different column plans"
-    );
-}
-
-fn assert_native_golden_fixture_source(source: &str, required_fragment: &str, context: &str) {
-    assert!(
-        source.contains(required_fragment),
-        "{context}: missing `{required_fragment}`"
-    );
-    assert!(
-        source.contains("MS Mincho"),
-        "{context}: source should pin the Windows fixture font"
-    );
-    assert!(
-        source.contains("[.vertical_rl") || source.contains("[.vertical_lr"),
-        "{context}: source should exercise vertical Japanese text"
     );
 }
 
