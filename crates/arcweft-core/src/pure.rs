@@ -6,7 +6,7 @@ use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
     RuntimeExactInteger, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeFieldValue,
     RuntimeFunctionValue, RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator, RuntimeSeq,
-    RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
     evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
     evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
     evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_numeric_op,
@@ -2009,9 +2009,9 @@ impl PureEvaluator {
             }
             (RuntimeValue::String(value), "to_string", []) => Ok(RuntimeValue::String(value)),
             (RuntimeValue::String(value), "len", []) => {
-                Ok(runtime_len_value(value.chars().count()))
+                Ok(RuntimeValue::from_collection_len(value.chars().count()))
             }
-            (RuntimeValue::Seq(seq), "len", []) => Ok(runtime_len_value(seq.len())),
+            (RuntimeValue::Seq(seq), "len", []) => Ok(RuntimeValue::from_collection_len(seq.len())),
             (RuntimeValue::Seq(seq), "contains", [needle]) => Ok(RuntimeValue::Bool(
                 seq.into_values().iter().any(|item| item == needle),
             )),
@@ -2022,14 +2022,15 @@ impl PureEvaluator {
                     Self::runtime_record_string_field(item, "role").as_deref() == Some(role)
                 })
                 .unwrap_or(RuntimeValue::Unit)),
-            (RuntimeValue::Seq(seq), "__index", [index]) => {
-                Ok(runtime_sequence_index_value(&seq, index))
+            (RuntimeValue::Seq(seq), "__index", [index]) => Ok(seq.value_at_runtime_index(index)),
+            (RuntimeValue::Tuple(items), "len", []) => {
+                Ok(RuntimeValue::from_collection_len(items.len()))
             }
-            (RuntimeValue::Tuple(items), "len", []) => Ok(runtime_len_value(items.len())),
             (RuntimeValue::Tuple(items), "contains", [needle]) => {
                 Ok(RuntimeValue::Bool(items.iter().any(|item| item == needle)))
             }
-            (RuntimeValue::Tuple(items), "__index", [index]) => Ok(runtime_index_arg(index)
+            (RuntimeValue::Tuple(items), "__index", [index]) => Ok(index
+                .to_collection_index()
                 .and_then(|index| items.get(index).cloned())
                 .unwrap_or(RuntimeValue::Unit)),
             (
@@ -2085,40 +2086,6 @@ impl PureEvaluator {
             }
         }
         Ok(values)
-    }
-}
-
-fn runtime_len_value(len: usize) -> RuntimeValue {
-    RuntimeValue::usize(u64::try_from(len).unwrap_or(u64::MAX))
-}
-
-fn runtime_sequence_index_value(seq: &RuntimeSeq, index: &RuntimeValue) -> RuntimeValue {
-    runtime_index_arg(index)
-        .filter(|index| *index < seq.len())
-        .map_or(RuntimeValue::Unit, |index| seq.value_at(index))
-}
-
-fn runtime_index_arg(value: &RuntimeValue) -> Option<usize> {
-    match value {
-        RuntimeValue::Int(value) => value.try_into_i64().and_then(|value| {
-            if value < 0 {
-                None
-            } else {
-                usize::try_from(value).ok()
-            }
-        }),
-        RuntimeValue::UInt(value) => runtime_uint_to_usize(*value),
-        _ => None,
-    }
-}
-
-fn runtime_uint_to_usize(value: RuntimeUInt) -> Option<usize> {
-    match value {
-        RuntimeUInt::U8(value) => Some(usize::from(value)),
-        RuntimeUInt::U16(value) => Some(usize::from(value)),
-        RuntimeUInt::U32(value) => usize::try_from(value).ok(),
-        RuntimeUInt::U64(value) | RuntimeUInt::USize(value) => usize::try_from(value).ok(),
-        RuntimeUInt::U128(value) => usize::try_from(value).ok(),
     }
 }
 

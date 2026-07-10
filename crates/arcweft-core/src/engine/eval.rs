@@ -15,7 +15,7 @@ use crate::pure::{
     RuntimeCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args,
     RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
-use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr, RuntimeUInt};
+use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr};
 use crate::value::{
     RuntimeCallTarget, RuntimeIntrinsic, evaluate_core_iter_into_iter_intrinsic,
     evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
@@ -1465,7 +1465,7 @@ fn evaluate_runtime_method_call(
             RuntimeValue::String(value.trim_matches(char::is_whitespace).to_owned())
         }
         (RuntimeValue::String(value), "to_string", []) => RuntimeValue::String(value),
-        (RuntimeValue::Seq(seq), "len", []) => runtime_len_value(seq.len()),
+        (RuntimeValue::Seq(seq), "len", []) => RuntimeValue::from_collection_len(seq.len()),
         (RuntimeValue::Seq(seq), "contains", [needle]) => {
             RuntimeValue::Bool(seq.into_values().iter().any(|item| item == needle))
         }
@@ -1474,12 +1474,13 @@ fn evaluate_runtime_method_call(
             .into_iter()
             .find(|item| runtime_record_string_field(item, "role").as_deref() == Some(role))
             .unwrap_or(RuntimeValue::Unit),
-        (RuntimeValue::Seq(seq), "__index", [index]) => runtime_sequence_index_value(&seq, index),
-        (RuntimeValue::Tuple(items), "len", []) => runtime_len_value(items.len()),
+        (RuntimeValue::Seq(seq), "__index", [index]) => seq.value_at_runtime_index(index),
+        (RuntimeValue::Tuple(items), "len", []) => RuntimeValue::from_collection_len(items.len()),
         (RuntimeValue::Tuple(items), "contains", [needle]) => {
             RuntimeValue::Bool(items.iter().any(|item| item == needle))
         }
-        (RuntimeValue::Tuple(items), "__index", [index]) => runtime_index_arg(index)
+        (RuntimeValue::Tuple(items), "__index", [index]) => index
+            .to_collection_index()
             .and_then(|index| items.get(index).cloned())
             .unwrap_or(RuntimeValue::Unit),
         (
@@ -1512,38 +1513,4 @@ fn runtime_record_string_field(value: &RuntimeValue, field: &str) -> Option<Stri
             RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Some(value.clone()),
             _ => None,
         })
-}
-
-fn runtime_len_value(len: usize) -> RuntimeValue {
-    RuntimeValue::usize(u64::try_from(len).unwrap_or(u64::MAX))
-}
-
-fn runtime_sequence_index_value(seq: &RuntimeSeq, index: &RuntimeValue) -> RuntimeValue {
-    runtime_index_arg(index)
-        .filter(|index| *index < seq.len())
-        .map_or(RuntimeValue::Unit, |index| seq.value_at(index))
-}
-
-fn runtime_index_arg(value: &RuntimeValue) -> Option<usize> {
-    match value {
-        RuntimeValue::Int(value) => value.try_into_i64().and_then(|value| {
-            if value < 0 {
-                None
-            } else {
-                usize::try_from(value).ok()
-            }
-        }),
-        RuntimeValue::UInt(value) => runtime_uint_to_usize(*value),
-        _ => None,
-    }
-}
-
-fn runtime_uint_to_usize(value: RuntimeUInt) -> Option<usize> {
-    match value {
-        RuntimeUInt::U8(value) => Some(usize::from(value)),
-        RuntimeUInt::U16(value) => Some(usize::from(value)),
-        RuntimeUInt::U32(value) => usize::try_from(value).ok(),
-        RuntimeUInt::U64(value) | RuntimeUInt::USize(value) => usize::try_from(value).ok(),
-        RuntimeUInt::U128(value) => usize::try_from(value).ok(),
-    }
 }

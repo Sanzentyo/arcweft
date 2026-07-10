@@ -18,6 +18,52 @@ use crate::{
 };
 
 #[test]
+fn runtime_collection_indices_use_one_width_preserving_conversion_rule() {
+    let host_max = usize::MAX;
+    let host_max_i128 = i128::try_from(host_max).expect("supported host usize fits i128");
+
+    assert_eq!(
+        RuntimeValue::i128(host_max_i128).to_collection_index(),
+        Some(host_max)
+    );
+    assert_eq!(
+        RuntimeValue::u128(u128::try_from(host_max).expect("usize fits u128"))
+            .to_collection_index(),
+        Some(host_max)
+    );
+    assert_eq!(RuntimeValue::i8(-1).to_collection_index(), None);
+    assert_eq!(RuntimeValue::u128(u128::MAX).to_collection_index(), None);
+    assert_eq!(RuntimeValue::f64(0.0).to_collection_index(), None);
+
+    assert_eq!(
+        RuntimeValue::from_collection_len(host_max),
+        RuntimeValue::usize(u64::try_from(host_max).unwrap_or(u64::MAX))
+    );
+}
+
+#[test]
+fn runtime_sequence_index_returns_unit_for_invalid_or_out_of_bounds_values() {
+    let sequence = RuntimeSeq::values(vec![RuntimeValue::String("first".to_owned())]);
+
+    assert_eq!(
+        sequence.value_at_runtime_index(&RuntimeValue::u8(0)),
+        RuntimeValue::String("first".to_owned())
+    );
+    assert_eq!(
+        sequence.value_at_runtime_index(&RuntimeValue::u8(1)),
+        RuntimeValue::Unit
+    );
+    assert_eq!(
+        sequence.value_at_runtime_index(&RuntimeValue::i8(-1)),
+        RuntimeValue::Unit
+    );
+    assert_eq!(
+        sequence.value_at_runtime_index(&RuntimeValue::String("0".to_owned())),
+        RuntimeValue::Unit
+    );
+}
+
+#[test]
 fn root_binding_ref_updates_existing_slots() {
     let mut env = RuntimeEnv::default();
     let first = [RuntimeBinding {
