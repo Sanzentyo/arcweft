@@ -1,0 +1,81 @@
+webgpu-parity:
+    @cargo run -p arcweft-cli -- bundle --manifest-path web/arcw.toml --profile main --output web/demo.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice")) { cargo +nightly -Zscript tools\capture-webgpu-native-frame.rs --output "target\webgpu-parity\native-$checkpoint.png" --checkpoint $checkpoint --visual-time-millis 160 --target-format rgba8unorm; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+    @$checkpoints = @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice"); $env:ARW_WEB_PARITY_DIR = (Resolve-Path target\webgpu-parity).Path; $env:ARW_WEB_PARITY_CHECKPOINTS = ($checkpoints -join ","); npm.cmd --prefix web test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice")) { cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native "target\webgpu-parity\native-$checkpoint.png" --web "target\webgpu-parity\web-$checkpoint.png" --report "target\webgpu-parity\parity-$checkpoint.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\webgpu-parity\native-press-first-choice.png --web target\webgpu-parity\web-press-first-choice.png --report target\webgpu-parity\parity-press-first-choice.json --min-psnr 23.9
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\webgpu-parity\native-compact-focus-first-choice.png --web target\webgpu-parity\web-compact-focus-first-choice.png --report target\webgpu-parity\parity-compact-focus-first-choice.json --min-psnr 21.4 --max-mse 0.0072 --max-mae 0.0108 --max-changed-pixel-ratio 0.03
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\webgpu-parity\native-hidpi-focus-first-choice.png --web target\webgpu-parity\web-hidpi-focus-first-choice.png --report target\webgpu-parity\parity-hidpi-focus-first-choice.json --min-psnr 20.0 --max-mse 0.0101 --max-mae 0.0168 --max-changed-pixel-ratio 0.04
+    @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice")) { imq compare "target\webgpu-parity\native-$checkpoint.png" "target\webgpu-parity\web-$checkpoint.png" --format json --output "target\webgpu-parity\imq-$checkpoint.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+
+css-style-parity:
+    @New-Item -ItemType Directory -Force -Path web\local,target\css-style-parity | Out-Null
+    @cargo run -p arcweft-cli -- bundle samples/css-style-parity/main.arcw --output web/local/css-style-parity.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --font web\assets\arcweft-demo.ttf --output target\css-style-parity\native-default.png --frame-report target\css-style-parity\native-default.frame.json --viewport default --visual-time-millis 9000 --target-format rgba8unorm
+    @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --font web\assets\arcweft-demo.ttf --output target\css-style-parity\native-compact.png --frame-report target\css-style-parity\native-compact.frame.json --viewport compact --visual-time-millis 9000 --target-format rgba8unorm
+    @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --font web\assets\arcweft-demo.ttf --output target\css-style-parity\native-hidpi.png --frame-report target\css-style-parity\native-hidpi.frame.json --viewport hidpi --visual-time-millis 9000 --target-format rgba8unorm
+    @$env:ARW_CSS_STYLE_PARITY_DIR = (Resolve-Path target\css-style-parity).Path; $env:ARW_CSS_STYLE_PARITY_CHECKPOINTS = "default,compact,hidpi"; $env:ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS = "9000"; $env:ARW_CSS_STYLE_PARITY_FONT_URL = "./assets/arcweft-demo.ttf"; node web\tests\css-style-parity-smoke.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo +nightly -Zscript tools\run-css-style-parity-gates.rs --dir target\css-style-parity --font web\assets\arcweft-demo.ttf
+
+css-style-parity-profile:
+    @cargo +nightly -Zscript tools\profile-css-style-parity-startup.rs --output target\css-style-parity\startup-profile.json
+
+css-layout-cascade-coverage:
+    @cargo test -p arcweft-takumi-adapter css_layout_cascade --quiet
+
+reactive-view-style-sample:
+    @New-Item -ItemType Directory -Force -Path web\local,target\reactive-view-style,target\reactive-view-style\interaction-states | Out-Null
+    @cargo run -p arcweft-cli -- bundle --manifest-path samples/reactive-view-style/arcw.toml --profile main --output web/local/reactive-view-style.awfb
+    @cargo run -p arcweft-render-wgpu --example view_interaction_showcase -- --out target\reactive-view-style\interaction-states
+
+web-player-refresh:
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown --all-features
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @cargo run -p arcweft-cli --all-features -- bundle --manifest-path web\arcw.toml --profile main --output web\demo.awfb
+    @cargo run -p arcweft-cli --all-features -- bundle --manifest-path samples\modern-feedback-view\arcw.toml --profile main --output web\modern-feedback-view.awfb
+
+web-player-serve port="4173":
+    @Write-Host "Serving Arcweft web player at http://127.0.0.1:{{ port }}/"
+    @Write-Host "Modern feedback: http://127.0.0.1:{{ port }}/?bundle=./modern-feedback-view.awfb"
+    @python -m http.server {{ port }} --bind 127.0.0.1 --directory web
+
+ime-sample-web port="8786":
+    @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @Write-Host "Serving Arcweft player-rendered IME sample at http://127.0.0.1:{{ port }}/ime-sample.html"
+    @Write-Host "Equivalent player URL: http://127.0.0.1:{{ port }}/index.html?bundle=./ime-player-rendered.awfb"
+    @python -m http.server {{ port }} --bind 127.0.0.1 --directory web
+
+ime-sample-native:
+    @cargo run -p arcweft-cli --features native-player -- run --runner native samples/native-text-input/src/main.arcw --text-input-trace-out target\native-text-input-trace\native-player-ime.real.json
+
+view-text-input-native-smoke-check:
+    @cargo run -p arcweft-cli -- check --manifest-path samples\native-text-input\arcw.toml
+    @cargo run -p arcweft-cli -- check --manifest-path samples\text-submit-flow\arcw.toml
+    @cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-view\arcw.toml
+    @cargo run -p arcweft-cli -- bundle samples\native-text-input\src\main.arcw --output target\arcweft\native-text-input-seq06.16.3.awfb
+    @cargo run -p arcweft-cli -- bundle samples\text-submit-flow\src\main.arcw --output target\arcweft\text-submit-flow-seq06.16.3.awfb
+    @cargo run -p arcweft-cli -- bundle --manifest-path samples\modern-feedback-view\arcw.toml --profile main --output target\arcweft\modern-feedback-view-seq06.16.3.awfb
+
+view-text-input-native-smoke out="target\\native-text-input-trace\\seq06.16.3":
+    @just view-text-input-native-smoke-check
+    @New-Item -ItemType Directory -Force -Path "{{ out }}" | Out-Null
+    @cargo run -p arcweft-cli --features native-player -- run --runner native samples\native-text-input\src\main.arcw --text-input-trace-out "{{ out }}\native-player-ime.real.json"
+    @cargo +nightly -Zscript tools\verify-seq06-16-3-native-smoke-trace.rs --trace "{{ out }}\native-player-ime.real.json"
+
+ime-sample-native-contract:
+    @cargo run -p arcweft-desktop-native --example ime_text_input_contract
+
+ime-sample-check:
+    @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @npm.cmd --prefix web run test:ime
+    @cargo test -p arcweft-render-wgpu focused_text_input_target --all-features --quiet
+    @cargo test -p arcweft-player-scene --test runtime_text_controls --quiet
+    @cargo test -p arcweft-player-web runtime_text_input --all-features --quiet
