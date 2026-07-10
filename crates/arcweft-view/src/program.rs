@@ -78,8 +78,6 @@ pub enum ViewElementKind {
     Scroll,
     Row,
     Column,
-    LazyRow,
-    LazyColumn,
     Stack,
     Button,
     TextField,
@@ -96,6 +94,14 @@ pub enum ViewElementLayoutKind {
     Column,
 }
 
+/// Primary layout axis owned by a virtualized retained list.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewVirtualAxis {
+    Horizontal,
+    Vertical,
+}
+
 /// Text-input control represented by a built-in View element.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ViewElementTextInputKind {
@@ -105,14 +111,12 @@ pub enum ViewElementTextInputKind {
 }
 
 impl ViewElementKind {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 10] = [
         Self::Panel,
         Self::Box,
         Self::Scroll,
         Self::Row,
         Self::Column,
-        Self::LazyRow,
-        Self::LazyColumn,
         Self::Stack,
         Self::Button,
         Self::TextField,
@@ -128,8 +132,6 @@ impl ViewElementKind {
             Self::Scroll => "Scroll",
             Self::Row => "Row",
             Self::Column => "Column",
-            Self::LazyRow => "LazyRow",
-            Self::LazyColumn => "LazyColumn",
             Self::Stack => "Stack",
             Self::Button => "Button",
             Self::TextField => "TextField",
@@ -146,8 +148,6 @@ impl ViewElementKind {
             Self::Scroll => "scroll",
             Self::Row => "row",
             Self::Column => "column",
-            Self::LazyRow => "lazy_row",
-            Self::LazyColumn => "lazy_column",
             Self::Stack => "stack",
             Self::Button => "button",
             Self::TextField => "text_field",
@@ -175,8 +175,8 @@ impl ViewElementKind {
         match self {
             Self::Panel | Self::Box | Self::Stack => Some(ViewElementLayoutKind::Stack),
             Self::Scroll => Some(ViewElementLayoutKind::Scroll),
-            Self::Row | Self::LazyRow => Some(ViewElementLayoutKind::Row),
-            Self::Column | Self::LazyColumn => Some(ViewElementLayoutKind::Column),
+            Self::Row => Some(ViewElementLayoutKind::Row),
+            Self::Column => Some(ViewElementLayoutKind::Column),
             Self::Button | Self::TextField | Self::TextArea | Self::SecureField => None,
         }
     }
@@ -192,8 +192,6 @@ impl ViewElementKind {
             | Self::Scroll
             | Self::Row
             | Self::Column
-            | Self::LazyRow
-            | Self::LazyColumn
             | Self::Stack
             | Self::Button => None,
         }
@@ -202,11 +200,6 @@ impl ViewElementKind {
     /// Whether the element lays out child View nodes.
     pub const fn is_layout_container(self) -> bool {
         self.layout_kind().is_some()
-    }
-
-    /// Whether this is one of the lazy-layout vocabulary items.
-    pub const fn is_lazy(self) -> bool {
-        matches!(self, Self::LazyRow | Self::LazyColumn)
     }
 
     /// Whether this element owns a text-input control.
@@ -220,7 +213,7 @@ impl ViewElementKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct ViewStableKey(pub u64);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -479,10 +472,9 @@ mod tests {
             Some(ViewElementLayoutKind::Stack)
         );
         assert_eq!(
-            ViewElementKind::LazyRow.layout_kind(),
+            ViewElementKind::Row.layout_kind(),
             Some(ViewElementLayoutKind::Row)
         );
-        assert!(ViewElementKind::LazyColumn.is_lazy());
         assert!(ViewElementKind::Scroll.is_layout_container());
         assert!(ViewElementKind::Button.is_action_control());
         assert_eq!(

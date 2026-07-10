@@ -9,9 +9,9 @@ use arcweft_bundle::patch::{
 };
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewSecureInputPolicy,
-    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
-    ViewTextVerticalNavigationPolicy,
+    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLogicalRect, ViewProgramResource,
+    ViewScrollAxis, ViewScrollRegionResource, ViewSecureInputPolicy, ViewTextSelectionPolicy,
+    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -54,10 +54,13 @@ use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::session::{
     BundleEntryStart, BundleEntryStartError, BundleHotSwapError, BundlePatchReadiness,
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
+    BundleVirtualListMountError,
 };
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use arcweft_runtime_driver::swap::SwapCompatibility;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
+use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -821,6 +824,107 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
             }
         ]
     ));
+}
+
+#[test]
+fn session_save_restores_complete_per_mount_virtual_range_state() {
+    let mut bundle = paged_fixture_bundle();
+    bundle.view_program = Some(ViewProgramResource {
+        program_id: "view.program.inventory".to_owned(),
+        root_view: "view.inventory".to_owned(),
+        scroll_regions: vec![ViewScrollRegionResource::new(
+            "scroll.inventory",
+            Some("view.inventory".to_owned()),
+            ViewLogicalRect::from_px(0, 0, 100, 100),
+            100_000,
+            240,
+            ViewScrollAxis::Vertical,
+        )],
+        ..ViewProgramResource::default()
+    });
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(matches!(
+        session.mount_virtual_list(
+            ViewVirtualScrollTarget::from(PublicId::try_new("scroll.inventory").unwrap()),
+            ViewVirtualAxis::Horizontal,
+            100,
+            vec![ViewVirtualItem::new(ViewStableKey(99), 60)],
+        ),
+        Err(BundleVirtualListMountError::AxisMismatch { .. })
+    ));
+    let mount = session
+        .mount_virtual_list(
+            ViewVirtualScrollTarget::from(PublicId::try_new("scroll.inventory").unwrap()),
+            ViewVirtualAxis::Vertical,
+            100,
+            vec![
+                ViewVirtualItem::new(ViewStableKey(1), 60),
+                ViewVirtualItem::new(ViewStableKey(2), 60),
+                ViewVirtualItem::new(ViewStableKey(3), 60),
+                ViewVirtualItem::new(ViewStableKey(4), 60),
+            ],
+        )
+        .expect("list mounts under a matching authored Scroll");
+    assert_eq!(mount.get(), 0);
+    session.virtual_list_mut(mount).unwrap().scroll_to_milli(70);
+
+    let save = session.export_session_save_bytes().expect("session saves");
+    let mut restored =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session restarts");
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect("virtual range state restores");
+
+    let list = restored
+        .view_virtualization()
+        .get(mount)
+        .expect("mount is reconstructed from the save");
+    assert_eq!(list.offset_milli(), 70);
+    assert_eq!(list.materialized_window().start, 1);
+    assert_eq!(list.materialized_window().end, 3);
+    assert_eq!(
+        list.range_table()
+            .items
+            .iter()
+            .map(|range| range.materialized)
+            .collect::<Vec<_>>(),
+        vec![false, true, true, false]
+    );
+
+    let before_hot_swap = restored
+        .snapshot_session()
+        .expect("snapshot before hot swap");
+    assert!(matches!(
+        restored.hot_swap_bundle(&paged_fixture_bundle()),
+        Err(BundleHotSwapError::ViewVirtualization { .. })
+    ));
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("rejected hot swap is atomic"),
+        before_hot_swap
+    );
+
+    let before = restored
+        .snapshot_session()
+        .expect("restored snapshot exports");
+    let mut tampered = before.clone();
+    tampered.view_virtualization.mounts[0].absolute_offset_milli = u64::MAX;
+    assert!(matches!(
+        restored.restore_session_snapshot(tampered),
+        Err(BundleSessionSaveError::ViewVirtualization { .. })
+    ));
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("failed restore is atomic"),
+        before
+    );
 }
 
 #[test]

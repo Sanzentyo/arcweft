@@ -1215,6 +1215,7 @@ dependencies = [
  "arcweft-render-text",
  "arcweft-runtime-plan",
  "arcweft-save",
+ "arcweft-view",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1421,6 +1422,7 @@ dependencies = [
  "arcweft-image",
  "arcweft-presentation",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "unicode-segmentation",
 ]

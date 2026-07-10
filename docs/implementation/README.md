@@ -5,18 +5,15 @@ This directory records the current implementation state of Arcweft Engine.
 Design specifications remain in the numbered `docs/` chapters. Files here describe what exists in the Rust workspace today, what has been verified, and what is intentionally deferred.
 
 The current operational worktree map is
-`docs/implementation/current-work-status-2026-07-09.md`.
+`docs/implementation/current-work-status-2026-07-10.md`.
 
-The active function/closure/currying/pipeline goal status is summarized first
-in the short current-state map
-`docs/implementation/function-stack-current-gap-map-2026-07-09.md`, then in
-the more detailed rollup
-`docs/implementation/function-stack-status-rollup-2026-07-09.md`; the detailed
-implementation log and evidence trail remain
+The revised function/closure/currying/pipeline goal is summarized in
+`docs/implementation/function-stack-final-state-2026-07-10.md`. The dated
+2026-07-09 current-state, gap-map, and status-rollup files remain historical
+audit snapshots; the detailed implementation log and evidence trail remain
 `docs/implementation/2026-07-07-functions-closures-pipeline-language-stack.md`.
-The current AWBC non-suspending control-expression parity cut for that goal is
-tracked in
-`docs/implementation/function-stack-awbc-control-expression-parity-2026-07-09.md`.
+Suspension-aware AWBC apply and validated function snapshots are recorded in
+`docs/implementation/function-stack-awbc-resume-function-snapshot-2026-07-10.md`.
 
 Latest executable-runtime-core implementation notes are tracked in
 `docs/implementation/executable-runtime-core-2026-06-24.md`; the corresponding

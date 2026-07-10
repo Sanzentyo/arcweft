@@ -420,6 +420,21 @@ pixel deltas. Adapters reject missing/disabled region actions, non-integer or
 out-of-i32-range values, and a zero delta on both axes before calling the live
 player input route.
 
+`virtual_lists[]` is emitted only for retained virtual-list mounts that exist
+in the runtime session. Each list record carries its runtime-unique mount
+target, the authored `scroll_target` that an Agent can act on, primary axis,
+viewport/offset/total extents, and a half-open materialized index range. Its
+`items[]` is the complete finite stable-key range table: off-window entries
+remain present with `materialized = false` and keep the same
+`view.mount.<mount>.item.<key>` target across scrolling and save/load.
+
+The complete table is expanded at observation/capture time, not on ordinary
+runtime steps. It is range metadata rather than a claim that an off-window
+child has render geometry or pixels. Selecting, focusing, or image-capturing an
+off-window child requires the typed View evaluator and materialization policy;
+until that contract is implemented, the Agent uses `scroll_target` to request
+a new window.
+
 ---
 
 ## Diagnostics

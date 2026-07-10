@@ -98,6 +98,37 @@ AwaitView(load_avatar(user)) {
 }
 ```
 
+## Retained list virtualization
+
+Virtualized lists are addressed by mount occurrence, not only by View program.
+The implemented range/save substrate therefore keeps independent source
+inventory, viewport, offset, and materialized-window state for two mounts of
+the same program. Typed child-local state belongs to the future evaluator and
+must use the same mount/key identity; the range planner does not claim to
+serialize an opaque child state value.
+
+The Sans I/O range contract consumes a finite ordered item set. Every item has
+a stable key and a resolved non-zero primary-axis extent in logical
+milli-pixels. It produces one half-open materialized window plus a complete
+range table. Items outside the window remain in the table and are reported as
+non-materialized. Leaving the window does not discard their stable range
+identity. Whether concrete child-local state is retained, pruned, focused, or
+temporarily materialized is an evaluator policy and is not invented by this
+Sans I/O planner.
+
+Live source replacement preserves a key-relative scroll anchor when source
+order changes. Save/load instead restores the exact finite inventory and
+absolute offset; its derived anchor is an integrity check, so contradictory or
+tampered offset/anchor pairs are rejected rather than silently normalized.
+
+`LazyRow` and `LazyColumn` authoring must not be implemented as eager Row/Column
+aliases. The grammar becomes available only when the typed View evaluator can
+provide finite keyed values and the layout layer can resolve off-window extents
+under one deterministic measurement policy. That evaluator must also allocate
+an occurrence-specific actionable Scroll identity; the current player and
+Agent action path still addresses authored Scroll strings and cannot
+independently route two mounts of one authored Scroll.
+
 ## Agent output
 
 View node は bbox / polygon / mask / action target を持つ。
@@ -112,8 +143,6 @@ pub struct ViewNode {
     pub actions: Vec<ActionTarget>,
 }
 ```
-
-
 
 ## Memoized view and hooks
 
@@ -144,5 +173,3 @@ phase AfterLayout
     assert(object.actions.contains("select"))
 }
 ```
-
-

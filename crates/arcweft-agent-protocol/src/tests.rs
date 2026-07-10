@@ -26,9 +26,10 @@ use crate::rich_text::{
 };
 use crate::session::{AgentAssignment, AgentAudioState};
 use crate::view::{
-    AgentFocusAutoScrollPolicy, AgentObservedScrollRegion, AgentScrollAxis, AgentScrollContentPart,
-    AgentScrollIndicatorsPolicy, AgentScrollOverflow, AgentScrollOverscrollPolicy,
-    AgentScrollRegionParts, AgentScrollRegionRole, AgentScrollViewportPart, AgentViewTree,
+    AgentFocusAutoScrollPolicy, AgentObservedScrollRegion, AgentObservedVirtualItem,
+    AgentObservedVirtualList, AgentScrollAxis, AgentScrollContentPart, AgentScrollIndicatorsPolicy,
+    AgentScrollOverflow, AgentScrollOverscrollPolicy, AgentScrollRegionParts,
+    AgentScrollRegionRole, AgentScrollViewportPart, AgentViewTree,
 };
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_layout::{
@@ -213,6 +214,7 @@ fn test_mcp_observation_report() -> AgentObservationReport {
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
         scroll_regions: Vec::new(),
+        virtual_lists: Vec::new(),
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
             children: Vec::new(),
@@ -350,6 +352,34 @@ fn test_serialization_observation_report() -> AgentObservationReport {
             indicators: AgentScrollIndicatorsPolicy::Auto,
             overscroll: AgentScrollOverscrollPolicy::Clamp,
             auto_scroll_focus: AgentFocusAutoScrollPolicy::Nearest,
+        }],
+        virtual_lists: vec![AgentObservedVirtualList {
+            target: "view.mount.7".to_owned(),
+            scroll_target: "scroll.Inventory.0".to_owned(),
+            axis: AgentScrollAxis::Vertical,
+            viewport_extent_milli: 120_000,
+            offset_milli: 60_000,
+            total_extent_milli: 240_000,
+            materialized_start: 1,
+            materialized_end: 3,
+            items: vec![
+                AgentObservedVirtualItem {
+                    target: "view.mount.7.item.10".to_owned(),
+                    index: 0,
+                    key: 10,
+                    start_milli: 0,
+                    extent_milli: 60_000,
+                    materialized: false,
+                },
+                AgentObservedVirtualItem {
+                    target: "view.mount.7.item.11".to_owned(),
+                    index: 1,
+                    key: 11,
+                    start_milli: 60_000,
+                    extent_milli: 60_000,
+                    materialized: true,
+                },
+            ],
         }],
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
@@ -616,6 +646,14 @@ fn observation_report_serializes_stable_snake_case_enums() {
         780.0
     );
     assert_eq!(json["scroll_regions"][0]["overscroll"], "clamp");
+    assert_eq!(json["virtual_lists"][0]["target"], "view.mount.7");
+    assert_eq!(
+        json["virtual_lists"][0]["scroll_target"],
+        "scroll.Inventory.0"
+    );
+    assert_eq!(json["virtual_lists"][0]["materialized_start"], 1);
+    assert_eq!(json["virtual_lists"][0]["items"][0]["key"], 10);
+    assert_eq!(json["virtual_lists"][0]["items"][0]["materialized"], false);
     assert_eq!(json["diagnostics"][0]["severity"], "info");
 }
 

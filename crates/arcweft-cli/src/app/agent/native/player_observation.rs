@@ -10,8 +10,9 @@ use super::{
     agent_native_capture_session_for_hir, agent_object_capture_refs_for_page,
     agent_observe_capture_time_seconds, agent_observe_effective_steps,
     agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
-    agent_observed_layers, agent_observed_scroll_regions, agent_observed_views, agent_overlay_svg,
-    agent_textbox_object, dedupe_agent_action_targets, hash_hex, load_and_check_selection,
+    agent_observed_layers, agent_observed_scroll_regions, agent_observed_views,
+    agent_observed_virtual_lists, agent_overlay_svg, agent_textbox_object,
+    dedupe_agent_action_targets, hash_hex, load_and_check_selection,
     native_host_policy_for_selection, report_path, resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
@@ -30,7 +31,7 @@ use arcweft_agent_protocol::{
     presentation::AgentPresentationTree,
     proxy::AgentPresentationObjectProxyRef,
     session::{AgentAssignment, AgentAudioState},
-    view::AgentViewTree,
+    view::{AgentObservedScrollRegion, AgentObservedVirtualList, AgentViewTree},
 };
 use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjectProxy};
@@ -215,11 +216,14 @@ pub(super) fn observe_native_player_runtime(
     let report = player_observation_report(
         &runtime.source_path,
         prepared,
-        &step,
         objects,
-        diagnostics,
-        task_request_count,
         options,
+        PlayerObservationEvidence {
+            step: &step,
+            diagnostics,
+            task_request_count,
+            virtual_ranges: runtime.session.view_virtualization().range_tables(),
+        },
     );
     runtime.prepared_frame = Some(prepared_runtime.prepared);
     Ok(NativePlayerObservedFrame {
@@ -347,24 +351,39 @@ fn player_observe_viewport(options: &AgentObserveOptions) -> RenderViewport {
     }
 }
 
+struct PlayerObservationEvidence<'a> {
+    step: &'a BundleSessionStep,
+    diagnostics: Vec<AgentDiagnostic>,
+    task_request_count: usize,
+    virtual_ranges: Vec<arcweft_view::virtualization::ViewVirtualRangeTable>,
+}
+
+struct PlayerVisualEvidence {
+    viewport: AgentViewport,
+    render_hash: String,
+    scroll_regions: Vec<AgentObservedScrollRegion>,
+    virtual_lists: Vec<AgentObservedVirtualList>,
+}
+
 fn player_observation_report(
     source_path: &Path,
     prepared: &PlayerPreparedFrame,
-    step: &BundleSessionStep,
     objects: Vec<AgentObservedObject>,
-    mut diagnostics: Vec<AgentDiagnostic>,
-    task_request_count: usize,
     options: &AgentObserveOptions,
+    evidence: PlayerObservationEvidence<'_>,
 ) -> AgentObservationReport {
-    let viewport = player_observed_viewport(prepared);
-    let object_refs = objects.iter().collect::<Vec<_>>();
-    let overlay_svg = agent_overlay_svg(&viewport, &object_refs);
-    let scroll_regions = agent_observed_scroll_regions(&prepared.frame);
-    let mut render_evidence = overlay_svg.as_bytes().to_vec();
-    render_evidence.extend(
-        serde_json::to_vec(&scroll_regions).expect("finite typed scroll metadata serializes"),
-    );
-    let render_hash = hash_hex(&render_evidence);
+    let PlayerObservationEvidence {
+        step,
+        mut diagnostics,
+        task_request_count,
+        virtual_ranges,
+    } = evidence;
+    let PlayerVisualEvidence {
+        viewport,
+        render_hash,
+        scroll_regions,
+        virtual_lists,
+    } = player_visual_evidence(prepared, &objects, &virtual_ranges);
     let mut actions = agent_action_targets(&objects);
     actions.extend(agent_action_targets_for_semantics(
         &prepared.frame.semantics,
@@ -415,6 +434,7 @@ fn player_observation_report(
         presentation_tree,
         actions,
         scroll_regions,
+        virtual_lists,
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
             children: layers.iter().map(|layer| layer.id.clone()).collect(),
@@ -450,6 +470,31 @@ fn player_observation_report(
         task_requests: task_request_count,
         final_status: step.status_label.clone(),
         overlay_svg: None,
+    }
+}
+
+fn player_visual_evidence(
+    prepared: &PlayerPreparedFrame,
+    objects: &[AgentObservedObject],
+    virtual_ranges: &[arcweft_view::virtualization::ViewVirtualRangeTable],
+) -> PlayerVisualEvidence {
+    let viewport = player_observed_viewport(prepared);
+    let object_refs = objects.iter().collect::<Vec<_>>();
+    let overlay_svg = agent_overlay_svg(&viewport, &object_refs);
+    let scroll_regions = agent_observed_scroll_regions(&prepared.frame);
+    let virtual_lists = agent_observed_virtual_lists(virtual_ranges);
+    let mut render_evidence = overlay_svg.into_bytes();
+    render_evidence.extend(
+        serde_json::to_vec(&scroll_regions).expect("finite typed scroll metadata serializes"),
+    );
+    render_evidence.extend(
+        serde_json::to_vec(&virtual_lists).expect("finite typed virtual range metadata serializes"),
+    );
+    PlayerVisualEvidence {
+        viewport,
+        render_hash: hash_hex(&render_evidence),
+        scroll_regions,
+        virtual_lists,
     }
 }
 

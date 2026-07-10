@@ -3,7 +3,7 @@ use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, DigestRef, SourceRangeRef};
 pub use arcweft_view::program::ViewElementKind;
-use arcweft_view::program::ViewElementTextInputKind;
+use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -424,6 +424,14 @@ pub enum ViewScrollAxis {
 }
 
 impl ViewScrollAxis {
+    /// Corresponding primary axis used by retained-list virtualization.
+    pub const fn virtual_axis(self) -> ViewVirtualAxis {
+        match self {
+            Self::Vertical => ViewVirtualAxis::Vertical,
+            Self::Horizontal => ViewVirtualAxis::Horizontal,
+        }
+    }
+
     #[must_use]
     pub fn from_author_symbol(value: &str) -> Option<Self> {
         match normalized_author_symbol(value).as_str() {

@@ -9,7 +9,7 @@ use crate::resource::{
     AgentResourceKind,
 };
 use crate::session::{AgentAssignment, AgentAudioState};
-use crate::view::{AgentObservedScrollRegion, AgentViewTree};
+use crate::view::{AgentObservedScrollRegion, AgentObservedVirtualList, AgentViewTree};
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,8 @@ pub struct AgentObservationReport {
     pub actions: Vec<AgentActionTarget>,
     /// Authored Scroll targets with non-actionable viewport/content parts.
     pub scroll_regions: Vec<AgentObservedScrollRegion>,
+    /// Stable range tables for mounted lazy lists, including off-window items.
+    pub virtual_lists: Vec<AgentObservedVirtualList>,
     pub view_tree: AgentViewTree,
     pub scene_graph: Vec<serde_json::Value>,
     pub audio_state: AgentAudioState,

@@ -1,3 +1,4 @@
+use self::virtualization::validate_virtual_list_scroll_owner;
 use crate::clock::RuntimeClockStep;
 use crate::dialogue::{
     BundlePresentationInput, BundlePresentationTransition, DialogueAdvanceRejection,
@@ -67,9 +68,14 @@ use arcweft_interaction_model::payload::InteractionPayload;
 use arcweft_presentation::input::Action;
 use arcweft_presentation::text_input::TextControlWriteBack;
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_view::virtualization::ViewVirtualizationRuntime;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
+
+mod virtualization;
+
+pub use self::virtualization::BundleVirtualListMountError;
 
 /// Host-selected options for a portable bundle session.
 #[derive(Clone, Debug, PartialEq)]
@@ -196,6 +202,7 @@ pub struct BundleSession {
     pending_host_call_results: Vec<RuntimeHostCallResult>,
     waiting_action_receive_calls: Vec<PendingActionReceiveCall>,
     presentation: BundlePresentationSnapshot,
+    view_virtualization: ViewVirtualizationRuntime,
     next_step_index: usize,
     next_task_sequence: u64,
     swap: SwapSession,
@@ -319,6 +326,8 @@ pub enum BundleHotSwapError {
     DecodePatchTarget { message: String },
     #[error("generation runtime table failed: {0}")]
     GenerationRuntime(#[from] GenerationRuntimeError),
+    #[error("hot-swap View virtualization contract changed: {message}")]
+    ViewVirtualization { message: String },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -493,6 +502,7 @@ impl BundleSession {
             pending_host_call_results: Vec::new(),
             waiting_action_receive_calls: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
+            view_virtualization: ViewVirtualizationRuntime::default(),
             next_step_index: 0,
             next_task_sequence: 0,
             swap: SwapSession::new(generation.clone()),
@@ -742,6 +752,21 @@ impl BundleSession {
 
         let mut next_runtime = build_session_runtime(bundle, &self.options)?;
         preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
+        if matches!(
+            compatibility,
+            SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
+        ) {
+            for list in self.view_virtualization.mounts() {
+                validate_virtual_list_scroll_owner(
+                    &next_runtime.scroll_regions,
+                    list.scroll_target(),
+                    list.axis(),
+                )
+                .map_err(|error| BundleHotSwapError::ViewVirtualization {
+                    message: error.to_string(),
+                })?;
+            }
+        }
 
         self.swap
             .prepare_with_compatibility(next_generation, compatibility)
@@ -1231,6 +1256,7 @@ impl BundleSession {
         self.pending_input_events.clear();
         self.pending_presentation_inputs.clear();
         self.presentation = BundlePresentationSnapshot::default();
+        self.view_virtualization = ViewVirtualizationRuntime::default();
         self.retire_unused_generations();
         Ok(StartedForegroundEntry { generation, entry })
     }
@@ -1273,6 +1299,7 @@ impl BundleSession {
             },
             executor,
             presentation: self.presentation.clone(),
+            view_virtualization: self.view_virtualization.snapshot(),
         })
     }
 
@@ -1353,6 +1380,22 @@ impl BundleSession {
         let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
         let mut restored_executor = self.executor.clone();
         restored_executor.restore_snapshot(executor_snapshot)?;
+        let restored_view_virtualization = ViewVirtualizationRuntime::from_snapshot(
+            &snapshot.view_virtualization,
+        )
+        .map_err(|error| BundleSessionSaveError::ViewVirtualization {
+            message: error.to_string(),
+        })?;
+        for list in restored_view_virtualization.mounts() {
+            validate_virtual_list_scroll_owner(
+                &self.scroll_regions,
+                list.scroll_target(),
+                list.axis(),
+            )
+            .map_err(|error| BundleSessionSaveError::ViewVirtualization {
+                message: error.to_string(),
+            })?;
+        }
         validate_presentation_runtime_status(
             &snapshot.presentation,
             &restored_executor.fiber().status,
@@ -1372,6 +1415,7 @@ impl BundleSession {
         self.task_generation_pins.clear();
         self.tasks = RuntimeTaskRegistry::default();
         self.presentation = snapshot.presentation;
+        self.view_virtualization = restored_view_virtualization;
         self.retire_unused_generations();
         Ok(())
     }

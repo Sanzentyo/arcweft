@@ -27,11 +27,11 @@ without reintroducing `ui` or `component` compatibility names.
 - `ViewScrollAxis` remains `Vertical | Horizontal`. Authoring `.both`, `.xy`,
   `.yx`, `.all`, `.2d`, or `.both-axes` is rejected with
   `AWF0618 view::scroll_axis_both_unsupported`.
-- `LazyRow` and `LazyColumn` remain rejected at the source boundary until the
-  runtime can publish one deterministic materialized window and stable range
-  table. The compact bundle enum still contains provisional variants while
-  that implementation is replaced; they are not described as an eager source
-  feature.
+- `LazyRow` and `LazyColumn` remain outside both the accepted grammar and the
+  executable `ViewElementKind` inventory until the typed View evaluator can
+  supply finite keyed items and resolved extents. They are never lowered
+  eagerly, decoded as executable elements, or accepted through a spelling
+  scan.
 - Player-scene input now exposes precision x/y scrolling and explicit
   `scroll_region_by_id` routing over the existing compact x/y scroll-offset
   snapshot.
@@ -68,16 +68,55 @@ without reintroducing `ui` or `component` compatibility names.
 - Native observation publishes one typed record per authored Scroll with
   internal viewport/content parts, current/max offsets, and effective policies.
   Internal parts do not create duplicate objects or action targets.
+- `arcweft-view` now owns exact finite-list virtualization in logical
+  milli-pixels. Each list is keyed by a runtime-unique `ViewMountId`, so two
+  occurrences of the same View program cannot collapse into one state record.
+- The range planner validates non-zero extents and unique stable keys, computes
+  a half-open materialized window, and publishes a complete range table whose
+  off-window items remain present with `materialized = false`.
+- Finite-source replacement preserves a key-relative scroll anchor. The
+  evaluator follow-up must use the same `(mount, key)` identity for child state;
+  the range planner does not invent an opaque state codec ahead of that layer.
+- Bundle-session saves now contain the complete per-mount source inventory,
+  viewport, axis, absolute offset, derived key anchor, and monotonic mount
+  allocator. Restore rebuilds the exact mount set atomically and rejects
+  duplicate mounts, duplicate item keys, zero extents, stale allocators,
+  inconsistent anchors/offsets, unknown Scroll owners, and axis mismatches.
+- Content-only and code-compatible hot swaps validate every live mount against
+  the replacement Scroll inventory before mutating the session. A removed
+  target or axis change rejects the swap atomically; generational swaps keep
+  the old mount with its old running generation and clear it when a new entry
+  is started.
+- The session retains compact indexed mount state without rebuilding all range
+  records on ordinary runtime steps. Agent observation expands full tables only
+  when observation/capture is requested, maps items to stable
+  `view.mount.<mount>.item.<key>` targets, links each list to its actionable
+  authored Scroll target, and includes materialized and retained-only items.
 
-## Deferred behavior
+## Remaining end-to-end activation work
 
-- Full range virtualization for `LazyRow` and `LazyColumn`.
-- Non-materialized child range records for Agent observe/capture and save/load.
+- The current CLI bundle lowering stores View expressions as schema digests,
+  flattens multiple View declarations into one resource, and materializes
+  sidecars before a mount exists. It therefore cannot yet feed authored
+  `for ... key = ...` values into the implemented per-mount virtualizer.
+- Off-window layout requires an explicit measurement contract. The design has
+  not chosen between fixed authored extent, an estimated extent with anchor
+  correction, or another deterministic measurement protocol. Guessing one
+  here would make save/load and focus routing unstable.
+- `LazyRow` / `LazyColumn` source activation is consequently part of the typed
+  View evaluator cut, not an eager compatibility phase.
+- Range/save mounts are occurrence-specific, but the live player and Agent
+  scroll route still names an authored-global Scroll string. The evaluator cut
+  must allocate occurrence-specific actionable targets before two mounts of
+  one authored Scroll can be scrolled independently.
+- Typed child-local state serialization and off-window selected-capture/focus
+  materialization remain evaluator responsibilities; the current cut does not
+  claim that a generic opaque state table is a finished runtime integration.
 
-These remain within the existing request:
+The independently implementable follow-up is:
 
 ```text
-docs/reviews/requests/2026-07-07-seq-06.16.6.2-scroll-axis-virtualization-retained-content.md
+docs/reviews/requests/2026-07-10-seq-06.16.6.2.1-view-runtime-evaluator-and-lazy-source.md
 ```
 
 ## Validation
@@ -129,8 +168,7 @@ existing single-primary-axis runtime/render/save contract and reject dual-axis
 authoring until a deterministic two-axis contract exists.
 
 The package's proposed eager `LazyRow` / `LazyColumn` phase was not a valid
-implemented source feature: the parser continued to reject both spellings and
-the focused validation filter did not select the differently named Lazy test.
-The final implementation does not preserve that accidental half-state. Source
-acceptance will be enabled only together with live range virtualization,
-non-materialized observation, and range-aware restore.
+implementation: it would execute every child and only rename the surrounding
+container. That half-state was removed. The exact range/save/Agent substrate is
+now implemented, while authored source activation remains tied to the missing
+typed evaluator and deterministic extent protocol documented in the follow-up.

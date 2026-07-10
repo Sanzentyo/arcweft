@@ -76,3 +76,59 @@ and retained content are metadata parts, not additional semantic/action nodes:
   "auto_scroll_focus": "nearest"
 }
 ```
+
+Mounted retained lists are reported separately from the rendered object tree.
+The range is half-open and every finite-source item remains addressable even
+when it is not materialized:
+
+```json
+{
+  "target": "view.mount.7",
+  "scroll_target": "scroll.Inventory.0",
+  "axis": "vertical",
+  "viewport_extent_milli": 60000,
+  "offset_milli": 120000,
+  "total_extent_milli": 240000,
+  "materialized_start": 2,
+  "materialized_end": 3,
+  "items": [
+    {
+      "target": "view.mount.7.item.42",
+      "index": 0,
+      "key": 42,
+      "start_milli": 0,
+      "extent_milli": 60000,
+      "materialized": false
+    },
+    {
+      "target": "view.mount.7.item.43",
+      "index": 1,
+      "key": 43,
+      "start_milli": 60000,
+      "extent_milli": 60000,
+      "materialized": false
+    },
+    {
+      "target": "view.mount.7.item.44",
+      "index": 2,
+      "key": 44,
+      "start_milli": 120000,
+      "extent_milli": 60000,
+      "materialized": true
+    },
+    {
+      "target": "view.mount.7.item.45",
+      "index": 3,
+      "key": 45,
+      "start_milli": 180000,
+      "extent_milli": 60000,
+      "materialized": false
+    }
+  ]
+}
+```
+
+`virtual_lists[]` is produced from exact per-mount session state only when an
+observation or capture report is requested. `scroll_target` names the authored
+region accepted by the `scroll` action; an off-window item target does not by
+itself imply render geometry or an image capture.

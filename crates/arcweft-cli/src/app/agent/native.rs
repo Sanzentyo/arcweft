@@ -318,7 +318,7 @@ use runtime_observation::{
     agent_action_targets_for_runtime_status, agent_action_targets_for_scroll_regions,
     agent_action_targets_for_semantics, agent_image_kind, agent_image_scope_for_capture_scope,
     agent_native_visual_diagnostics, agent_observe_image_output, agent_observe_layout_scene_graph,
-    agent_observed_scroll_regions, dedupe_agent_action_targets,
+    agent_observed_scroll_regions, agent_observed_virtual_lists, dedupe_agent_action_targets,
 };
 
 pub(super) fn agent_command(

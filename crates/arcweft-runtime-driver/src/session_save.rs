@@ -13,6 +13,7 @@ use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
+use arcweft_view::virtualization::ViewVirtualizationSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -26,6 +27,8 @@ pub struct BundleSessionSnapshot {
     pub runtime: BundleSessionRuntimeSnapshot,
     pub executor: BundleSessionExecutorSnapshot,
     pub presentation: BundlePresentationSnapshot,
+    /// Exact per-mount range/scroll state, including off-window item descriptors.
+    pub view_virtualization: ViewVirtualizationSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -108,6 +111,8 @@ pub enum BundleSessionSaveError {
     Fiber { message: String },
     #[error("invalid runtime value in session save at {path}: {message}")]
     InvalidRuntimeValue { path: String, message: String },
+    #[error("invalid retained View virtualization snapshot: {message}")]
+    ViewVirtualization { message: String },
     #[error("session save counter `{field}` value {value} does not fit this platform")]
     CounterOutOfRange { field: &'static str, value: u64 },
     #[error("failed to encode bundle session save: {message}")]

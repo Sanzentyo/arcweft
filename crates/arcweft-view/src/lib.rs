@@ -17,6 +17,7 @@ pub mod style_authoring;
 pub mod text_field;
 pub mod text_source;
 pub mod view;
+pub mod virtualization;
 
 use thiserror::Error;
 
@@ -73,7 +74,6 @@ pub use view::{
     RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewProgramId, ViewRegistry,
     ViewSchemaId,
 };
-
 /// Stable key for one retained View fragment node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeKey(pub u64);

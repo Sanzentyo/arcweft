@@ -23,6 +23,34 @@ pub struct AgentObservedScrollRegion {
     pub auto_scroll_focus: AgentFocusAutoScrollPolicy,
 }
 
+/// Complete range observation for one independently mounted virtual list.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentObservedVirtualList {
+    pub target: String,
+    /// Authored Scroll target that can materialize a different item window.
+    pub scroll_target: String,
+    pub axis: AgentScrollAxis,
+    pub viewport_extent_milli: u32,
+    pub offset_milli: u64,
+    pub total_extent_milli: u64,
+    /// First materialized item index.
+    pub materialized_start: u32,
+    /// Exclusive end of the materialized item window.
+    pub materialized_end: u32,
+    pub items: Vec<AgentObservedVirtualItem>,
+}
+
+/// Stable-keyed item range, including items retained outside the live window.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AgentObservedVirtualItem {
+    pub target: String,
+    pub index: u32,
+    pub key: u64,
+    pub start_milli: u64,
+    pub extent_milli: u32,
+    pub materialized: bool,
+}
+
 /// Semantic role of an authored scroll observation target.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

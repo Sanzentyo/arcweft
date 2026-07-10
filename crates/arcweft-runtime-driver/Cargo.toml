@@ -14,6 +14,7 @@ arcweft-save = { path = "../arcweft-save" }
 arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-view = { path = "../arcweft-view" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

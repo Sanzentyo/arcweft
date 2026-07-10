@@ -1,14 +1,53 @@
 use super::*;
 use arcweft_agent_protocol::view::{
-    AgentFocusAutoScrollPolicy, AgentObservedScrollRegion, AgentScrollAxis, AgentScrollContentPart,
-    AgentScrollIndicatorsPolicy, AgentScrollOverflow, AgentScrollOverscrollPolicy,
-    AgentScrollRegionParts, AgentScrollRegionRole, AgentScrollViewportPart,
+    AgentFocusAutoScrollPolicy, AgentObservedScrollRegion, AgentObservedVirtualItem,
+    AgentObservedVirtualList, AgentScrollAxis, AgentScrollContentPart, AgentScrollIndicatorsPolicy,
+    AgentScrollOverflow, AgentScrollOverscrollPolicy, AgentScrollRegionParts,
+    AgentScrollRegionRole, AgentScrollViewportPart,
 };
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, RenderFocusAutoScrollPolicy, RenderScrollAxis, RenderScrollIndicatorsPolicy,
     RenderScrollOverflow, RenderScrollOverscrollPolicy,
 };
 use std::collections::BTreeSet;
+
+pub(super) fn agent_observed_virtual_lists(
+    tables: &[arcweft_view::virtualization::ViewVirtualRangeTable],
+) -> Vec<AgentObservedVirtualList> {
+    tables
+        .iter()
+        .map(|table| {
+            let target = format!("view.mount.{}", table.mount.get());
+            AgentObservedVirtualList {
+                target: target.clone(),
+                scroll_target: table.scroll_target.as_str().to_owned(),
+                axis: match table.axis {
+                    arcweft_view::program::ViewVirtualAxis::Horizontal => {
+                        AgentScrollAxis::Horizontal
+                    }
+                    arcweft_view::program::ViewVirtualAxis::Vertical => AgentScrollAxis::Vertical,
+                },
+                viewport_extent_milli: table.viewport_extent_milli,
+                offset_milli: table.offset_milli,
+                total_extent_milli: table.total_extent_milli,
+                materialized_start: table.materialized.start,
+                materialized_end: table.materialized.end,
+                items: table
+                    .items
+                    .iter()
+                    .map(|item| AgentObservedVirtualItem {
+                        target: format!("{target}.item.{}", item.key.0),
+                        index: item.index,
+                        key: item.key.0,
+                        start_milli: item.start_milli,
+                        extent_milli: item.extent_milli,
+                        materialized: item.materialized,
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
+}
 
 pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serde_json::Value {
     let content_rect = agent_observe_content_rect(viewport);
@@ -565,19 +604,27 @@ pub(super) fn agent_image_kind(capture: AgentObserveCaptureKind) -> AgentImageKi
 
 #[cfg(test)]
 mod scroll_observation_tests {
-    use super::{agent_action_targets_for_scroll_regions, agent_observed_scroll_regions};
+    use super::{
+        agent_action_targets_for_scroll_regions, agent_observed_scroll_regions,
+        agent_observed_virtual_lists,
+    };
     use crate::app::agent::native::observe::dispatch_native_agent_scroll;
     use arcweft_agent_protocol::{
         action::AgentActionKind,
         protocol::AgentScrollAction,
         view::{AgentScrollAxis, AgentScrollOverscrollPolicy},
     };
+    use arcweft_id::PublicId;
     use arcweft_player_scene::input::InputController;
     use arcweft_presentation::hit::HitRect;
     use arcweft_render_wgpu::geometry::{
         ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderPreferences,
         RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
         RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanner,
+    };
+    use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
+    use arcweft_view::virtualization::{
+        ViewVirtualItem, ViewVirtualScrollTarget, ViewVirtualizationRuntime,
     };
 
     fn assert_exact_geometry<const N: usize>(actual: [f64; N], expected: [f64; N]) {
@@ -674,5 +721,35 @@ mod scroll_observation_tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn virtual_list_observation_keeps_off_window_stable_targets() {
+        let mut runtime = ViewVirtualizationRuntime::default();
+        let mount = runtime
+            .mount(
+                ViewVirtualScrollTarget::from(PublicId::try_new("scroll.inventory").unwrap()),
+                ViewVirtualAxis::Vertical,
+                100,
+                vec![
+                    ViewVirtualItem::new(ViewStableKey(10), 60),
+                    ViewVirtualItem::new(ViewStableKey(11), 60),
+                    ViewVirtualItem::new(ViewStableKey(12), 60),
+                    ViewVirtualItem::new(ViewStableKey(13), 60),
+                ],
+            )
+            .expect("finite list validates");
+        runtime.get_mut(mount).unwrap().scroll_to_milli(70);
+
+        let observed = agent_observed_virtual_lists(&runtime.range_tables());
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].target, "view.mount.0");
+        assert_eq!(observed[0].scroll_target, "scroll.inventory");
+        assert_eq!(observed[0].materialized_start, 1);
+        assert_eq!(observed[0].materialized_end, 3);
+        assert_eq!(observed[0].items[0].target, "view.mount.0.item.10");
+        assert!(!observed[0].items[0].materialized);
+        assert!(observed[0].items[1].materialized);
+        assert!(!observed[0].items[3].materialized);
     }
 }

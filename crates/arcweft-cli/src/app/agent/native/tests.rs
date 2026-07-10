@@ -116,6 +116,7 @@ fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObser
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
         scroll_regions: Vec::new(),
+        virtual_lists: Vec::new(),
         view_tree: AgentViewTree {
             root: "view.root".to_owned(),
             children: Vec::new(),
