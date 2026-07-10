@@ -29,7 +29,7 @@ pub use header::{
     ProductSectionHeader,
 };
 pub use inspection::{EnumSymbolInspection, ResourceFieldInspection, ResourceInspection};
-pub use kind::{ProductResourceMigrationStatus, ProductSectionCodecKind};
+pub use kind::ProductSectionCodecKind;
 pub use product_catalog::{
     AssetCatalogSection as CompactAssetCatalogSection,
     AudioGraphSection as CompactAudioGraphSection,

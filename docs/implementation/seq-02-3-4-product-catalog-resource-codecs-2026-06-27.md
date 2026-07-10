@@ -68,20 +68,21 @@ JSON section fallback for these migrated families.
 - no longer emits or decodes legacy `NormalizedSource` product JSON;
 - no longer carries `ContentCatalogSection.audio`.
 
-`ProductSectionCodecKind::migration_status()` now reports compact-first for the
-implemented families. `LocaleText` and `DebugSymbols` remain JSON-temporary
-because no product model migration was implemented in this cut. Shader, UI,
-Contracts, Entity, and GraphIndex remain future work.
+As of the 2026-07-10 inventory cleanup, `ProductSectionCodecKind::ALL` contains
+only implemented compact families. `LocaleText`, `DebugSymbols`, Shader,
+Contracts, Entity, and GraphIndex are not codec variants until an owning compact
+codec is implemented; migration planning belongs in implementation notes, not
+the runtime enum.
 
 ## Review Issues Addressed
 
 - The invalid seq-02.4 patches were not used.
 - `product.rs` and `Cargo.toml` were not replaced wholesale.
 - The implementation uses the actual current `ProductResourceEnvelope` API.
-- `EntityGraph` was not added as an ad hoc section kind. Current
-  `ProductSectionCodecKind` has `Entity` and `GraphIndex`, but no stable
-  `BundleSectionKind` or product data for the package's `EntityGraph` design.
-- Product JSON fallback source gates were added for migrated catalog families.
+- `EntityGraph` was not added as an ad hoc section kind. There is no stable
+  `BundleSectionKind`, product data, or placeholder codec variant for it.
+- Migrated catalog families are verified through their typed decode behavior;
+  the temporary source-spelling gates from this historical cut were removed.
 
 ## Tests Added
 

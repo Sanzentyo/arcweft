@@ -1,25 +1,58 @@
 use arcweft_bundle::container::BundleSectionKind;
-use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::*;
+use std::collections::BTreeSet;
 
 const TINY_TITLE: FieldId = FieldId(1);
 const TINY_PUBLIC_ID: FieldId = FieldId(2);
 
 #[test]
-fn resource_codec_kinds_map_to_magic_and_existing_sections() {
+fn resource_codec_inventory_is_complete_and_bijective() {
+    let mut tags = BTreeSet::new();
+    let mut labels = BTreeSet::new();
+    let mut magics = BTreeSet::new();
+    let mut sections = BTreeSet::new();
+
+    for codec in ProductSectionCodecKind::ALL {
+        assert!(tags.insert(codec.encoded()), "duplicate tag for {codec:?}");
+        assert!(
+            labels.insert(codec.as_str()),
+            "duplicate label for {codec:?}"
+        );
+        assert!(
+            magics.insert(codec.magic()),
+            "duplicate magic for {codec:?}"
+        );
+        assert!(
+            sections.insert(codec.section_kind().encoded()),
+            "duplicate section for {codec:?}"
+        );
+        assert_eq!(
+            ProductSectionCodecKind::from_encoded(codec.encoded()),
+            Some(codec)
+        );
+        assert_eq!(
+            ProductSectionCodecKind::from_section_kind(codec.section_kind()),
+            Some(codec)
+        );
+    }
+
     assert_eq!(
         ProductSectionCodecKind::RuntimeTypes.magic(),
         *b"AWRT\r\n\x1a\n"
     );
     assert_eq!(
         ProductSectionCodecKind::RuntimeTypes.section_kind(),
-        Some(BundleSectionKind::RuntimeTypes)
+        BundleSectionKind::RuntimeTypes
     );
-    assert_eq!(ProductSectionCodecKind::Contracts.section_kind(), None);
     assert_eq!(
-        ProductSectionCodecKind::GraphIndex.patch_compatibility(),
-        PatchCompatibility::CodeCompatible
+        ProductSectionCodecKind::from_section_kind(BundleSectionKind::LocaleCatalog),
+        None
     );
+    assert_eq!(
+        ProductSectionCodecKind::from_section_kind(BundleSectionKind::DebugSymbols),
+        None
+    );
+    assert_eq!(ProductSectionCodecKind::from_encoded(14), None);
 }
 
 #[test]
