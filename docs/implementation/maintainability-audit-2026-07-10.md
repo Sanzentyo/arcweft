@@ -210,17 +210,21 @@ reuse that single materialization for resource validation and commit.
 The review then exposed a deeper identity hole: AWFB `content_root` covers
 section descriptors but not the manifest. A session that remembered only the
 content root could accept a patch prepared for a different manifest, and could
-misclassify a manifest-only patch as a no-op. `BundleSession` now stores one
-optional `ArtifactIdentity`, derives its content-root accessor from it, compares
-the complete base identity, and commits the verified target identity. Plain
-in-memory sessions represent the absence of an AWFB identity as `None`.
+misclassify a manifest-only patch as a no-op. At the end of Slice 3,
+`BundleSession` stored an optional `ArtifactIdentity`, derived its content-root
+accessor from it, compared the complete base identity, and committed the
+verified target identity.
 
-Session-save schema v2 likewise stores the optional complete identity and
-rejects restore against an equal-section-root/different-manifest artifact. This
-is an intentional direct schema replacement: retaining a v1 root-only restore
-shim would preserve the defect. Native endpoint tests prove that manifest-only
-patches update generation, source label, active bytes, and target identity, and
-that prepared patches cannot cross the equal-root artifact boundary.
+The subsequent independent cleanup replaced the unpublished save payload
+directly and removed the optional internal identity. `BundleSession` and its
+schema-v1 save now store one required artifact identity: either the complete
+typed `ArcweftBundle` identity (including manifest, source, executable, and
+resources) or the complete AWFB identity. There is no root-only variant, legacy
+decoder, or duplicate payload-level schema marker. Native endpoint tests prove
+that manifest-only patches update generation, source label, active bytes, and
+target identity, and that prepared patches cannot cross the equal-root artifact
+boundary. A separate logical-bundle restore test proves the same manifest
+boundary for sessions created without AWFB bytes.
 
 ### Executor and unsafe boundaries
 
@@ -236,9 +240,10 @@ and unsafe operations inside unsafe functions.
 
 No Cargo dependency edge changed. The two Cargo manifest edits configure lints,
 and the existing dependency graph continues to point through the runtime facade
-and bundle/runtime layers. Public contract changes are limited to sealing the
-concrete executor types and replacing the root-only session-save v1 identity
-field with the v2 `ArtifactIdentity` field.
+and bundle/runtime layers. At that Slice 3 cut, public contract changes were
+limited to sealing the concrete executor types and introducing a provisional
+complete AWFB identity field. The later independent cleanup supersedes that
+unpublished payload shape.
 
 ### Just workflow cleanup
 
@@ -279,7 +284,7 @@ separately where present.
 | `crates/arcweft-player-scene/src/fonts.rs` | `arcweft-player-scene` / production | 9,832 | 292 | 143 | Runtime font inventory without source-spelling guards |
 | `crates/arcweft-project-loader/src/release_adapter/trust.rs` | `arcweft-project-loader` / production | 22,268 | 644 | 0 | Release trust projection through the verified patch API |
 | `crates/arcweft-runtime-driver/src/session.rs` | `arcweft-runtime-driver` / production | 74,195 | 1,930 | 0 | Session state, complete container identity, and hot-swap commit |
-| `crates/arcweft-runtime-driver/src/session_save.rs` | `arcweft-runtime-driver` / production | 16,112 | 448 | 0 | Strict session-save v2 codec and identity snapshot |
+| `crates/arcweft-runtime-driver/src/session_save.rs` | `arcweft-runtime-driver` / production | 16,112 | 448 | 0 | Session-save identity snapshot before the subsequent payload simplification |
 | `crates/arcweft-runtime-driver/src/swap.rs` | `arcweft-runtime-driver` / production | 32,314 | 972 | 337 | Program-generation classification and unified swap commit |
 | `tools/structure-audit.rs` | workspace tool / production | 31,251 | 969 | 0 | Size, ownership, generated metadata, and dependency audit |
 | `crates/arcweft-bundle/tests/patch_schema.rs` | `arcweft-bundle` / integration test | 11,939 | 324 | 0 | Patch tamper, duplicate, identity, and compatibility matrix |
@@ -386,6 +391,122 @@ with the warmed build cache and a sufficient limit completed successfully.
   only along cohesive responsibility boundaries. No error-level structural
   violation remains in this slice.
 
-There are no known design deviations in this slice. The session-save schema v2
-break is intentional and documented because retaining root-only compatibility
-would preserve an identity and restore vulnerability.
+There are no known design deviations in this slice. No compatibility promise
+existed for the unpublished session-save payload; the subsequent cleanup
+therefore established the corrected identity-bound shape as schema v1 instead
+of carrying a migration story for an unused defective format.
+
+## Slice 4: independent ownership and provisional-contract cleanup
+
+The Slice 3 follow-ups are complete. `DataFormat::ALL` now owns the language
+inventory; dialogue identity normalization is shared by HIR and ID-context;
+runtime collection conversion is owned by `RuntimeValue`/`RuntimeSeq`; and
+`ProductSectionCodecKind::ALL` contains only implemented compact codecs.
+`docs/implementation/independent-cleanup-inventory-2026-07-10.md` records the
+breaking changes and ranks the next independent slices.
+
+Session identity was tightened beyond the Slice 3 AWFB fix. The bundle crate
+now exposes `logical_identity::LogicalBundleIdentity`, which hashes the complete
+validated typed bundle through its deterministic codec. `BundleSession` always
+stores either that complete logical identity or a complete AWFB
+`ArtifactIdentity`; there is no optional or root-only state. The schema-v1 save
+payload uses the same required enum and omits duplicate schema/quiescence
+markers and speculative executor variants.
+
+The broad workspace route also exposed a test-fixture race. Two parallel
+release tests could create the same timestamp-derived directory and one test's
+explicit cleanup could delete another test's staged publication. The fixture
+now uses the shared atomic-sequence `TempDir` and RAII cleanup. This is a test
+infrastructure correction, not a production publication compatibility change.
+
+### Slice 4 structural measurements
+
+Measurements are from base revision `fce823c7ab8b` and Jujutsu working change
+`lzuoprwr`, using current file sizes from the canonical audit rather than diff
+additions. Embedded-test LOC runs from each file's `#[cfg(test)]` module through
+EOF; the affected files each have one such trailing module.
+
+| Path | Owner / kind | Bytes | Physical LOC | Embedded test LOC | Major responsibility |
+| --- | --- | ---: | ---: | ---: | --- |
+| `crates/arcweft-bundle/src/lib.rs` | `arcweft-bundle` / facade | 71,520 | 2,006 | 620 | Existing bundle facade; only the logical-identity module boundary changed |
+| `crates/arcweft-bundle/src/logical_identity.rs` | `arcweft-bundle` / production | 1,221 | 31 | 0 | Complete deterministic typed-bundle identity |
+| `crates/arcweft-bundle/src/resource_codec/kind.rs` | `arcweft-bundle` / production | 7,519 | 196 | 0 | Implemented compact-codec inventory and section mapping |
+| `crates/arcweft-bundle/src/resource_codec.rs` | `arcweft-bundle` / facade | 3,745 | 73 | 0 | Resource-codec public surface after migration-status removal |
+| `crates/arcweft-core/src/engine/eval.rs` | `arcweft-core` / production | 57,090 | 1,516 | 0 | Engine evaluator call sites using owned collection conversion |
+| `crates/arcweft-core/src/pure.rs` | `arcweft-core` / production | 74,447 | 2,097 | 0 | Pure evaluator call sites using owned collection conversion |
+| `crates/arcweft-core/src/value/sequence_impls.rs` | `arcweft-core` / production | 52,736 | 1,580 | 0 | Runtime collection length/index rules and sequence implementations |
+| `crates/arcweft-data/src/codec.rs` | `arcweft-data` / production | 10,408 | 370 | 0 | Authoritative DataFormat metadata and lookup |
+| `crates/arcweft-lang-hir/src/dialogue_identity.rs` | `arcweft-lang-hir` / production | 5,900 | 182 | 65 | Typed dialogue families, speaker slug, and generated text-key rule |
+| `crates/arcweft-lang-hir/src/id_context.rs` | `arcweft-lang-hir` / production | 31,214 | 960 | 119 | AST-gated source materialization using shared identity rules |
+| `crates/arcweft-lang-hir/src/lib.rs` | `arcweft-lang-hir` / facade | 760 | 23 | 0 | Private dialogue-identity module declaration |
+| `crates/arcweft-lang-hir/src/lower.rs` | `arcweft-lang-hir` / production | 10,539 | 319 | 134 | HIR orchestration and wrong-family behavior tests |
+| `crates/arcweft-lang-hir/src/lower_dialogue.rs` | `arcweft-lang-hir` / production | 3,774 | 91 | 0 | Dialogue lowering through typed speaker identity |
+| `crates/arcweft-lang-hir/src/lower_ids.rs` | `arcweft-lang-hir` / production | 12,523 | 362 | 0 | Relative/absolute dialogue ID construction and validation |
+| `crates/arcweft-lang-sema/src/env.rs` | `arcweft-lang-sema` / production | 39,921 | 1,203 | 41 | Builtin registration from DataFormat inventory |
+| `crates/arcweft-runtime-accelerator/src/external.rs` | `arcweft-runtime-accelerator` / production | 49,385 | 1,255 | 0 | Runtime DataFormat argument parsing through owning lookup |
+| `crates/arcweft-runtime-driver/src/session.rs` | `arcweft-runtime-driver` / production | 73,593 | 1,929 | 0 | Required logical/AWFB session identity and restore boundary |
+| `crates/arcweft-runtime-driver/src/session_save.rs` | `arcweft-runtime-driver` / production | 14,991 | 403 | 0 | Minimal schema-v1 quiescent session payload |
+
+Changed integration/unit test files remain below their applicable error
+thresholds: `resource_codec_common.rs` is 16,422 bytes / 529 LOC,
+`arcweft-core/src/tests/value.rs` is 30,981 bytes / 868 LOC,
+`data_format.rs` is 1,113 bytes / 34 LOC, sema `typecheck.rs` is 121,562 bytes /
+4,005 LOC, `awbc_product_session.rs` is 18,615 bytes / 529 LOC,
+`release_trust_json.rs` is 7,017 bytes / 203 LOC, and its shared fixture is
+11,559 bytes / 322 LOC.
+
+The only Cargo edge added is the lower-layer normal dependency
+`arcweft-lang-sema -> arcweft-data`. Sema has seven normal direct outgoing
+dependencies after the change and eight incoming workspace edges when two
+development edges are included (six normal plus two development). The edge
+does not create a cycle and preserves `syntax -> HIR -> sema` while reusing the
+independent Sans I/O data contract.
+
+The first Slice 4 audit reported one size error because adding collection
+methods directly to the pre-existing 2,498-LOC `value.rs` raised it to 2,515
+LOC. The methods remain inherent `RuntimeValue` APIs but their implementation
+now lives in the existing sequence responsibility module; `value.rs` is back to
+83,955 bytes / 2,498 LOC. The final canonical audit reports:
+
+```text
+files scanned: 2486
+Rust files: 1152
+Rust physical LOC: 584369
+package manifests: 91
+violations: 0 error(s), 151 warning(s)
+```
+
+The warning-level large files were audited rather than split mechanically.
+`sequence_impls.rs` remains a cohesive collection implementation module;
+`eval.rs`, `pure.rs`, `env.rs`, and `external.rs` only lost duplicated logic or
+received narrow inventory call sites. The 2,006-LOC bundle `lib.rs` remains a
+real facade/test hotspot, so the new identity implementation was placed in a
+31-LOC responsibility module rather than added to the facade body.
+
+### Slice 4 validation
+
+```text
+cargo fmt --all -- --check
+  passed
+focused DataFormat, HIR/tooling, core evaluator, resource-codec, and session
+tests listed in independent-cleanup-inventory-2026-07-10.md
+  passed
+cargo test -p arcweft-cli --test release_trust_json -- --nocapture
+  5 passed in parallel after collision-safe TempDir migration; the complete
+  binary then passed five consecutive runs (25 test executions)
+just test-workspace
+  passed on the final checkout
+cargo clippy --workspace --all-targets --all-features
+  passed; existing syntax enum-size, sema size, float-comparison, clipboard,
+  Option<Option>, and web-input warnings remain; no warning is introduced here
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write target/structure-audit/independent-cleanup-2026-07-10
+  0 error(s); 151 warning(s)
+git diff --check
+  passed
+```
+
+The first broad `just test-workspace` attempt reached its external command
+limit during compilation and is not counted. A warmed attempt exposed the
+release fixture collision described above. After the fixture correction, the
+final complete workspace route passed.
