@@ -1,3 +1,4 @@
+use crate::dialogue_identity::{DialogueIdFamily, DialogueLineId, DialogueSpeakerSlug};
 use crate::lower_context::LowerContext;
 use crate::model::HirLowerError;
 use arcweft_lang_syntax::ast::{
@@ -169,7 +170,7 @@ pub(crate) fn normalize_text_key_id(
 
 pub(crate) fn normalize_line_id(
     id: Option<&IdRef>,
-    speaker: String,
+    speaker: &DialogueSpeakerSlug,
     context: &mut LowerContext,
     range: TextRange,
 ) -> Result<Option<EntityRef>, HirLowerError> {
@@ -177,7 +178,15 @@ pub(crate) fn normalize_line_id(
         return Ok(None);
     }
     match id {
-        Some(IdRef::Absolute(id)) => Ok(Some(id.clone())),
+        Some(IdRef::Absolute(id)) => {
+            if !DialogueIdFamily::Line.contains(id.body()) {
+                return Err(HirLowerError::new(
+                    "dialogue line ID must use the `say` family",
+                    Some(*id.range()),
+                ));
+            }
+            Ok(Some(id.clone()))
+        }
         Some(IdRef::Relative(relative)) => Ok(Some(build_line_entity_ref(
             speaker,
             Some(relative),
@@ -185,7 +194,11 @@ pub(crate) fn normalize_line_id(
             *relative.range(),
         )?)),
         Some(IdRef::FamilyRelative(relative)) => {
-            ensure_id_family(relative.family(), "say", relative.range())?;
+            ensure_id_family(
+                relative.family(),
+                DialogueIdFamily::Line.prefix(),
+                relative.range(),
+            )?;
             Ok(Some(build_line_entity_ref(
                 speaker,
                 Some(relative.relative()),
@@ -200,15 +213,27 @@ pub(crate) fn normalize_line_id(
 pub(crate) fn normalize_line_text_key(
     text_key: Option<&IdRef>,
     line_id: Option<&EntityRef>,
-    speaker: String,
+    speaker: &DialogueSpeakerSlug,
     context: &LowerContext,
 ) -> Result<Option<EntityRef>, HirLowerError> {
     if let Some(text_key) = text_key {
         let relative = match text_key {
-            IdRef::Absolute(text_key) => return Ok(Some(text_key.clone())),
+            IdRef::Absolute(text_key) => {
+                if !DialogueIdFamily::Text.contains(text_key.body()) {
+                    return Err(HirLowerError::new(
+                        "dialogue text key must use the `text` family",
+                        Some(*text_key.range()),
+                    ));
+                }
+                return Ok(Some(text_key.clone()));
+            }
             IdRef::Relative(relative) => relative,
             IdRef::FamilyRelative(relative) => {
-                ensure_id_family(relative.family(), "text", relative.range())?;
+                ensure_id_family(
+                    relative.family(),
+                    DialogueIdFamily::Text.prefix(),
+                    relative.range(),
+                )?;
                 relative.relative()
             }
         };
@@ -218,7 +243,11 @@ pub(crate) fn normalize_line_text_key(
                 Some(*text_key.range()),
             ));
         };
-        let mut parts = vec!["text".to_owned(), flow_slug.clone(), speaker];
+        let mut parts = vec![
+            DialogueIdFamily::Text.prefix().to_owned(),
+            flow_slug.clone(),
+            speaker.as_str().to_owned(),
+        ];
         parts.extend(relative_scopes(context, relative)?);
         parts.push(relative.suffix().to_owned());
         return Ok(Some(EntityRef::new(
@@ -227,35 +256,20 @@ pub(crate) fn normalize_line_text_key(
             *text_key.range(),
         )));
     }
-    Ok(line_id.map(|id| EntityRef::new(line_id_to_text_key(id.body()), false, *id.range())))
-}
-
-pub(crate) fn speaker_slug(speaker: &str) -> String {
-    match speaker.trim() {
-        "地の文" | "地文" | "ナレーター" | "ナレータ" | "ナレーション" | "語り" | "語り手"
-        | "narrator" | "Narrator" | "NARRATOR" | "VO" | "V.O." | "O.S." | "Offscreen"
-        | "Script" | "StageDirection" | "ト書き" | "脚本" => "narrator".to_owned(),
-        other => {
-            let source = other
-                .trim()
-                .strip_prefix("@<")
-                .and_then(|inner| inner.strip_suffix('>'))
-                .or_else(|| other.trim().strip_prefix('@'))
-                .unwrap_or(other)
-                .trim_end_matches(".say");
-            source
-                .rsplit(['.', ':'])
-                .next()
-                .unwrap_or(source)
-                .to_owned()
-        }
-    }
-}
-
-pub(crate) fn content_callee_slug(callee: &str) -> String {
-    callee
-        .strip_suffix(".say")
-        .map_or_else(|| speaker_slug(callee), speaker_slug)
+    let Some(line_id) = line_id else {
+        return Ok(None);
+    };
+    let normalized = DialogueLineId::parse(line_id.body()).ok_or_else(|| {
+        HirLowerError::new(
+            "dialogue line ID must use the `say` family before deriving a text key",
+            Some(*line_id.range()),
+        )
+    })?;
+    Ok(Some(EntityRef::new(
+        normalized.generated_text_key(),
+        false,
+        *line_id.range(),
+    )))
 }
 
 pub(crate) fn flow_slug_from_entity(id: &EntityRef) -> String {
@@ -277,7 +291,7 @@ fn ensure_id_family(found: &str, expected: &str, range: &TextRange) -> Result<()
 }
 
 fn build_line_entity_ref(
-    speaker: String,
+    speaker: &DialogueSpeakerSlug,
     explicit_id: Option<&RelativeId>,
     context: &mut LowerContext,
     range: TextRange,
@@ -288,7 +302,11 @@ fn build_line_entity_ref(
             Some(range),
         ));
     };
-    let mut parts = vec!["say".to_owned(), flow_slug.clone(), speaker];
+    let mut parts = vec![
+        DialogueIdFamily::Line.prefix().to_owned(),
+        flow_slug.clone(),
+        speaker.as_str().to_owned(),
+    ];
     if let Some(id) = explicit_id {
         parts.extend(relative_scopes(context, id)?);
     } else {
@@ -341,10 +359,4 @@ fn append_relative_suffix(
         parts.push(suffix.to_owned());
     }
     Ok(parts.join("."))
-}
-
-fn line_id_to_text_key(line_id: &str) -> String {
-    line_id
-        .strip_prefix("say.")
-        .map_or_else(|| format!("text.{line_id}"), |tail| format!("text.{tail}"))
 }

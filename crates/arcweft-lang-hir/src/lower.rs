@@ -293,4 +293,27 @@ pub dialogue defaults @dialogue.defaults.mobile {
         assert_eq!(defaults.attrs()[0].name(), "profile");
         assert_eq!(defaults.attrs()[0].args(), Some("note=\"mobile defaults\""));
     }
+
+    #[test]
+    fn lowering_rejects_wrong_dialogue_id_families() {
+        for (line, expected) in [
+            (
+                "alice(id=@text.not_a_line): Bad[p]",
+                "dialogue line ID must use the `say` family",
+            ),
+            (
+                "alice(text_key=@say.not_a_text_key): Bad[p]",
+                "dialogue text key must use the `text` family",
+            ),
+        ] {
+            let source = format!("flow @flow.opening opening {{\n    {line}\n}}\n");
+            let parsed = parse_source(&source);
+            assert_eq!(parsed.errors(), &[], "source for {line:?}");
+            let errors = lower_to_hir(parsed.typed_tree()).expect_err("wrong family must fail");
+            assert!(
+                errors.iter().any(|error| error.message() == expected),
+                "expected {expected:?} for {line:?}, got {errors:?}"
+            );
+        }
+    }
 }

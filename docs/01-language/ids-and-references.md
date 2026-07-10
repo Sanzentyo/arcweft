@@ -288,6 +288,11 @@ alice(id=@.greeting, voice=auto):
     おはよう。[p]
 ```
 
+Ordinary speaker segments are case-sensitive and retain their authored entity
+case. Built-in narrator aliases normalize to `narrator`. Explicit absolute line
+and text identities are restricted to `@say.*` and `@text.*`, respectively;
+other families are rejected instead of being rewritten.
+
 ```text
 地の文(id=@.rain)
   -> @say.opening.narrator.rain

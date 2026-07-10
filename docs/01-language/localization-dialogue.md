@@ -116,6 +116,14 @@ id = @say.opening.alice.greeting
   -> voice_key = @voice.{runtime_locale}.alice.opening.greeting
 ```
 
+An absolute line ID must belong to the `@say.*` family, and an absolute
+localization override must belong to `@text.*`. A family mismatch is a lowering
+error; it is never repaired by prefixing or by deriving a second, phantom key.
+
+Generated IDs preserve the case of an ordinary authored speaker/entity segment.
+Only built-in narrator spellings normalize to the reserved `narrator` segment.
+HIR lowering and ID materialization use this same normalization rule.
+
 Line IDs may be written as relative IDs when the surrounding flow and speaker
 provide the stable prefix:
 

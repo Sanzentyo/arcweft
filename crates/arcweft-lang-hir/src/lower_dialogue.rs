@@ -1,8 +1,6 @@
+use crate::dialogue_identity::DialogueSpeakerSlug;
 use crate::lower_context::LowerContext;
-use crate::lower_ids::{
-    content_callee_slug, normalize_entity_ref_syntax, normalize_line_id, normalize_line_text_key,
-    speaker_slug,
-};
+use crate::lower_ids::{normalize_entity_ref_syntax, normalize_line_id, normalize_line_text_key};
 use crate::model::{HirDialogue, HirLowerError};
 use arcweft_lang_syntax::ast::dialogue::{ContentCall, SpeakerLine};
 
@@ -10,10 +8,15 @@ pub(crate) fn lower_speaker_line(
     line: &SpeakerLine,
     context: &mut LowerContext,
 ) -> Result<HirDialogue, HirLowerError> {
-    let speaker = speaker_slug(line.speaker());
-    let id = normalize_line_id(line.options().id(), speaker.clone(), context, *line.range())?;
+    let speaker = DialogueSpeakerSlug::from_callee(line.speaker()).ok_or_else(|| {
+        HirLowerError::new(
+            "dialogue callee does not contain a usable speaker ID segment",
+            Some(*line.range()),
+        )
+    })?;
+    let id = normalize_line_id(line.options().id(), &speaker, context, *line.range())?;
     let text_key =
-        normalize_line_text_key(line.options().text_key(), id.as_ref(), speaker, context)?;
+        normalize_line_text_key(line.options().text_key(), id.as_ref(), &speaker, context)?;
     let window = line
         .options()
         .window()
@@ -48,10 +51,15 @@ pub(crate) fn lower_content_call(
     call: &ContentCall,
     context: &mut LowerContext,
 ) -> Result<HirDialogue, HirLowerError> {
-    let speaker = content_callee_slug(call.callee());
-    let id = normalize_line_id(call.options().id(), speaker.clone(), context, *call.range())?;
+    let speaker = DialogueSpeakerSlug::from_callee(call.callee()).ok_or_else(|| {
+        HirLowerError::new(
+            "dialogue callee does not contain a usable speaker ID segment",
+            Some(*call.range()),
+        )
+    })?;
+    let id = normalize_line_id(call.options().id(), &speaker, context, *call.range())?;
     let text_key =
-        normalize_line_text_key(call.options().text_key(), id.as_ref(), speaker, context)?;
+        normalize_line_text_key(call.options().text_key(), id.as_ref(), &speaker, context)?;
     let window = call
         .options()
         .window()

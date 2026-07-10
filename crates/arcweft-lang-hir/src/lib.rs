@@ -5,6 +5,7 @@
 //! this crate instead of reaching into parser internals.
 
 pub mod cache_facts;
+mod dialogue_identity;
 pub mod id_context;
 pub mod lower;
 pub mod lower_choice;
