@@ -31,7 +31,7 @@ pub struct FiberState {
 pub struct FiberCursor {
     pub function: AwbcFunctionId,
     pub block: AwbcBlockId,
-    /// Offset in the block instruction range. A safe-point cursor is always zero.
+    /// Offset of the next instruction, or the block length when its terminator is next.
     pub instruction_offset: u32,
 }
 
@@ -47,7 +47,12 @@ pub struct FiberFrame {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FiberReturnPoint {
-    pub resume: AwbcResumePointId,
+    /// Exact caller cursor to restore after the callee returns.
+    ///
+    /// Static calls resolve their declared resume point to this cursor before
+    /// entering the callee. Dynamic calls may resume at the instruction after
+    /// the call without requiring a synthetic block or resume-point record.
+    pub cursor: FiberCursor,
     pub destination: Option<AwbcRegisterId>,
 }
 
@@ -75,8 +80,28 @@ pub enum FiberStatus {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FiberSuspension {
-    pub resume: AwbcResumePointId,
+    pub resume: FiberResumeTarget,
     pub reason: FiberSuspensionReason,
+}
+
+/// Where a suspended fiber continues after the host replenishes or resolves it.
+///
+/// Program-declared suspension terminators use a verified resume point. Budget
+/// preemption between instructions retains the exact execution cursor instead;
+/// forcing that cursor through an unrelated declared point can replay work.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum FiberResumeTarget {
+    Declared(AwbcResumePointId),
+    Exact(FiberCursor),
+}
+
+impl FiberSuspension {
+    pub const fn declared_resume(&self) -> Option<AwbcResumePointId> {
+        match self.resume {
+            FiberResumeTarget::Declared(resume) => Some(resume),
+            FiberResumeTarget::Exact(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -447,6 +472,11 @@ impl FiberState {
         }
         validate_fiber_terminal_shape(self)?;
         validate_cursor(program, self.cursor)?;
+        if let Some(active_frame) = self.frames.last()
+            && active_frame.function != self.cursor.function
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
         for (index, frame) in self.frames.iter().enumerate() {
             validate_frame(program, frame)?;
             if index == 0 && frame.return_to.is_some() {
@@ -534,6 +564,14 @@ impl FiberState {
         resume: AwbcResumePointId,
     ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Suspended)?;
+        if self
+            .suspension
+            .as_ref()
+            .and_then(FiberSuspension::declared_resume)
+            != Some(resume)
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
         let point = program
             .resume_points
             .get(resume.index())
@@ -563,6 +601,31 @@ impl FiberState {
         Ok(())
     }
 
+    /// Resumes a budget yield at its declared or exact preemption target.
+    pub fn resume_budget_yield(&mut self, program: &AwbcProgram) -> Result<(), FiberStateError> {
+        self.require_status(FiberStatus::Suspended)?;
+        let suspension = self
+            .suspension
+            .as_ref()
+            .ok_or(FiberStateError::InvalidFrame)?;
+        if suspension.reason != FiberSuspensionReason::BudgetYield {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        match suspension.resume {
+            FiberResumeTarget::Declared(resume) => self.resume_at(program, resume),
+            FiberResumeTarget::Exact(cursor) => {
+                validate_cursor(program, cursor)?;
+                if self.active_frame()?.function != cursor.function {
+                    return Err(FiberStateError::InvalidFrame);
+                }
+                self.cursor = cursor;
+                self.status = FiberStatus::Running;
+                self.suspension = None;
+                Ok(())
+            }
+        }
+    }
+
     pub fn push_call_frame(
         &mut self,
         program: &AwbcProgram,
@@ -581,19 +644,42 @@ impl FiberState {
         destination: Option<AwbcRegisterId>,
         args: &[RuntimeValue],
     ) -> Result<(), FiberStateError> {
+        let caller = self.active_frame()?;
+        let point = validate_resume_point(program, caller, return_to)?;
+        self.push_call_frame_at(
+            program,
+            function,
+            FiberReturnPoint {
+                cursor: FiberCursor {
+                    function: point.function,
+                    block: point.block,
+                    instruction_offset: 0,
+                },
+                destination,
+            },
+            args,
+        )
+    }
+
+    /// Pushes a function frame with an exact caller continuation.
+    ///
+    /// The continuation and all positional arguments are validated before the
+    /// live fiber is mutated, so malformed function values cannot leave a
+    /// partially entered frame behind.
+    pub fn push_call_frame_at(
+        &mut self,
+        program: &AwbcProgram,
+        function: AwbcFunctionId,
+        return_to: FiberReturnPoint,
+        args: &[RuntimeValue],
+    ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
+        validate_return_point(program, self.active_frame()?, return_to)?;
         let function_record = program
             .functions
             .get(function.index())
             .ok_or(FiberStateError::UnknownFunction(function.0))?;
-        let mut frame = FiberFrame::new(
-            program,
-            function,
-            Some(FiberReturnPoint {
-                resume: return_to,
-                destination,
-            }),
-        )?;
+        let mut frame = FiberFrame::new(program, function, Some(return_to))?;
         frame.bind_positional_arguments(program, args)?;
         self.frames.push(frame);
         self.cursor = FiberCursor {
@@ -642,19 +728,9 @@ impl FiberState {
             .frames
             .get(self.frames.len().saturating_sub(2))
             .ok_or(FiberStateError::MissingFrame)?;
-        let point = program
-            .resume_points
-            .get(return_to.resume.index())
-            .ok_or(FiberStateError::UnknownResumePoint(return_to.resume.0))?;
-        if caller.function != point.function || caller.layout != point.frame_layout {
-            return Err(FiberStateError::InvalidFrame);
-        }
+        validate_return_point(program, caller, return_to)?;
         self.frames.pop();
-        self.cursor = FiberCursor {
-            function: point.function,
-            block: point.block,
-            instruction_offset: 0,
-        };
+        self.cursor = return_to.cursor;
         Ok(Some(return_to))
     }
 
@@ -676,11 +752,22 @@ impl FiberState {
         let return_to = returning_frame
             .return_to
             .ok_or(FiberStateError::InvalidFrame)?;
-        match (return_to.destination, value.as_ref()) {
-            (Some(_), Some(_)) | (None, None) => {}
+        let signature = program
+            .functions
+            .get(returning_frame.function.index())
+            .and_then(|function| program.signatures.get(function.signature.index()))
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let return_value = match (signature.result, value) {
+            (Some(expected), Some(value))
+                if runtime_value_matches_type(program, &value, expected, 0) =>
+            {
+                Some(value)
+            }
+            (None, None) if return_to.destination.is_some() => Some(RuntimeValue::Unit),
+            (None, None) => None,
             _ => return Err(FiberStateError::ReturnValueMismatch),
-        }
-        if let Some(destination) = return_to.destination {
+        };
+        if let (Some(destination), Some(value)) = (return_to.destination, return_value.as_ref()) {
             let caller_frame = self
                 .frames
                 .get(self.frames.len() - 2)
@@ -691,12 +778,21 @@ impl FiberState {
                     layout: caller_frame.layout.0,
                 });
             }
+            let destination_type = program
+                .frame_layouts
+                .get(caller_frame.layout.index())
+                .and_then(|layout| layout.slots.get(destination.index()))
+                .map(|slot| slot.ty)
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if !runtime_value_matches_type(program, value, destination_type, 0) {
+                return Err(FiberStateError::ReturnValueMismatch);
+            }
         }
         let popped = self
             .pop_call_frame(program)?
             .ok_or(FiberStateError::InvalidFrame)?;
         debug_assert_eq!(popped, return_to);
-        if let (Some(destination), Some(value)) = (return_to.destination, value) {
+        if let (Some(destination), Some(value)) = (return_to.destination, return_value) {
             self.active_frame_mut()?.set_register(destination, value)?;
         }
         Ok(false)
@@ -763,10 +859,14 @@ fn validate_cursor(program: &AwbcProgram, cursor: FiberCursor) -> Result<(), Fib
         .functions
         .get(cursor.function.index())
         .ok_or(FiberStateError::UnknownFunction(cursor.function.0))?;
-    if !function_owns_block(function, cursor.block) || cursor.instruction_offset != 0 {
+    if !function_owns_block(function, cursor.block) {
         return Err(FiberStateError::InvalidFrame);
     }
-    if program.blocks.get(cursor.block.index()).is_none() {
+    let block = program
+        .blocks
+        .get(cursor.block.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if block.owner != cursor.function || cursor.instruction_offset > block.instructions.len {
         return Err(FiberStateError::InvalidFrame);
     }
     Ok(())
@@ -832,23 +932,9 @@ fn validate_return_point(
     caller: &FiberFrame,
     return_to: FiberReturnPoint,
 ) -> Result<(), FiberStateError> {
-    let point = program
-        .resume_points
-        .get(return_to.resume.index())
-        .ok_or(FiberStateError::UnknownResumePoint(return_to.resume.0))?;
-    if point.function != caller.function {
-        return Err(FiberStateError::ResumeFunctionMismatch {
-            resume: return_to.resume.0,
-            actual: point.function.0,
-            expected: caller.function.0,
-        });
-    }
-    if point.frame_layout != caller.layout {
-        return Err(FiberStateError::ResumeLayoutMismatch {
-            resume: return_to.resume.0,
-            actual: point.frame_layout.0,
-            expected: caller.layout.0,
-        });
+    validate_cursor(program, return_to.cursor)?;
+    if return_to.cursor.function != caller.function {
+        return Err(FiberStateError::InvalidFrame);
     }
     if let Some(destination) = return_to.destination
         && destination.index() >= caller.registers.len()
@@ -861,20 +947,52 @@ fn validate_return_point(
     Ok(())
 }
 
+fn validate_resume_point<'a>(
+    program: &'a AwbcProgram,
+    frame: &FiberFrame,
+    resume: AwbcResumePointId,
+) -> Result<&'a super::schema::AwbcResumePoint, FiberStateError> {
+    let point = program
+        .resume_points
+        .get(resume.index())
+        .ok_or(FiberStateError::UnknownResumePoint(resume.0))?;
+    if point.function != frame.function {
+        return Err(FiberStateError::ResumeFunctionMismatch {
+            resume: resume.0,
+            actual: point.function.0,
+            expected: frame.function.0,
+        });
+    }
+    if point.frame_layout != frame.layout {
+        return Err(FiberStateError::ResumeLayoutMismatch {
+            resume: resume.0,
+            actual: point.frame_layout.0,
+            expected: frame.layout.0,
+        });
+    }
+    Ok(point)
+}
+
 fn validate_suspension(
     program: &AwbcProgram,
     state: &FiberState,
     suspension: &FiberSuspension,
 ) -> Result<(), FiberStateError> {
     let frame = state.active_frame()?;
-    validate_return_point(
-        program,
-        frame,
-        FiberReturnPoint {
-            resume: suspension.resume,
-            destination: None,
-        },
-    )?;
+    match suspension.resume {
+        FiberResumeTarget::Declared(resume) => {
+            validate_resume_point(program, frame, resume)?;
+        }
+        FiberResumeTarget::Exact(cursor) => {
+            if suspension.reason != FiberSuspensionReason::BudgetYield
+                || cursor != state.cursor
+                || cursor.function != frame.function
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            validate_cursor(program, cursor)?;
+        }
+    }
     match &suspension.reason {
         FiberSuspensionReason::Dialogue {
             content,

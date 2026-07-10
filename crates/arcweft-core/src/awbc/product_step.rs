@@ -405,15 +405,10 @@ impl AwbcProductStepExecutor {
                 .map(|suspension| &suspension.reason),
             Some(FiberSuspensionReason::BudgetYield)
         ) {
-            if let Some(suspension) = self.fiber.suspension.clone() {
-                if let Err(error) = self.fiber.resume_at(&self.program, suspension.resume) {
-                    self.fail_with_error(
-                        ProductStepError::Internal(error.to_string()),
-                        &mut output,
-                    );
-                } else {
-                    self.fiber.replenish_budget();
-                }
+            if let Err(error) = self.fiber.resume_budget_yield(&self.program) {
+                self.fail_with_error(ProductStepError::Internal(error.to_string()), &mut output);
+            } else {
+                self.fiber.replenish_budget();
             }
         } else if self.fiber.status == FiberStatus::Running {
             self.fiber.replenish_budget();
@@ -714,37 +709,36 @@ impl AwbcProductStepExecutor {
         let Some(suspension) = self.fiber.suspension.clone() else {
             return false;
         };
+        if suspension.reason == FiberSuspensionReason::BudgetYield {
+            return false;
+        }
+        let Some(resume) = suspension.declared_resume() else {
+            self.fail_with_error(
+                ProductStepError::Internal(
+                    "non-budget suspension is missing a declared resume point".to_owned(),
+                ),
+                output,
+            );
+            return false;
+        };
         match suspension.reason {
             FiberSuspensionReason::Dialogue {
                 content,
                 line_task_group,
-            } => self.resume_dialogue(content, line_task_group, suspension.resume, input, output),
+            } => self.resume_dialogue(content, line_task_group, resume, input, output),
             FiberSuspensionReason::Choice {
                 choice,
                 destination,
-            } => self.resume_choice(
-                choice,
-                destination,
-                suspension.resume,
-                input,
-                output,
-                pure_backend,
-            ),
+            } => self.resume_choice(choice, destination, resume, input, output, pure_backend),
             FiberSuspensionReason::Await { task, binding } => {
-                self.resume_await(&task, binding, suspension.resume, task_events, output)
+                self.resume_await(&task, binding, resume, task_events, output)
             }
             FiberSuspensionReason::AwaitMany(state) => {
-                self.resume_await_many(state, suspension.resume, task_events, output)
+                self.resume_await_many(state, resume, task_events, output)
             }
             FiberSuspensionReason::HostCall {
                 call, destination, ..
-            } => self.resume_host_call(
-                call,
-                destination,
-                suspension.resume,
-                &input.host_call_results,
-                output,
-            ),
+            } => self.resume_host_call(call, destination, resume, &input.host_call_results, output),
             FiberSuspensionReason::BudgetYield => false,
         }
     }

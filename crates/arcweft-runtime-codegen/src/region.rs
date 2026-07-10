@@ -1,7 +1,7 @@
 use crate::artifact::CodeRegionId;
 use crate::policy::ProgramGenerationId;
 use arcweft_core::awbc::fiber::{
-    FiberSafePoint, FiberState, FiberStateError, FiberStatus, FiberSuspension,
+    FiberResumeTarget, FiberSafePoint, FiberState, FiberStateError, FiberStatus, FiberSuspension,
     FiberSuspensionReason, FiberTrap,
 };
 use arcweft_core::awbc::schema::{
@@ -282,7 +282,7 @@ fn apply_exit(
         CompiledStepExit::HostRequest(request) => {
             validate_resume(program, fiber, request.resume, AwbcSafePointKind::HostCall)?;
             fiber.suspend(FiberSuspension {
-                resume: request.resume,
+                resume: FiberResumeTarget::Declared(request.resume),
                 reason: FiberSuspensionReason::HostCall {
                     call: request.call,
                     args: request.args.clone(),
@@ -293,7 +293,10 @@ fn apply_exit(
         }
         CompiledStepExit::Suspended(suspension) => {
             let expected = suspension_kind(&suspension.reason);
-            validate_resume(program, fiber, suspension.resume, expected)?;
+            let resume = suspension
+                .declared_resume()
+                .ok_or(CompiledApplyError::InvalidSafePoint)?;
+            validate_resume(program, fiber, resume, expected)?;
             fiber.suspend(suspension)?;
             Ok(CompiledTransition::Suspended)
         }
@@ -310,7 +313,7 @@ fn apply_exit(
         CompiledStepExit::BudgetExhausted { resume } => {
             validate_resume(program, fiber, resume, AwbcSafePointKind::BudgetYield)?;
             fiber.suspend(FiberSuspension {
-                resume,
+                resume: FiberResumeTarget::Declared(resume),
                 reason: FiberSuspensionReason::BudgetYield,
             })?;
             Ok(CompiledTransition::BudgetExhausted)

@@ -1,6 +1,7 @@
 use super::codec::{AwbcCodecError, AwbcDecodeBudget};
 use super::fiber::{
-    FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
+    FiberResumeTarget, FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension,
+    FiberSuspensionReason, FiberTrap,
 };
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
@@ -50,7 +51,7 @@ fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
             slots: vec![
                 AwbcFrameSlot {
                     name: None,
-                    ty: AwbcTypeId(0),
+                    ty: AwbcTypeId(1),
                     role: AwbcFrameSlotRole::Temporary,
                     scope_depth: 0,
                 },
@@ -506,7 +507,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
 }
 
 #[test]
-fn expression_apply_reports_suspending_function_body_as_runtime_error() {
+fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() {
     let program = expression_apply_program(
         Vec::new(),
         vec![
@@ -541,20 +542,223 @@ fn expression_apply_reports_suspending_function_body_as_runtime_error() {
             max_instructions: 16,
         },
     )
-    .expect("suspending expression apply records a trap");
+    .expect("suspending expression apply exits normally");
 
-    assert!(matches!(
+    assert_eq!(
         output.exit,
-        super::vm::VmExit::Trapped(trap)
-            if trap.message.as_deref().is_some_and(|message|
-                message.contains("function application cannot suspend from expression lowering")
-                && message.contains("BudgetYield")
-            )
-    ));
+        super::vm::VmExit::Suspended(FiberSuspensionReason::BudgetYield)
+    );
+    assert_eq!(fiber.frames.len(), 2);
+    assert_eq!(fiber.cursor.function, AwbcFunctionId(1));
+    assert_eq!(
+        fiber
+            .suspension
+            .as_ref()
+            .and_then(FiberSuspension::declared_resume),
+        Some(AwbcResumePointId(0))
+    );
+    assert_eq!(
+        fiber.frames[1]
+            .return_to
+            .expect("dynamic call continuation")
+            .cursor,
+        super::fiber::FiberCursor {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(0),
+            instruction_offset: 2,
+        }
+    );
+    fiber
+        .validate_for_program(&program)
+        .expect("suspended dynamic call snapshot validates");
+    let encoded = serde_json::to_string(&fiber).expect("serialize suspended dynamic call");
+    let mut fiber: FiberState =
+        serde_json::from_str(&encoded).expect("deserialize suspended dynamic call");
+    fiber
+        .validate_for_program(&program)
+        .expect("restored dynamic call snapshot validates");
+
+    fiber
+        .resume_at(&program, AwbcResumePointId(0))
+        .expect("resume dynamic callee");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("finish resumed dynamic call");
+    assert_eq!(
+        output.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::Unit))
+    );
+    assert_eq!(fiber.frames.len(), 1);
 }
 
 #[test]
-fn expression_apply_reports_inner_budget_yield_as_runtime_error() {
+fn expression_apply_surfaces_await_from_the_dynamic_callee() {
+    let mut await_program = expression_apply_program(
+        vec![AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(1),
+        }],
+        vec![
+            (
+                AwbcTerminator::Await {
+                    task: AwbcRegisterId(0),
+                    binding: None,
+                    resume: AwbcResumePointId(0),
+                },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+            (
+                AwbcTerminator::Return { value: None },
+                AwbcSafePointKind::None,
+            ),
+        ],
+        vec![AwbcResumePoint {
+            function: AwbcFunctionId(1),
+            block: AwbcBlockId(2),
+            frame_layout: AwbcFrameLayoutId(1),
+            kind: AwbcSafePointKind::Await,
+        }],
+    );
+    await_program.strings.push("task.dynamic".to_owned());
+    await_program
+        .constants
+        .push(AwbcConstant::String(AwbcStringId(1)));
+    await_program
+        .runtime_types
+        .push(AwbcRuntimeType::TaskHandle);
+    await_program.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
+
+    let mut fiber = FiberState::for_entry(&await_program, AwbcEntryId(0), 0, 64)
+        .expect("create await expression apply fiber");
+    let output = super::vm::step(
+        &await_program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("dynamic callee reaches await");
+    assert!(matches!(
+        output.exit,
+        super::vm::VmExit::Suspended(FiberSuspensionReason::Await {
+            task: RuntimeValue::String(ref task),
+            binding: None,
+        }) if task == "task.dynamic"
+    ));
+    assert_eq!(
+        fiber
+            .suspension
+            .as_ref()
+            .and_then(FiberSuspension::declared_resume),
+        Some(AwbcResumePointId(0))
+    );
+    fiber
+        .validate_for_program(&await_program)
+        .expect("awaiting dynamic callee snapshot validates");
+    fiber
+        .resume_at(&await_program, AwbcResumePointId(0))
+        .expect("resume await dynamic callee");
+    assert_eq!(
+        super::vm::step(
+            &await_program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 16,
+            },
+        )
+        .expect("finish await dynamic callee")
+        .exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::Unit))
+    );
+}
+
+#[test]
+fn expression_apply_surfaces_host_call_from_the_dynamic_callee() {
+    let mut host_program = expression_apply_program(
+        Vec::new(),
+        vec![
+            (
+                AwbcTerminator::HostCall {
+                    call: AwbcHostCallId(0),
+                    args: Vec::new(),
+                    dst: None,
+                    resume: AwbcResumePointId(0),
+                },
+                AwbcSafePointKind::CallableBoundary,
+            ),
+            (
+                AwbcTerminator::Return { value: None },
+                AwbcSafePointKind::None,
+            ),
+        ],
+        vec![AwbcResumePoint {
+            function: AwbcFunctionId(1),
+            block: AwbcBlockId(2),
+            frame_layout: AwbcFrameLayoutId(1),
+            kind: AwbcSafePointKind::HostCall,
+        }],
+    );
+    host_program.host_calls.push(AwbcHostCall {
+        public_id: AwbcStringId(0),
+        capability: AwbcStringId(0),
+        operation: AwbcStringId(0),
+        signature: AwbcSignatureId(1),
+        mode: AwbcHostCallMode::Suspend,
+        deterministic: true,
+    });
+
+    let mut fiber = FiberState::for_entry(&host_program, AwbcEntryId(0), 0, 64)
+        .expect("create host-call expression apply fiber");
+    let output = super::vm::step(
+        &host_program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("dynamic callee reaches host call");
+    assert_eq!(
+        output.exit,
+        super::vm::VmExit::Suspended(FiberSuspensionReason::HostCall {
+            call: AwbcHostCallId(0),
+            args: Vec::new(),
+            destination: None,
+        })
+    );
+    assert_eq!(
+        fiber
+            .suspension
+            .as_ref()
+            .and_then(FiberSuspension::declared_resume),
+        Some(AwbcResumePointId(0))
+    );
+    fiber
+        .validate_for_program(&host_program)
+        .expect("host-call dynamic callee snapshot validates");
+    fiber
+        .resume_at(&host_program, AwbcResumePointId(0))
+        .expect("resume host-call dynamic callee");
+    assert_eq!(
+        super::vm::step(
+            &host_program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 16,
+            },
+        )
+        .expect("finish host-call dynamic callee")
+        .exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::Unit))
+    );
+}
+
+#[test]
+fn expression_apply_uses_the_callers_budget_without_a_hidden_inner_limit() {
     let synthetic_instructions = vec![
         AwbcInstruction::LoadConst {
             dst: AwbcRegisterId(0),
@@ -574,8 +778,49 @@ fn expression_apply_reports_inner_budget_yield_as_runtime_error() {
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("verify expression apply budget program");
 
-    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 8_192)
         .expect("create expression apply fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 8_192,
+        },
+    )
+    .expect("long dynamic call uses caller budget");
+
+    assert_eq!(
+        output.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::Unit))
+    );
+    assert!(output.executed > 4_096);
+}
+
+#[test]
+fn expression_apply_keeps_partial_application_as_a_value_operation() {
+    let mut program = expression_apply_program(
+        Vec::new(),
+        vec![(
+            AwbcTerminator::Return { value: None },
+            AwbcSafePointKind::CallableBoundary,
+        )],
+        Vec::new(),
+    );
+    program.signatures[0].result = Some(AwbcTypeId(1));
+    program.signatures[1].params.push(AwbcTypeId(1));
+    program.frame_layouts[0].slots[1].ty = AwbcTypeId(1);
+    program.frame_layouts[1].slots[0].ty = AwbcTypeId(1);
+    program.frame_layouts[1].slots[0].role = AwbcFrameSlotRole::Parameter;
+    let AwbcInstruction::MakeFunction { params, .. } = &mut program.instructions[0] else {
+        panic!("expression apply fixture starts with MakeFunction");
+    };
+    params.push(AwbcStringId(0));
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("verify partial expression apply program");
+
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 0, 16).expect("create partial fiber");
     let output = super::vm::step(
         &program,
         &mut fiber,
@@ -583,14 +828,115 @@ fn expression_apply_reports_inner_budget_yield_as_runtime_error() {
             max_instructions: 16,
         },
     )
-    .expect("budget-yielding expression apply records a trap");
+    .expect("partially apply function");
+    let super::vm::VmExit::Returned(Some(RuntimeValue::Function(function))) = output.exit else {
+        panic!("partial application must return a function value");
+    };
+    assert_eq!(function.params, vec!["main".to_owned()]);
+    assert!(function.captures.is_empty());
+    assert_eq!(fiber.frames.len(), 1);
+}
 
+#[test]
+fn expression_apply_rejects_over_application_before_entering_the_callee() {
+    let mut program = expression_apply_program(
+        Vec::new(),
+        vec![(
+            AwbcTerminator::Return { value: None },
+            AwbcSafePointKind::CallableBoundary,
+        )],
+        Vec::new(),
+    );
+    let AwbcInstruction::ApplyFunction { args, .. } = &mut program.instructions[1] else {
+        panic!("expression apply fixture ends with ApplyFunction");
+    };
+    args.push(AwbcRegisterId(0));
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("verify over-application program");
+
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 0, 16).expect("create over-apply fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("over-application becomes a typed trap");
     assert!(matches!(
         output.exit,
-        super::vm::VmExit::Trapped(trap)
-            if trap.message.as_deref()
-                == Some("runtime error: function application exhausted expression budget")
+        super::vm::VmExit::Trapped(FiberTrap {
+            code: AwbcTrapCode::TypeMismatch,
+            message: Some(ref message),
+            ..
+        }) if message == "function application expected 0 arguments, received 1"
     ));
+    assert_eq!(fiber.frames.len(), 1);
+}
+
+#[test]
+fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
+    let program = expression_apply_program(
+        Vec::new(),
+        vec![(
+            AwbcTerminator::Return { value: None },
+            AwbcSafePointKind::CallableBoundary,
+        )],
+        Vec::new(),
+    );
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 0, 2).expect("create budgeted fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("preempt dynamic callee");
+
+    let exact_callee_entry = super::fiber::FiberCursor {
+        function: AwbcFunctionId(1),
+        block: AwbcBlockId(1),
+        instruction_offset: 0,
+    };
+    assert!(matches!(
+        output.exit,
+        super::vm::VmExit::BudgetYield(point) if point.cursor == exact_callee_entry
+    ));
+    assert_eq!(
+        fiber
+            .suspension
+            .as_ref()
+            .map(|suspension| suspension.resume),
+        Some(FiberResumeTarget::Exact(exact_callee_entry))
+    );
+    fiber
+        .validate_for_program(&program)
+        .expect("preempted dynamic call snapshot validates");
+    let encoded = serde_json::to_string(&fiber).expect("serialize preempted dynamic call");
+    let mut fiber: FiberState =
+        serde_json::from_str(&encoded).expect("deserialize preempted dynamic call");
+    fiber
+        .resume_budget_yield(&program)
+        .expect("resume exact budget target");
+    assert_eq!(fiber.cursor, exact_callee_entry);
+    fiber.replenish_budget();
+
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("finish exact-resumed dynamic call");
+    assert_eq!(
+        output.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::Unit))
+    );
 }
 
 #[test]
@@ -632,7 +978,7 @@ fn budget_safe_point_suspends_and_resumes() {
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 7, 100).expect("create fiber");
     fiber
         .suspend(FiberSuspension {
-            resume: AwbcResumePointId(0),
+            resume: FiberResumeTarget::Declared(AwbcResumePointId(0)),
             reason: FiberSuspensionReason::BudgetYield,
         })
         .expect("suspend fiber");

@@ -5,8 +5,9 @@
 //! This module never falls back to the structured VM.
 
 use super::fiber::{
-    FiberAwaitManyState, FiberSafePoint, FiberScopeCleanup, FiberState, FiberStateError,
-    FiberStatus, FiberSuspension, FiberSuspensionReason, FiberTerminalValue, FiberTrap,
+    FiberAwaitManyState, FiberCursor, FiberResumeTarget, FiberReturnPoint, FiberSafePoint,
+    FiberScopeCleanup, FiberState, FiberStateError, FiberStatus, FiberSuspension,
+    FiberSuspensionReason, FiberTerminalValue, FiberTrap,
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
@@ -112,8 +113,16 @@ pub enum VmError {
     MissingIntrinsic(AwbcIntrinsicId),
     #[error("AWBC trait method {0:?} does not exist")]
     MissingTraitMethod(AwbcTraitMethodId),
+    #[error("function application expected {expected} arguments, received {actual}")]
+    FunctionArgumentCount { expected: usize, actual: usize },
     #[error("runtime error: {0}")]
     Runtime(String),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InstructionControl {
+    Continue,
+    Transferred,
 }
 
 pub trait VmHost {
@@ -180,7 +189,7 @@ pub fn step_with_host(
         if !fiber.consume_budget(1) {
             let safe_point = fiber.safe_point(None)?;
             fiber.suspend(FiberSuspension {
-                resume: safe_point.resume.unwrap_or(AwbcResumePointId(0)),
+                resume: FiberResumeTarget::Exact(safe_point.cursor),
                 reason: FiberSuspensionReason::BudgetYield,
             })?;
             return Ok(VmStepOutput {
@@ -213,7 +222,7 @@ pub fn step_with_host(
             let source_map =
                 source_map_for_location(program, AwbcCodeLocation::Instruction(instruction_id))
                     .or(block.source_map);
-            if let Err(error) = execute_instruction(
+            let control = match execute_instruction(
                 program,
                 fiber,
                 host,
@@ -221,24 +230,34 @@ pub fn step_with_host(
                 source_map,
                 &mut observations,
             ) {
-                if let Some(code) = error.runtime_trap_code() {
-                    let trap = mark_runtime_error_trap(
-                        fiber,
-                        code,
-                        error.to_string(),
-                        source_map,
-                        &mut observations,
-                    );
-                    executed = executed.saturating_add(1);
-                    return Ok(VmStepOutput {
-                        executed,
-                        observations,
-                        exit: VmExit::Trapped(trap),
-                    });
+                Ok(control) => control,
+                Err(error) => {
+                    if let Some(code) = error.runtime_trap_code() {
+                        let trap = mark_runtime_error_trap(
+                            fiber,
+                            code,
+                            error.to_string(),
+                            source_map,
+                            &mut observations,
+                        );
+                        executed = executed.saturating_add(1);
+                        return Ok(VmStepOutput {
+                            executed,
+                            observations,
+                            exit: VmExit::Trapped(trap),
+                        });
+                    }
+                    return Err(error);
                 }
-                return Err(error);
+            };
+            if control == InstructionControl::Continue {
+                if fiber.cursor != cursor {
+                    return Err(VmError::Runtime(
+                        "instruction changed control flow without reporting a transfer".to_owned(),
+                    ));
+                }
+                fiber.cursor.instruction_offset = cursor.instruction_offset.saturating_add(1);
             }
-            fiber.cursor.instruction_offset = fiber.cursor.instruction_offset.saturating_add(1);
             executed = executed.saturating_add(1);
             continue;
         }
@@ -293,7 +312,7 @@ fn execute_instruction(
     instruction: &AwbcInstruction,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
-) -> Result<(), VmError> {
+) -> Result<InstructionControl, VmError> {
     match instruction {
         AwbcInstruction::Nop => {}
         AwbcInstruction::LoadConst { dst, constant } => {
@@ -399,7 +418,7 @@ fn execute_instruction(
                         source_map,
                         observations,
                     );
-                    return Ok(());
+                    return Ok(InstructionControl::Continue);
                 }
                 sequence.value_at(index)
             };
@@ -675,8 +694,7 @@ fn execute_instruction(
                     runtime_value_label(&callee)
                 )));
             };
-            let value = apply_runtime_function(program, fiber.entry, host, &function, &args)?;
-            fiber.active_frame_mut()?.set_register(*dst, value)?;
+            return apply_runtime_function(program, fiber, &function, &args, *dst);
         }
         AwbcInstruction::StartTask { dst, plan, args } => {
             let args = register_values(fiber, args)?;
@@ -755,7 +773,7 @@ fn execute_instruction(
             }
         }
     }
-    Ok(())
+    Ok(InstructionControl::Continue)
 }
 
 fn drain_active_frame_root_cleanups(
@@ -781,39 +799,24 @@ fn emit_cleanup_observations(
 
 fn apply_runtime_function(
     program: &AwbcProgram,
-    entry: super::schema::AwbcEntryId,
-    host: &mut impl VmHost,
+    fiber: &mut FiberState,
     function: &RuntimeFunctionValue,
     args: &[RuntimeValue],
-) -> Result<RuntimeValue, VmError> {
+    destination: AwbcRegisterId,
+) -> Result<InstructionControl, VmError> {
     if args.len() < function.arity() {
-        return Ok(RuntimeValue::Function(function.partially_apply(args)));
+        fiber.active_frame_mut()?.set_register(
+            destination,
+            RuntimeValue::Function(function.partially_apply(args)),
+        )?;
+        return Ok(InstructionControl::Continue);
     }
-
-    let (call_args, remaining_args) = args.split_at(function.arity());
-    let value = call_awbc_function(program, entry, host, function, call_args)?;
-    if remaining_args.is_empty() {
-        return Ok(value);
+    if args.len() > function.arity() {
+        return Err(VmError::FunctionArgumentCount {
+            expected: function.arity(),
+            actual: args.len(),
+        });
     }
-    match value {
-        RuntimeValue::Function(next) => {
-            apply_runtime_function(program, entry, host, &next, remaining_args)
-        }
-        _ => Err(VmError::Runtime(format!(
-            "function returned {} before consuming {} remaining arguments",
-            runtime_value_label(&value),
-            remaining_args.len()
-        ))),
-    }
-}
-
-fn call_awbc_function(
-    program: &AwbcProgram,
-    entry: super::schema::AwbcEntryId,
-    host: &mut impl VmHost,
-    function: &RuntimeFunctionValue,
-    args: &[RuntimeValue],
-) -> Result<RuntimeValue, VmError> {
     let RuntimeFunctionBody::Awbc(function_id) = &function.body else {
         return Err(VmError::Runtime(
             "AWBC VM cannot apply structured expression function bodies".to_owned(),
@@ -825,51 +828,17 @@ fn call_awbc_function(
         .map(|capture| capture.value.clone())
         .collect::<Vec<_>>();
     values.extend(args.iter().cloned());
-    execute_awbc_function_sync(program, entry, host, *function_id, &values)
-}
-
-fn execute_awbc_function_sync(
-    program: &AwbcProgram,
-    entry: super::schema::AwbcEntryId,
-    host: &mut impl VmHost,
-    function: AwbcFunctionId,
-    args: &[RuntimeValue],
-) -> Result<RuntimeValue, VmError> {
-    const FUNCTION_APPLY_BUDGET: u64 = 4_096;
-
-    let mut fiber = FiberState::for_function(program, entry, function, 0, FUNCTION_APPLY_BUDGET)?;
-    fiber
-        .active_frame_mut()?
-        .bind_positional_arguments(program, args)?;
-    loop {
-        let output = step_with_host(
-            program,
-            &mut fiber,
-            VmStepOptions {
-                max_instructions: FUNCTION_APPLY_BUDGET,
-            },
-            host,
-        )?;
-        match output.exit {
-            VmExit::Running => {}
-            VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
-            VmExit::Trapped(trap) => {
-                return Err(VmError::Runtime(format!(
-                    "function application trapped: {trap:?}"
-                )));
-            }
-            VmExit::Suspended(reason) => {
-                return Err(VmError::Runtime(format!(
-                    "function application cannot suspend from expression lowering: {reason:?}"
-                )));
-            }
-            VmExit::BudgetYield(_) => {
-                return Err(VmError::Runtime(
-                    "function application exhausted expression budget".to_owned(),
-                ));
-            }
-        }
-    }
+    let caller = fiber.cursor;
+    let return_to = FiberReturnPoint {
+        cursor: FiberCursor {
+            function: caller.function,
+            block: caller.block,
+            instruction_offset: caller.instruction_offset.saturating_add(1),
+        },
+        destination: Some(destination),
+    };
+    fiber.push_call_frame_at(program, *function_id, return_to, &values)?;
+    Ok(InstructionControl::Transferred)
 }
 
 #[derive(Debug)]
@@ -1206,7 +1175,7 @@ fn suspend(
     reason: FiberSuspensionReason,
 ) -> Result<VmExit, VmError> {
     fiber.suspend(FiberSuspension {
-        resume,
+        resume: FiberResumeTarget::Declared(resume),
         reason: reason.clone(),
     })?;
     Ok(VmExit::Suspended(reason))
@@ -1552,7 +1521,8 @@ impl VmError {
             }
             Self::Fiber(
                 FiberStateError::ReturnValueMismatch | FiberStateError::EntryArgumentType { .. },
-            ) => Some(AwbcTrapCode::TypeMismatch),
+            )
+            | Self::FunctionArgumentCount { .. } => Some(AwbcTrapCode::TypeMismatch),
             Self::MissingIntrinsic(_) => Some(AwbcTrapCode::HostAbiMismatch),
             Self::Fiber(_) => Some(AwbcTrapCode::InternalInvariant),
             Self::MissingFunction(_)
