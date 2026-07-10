@@ -8,13 +8,14 @@ use arcweft_core::{
         schema::{
             AwbcBlock, AwbcBlockId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
             AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout,
-            AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-            AwbcProgram, AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId,
-            AwbcStringId, AwbcTableRange, AwbcTerminator,
+            AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags,
+            AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType, AwbcSafePointKind,
+            AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+            AwbcTerminator, AwbcTypeId,
         },
     },
     bytecode::BytecodeProgram,
-    value::{RuntimeExpr, RuntimeFunctionValue, RuntimeValue},
+    value::{RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, RuntimeValue},
 };
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
@@ -242,7 +243,7 @@ fn awbc_save_load_preserves_cleanup_stacks() {
 }
 
 #[test]
-fn session_save_rejects_runtime_function_values() {
+fn session_save_rejects_structured_function_bodies() {
     let bytes = product_awfb_bytes("entry.main");
     let mut session = product_session_from_bytes(&bytes);
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
@@ -251,29 +252,96 @@ fn session_save_rejects_runtime_function_values() {
     frame.root_cleanups.push(FiberScopeCleanup {
         key: "handle.function".to_owned(),
         effect: AwbcEffectPlanId(0),
-        args: vec![runtime_function_value()],
+        args: vec![structured_runtime_function_value()],
     });
 
     let error = session
         .restore_session_snapshot(snapshot.clone())
-        .expect_err("function values are not valid session-save payloads");
+        .expect_err("structured function bodies are not valid Product AWBC state");
     assert!(matches!(
         error,
-        BundleSessionSaveError::UnsupportedRuntimeValue { path, kind }
-            if kind == "function"
-                && path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+        BundleSessionSaveError::InvalidRuntimeValue { path, message }
+            if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+                && message.contains("structured expression function bodies")
     ));
 
     let save = encode_session_snapshot(&snapshot, BUNDLE_SESSION_SAVE_SCHEMA_VERSION);
     let mut restored = product_session_from_bytes(&bytes);
     let error = restored
         .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
-        .expect_err("encoded function values are rejected on import");
+        .expect_err("encoded structured functions are rejected on import");
     assert!(matches!(
         error,
-        BundleSessionSaveError::UnsupportedRuntimeValue { path, kind }
-            if kind == "function"
-                && path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+        BundleSessionSaveError::InvalidRuntimeValue { path, message }
+            if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+                && message.contains("structured expression function bodies")
+    ));
+}
+
+#[test]
+fn session_save_round_trips_awbc_function_values() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let mut snapshot = session.snapshot_session().expect("snapshot exports");
+    snapshot
+        .executor
+        .state
+        .fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .root_cleanups
+        .push(FiberScopeCleanup {
+            key: "handle.function".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: vec![captured_awbc_runtime_function_value()],
+        });
+
+    session
+        .restore_session_snapshot(snapshot.clone())
+        .expect("AWBC-backed function state restores");
+    let encoded = session
+        .export_session_save_bytes()
+        .expect("AWBC-backed function state encodes");
+    let mut restored = product_session_from_bytes(&bytes);
+    restored
+        .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
+        .expect("AWBC-backed function state imports");
+
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("restored snapshot exports")
+            .executor,
+        snapshot.executor
+    );
+}
+
+#[test]
+fn session_save_rejects_stale_awbc_function_ids() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let mut snapshot = session.snapshot_session().expect("snapshot exports");
+    snapshot
+        .executor
+        .state
+        .fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .root_cleanups
+        .push(FiberScopeCleanup {
+            key: "handle.function".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: vec![awbc_runtime_function_value(AwbcFunctionId(u32::MAX))],
+        });
+
+    let error = session
+        .restore_session_snapshot(snapshot)
+        .expect_err("stale function table ids reject");
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::InvalidRuntimeValue { path, message }
+            if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+                && message.contains("does not exist")
     ));
 }
 
@@ -509,7 +577,7 @@ fn cleanup(key: &str, value: &str) -> FiberScopeCleanup {
     }
 }
 
-fn runtime_function_value() -> RuntimeValue {
+fn structured_runtime_function_value() -> RuntimeValue {
     RuntimeValue::Function(RuntimeFunctionValue::new(
         vec!["value".to_owned()],
         RuntimeExpr::Local("value".to_owned()),
@@ -517,43 +585,108 @@ fn runtime_function_value() -> RuntimeValue {
     ))
 }
 
+fn awbc_runtime_function_value(function: AwbcFunctionId) -> RuntimeValue {
+    RuntimeValue::Function(RuntimeFunctionValue::new_awbc(
+        Vec::new(),
+        function,
+        Vec::new(),
+    ))
+}
+
+fn captured_awbc_runtime_function_value() -> RuntimeValue {
+    RuntimeValue::Function(RuntimeFunctionValue::new_awbc(
+        Vec::new(),
+        AwbcFunctionId(1),
+        vec![RuntimeBinding {
+            name: "captured".to_owned(),
+            value: RuntimeValue::String("saved value".to_owned()),
+        }],
+    ))
+}
+
 fn minimal_awbc_program(entry: &str) -> AwbcProgram {
     AwbcProgram {
-        strings: vec![entry.to_owned()],
-        signatures: vec![AwbcSignature {
-            params: Vec::new(),
-            result: None,
-            effects: AwbcEffectSetId(0),
-        }],
-        frame_layouts: vec![AwbcFrameLayout {
-            slots: Vec::new(),
-            max_scope_depth: 1,
-        }],
-        functions: vec![AwbcFunction {
-            public_id: Some(AwbcStringId(0)),
-            kind: AwbcFunctionKind::Flow,
-            signature: AwbcSignatureId(0),
-            frame_layout: AwbcFrameLayoutId(0),
-            blocks: AwbcTableRange::new(0, 1),
-            entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
-        }],
-        blocks: vec![AwbcBlock {
-            owner: AwbcFunctionId(0),
-            instructions: AwbcTableRange::new(0, 0),
-            terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::FlowEntry,
-            source_map: None,
-        }],
+        strings: vec!["captured".to_owned(), entry.to_owned()],
+        runtime_types: vec![AwbcRuntimeType::String, AwbcRuntimeType::Dynamic],
+        signatures: vec![
+            AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            },
+            AwbcSignature {
+                params: vec![AwbcTypeId(0)],
+                result: Some(AwbcTypeId(0)),
+                effects: AwbcEffectSetId(0),
+            },
+            AwbcSignature {
+                params: vec![AwbcTypeId(1)],
+                result: None,
+                effects: AwbcEffectSetId(0),
+            },
+        ],
+        frame_layouts: vec![
+            AwbcFrameLayout {
+                slots: Vec::new(),
+                max_scope_depth: 1,
+            },
+            AwbcFrameLayout {
+                slots: vec![AwbcFrameSlot {
+                    name: Some(AwbcStringId(0)),
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                }],
+                max_scope_depth: 0,
+            },
+        ],
+        functions: vec![
+            AwbcFunction {
+                public_id: Some(AwbcStringId(1)),
+                kind: AwbcFunctionKind::Flow,
+                signature: AwbcSignatureId(0),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 1),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            },
+            AwbcFunction {
+                public_id: None,
+                kind: AwbcFunctionKind::Synthetic,
+                signature: AwbcSignatureId(1),
+                frame_layout: AwbcFrameLayoutId(1),
+                blocks: AwbcTableRange::new(1, 1),
+                entry_block: AwbcBlockId(1),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            },
+        ],
+        blocks: vec![
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(1),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return {
+                    value: Some(arcweft_core::awbc::schema::AwbcRegisterId(0)),
+                },
+                safe_point: AwbcSafePointKind::CallableBoundary,
+                source_map: None,
+            },
+        ],
         entries: vec![AwbcEntry {
-            public_id: AwbcStringId(0),
+            public_id: AwbcStringId(1),
             kind: AwbcEntryKind::Game,
             signature: AwbcSignatureId(0),
             target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
         }],
         effect_plans: vec![AwbcEffectPlan {
             kind: AwbcEffectKind::DropHandle,
-            signature: AwbcSignatureId(0),
+            signature: AwbcSignatureId(2),
             capability: None,
             audio: None,
             static_args: Vec::new(),

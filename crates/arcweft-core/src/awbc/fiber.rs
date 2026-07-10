@@ -7,8 +7,12 @@ use super::schema::{
     AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
     AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind,
 };
-use crate::value::{RuntimeBinding, RuntimeInt, RuntimeUInt, RuntimeValue};
+use crate::value::{
+    RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeInt, RuntimeIterator,
+    RuntimeSeq, RuntimeUInt, RuntimeValue,
+};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use thiserror::Error;
 
 /// Complete state that may cross compact-VM and compiled-region boundaries.
@@ -232,6 +236,12 @@ pub enum FiberStateError {
     InvalidFrame,
     #[error("fiber call return value does not match its destination")]
     ReturnValueMismatch,
+    #[error("structured expression function bodies are not valid in an AWBC fiber")]
+    StructuredRuntimeFunction,
+    #[error("invalid AWBC runtime function: {reason}")]
+    InvalidRuntimeFunction { reason: String },
+    #[error("invalid runtime value at {path}: {reason}")]
+    InvalidRuntimeValue { path: String, reason: String },
     #[error("AWBC entry expects {expected} arguments, received {actual}")]
     EntryArgumentCount { expected: usize, actual: usize },
     #[error("AWBC entry argument `{name}` is duplicated")]
@@ -478,7 +488,7 @@ impl FiberState {
             return Err(FiberStateError::InvalidFrame);
         }
         for (index, frame) in self.frames.iter().enumerate() {
-            validate_frame(program, frame)?;
+            validate_frame(program, frame, &format!("frames[{index}]"))?;
             if index == 0 && frame.return_to.is_some() {
                 return Err(FiberStateError::InvalidFrame);
             }
@@ -504,15 +514,14 @@ impl FiberState {
             }
             validate_suspension(program, self, suspension)?;
         }
-        for source in &self.sources {
-            if program.source_plans.get(source.plan.index()).is_none() {
-                return Err(FiberStateError::InvalidFrame);
-            }
+        if let Some(terminal) = &self.terminal {
+            validate_terminal(program, terminal)?;
         }
-        for stream in &self.streams {
-            if program.stream_plans.get(stream.plan.index()).is_none() {
-                return Err(FiberStateError::InvalidFrame);
-            }
+        for (index, source) in self.sources.iter().enumerate() {
+            validate_source(program, source, &format!("sources[{index}]"))?;
+        }
+        for (index, stream) in self.streams.iter().enumerate() {
+            validate_stream(program, stream, &format!("streams[{index}]"))?;
         }
         Ok(())
     }
@@ -842,8 +851,26 @@ fn validate_fiber_terminal_shape(state: &FiberState) -> Result<(), FiberStateErr
                 });
             }
         }
-        FiberStatus::Returned | FiberStatus::Trapped => {
-            if state.suspension.is_some() || state.terminal.is_none() {
+        FiberStatus::Returned => {
+            if state.suspension.is_some()
+                || !matches!(
+                    state.terminal.as_ref(),
+                    Some(FiberTerminalValue::Returned(_))
+                )
+            {
+                return Err(FiberStateError::InvalidStatus {
+                    actual: state.status,
+                    expected: state.status,
+                });
+            }
+        }
+        FiberStatus::Trapped => {
+            if state.suspension.is_some()
+                || !matches!(
+                    state.terminal.as_ref(),
+                    Some(FiberTerminalValue::Trapped(_))
+                )
+            {
                 return Err(FiberStateError::InvalidStatus {
                     actual: state.status,
                     expected: state.status,
@@ -872,7 +899,11 @@ fn validate_cursor(program: &AwbcProgram, cursor: FiberCursor) -> Result<(), Fib
     Ok(())
 }
 
-fn validate_frame(program: &AwbcProgram, frame: &FiberFrame) -> Result<(), FiberStateError> {
+fn validate_frame(
+    program: &AwbcProgram,
+    frame: &FiberFrame,
+    path: &str,
+) -> Result<(), FiberStateError> {
     let function = program
         .functions
         .get(frame.function.index())
@@ -895,24 +926,226 @@ fn validate_frame(program: &AwbcProgram, frame: &FiberFrame) -> Result<(), Fiber
             .slots
             .get(index)
             .ok_or(FiberStateError::InvalidFrame)?;
-        if !runtime_value_matches_type(program, value, slot.ty, 0) {
-            let register = u32::try_from(index).unwrap_or(u32::MAX);
-            return Err(FiberStateError::RegisterOutOfBounds {
-                register,
-                layout: frame.layout.0,
-            });
-        }
+        validate_runtime_value_at(
+            program,
+            value,
+            Some(slot.ty),
+            format!("{path}.registers[{index}]"),
+        )?;
     }
-    for cleanup in &frame.root_cleanups {
-        validate_cleanup(program, cleanup)?;
+    for (index, cleanup) in frame.root_cleanups.iter().enumerate() {
+        validate_cleanup(program, cleanup, &format!("{path}.root_cleanups[{index}]"))?;
     }
-    for scope in &frame.scopes {
+    for (scope_index, scope) in frame.scopes.iter().enumerate() {
         if scope.depth > layout.max_scope_depth {
             return Err(FiberStateError::InvalidFrame);
         }
-        for cleanup in &scope.cleanups {
-            validate_cleanup(program, cleanup)?;
+        for (cleanup_index, cleanup) in scope.cleanups.iter().enumerate() {
+            validate_cleanup(
+                program,
+                cleanup,
+                &format!("{path}.scopes[{scope_index}].cleanups[{cleanup_index}]"),
+            )?;
         }
+    }
+    Ok(())
+}
+
+fn validate_runtime_value_at(
+    program: &AwbcProgram,
+    value: &RuntimeValue,
+    expected: Option<AwbcTypeId>,
+    path: String,
+) -> Result<(), FiberStateError> {
+    if let Some(expected) = expected
+        && !runtime_value_matches_type(program, value, expected, 0)
+    {
+        return Err(FiberStateError::InvalidRuntimeValue {
+            path,
+            reason: format!(
+                "expected {}, received {}",
+                runtime_type_label(program, expected),
+                runtime_value_type_label(value)
+            ),
+        });
+    }
+    validate_nested_runtime_value(program, value, 0).map_err(|error| {
+        FiberStateError::InvalidRuntimeValue {
+            path,
+            reason: error.to_string(),
+        }
+    })
+}
+
+fn validate_nested_runtime_value(
+    program: &AwbcProgram,
+    value: &RuntimeValue,
+    depth: usize,
+) -> Result<(), FiberStateError> {
+    if depth > 64 {
+        return Err(FiberStateError::InvalidRuntimeFunction {
+            reason: "runtime value nesting exceeds 64 levels".to_owned(),
+        });
+    }
+    match value {
+        RuntimeValue::Function(function) => validate_runtime_function(program, function, depth),
+        RuntimeValue::Tuple(items) => items
+            .iter()
+            .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
+        RuntimeValue::Seq(sequence) => validate_nested_runtime_sequence(program, sequence, depth),
+        RuntimeValue::Record(fields) => fields
+            .iter()
+            .try_for_each(|field| validate_nested_runtime_value(program, &field.value, depth + 1)),
+        RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => items
+            .iter()
+            .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
+        RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
+            validate_nested_runtime_value(program, state, depth + 1)
+        }
+        RuntimeValue::Variant {
+            payload: Some(payload),
+            ..
+        } => validate_nested_runtime_value(program, payload, depth + 1),
+        RuntimeValue::Unit
+        | RuntimeValue::Bool(_)
+        | RuntimeValue::Int(_)
+        | RuntimeValue::UInt(_)
+        | RuntimeValue::F32(_)
+        | RuntimeValue::F64(_)
+        | RuntimeValue::MatrixF32(_)
+        | RuntimeValue::MatrixF64(_)
+        | RuntimeValue::TensorF32(_)
+        | RuntimeValue::TensorF64(_)
+        | RuntimeValue::String(_)
+        | RuntimeValue::Char(_)
+        | RuntimeValue::Duration(_)
+        | RuntimeValue::Range(_)
+        | RuntimeValue::Iterator(RuntimeIterator::Range(_))
+        | RuntimeValue::EntityRef(_)
+        | RuntimeValue::Variant { payload: None, .. } => Ok(()),
+    }
+}
+
+fn validate_nested_runtime_sequence(
+    program: &AwbcProgram,
+    sequence: &RuntimeSeq,
+    depth: usize,
+) -> Result<(), FiberStateError> {
+    match sequence {
+        RuntimeSeq::Values(items) => items
+            .iter()
+            .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
+        RuntimeSeq::TupleColumns(columns) => columns
+            .columns()
+            .iter()
+            .try_for_each(|column| validate_nested_runtime_sequence(program, column, depth + 1)),
+        RuntimeSeq::RecordColumns(records) => records.fields().iter().try_for_each(|field| {
+            validate_nested_runtime_sequence(program, &field.values, depth + 1)
+        }),
+        RuntimeSeq::Dense(_) => Ok(()),
+    }
+}
+
+fn validate_runtime_function(
+    program: &AwbcProgram,
+    function: &RuntimeFunctionValue,
+    depth: usize,
+) -> Result<(), FiberStateError> {
+    let RuntimeFunctionBody::Awbc(function_id) = &function.body else {
+        return Err(FiberStateError::StructuredRuntimeFunction);
+    };
+    let function_id = *function_id;
+    let function_record = program
+        .functions
+        .get(function_id.index())
+        .ok_or(FiberStateError::UnknownFunction(function_id.0))?;
+    let signature = program
+        .signatures
+        .get(function_record.signature.index())
+        .ok_or_else(|| FiberStateError::InvalidRuntimeFunction {
+            reason: format!("function {} has no signature", function_id.0),
+        })?;
+    let layout = program
+        .frame_layouts
+        .get(function_record.frame_layout.index())
+        .ok_or(FiberStateError::UnknownFrameLayout(
+            function_record.frame_layout.0,
+        ))?;
+    let parameters = layout
+        .slots
+        .iter()
+        .filter(|slot| slot.role == AwbcFrameSlotRole::Parameter)
+        .collect::<Vec<_>>();
+    let stored_arity = function
+        .captures
+        .len()
+        .saturating_add(function.params.len());
+    if signature.params.len() != stored_arity || parameters.len() != stored_arity {
+        return Err(FiberStateError::InvalidRuntimeFunction {
+            reason: format!(
+                "function {} expects {} parameters, snapshot stores {} captures/parameters",
+                function_id.0,
+                signature.params.len(),
+                stored_arity
+            ),
+        });
+    }
+
+    let stored_names = function
+        .captures
+        .iter()
+        .map(|capture| capture.name.as_str())
+        .chain(function.params.iter().map(String::as_str))
+        .collect::<Vec<_>>();
+    let mut unique_names = BTreeSet::new();
+    for (position, (name, slot)) in stored_names.iter().zip(&parameters).enumerate() {
+        if name.is_empty() || !unique_names.insert(*name) {
+            return Err(FiberStateError::InvalidRuntimeFunction {
+                reason: format!(
+                    "function {} has an empty or duplicate binding name at position {position}",
+                    function_id.0
+                ),
+            });
+        }
+        let expected_name = slot
+            .name
+            .and_then(|name| program.strings.get(name.index()))
+            .ok_or_else(|| FiberStateError::InvalidRuntimeFunction {
+                reason: format!(
+                    "function {} parameter {position} has no stable name",
+                    function_id.0
+                ),
+            })?;
+        if *name != expected_name {
+            return Err(FiberStateError::InvalidRuntimeFunction {
+                reason: format!(
+                    "function {} binding {position} is `{name}`, expected `{expected_name}`",
+                    function_id.0
+                ),
+            });
+        }
+        if slot.ty != signature.params[position] {
+            return Err(FiberStateError::InvalidRuntimeFunction {
+                reason: format!(
+                    "function {} parameter {position} disagrees with its signature",
+                    function_id.0
+                ),
+            });
+        }
+    }
+    for (position, capture) in function.captures.iter().enumerate() {
+        if !runtime_value_matches_type(program, &capture.value, signature.params[position], 0) {
+            return Err(FiberStateError::InvalidRuntimeFunction {
+                reason: format!(
+                    "function {} capture `{}` has type {}, expected {}",
+                    function_id.0,
+                    capture.name,
+                    runtime_value_type_label(&capture.value),
+                    runtime_type_label(program, signature.params[position])
+                ),
+            });
+        }
+        validate_nested_runtime_value(program, &capture.value, depth + 1)?;
     }
     Ok(())
 }
@@ -920,9 +1153,36 @@ fn validate_frame(program: &AwbcProgram, frame: &FiberFrame) -> Result<(), Fiber
 fn validate_cleanup(
     program: &AwbcProgram,
     cleanup: &FiberScopeCleanup,
+    path: &str,
 ) -> Result<(), FiberStateError> {
-    if cleanup.key.is_empty() || program.effect_plans.get(cleanup.effect.index()).is_none() {
+    if cleanup.key.is_empty() {
         return Err(FiberStateError::InvalidFrame);
+    }
+    let effect = program
+        .effect_plans
+        .get(cleanup.effect.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let signature = program
+        .signatures
+        .get(effect.signature.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if cleanup.args.len() != signature.params.len() {
+        return Err(FiberStateError::InvalidRuntimeValue {
+            path: format!("{path}.args"),
+            reason: format!(
+                "cleanup effect expects {} arguments, snapshot stores {}",
+                signature.params.len(),
+                cleanup.args.len()
+            ),
+        });
+    }
+    for (index, (value, expected)) in cleanup.args.iter().zip(&signature.params).enumerate() {
+        validate_runtime_value_at(
+            program,
+            value,
+            Some(*expected),
+            format!("{path}.args[{index}]"),
+        )?;
     }
     Ok(())
 }
@@ -1021,32 +1281,201 @@ fn validate_suspension(
                 });
             }
         }
-        FiberSuspensionReason::Await { binding, .. } => {
-            if let Some(binding) = binding
-                && program.patterns.get(binding.index()).is_none()
-            {
-                return Err(FiberStateError::InvalidFrame);
-            }
+        FiberSuspensionReason::Await { task, binding } => {
+            validate_await_suspension(program, task, *binding)?;
         }
         FiberSuspensionReason::AwaitMany(await_many) => {
-            if program.task_plans.get(await_many.plan.index()).is_none() {
-                return Err(FiberStateError::InvalidFrame);
-            }
-            if let Some(binding) = await_many.binding
-                && program.patterns.get(binding.index()).is_none()
+            validate_await_many_suspension(program, await_many)?;
+        }
+        FiberSuspensionReason::HostCall {
+            call,
+            args,
+            destination,
+        } => {
+            validate_host_call_suspension(program, frame, *call, args, *destination)?;
+        }
+        FiberSuspensionReason::BudgetYield => {}
+    }
+    Ok(())
+}
+
+fn validate_await_suspension(
+    program: &AwbcProgram,
+    task: &RuntimeValue,
+    binding: Option<AwbcPatternId>,
+) -> Result<(), FiberStateError> {
+    if binding.is_some_and(|binding| program.patterns.get(binding.index()).is_none()) {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    if !matches!(task, RuntimeValue::String(_)) {
+        return Err(FiberStateError::InvalidRuntimeValue {
+            path: "suspension.await.task".to_owned(),
+            reason: format!(
+                "expected task handle, received {}",
+                runtime_value_type_label(task)
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn validate_await_many_suspension(
+    program: &AwbcProgram,
+    await_many: &FiberAwaitManyState,
+) -> Result<(), FiberStateError> {
+    let plan = program
+        .task_plans
+        .get(await_many.plan.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let signature = program
+        .signatures
+        .get(plan.signature.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if plan.many.is_none()
+        || plan.arguments.len() != signature.params.len()
+        || await_many
+            .binding
+            .is_some_and(|binding| program.patterns.get(binding.index()).is_none())
+        || await_many.results.len() > await_many.items.len()
+        || await_many.next_index as usize > await_many.items.len()
+        || await_many
+            .in_flight
+            .iter()
+            .any(|in_flight| in_flight.index as usize >= await_many.items.len())
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let item_type = match signature.params.as_slice() {
+        [] => None,
+        [item] => Some(*item),
+        _ => return Err(FiberStateError::InvalidFrame),
+    };
+    for (index, item) in await_many.items.iter().enumerate() {
+        validate_runtime_value_at(
+            program,
+            item,
+            item_type,
+            format!("suspension.await_many.items[{index}]"),
+        )?;
+    }
+    for (index, result) in await_many.results.iter().enumerate() {
+        if let Some(result) = result {
+            validate_runtime_value_at(
+                program,
+                result,
+                signature.result,
+                format!("suspension.await_many.results[{index}]"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_host_call_suspension(
+    program: &AwbcProgram,
+    frame: &FiberFrame,
+    call: AwbcHostCallId,
+    args: &[RuntimeValue],
+    destination: Option<AwbcRegisterId>,
+) -> Result<(), FiberStateError> {
+    let call = program
+        .host_calls
+        .get(call.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let signature = program
+        .signatures
+        .get(call.signature.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if args.len() != signature.params.len() {
+        return Err(FiberStateError::InvalidRuntimeValue {
+            path: "suspension.host_call.args".to_owned(),
+            reason: format!(
+                "host call expects {} arguments, snapshot stores {}",
+                signature.params.len(),
+                args.len()
+            ),
+        });
+    }
+    for (index, (value, expected)) in args.iter().zip(&signature.params).enumerate() {
+        validate_runtime_value_at(
+            program,
+            value,
+            Some(*expected),
+            format!("suspension.host_call.args[{index}]"),
+        )?;
+    }
+    match (signature.result, destination) {
+        (None, None) => Ok(()),
+        (Some(_), Some(destination)) if destination.index() < frame.registers.len() => Ok(()),
+        _ => Err(FiberStateError::InvalidFrame),
+    }
+}
+
+fn validate_terminal(
+    program: &AwbcProgram,
+    terminal: &FiberTerminalValue,
+) -> Result<(), FiberStateError> {
+    match terminal {
+        FiberTerminalValue::Returned(Some(value)) => {
+            validate_runtime_value_at(program, value, None, "terminal.returned".to_owned())
+        }
+        FiberTerminalValue::Returned(None) => Ok(()),
+        FiberTerminalValue::Trapped(trap) => {
+            if trap
+                .source_map
+                .is_some_and(|source_map| program.source_map.get(source_map.index()).is_none())
             {
                 return Err(FiberStateError::InvalidFrame);
             }
-            if await_many.results.len() > await_many.items.len() {
-                return Err(FiberStateError::InvalidFrame);
-            }
+            Ok(())
         }
-        FiberSuspensionReason::HostCall { call, .. } => {
-            if program.host_calls.get(call.index()).is_none() {
-                return Err(FiberStateError::InvalidFrame);
-            }
-        }
-        FiberSuspensionReason::BudgetYield => {}
+    }
+}
+
+fn validate_source(
+    program: &AwbcProgram,
+    source: &FiberSourceState,
+    path: &str,
+) -> Result<(), FiberStateError> {
+    let plan = program
+        .source_plans
+        .get(source.plan.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    for (index, value) in source.queue.iter().enumerate() {
+        validate_runtime_value_at(
+            program,
+            value,
+            Some(plan.item_type),
+            format!("{path}.queue[{index}]"),
+        )?;
+    }
+    if let Some(error) = &source.last_error {
+        validate_runtime_value_at(
+            program,
+            error,
+            Some(plan.error_type),
+            format!("{path}.last_error"),
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_stream(
+    program: &AwbcProgram,
+    stream: &FiberStreamState,
+    path: &str,
+) -> Result<(), FiberStateError> {
+    let plan = program
+        .stream_plans
+        .get(stream.plan.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    for (index, value) in stream.queue.iter().enumerate() {
+        validate_runtime_value_at(
+            program,
+            value,
+            Some(plan.item_type),
+            format!("{path}.queue[{index}]"),
+        )?;
     }
     Ok(())
 }

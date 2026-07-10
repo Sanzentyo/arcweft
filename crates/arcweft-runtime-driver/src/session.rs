@@ -15,7 +15,7 @@ use crate::session_save::{
     BundleSessionArtifactIdentity, BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot,
     BundleSessionPendingBlocker, BundleSessionRuntimeSnapshot, BundleSessionSaveError,
     BundleSessionSnapshot, digest_label, validate_presentation_runtime_status,
-    validate_presentation_snapshot, validate_product_awbc_runtime_values,
+    validate_presentation_snapshot, validate_product_awbc_snapshot,
 };
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
@@ -1159,14 +1159,17 @@ impl BundleSession {
             if request.capability == "view.action" && request.operation == "await" {
                 match action_receive_action_id(&request) {
                     Some(action_id) => {
-                        if let Some(payload) = action_payload_from_step_inputs(
+                        if let Some(invocation) = action_invocation_from_step_inputs(
                             &action_id,
                             step_input_events,
                             text_control_write_backs,
                         ) {
                             self.pending_host_call_results.push(RuntimeHostCallResult {
                                 id: request.id,
-                                outcome: Ok(action_receive_payload(&action_id, payload.as_deref())),
+                                outcome: Ok(action_receive_payload(
+                                    &action_id,
+                                    invocation.payload.as_deref(),
+                                )),
                             });
                         } else {
                             self.waiting_action_receive_calls
@@ -1240,9 +1243,14 @@ impl BundleSession {
         validate_presentation_snapshot(&self.presentation)?;
         validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
         let active = self.active_generation();
+        let product_program = self.executor.product_awbc_program().ok_or_else(|| {
+            BundleSessionSaveError::UnsupportedExecutorTier {
+                tier: self.executor.tier().as_str().to_owned(),
+            }
+        })?;
         let executor = match self.executor.snapshot()? {
             ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) => {
-                validate_product_awbc_runtime_values(&state)?;
+                validate_product_awbc_snapshot(&state, product_program)?;
                 BundleSessionExecutorSnapshot {
                     generation: active.id,
                     state,
@@ -1336,7 +1344,12 @@ impl BundleSession {
             }
             None => false,
         };
-        validate_product_awbc_runtime_values(&state)?;
+        let product_program = self.executor.product_awbc_program().ok_or_else(|| {
+            BundleSessionSaveError::UnsupportedExecutorTier {
+                tier: self.executor.tier().as_str().to_owned(),
+            }
+        })?;
+        validate_product_awbc_snapshot(&state, product_program)?;
         let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
         let mut restored_executor = self.executor.clone();
         restored_executor.restore_snapshot(executor_snapshot)?;
@@ -1850,29 +1863,34 @@ fn action_receive_action_id(request: &RuntimeHostCallRequest) -> Option<String> 
     }
 }
 
-fn action_payload_from_step_inputs(
+struct ActionInvocation {
+    payload: Option<String>,
+}
+
+fn action_invocation_from_step_inputs(
     action_id: &str,
     step_input_events: &[RoutedInputEvent],
     text_control_write_backs: &[RuntimeTextControlWriteBack],
-) -> Option<Option<String>> {
+) -> Option<ActionInvocation> {
     text_control_write_backs
         .iter()
         .find_map(|write_back| {
             let handler = write_back.handler()?;
-            (write_back.is_submit() && handler.handler_id == action_id)
-                .then(|| Some(write_back.value().as_str().to_owned()))
+            (write_back.is_submit() && handler.handler_id == action_id).then(|| ActionInvocation {
+                payload: Some(write_back.value().as_str().to_owned()),
+            })
         })
         .or_else(|| {
             step_input_events
                 .iter()
-                .find_map(|event| action_payload_from_input_event(action_id, event))
+                .find_map(|event| action_invocation_from_input_event(action_id, event))
         })
 }
 
-fn action_payload_from_input_event(
+fn action_invocation_from_input_event(
     action_id: &str,
     event: &RoutedInputEvent,
-) -> Option<Option<String>> {
+) -> Option<ActionInvocation> {
     let InputEventKind::Custom { name } = &event.event else {
         return None;
     };
@@ -1881,7 +1899,7 @@ fn action_payload_from_input_event(
     {
         return None;
     }
-    Some(match event.payload.as_ref() {
+    let payload = match event.payload.as_ref() {
         Some(InteractionPayload::Text(value)) => Some(value.clone()),
         Some(InteractionPayload::Entity(value)) => Some(value.as_str().to_owned()),
         Some(
@@ -1894,7 +1912,8 @@ fn action_payload_from_input_event(
             | InteractionPayload::Map(_),
         )
         | None => None,
-    })
+    };
+    Some(ActionInvocation { payload })
 }
 
 fn action_receive_payload(action_id: &str, payload: Option<&str>) -> RuntimePayload {

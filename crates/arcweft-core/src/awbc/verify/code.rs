@@ -737,6 +737,36 @@ fn apply_instruction(
             if signature.params.len() != expected {
                 return argument_count(&at, signature.params.len(), expected);
             }
+            let target_layout =
+                &program.frame_layouts[program.functions[target.index()].frame_layout.index()];
+            let target_parameters = target_layout
+                .slots
+                .iter()
+                .filter(|slot| slot.role == AwbcFrameSlotRole::Parameter)
+                .collect::<Vec<_>>();
+            if target_parameters.len() != expected {
+                return argument_count(&at, target_parameters.len(), expected);
+            }
+            for (position, (name, slot)) in capture_names
+                .iter()
+                .chain(params)
+                .zip(&target_parameters)
+                .enumerate()
+            {
+                if slot.name != Some(*name) {
+                    return invalid_type(
+                        &at,
+                        &format!("function parameter {position} name matching its closure binding"),
+                    );
+                }
+                if slot.ty != signature.params[position] {
+                    return type_mismatch(&at, signature.params[position], slot.ty);
+                }
+            }
+            for (position, capture) in captures.iter().enumerate() {
+                let actual = register_type(verifier, function, block, *capture)?;
+                require_compatible(program, signature.params[position], actual, &at)?;
+            }
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::ApplyFunction { dst, callee, args } => {

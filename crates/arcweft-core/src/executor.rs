@@ -307,6 +307,15 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Returns the canonical program that owns Product AWBC fiber values.
+    pub const fn product_awbc_program(&self) -> Option<&AwbcProgram> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Some(executor.vm.program()),
+            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+        }
+    }
+
     pub const fn fast_path_ops(&self) -> usize {
         match &self.inner {
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fast_path_ops(),

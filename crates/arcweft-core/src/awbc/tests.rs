@@ -5,7 +5,7 @@ use super::fiber::{
 };
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
-use crate::value::RuntimeValue;
+use crate::value::{RuntimeFunctionValue, RuntimeValue};
 
 fn minimal_program() -> AwbcProgram {
     AwbcProgram {
@@ -43,6 +43,56 @@ fn minimal_program() -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+#[test]
+fn fiber_snapshot_rejects_stale_functions_in_cleanup_arguments() {
+    let mut program = minimal_program();
+    let dynamic_type = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Dynamic);
+    program.signatures.push(AwbcSignature {
+        params: vec![dynamic_type],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Log,
+        signature: AwbcSignatureId(1),
+        capability: None,
+        audio: None,
+        static_args: Vec::new(),
+        resources: Vec::new(),
+    });
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
+        .expect("create snapshot validation fiber");
+    fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .root_cleanups
+        .push(FiberScopeCleanup {
+            key: "cleanup.stale-function".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: vec![RuntimeValue::Function(RuntimeFunctionValue::new_awbc(
+                Vec::new(),
+                AwbcFunctionId(u32::MAX),
+                Vec::new(),
+            ))],
+        });
+
+    let error = fiber
+        .validate_for_program(&program)
+        .expect_err("stale cleanup function must reject");
+    assert!(
+        matches!(
+        &error,
+        super::fiber::FiberStateError::InvalidRuntimeValue { path, reason }
+            if path == "frames[0].root_cleanups[0].args[0]"
+                && reason.contains("does not exist")
+        ),
+        "{error:?}"
+    );
 }
 
 fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
@@ -811,6 +861,7 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
     program.frame_layouts[0].slots[1].ty = AwbcTypeId(1);
     program.frame_layouts[1].slots[0].ty = AwbcTypeId(1);
     program.frame_layouts[1].slots[0].role = AwbcFrameSlotRole::Parameter;
+    program.frame_layouts[1].slots[0].name = Some(AwbcStringId(0));
     let AwbcInstruction::MakeFunction { params, .. } = &mut program.instructions[0] else {
         panic!("expression apply fixture starts with MakeFunction");
     };
@@ -835,6 +886,33 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
     assert_eq!(function.params, vec!["main".to_owned()]);
     assert!(function.captures.is_empty());
     assert_eq!(fiber.frames.len(), 1);
+}
+
+#[test]
+fn verifier_rejects_make_function_binding_name_mismatch() {
+    let mut program = expression_apply_program(
+        Vec::new(),
+        vec![(
+            AwbcTerminator::Return { value: None },
+            AwbcSafePointKind::CallableBoundary,
+        )],
+        Vec::new(),
+    );
+    program.signatures[1].params.push(AwbcTypeId(1));
+    program.frame_layouts[1].slots[0].ty = AwbcTypeId(1);
+    program.frame_layouts[1].slots[0].role = AwbcFrameSlotRole::Parameter;
+    program.frame_layouts[1].slots[0].name = Some(AwbcStringId(0));
+    let AwbcInstruction::MakeFunction { params, .. } = &mut program.instructions[0] else {
+        panic!("expression apply fixture starts with MakeFunction");
+    };
+    params.push(AwbcStringId(0));
+    program.frame_layouts[1].slots[0].name = None;
+
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message.contains("name matching its closure binding")
+    ));
 }
 
 #[test]
