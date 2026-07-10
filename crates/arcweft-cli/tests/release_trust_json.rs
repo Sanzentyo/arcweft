@@ -2,11 +2,11 @@
 mod cli;
 #[path = "support/release_trust_fixture.rs"]
 mod release_trust_fixture;
+#[path = "support/temp.rs"]
+mod temp;
 
 use cli::CommandOutput;
-use release_trust_fixture::{
-    CHANNEL, KEY_EPOCH, ReleaseTrustCase, build_release_trust_fixture, cleanup_fixture,
-};
+use release_trust_fixture::{CHANNEL, KEY_EPOCH, ReleaseTrustCase, build_release_trust_fixture};
 use serde_json::Value;
 use std::path::Path;
 
@@ -21,7 +21,6 @@ fn release_verify_json_success_reports_machine_readable_evidence() {
     assert!(contains_code(&json, "base_signature_valid"));
     assert!(contains_code(&json, "patch_signature_valid"));
     assert!(contains_code(&json, "external_payload_verified"));
-    cleanup_fixture(&fixture);
 }
 
 #[test]
@@ -51,7 +50,6 @@ fn release_verify_json_failure_still_prints_typed_evidence() {
             contains_code(&json, expected_code),
             "missing {expected_code} in {json:#}"
         );
-        cleanup_fixture(&fixture);
     }
 }
 
@@ -63,14 +61,13 @@ fn release_verify_json_wrong_policy_is_failure_for_same_archive() {
     let json = parse_stdout_json(&output);
     assert_eq!(json["success"], Value::Bool(false));
     assert!(contains_code(&json, "wrong_signing_policy"));
-    cleanup_fixture(&fixture);
 }
 
 #[test]
 fn release_publish_remote_dry_run_json_does_not_write_objects() {
     let fixture = build_release_trust_fixture(ReleaseTrustCase::SuccessFileMirror);
-    let remote_root = fixture.root.join("remote-dry-run");
-    let output = CommandOutput::run(publish_args(&fixture.root, &remote_root, true, true))
+    let remote_root = fixture.root().join("remote-dry-run");
+    let output = CommandOutput::run(publish_args(fixture.root(), &remote_root, true, true))
         .expect("arcw release publish dry-run runs");
     output.assert_success();
     let json = parse_stdout_json(&output);
@@ -88,14 +85,13 @@ fn release_publish_remote_dry_run_json_does_not_write_objects() {
         !remote_root.exists(),
         "dry-run should not create the object-directory root"
     );
-    cleanup_fixture(&fixture);
 }
 
 #[test]
 fn release_publish_remote_json_then_release_verify_json_succeeds() {
     let fixture = build_release_trust_fixture(ReleaseTrustCase::SuccessFileMirror);
-    let remote_root = fixture.root.join("remote-publish");
-    let output = CommandOutput::run(publish_args(&fixture.root, &remote_root, false, true))
+    let remote_root = fixture.root().join("remote-publish");
+    let output = CommandOutput::run(publish_args(fixture.root(), &remote_root, false, true))
         .expect("arcw release publish runs");
     output.assert_success();
     let publish_json = parse_stdout_json(&output);
@@ -124,7 +120,6 @@ fn release_publish_remote_json_then_release_verify_json_succeeds() {
     verify_output.assert_success();
     let verify_json = parse_stdout_json(&verify_output);
     assert_eq!(verify_json["success"], Value::Bool(true));
-    cleanup_fixture(&fixture);
 }
 
 fn run_verify(

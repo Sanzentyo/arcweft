@@ -1,3 +1,4 @@
+use crate::temp::TempDir;
 use arcweft_bundle::{
     container::{
         BundleDigest, BundleKind, BundleSectionKind, BundleView, ContentResidency, ReadBudget,
@@ -20,8 +21,7 @@ use arcweft_project_loader::cache::store::FilesystemCacheStore;
 use ed25519_dalek::Signer as _;
 use std::{
     fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
+    path::{Path, PathBuf},
 };
 
 pub const SIGNER_ID: &str = "seq02-9-test-fixture-key-do-not-use";
@@ -40,15 +40,21 @@ pub enum ReleaseTrustCase {
 }
 
 pub struct BuiltReleaseTrustFixture {
-    pub root: PathBuf,
+    root: TempDir,
     pub archive_path: PathBuf,
     pub cache_root: PathBuf,
 }
 
+impl BuiltReleaseTrustFixture {
+    pub fn root(&self) -> &Path {
+        self.root.path()
+    }
+}
+
 pub fn build_release_trust_fixture(case: ReleaseTrustCase) -> BuiltReleaseTrustFixture {
-    let root = temp_root(case.label());
-    let artifacts = root.join("artifacts");
-    let cache_root = root.join("cache");
+    let root = TempDir::new(&format!("seq02-9-{}", case.label())).expect("fixture temp dir");
+    let artifacts = root.path().join("artifacts");
+    let cache_root = root.path().join("cache");
     fs::create_dir_all(&artifacts).expect("fixture artifact dir");
 
     let external_required = true;
@@ -150,8 +156,8 @@ pub fn build_release_trust_fixture(case: ReleaseTrustCase) -> BuiltReleaseTrustF
         archive.signatures[0].signing_digest = BundleDigest::of(b"wrong detached transcript");
     }
 
-    let archive_path = write_archive(&root, &archive);
-    write_detached_signature(&root, &archive);
+    let archive_path = write_archive(root.path(), &archive);
+    write_detached_signature(root.path(), &archive);
 
     BuiltReleaseTrustFixture {
         root,
@@ -313,19 +319,4 @@ fn encode_hex(bytes: &[u8]) -> String {
             write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
             hex
         })
-}
-
-fn temp_root(label: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "arcweft-seq02-9-{label}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos(),
-    ))
-}
-
-pub fn cleanup_fixture(fixture: &BuiltReleaseTrustFixture) {
-    let _ = fs::remove_dir_all(&fixture.root);
 }
