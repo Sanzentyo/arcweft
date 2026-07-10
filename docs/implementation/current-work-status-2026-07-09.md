@@ -34,9 +34,7 @@ data-last method fallback accept inline fixed-length literal spread.
 Remaining completion still depends on explicit request/design areas:
 
 1. Variable-length spread semantics.
-2. AWBC suspension-aware dynamic apply plus resume-point behavior.
-3. Serializable persisted closure/function snapshots.
-4. General non-helper/effectful/suspending callable allocation and the final
+2. General non-helper/effectful/suspending callable allocation and the final
    closure effect-row contract.
 
 The current status entry points are:
@@ -142,8 +140,6 @@ implementation:
 
 - Spread data-last fallback and variable-length spread:
   `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
-- AWBC suspension-aware dynamic apply and persisted closure snapshots:
-  `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
 - Non-helper/effectful/suspending callable allocation:
   `docs/reviews/requests/2026-07-08-seq-07.7-function-stack-non-helper-callable-allocation.md`
   The accepted source-local `fn` subset now covers curried groups, returned
