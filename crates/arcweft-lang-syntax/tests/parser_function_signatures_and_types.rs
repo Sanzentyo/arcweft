@@ -1,5 +1,6 @@
 use arcweft_lang_syntax::{
     ast::items::Item,
+    parser::parse_source,
     types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature, parse_type_ref},
 };
 
@@ -114,6 +115,57 @@ fn function_signatures_keep_function_typed_parameters() {
 }
 
 #[test]
+fn type_parser_rejects_removed_primitive_spellings_at_the_syntax_boundary() {
+    for (source, remedy) in [
+        ("Bool", "`bool`"),
+        ("Char", "`char`"),
+        ("string", "`String`"),
+        ("int", "explicit-width signed integer"),
+        ("uint", "explicit-width unsigned integer"),
+        ("float", "explicit-width float"),
+        ("Number", "explicit-width numeric primitive"),
+        ("Vec<Bool>", "`bool`"),
+    ] {
+        let error = parse_type_ref(source).expect_err("removed primitive spelling must reject");
+        assert!(
+            error.to_string().contains(remedy),
+            "unexpected diagnostic for {source}: {error}"
+        );
+    }
+
+    assert!(matches!(
+        parse_type_ref("domain.Bool").expect("qualified nominal type remains distinct"),
+        TypeRef::Path(path) if path == "domain.Bool"
+    ));
+}
+
+#[test]
+fn source_parser_reports_noncanonical_types_in_every_owned_type_surface() {
+    for source in [
+        "flow bad { let value: Bool = true }",
+        "type Bad = Bool",
+        "struct Bad { value: Bool }",
+        "state Bad { value: Bool = true }",
+        "flow bad(value: Bool) {}",
+        "fn bad(value: Bool) -> Unit {}",
+        "trait Bad { fn value(input: Bool) -> Unit }",
+        "impl Bad for Thing { fn value(input: Bool) -> Unit {} }",
+        "extern mod rust bad { fn value(input: Bool) -> Unit }",
+    ] {
+        let parsed = parse_source(source);
+        assert!(
+            parsed.errors().iter().any(|error| {
+                error
+                    .message()
+                    .contains("`Bool` is not a canonical primitive type spelling")
+            }),
+            "noncanonical type was silently accepted for `{source}`: {:?}",
+            parsed.errors()
+        );
+    }
+}
+
+#[test]
 fn function_types_keep_closed_effect_rows() {
     let TypeRef::Function {
         params,
@@ -163,7 +215,7 @@ fn function_types_keep_closed_effect_rows() {
 fn flow_signatures_reject_curried_parameter_groups() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
-flow opening(x: Int)(y: Int) {
+flow opening(x: i32)(y: i32) {
   return x
 }
 ",
@@ -198,11 +250,11 @@ fn function_signatures_keep_rest_parameters() {
 
 #[test]
 fn function_signatures_reject_misplaced_rest_parameters() {
-    let in_middle = parse_fn_signature("fn f(xs: ...Int, y: Int) -> Unit")
+    let in_middle = parse_fn_signature("fn f(xs: ...i32, y: i32) -> Unit")
         .expect_err("rest in the middle is rejected");
-    let curried = parse_fn_signature("fn f(xs: ...Int)(y: Int) -> Unit")
+    let curried = parse_fn_signature("fn f(xs: ...i32)(y: i32) -> Unit")
         .expect_err("rest before a curried group is rejected");
-    let defaulted = parse_fn_signature("fn f(xs: ...Int = []) -> Unit")
+    let defaulted = parse_fn_signature("fn f(xs: ...i32 = []) -> Unit")
         .expect_err("defaulted rest is rejected");
 
     assert!(in_middle.to_string().contains("last parameter"));

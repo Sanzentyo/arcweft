@@ -285,12 +285,18 @@ format("score={score}", score = score)
 
 ## Syntax AST Policy
 
-The syntax AST should preserve literal raw text instead of eagerly converting
+The syntax AST preserves literal raw text instead of eagerly converting
 numeric literals to host Rust integers. This is required for `i128`/`u128`,
 overflow diagnostics, suffix-aware type checking, unit normalization, and exact
 formatting.
 
-Recommended syntax shapes:
+The canonical integer syntax node owns its raw spelling, radix, and typed
+`IntSuffix`. Its non-negative magnitude is parsed on demand as `u128`; a value
+larger than `u128` remains a valid syntax node so semantic analysis can emit a
+structured overflow diagnostic. Compact integer bracket sequences retain these
+same nodes instead of narrowing their elements to a host integer width.
+
+Canonical syntax shapes:
 
 ```rust
 pub enum Literal {
@@ -304,9 +310,9 @@ pub enum Literal {
 }
 
 pub struct IntLiteral {
-    pub raw: String,
-    pub radix: IntRadix,
-    pub suffix: Option<IntSuffix>,
+    raw: String,
+    radix: IntRadix,
+    suffix: Option<IntSuffix>,
 }
 
 pub struct FloatLiteral {
@@ -325,6 +331,23 @@ pub struct CharLiteral {
 }
 ```
 
+Non-canonical primitive spellings are syntax errors in every type-owning source
+position, including binding ascriptions, declaration fields, callable
+signatures, and trait/impl members. Parser recovery may omit the invalid typed
+node, but it must retain a structured diagnostic; it must not silently turn an
+ascribed binding into an inferred one.
+
 `Literal::Color` should not exist in the syntax AST. Color is a typed
 interpretation of string literals.
+
+Semantic analysis records the resolved numeric primitive for every integer or
+float literal and compact integer sequence after applying suffix, expected-type,
+or fallback rules. Checked runtime-plan lowering consumes that evidence; it must
+not independently reapply `i32` / `f64` fallback when an expected type exists.
+For example, an unsuffixed literal expected as `u128` lowers directly to a
+`u128` runtime value. Unary negation admits the one extra positive magnitude
+needed to represent each signed minimum, including `-128i8` and the `i128`
+minimum, but the same positive literal is out of range outside that negation.
+Contract SMT lowering uses arbitrary-precision decimal integer terms, so an
+exact `u128` literal is not narrowed through a host `i64` on its way to QF_LIA.
 

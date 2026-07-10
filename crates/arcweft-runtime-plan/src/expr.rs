@@ -7,8 +7,8 @@ use crate::labels::{
 };
 use crate::pattern::lower_runtime_pattern;
 use crate::typed_evidence::{
-    RuntimeDataLastMethodFallbackArg, RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence,
-    RuntimeTypedLoweringEvidenceLookup,
+    RuntimeDataLastMethodFallbackArg, RuntimeNumericType, RuntimeTypedExpressionId,
+    RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceLookup,
 };
 use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
@@ -25,18 +25,18 @@ use arcweft_core::value::{
 };
 use arcweft_lang_hir::syntax::{
     ast::{flow::Stmt, line_plan::LinePlanItem, pattern::Pattern},
-    expr::{BinaryOp, CallArg, ClosureParam, Expr, FloatSuffix, Literal, MatchExprArm, UnaryOp},
+    expr::{
+        BinaryOp, CallArg, ClosureParam, Expr, FloatSuffix, IntLiteral, Literal, MatchExprArm,
+        NumericBracketSeq, Placeholder, UnaryOp,
+    },
     types::TypeRef,
 };
-use std::{cell::Cell, collections::BTreeMap};
+use std::{cell::Cell, collections::BTreeMap, sync::LazyLock};
 
 pub(crate) mod desugar;
 mod enum_constructor;
 mod named_callable;
-use desugar::{
-    expr_contains_partial_placeholder, expr_contains_pipe_left, substitute_partial_placeholder,
-    substitute_pipe_left,
-};
+use desugar::{expr_contains_partial_placeholder, substitute_partial_placeholder};
 use enum_constructor::{lower_constructor_call, lower_expected_enum_record_constructor};
 use named_callable::{
     PureHelperNamedCallLowering, lower_strict_function_value_named_call,
@@ -51,7 +51,11 @@ pub(crate) struct RuntimePureHelperLookup<'helpers, 'functions, 'locals> {
     function_locals: Option<&'locals BTreeMap<String, usize>>,
     typed_lowering_evidence: Option<RuntimeTypedLoweringEvidenceLookup<'helpers>>,
     expression_cursor: Option<&'helpers Cell<usize>>,
+    pipe_binding_depth: Option<u32>,
 }
+
+static EMPTY_PURE_HELPER_IDS: LazyLock<BTreeMap<String, RuntimePureHelperId>> =
+    LazyLock::new(BTreeMap::new);
 
 impl<'helpers> RuntimePureHelperLookup<'helpers, 'static, 'static> {
     pub(crate) fn new(
@@ -65,7 +69,21 @@ impl<'helpers> RuntimePureHelperLookup<'helpers, 'static, 'static> {
             function_locals: None,
             typed_lowering_evidence: None,
             expression_cursor: None,
+            pipe_binding_depth: None,
         }
+    }
+}
+
+fn empty_runtime_lookup<'helpers, 'functions, 'locals>()
+-> RuntimePureHelperLookup<'helpers, 'functions, 'locals> {
+    RuntimePureHelperLookup {
+        ids: &EMPTY_PURE_HELPER_IDS,
+        helpers: &[],
+        function_values: None,
+        function_locals: None,
+        typed_lowering_evidence: None,
+        expression_cursor: None,
+        pipe_binding_depth: None,
     }
 }
 
@@ -81,6 +99,7 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
             function_locals: Some(function_locals),
             typed_lowering_evidence: self.typed_lowering_evidence,
             expression_cursor: self.expression_cursor,
+            pipe_binding_depth: self.pipe_binding_depth,
         }
     }
 
@@ -95,6 +114,7 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
             function_locals: self.function_locals,
             typed_lowering_evidence: self.typed_lowering_evidence,
             expression_cursor: self.expression_cursor,
+            pipe_binding_depth: self.pipe_binding_depth,
         }
     }
 
@@ -112,7 +132,21 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
                 typed_lowering_evidence,
             )),
             expression_cursor: Some(expression_cursor),
+            pipe_binding_depth: self.pipe_binding_depth,
         }
+    }
+
+    fn enter_pipe_binding(mut self) -> Self {
+        self.pipe_binding_depth = Some(
+            self.pipe_binding_depth
+                .map_or(0, |depth| depth.saturating_add(1)),
+        );
+        self
+    }
+
+    fn pipe_binding_name(self) -> Option<String> {
+        self.pipe_binding_depth
+            .map(|depth| format!("\0arcweft.pipe.{depth}"))
     }
 
     fn id(self, name: &str) -> Option<RuntimePureHelperId> {
@@ -194,6 +228,16 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
         })
     }
 
+    fn resolved_numeric_type(
+        self,
+        expression_id: Option<RuntimeTypedExpressionId>,
+    ) -> Option<RuntimeNumericType> {
+        expression_id.and_then(|expression_id| {
+            self.typed_lowering_evidence
+                .and_then(|evidence| evidence.resolved_numeric_type(expression_id))
+        })
+    }
+
     fn has_expected_function_value_evidence(self, expression_id: RuntimeTypedExpressionId) -> bool {
         self.typed_lowering_evidence
             .is_some_and(|evidence| evidence.has_expected_function_value(expression_id))
@@ -242,14 +286,17 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
 /// string label for adapter-facing values that are not executable by the core.
 pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
     match expr {
-        Expr::Literal(literal) => RuntimeExpr::Value(lower_runtime_literal(literal)),
+        Expr::Literal(literal) => RuntimeExpr::Value(
+            lower_runtime_literal(literal, None)
+                .unwrap_or_else(|_| RuntimeValue::String(literal_label(literal))),
+        ),
         Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity_ref_label(entity)),
         Expr::Path(path) => RuntimeExpr::Local(path.as_label().to_owned()),
         Expr::ShortVariant(name) => RuntimeExpr::Value(RuntimeValue::String(format!(".{name}"))),
         Expr::Tuple(items) if items.is_empty() => RuntimeExpr::Value(RuntimeValue::Unit),
         Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
         Expr::BracketSeq(items) => lower_runtime_bracket_seq(items),
-        Expr::NumericBracketSeq(seq) => lower_runtime_numeric_bracket_seq(seq),
+        Expr::NumericBracketSeq(seq) => lower_runtime_numeric_bracket_seq_lossy(seq),
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat(value, len),
         Expr::Range {
             start,
@@ -275,6 +322,12 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 )
             })
         }
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } if negated_signed_min_value(expr, None).is_some() => RuntimeExpr::Value(
+            negated_signed_min_value(expr, None).expect("guard checked signed minimum"),
+        ),
         Expr::Unary { op, expr } => RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr(expr)),
@@ -378,14 +431,21 @@ fn lower_runtime_expr_strict_with_helpers(
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let expression_id = helpers.and_then(RuntimePureHelperLookup::next_expression_id);
+    let resolved_numeric_type =
+        helpers.and_then(|helpers| helpers.resolved_numeric_type(expression_id));
     if expression_id.is_some_and(|id| {
         helpers.is_some_and(|helpers| helpers.has_expected_function_value_evidence(id))
     }) && expr_contains_partial_placeholder(expr)
     {
         return lower_partial_placeholder_function_expr(expr, helpers);
     }
+    if let Some(value) = lower_strict_negated_signed_min(expr, helpers) {
+        return Ok(RuntimeExpr::Value(value));
+    }
     match expr {
-        Expr::Literal(literal) => Ok(RuntimeExpr::Value(lower_runtime_literal(literal))),
+        Expr::Literal(literal) => {
+            lower_runtime_literal(literal, resolved_numeric_type).map(RuntimeExpr::Value)
+        }
         Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity_ref_label(entity))),
         Expr::Path(path) => lower_strict_path_expr(path.as_label(), helpers, expression_id),
         Expr::ShortVariant(name) => Ok(RuntimeExpr::Variant {
@@ -400,7 +460,9 @@ fn lower_runtime_expr_strict_with_helpers(
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeExpr::Tuple),
         Expr::BracketSeq(items) => lower_runtime_bracket_seq_strict(items, helpers),
-        Expr::NumericBracketSeq(seq) => Ok(lower_runtime_numeric_bracket_seq(seq)),
+        Expr::NumericBracketSeq(seq) => {
+            lower_runtime_numeric_bracket_seq(seq, resolved_numeric_type)
+        }
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat_strict(value, len, helpers),
         Expr::Range {
             start,
@@ -455,10 +517,15 @@ fn lower_runtime_expr_strict_with_helpers(
         Expr::Try { expr } | Expr::Await { expr, .. } => {
             lower_runtime_expr_strict_with_helpers(expr, helpers)
         }
-        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers, expression_id),
-        Expr::Thread { .. } | Expr::LifetimePath { .. } | Expr::Placeholder(_) | Expr::Raw(_) => {
-            unsupported_strict_runtime_expr(expr)
-        }
+        Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers),
+        Expr::Placeholder(Placeholder::PipeLeft) => helpers
+            .and_then(RuntimePureHelperLookup::pipe_binding_name)
+            .map(RuntimeExpr::Local)
+            .ok_or_else(|| "pipe-left placeholder is outside a runtime pipe scope".to_owned()),
+        Expr::Thread { .. }
+        | Expr::LifetimePath { .. }
+        | Expr::Placeholder(Placeholder::Partial)
+        | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
     }
 }
 
@@ -617,165 +684,149 @@ fn lower_strict_data_last_method_fallback(
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
     arg_order: &[RuntimeDataLastMethodFallbackArg],
 ) -> Result<RuntimeExpr, String> {
-    let lowered_args = arg_order
+    validate_data_last_fallback_evidence(method, args.len(), arg_order)?;
+    let first_stage = lower_data_last_fallback_first_stage(method, args, helpers)?;
+    let receiver = lower_runtime_expr_strict_with_helpers(receiver, helpers)?;
+    Ok(RuntimeExpr::Apply {
+        callee: Box::new(first_stage),
+        args: vec![receiver],
+    })
+}
+
+fn validate_data_last_fallback_evidence(
+    method: &str,
+    arg_count: usize,
+    arg_order: &[RuntimeDataLastMethodFallbackArg],
+) -> Result<(), String> {
+    let Some((last, first_stage)) = arg_order.split_last() else {
+        return Err(format!(
+            "data-last method fallback `{}` has empty staged argument evidence",
+            runtime_method_name(method)
+        ));
+    };
+    if last != &RuntimeDataLastMethodFallbackArg::Receiver {
+        return Err(format!(
+            "data-last method fallback `{}` must apply its receiver in a separate final stage",
+            runtime_method_name(method)
+        ));
+    }
+    let mut seen = vec![false; arg_count];
+    for arg in first_stage {
+        let RuntimeDataLastMethodFallbackArg::CallArg { index } = arg else {
+            return Err(format!(
+                "data-last method fallback `{}` contains an early receiver stage",
+                runtime_method_name(method)
+            ));
+        };
+        let Some(seen) = seen.get_mut(*index) else {
+            return Err(format!(
+                "data-last method fallback `{}` referenced missing argument #{}",
+                runtime_method_name(method),
+                index
+            ));
+        };
+        if std::mem::replace(seen, true) {
+            return Err(format!(
+                "data-last method fallback `{}` referenced argument #{} more than once",
+                runtime_method_name(method),
+                index
+            ));
+        }
+    }
+    if seen.into_iter().any(|seen| !seen) {
+        return Err(format!(
+            "data-last method fallback `{}` omitted a first-stage source argument",
+            runtime_method_name(method)
+        ));
+    }
+    Ok(())
+}
+
+fn lower_data_last_fallback_first_stage(
+    method: &str,
+    args: &[CallArg],
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+) -> Result<RuntimeExpr, String> {
+    let method = runtime_method_name(method);
+    if args.iter().any(|arg| matches!(arg, CallArg::Named { .. })) {
+        if let Some(helper) = helpers.and_then(|helpers| helpers.helper(method)) {
+            return lower_strict_pure_helper_named_call(method, args, helper, helpers);
+        }
+        if let Some(candidate) =
+            helpers.and_then(|helpers| helpers.function_value_candidate(method))
+        {
+            return lower_strict_function_value_named_call(method, args, candidate, helpers);
+        }
+        return Err(format!(
+            "data-last method fallback `{method}` has named arguments but no executable callable metadata"
+        ));
+    }
+
+    let callee = helpers
+        .and_then(|helpers| helpers.value_expr(method))
+        .ok_or_else(|| {
+            format!("data-last method fallback `{method}` has no executable function value")
+        })?;
+    if args.is_empty() {
+        return Ok(callee);
+    }
+    let args = args
         .iter()
-        .map(|arg| match arg {
-            RuntimeDataLastMethodFallbackArg::CallArg { index } => {
-                let arg = args.get(*index).ok_or_else(|| {
-                    format!(
-                        "data-last method fallback `{}` referenced missing argument #{}",
-                        runtime_method_name(method),
-                        index
-                    )
-                })?;
-                lower_strict_call_arg(arg, helpers)
-            }
-            RuntimeDataLastMethodFallbackArg::Receiver => {
-                lower_runtime_expr_strict_with_helpers(receiver, helpers)
-            }
-        })
+        .map(|arg| lower_strict_call_arg(arg, helpers))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(lower_strict_named_call(
-        runtime_method_name(method),
-        lowered_args,
-        helpers,
-    ))
+    Ok(RuntimeExpr::Apply {
+        callee: Box::new(callee),
+        args,
+    })
 }
 
 fn lower_runtime_pipe_expr(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
-    if expr_contains_pipe_left(rhs) {
-        return lower_runtime_expr(&substitute_pipe_left(rhs, lhs));
-    }
-    lower_runtime_data_last_pipe(lhs, rhs)
+    lower_runtime_pipe_expr_strict(lhs, rhs, Some(empty_runtime_lookup()))
+        .unwrap_or_else(|error| RuntimeExpr::Value(RuntimeValue::String(error)))
 }
 
 fn lower_runtime_pipe_expr_strict(
     lhs: &Expr,
     rhs: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
-    expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
-    if expr_contains_pipe_left(rhs) {
-        return lower_runtime_expr_strict_with_helpers(&substitute_pipe_left(rhs, lhs), helpers);
+    if rhs.contains_pipe_left() {
+        let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
+        let scoped_helpers = helpers
+            .unwrap_or_else(empty_runtime_lookup)
+            .enter_pipe_binding();
+        let binding = scoped_helpers
+            .pipe_binding_name()
+            .expect("entered pipe scope has a binding");
+        let body = lower_runtime_expr_strict_with_helpers(rhs, Some(scoped_helpers))?;
+        return Ok(RuntimeExpr::Let {
+            name: binding,
+            expr: Box::new(lhs),
+            body: Box::new(body),
+        });
     }
-    lower_runtime_data_last_pipe_strict(lhs, rhs, helpers, expression_id)
-}
 
-fn lower_runtime_data_last_pipe(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {
-    if let Some((method, args)) = data_last_collection_method(rhs) {
-        return RuntimeExpr::MethodCall {
-            receiver: Box::new(lower_runtime_expr(lhs)),
-            method: method.to_owned(),
-            args: args.iter().map(lower_runtime_call_arg).collect(),
-        };
-    }
-    match rhs {
-        Expr::Path(path) => RuntimeExpr::Call {
-            callee: RuntimeCallTarget::from_label(path.as_label()),
-            args: vec![lower_runtime_expr(lhs)],
-        },
-        Expr::Call { callee, args } => RuntimeExpr::Call {
-            callee: RuntimeCallTarget::from_label(expr_label(callee)),
-            args: args
-                .iter()
-                .map(lower_runtime_call_arg)
-                .chain(std::iter::once(lower_runtime_expr(lhs)))
-                .collect(),
-        },
-        _ => RuntimeExpr::Call {
-            callee: RuntimeCallTarget::from_label(expr_label(rhs)),
-            args: vec![lower_runtime_expr(lhs)],
-        },
-    }
-}
-
-fn lower_runtime_data_last_pipe_strict(
-    lhs: &Expr,
-    rhs: &Expr,
-    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
-    expression_id: Option<RuntimeTypedExpressionId>,
-) -> Result<RuntimeExpr, String> {
-    if let Some((method, args)) = data_last_collection_method(rhs) {
-        return lower_strict_method_call_expr(lhs, method, args, helpers);
-    }
-    match rhs {
-        Expr::Path(path) => {
-            let callee = path.as_label();
-            reject_signature_partial_without_helper(callee, 1, helpers, expression_id)?;
-            Ok(lower_strict_named_call(
-                callee,
-                vec![lower_runtime_expr_strict_with_helpers(lhs, helpers)?],
-                helpers,
-            ))
-        }
-        Expr::Call { callee, args } => {
-            if let Expr::Path(path) = callee.as_ref()
-                && let Some(lowered) =
-                    lower_strict_named_data_last_pipe_call(lhs, path.as_label(), args, helpers)
-            {
-                return lowered;
-            }
-            if let Expr::Path(path) = callee.as_ref() {
-                reject_signature_partial_without_helper(
-                    path.as_label(),
-                    args.len() + 1,
-                    helpers,
-                    expression_id,
-                )?;
-            }
-            let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
-            let mut args = args
-                .iter()
-                .map(|arg| lower_strict_call_arg(arg, helpers))
-                .collect::<Result<Vec<_>, _>>()?;
-            args.push(lhs);
-            let Expr::Path(path) = callee.as_ref() else {
-                return Ok(RuntimeExpr::Apply {
-                    callee: Box::new(lower_runtime_expr_strict_with_helpers(callee, helpers)?),
-                    args,
-                });
-            };
-            Ok(lower_strict_named_call(path.as_label(), args, helpers))
-        }
-        _ => Ok(RuntimeExpr::Call {
-            callee: RuntimeCallTarget::from_label(expr_label(rhs)),
-            args: vec![lower_runtime_expr_strict_with_helpers(lhs, helpers)?],
+    // Reserve the outer binding before constructing the RHS. Nested pipes in a
+    // returned closure then receive a deeper impossible-to-author name instead
+    // of accidentally reusing this binding's lexical identity.
+    let scoped_helpers = helpers
+        .unwrap_or_else(empty_runtime_lookup)
+        .enter_pipe_binding();
+    let binding = scoped_helpers
+        .pipe_binding_name()
+        .expect("entered pipe scope has a binding");
+    // Construct RHS first to consume semantic expression evidence in the same
+    // order as type checking. The lexical let still evaluates the LHS first.
+    let callee = lower_runtime_expr_strict_with_helpers(rhs, Some(scoped_helpers))?;
+    let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
+    Ok(RuntimeExpr::Let {
+        name: binding.clone(),
+        expr: Box::new(lhs),
+        body: Box::new(RuntimeExpr::Apply {
+            callee: Box::new(callee),
+            args: vec![RuntimeExpr::Local(binding)],
         }),
-    }
-}
-
-fn lower_strict_named_data_last_pipe_call(
-    lhs: &Expr,
-    callee: &str,
-    args: &[CallArg],
-    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
-) -> Option<Result<RuntimeExpr, String>> {
-    if !args.iter().any(|arg| matches!(arg, CallArg::Named { .. })) {
-        return None;
-    }
-    let mut pipe_args = args.to_vec();
-    pipe_args.push(CallArg::Positional(lhs.clone()));
-    if let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee)) {
-        return Some(lower_strict_pure_helper_named_call(
-            callee, &pipe_args, helper, helpers,
-        ));
-    }
-    helpers
-        .and_then(|helpers| helpers.function_value_candidate(callee))
-        .map(|candidate| {
-            lower_strict_function_value_named_call(callee, &pipe_args, candidate, helpers)
-        })
-}
-
-fn data_last_collection_method(rhs: &Expr) -> Option<(&str, &[CallArg])> {
-    let Expr::Call { callee, args } = rhs else {
-        return None;
-    };
-    let Expr::Path(path) = callee.as_ref() else {
-        return None;
-    };
-    let method = path.as_label();
-    matches!(method, "map" | "filter").then_some((method, args.as_slice()))
+    })
 }
 
 fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
@@ -784,27 +835,68 @@ fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
 }
 
 fn lower_runtime_numeric_bracket_seq(
-    seq: &arcweft_lang_hir::syntax::expr::NumericBracketSeq,
-) -> RuntimeExpr {
-    RuntimeExpr::Value(match seq.suffix() {
-        Some("i8") => collect_dense(seq.values(), i8::try_from, runtime_sequence_dense_i8),
-        Some("i16") => collect_dense(seq.values(), i16::try_from, runtime_sequence_dense_i16),
-        Some("i32") | None => {
-            collect_dense(seq.values(), i32::try_from, runtime_sequence_dense_i32)
+    seq: &NumericBracketSeq,
+    resolved_type: Option<RuntimeNumericType>,
+) -> Result<RuntimeExpr, String> {
+    let target = resolved_type.unwrap_or_else(|| {
+        seq.suffix()
+            .map_or(RuntimeNumericType::I32, RuntimeNumericType::from)
+    });
+    let value = match target {
+        RuntimeNumericType::I8 => {
+            dense_integer_sequence(seq, target, i8::try_from, runtime_sequence_dense_i8)
         }
-        Some("i128") => collect_dense(seq.values(), i128::try_from, runtime_sequence_dense_i128),
-        Some("isize") => collect_dense(
-            seq.values(),
-            Ok::<i64, std::convert::Infallible>,
-            runtime_sequence_dense_isize,
+        RuntimeNumericType::I16 => {
+            dense_integer_sequence(seq, target, i16::try_from, runtime_sequence_dense_i16)
+        }
+        RuntimeNumericType::I32 => {
+            dense_integer_sequence(seq, target, i32::try_from, runtime_sequence_dense_i32)
+        }
+        RuntimeNumericType::I64 => {
+            dense_integer_sequence(seq, target, i64::try_from, runtime_sequence_dense_i64)
+        }
+        RuntimeNumericType::I128 => {
+            dense_integer_sequence(seq, target, i128::try_from, runtime_sequence_dense_i128)
+        }
+        RuntimeNumericType::ISize => {
+            dense_integer_sequence(seq, target, i64::try_from, runtime_sequence_dense_isize)
+        }
+        RuntimeNumericType::U8 => {
+            dense_integer_sequence(seq, target, u8::try_from, runtime_sequence_dense_u8)
+        }
+        RuntimeNumericType::U16 => {
+            dense_integer_sequence(seq, target, u16::try_from, runtime_sequence_dense_u16)
+        }
+        RuntimeNumericType::U32 => {
+            dense_integer_sequence(seq, target, u32::try_from, runtime_sequence_dense_u32)
+        }
+        RuntimeNumericType::U64 => {
+            dense_integer_sequence(seq, target, u64::try_from, runtime_sequence_dense_u64)
+        }
+        RuntimeNumericType::U128 => dense_integer_sequence(
+            seq,
+            target,
+            Ok::<u128, std::convert::Infallible>,
+            runtime_sequence_dense_u128,
         ),
-        Some("u8") => collect_dense(seq.values(), u8::try_from, runtime_sequence_dense_u8),
-        Some("u16") => collect_dense(seq.values(), u16::try_from, runtime_sequence_dense_u16),
-        Some("u32") => collect_dense(seq.values(), u32::try_from, runtime_sequence_dense_u32),
-        Some("u64") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_u64),
-        Some("u128") => collect_dense(seq.values(), u128::try_from, runtime_sequence_dense_u128),
-        Some("usize") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_usize),
-        Some(_) => runtime_sequence_dense_i64(seq.values().to_vec()),
+        RuntimeNumericType::USize => {
+            dense_integer_sequence(seq, target, u64::try_from, runtime_sequence_dense_usize)
+        }
+        RuntimeNumericType::F32 | RuntimeNumericType::F64 => {
+            Err("integer sequence resolved to a float item type".to_owned())
+        }
+    }?;
+    Ok(RuntimeExpr::Value(value))
+}
+
+fn lower_runtime_numeric_bracket_seq_lossy(seq: &NumericBracketSeq) -> RuntimeExpr {
+    lower_runtime_numeric_bracket_seq(seq, None).unwrap_or_else(|_| {
+        RuntimeExpr::Value(runtime_sequence_from_literal_values(
+            seq.literals()
+                .iter()
+                .map(|literal| RuntimeValue::String(literal.raw().to_owned()))
+                .collect(),
+        ))
     })
 }
 
@@ -849,17 +941,30 @@ fn runtime_field_expr(name: &str, value: RuntimeExpr) -> RuntimeFieldExpr {
     }
 }
 
-fn collect_dense<T, E>(
-    values: &[i64],
-    convert: impl Fn(i64) -> Result<T, E>,
+fn dense_integer_sequence<T, E>(
+    seq: &NumericBracketSeq,
+    target: RuntimeNumericType,
+    convert: impl Fn(u128) -> Result<T, E>,
     wrap: impl Fn(Vec<T>) -> RuntimeValue,
-) -> RuntimeValue {
-    values
+) -> Result<RuntimeValue, String> {
+    seq.literals()
         .iter()
-        .copied()
-        .map(convert)
+        .map(|literal| {
+            literal
+                .magnitude()
+                .map_err(|error| format!("invalid integer literal `{}`: {error}", literal.raw()))
+                .and_then(|magnitude| {
+                    convert(magnitude).map_err(|_| {
+                        format!(
+                            "integer literal `{}` is out of range for `{}`",
+                            literal.raw(),
+                            target.as_str()
+                        )
+                    })
+                })
+        })
         .collect::<Result<Vec<_>, _>>()
-        .map_or_else(|_| runtime_sequence_dense_i64(values.to_vec()), wrap)
+        .map(wrap)
 }
 
 fn lower_runtime_bracket_seq_strict(
@@ -1901,47 +2006,95 @@ fn is_uppercase_path_segment(name: &str) -> bool {
         .is_some_and(|ch| ch.is_ascii_uppercase())
 }
 
-fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
-    match literal {
+fn lower_runtime_literal(
+    literal: &Literal,
+    resolved_type: Option<RuntimeNumericType>,
+) -> Result<RuntimeValue, String> {
+    Ok(match literal {
         Literal::String(value) => RuntimeValue::String(decode_string_literal_value(value)),
         Literal::Char { value, .. } => RuntimeValue::Char(*value),
-        Literal::Int { value, suffix, .. } => lower_runtime_int_literal(*value, suffix.as_deref()),
-        Literal::Float {
-            raw,
-            suffix: Some(FloatSuffix::F32),
-        } => RuntimeValue::F32(
-            typed_f32_literal(raw, FloatSuffix::F32).expect("syntax parser accepted f32 literal"),
-        ),
-        Literal::Float {
-            raw,
-            suffix: Some(FloatSuffix::F64),
-        } => RuntimeValue::F64(typed_f64_literal(raw, FloatSuffix::F64)),
-        Literal::Float { raw, .. } => RuntimeValue::F64(parse_f64_literal(raw)),
+        Literal::Int(literal) => lower_runtime_int_literal(literal, resolved_type)?,
+        Literal::Float { raw, suffix } => match resolved_type.unwrap_or_else(|| {
+            suffix.map_or(RuntimeNumericType::F64, |suffix| match suffix {
+                FloatSuffix::F32 => RuntimeNumericType::F32,
+                FloatSuffix::F64 => RuntimeNumericType::F64,
+            })
+        }) {
+            RuntimeNumericType::F32 => RuntimeValue::F32(parse_f32_literal(raw, *suffix)?),
+            RuntimeNumericType::F64 => RuntimeValue::F64(parse_f64_literal(raw, *suffix)?),
+            target => {
+                return Err(format!(
+                    "float literal `{raw}` resolved to non-float runtime type {target:?}"
+                ));
+            }
+        },
         Literal::UnitNumber { raw, .. } => RuntimeValue::String(raw.clone()),
         Literal::Bool(value) => RuntimeValue::Bool(*value),
         Literal::Duration { .. } => duration_expr(&Expr::Literal(literal.clone())).map_or_else(
             || RuntimeValue::String(literal_label(literal)),
             RuntimeValue::Duration,
         ),
-    }
+    })
 }
 
-fn lower_runtime_int_literal(value: i64, suffix: Option<&str>) -> RuntimeValue {
-    match suffix {
-        Some("i8") => i8::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::i8),
-        Some("i16") => i16::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::i16),
-        Some("i32") | None => {
-            i32::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::i32)
-        }
-        Some("i128") => RuntimeValue::i128(i128::from(value)),
-        Some("isize") => RuntimeValue::isize(value),
-        Some("u8") => u8::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u8),
-        Some("u16") => u16::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u16),
-        Some("u32") => u32::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u32),
-        Some("u64") => u64::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u64),
-        Some("u128") => u128::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u128),
-        Some("usize") => u64::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::usize),
-        Some(_) => RuntimeValue::i64(value),
+fn lower_runtime_int_literal(
+    literal: &IntLiteral,
+    resolved_type: Option<RuntimeNumericType>,
+) -> Result<RuntimeValue, String> {
+    let magnitude = literal
+        .magnitude()
+        .map_err(|error| format!("invalid integer literal `{}`: {error}", literal.raw()))?;
+    let target = resolved_type.unwrap_or_else(|| {
+        literal
+            .suffix()
+            .map_or(RuntimeNumericType::I32, RuntimeNumericType::from)
+    });
+    let out_of_range = || {
+        format!(
+            "integer literal `{}` is out of range for `{}`",
+            literal.raw(),
+            target.as_str()
+        )
+    };
+    match target {
+        RuntimeNumericType::I8 => i8::try_from(magnitude)
+            .map(RuntimeValue::i8)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::I16 => i16::try_from(magnitude)
+            .map(RuntimeValue::i16)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::I32 => i32::try_from(magnitude)
+            .map(RuntimeValue::i32)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::I64 => i64::try_from(magnitude)
+            .map(RuntimeValue::i64)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::I128 => i128::try_from(magnitude)
+            .map(RuntimeValue::i128)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::ISize => i64::try_from(magnitude)
+            .map(RuntimeValue::isize)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::U8 => u8::try_from(magnitude)
+            .map(RuntimeValue::u8)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::U16 => u16::try_from(magnitude)
+            .map(RuntimeValue::u16)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::U32 => u32::try_from(magnitude)
+            .map(RuntimeValue::u32)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::U64 => u64::try_from(magnitude)
+            .map(RuntimeValue::u64)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::U128 => Ok(RuntimeValue::u128(magnitude)),
+        RuntimeNumericType::USize => u64::try_from(magnitude)
+            .map(RuntimeValue::usize)
+            .map_err(|_| out_of_range()),
+        RuntimeNumericType::F32 | RuntimeNumericType::F64 => Err(format!(
+            "integer literal `{}` resolved to a float runtime type",
+            literal.raw()
+        )),
     }
 }
 
@@ -2017,21 +2170,73 @@ fn lower_std_float_constant(expr: &Expr) -> Option<RuntimeValue> {
     })
 }
 
-fn typed_f32_literal(raw: &str, suffix: FloatSuffix) -> Option<f32> {
-    raw.strip_suffix(suffix.as_str())
-        .and_then(|value| value.parse::<f32>().ok())
+fn normalized_float_source(raw: &str, suffix: Option<FloatSuffix>) -> String {
+    let number = suffix
+        .and_then(|suffix| raw.strip_suffix(suffix.as_str()))
+        .unwrap_or(raw);
+    number.chars().filter(|ch| *ch != '_').collect::<String>()
 }
 
-fn typed_f64_literal(raw: &str, suffix: FloatSuffix) -> f64 {
-    raw.strip_suffix(suffix.as_str())
-        .map_or(raw, str::trim)
+fn parse_f32_literal(raw: &str, suffix: Option<FloatSuffix>) -> Result<f32, String> {
+    normalized_float_source(raw, suffix)
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| format!("float literal `{raw}` is invalid or overflows f32"))
+}
+
+fn parse_f64_literal(raw: &str, suffix: Option<FloatSuffix>) -> Result<f64, String> {
+    normalized_float_source(raw, suffix)
         .parse::<f64>()
-        .expect("syntax parser accepted f64 literal")
+        .ok()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| format!("float literal `{raw}` is invalid or overflows f64"))
 }
 
-fn parse_f64_literal(raw: &str) -> f64 {
-    raw.parse::<f64>()
-        .expect("syntax parser accepted unsuffixed float literal")
+fn negated_signed_min_value(
+    expr: &Expr,
+    resolved_type: Option<RuntimeNumericType>,
+) -> Option<RuntimeValue> {
+    let Expr::Literal(Literal::Int(literal)) = expr else {
+        return None;
+    };
+    let magnitude = literal.magnitude().ok()?;
+    let target = resolved_type.unwrap_or_else(|| {
+        literal
+            .suffix()
+            .map_or(RuntimeNumericType::I32, RuntimeNumericType::from)
+    });
+    match (target, magnitude) {
+        (RuntimeNumericType::I8, 128) => Some(RuntimeValue::i8(i8::MIN)),
+        (RuntimeNumericType::I16, 32_768) => Some(RuntimeValue::i16(i16::MIN)),
+        (RuntimeNumericType::I32, 2_147_483_648) => Some(RuntimeValue::i32(i32::MIN)),
+        (RuntimeNumericType::I64, 9_223_372_036_854_775_808) => Some(RuntimeValue::i64(i64::MIN)),
+        (RuntimeNumericType::ISize, 9_223_372_036_854_775_808) => {
+            Some(RuntimeValue::isize(i64::MIN))
+        }
+        (RuntimeNumericType::I128, magnitude) if magnitude == (i128::MAX as u128) + 1 => {
+            Some(RuntimeValue::i128(i128::MIN))
+        }
+        _ => None,
+    }
+}
+
+fn lower_strict_negated_signed_min(
+    expr: &Expr,
+    helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
+) -> Option<RuntimeValue> {
+    let Expr::Unary {
+        op: UnaryOp::Neg,
+        expr,
+    } = expr
+    else {
+        return None;
+    };
+    let child_target =
+        helpers.and_then(|helpers| helpers.resolved_numeric_type(helpers.current_expression_id()));
+    let value = negated_signed_min_value(expr, child_target)?;
+    helpers.and_then(RuntimePureHelperLookup::next_expression_id);
+    Some(value)
 }
 
 fn lower_runtime_unary_op(op: UnaryOp) -> RuntimeUnaryOp {
@@ -2224,7 +2429,10 @@ fn repeated_runtime_expr(value: RuntimeExpr, len: usize) -> RuntimeExpr {
 
 fn array_repeat_len(expr: &Expr) -> Option<usize> {
     match expr {
-        Expr::Literal(Literal::Int { value, .. }) => usize::try_from(*value).ok(),
+        Expr::Literal(Literal::Int(literal)) => literal
+            .magnitude()
+            .ok()
+            .and_then(|value| usize::try_from(value).ok()),
         _ => None,
     }
 }

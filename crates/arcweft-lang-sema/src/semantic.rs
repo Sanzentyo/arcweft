@@ -141,9 +141,10 @@ fn expr_static_type_label(expr: &Expr) -> String {
     match expr {
         Expr::Literal(Literal::String(_)) => "String".to_owned(),
         Expr::Literal(Literal::Char { .. }) => "char".to_owned(),
-        Expr::Literal(Literal::Int { suffix, .. }) => {
-            suffix.as_deref().unwrap_or("unsuffixed-int").to_owned()
-        }
+        Expr::Literal(Literal::Int(literal)) => literal
+            .suffix()
+            .map_or("unsuffixed-int", |suffix| suffix.as_str())
+            .to_owned(),
         Expr::Literal(Literal::Float { suffix, .. }) => suffix
             .as_ref()
             .map_or("unsuffixed-float", |suffix| suffix.as_str())
@@ -719,19 +720,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 else_body,
             } => self.analyze_if_stmt(condition.expr(), body, else_body, facts, context),
             Stmt::Match { expr, arms } => {
-                self.collect_expr(expr.expr(), &mut facts);
-                let mut flow = BlockFlow::default();
-                for arm in arms {
-                    let mut arm_facts = facts.clone();
-                    if let Some(guard) = arm.guard() {
-                        self.collect_expr(guard, &mut arm_facts);
-                    }
-                    flow.append(self.analyze_stmts(arm.body(), vec![arm_facts], context));
-                }
-                if flow.fallthrough.is_empty() && flow.exits.is_empty() {
-                    flow.fallthrough.push(facts);
-                }
-                flow
+                self.analyze_match_stmt(expr.expr(), arms, facts, context)
             }
             Stmt::Loop { body } => self.analyze_loop_stmts(body, facts, context, false),
             Stmt::While { condition, body } => {
@@ -821,6 +810,28 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut flow = BlockFlow::default();
         flow.append(then_flow);
         flow.append(else_flow);
+        flow
+    }
+
+    fn analyze_match_stmt(
+        &mut self,
+        scrutinee: &Expr,
+        arms: &[StmtMatchArm],
+        mut facts: FlowFacts,
+        context: ExitReason,
+    ) -> BlockFlow {
+        self.collect_expr(scrutinee, &mut facts);
+        let mut flow = BlockFlow::default();
+        for arm in arms {
+            let mut arm_facts = facts.clone();
+            if let Some(guard) = arm.guard() {
+                self.collect_expr(guard, &mut arm_facts);
+            }
+            flow.append(self.analyze_stmts(arm.body(), vec![arm_facts], context));
+        }
+        if flow.fallthrough.is_empty() && flow.exits.is_empty() {
+            flow.fallthrough.push(facts);
+        }
         flow
     }
 

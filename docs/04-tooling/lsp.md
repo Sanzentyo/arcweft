@@ -9,6 +9,10 @@
 - find references
 - semantic tokens
 - inlay hints
+  - inferred `let` expressions containing numeric fallback show their stable
+    resolved type (`: i32`, `: f64`, `: Vec<i32>`, and so on), including unary,
+    binary, and compact-sequence expressions; explicit ascriptions do not get a
+    duplicate hint
 - code actions
 - formatter
 - rename

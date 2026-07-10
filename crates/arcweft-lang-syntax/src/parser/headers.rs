@@ -283,12 +283,12 @@ pub(super) fn find_header_value(lines: &[&str], prefix: &str) -> String {
 pub(super) fn parse_flow_signature(
     name: Option<&str>,
     signature_tail: &str,
-) -> Option<crate::types::FnSignature> {
+) -> Result<Option<crate::types::FnSignature>, crate::types::TypeParseError> {
     let tail = signature_tail.trim();
     if !(tail.starts_with('(') || tail.starts_with('<')) {
-        return None;
+        return Ok(None);
     }
-    parse_fn_signature(&format!("fn {}{}", name.unwrap_or("flow"), tail)).ok()
+    parse_fn_signature(&format!("fn {}{}", name.unwrap_or("flow"), tail)).map(Some)
 }
 
 pub(super) fn implicit_flow_name_from_id(id: Option<&IdRef>) -> Option<String> {

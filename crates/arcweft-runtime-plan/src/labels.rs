@@ -76,11 +76,10 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
         ),
         Expr::Unary { op, expr } => format!("{}{}", unary_op_label(*op), expr_label(expr)),
         Expr::NumericBracketSeq(seq) => {
-            let suffix = seq.suffix().unwrap_or_default();
             let values = seq
-                .values()
+                .literals()
                 .iter()
-                .map(|value| format!("{value}{suffix}"))
+                .map(arcweft_lang_hir::syntax::expr::IntLiteral::raw)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("[{values}]")
@@ -131,7 +130,7 @@ pub(crate) fn literal_label(literal: &Literal) -> String {
         Literal::Char { raw, .. }
         | Literal::Float { raw, .. }
         | Literal::UnitNumber { raw, .. } => raw.clone(),
-        Literal::Int { value, .. } => value.to_string(),
+        Literal::Int(literal) => literal.raw().to_owned(),
         Literal::Bool(value) => value.to_string(),
         Literal::Duration { amount, unit } => format!("{amount}{}", unit.as_str()),
     }

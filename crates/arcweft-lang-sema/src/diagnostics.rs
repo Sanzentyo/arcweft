@@ -55,6 +55,14 @@ pub enum TypeCheckErrorKind {
         expected: usize,
         actual: usize,
     },
+    /// An integer literal's raw digits could not be interpreted as a `u128`
+    /// magnitude, so no target-width check or lowering is possible.
+    InvalidIntegerLiteral { literal: String, reason: String },
+    /// A non-negative integer literal does not fit the type selected by its
+    /// suffix, expected type, or stable fallback rule.
+    IntegerLiteralOutOfRange { literal: String, target: TypeKind },
+    /// A finite source float overflows the selected IEEE width.
+    FloatLiteralOutOfRange { literal: String, target: TypeKind },
     /// A method-call expression has more than one viable data-last callable
     /// fallback candidate, so lowering would depend on source ordering or
     /// environment merge order instead of a typed rule.
@@ -430,6 +438,43 @@ impl TypeCheckError {
         }
     }
 
+    pub(crate) fn invalid_integer_literal(
+        literal: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        let literal = literal.into();
+        let reason = reason.into();
+        Self {
+            message: format!("integer literal `{literal}` is invalid: {reason}"),
+            kind: TypeCheckErrorKind::InvalidIntegerLiteral { literal, reason },
+        }
+    }
+
+    pub(crate) fn integer_literal_out_of_range(
+        literal: impl Into<String>,
+        target: TypeKind,
+    ) -> Self {
+        let literal = literal.into();
+        Self {
+            message: format!(
+                "integer literal `{literal}` is out of range for {}",
+                target.source_label()
+            ),
+            kind: TypeCheckErrorKind::IntegerLiteralOutOfRange { literal, target },
+        }
+    }
+
+    pub(crate) fn float_literal_out_of_range(literal: impl Into<String>, target: TypeKind) -> Self {
+        let literal = literal.into();
+        Self {
+            message: format!(
+                "float literal `{literal}` overflows {}",
+                target.source_label()
+            ),
+            kind: TypeCheckErrorKind::FloatLiteralOutOfRange { literal, target },
+        }
+    }
+
     pub(crate) fn inline_call_error_policy_missing(function: impl Into<String>) -> Self {
         let function = function.into();
         Self {
@@ -556,6 +601,9 @@ impl TypeCheckError {
             | TypeCheckErrorKind::UnsupportedFunctionValueCall { .. }
             | TypeCheckErrorKind::UnsupportedMethodValueReference { .. }
             | TypeCheckErrorKind::FunctionValueArityMismatch { .. }
+            | TypeCheckErrorKind::InvalidIntegerLiteral { .. }
+            | TypeCheckErrorKind::IntegerLiteralOutOfRange { .. }
+            | TypeCheckErrorKind::FloatLiteralOutOfRange { .. }
             | TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. }
             | TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. }
             | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
@@ -1052,6 +1100,15 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::FunctionValueArityMismatch { .. } => {
             "sema.typecheck.function_value_arity_mismatch".to_owned()
+        }
+        TypeCheckErrorKind::InvalidIntegerLiteral { .. } => {
+            "sema.numeric.invalid_integer_literal".to_owned()
+        }
+        TypeCheckErrorKind::IntegerLiteralOutOfRange { .. } => {
+            "sema.numeric.integer_out_of_range".to_owned()
+        }
+        TypeCheckErrorKind::FloatLiteralOutOfRange { .. } => {
+            "sema.numeric.float_out_of_range".to_owned()
         }
         TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. } => {
             "sema.typecheck.ambiguous_data_last_method_fallback".to_owned()

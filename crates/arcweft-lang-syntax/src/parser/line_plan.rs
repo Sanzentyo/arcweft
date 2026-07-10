@@ -416,10 +416,10 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
             return raw_line_plan_item(line);
         }
         let source = rest.trim();
-        return LinePlanItem::Stmt(Stmt::Defer {
+        return LinePlanItem::Stmt(Box::new(Stmt::Defer {
             outcome: DeferOutcome::Always,
             expr: authored_line_plan_expr(line, source, base),
-        });
+        }));
     }
     if let Some(rest) = line.strip_prefix("cancel on ") {
         if let Some((head, body)) = split_brace_item(line)
@@ -468,9 +468,9 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
         return raw_line_plan_item(line);
     }
     if is_line_plan_statement(line) {
-        return LinePlanItem::Stmt(
+        return LinePlanItem::Stmt(Box::new(
             base.map_or_else(|| parse_stmt(line), |base| parse_stmt_with_base(line, base)),
-        );
+        ));
     }
     if let Some((name, value)) = split_top_level_punctuation_once(line, '=') {
         return LinePlanItem::Option {
@@ -529,10 +529,10 @@ fn parse_line_plan_block_item(head: &str, body: &str) -> Option<LinePlanItem> {
         return Some(LinePlanItem::Init(parse_stmt_lines(body)));
     }
     if let Some(outcome) = parse_defer_outcome(head) {
-        return Some(LinePlanItem::Stmt(Stmt::DeferBlock {
+        return Some(LinePlanItem::Stmt(Box::new(Stmt::DeferBlock {
             outcome,
             statements: parse_stmt_lines(body),
-        }));
+        })));
     }
     if let Some(rest) = head.strip_prefix("thread") {
         return Some(LinePlanItem::Thread(parse_thread_block(
@@ -561,11 +561,11 @@ fn parse_line_plan_block_item(head: &str, body: &str) -> Option<LinePlanItem> {
         )));
     }
     if head.starts_with("scope") {
-        return Some(LinePlanItem::Stmt(Stmt::Expr {
+        return Some(LinePlanItem::Stmt(Box::new(Stmt::Expr {
             expr: parse_named_block_expr(head, body),
             expr_source: None,
             expr_range: None,
-        }));
+        })));
     }
     None
 }

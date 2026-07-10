@@ -21,10 +21,17 @@ mod char_literal;
 mod closure_parse;
 mod closure_source;
 mod control_parse;
+mod numeric;
+mod pipe_scope;
 mod source_ranges;
 
 use closure_parse::parse_closure_params;
 use closure_source::ClosureBodySource;
+pub use numeric::{
+    IntLiteral, IntLiteralValueError, IntRadix, IntSuffix, NumericBracketSeq,
+    NumericBracketSeqError,
+};
+use numeric::{digit_matches_radix, split_number_suffix};
 pub use source_ranges::{ExprSourceRange, collect_expr_source_ranges};
 
 /// Identifier segment used by expression paths and shorthand selectors.
@@ -413,13 +420,6 @@ impl Expr {
     }
 }
 
-/// Compact representation for integer-only bracket sequence literals.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NumericBracketSeq {
-    values: Vec<i64>,
-    suffix: Option<String>,
-}
-
 /// One argument in a call or method-call argument list.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallArg {
@@ -444,11 +444,7 @@ pub enum Literal {
         raw: String,
         value: char,
     },
-    Int {
-        raw: String,
-        value: i64,
-        suffix: Option<String>,
-    },
+    Int(IntLiteral),
     Float {
         raw: String,
         suffix: Option<FloatSuffix>,
@@ -689,28 +685,6 @@ impl LifetimeScopeKind {
             Self::Persistent => "persistent",
             Self::Named(name) => name.as_str(),
         }
-    }
-}
-
-impl NumericBracketSeq {
-    pub fn new(values: Vec<i64>, suffix: Option<String>) -> Self {
-        Self { values, suffix }
-    }
-
-    pub fn values(&self) -> &[i64] {
-        &self.values
-    }
-
-    pub fn suffix(&self) -> Option<&str> {
-        self.suffix.as_deref()
-    }
-
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
     }
 }
 
@@ -1164,9 +1138,9 @@ impl<'a> Lexer<'a> {
         self.consume_number_suffix();
         let raw = &self.source[start..self.cursor];
         let (number, suffix) = split_number_suffix(raw);
-        let suffix = (!suffix.is_empty()).then(|| suffix.trim_start_matches('_').to_owned());
-        let float_suffix = suffix.as_deref().and_then(FloatSuffix::parse);
-        let unit_suffix = suffix.as_deref().and_then(UnitNumberSuffix::parse);
+        let suffix = (!suffix.is_empty()).then(|| suffix.trim_start_matches('_'));
+        let float_suffix = suffix.and_then(FloatSuffix::parse);
+        let unit_suffix = suffix.and_then(UnitNumberSuffix::parse);
         let has_float_body = number.contains('.') || number.contains('e') || number.contains('E');
         if let Some(duration) = parse_duration(raw) {
             Token::Literal(duration)
@@ -1179,7 +1153,7 @@ impl<'a> Lexer<'a> {
             if suffix.is_some() && float_suffix.is_none() {
                 return Token::Invalid(format!(
                     "unknown float literal suffix `{}`",
-                    suffix.as_deref().unwrap_or_default()
+                    suffix.unwrap_or_default()
                 ));
             }
             Token::Literal(Literal::Float {
@@ -1187,11 +1161,22 @@ impl<'a> Lexer<'a> {
                 suffix: float_suffix,
             })
         } else {
-            Token::Literal(Literal::Int {
-                raw: raw.to_owned(),
-                value: parse_int_literal_value(number).unwrap_or(0),
-                suffix,
-            })
+            let int_suffix = match suffix {
+                Some(suffix) => match IntSuffix::parse(suffix) {
+                    Some(suffix) => Some(suffix),
+                    None => {
+                        return Token::Invalid(format!(
+                            "unknown integer literal suffix `{suffix}`"
+                        ));
+                    }
+                },
+                None => None,
+            };
+            Token::Literal(Literal::Int(IntLiteral::new(
+                raw,
+                IntRadix::from_number_source(number),
+                int_suffix,
+            )))
         }
     }
 
@@ -1645,7 +1630,7 @@ impl ExprParser {
     fn parse_flat_literal_bracket_seq(&mut self) -> Option<Expr> {
         let start = self.cursor;
         let mut fallback_items = None;
-        let mut int_values = Vec::new();
+        let mut int_literals = Vec::new();
         let mut int_suffix = None;
         let mut int_suffix_seen = false;
         let mut all_int = true;
@@ -1655,14 +1640,14 @@ impl ExprParser {
                 return None;
             };
             match literal {
-                Literal::Int { value, suffix, .. } if all_int => {
-                    if int_suffix_seen && int_suffix.as_ref() != suffix.as_ref() {
+                Literal::Int(literal) if all_int => {
+                    if int_suffix_seen && int_suffix != literal.suffix() {
                         all_int = false;
                     } else if !int_suffix_seen {
-                        int_suffix.clone_from(suffix);
+                        int_suffix = literal.suffix();
                         int_suffix_seen = true;
                     }
-                    int_values.push(*value);
+                    int_literals.push(literal.clone());
                 }
                 _ => all_int = false,
             }
@@ -1679,12 +1664,8 @@ impl ExprParser {
                     self.bump();
                     if self.peek() == &Token::RBracket {
                         self.bump();
-                        let expr = flat_literal_bracket_seq_expr(
-                            all_int,
-                            int_values,
-                            int_suffix,
-                            fallback_items,
-                        );
+                        let expr =
+                            flat_literal_bracket_seq_expr(all_int, int_literals, fallback_items);
                         if matches!(expr, Expr::NumericBracketSeq(_)) {
                             self.stats.numeric_seq_summaries += 1;
                         }
@@ -1693,12 +1674,7 @@ impl ExprParser {
                 }
                 Token::RBracket => {
                     self.bump();
-                    let expr = flat_literal_bracket_seq_expr(
-                        all_int,
-                        int_values,
-                        int_suffix,
-                        fallback_items,
-                    );
+                    let expr = flat_literal_bracket_seq_expr(all_int, int_literals, fallback_items);
                     if matches!(expr, Expr::NumericBracketSeq(_)) {
                         self.stats.numeric_seq_summaries += 1;
                     }
@@ -1986,12 +1962,14 @@ fn infix_binding_power(op: ExprOp) -> Option<(u8, u8, BinaryOp)> {
 
 fn flat_literal_bracket_seq_expr(
     all_int: bool,
-    int_values: Vec<i64>,
-    int_suffix: Option<String>,
+    int_literals: Vec<IntLiteral>,
     fallback_items: Option<Vec<Expr>>,
 ) -> Expr {
     if all_int {
-        Expr::NumericBracketSeq(NumericBracketSeq::new(int_values, int_suffix))
+        Expr::NumericBracketSeq(
+            NumericBracketSeq::new(int_literals)
+                .expect("flat integer sequence parser checked the common suffix"),
+        )
     } else {
         Expr::BracketSeq(fallback_items.unwrap_or_default())
     }
@@ -2019,7 +1997,8 @@ fn token_source(token: &Token) -> String {
             format!("'{}{}", key.as_dotted(), if *optional { "?" } else { "" })
         }
         Token::Literal(Literal::String(value)) => format!("\"{value}\""),
-        Token::Literal(Literal::Char { raw, .. } | Literal::Int { raw, .. }) => raw.clone(),
+        Token::Literal(Literal::Char { raw, .. }) => raw.clone(),
+        Token::Literal(Literal::Int(literal)) => literal.raw().to_owned(),
         Token::Literal(Literal::Bool(value)) => value.to_string(),
         Token::Literal(Literal::Duration { amount, unit }) => {
             format!("{amount}{}", duration_unit_suffix(*unit))
@@ -2079,100 +2058,6 @@ fn parse_duration(source: &str) -> Option<Literal> {
                 unit,
             })
     })
-}
-
-fn split_number_suffix(source: &str) -> (&str, &str) {
-    let split = numeric_body_len(source);
-    (&source[..split], &source[split..])
-}
-
-fn numeric_body_len(source: &str) -> usize {
-    if let Some(rest) = source
-        .strip_prefix("0x")
-        .or_else(|| source.strip_prefix("0X"))
-    {
-        return "0x".len() + radix_digits_len(rest, 16);
-    }
-    if let Some(rest) = source
-        .strip_prefix("0b")
-        .or_else(|| source.strip_prefix("0B"))
-    {
-        return "0b".len() + radix_digits_len(rest, 2);
-    }
-    if let Some(rest) = source
-        .strip_prefix("0o")
-        .or_else(|| source.strip_prefix("0O"))
-    {
-        return "0o".len() + radix_digits_len(rest, 8);
-    }
-    let bytes = source.as_bytes();
-    let mut index = decimal_digits_len(source);
-    if bytes.get(index) == Some(&b'.') && !source[index..].starts_with(ExprOp::Range.as_str()) {
-        index += 1;
-        index += decimal_digits_len(&source[index..]);
-    }
-    if matches!(bytes.get(index), Some(b'e' | b'E')) {
-        let exponent_start = index;
-        index += 1;
-        if matches!(bytes.get(index), Some(b'+' | b'-')) {
-            index += 1;
-        }
-        let digits_start = index;
-        index += decimal_digits_len(&source[index..]);
-        if source[digits_start..index]
-            .chars()
-            .filter(|ch| *ch != '_')
-            .all(|ch| !ch.is_ascii_digit())
-        {
-            index = exponent_start;
-        }
-    }
-    index
-}
-
-fn decimal_digits_len(source: &str) -> usize {
-    source
-        .char_indices()
-        .take_while(|(_, ch)| ch.is_ascii_digit() || *ch == '_')
-        .map(|(index, ch)| index + ch.len_utf8())
-        .last()
-        .unwrap_or(0)
-}
-
-fn radix_digits_len(source: &str, radix: u32) -> usize {
-    source
-        .char_indices()
-        .take_while(|(_, ch)| *ch == '_' || digit_matches_radix(*ch, radix))
-        .map(|(index, ch)| index + ch.len_utf8())
-        .last()
-        .unwrap_or(0)
-}
-
-fn parse_int_literal_value(number: &str) -> Option<i64> {
-    let cleaned = number.replace('_', "");
-    let (radix, digits) = if let Some(digits) = cleaned
-        .strip_prefix("0x")
-        .or_else(|| cleaned.strip_prefix("0X"))
-    {
-        (16, digits)
-    } else if let Some(digits) = cleaned
-        .strip_prefix("0b")
-        .or_else(|| cleaned.strip_prefix("0B"))
-    {
-        (2, digits)
-    } else if let Some(digits) = cleaned
-        .strip_prefix("0o")
-        .or_else(|| cleaned.strip_prefix("0O"))
-    {
-        (8, digits)
-    } else {
-        (10, cleaned.as_str())
-    };
-    i64::from_str_radix(digits, radix).ok()
-}
-
-fn digit_matches_radix(ch: char, radix: u32) -> bool {
-    ch.is_digit(radix)
 }
 
 fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {

@@ -1,18 +1,20 @@
-use super::{
-    CallArg, Expr, MatchExprArm, Placeholder, TypeCheckError, TypeChecker, TypeExpressionId,
-    TypeKind, TypedLoweringEvidence, TypedLoweringEvidenceKind,
-};
+use super::{CallArg, Expr, Placeholder, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
+use crate::checker::PipeLeftBinding;
 
 impl TypeChecker<'_> {
     pub(super) fn check_placeholder_expr(&mut self, placeholder: Placeholder) -> Option<TypeKind> {
         match placeholder {
-            Placeholder::PipeLeft => {
-                self.errors.push(TypeCheckError::new(
-                    "`^` can only appear inside the right-hand side of a pipe expression"
-                        .to_owned(),
-                ));
-                None
-            }
+            Placeholder::PipeLeft => self
+                .pipe_left_stack
+                .last()
+                .map(|binding| binding.ty.clone())
+                .or_else(|| {
+                    self.errors.push(TypeCheckError::new(
+                        "`^` can only appear inside the right-hand side of a pipe expression"
+                            .to_owned(),
+                    ));
+                    None
+                }),
             Placeholder::Partial => self
                 .current_partial_placeholder_type()
                 .or_else(|| self.reject_partial_placeholder_without_expected_type()),
@@ -28,303 +30,70 @@ impl TypeChecker<'_> {
         if self.check_lifetime_pipe(lhs, rhs).is_some() {
             return Some(TypeKind::Unit);
         }
-        let rhs_source_range = self.source_range_for_expr(rhs);
-        let has_pipe_left = expr_contains_pipe_left(rhs);
-        let lowered = if has_pipe_left {
-            substitute_pipe_left(rhs, lhs)
-        } else {
-            data_last_pipe_call(lhs, rhs)
-        };
-        let ty = if let Some(rhs_source_range) = rhs_source_range {
-            self.check_desugared_expr_with_authored_ranges(rhs, &lowered, rhs_source_range, None)
-        } else {
-            self.check_expr(&lowered)
-        };
-        if !has_pipe_left {
-            self.record_data_last_pipe_signature_partial_evidence(
-                expression_id,
-                &lowered,
-                ty.as_ref(),
-            );
+        if rhs.contains_pipe_left() {
+            return self.check_pipe_placeholder_rhs(lhs, rhs);
         }
-        ty
+        self.check_data_last_pipe(lhs, rhs, expression_id)
     }
 
-    fn record_data_last_pipe_signature_partial_evidence(
-        &mut self,
-        expression_id: TypeExpressionId,
-        lowered: &Expr,
-        ty: Option<&TypeKind>,
-    ) {
-        let Some(result_ty @ TypeKind::Function { .. }) = ty else {
-            return;
-        };
-        let Some((callee, arg_count)) = data_last_pipe_signature_call(lowered) else {
-            return;
-        };
-        if self.function_signature(callee).is_none() {
-            return;
-        }
-        self.record_typed_lowering_evidence(TypedLoweringEvidence {
-            expression_id,
-            kind: TypedLoweringEvidenceKind::SignaturePartialCall {
-                callee: callee.to_owned(),
-                result_ty: result_ty.clone(),
-                arg_count,
-            },
+    fn check_pipe_placeholder_rhs(&mut self, lhs: &Expr, rhs: &Expr) -> Option<TypeKind> {
+        let previous_closure_effect_callable = self.last_checked_closure_effect_callable.take();
+        let previous_curried_signature_call = self.last_checked_curried_signature_call.take();
+        let lhs_source_range = self.source_range_for_expr(lhs);
+        let lhs_ty = self
+            .check_expr(lhs)
+            .unwrap_or_else(|| TypeKind::Named("_".to_owned()));
+
+        // The left value is produced before the RHS. Function/effect side-channel
+        // evidence for the whole pipe, however, belongs to the RHS result.
+        self.last_checked_closure_effect_callable = previous_closure_effect_callable;
+        self.last_checked_curried_signature_call = previous_curried_signature_call;
+        self.pipe_left_stack.push(PipeLeftBinding {
+            ty: lhs_ty,
+            source_range: lhs_source_range,
         });
+        let result = self.check_expr(rhs);
+        self.pipe_left_stack
+            .pop()
+            .expect("pipe-left type scope must stay balanced");
+        result
     }
-}
 
-fn data_last_pipe_call(lhs: &Expr, rhs: &Expr) -> Expr {
-    if let Some((method, args)) = data_last_collection_method(rhs) {
-        return Expr::selected_call(lhs.clone(), method, args.to_vec());
-    }
-    if let Expr::Call { callee, args } = rhs {
-        return Expr::Call {
-            callee: callee.clone(),
-            args: args
-                .iter()
-                .cloned()
-                .chain(std::iter::once(CallArg::Positional(lhs.clone())))
-                .collect(),
+    fn check_data_last_pipe(
+        &mut self,
+        lhs: &Expr,
+        rhs: &Expr,
+        expression_id: TypeExpressionId,
+    ) -> Option<TypeKind> {
+        let previous_closure_effect_callable = self.last_checked_closure_effect_callable.take();
+        let previous_curried_signature_call = self.last_checked_curried_signature_call.take();
+        let rhs_ty = self.check_expr(rhs);
+        let rhs_effect_callable = self.last_checked_closure_effect_callable.take();
+        let rhs_curried_signature_call = self.last_checked_curried_signature_call.take();
+        self.last_checked_closure_effect_callable = previous_closure_effect_callable;
+        self.last_checked_curried_signature_call = previous_curried_signature_call;
+
+        let Some(rhs_ty @ TypeKind::Function { .. }) = rhs_ty else {
+            // Keep authored diagnostics complete without visiting the pipe LHS
+            // twice. Runtime lowering uses the same RHS-then-LHS construction
+            // order while the resulting lexical let still evaluates LHS first.
+            self.check_expr(lhs);
+            if let Some(rhs_ty) = rhs_ty {
+                self.errors.push(TypeCheckError::new(format!(
+                    "pipe right-hand side must be a function value, found {}",
+                    rhs_ty.source_label()
+                )));
+            }
+            return None;
         };
-    }
-    Expr::Call {
-        callee: Box::new(rhs.clone()),
-        args: vec![CallArg::Positional(lhs.clone())],
-    }
-}
 
-fn data_last_pipe_signature_call(expr: &Expr) -> Option<(&str, usize)> {
-    let Expr::Call { callee, args } = expr else {
-        return None;
-    };
-    let Expr::Path(path) = callee.as_ref() else {
-        return None;
-    };
-    Some((path.as_label(), args.len()))
-}
-
-fn data_last_collection_method(rhs: &Expr) -> Option<(&str, &[CallArg])> {
-    let Expr::Call { callee, args } = rhs else {
-        return None;
-    };
-    let Expr::Path(path) = callee.as_ref() else {
-        return None;
-    };
-    let method = path.as_label();
-    matches!(method, "map" | "filter").then_some((method, args.as_slice()))
-}
-
-fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
-    match expr {
-        Expr::Placeholder(Placeholder::PipeLeft) => lhs.clone(),
-        Expr::Tuple(items) => Expr::Tuple(
-            items
-                .iter()
-                .map(|item| substitute_pipe_left(item, lhs))
-                .collect(),
-        ),
-        Expr::BracketSeq(items) => Expr::BracketSeq(
-            items
-                .iter()
-                .map(|item| substitute_pipe_left(item, lhs))
-                .collect(),
-        ),
-        Expr::ArrayRepeat { value, len } => Expr::ArrayRepeat {
-            value: Box::new(substitute_pipe_left(value, lhs)),
-            len: Box::new(substitute_pipe_left(len, lhs)),
-        },
-        Expr::Call { callee, args } => Expr::Call {
-            callee: Box::new(substitute_pipe_left(callee, lhs)),
-            args: args
-                .iter()
-                .map(|arg| substitute_pipe_left_arg(arg, lhs))
-                .collect(),
-        },
-        Expr::Select(select) => {
-            let (target, member) = select.clone().into_parts();
-            Expr::Select(arcweft_lang_syntax::expr::SelectExpr::new(
-                substitute_pipe_left(&target, lhs),
-                member,
-            ))
-        }
-        Expr::Index { target, index } => Expr::Index {
-            target: Box::new(substitute_pipe_left(target, lhs)),
-            index: Box::new(substitute_pipe_left(index, lhs)),
-        },
-        Expr::Unary { op, expr } => Expr::Unary {
-            op: *op,
-            expr: Box::new(substitute_pipe_left(expr, lhs)),
-        },
-        Expr::Binary { lhs: left, op, rhs } => Expr::Binary {
-            lhs: Box::new(substitute_pipe_left(left, lhs)),
-            op: *op,
-            rhs: Box::new(substitute_pipe_left(rhs, lhs)),
-        },
-        Expr::Record { path, fields } => Expr::Record {
-            path: path.clone(),
-            fields: fields
-                .iter()
-                .map(|(name, value)| (name.clone(), substitute_pipe_left(value, lhs)))
-                .collect(),
-        },
-        Expr::RecordLiteral(fields) => Expr::RecordLiteral(
-            fields
-                .iter()
-                .map(|(name, value)| (name.clone(), substitute_pipe_left(value, lhs)))
-                .collect(),
-        ),
-        Expr::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => Expr::If {
-            condition: Box::new(substitute_pipe_left(condition, lhs)),
-            then_branch: Box::new(substitute_pipe_left(then_branch, lhs)),
-            else_branch: else_branch
-                .as_deref()
-                .map(|else_branch| Box::new(substitute_pipe_left(else_branch, lhs))),
-        },
-        Expr::IfLet { .. } => substitute_pipe_left_if_let(expr, lhs),
-        Expr::Match { .. } => substitute_pipe_left_match(expr, lhs),
-        Expr::Try { expr } => Expr::Try {
-            expr: Box::new(substitute_pipe_left(expr, lhs)),
-        },
-        Expr::Await { expr, applies_try } => Expr::Await {
-            expr: Box::new(substitute_pipe_left(expr, lhs)),
-            applies_try: *applies_try,
-        },
-        Expr::Closure {
-            params,
-            return_type,
-            body,
-        } => Expr::Closure {
-            params: params.clone(),
-            return_type: return_type.clone(),
-            body: Box::new(substitute_pipe_left(body, lhs)),
-        },
-        _ => expr.clone(),
-    }
-}
-
-fn substitute_pipe_left_if_let(expr: &Expr, lhs: &Expr) -> Expr {
-    let Expr::IfLet {
-        pattern,
-        expr,
-        guard,
-        then_branch,
-        else_branch,
-    } = expr
-    else {
-        unreachable!("pipe-left if-let substitution expects an if-let expression")
-    };
-    Expr::IfLet {
-        pattern: pattern.clone(),
-        expr: Box::new(substitute_pipe_left(expr, lhs)),
-        guard: guard
-            .as_deref()
-            .map(|guard| Box::new(substitute_pipe_left(guard, lhs))),
-        then_branch: Box::new(substitute_pipe_left(then_branch, lhs)),
-        else_branch: else_branch
-            .as_deref()
-            .map(|else_branch| Box::new(substitute_pipe_left(else_branch, lhs))),
-    }
-}
-
-fn substitute_pipe_left_match(expr: &Expr, lhs: &Expr) -> Expr {
-    let Expr::Match { scrutinee, arms } = expr else {
-        unreachable!("pipe-left match substitution expects a match expression")
-    };
-    Expr::Match {
-        scrutinee: Box::new(substitute_pipe_left(scrutinee, lhs)),
-        arms: arms
-            .iter()
-            .map(|arm| {
-                MatchExprArm::new(
-                    arm.pattern().clone(),
-                    arm.guard()
-                        .map(|guard| Box::new(substitute_pipe_left(guard, lhs))),
-                    Box::new(substitute_pipe_left(arm.value(), lhs)),
-                )
-            })
-            .collect(),
-    }
-}
-
-fn substitute_pipe_left_arg(arg: &CallArg, lhs: &Expr) -> CallArg {
-    match arg {
-        CallArg::Positional(value) => CallArg::Positional(substitute_pipe_left(value, lhs)),
-        CallArg::Named { name, value } => CallArg::Named {
-            name: name.clone(),
-            value: Box::new(substitute_pipe_left(value, lhs)),
-        },
-        CallArg::Spread { value } => CallArg::Spread {
-            value: Box::new(substitute_pipe_left(value, lhs)),
-        },
-    }
-}
-
-fn expr_contains_pipe_left(expr: &Expr) -> bool {
-    match expr {
-        Expr::Placeholder(Placeholder::PipeLeft) => true,
-        Expr::Tuple(items) | Expr::BracketSeq(items) => items.iter().any(expr_contains_pipe_left),
-        Expr::ArrayRepeat { value, len }
-        | Expr::Binary {
-            lhs: value,
-            rhs: len,
-            ..
-        } => expr_contains_pipe_left(value) || expr_contains_pipe_left(len),
-        Expr::Call { callee, args } => {
-            expr_contains_pipe_left(callee) || args.iter().any(call_arg_contains_pipe_left)
-        }
-        Expr::Select(select) => expr_contains_pipe_left(select.target()),
-        Expr::Try { expr: target } => expr_contains_pipe_left(target),
-        Expr::Index { target, index } => {
-            expr_contains_pipe_left(target) || expr_contains_pipe_left(index)
-        }
-        Expr::Unary { expr, .. } | Expr::Await { expr, .. } | Expr::Closure { body: expr, .. } => {
-            expr_contains_pipe_left(expr)
-        }
-        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
-            .iter()
-            .any(|(_, value)| expr_contains_pipe_left(value)),
-        Expr::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
-            expr_contains_pipe_left(condition)
-                || expr_contains_pipe_left(then_branch)
-                || else_branch.as_deref().is_some_and(expr_contains_pipe_left)
-        }
-        Expr::IfLet {
-            expr,
-            guard,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            expr_contains_pipe_left(expr)
-                || guard.as_deref().is_some_and(expr_contains_pipe_left)
-                || expr_contains_pipe_left(then_branch)
-                || else_branch.as_deref().is_some_and(expr_contains_pipe_left)
-        }
-        Expr::Match { scrutinee, arms } => {
-            expr_contains_pipe_left(scrutinee)
-                || arms.iter().any(|arm| {
-                    arm.guard().is_some_and(expr_contains_pipe_left)
-                        || expr_contains_pipe_left(arm.value())
-                })
-        }
-        _ => false,
-    }
-}
-
-fn call_arg_contains_pipe_left(arg: &CallArg) -> bool {
-    match arg {
-        CallArg::Positional(value) => expr_contains_pipe_left(value),
-        CallArg::Named { value, .. } | CallArg::Spread { value } => expr_contains_pipe_left(value),
+        Some(self.check_known_function_value_call(
+            expression_id,
+            None,
+            rhs_effect_callable,
+            rhs_curried_signature_call.as_ref(),
+            &[CallArg::Positional(lhs.clone())],
+            rhs_ty,
+        ))
     }
 }

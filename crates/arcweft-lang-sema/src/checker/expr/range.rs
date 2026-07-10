@@ -1,5 +1,5 @@
 use super::{Expr, TypeCheckError, TypeChecker, TypeKind};
-use crate::checker::helpers::{numeric_literal_suffix_type, type_kind_label};
+use crate::checker::helpers::type_kind_label;
 use arcweft_lang_syntax::expr::Literal;
 
 impl TypeChecker<'_> {
@@ -33,10 +33,7 @@ impl TypeChecker<'_> {
     fn range_bound_type_hint(&self, expr: &Expr) -> Option<TypeKind> {
         match expr {
             Expr::Path(path) => self.symbol_type(path).cloned(),
-            Expr::Literal(Literal::Int {
-                suffix: Some(suffix),
-                ..
-            }) => numeric_literal_suffix_type(Some(suffix.as_str())),
+            Expr::Literal(Literal::Int(literal)) => literal.suffix().map(TypeKind::from),
             _ => None,
         }
     }

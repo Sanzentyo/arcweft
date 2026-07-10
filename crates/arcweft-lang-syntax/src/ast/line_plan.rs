@@ -43,7 +43,7 @@ pub enum LinePlanItem {
         expr: Expr,
     },
     /// Statement item such as `defer { ... }` preserved in a line plan.
-    Stmt(Stmt),
+    Stmt(Box<Stmt>),
     Out(Expr),
     CancelRule(CancelRuleSyntax),
     TimedCue {

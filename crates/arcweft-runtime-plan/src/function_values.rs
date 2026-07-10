@@ -1,8 +1,7 @@
 //! Runtime function-value extraction for source-local top-level `fn` bodies.
 
 use crate::expr::{
-    RuntimePureHelperLookup,
-    desugar::{expr_contains_pipe_left, substitute_pipe_left},
+    RuntimePureHelperLookup, desugar::substitute_pipe_left,
     lower_runtime_expr_strict_with_function_locals_and_pure,
 };
 use arcweft_core::value::RuntimeExpr;
@@ -548,7 +547,7 @@ fn runtime_function_value_pipe_supported(
     rhs: &Expr,
     context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
-    if expr_contains_pipe_left(rhs) {
+    if rhs.contains_pipe_left() {
         return runtime_function_value_expr_supported(&substitute_pipe_left(rhs, lhs), context);
     }
     runtime_function_value_expr_supported(lhs, context)
@@ -706,7 +705,7 @@ fn runtime_function_value_pipe_function_signature(
     rhs: &Expr,
     context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> Option<FunctionLocalSignature> {
-    if expr_contains_pipe_left(rhs) {
+    if rhs.contains_pipe_left() {
         return runtime_function_value_expr_function_signature(
             &substitute_pipe_left(rhs, lhs),
             context,

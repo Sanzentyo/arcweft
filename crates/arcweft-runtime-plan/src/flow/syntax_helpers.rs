@@ -90,11 +90,13 @@ pub(super) fn parallel_limit(args: &[CallArg]) -> Result<usize, String> {
     if arg.name() != Some("limit") || arg.is_spread() {
         return Err("parallel(...) requires a named `limit = N` argument".to_owned());
     }
-    let Expr::Literal(Literal::Int { value, .. }) = arg.value() else {
+    let Expr::Literal(Literal::Int(literal)) = arg.value() else {
         return Err("parallel limit must be an integer literal".to_owned());
     };
-    usize::try_from(*value)
+    literal
+        .magnitude()
         .ok()
+        .and_then(|value| usize::try_from(value).ok())
         .filter(|value| *value > 0)
         .ok_or_else(|| "parallel limit must be greater than zero".to_owned())
 }

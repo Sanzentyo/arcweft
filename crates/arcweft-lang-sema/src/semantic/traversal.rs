@@ -770,9 +770,10 @@ fn expr_type_label(expr: &Expr) -> String {
     match expr {
         Expr::Literal(Literal::String(_)) => "String".to_owned(),
         Expr::Literal(Literal::Char { .. }) => "char".to_owned(),
-        Expr::Literal(Literal::Int { suffix, .. }) => {
-            suffix.as_deref().unwrap_or("unsuffixed-int").to_owned()
-        }
+        Expr::Literal(Literal::Int(literal)) => literal
+            .suffix()
+            .map_or("unsuffixed-int", |suffix| suffix.as_str())
+            .to_owned(),
         Expr::Literal(Literal::Float { suffix, .. }) => suffix
             .as_ref()
             .map_or("unsuffixed-float", |suffix| suffix.as_str())
@@ -788,9 +789,11 @@ fn expr_type_label(expr: &Expr) -> String {
             || "Vec<Unknown>".to_owned(),
             |item| format!("Vec<{}>", expr_type_label(item)),
         ),
-        Expr::NumericBracketSeq(seq) => {
-            format!("Vec<{}>", seq.suffix().unwrap_or("unsuffixed-int"))
-        }
+        Expr::NumericBracketSeq(seq) => format!(
+            "Vec<{}>",
+            seq.suffix()
+                .map_or("unsuffixed-int", |suffix| suffix.as_str())
+        ),
         Expr::ArrayRepeat { value, len } => {
             format!("Array<{}, {}>", expr_type_label(value), expr_label(len))
         }

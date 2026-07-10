@@ -60,10 +60,10 @@ use helpers::{
     parse_dialogue_call_expr_source, parse_expr_lossy, parse_expr_lossy_with_stats,
     parse_expr_with_inline_line_plan_with_stats, parse_inline_with_colon_plan, parse_line_options,
     parse_line_plan_attachment, parse_line_plan_attachment_with_body_base,
-    parse_memo_block_options, parse_outer_attribute, parse_with_brace_label,
-    parse_with_indent_label, source_take, split_brace_item, split_brace_item_with_scan,
-    split_call_head, split_comma_args, split_optional_block_label, split_speaker_line,
-    split_top_level_binding,
+    parse_memo_block_options, parse_outer_attribute, parse_type_ref_or_error,
+    parse_with_brace_label, parse_with_indent_label, source_take, split_brace_item,
+    split_brace_item_with_scan, split_call_head, split_comma_args, split_optional_block_label,
+    split_speaker_line, split_top_level_binding, validate_let_type_ascriptions,
 };
 use line_plan::{
     parse_defer_outcome, parse_thread_block, parse_thread_block_items, parse_trigger_pattern,
@@ -108,7 +108,8 @@ fn parse_source_with_options(source: impl Into<String>, options: ParseOptions) -
     let syntax = crate::cst::parse_cst(&source);
     let mut parser = Parser::from_syntax(&source, &syntax);
     parser.source_dialect = options.source_dialect;
-    let (tree, errors, syntax_stats) = parser.parse();
+    let (tree, mut errors, syntax_stats) = parser.parse();
+    errors.extend(validate_let_type_ascriptions(&source));
     ParsedSource::new(source, syntax, tree, errors, syntax_stats)
 }
 

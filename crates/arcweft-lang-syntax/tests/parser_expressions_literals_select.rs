@@ -3,7 +3,10 @@ use arcweft_lang_syntax::{
         flow::{FlowItem, Stmt},
         items::Item,
     },
-    expr::{BinaryOp, DurationUnit, Expr, Literal, UnaryOp, UnitNumberSuffix, parse_expr},
+    expr::{
+        BinaryOp, DurationUnit, Expr, IntRadix, IntSuffix, Literal, UnaryOp, UnitNumberSuffix,
+        parse_expr,
+    },
     types::{TypeRef, parse_type_ref},
 };
 
@@ -134,9 +137,9 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
         panic!("expected numeric bracket sequence");
     };
     assert_eq!(seq.len(), 128);
-    assert_eq!(seq.suffix(), Some("i64"));
-    assert_eq!(seq.values()[0], 0);
-    assert_eq!(seq.values()[127], 127);
+    assert_eq!(seq.suffix(), Some(IntSuffix::I64));
+    assert_eq!(seq.literals()[0].magnitude(), Ok(0));
+    assert_eq!(seq.literals()[127].magnitude(), Ok(127));
 
     let repeat = parse_expr("[0i64; 4]").expect("array repeat still parses");
     assert!(matches!(repeat, Expr::ArrayRepeat { .. }));
@@ -146,7 +149,7 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
         indexed,
         Expr::Index { target, index }
             if matches!(target.as_ref(), Expr::NumericBracketSeq(_))
-                && matches!(index.as_ref(), Expr::Literal(Literal::Int { .. }))
+                && matches!(index.as_ref(), Expr::Literal(Literal::Int(_)))
     ));
 
     let mixed = parse_expr("[1i64, false]").expect("mixed sequence falls back");
@@ -157,8 +160,8 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
         mixed_suffix,
         Expr::BracketSeq(items)
             if items.len() == 2
-                && matches!(&items[0], Expr::Literal(Literal::Int { suffix, .. }) if suffix.as_deref() == Some("i32"))
-                && matches!(&items[1], Expr::Literal(Literal::Int { suffix, .. }) if suffix.as_deref() == Some("i64"))
+                && matches!(&items[0], Expr::Literal(Literal::Int(literal)) if literal.suffix() == Some(IntSuffix::I32))
+                && matches!(&items[1], Expr::Literal(Literal::Int(literal)) if literal.suffix() == Some(IntSuffix::I64))
     ));
 }
 
@@ -218,21 +221,56 @@ fn float_suffix_and_unit_number_literals_are_typed_syntax() {
 
     assert!(matches!(
         parse_expr("0xff_u8").expect("hex integer parses"),
-        Expr::Literal(Literal::Int { value: 255, suffix, .. }) if suffix.as_deref() == Some("u8")
+        Expr::Literal(Literal::Int(literal))
+            if literal.magnitude() == Ok(255)
+                && literal.radix() == IntRadix::Hexadecimal
+                && literal.suffix() == Some(IntSuffix::U8)
     ));
     assert!(matches!(
         parse_expr("0b1010_0101u8").expect("binary integer parses"),
-        Expr::Literal(Literal::Int { value: 0b1010_0101, suffix, .. }) if suffix.as_deref() == Some("u8")
+        Expr::Literal(Literal::Int(literal))
+            if literal.magnitude() == Ok(0b1010_0101)
+                && literal.radix() == IntRadix::Binary
+                && literal.suffix() == Some(IntSuffix::U8)
     ));
     assert!(matches!(
         parse_expr("0o755u32").expect("octal integer parses"),
-        Expr::Literal(Literal::Int { value: 0o755, suffix, .. }) if suffix.as_deref() == Some("u32")
+        Expr::Literal(Literal::Int(literal))
+            if literal.magnitude() == Ok(0o755)
+                && literal.radix() == IntRadix::Octal
+                && literal.suffix() == Some(IntSuffix::U32)
     ));
     assert!(matches!(
         parse_expr("1_000i32").expect("underscored decimal integer parses"),
-        Expr::Literal(Literal::Int { value: 1000, suffix, .. }) if suffix.as_deref() == Some("i32")
+        Expr::Literal(Literal::Int(literal))
+            if literal.magnitude() == Ok(1000)
+                && literal.radix() == IntRadix::Decimal
+                && literal.suffix() == Some(IntSuffix::I32)
     ));
 
     assert!(parse_expr("1.0NaN").is_err());
     assert!(parse_expr("1.0Inf").is_err());
+}
+
+#[test]
+fn integer_literals_preserve_u128_magnitudes_without_host_narrowing() {
+    let max = parse_expr("0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffffu128")
+        .expect("u128 max literal parses");
+    let Expr::Literal(Literal::Int(max)) = max else {
+        panic!("expected integer literal");
+    };
+    assert_eq!(max.radix(), IntRadix::Hexadecimal);
+    assert_eq!(max.suffix(), Some(IntSuffix::U128));
+    assert_eq!(max.magnitude(), Ok(u128::MAX));
+    assert_eq!(max.raw(), "0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffffu128");
+
+    let overflow = parse_expr("340282366920938463463374607431768211456u128")
+        .expect("overflow is preserved for semantic diagnostics");
+    let Expr::Literal(Literal::Int(overflow)) = overflow else {
+        panic!("expected integer literal");
+    };
+    assert_eq!(
+        overflow.magnitude(),
+        Err(arcweft_lang_syntax::expr::IntLiteralValueError::OutOfRange)
+    );
 }

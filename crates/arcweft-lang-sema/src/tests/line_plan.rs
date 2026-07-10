@@ -393,10 +393,11 @@ flow @flow.opening opening {
     ));
     assert!(matches!(
         &plan.items()[3],
-        LinePlanItem::Stmt(Stmt::DeferBlock {
-            outcome: DeferOutcome::Always,
-            statements
-        }) if statements.len() == 1
+        LinePlanItem::Stmt(stmt)
+            if matches!(stmt.as_ref(), Stmt::DeferBlock {
+                outcome: DeferOutcome::Always,
+                statements
+            } if statements.len() == 1)
     ));
 
     let hir = lower_to_hir(&tree).expect("line plan fixture lowers");
@@ -441,7 +442,8 @@ wait(mark(.release_focus))
     let plan = call.plan().expect("flat with plan");
     assert!(matches!(
         plan.items(),
-        [LinePlanItem::Stmt(Stmt::Wait(WaitTarget::Expr(_)))]
+        [LinePlanItem::Stmt(stmt)]
+            if matches!(stmt.as_ref(), Stmt::Wait(WaitTarget::Expr(_)))
     ));
 }
 
@@ -794,10 +796,11 @@ flow @flow.opening opening {
         assert!(matches!(&items[2], LinePlanItem::CancelRule(rule) if rule.action().len() == 1));
         assert!(matches!(
             &items[3],
-            LinePlanItem::Stmt(Stmt::DeferBlock {
-                outcome: DeferOutcome::Completed,
-                statements,
-            }) if statements.len() == 1
+            LinePlanItem::Stmt(stmt)
+                if matches!(stmt.as_ref(), Stmt::DeferBlock {
+                    outcome: DeferOutcome::Completed,
+                    statements,
+                } if statements.len() == 1)
         ));
         assert!(matches!(
             &items[4],

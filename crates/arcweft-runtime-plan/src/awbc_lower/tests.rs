@@ -77,6 +77,45 @@ impl VmHost for TestPureHelperHost {
     }
 }
 
+#[derive(Default)]
+struct CountingProbeHost {
+    calls: usize,
+}
+
+impl VmHost for CountingProbeHost {
+    fn call_intrinsic(
+        &mut self,
+        program: &AwbcProgram,
+        intrinsic: arcweft_core::awbc::schema::AwbcIntrinsicId,
+        _args: &[RuntimeValue],
+    ) -> Result<Option<RuntimeValue>, VmError> {
+        let record = program
+            .intrinsics
+            .get(intrinsic.index())
+            .ok_or(VmError::MissingIntrinsic(intrinsic))?;
+        let label = &program.strings[record.public_id.index()];
+        if label != "probe" {
+            return Err(VmError::Runtime(format!(
+                "unexpected test intrinsic `{label}`"
+            )));
+        }
+        self.calls += 1;
+        Ok(Some(RuntimeValue::i64(5)))
+    }
+
+    fn call_pure_helper(
+        &mut self,
+        _program: &AwbcProgram,
+        helper: arcweft_core::awbc::schema::AwbcPureHelperId,
+        _args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, VmError> {
+        Err(VmError::Runtime(format!(
+            "unexpected pure helper {}",
+            helper.0
+        )))
+    }
+}
+
 fn run_function(
     program: &AwbcProgram,
     function: AwbcFunctionId,
@@ -116,6 +155,47 @@ fn run_function(
             }
         }
     }
+}
+
+#[test]
+fn pipe_left_value_is_evaluated_once_and_shared_by_awbc_reads() {
+    let source = arcweft_lang_syntax::expr::parse_expr("probe() |> (^ + ^)")
+        .expect("pipe expression parses");
+    let lowered = crate::expr::lower_runtime_expr_strict(&source)
+        .expect("pipe expression lowers to an exact-once binding");
+    assert!(matches!(
+        &lowered,
+        RuntimeExpr::Let { name, body, .. }
+            if name.starts_with('\0')
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Binary { lhs, rhs, .. }
+                        if matches!(
+                            (lhs.as_ref(), rhs.as_ref()),
+                            (RuntimeExpr::Local(first), RuntimeExpr::Local(second))
+                                if first == name && second == name
+                        )
+                )
+    ));
+
+    let plan = RuntimePlan::new(
+        Some(flow_id("main")),
+        vec![RuntimeFlow {
+            id: flow_id("main"),
+            ops: vec![FlowOp::ReturnExpr(lowered)],
+        }],
+        Vec::new(),
+    )
+    .expect("plan builds");
+    let report = lower_plan(&plan);
+    let mut host = CountingProbeHost::default();
+    let exit = run_entry(&report.program, &mut host);
+
+    assert_eq!(
+        host.calls, 1,
+        "pipe lhs intrinsic must execute exactly once"
+    );
+    assert_eq!(exit, VmExit::Returned(Some(RuntimeValue::i64(10))));
 }
 
 #[test]

@@ -62,6 +62,43 @@ fn collect_runtime_apply_arg_counts(expr: &RuntimeExpr, counts: &mut Vec<usize>)
     }
 }
 
+/// Returns the initializer, scoped binding name, and body of a lowered pipe.
+///
+/// Pipe bindings are deliberately outside the source identifier alphabet, so
+/// the runtime plan can share one evaluated LHS across every RHS use without
+/// colliding with an authored local.
+fn runtime_pipe_let(expr: &RuntimeExpr) -> Option<(&RuntimeExpr, &str, &RuntimeExpr)> {
+    let RuntimeExpr::Let { name, expr, body } = expr else {
+        return None;
+    };
+    name.starts_with('\0')
+        .then_some((expr.as_ref(), name.as_str(), body.as_ref()))
+}
+
+/// Returns the LHS initializer and RHS callable of a placeholder-free pipe.
+///
+/// The final `Apply` is intentionally kept separate from any applications
+/// already present in the RHS, preserving `lhs |> f(a)` as `f(a)(lhs)`.
+fn runtime_staged_pipe(expr: &RuntimeExpr) -> Option<(&RuntimeExpr, &RuntimeExpr)> {
+    let (initializer, binding, body) = runtime_pipe_let(expr)?;
+    let RuntimeExpr::Apply { callee, args } = body else {
+        return None;
+    };
+    matches!(args.as_slice(), [RuntimeExpr::Local(name)] if name == binding)
+        .then_some((initializer, callee.as_ref()))
+}
+
+/// Splits the separate receiver stage from a data-last method fallback.
+fn runtime_data_last_stages(expr: &RuntimeExpr) -> Option<(&RuntimeExpr, &RuntimeExpr)> {
+    let RuntimeExpr::Apply { callee, args } = expr else {
+        return None;
+    };
+    let [receiver] = args.as_slice() else {
+        return None;
+    };
+    Some((callee.as_ref(), receiver))
+}
+
 fn project_with_entity(id: &str, kind: EntityKind) -> ProjectSemanticIndex {
     project_with_typed_entity(id, kind, None)
 }
@@ -759,28 +796,133 @@ flow @flow.main main {
     else {
         panic!("expected score, ok, and named lets");
     };
+    let (positional_stage, positional_receiver) =
+        runtime_data_last_stages(ok).expect("positional fallback keeps a receiver stage");
     assert!(matches!(
-        ok,
-        RuntimeExpr::PureCall { args, .. }
-            if matches!(
-                args.as_slice(),
-                [
-                    RuntimeExpr::Value(value),
-                    RuntimeExpr::Local(name),
-                ] if value == &RuntimeValue::i64(80) && name == "score"
-            )
+        positional_receiver,
+        RuntimeExpr::Local(name) if name == "score"
     ));
     assert!(matches!(
-        named,
-        RuntimeExpr::PureCall { args, .. }
+        positional_stage,
+        RuntimeExpr::Apply { callee, args }
             if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Function { params, .. }
+                    if params.as_slice() == ["min", "value"]
+            ) && matches!(
                 args.as_slice(),
-                [
-                    RuntimeExpr::Value(value),
-                    RuntimeExpr::Local(name),
-                ] if value == &RuntimeValue::i64(80) && name == "score"
+                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(80)
             )
     ));
+
+    let (named_stage, named_receiver) =
+        runtime_data_last_stages(named).expect("named fallback keeps a receiver stage");
+    assert!(matches!(
+        named_receiver,
+        RuntimeExpr::Local(name) if name == "score"
+    ));
+    assert!(matches!(
+        named_stage,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["value"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::PureCall { args, .. }
+                        if matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Value(min), RuntimeExpr::Local(value)]
+                                if min == &RuntimeValue::i64(80) && value == "value"
+                        )
+                )
+    ));
+}
+
+#[test]
+fn runtime_plan_keeps_curried_source_and_local_method_fallback_staged() {
+    let parsed = parse_source_text(
+        r#"
+#[pure]
+fn above(min: i64)(value: i64) -> bool {
+    return value > min
+}
+
+fn trim(prefix: String)(value: String) -> String {
+    return value
+}
+
+flow @flow.main main {
+    let compare = above
+    let score = 90i64
+    let source = score.above(80i64)
+    let local = score.compare(80i64)
+    let text = " padded "
+    let inherent = text.trim()
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers curried source and local method fallback");
+    let [
+        FlowOp::Let { .. },
+        FlowOp::Let { .. },
+        FlowOp::Let { expr: source, .. },
+        FlowOp::Let { expr: local, .. },
+        FlowOp::Let { .. },
+        FlowOp::Let { expr: inherent, .. },
+        ..,
+    ] = report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected compare, score, source, local, text, and inherent lets");
+    };
+
+    let (source_stage, source_receiver) =
+        runtime_data_last_stages(source).expect("source fallback keeps its receiver stage");
+    assert!(matches!(source_receiver, RuntimeExpr::Local(name) if name == "score"));
+    assert_eq!(
+        runtime_apply_arg_counts(source_stage),
+        [1],
+        "source method arguments must complete the first group before the receiver: {source:#?}"
+    );
+
+    let (local_stage, local_receiver) =
+        runtime_data_last_stages(local).expect("local fallback keeps its receiver stage");
+    assert!(matches!(local_receiver, RuntimeExpr::Local(name) if name == "score"));
+    assert!(matches!(
+        local_stage,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "compare")
+                && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(80)
+                )
+    ));
+
+    assert!(
+        matches!(
+            inherent,
+            RuntimeExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } if matches!(receiver.as_ref(), RuntimeExpr::Local(name) if name == "text")
+                && method == "trim"
+                && args.is_empty()
+        ),
+        "inherent method must win over data-last fallback: {inherent:#?}"
+    );
 }
 
 #[test]
@@ -823,42 +965,63 @@ flow @flow.main main {
     else {
         panic!("expected score, direct, and mixed lets");
     };
-    let direct_args = match direct {
-        RuntimeExpr::PureCall { args, .. } | RuntimeExpr::Apply { args, .. } => args,
-        other => panic!("expected direct fallback call expression, got {other:#?}"),
+    assert_direct_spread_data_last_stage(direct);
+    assert_mixed_spread_data_last_stage(mixed);
+}
+
+fn assert_direct_spread_data_last_stage(expr: &RuntimeExpr) {
+    let (stage, receiver) =
+        runtime_data_last_stages(expr).expect("spread fallback keeps a receiver stage");
+    assert!(matches!(receiver, RuntimeExpr::Local(score) if score == "score"));
+    let RuntimeExpr::Apply { callee, args } = stage else {
+        panic!("expected direct spread arguments in the first stage, got {stage:#?}");
     };
+    assert!(matches!(
+        callee.as_ref(),
+        RuntimeExpr::Function { params, .. }
+            if params.as_slice() == ["min", "max", "value"]
+    ));
     assert!(
         matches!(
-            direct_args.as_slice(),
-            [RuntimeExpr::SpreadArg(value), RuntimeExpr::Local(score)]
+            args.as_slice(),
+            [RuntimeExpr::SpreadArg(value)]
                 if matches!(
                     value.as_ref(),
                     RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::Dense(
                         DenseSeq::I64(values)
                     ))) if matches!(values.as_slice(), [60, 90])
-                ) && score == "score"
+                )
         ),
-        "expected direct fallback to preserve one spread arg before receiver, got {direct:#?}"
+        "expected direct fallback to preserve one spread arg in its first stage, got {expr:#?}"
     );
-    let mixed_args = match mixed {
-        RuntimeExpr::PureCall { args, .. } | RuntimeExpr::Apply { args, .. } => args,
-        other => panic!("expected mixed fallback call expression, got {other:#?}"),
+}
+
+fn assert_mixed_spread_data_last_stage(expr: &RuntimeExpr) {
+    let (stage, receiver) =
+        runtime_data_last_stages(expr).expect("mixed fallback keeps a receiver stage");
+    assert!(matches!(receiver, RuntimeExpr::Local(score) if score == "score"));
+    let RuntimeExpr::Function { params, body } = stage else {
+        panic!("expected mixed first stage to leave only its receiver parameter, got {stage:#?}");
+    };
+    assert_eq!(params, &["value"]);
+    let RuntimeExpr::PureCall { args, .. } = body.as_ref() else {
+        panic!("expected mixed first stage to call its helper, got {body:#?}");
     };
     assert!(
         matches!(
-            mixed_args.as_slice(),
+            args.as_slice(),
             [
                 RuntimeExpr::SpreadArg(value),
                 RuntimeExpr::Value(max),
-                RuntimeExpr::Local(score),
+                RuntimeExpr::Local(value_param),
             ] if matches!(
                 value.as_ref(),
                 RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::Dense(
                     DenseSeq::I64(values)
                 ))) if matches!(values.as_slice(), [60])
-            ) && max == &RuntimeValue::i64(90) && score == "score"
+            ) && max == &RuntimeValue::i64(90) && value_param == "value"
         ),
-        "expected mixed fallback to preserve spread, named arg, then receiver, got {mixed:#?}"
+        "expected mixed fallback to preserve spread and named args before its receiver stage, got {expr:#?}"
     );
 }
 
@@ -908,45 +1071,43 @@ flow @flow.main main {
     else {
         panic!("expected partial, positional, and named pipe lets");
     };
+    let (partial_lhs, partial_callee) =
+        runtime_staged_pipe(partial).expect("bare callable pipe keeps a final apply stage");
     assert!(matches!(
-        partial,
-        RuntimeExpr::Apply { callee, args }
-            if matches!(
-                callee.as_ref(),
-                RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
-            ) && matches!(
-                args.as_slice(),
-                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
-            )
+        partial_lhs,
+        RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2)
     ));
-    for expr in [positional, named] {
-        assert!(matches!(
-            expr,
-            RuntimeExpr::PureCall { args, .. }
-                if matches!(
-                    args.as_slice(),
-                    [
-                        RuntimeExpr::Value(lhs),
-                        RuntimeExpr::Value(rhs),
-                    ] if lhs == &RuntimeValue::i64(1) && rhs == &RuntimeValue::i64(2)
-                )
-        ));
+    assert!(matches!(
+        partial_callee,
+        RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
+    ));
+
+    for (label, expr) in [
+        ("positional", positional),
+        ("named-left", named),
+        ("named-right", named_rhs),
+    ] {
+        let (lhs, rhs_callable) = runtime_staged_pipe(expr)
+            .unwrap_or_else(|| panic!("{label} pipe must keep rhs(lhs) as a separate stage"));
+        assert!(
+            matches!(lhs, RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2)),
+            "unexpected {label} pipe initializer: {lhs:#?}"
+        );
+        assert!(
+            matches!(
+                rhs_callable,
+                RuntimeExpr::Function { params, .. } if params.len() == 1
+            ) || matches!(
+                rhs_callable,
+                RuntimeExpr::Apply { args, .. } if args.len() == 1
+            ),
+            "{label} RHS must be the one-argument callable produced by add(1), got {rhs_callable:#?}"
+        );
     }
-    assert!(matches!(
-        named_rhs,
-        RuntimeExpr::PureCall { args, .. }
-            if matches!(
-                args.as_slice(),
-                [
-                    RuntimeExpr::Value(lhs),
-                    RuntimeExpr::Value(rhs),
-                ] if lhs == &RuntimeValue::i64(2) && rhs == &RuntimeValue::i64(1)
-            )
-    ));
 }
 
 #[test]
-fn runtime_plan_substitutes_pipe_left_inside_if_let_expression() {
+fn runtime_plan_binds_pipe_left_once_inside_if_let_expression() {
     let parsed = parse_source_text(
         r"
 flow @flow.main main {
@@ -983,8 +1144,11 @@ flow @flow.main main {
         panic!("expected maybe and selected lets");
     };
     assert!(matches!(maybe, RuntimeExpr::Variant { name, .. } if name == "Some"));
+    let (initializer, binding, body) =
+        runtime_pipe_let(selected).expect("pipe-left lowers through one lexical binding");
+    assert!(matches!(initializer, RuntimeExpr::Local(name) if name == "maybe"));
     assert!(matches!(
-        selected,
+        body,
         RuntimeExpr::IfLet {
             pattern:
                 RuntimePattern::Variant {
@@ -1002,14 +1166,14 @@ flow @flow.main main {
                 RuntimePattern::Tuple(items)
                     if matches!(items.as_slice(), [RuntimePattern::Ident(value)] if value == "value")
             )
-            && matches!(expr.as_ref(), RuntimeExpr::Local(name) if name == "maybe")
+            && matches!(expr.as_ref(), RuntimeExpr::Local(name) if name == binding)
             && matches!(then_expr.as_ref(), RuntimeExpr::Local(name) if name == "value")
             && matches!(else_expr.as_ref(), RuntimeExpr::Value(value) if value == &RuntimeValue::i64(1))
     ));
 }
 
 #[test]
-fn runtime_plan_substitutes_pipe_left_inside_match_expression() {
+fn runtime_plan_binds_pipe_left_once_inside_match_expression() {
     let parsed = parse_source_text(
         r"
 flow @flow.main main {
@@ -1048,10 +1212,13 @@ flow @flow.main main {
         ready,
         RuntimeExpr::Value(RuntimeValue::Bool(true))
     ));
+    let (initializer, binding, body) =
+        runtime_pipe_let(selected).expect("pipe-left lowers through one lexical binding");
+    assert!(matches!(initializer, RuntimeExpr::Local(name) if name == "ready"));
     assert!(matches!(
-        selected,
+        body,
         RuntimeExpr::Match { scrutinee, arms }
-            if matches!(scrutinee.as_ref(), RuntimeExpr::Local(name) if name == "ready")
+            if matches!(scrutinee.as_ref(), RuntimeExpr::Local(name) if name == binding)
                 && matches!(
                     arms.as_slice(),
                     [
@@ -1168,31 +1335,46 @@ flow @flow.main main {
     else {
         panic!("expected named data-last pipe lets");
     };
+    let (right_initializer, right_callable) =
+        runtime_staged_pipe(via_right).expect("named-right pipe keeps a final receiver stage");
     assert!(matches!(
-        via_right,
-        RuntimeExpr::Apply { callee, args }
-            if matches!(
-                callee.as_ref(),
-                RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
-            ) && matches!(
-                args.as_slice(),
-                [RuntimeExpr::Value(left), RuntimeExpr::Value(right)]
-                    if left == &RuntimeValue::String("pipe-left".to_owned())
-                        && right == &RuntimeValue::String("named-right".to_owned())
-            )
+        right_initializer,
+        RuntimeExpr::Value(RuntimeValue::String(value)) if value == "pipe-left"
     ));
     assert!(matches!(
-        via_left,
-        RuntimeExpr::Apply { callee, args }
-            if matches!(
-                callee.as_ref(),
-                RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
-            ) && matches!(
-                args.as_slice(),
-                [RuntimeExpr::Value(left), RuntimeExpr::Value(right)]
-                    if left == &RuntimeValue::String("named-left".to_owned())
-                        && right == &RuntimeValue::String("pipe-right".to_owned())
-            )
+        right_callable,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["left"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Apply { args, .. }
+                        if matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Local(left), RuntimeExpr::Value(RuntimeValue::String(right))]
+                                if left == "left" && right == "named-right"
+                        )
+                )
+    ));
+
+    let (left_initializer, left_callable) =
+        runtime_staged_pipe(via_left).expect("named-left pipe keeps a final receiver stage");
+    assert!(matches!(
+        left_initializer,
+        RuntimeExpr::Value(RuntimeValue::String(value)) if value == "pipe-right"
+    ));
+    assert!(matches!(
+        left_callable,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["right"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Apply { args, .. }
+                        if matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Value(RuntimeValue::String(left)), RuntimeExpr::Local(right)]
+                                if left == "named-left" && right == "right"
+                        )
+                )
     ));
 }
 
@@ -1580,6 +1762,42 @@ flow @flow.main main {
         ),
         "expected ok to apply add_one with fixed literal spread arg, got {ok:#?}"
     );
+}
+
+#[test]
+fn function_value_numeric_spread_keeps_following_typed_evidence_aligned() {
+    let parsed = parse_source_text(
+        r#"
+fn sum(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+flow main {
+    let callback: (i64, i64) -> i64 = sum
+    let total: i64 = callback([1i64, 2i64]...)
+    let wide: u128 = 340282366920938463463374607431768211455
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "{:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("spread container and following numeric evidence stay aligned");
+    let FlowOp::Let { expr: wide, .. } = &report.plan.flows[0].ops[2] else {
+        panic!("expected wide let after function-value spread");
+    };
+    assert_eq!(wide, &RuntimeExpr::Value(RuntimeValue::u128(u128::MAX)));
 }
 
 #[test]
@@ -2199,53 +2417,65 @@ fn runtime_pipe_body_has_partial_and_exact_helper_apply(expr: &RuntimeExpr) -> b
     let RuntimeExpr::Let { name, expr, body } = expr else {
         return false;
     };
-    name == "add_label"
+    if name != "add_label" {
+        return false;
+    }
+    let Some((partial_initializer, partial_callable)) = runtime_staged_pipe(expr) else {
+        return false;
+    };
+    if !matches!(partial_initializer, RuntimeExpr::Local(name) if name == "value")
+        || !matches!(
+            partial_callable,
+            RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
+        )
+    {
+        return false;
+    }
+
+    let RuntimeExpr::Let {
+        name: exact_name,
+        expr: exact_expr,
+        body,
+    } = body.as_ref()
+    else {
+        return false;
+    };
+    if exact_name != "exact" {
+        return false;
+    }
+    let Some((exact_initializer, exact_binding, exact_body)) = runtime_pipe_let(exact_expr) else {
+        return false;
+    };
+    matches!(exact_initializer, RuntimeExpr::Local(name) if name == "value")
         && matches!(
-            expr.as_ref(),
-            RuntimeExpr::Apply { callee, args }
+            exact_body,
+            RuntimeExpr::PureCall { args, .. }
                 if matches!(
-                    callee.as_ref(),
-                    RuntimeExpr::Function { params, .. } if params.as_slice() == ["left", "right"]
-                ) && matches!(
                     args.as_slice(),
-                    [RuntimeExpr::Local(name)] if name == "value"
+                    [RuntimeExpr::Local(left), RuntimeExpr::Value(right)]
+                        if left == exact_binding && right == &RuntimeValue::i64(5)
                 )
         )
         && matches!(
             body.as_ref(),
-            RuntimeExpr::Let { name, expr, body }
-                if name == "exact"
-                    && matches!(
-                        expr.as_ref(),
-                        RuntimeExpr::PureCall { args, .. }
-                            if matches!(
-                                args.as_slice(),
-                                [RuntimeExpr::Local(left), RuntimeExpr::Value(right)]
-                                    if left == "value" && right == &RuntimeValue::i64(5)
-                            )
-                    )
-                    && matches!(
-                        body.as_ref(),
-                        RuntimeExpr::Tuple(items)
-                            if matches!(
-                                items.as_slice(),
-                                [
-                                    RuntimeExpr::Local(label),
-                                    RuntimeExpr::Apply { callee, args },
-                                    RuntimeExpr::Local(exact),
-                                ] if label == "label"
-                                    && exact == "exact"
-                                    && matches!(
-                                        callee.as_ref(),
-                                        RuntimeExpr::Local(name) if name == "add_label"
-                                    )
-                                    && matches!(
-                                        args.as_slice(),
-                                        [RuntimeExpr::Value(value)]
-                                            if value == &RuntimeValue::i64(5)
-                                    )
-                            )
-                    )
+            RuntimeExpr::Tuple(items)
+                if matches!(
+                    items.as_slice(),
+                    [
+                        RuntimeExpr::Local(label),
+                        RuntimeExpr::Apply { callee, args },
+                        RuntimeExpr::Local(exact),
+                    ] if label == "label"
+                        && exact == "exact"
+                        && matches!(
+                            callee.as_ref(),
+                            RuntimeExpr::Local(name) if name == "add_label"
+                        )
+                        && matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(5)
+                        )
+                )
         )
 }
 
@@ -2281,36 +2511,35 @@ flow @flow.main main {
     let [FlowOp::Let { expr: value, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
         panic!("expected value let");
     };
-    assert!(
-        matches!(
-            value,
-            RuntimeExpr::Apply { callee, args }
-                if matches!(
-                    callee.as_ref(),
-                    RuntimeExpr::Function { params, body }
-                        if params.as_slice() == ["tail"]
-                            && matches!(
-                                body.as_ref(),
-                                RuntimeExpr::Apply { callee, args }
-                                    if matches!(
-                                        callee.as_ref(),
-                                        RuntimeExpr::Function { params, .. }
-                                            if params.as_slice() == ["left", "right"]
-                                    ) && matches!(
-                                        args.as_slice(),
-                                        [RuntimeExpr::Value(left), RuntimeExpr::Local(right)]
-                                            if left == &RuntimeValue::String("head".to_owned())
-                                                && right == "tail"
-                                    )
-                            )
-                ) && matches!(
-                    args.as_slice(),
-                    [RuntimeExpr::Value(value)]
-                        if value == &RuntimeValue::String("tail".to_owned())
+    let RuntimeExpr::Apply { callee, args } = value else {
+        panic!("expected tail_pair application, got {value:#?}");
+    };
+    assert!(matches!(
+        args.as_slice(),
+        [RuntimeExpr::Value(RuntimeValue::String(value))] if value == "tail"
+    ));
+    let RuntimeExpr::Function { params, body } = callee.as_ref() else {
+        panic!("expected materialized tail_pair function, got {callee:#?}");
+    };
+    assert_eq!(params, &["tail"]);
+    let (initializer, pair_with_left) = runtime_staged_pipe(body).unwrap_or_else(|| {
+        panic!("source function pipe must keep pair(left = head)(tail), got {body:#?}")
+    });
+    assert!(matches!(initializer, RuntimeExpr::Local(name) if name == "tail"));
+    assert!(matches!(
+        pair_with_left,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["right"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Apply { args, .. }
+                        if matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Value(RuntimeValue::String(left)), RuntimeExpr::Local(right)]
+                                if left == "head" && right == "right"
+                        )
                 )
-        ),
-        "expected source function body to preserve named source pipe, got {value:#?}"
-    );
+    ));
 }
 
 #[test]
@@ -3277,25 +3506,74 @@ flow @flow.main main {
         f,
         RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
     ));
+    let (partial_initializer, partial_callee) =
+        runtime_staged_pipe(partial).expect("bare local pipe keeps its final apply stage");
     assert!(matches!(
-        partial,
+        partial_initializer,
+        RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2)
+    ));
+    assert!(matches!(partial_callee, RuntimeExpr::Local(name) if name == "f"));
+
+    let (exact_initializer, exact_callee) =
+        runtime_staged_pipe(exact).expect("local call pipe keeps f(1)(lhs) staged");
+    assert!(matches!(
+        exact_initializer,
+        RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2)
+    ));
+    assert!(matches!(
+        exact_callee,
         RuntimeExpr::Apply { callee, args }
             if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
                 && matches!(
                     args.as_slice(),
-                    [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
+                    [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(1)
                 )
     ));
+}
+
+#[test]
+fn runtime_plan_keeps_curried_data_last_pipe_groups_staged() {
+    let parsed = parse_source_text(
+        r"
+#[pure]
+fn add(left: i64)(right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.main main {
+    let sum: i64 = 2i64 |> add(40i64)
+    return sum
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers curried data-last pipe");
+    let [FlowOp::Let { expr: sum, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
+        panic!("expected sum let");
+    };
+    let (initializer, add_left) =
+        runtime_staged_pipe(sum).expect("pipeline must lower as add(40)(2)");
     assert!(matches!(
-        exact,
-        RuntimeExpr::Apply { callee, args }
-            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
-                && matches!(
-                    args.as_slice(),
-                    [RuntimeExpr::Value(lhs), RuntimeExpr::Value(rhs)]
-                        if lhs == &RuntimeValue::i64(1) && rhs == &RuntimeValue::i64(2)
-                )
+        initializer,
+        RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2)
     ));
+    assert_eq!(
+        runtime_apply_arg_counts(add_left),
+        [1],
+        "the authored add(40) group must remain before the pipeline receiver group: {sum:#?}"
+    );
 }
 
 #[test]

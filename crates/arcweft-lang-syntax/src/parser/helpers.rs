@@ -27,7 +27,7 @@ use crate::cst::{
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr, parse_expr_with_stats};
 use crate::pattern::parse_pattern;
-use crate::types::parse_type_ref;
+use crate::types::{TypeRef, parse_type_ref};
 use std::borrow::Cow;
 
 pub(super) enum OptionalLabel {
@@ -143,6 +143,60 @@ pub(super) fn parse_binding_pattern(source: &str) -> (Pattern, Option<crate::typ
             (parse_pattern(pattern.trim()), parsed_ty)
         },
     )
+}
+
+pub(super) fn parse_type_ref_or_error(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<TypeRef> {
+    let trimmed = source.trim();
+    let leading = source.len().saturating_sub(source.trim_start().len());
+    match parse_type_ref(trimmed) {
+        Ok(ty) => Some(ty),
+        Err(error) => {
+            errors.push(simple_error(
+                base + leading,
+                trimmed.len(),
+                &error.to_string(),
+                "a canonical Arcweft type",
+            ));
+            None
+        }
+    }
+}
+
+pub(super) fn validate_let_type_ascriptions(source: &str) -> Vec<ParseError> {
+    let mut errors = Vec::new();
+    let mut line_base = 0;
+    for line_with_ending in source.split_inclusive('\n') {
+        let line = line_with_ending.trim_end_matches(['\r', '\n']);
+        for (let_offset, _) in line.match_indices("let ") {
+            let boundary = let_offset == 0
+                || line[..let_offset]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|ch| ch.is_whitespace() || matches!(ch, '{' | ';'));
+            if !boundary {
+                continue;
+            }
+            let binding_source = &line[let_offset + "let ".len()..];
+            let Some((binding, _)) = split_top_level_binding(binding_source) else {
+                continue;
+            };
+            let Some((_, ty)) = split_top_level_punctuation_once(binding, ':') else {
+                continue;
+            };
+            let type_offset = binding
+                .rfind(ty)
+                .map_or(let_offset + "let ".len(), |offset| {
+                    let_offset + "let ".len() + offset
+                });
+            let _ = parse_type_ref_or_error(ty, line_base + type_offset, &mut errors);
+        }
+        line_base += line_with_ending.len();
+    }
+    errors
 }
 
 pub(super) fn is_expression_statement_call(trimmed: &str) -> bool {

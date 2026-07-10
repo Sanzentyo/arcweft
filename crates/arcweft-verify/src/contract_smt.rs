@@ -274,7 +274,20 @@ impl SmtSort {
         match ty {
             TypeRef::Path(path) if path == "bool" => Some(Self::Bool),
             TypeRef::Path(path)
-                if matches!(path.as_str(), "i8" | "i16" | "i32" | "i64" | "isize") =>
+                if matches!(
+                    path.as_str(),
+                    "i8" | "i16"
+                        | "i32"
+                        | "i64"
+                        | "i128"
+                        | "isize"
+                        | "u8"
+                        | "u16"
+                        | "u32"
+                        | "u64"
+                        | "u128"
+                        | "usize"
+                ) =>
             {
                 Some(Self::Int)
             }
@@ -311,7 +324,15 @@ impl ProofExpr {
     ) -> Result<LoweredExpr, ContractLoweringError> {
         match expr {
             Expr::Literal(Literal::Bool(value)) => Ok(LoweredExpr::bool(Self::bool(*value))),
-            Expr::Literal(Literal::Int { value, .. }) => Ok(LoweredExpr::int(Self::int(*value))),
+            Expr::Literal(Literal::Int(literal)) => literal
+                .magnitude()
+                .map(|value| LoweredExpr::int(Self::natural(value)))
+                .map_err(|_| {
+                    ContractLoweringError::UnsupportedExpression(format!(
+                        "integer literal `{}` is not a valid u128 magnitude",
+                        literal.raw()
+                    ))
+                }),
             Expr::Path(path) => {
                 let id = SmtSymbolId::new(path.as_str());
                 let sort = symbols.get(&id).copied().ok_or_else(|| {
@@ -631,6 +652,26 @@ ensures prove result >= 0
         assert!(script.contains("(declare-const result Int)"));
         assert!(script.contains("(assert (= result (ite"));
         assert!(script.contains("(assert (< result 0))"));
+    }
+
+    #[test]
+    fn preserves_u128_literals_as_arbitrary_precision_smt_integers() {
+        let report = lowered_report(
+            r"
+fn bounded(value: u128) -> u128
+ensures prove result <= 340282366920938463463374607431768211455
+{
+    value
+}
+",
+        );
+        let script = report.obligations[0]
+            .smt
+            .as_ref()
+            .expect("u128 contract lowers")
+            .emit_smt_lib(crate::smt::SmtEmission::CheckOnly)
+            .expect("SMT emits");
+        assert!(script.contains("340282366920938463463374607431768211455"));
     }
 
     #[test]

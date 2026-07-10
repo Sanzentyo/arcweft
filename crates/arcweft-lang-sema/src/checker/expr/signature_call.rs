@@ -1,9 +1,8 @@
-use super::super::helpers::numeric_literal_suffix_type;
 use super::builtin::CapabilityFunctionSpec;
 use super::partial::expr_contains_partial_placeholder;
 use super::support::{
     FixedLiteralSpreadSlot, call_arg_spread_value, fixed_literal_spread_slot_count,
-    fixed_literal_spread_slots, is_unit_number_type, signature_param_label, spread_item_type,
+    fixed_literal_spread_slots, signature_param_label, spread_item_type,
 };
 use super::{
     CallArg, Expr, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
@@ -413,8 +412,8 @@ impl TypeChecker<'_> {
     ) -> Option<TypeKind> {
         match arg {
             FixedLiteralSpreadSlot::Expr(expr) => self.check_expr_with_expected(expr, expected),
-            FixedLiteralSpreadSlot::Int { suffix, .. } => {
-                Some(self.check_fixed_literal_spread_int_slot(suffix, expected))
+            FixedLiteralSpreadSlot::Int(literal) => {
+                Some(self.check_fixed_literal_spread_int_slot(literal, expected))
             }
         }
     }
@@ -427,31 +426,26 @@ impl TypeChecker<'_> {
 
     fn check_fixed_literal_spread_int_slot(
         &mut self,
-        suffix: Option<&str>,
+        literal: &arcweft_lang_syntax::expr::IntLiteral,
         expected: Option<&TypeKind>,
     ) -> TypeKind {
-        if let Some(suffix) = suffix {
-            let ty = if let Some(ty) = numeric_literal_suffix_type(Some(suffix)) {
-                ty
-            } else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "unknown integer literal suffix `{suffix}`"
-                )));
-                TypeKind::Named("_".to_owned())
-            };
-            if ty.is_integer() || is_unit_number_type(&ty) {
-                return ty;
-            }
-            self.errors.push(TypeCheckError::new(format!(
-                "integer literal suffix must be an integer type, found {ty:?}"
-            )));
-            return TypeKind::Named("_".to_owned());
-        }
-        if let Some(expected) = expected.filter(|ty| ty.is_integer()) {
-            return expected.clone();
-        }
-        self.record_numeric_fallback_in_inferred_closure("integer spread slot", TypeKind::I32);
-        TypeKind::I32
+        let ty = literal.suffix().map_or_else(
+            || {
+                expected
+                    .filter(|ty| ty.is_integer())
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        self.record_numeric_fallback_in_inferred_closure(
+                            "integer spread slot",
+                            TypeKind::I32,
+                        );
+                        TypeKind::I32
+                    })
+            },
+            TypeKind::from,
+        );
+        self.validate_integer_literal(literal, &ty);
+        ty
     }
 }
 

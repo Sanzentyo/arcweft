@@ -13,10 +13,8 @@ use core::pin::Pin;
 pub type ClipboardHostFuture<'a> = Pin<Box<dyn Future<Output = TextClipboardOutcome> + Send + 'a>>;
 
 pub trait TextClipboardHostAdapter {
-    fn apply_clipboard_request<'a>(
-        &'a mut self,
-        request: TextClipboardRequest,
-    ) -> ClipboardHostFuture<'a>;
+    fn apply_clipboard_request(&mut self, request: TextClipboardRequest)
+    -> ClipboardHostFuture<'_>;
 }
 
 pub trait SyncTextClipboardHostAdapter {
@@ -30,10 +28,10 @@ impl<T> TextClipboardHostAdapter for T
 where
     T: SyncTextClipboardHostAdapter + Send,
 {
-    fn apply_clipboard_request<'a>(
-        &'a mut self,
+    fn apply_clipboard_request(
+        &mut self,
         request: TextClipboardRequest,
-    ) -> ClipboardHostFuture<'a> {
+    ) -> ClipboardHostFuture<'_> {
         Box::pin(ready(self.apply_clipboard_request_sync(request)))
     }
 }

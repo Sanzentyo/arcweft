@@ -242,6 +242,9 @@ pub struct TypedLoweringEvidence {
 /// Lowering-sensitive semantic facts proven during type checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypedLoweringEvidenceKind {
+    /// Numeric literal or compact integer sequence after suffix, expected-type,
+    /// and fallback resolution selected one concrete primitive representation.
+    ResolvedNumericType { target: TypeKind },
     /// A call expression's callee evaluated to a function value.
     FunctionValueCall {
         callee: Option<String>,
@@ -277,9 +280,9 @@ pub enum TypedLoweringEvidenceKind {
 /// One runtime argument selected for a data-last method fallback call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataLastMethodFallbackArg {
-    /// Source method-call argument at the given index.
+    /// Source method-call argument in the fallback callable's first stage.
     CallArg { index: usize },
-    /// The method-call receiver appended as the callable's data-last argument.
+    /// The method-call receiver applied as one separate final call group.
     Receiver,
 }
 
@@ -297,6 +300,23 @@ pub struct ClosureCaptureInventory {
     pub captures: Vec<ClosureCapture>,
 }
 
+/// Numeric literal family whose type was selected by the stable fallback rule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NumericFallbackKind {
+    IntegerLiteral,
+    FloatLiteral,
+    IntegerSequence,
+}
+
+/// Machine-readable fallback evidence for lint and editor policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NumericFallback {
+    pub expression_id: TypeExpressionId,
+    pub kind: NumericFallbackKind,
+    pub fallback: TypeKind,
+    pub inferred_contract: bool,
+}
+
 /// Machine-readable type-check result used by tooling and profiling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeCheckReport {
@@ -306,6 +326,7 @@ pub struct TypeCheckReport {
     pub judgments: Vec<TypeJudgment>,
     pub typed_lowering_evidence: Vec<TypedLoweringEvidence>,
     pub closure_captures: Vec<ClosureCaptureInventory>,
+    pub numeric_fallbacks: Vec<NumericFallback>,
     pub effects: EffectAnalysisReport,
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
     pub trait_catalog: TraitCatalog,
@@ -357,6 +378,7 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
         judgments: checker.judgments,
         typed_lowering_evidence: checker.typed_lowering_evidence,
         closure_captures: checker.closure_captures,
+        numeric_fallbacks: checker.numeric_fallbacks,
         effects,
         for_iteration_evidence: checker.for_iteration_evidence,
         trait_catalog: checker.trait_catalog,
@@ -438,6 +460,7 @@ struct TypeChecker<'a> {
     effect_collector: EffectCollector,
     expected_returns: Vec<Option<TypeKind>>,
     partial_placeholder_stack: Vec<TypeKind>,
+    pipe_left_stack: Vec<PipeLeftBinding>,
     allow_inferred_signature_partial_calls: bool,
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
@@ -447,10 +470,13 @@ struct TypeChecker<'a> {
     closure_capture_stack: Vec<ClosureCaptureFrame>,
     closure_inference_stack: Vec<ClosureInferenceContext>,
     closure_captures: Vec<ClosureCaptureInventory>,
+    numeric_fallbacks: Vec<NumericFallback>,
+    allow_signed_min_literal: bool,
     local_function_effects: HashMap<String, CallableId>,
     closure_effect_callables_by_expr: HashMap<ExprNodeKey, CallableId>,
     last_checked_closure_effect_callable: Option<CallableId>,
     function_return_effect_callables: HashMap<String, CallableId>,
+    local_callable_signatures: HashMap<String, FunctionSignature>,
     local_curried_signature_calls: HashMap<String, CurriedSignatureCallValue>,
     last_checked_curried_signature_call: Option<CurriedSignatureCallValue>,
     local_higher_order_param_aliases: HashMap<String, String>,
@@ -461,6 +487,16 @@ struct TypeChecker<'a> {
     pending_higher_order_effect_calls: Vec<PendingHigherOrderEffectCall>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
+}
+
+/// Type and authored provenance of the value bound by one active pipe RHS.
+///
+/// `^` is a lexical read, but diagnostics and judgments still point at the
+/// authored expression that produced the binding rather than at the read token.
+#[derive(Clone, Debug)]
+struct PipeLeftBinding {
+    ty: TypeKind,
+    source_range: Option<TextRange>,
 }
 
 #[derive(Clone, Debug)]
@@ -559,6 +595,7 @@ struct LocalBindingSnapshotEntry {
     name: String,
     previous_ty: Option<TypeKind>,
     previous_function_effect: Option<CallableId>,
+    previous_callable_signature: Option<FunctionSignature>,
     previous_curried_signature_call: Option<CurriedSignatureCallValue>,
     previous_higher_order_param_alias: Option<String>,
 }
@@ -693,6 +730,7 @@ impl TypeChecker<'_> {
             effect_collector: EffectCollector::new(available_effect_set(env)),
             expected_returns: Vec::new(),
             partial_placeholder_stack: Vec::new(),
+            pipe_left_stack: Vec::new(),
             allow_inferred_signature_partial_calls: true,
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
@@ -702,10 +740,13 @@ impl TypeChecker<'_> {
             closure_capture_stack: Vec::new(),
             closure_inference_stack: Vec::new(),
             closure_captures: Vec::new(),
+            numeric_fallbacks: Vec::new(),
+            allow_signed_min_literal: false,
             local_function_effects: HashMap::new(),
             closure_effect_callables_by_expr: HashMap::new(),
             last_checked_closure_effect_callable: None,
             function_return_effect_callables: HashMap::new(),
+            local_callable_signatures: HashMap::new(),
             local_curried_signature_calls: HashMap::new(),
             last_checked_curried_signature_call: None,
             local_higher_order_param_aliases: HashMap::new(),
@@ -727,6 +768,8 @@ impl TypeChecker<'_> {
                 .into_iter()
                 .map(|(name, ty)| {
                     let previous_function_effect = self.local_function_effects.get(&name).cloned();
+                    let previous_callable_signature =
+                        self.local_callable_signatures.get(&name).cloned();
                     let previous_curried_signature_call =
                         self.local_curried_signature_calls.get(&name).cloned();
                     let previous_higher_order_param_alias =
@@ -736,6 +779,7 @@ impl TypeChecker<'_> {
                         name,
                         previous_ty,
                         previous_function_effect,
+                        previous_callable_signature,
                         previous_curried_signature_call,
                         previous_higher_order_param_alias,
                     }
@@ -747,6 +791,7 @@ impl TypeChecker<'_> {
     fn bind_local(&mut self, name: String, ty: TypeKind) -> Option<TypeKind> {
         let previous = self.locals.insert(name.clone(), ty);
         let previous_function_effect = self.local_function_effects.remove(&name);
+        let previous_callable_signature = self.local_callable_signatures.remove(&name);
         let previous_curried_signature_call = self.local_curried_signature_calls.remove(&name);
         let previous_higher_order_param_alias = self.local_higher_order_param_aliases.remove(&name);
         if let Some(frame) = self.closure_capture_stack.last_mut() {
@@ -757,6 +802,7 @@ impl TypeChecker<'_> {
                 name,
                 previous_ty: previous.clone(),
                 previous_function_effect,
+                previous_callable_signature,
                 previous_curried_signature_call,
                 previous_higher_order_param_alias,
             });
@@ -767,6 +813,11 @@ impl TypeChecker<'_> {
     fn bind_local_function_effect(&mut self, name: &str, callable: CallableId) {
         self.local_function_effects
             .insert(name.to_owned(), callable);
+    }
+
+    fn bind_local_callable_signature(&mut self, name: &str, signature: FunctionSignature) {
+        self.local_callable_signatures
+            .insert(name.to_owned(), signature);
     }
 
     fn bind_local_curried_signature_call(&mut self, name: &str, value: CurriedSignatureCallValue) {
@@ -791,6 +842,12 @@ impl TypeChecker<'_> {
                     .insert(entry.name.clone(), callable);
             } else {
                 self.local_function_effects.remove(&entry.name);
+            }
+            if let Some(signature) = entry.previous_callable_signature {
+                self.local_callable_signatures
+                    .insert(entry.name.clone(), signature);
+            } else {
+                self.local_callable_signatures.remove(&entry.name);
             }
             if let Some(value) = entry.previous_curried_signature_call {
                 self.local_curried_signature_calls
@@ -980,6 +1037,32 @@ impl TypeChecker<'_> {
             .last()
             .is_some_and(|context| context.inferred_return_type)
         {
+            self.warnings
+                .push(TypeCheckWarning::numeric_fallback_in_inferred_closure(
+                    literal_kind,
+                    fallback,
+                ));
+        }
+    }
+
+    fn record_numeric_fallback(
+        &mut self,
+        expression_id: TypeExpressionId,
+        kind: NumericFallbackKind,
+        literal_kind: &'static str,
+        fallback: TypeKind,
+    ) {
+        let inferred_contract = self
+            .closure_inference_stack
+            .last()
+            .is_some_and(|context| context.inferred_return_type);
+        self.numeric_fallbacks.push(NumericFallback {
+            expression_id,
+            kind,
+            fallback: fallback.clone(),
+            inferred_contract,
+        });
+        if inferred_contract {
             self.warnings
                 .push(TypeCheckWarning::numeric_fallback_in_inferred_closure(
                     literal_kind,
@@ -1354,6 +1437,24 @@ impl TypeChecker<'_> {
                 .cloned(),
             _ => None,
         }
+    }
+
+    fn callable_signature_for_function_expr(
+        &self,
+        expr: &Expr,
+        ty: &TypeKind,
+    ) -> Option<FunctionSignature> {
+        if !matches!(ty, TypeKind::Function { .. }) {
+            return None;
+        }
+        let Expr::Path(path) = expr else {
+            return None;
+        };
+        let name = path.as_label();
+        self.local_callable_signatures
+            .get(name)
+            .cloned()
+            .or_else(|| self.function_signature(name).cloned())
     }
 
     fn higher_order_param_alias_for_function_expr(

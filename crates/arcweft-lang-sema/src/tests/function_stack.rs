@@ -284,7 +284,7 @@ flow @flow.env_function_value_effect_row env_function_value_effect_row {
 }
 
 #[test]
-fn data_last_pipe_through_local_function_value_records_call_evidence() {
+fn data_last_pipe_through_local_function_value_records_staged_call_evidence() {
     let tree = parse_ok(
         r"
 #[pure]
@@ -314,14 +314,14 @@ flow @flow.local_pipe local_pipe {
             matches!(
                 &evidence.kind,
                 TypedLoweringEvidenceKind::FunctionValueCall {
-                    callee: Some(callee),
+                    callee: None,
                     result_ty,
                     arg_count: 1,
                     ..
-                } if callee == "f" && result_ty.function_arity() == Some(1)
+                } if result_ty.function_arity() == Some(1)
             )
         }),
-        "expected bare pipe RHS through local function to record partial function-value evidence"
+        "expected bare pipe RHS to apply the left value as one distinct call group"
     );
     assert!(
         report.typed_lowering_evidence.iter().any(|evidence| {
@@ -329,13 +329,131 @@ flow @flow.local_pipe local_pipe {
                 &evidence.kind,
                 TypedLoweringEvidenceKind::FunctionValueCall {
                     callee: Some(callee),
-                    result_ty: TypeKind::I64,
-                    arg_count: 2,
+                    result_ty,
+                    arg_count: 1,
                     ..
-                } if callee == "f"
+                } if callee == "f" && result_ty.function_arity() == Some(1)
             )
         }),
-        "expected call pipe RHS through local function to record exact function-value evidence"
+        "expected f(1i64) to remain a first-stage partial call"
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: None,
+                    result_ty: TypeKind::I64,
+                    arg_count: 1,
+                    ..
+                }
+            )
+        }),
+        "expected the pipe left value to be applied in a second, exact call group"
+    );
+}
+
+#[test]
+fn data_last_pipe_preserves_curried_source_call_groups() {
+    let tree = parse_ok(
+        r"
+fn add(a: i64)(b: i64) -> i64 {
+    return a + b
+}
+
+flow @flow.curried_pipe curried_pipe {
+    let piped: i64 = 2i64 |> add(40i64)
+    let grouped: i64 = add(40i64)(2i64)
+    log.info(piped)
+    log.info(grouped)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried pipe fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried pipe fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "staged data-last application must preserve add(40i64)(2i64), got {:?}",
+        report.diagnostics
+    );
+    assert!(report.typed_lowering_evidence.iter().any(|evidence| {
+        matches!(
+            &evidence.kind,
+            TypedLoweringEvidenceKind::FunctionValueCall {
+                callee: None,
+                result_ty: TypeKind::I64,
+                arg_count: 1,
+                ..
+            }
+        )
+    }));
+}
+
+#[test]
+fn data_last_pipe_does_not_merge_into_a_curried_rhs_group() {
+    let tree = parse_ok(
+        r"
+fn add(a: i64)(b: i64) -> i64 {
+    return a + b
+}
+
+flow @flow.flattened_curried_pipe flattened_curried_pipe {
+    let wrong = 3i64 |> add(1i64, 2i64)
+    log.info(wrong)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("flattened curried pipe fixture lowers");
+    validate_typecheck_ready(&hir).expect("flattened curried pipe fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message().contains("curried parameter groups")),
+        "RHS call groups must be checked before the pipe applies its left value: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn pipe_left_placeholder_is_one_lexical_value_inside_closure() {
+    let tree = parse_ok(
+        r"
+flow @flow.pipe_capture pipe_capture {
+    let reuse = 3i64 |> || ^ + ^
+    let six: i64 = reuse()
+    log.info(six)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("pipe capture fixture lowers");
+    validate_typecheck_ready(&hir).expect("pipe capture fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "pipe-left value should stay in scope throughout the RHS closure: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report
+            .judgments
+            .iter()
+            .filter(|judgment| {
+                matches!(
+                    &judgment.subject,
+                    TypeJudgmentSubject::Expr {
+                        kind: "placeholder",
+                        ..
+                    }
+                ) && judgment.ty == TypeKind::I64
+            })
+            .count()
+            >= 2
     );
 }
 
@@ -3936,6 +4054,54 @@ flow @flow.method_fallback method_fallback {
             )
         }),
         "expected method fallback evidence"
+    );
+}
+
+#[test]
+fn method_chain_fallback_preserves_curried_callable_groups() {
+    let tree = parse_ok(
+        r"
+fn above(min: i64)(value: i64) -> bool {
+    return value > min
+}
+
+flow @flow.curried_method_fallback curried_method_fallback {
+    let positional: bool = score.above(80i64)
+    let named: bool = score.above(min = 80i64)
+    log.info(positional)
+    log.info(named)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried method fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried method fallback fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol("score", TypeKind::I64);
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "method fallback must mean above(min)(score), got {:?}",
+        report.diagnostics
+    );
+    assert_eq!(
+        report
+            .typed_lowering_evidence
+            .iter()
+            .filter(|evidence| matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback {
+                    method,
+                    arg_count: 1,
+                    arg_order,
+                } if method == "above"
+                    && arg_order == &[
+                        DataLastMethodFallbackArg::CallArg { index: 0 },
+                        DataLastMethodFallbackArg::Receiver,
+                    ]
+            ))
+            .count(),
+        2,
+        "positional and named first-stage calls should share staged fallback evidence"
     );
 }
 

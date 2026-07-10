@@ -1,6 +1,146 @@
 use super::support::*;
-use crate::check::{ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport};
+use crate::check::{
+    ForIterationEvidenceFamily, NumericFallbackKind, StandardIteratorFamily, TypeCheckReport,
+};
 use arcweft_data::DataFormat;
+
+#[test]
+fn integer_literal_bounds_cover_expected_suffix_and_signed_minimum() {
+    let tree = parse_ok(
+        r"
+flow numeric_bounds {
+    let max_u128: u128 = 340282366920938463463374607431768211455
+    let min_i8: i8 = -128
+    let min_i128: i128 = -170141183460469231731687303715884105728
+    let too_large: u8 = 256
+    let too_negative: i8 = -129
+    let unsigned_negative = -1u8
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("numeric bounds fixture lowers");
+    validate_typecheck_ready(&hir).expect("numeric bounds fixture is structured");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+
+    let range_errors = report
+        .diagnostics
+        .iter()
+        .filter(|error| {
+            matches!(
+                error.kind(),
+                TypeCheckErrorKind::IntegerLiteralOutOfRange { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        range_errors.len(),
+        2,
+        "diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        range_errors
+            .iter()
+            .any(|error| error.message().contains("256"))
+    );
+    assert!(
+        range_errors
+            .iter()
+            .any(|error| error.message().contains("129"))
+    );
+    assert!(report.diagnostics.iter().any(|error| {
+        error
+            .message()
+            .contains("negation operand must be a signed numeric type or Duration")
+    }));
+}
+
+#[test]
+fn float_literal_bounds_follow_the_resolved_ieee_width() {
+    let tree = parse_ok(
+        r"
+flow float_bounds {
+    let max_f32: f32 = 3.4028235e38
+    let f32_overflow: f32 = 3.5e38
+    let f64_overflow: f64 = 1.8e308
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("float bounds fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    let overflow = report
+        .diagnostics
+        .iter()
+        .filter(|error| {
+            matches!(
+                error.kind(),
+                TypeCheckErrorKind::FloatLiteralOutOfRange { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(overflow.len(), 2, "{:?}", report.diagnostics);
+    assert!(overflow.iter().any(|error| error.message().contains("f32")));
+    assert!(overflow.iter().any(|error| error.message().contains("f64")));
+}
+
+#[test]
+fn numeric_resolution_exports_exact_lowering_and_fallback_evidence() {
+    let tree = parse_ok(
+        r"
+flow numeric_evidence {
+    let wide: u128 = 340282366920938463463374607431768211455
+    let precise: f32 = 1_2.5_0
+    let values: Vec<u64> = [4294967296, 4294967297]
+    let sum: u128 = 1 + 2
+    let scaled: f32 = 1.0 * 2.0
+    let fallback_int = 7
+    let fallback_float = 0.5
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("numeric evidence fixture lowers");
+    validate_typecheck_ready(&hir).expect("numeric evidence fixture is structured");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+
+    let targets = report
+        .typed_lowering_evidence
+        .iter()
+        .filter_map(|evidence| match &evidence.kind {
+            TypedLoweringEvidenceKind::ResolvedNumericType { target } => Some(target),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for expected in [
+        &TypeKind::U128,
+        &TypeKind::F32,
+        &TypeKind::U64,
+        &TypeKind::I32,
+        &TypeKind::F64,
+    ] {
+        assert!(
+            targets.contains(&expected),
+            "missing {expected:?} in {targets:?}"
+        );
+    }
+    assert!(report.numeric_fallbacks.iter().any(|fallback| {
+        fallback.kind == NumericFallbackKind::IntegerLiteral
+            && fallback.fallback == TypeKind::I32
+            && !fallback.inferred_contract
+    }));
+    assert!(report.numeric_fallbacks.iter().any(|fallback| {
+        fallback.kind == NumericFallbackKind::FloatLiteral
+            && fallback.fallback == TypeKind::F64
+            && !fallback.inferred_contract
+    }));
+    assert_eq!(
+        report.numeric_fallbacks.len(),
+        2,
+        "expected types must reach arithmetic operands: {:?}",
+        report.numeric_fallbacks
+    );
+}
 
 #[test]
 fn typechecks_flow_signature_parameters_as_locals() {
@@ -1126,61 +1266,6 @@ fn numeric_primitive_types_keep_explicit_widths() {
 }
 
 #[test]
-fn typecheck_rejects_noncanonical_primitive_type_spellings() {
-    let tree = parse_ok(
-        r#"
-fn bad(value: Bool, letter: Char, score: int, mask: uint, alpha: float) -> string {
-    return "bad"
-}
-
-fn also_bad(value: Number) -> Unit {
-    return Unit
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("noncanonical primitive fixture lowers");
-    validate_typecheck_ready(&hir).expect("noncanonical primitive fixture is structured");
-
-    let errors =
-        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("noncanonical primitives reject");
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("`Bool` is not a canonical primitive type spelling; use `bool`")
-    }));
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("`Char` is not a canonical primitive type spelling; use `char`")
-    }));
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("`string` is not a canonical primitive type spelling; use `String`")
-    }));
-    assert!(errors.iter().any(|error| {
-        error.message().contains(
-            "`int` is not a concrete primitive type in Arcweft; use an explicit-width signed integer"
-        )
-    }));
-    assert!(errors.iter().any(|error| {
-        error.message().contains(
-            "`uint` is not a concrete primitive type in Arcweft; use an explicit-width unsigned integer"
-        )
-    }));
-    assert!(errors.iter().any(|error| {
-        error.message().contains(
-            "`float` is not a concrete primitive type in Arcweft; use an explicit-width float",
-        )
-    }));
-    assert!(errors.iter().any(|error| {
-        error.message().contains(
-            "`Number` is not a concrete primitive type in Arcweft; use an explicit-width numeric primitive"
-        )
-    }));
-}
-
-#[test]
 fn unsuffixed_numeric_literals_default_to_stable_widths() {
     let tree = parse_ok(
         r"
@@ -2247,8 +2332,13 @@ flow @flow.container_source_ranges container_source_ranges {
         "unexpected diagnostics: {:?}",
         report.diagnostics
     );
+    assert_container_expression_ranges(&report, source);
+    assert_control_expression_ranges(&report, source);
+}
+
+fn assert_container_expression_ranges(report: &TypeCheckReport, source: &str) {
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "tuple",
         "(101i64, 202i64)",
@@ -2256,7 +2346,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "tuple root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "numeric_bracket_seq",
         "[303i64, 404i64]",
@@ -2264,7 +2354,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "bracket sequence root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "array_repeat",
         "[505i64; 2]",
@@ -2272,7 +2362,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "array repeat root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "literal",
         "505i64",
@@ -2280,7 +2370,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "array repeat value should carry its own authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "index",
         "numbers[1i64]",
@@ -2288,7 +2378,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "index root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "range",
         "1i64..=limit",
@@ -2296,7 +2386,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "range root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "record",
         r#"Choice { label: "Start", enabled: ready }"#,
@@ -2304,7 +2394,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "nominal record constructor should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "path",
         "ready",
@@ -2312,7 +2402,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "record field values should carry their authored ranges",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "block",
         "{ 606i64 + 707i64 }",
@@ -2320,15 +2410,18 @@ flow @flow.container_source_ranges container_source_ranges {
         "block expression root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "binary",
         "606i64 + 707i64",
         |ty| matches!(ty, TypeKind::I64),
         "block final value should carry its authored range",
     );
+}
+
+fn assert_control_expression_ranges(report: &TypeCheckReport, source: &str) {
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "if",
         "if ready {\n        808i64\n    } else {\n        909i64\n    }",
@@ -2336,7 +2429,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "if expression root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "if_let",
         "if let .Some(value) = maybe when ready && true {\n        value\n    } else {\n        0i64\n    }",
@@ -2344,7 +2437,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "if-let expression root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "path",
         "maybe",
@@ -2352,7 +2445,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "if-let scrutinee should not absorb the guard source",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "binary",
         "ready && true",
@@ -2368,7 +2461,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "if-let scrutinee range must stop before `when` guard source"
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "match",
         "match ready {\n        true => 1001i64\n        false => 1002i64\n    }",
@@ -2376,7 +2469,7 @@ flow @flow.container_source_ranges container_source_ranges {
         "match expression root should carry its full authored range",
     );
     assert_expr_source_judgment(
-        &report,
+        report,
         source,
         "literal",
         "1002i64",

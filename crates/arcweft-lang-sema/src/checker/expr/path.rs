@@ -9,35 +9,23 @@ use super::{
     BorrowLocalState, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
-use arcweft_lang_syntax::expr::Literal;
+use arcweft_lang_syntax::expr::{FloatSuffix, IntLiteral, Literal};
 
 impl TypeChecker<'_> {
     pub(super) fn check_literal_expr(
         &mut self,
         literal: &Literal,
         expected: Option<&TypeKind>,
+        expression_id: TypeExpressionId,
     ) -> TypeKind {
         match literal {
             Literal::String(_) => TypeKind::String,
             Literal::Char { .. } => TypeKind::Char,
             Literal::Bool(_) => TypeKind::Bool,
             Literal::Duration { .. } => TypeKind::Duration,
-            Literal::Int { suffix, .. } => {
-                if let Some(suffix) = suffix {
-                    let Some(ty) = numeric_literal_suffix_type(Some(suffix.as_str())) else {
-                        self.errors.push(TypeCheckError::new(format!(
-                            "unknown integer literal suffix `{suffix}`"
-                        )));
-                        return TypeKind::Named("_".to_owned());
-                    };
-                    if ty.is_integer() || is_unit_number_type(&ty) {
-                        ty
-                    } else {
-                        self.errors.push(TypeCheckError::new(format!(
-                            "integer literal suffix must be an integer type, found {ty:?}"
-                        )));
-                        TypeKind::Named("_".to_owned())
-                    }
+            Literal::Int(literal) => {
+                let ty = if let Some(suffix) = literal.suffix() {
+                    TypeKind::from(suffix)
                 } else if let Some(expected) = expected.filter(|ty| ty.is_integer()) {
                     expected.clone()
                 } else if let Some(expected) = expected
@@ -53,12 +41,19 @@ impl TypeChecker<'_> {
                     ));
                     TypeKind::Named("_".to_owned())
                 } else {
-                    self.record_numeric_fallback_in_inferred_closure("integer", TypeKind::I32);
+                    self.record_numeric_fallback(
+                        expression_id,
+                        super::super::NumericFallbackKind::IntegerLiteral,
+                        "integer",
+                        TypeKind::I32,
+                    );
                     TypeKind::I32
-                }
+                };
+                self.validate_integer_literal(literal, &ty);
+                ty
             }
-            Literal::Float { suffix, .. } => {
-                if let Some(suffix) = suffix {
+            Literal::Float { raw, suffix } => {
+                let ty = if let Some(suffix) = suffix {
                     let Some(ty) = numeric_literal_suffix_type(Some(suffix.as_str())) else {
                         self.errors.push(TypeCheckError::new(format!(
                             "unknown float literal suffix `{suffix}`"
@@ -88,14 +83,66 @@ impl TypeChecker<'_> {
                     ));
                     TypeKind::Named("_".to_owned())
                 } else {
-                    self.record_numeric_fallback_in_inferred_closure("float", TypeKind::F64);
+                    self.record_numeric_fallback(
+                        expression_id,
+                        super::super::NumericFallbackKind::FloatLiteral,
+                        "float",
+                        TypeKind::F64,
+                    );
                     TypeKind::F64
-                }
+                };
+                self.validate_float_literal(raw, suffix.as_ref().copied(), &ty);
+                ty
             }
             Literal::UnitNumber { suffix, .. } => {
                 numeric_literal_suffix_type(Some(suffix.as_str()))
                     .unwrap_or_else(|| TypeKind::Named("_".to_owned()))
             }
+        }
+    }
+
+    pub(super) fn validate_integer_literal(&mut self, literal: &IntLiteral, target: &TypeKind) {
+        let magnitude = match literal.magnitude() {
+            Ok(magnitude) => magnitude,
+            Err(error) => {
+                self.errors.push(TypeCheckError::invalid_integer_literal(
+                    literal.raw(),
+                    error.to_string(),
+                ));
+                return;
+            }
+        };
+        if !integer_magnitude_fits(magnitude, target, self.allow_signed_min_literal) {
+            self.errors
+                .push(TypeCheckError::integer_literal_out_of_range(
+                    literal.raw(),
+                    target.clone(),
+                ));
+        }
+    }
+
+    fn validate_float_literal(
+        &mut self,
+        raw: &str,
+        suffix: Option<FloatSuffix>,
+        target: &TypeKind,
+    ) {
+        let suffix_len = suffix.map_or(0, |suffix| suffix.as_str().len());
+        let number_end = raw.len().saturating_sub(suffix_len);
+        let normalized = raw[..number_end]
+            .chars()
+            .filter(|ch| *ch != '_')
+            .collect::<String>();
+        let finite = match target {
+            TypeKind::F32 => normalized.parse::<f32>().is_ok_and(f32::is_finite),
+            TypeKind::F64 => normalized.parse::<f64>().is_ok_and(f64::is_finite),
+            _ => true,
+        };
+        if !finite {
+            self.errors.push(TypeCheckError::float_literal_out_of_range(
+                raw,
+                target.clone(),
+            ));
         }
     }
 
@@ -211,5 +258,29 @@ impl TypeChecker<'_> {
         self.errors
             .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
         None
+    }
+}
+
+fn integer_magnitude_fits(magnitude: u128, target: &TypeKind, allow_signed_min: bool) -> bool {
+    let signed_max = |bits: u32| {
+        let max = if bits == 128 {
+            i128::MAX as u128
+        } else {
+            (1_u128 << (bits - 1)) - 1
+        };
+        magnitude <= max + u128::from(allow_signed_min)
+    };
+    let unsigned_max = |bits: u32| bits == 128 || magnitude <= (1_u128 << bits).saturating_sub(1);
+    match target {
+        TypeKind::I8 => signed_max(8),
+        TypeKind::I16 => signed_max(16),
+        TypeKind::I32 => signed_max(32),
+        TypeKind::I64 | TypeKind::ISize => signed_max(64),
+        TypeKind::I128 => signed_max(128),
+        TypeKind::U8 => unsigned_max(8),
+        TypeKind::U16 => unsigned_max(16),
+        TypeKind::U32 => unsigned_max(32),
+        TypeKind::U64 | TypeKind::USize => unsigned_max(64),
+        _ => true,
     }
 }

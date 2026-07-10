@@ -18,12 +18,15 @@ use std::collections::HashSet;
 /// Computes Arcweft inlay hints for one source snapshot.
 pub fn hints(profile: &LspProfile, document: &DocumentSnapshot) -> Vec<InlayHint> {
     let mut hints = inferred_id_inlay_hints_with_mapper(document.text(), document.line_index());
-    hints.extend(function_type_inlay_hints(profile, document));
+    hints.extend(inferred_let_type_inlay_hints(profile, document));
     hints.sort_by_key(inlay_sort_key);
     hints
 }
 
-fn function_type_inlay_hints(profile: &LspProfile, document: &DocumentSnapshot) -> Vec<InlayHint> {
+fn inferred_let_type_inlay_hints(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+) -> Vec<InlayHint> {
     let parsed = parse_source(document.text().to_owned());
     if !parsed.errors().is_empty() {
         return Vec::new();
@@ -43,6 +46,7 @@ fn function_type_inlay_hints(profile: &LspProfile, document: &DocumentSnapshot) 
     }
 
     let judgments = let_type_judgments(&report);
+    let numeric_fallback_ranges = numeric_fallback_ranges(&report);
     let mut judgment_cursor = 0usize;
     let mut hints = function_let_sites(tree, document.text())
         .into_iter()
@@ -56,9 +60,14 @@ fn function_type_inlay_hints(profile: &LspProfile, document: &DocumentSnapshot) 
             if !site.emit {
                 return None;
             }
-            let TypeKind::Function { .. } = judgment.ty else {
+            let has_numeric_fallback = numeric_fallback_ranges.iter().any(|range| {
+                range.start() >= site.expr_range.start() && range.end() <= site.expr_range.end()
+            });
+            let emit_resolved_type =
+                matches!(judgment.ty, TypeKind::Function { .. }) || has_numeric_fallback;
+            if !emit_resolved_type {
                 return None;
-            };
+            }
             Some(let_inlay_for_site(&site, judgment.ty, document))
         })
         .collect::<Vec<_>>();
@@ -66,6 +75,27 @@ fn function_type_inlay_hints(profile: &LspProfile, document: &DocumentSnapshot) 
         hints.extend(expression_type_inlay_hints(&report, document));
     }
     hints
+}
+
+fn numeric_fallback_ranges(report: &TypeCheckReport) -> Vec<TextRange> {
+    let fallback_ids = report
+        .numeric_fallbacks
+        .iter()
+        .map(|fallback| fallback.expression_id)
+        .collect::<HashSet<_>>();
+    report
+        .judgments
+        .iter()
+        .filter_map(|judgment| {
+            let TypeJudgmentSubject::Expr { id, .. } = &judgment.subject else {
+                return None;
+            };
+            fallback_ids
+                .contains(id)
+                .then_some(judgment.source_range)
+                .flatten()
+        })
+        .collect()
 }
 
 fn let_type_judgments(report: &TypeCheckReport) -> Vec<LetTypeJudgment<'_>> {

@@ -849,7 +849,7 @@ pub enum TraitMember {
         signature: FnSignature,
         body: Option<String>,
         body_statements: Vec<Stmt>,
-        body_value: Option<AuthoredExpr>,
+        body_value: Option<Box<AuthoredExpr>>,
     },
     Raw(String),
 }
@@ -866,7 +866,7 @@ pub enum ImplMember {
         signature: FnSignature,
         body: String,
         body_statements: Vec<Stmt>,
-        body_value: Option<AuthoredExpr>,
+        body_value: Option<Box<AuthoredExpr>>,
     },
     Raw(String),
 }

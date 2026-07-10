@@ -1477,6 +1477,44 @@ flow @flow.function_inlays function_inlays {
 }
 
 #[test]
+fn inlay_hint_request_reports_unsuffixed_numeric_fallback_types() {
+    let uri = "file:///numeric-inlays.arcw".parse::<Uri>().expect("uri");
+    let source = r"
+flow @flow.numeric_inlays numeric_inlays {
+    let count = 42
+    let ratio = 1_2.5_0
+    let negative = -1
+    let total = 1 + 2
+    let values = [1, 2]
+    let explicit: u64 = 42
+}
+";
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    open_text(&mut session, uri.clone(), source);
+
+    let labels = inlay_hint_labels(&mut session, uri);
+
+    assert!(labels.iter().any(|label| label == ": i32"), "{labels:?}");
+    assert!(labels.iter().any(|label| label == ": f64"), "{labels:?}");
+    assert!(
+        labels.iter().any(|label| label == ": Vec<i32>"),
+        "numeric sequence fallback should expose its container type: {labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .filter(|label| label.as_str() == ": i32")
+            .count()
+            >= 3,
+        "literal, unary, and binary fallback sites should all receive hints: {labels:?}"
+    );
+    assert!(
+        !labels.iter().any(|label| label == ": u64"),
+        "explicit numeric type should not receive a duplicate inlay: {labels:?}"
+    );
+}
+
+#[test]
 fn expression_type_inlays_are_profile_gated_and_skip_trivial_sites() {
     let uri = "file:///expression-inlays.arcw"
         .parse::<Uri>()

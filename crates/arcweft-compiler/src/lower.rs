@@ -17,8 +17,8 @@ use arcweft_runtime_plan::pure::{
     lower_pure_helper_candidate, lower_pure_helper_candidates,
 };
 use arcweft_runtime_plan::typed_evidence::{
-    RuntimeDataLastMethodFallbackArg, RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence,
-    RuntimeTypedLoweringEvidenceKind,
+    RuntimeDataLastMethodFallbackArg, RuntimeNumericType, RuntimeTypedExpressionId,
+    RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceKind,
 };
 
 use crate::trait_methods::{
@@ -128,6 +128,11 @@ fn runtime_typed_lowering_evidence(
     RuntimeTypedLoweringEvidence {
         expression_id: RuntimeTypedExpressionId::from_index(evidence.expression_id.index()),
         kind: match &evidence.kind {
+            TypedLoweringEvidenceKind::ResolvedNumericType { target } => {
+                RuntimeTypedLoweringEvidenceKind::ResolvedNumericType {
+                    target: checked_numeric_primitive(target),
+                }
+            }
             TypedLoweringEvidenceKind::FunctionValueCall {
                 callee, arg_count, ..
             } => RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
@@ -173,6 +178,27 @@ fn runtime_typed_lowering_evidence(
                     .collect(),
             },
         },
+    }
+}
+
+fn checked_numeric_primitive(target: &arcweft_lang_sema::types::TypeKind) -> RuntimeNumericType {
+    use arcweft_lang_sema::types::TypeKind;
+    match target {
+        TypeKind::I8 => RuntimeNumericType::I8,
+        TypeKind::I16 => RuntimeNumericType::I16,
+        TypeKind::I32 => RuntimeNumericType::I32,
+        TypeKind::I64 => RuntimeNumericType::I64,
+        TypeKind::I128 => RuntimeNumericType::I128,
+        TypeKind::ISize => RuntimeNumericType::ISize,
+        TypeKind::U8 => RuntimeNumericType::U8,
+        TypeKind::U16 => RuntimeNumericType::U16,
+        TypeKind::U32 => RuntimeNumericType::U32,
+        TypeKind::U64 => RuntimeNumericType::U64,
+        TypeKind::U128 => RuntimeNumericType::U128,
+        TypeKind::USize => RuntimeNumericType::USize,
+        TypeKind::F32 => RuntimeNumericType::F32,
+        TypeKind::F64 => RuntimeNumericType::F64,
+        _ => unreachable!("semantic numeric evidence must name a numeric primitive"),
     }
 }
 

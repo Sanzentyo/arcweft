@@ -277,8 +277,14 @@ impl<'a> AudioCall<'a> {
 
     fn literal_u64(&self, value: &Expr, name: &str) -> Result<u64, String> {
         match value {
-            Expr::Literal(Literal::Int { value, .. }) => u64::try_from(*value)
-                .map_err(|_| format!("{} argument `{name}` must be non-negative", self.callee)),
+            Expr::Literal(Literal::Int(literal)) => literal
+                .magnitude()
+                .and_then(|value| {
+                    u64::try_from(value).map_err(|_| {
+                        arcweft_lang_hir::syntax::expr::IntLiteralValueError::OutOfRange
+                    })
+                })
+                .map_err(|_| format!("{} argument `{name}` must fit u64", self.callee)),
             _ => Err(format!(
                 "{} argument `{name}` must be an integer literal",
                 self.callee

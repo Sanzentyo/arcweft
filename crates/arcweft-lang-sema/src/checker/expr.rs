@@ -48,6 +48,11 @@ use support::{
     trait_method_call_signature, unique_numeric_choice_alternative,
 };
 
+enum InherentMethodCallOutcome {
+    Missing,
+    Checked(Option<TypeKind>),
+}
+
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
         let actual = self.check_expr_with_expected(expr, Some(expected));
@@ -90,6 +95,24 @@ impl TypeChecker<'_> {
             self.check_expr_kind_with_expected(expr, expected, expression_id)
         };
         if let Some(ty) = ty.as_ref() {
+            let resolved_numeric_target = match (expr, ty) {
+                (Expr::Literal(Literal::Int(_) | Literal::Float { .. }), ty)
+                    if ty.is_integer() || ty.is_float() =>
+                {
+                    Some(ty.clone())
+                }
+                (
+                    Expr::NumericBracketSeq(_),
+                    TypeKind::Vec(item) | TypeKind::Array { item, .. },
+                ) if item.is_integer() => Some(item.as_ref().clone()),
+                _ => None,
+            };
+            if let Some(target) = resolved_numeric_target {
+                self.record_typed_lowering_evidence(TypedLoweringEvidence {
+                    expression_id,
+                    kind: TypedLoweringEvidenceKind::ResolvedNumericType { target },
+                });
+            }
             self.record_function_expr_effect_callable(expr, ty);
             let source_range = self.source_range_for_expr(expr);
             self.record_type_judgment_with_source_range(
@@ -138,7 +161,9 @@ impl TypeChecker<'_> {
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
         match expr {
-            Expr::Literal(literal) => Some(self.check_literal_expr(literal, expected)),
+            Expr::Literal(literal) => {
+                Some(self.check_literal_expr(literal, expected, expression_id))
+            }
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
             Expr::Path(path) => {
@@ -151,7 +176,7 @@ impl TypeChecker<'_> {
             Expr::Tuple(items) => Some(self.check_tuple_expr_with_expected(items, expected)),
             Expr::BracketSeq(items) => Some(self.check_bracket_seq_with_expected(items, expected)),
             Expr::NumericBracketSeq(seq) => {
-                Some(self.check_numeric_bracket_seq_summary(seq, expected))
+                Some(self.check_numeric_bracket_seq_summary(seq, expected, expression_id))
             }
             Expr::ArrayRepeat { value, len } => {
                 Some(self.check_array_repeat_expr(value, len, expected))
@@ -173,7 +198,7 @@ impl TypeChecker<'_> {
             }
             Expr::Record { path, fields } => Some(self.check_record_expr(path, fields, expected)),
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
-            Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
+            Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs, expected),
             Expr::Closure {
                 params,
                 return_type,
@@ -409,28 +434,14 @@ impl TypeChecker<'_> {
         &mut self,
         seq: &arcweft_lang_syntax::expr::NumericBracketSeq,
         expected: Option<&TypeKind>,
+        expression_id: TypeExpressionId,
     ) -> TypeKind {
         let expected_item = match expected {
             Some(TypeKind::Array { item, .. } | TypeKind::Vec(item)) => Some(item.as_ref()),
             _ => None,
         };
         let item_type = if let Some(suffix) = seq.suffix() {
-            let ty = if let Some(ty) = numeric_literal_suffix_type(Some(suffix)) {
-                ty
-            } else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "unknown integer literal suffix `{suffix}`"
-                )));
-                TypeKind::Named("_".to_owned())
-            };
-            if ty.is_integer() || is_unit_number_type(&ty) {
-                ty
-            } else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "integer literal suffix must be an integer type, found {ty:?}"
-                )));
-                TypeKind::Named("_".to_owned())
-            }
+            TypeKind::from(suffix)
         } else if let Some(expected_item) = expected_item.filter(|ty| ty.is_integer()) {
             expected_item.clone()
         } else if let Some(expected_item) = expected_item
@@ -446,9 +457,17 @@ impl TypeChecker<'_> {
             ));
             TypeKind::Named("_".to_owned())
         } else {
-            self.record_numeric_fallback_in_inferred_closure("integer sequence", TypeKind::I32);
+            self.record_numeric_fallback(
+                expression_id,
+                super::NumericFallbackKind::IntegerSequence,
+                "integer sequence",
+                TypeKind::I32,
+            );
             TypeKind::I32
         };
+        for literal in seq.literals() {
+            self.validate_integer_literal(literal, &item_type);
+        }
         self.finish_bracket_seq_type(seq.len(), item_type, expected)
     }
 
@@ -463,7 +482,7 @@ impl TypeChecker<'_> {
         if !items.iter().all(|item| {
             matches!(
                 (item, expected_item.is_integer(), expected_item.is_float()),
-                (Expr::Literal(Literal::Int { .. }), true, _)
+                (Expr::Literal(Literal::Int(_)), true, _)
                     | (Expr::Literal(Literal::Float { .. }), _, true)
             )
         }) {
@@ -500,30 +519,21 @@ impl TypeChecker<'_> {
         expected_item: &TypeKind,
     ) -> TypeKind {
         match literal {
-            Literal::Int { suffix: None, .. } if expected_item.is_integer() => {
+            Literal::Int(literal) if literal.suffix().is_none() && expected_item.is_integer() => {
+                self.validate_integer_literal(literal, expected_item);
                 expected_item.clone()
             }
             Literal::Float { suffix: None, .. } if expected_item.is_float() => {
                 expected_item.clone()
             }
-            Literal::Int {
-                suffix: Some(suffix),
-                ..
-            } => {
-                let Some(ty) = numeric_literal_suffix_type(Some(suffix.as_str())) else {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "unknown integer literal suffix `{suffix}`"
-                    )));
-                    return TypeKind::Named("_".to_owned());
-                };
-                if ty.is_integer() || is_unit_number_type(&ty) {
-                    ty
-                } else {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "integer literal suffix must be an integer type, found {ty:?}"
-                    )));
-                    TypeKind::Named("_".to_owned())
-                }
+            Literal::Int(literal) => {
+                let ty = TypeKind::from(
+                    literal
+                        .suffix()
+                        .expect("unsuffixed integer expected case handled above"),
+                );
+                self.validate_integer_literal(literal, &ty);
+                ty
             }
             Literal::Float {
                 suffix: Some(suffix),
@@ -955,17 +965,23 @@ impl TypeChecker<'_> {
                 self.expect_expr_type(expr, &TypeKind::Bool, "not operand");
                 TypeKind::Bool
             }
-            UnaryOp::Neg => match self.check_expr_with_expected(expr, expected) {
-                Some(ty) if ty.is_integer() || ty.is_float() => ty,
-                Some(TypeKind::Duration) => TypeKind::Duration,
-                other => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "negation operand must be numeric or Duration, found {}",
-                        optional_type_kind_label(other.as_ref())
-                    )));
-                    TypeKind::Named("_".to_owned())
+            UnaryOp::Neg => {
+                let previous = self.allow_signed_min_literal;
+                self.allow_signed_min_literal = matches!(expr, Expr::Literal(Literal::Int(_)));
+                let operand_type = self.check_expr_with_expected(expr, expected);
+                self.allow_signed_min_literal = previous;
+                match operand_type {
+                    Some(ty) if ty.is_signed_integer() || ty.is_float() => ty,
+                    Some(TypeKind::Duration) => TypeKind::Duration,
+                    other => {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "negation operand must be a signed numeric type or Duration, found {}",
+                            optional_type_kind_label(other.as_ref())
+                        )));
+                        TypeKind::Named("_".to_owned())
+                    }
                 }
-            },
+            }
         }
     }
 
@@ -985,43 +1001,121 @@ impl TypeChecker<'_> {
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
-            self.check_typed_method_call(receiver_type, method_name, args, expression_id)
+            self.check_typed_method_call(&receiver_type, method_name, args, expression_id)
         })
     }
 
     fn check_typed_method_call(
         &mut self,
-        receiver_type: TypeKind,
+        receiver_type: &TypeKind,
         method_name: &str,
         args: &[CallArg],
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
-        if method_name == "traverse" {
-            return self.check_traverse_method_call(&receiver_type, args);
+        match self.check_inherent_method_call(receiver_type, method_name, args) {
+            InherentMethodCallOutcome::Missing => {}
+            InherentMethodCallOutcome::Checked(return_type) => return return_type,
         }
-        if method_name == "parallel" {
-            return self.check_parallel_method_call(&receiver_type, args);
-        }
-        if let Some(return_type) = self.check_env_method_call(&receiver_type, method_name, args) {
-            return Some(return_type);
-        }
-        match self.check_builtin_collection_method_call(&receiver_type, method_name, args) {
-            BuiltinCollectionMethodCallOutcome::Missing => {}
-            BuiltinCollectionMethodCallOutcome::Checked(return_type) => return return_type,
+        match self.check_trait_method_call(receiver_type, method_name, args) {
+            TraitMethodCallOutcome::Missing => {}
+            TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
+            TraitMethodCallOutcome::Rejected => return None,
         }
         if let Some(return_type) =
-            self.check_presentation_handle_lifecycle_method(&receiver_type, method_name, args)
+            self.check_data_last_method_fallback(receiver_type, method_name, args, expression_id)
         {
             return Some(return_type);
         }
-        if matches!(method_name, "clamp" | "min" | "max") && receiver_type.is_integer() {
-            return Some(self.check_integer_scalar_method_call(receiver_type, method_name, args));
+        self.check_untyped_method_args(args);
+        self.env
+            .method_type(receiver_type, method_name)
+            .cloned()
+            .or_else(|| {
+                self.errors.push(TypeCheckError::new(format!(
+                    "unknown method `{method_name}` on {}",
+                    type_kind_label(receiver_type)
+                )));
+                None
+            })
+    }
+
+    /// Resolves method families that are owned directly by the receiver type.
+    ///
+    /// This phase deliberately precedes visible trait methods and data-last
+    /// callable fallback, preserving ordinary inherent-method shadowing.
+    fn check_inherent_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> InherentMethodCallOutcome {
+        if method_name == "traverse" {
+            return InherentMethodCallOutcome::Checked(
+                self.check_traverse_method_call(receiver_type, args),
+            );
         }
+        if method_name == "parallel" {
+            return InherentMethodCallOutcome::Checked(
+                self.check_parallel_method_call(receiver_type, args),
+            );
+        }
+        if let Some(return_type) = self.check_env_method_call(receiver_type, method_name, args) {
+            return InherentMethodCallOutcome::Checked(Some(return_type));
+        }
+        match self.check_builtin_collection_method_call(receiver_type, method_name, args) {
+            BuiltinCollectionMethodCallOutcome::Missing => {}
+            BuiltinCollectionMethodCallOutcome::Checked(return_type) => {
+                return InherentMethodCallOutcome::Checked(return_type);
+            }
+        }
+        if let Some(return_type) =
+            self.check_presentation_handle_lifecycle_method(receiver_type, method_name, args)
+        {
+            return InherentMethodCallOutcome::Checked(Some(return_type));
+        }
+        if matches!(method_name, "clamp" | "min" | "max") && receiver_type.is_integer() {
+            return InherentMethodCallOutcome::Checked(Some(
+                self.check_integer_scalar_method_call(receiver_type.clone(), method_name, args),
+            ));
+        }
+        match self.check_builtin_domain_method_call(receiver_type, method_name, args) {
+            InherentMethodCallOutcome::Missing => {}
+            checked @ InherentMethodCallOutcome::Checked(_) => return checked,
+        }
+        if let Some(return_type) =
+            well_known_capacity_method_type(receiver_type, method_name, args.len())
+        {
+            let signature = FunctionSignature::return_only(return_type.clone());
+            self.warn_if_data_last_method_fallback_shadowed(
+                receiver_type,
+                method_name,
+                args,
+                "inherent",
+                &signature,
+            );
+            self.check_untyped_method_args(args);
+            return InherentMethodCallOutcome::Checked(Some(return_type));
+        }
+        InherentMethodCallOutcome::Missing
+    }
+
+    /// Resolves Arcweft-owned domain values whose methods are part of the
+    /// language/runtime surface rather than environment or trait metadata.
+    fn check_builtin_domain_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> InherentMethodCallOutcome {
         if method_name == "require_role" {
-            return self.check_agent_object_require_role_method_call(&receiver_type, args);
+            return InherentMethodCallOutcome::Checked(
+                self.check_agent_object_require_role_method_call(receiver_type, args),
+            );
         }
         if method_name == "get" {
-            return self.check_map_get_method_call(&receiver_type, args);
+            return InherentMethodCallOutcome::Checked(
+                self.check_map_get_method_call(receiver_type, args),
+            );
         }
         if matches!(
             method_name,
@@ -1035,58 +1129,47 @@ impl TypeChecker<'_> {
                 | "less"
                 | "le"
                 | "less_or_equal"
-        ) && let TypeKind::Probe(inner) = &receiver_type
+        ) && let TypeKind::Probe(inner) = receiver_type
         {
-            return Some(self.check_probe_compare_method(method_name, inner.as_ref(), args));
+            return InherentMethodCallOutcome::Checked(Some(self.check_probe_compare_method(
+                method_name,
+                inner.as_ref(),
+                args,
+            )));
         }
-        if receiver_type == TypeKind::Named("Diagnostics".to_owned()) && method_name == "has_error"
+        if receiver_type == &TypeKind::Named("Diagnostics".to_owned()) && method_name == "has_error"
         {
-            return Some(self.check_no_arg_method(
+            return InherentMethodCallOutcome::Checked(Some(self.check_no_arg_method(
                 "Diagnostics.has_error",
                 args,
                 TypeKind::Predicate,
-            ));
+            )));
         }
-        if receiver_type == TypeKind::RagContextPack && method_name == "summary" {
-            return Some(self.check_no_arg_method(
+        if receiver_type == &TypeKind::RagContextPack && method_name == "summary" {
+            return InherentMethodCallOutcome::Checked(Some(self.check_no_arg_method(
                 "RagContextPack.summary",
                 args,
                 TypeKind::DisplayText,
-            ));
+            )));
         }
         if matches!(method_name, "context" | "with_context") {
-            return self.check_context_method_call(receiver_type, args);
+            return InherentMethodCallOutcome::Checked(
+                self.check_context_method_call(receiver_type.clone(), args),
+            );
         }
-        if method_name == "face" && is_character_speaker_type(&receiver_type) {
+        if method_name == "face" && is_character_speaker_type(receiver_type) {
             self.check_untyped_method_args(args);
-            return Some(TypeKind::CharacterPatch(EntityKind::Character));
+            return InherentMethodCallOutcome::Checked(Some(TypeKind::CharacterPatch(
+                EntityKind::Character,
+            )));
         }
-        if method_name == "say" && is_character_speaker_type(&receiver_type) {
+        if method_name == "say" && is_character_speaker_type(receiver_type) {
             self.check_untyped_method_args(args);
-            return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+            return InherentMethodCallOutcome::Checked(Some(TypeKind::SpeakerPreset(
+                EntityKind::Character,
+            )));
         }
-        match self.check_trait_method_call(&receiver_type, method_name, args) {
-            TraitMethodCallOutcome::Missing => {}
-            TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
-            TraitMethodCallOutcome::Rejected => return None,
-        }
-        if let Some(return_type) =
-            self.check_data_last_method_fallback(&receiver_type, method_name, args, expression_id)
-        {
-            return Some(return_type);
-        }
-        self.check_untyped_method_args(args);
-        self.env
-            .method_type(&receiver_type, method_name)
-            .cloned()
-            .or_else(|| well_known_capacity_method_type(&receiver_type, method_name, args.len()))
-            .or_else(|| {
-                self.errors.push(TypeCheckError::new(format!(
-                    "unknown method `{method_name}` on {}",
-                    type_kind_label(&receiver_type)
-                )));
-                None
-            })
+        InherentMethodCallOutcome::Missing
     }
 
     fn check_env_method_call(
@@ -2148,8 +2231,21 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_binary_expr(&mut self, lhs: &Expr, op: BinaryOp, rhs: &Expr) -> Option<TypeKind> {
-        let lhs_type = self.check_expr(lhs);
+    fn check_binary_expr(
+        &mut self,
+        lhs: &Expr,
+        op: BinaryOp,
+        rhs: &Expr,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
+        let operand_expected = matches!(
+            op,
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem
+        )
+        .then_some(expected)
+        .flatten()
+        .filter(|ty| ty.is_integer() || ty.is_float() || *ty == &TypeKind::Duration);
+        let lhs_type = self.check_expr_with_expected(lhs, operand_expected);
         if op == BinaryOp::In {
             return self.check_in_binary_expr(lhs_type.as_ref(), rhs);
         }

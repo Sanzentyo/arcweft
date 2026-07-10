@@ -127,7 +127,7 @@ flow main {
   let next = clamped |> plus_one
   let summed: i64 = 2i64 |> add(1i64)
   let named: i64 = 2i64 |> add(lhs = 1i64)
-  let labels: Vec<String> = choices |> filter(_.enabled) |> map(_.label)
+  let labels: Vec<String> = choices |> filter(|choice: Choice| -> bool { choice.enabled }) |> map(|choice: Choice| -> String { choice.label })
   log.info(labels)
   return next
 }
@@ -135,6 +135,8 @@ flow main {
     );
     let hir = lower_to_hir(&tree).expect("pipe fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("pipe expressions are typecheck-ready");
+    let choice = TypeKind::Named("Choice".to_owned());
+    let choices = TypeKind::Vec(Box::new(choice.clone()));
     let env = TypeCheckEnv::new()
         .with_function_signature(
             "clamp",
@@ -164,10 +166,29 @@ flow main {
                 ],
             ),
         )
-        .with_symbol(
-            "choices",
-            TypeKind::Vec(Box::new(TypeKind::Named("Choice".to_owned()))),
-        );
+        .with_function_signature(
+            "filter",
+            FunctionSignature::new(
+                TypeKind::function([choices.clone()], choices.clone()),
+                [FunctionParam::required(
+                    "predicate",
+                    TypeKind::function([choice.clone()], TypeKind::Bool),
+                )],
+            )
+            .with_remaining_param_groups([[FunctionParam::required("values", choices.clone())]]),
+        )
+        .with_function_signature(
+            "map",
+            FunctionSignature::new(
+                TypeKind::function([choices.clone()], TypeKind::Vec(Box::new(TypeKind::String))),
+                [FunctionParam::required(
+                    "project",
+                    TypeKind::function([choice], TypeKind::String),
+                )],
+            )
+            .with_remaining_param_groups([[FunctionParam::required("values", choices.clone())]]),
+        )
+        .with_symbol("choices", choices);
 
     typecheck_hir(&hir, &env).expect("pipe expressions typecheck");
 }

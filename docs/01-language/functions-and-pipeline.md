@@ -38,7 +38,17 @@ choices
     |> map(_.label)
 ```
 
-`rhs` に `^` がない場合は、左辺を最後の引数に渡す。
+`rhs` に `^` がない場合は、`rhs` をまず関数値として評価し、その関数値へ
+左辺を 1 引数の次 call group として適用する。
+
+```arcw
+x |> f(a)       // f(a)(x)
+x |> f(a, b)    // f(a, b)(x)
+```
+
+この規則は既存の call group へ左辺を append する書き換えではない。
+したがって `f(a)(b)` と `f(a, b)` の区別はパイプでも保たれる。左辺は
+`rhs` より先に一度だけ評価され、その値を次の apply が読む。
 
 ## プレースホルダ付きパイプ
 
@@ -46,11 +56,18 @@ choices
 raw_score |> clamp(0, ^, 100)
 ```
 
-展開:
+概念上の展開:
 
 ```arcw
-clamp(0, raw_score, 100)
+let <pipe-left> = raw_score
+clamp(0, <pipe-left>, 100)
 ```
+
+`<pipe-left>` はソースから記述できない内部 binding である。RHS 内に `^` が
+複数あっても、closure や `if` / `match` の内側にあっても、すべて同じ値を
+読む。左辺式を `^` の個数だけ複製してはならない。入れ子のパイプでは、内側
+パイプの RHS にある `^` は内側の値を参照し、内側パイプの LHS にある `^` は
+外側の RHS scope を参照する。
 
 `_` と `^` は役割が違う。
 
@@ -61,11 +78,29 @@ threshold |> choices.filter(_.score >= ^)
 - `_`: `choices` の各要素。
 - `^`: pipe 左辺の `threshold`。
 
-展開:
+概念上の展開:
 
 ```arcw
-choices.filter(|choice| choice.score >= threshold)
+let <pipe-left> = threshold
+choices.filter(|choice| choice.score >= <pipe-left>)
 ```
+
+## method-chain fallback
+
+`receiver.method(args...)` は inherent method と可視 trait method を先に解決する。
+どちらも存在しない場合だけ、同名 callable による data-last fallback を試みる。
+fallback もパイプと同じ staged apply であり、call group を flatten しない。
+
+```arcw
+receiver.transform(options...) // transform(options...)(receiver)
+```
+
+そのため `fn transform(options: Options)(value: Value) -> Output` を直接利用できる。
+named argument と固定長 literal spread は最初の call group の binding 順を保持し、
+receiver は常に独立した次 call group である。複数 callable が同じ staged shape に
+適合する場合は曖昧性診断とし、任意の候補を選ばない。ローカルに束縛した callable
+alias は元の署名の parameter group と parameter name を保持し、通常の lexical
+shadowing に従って module / environment callable より先に解決する。
 
 ## カリー化
 

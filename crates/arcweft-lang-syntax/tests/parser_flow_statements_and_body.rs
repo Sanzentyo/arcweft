@@ -138,7 +138,7 @@ flow main {
 fn value_if_else_if_is_nested_if_not_raw_recovery() {
     let tree = parse_ok(
         r#"
-fn label(i: i32) -> string {
+fn label(i: i32) -> String {
     if i == 0 {
         return "first"
     } else if i == 1 {

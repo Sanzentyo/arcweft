@@ -242,9 +242,7 @@ fn literal_type_for_partial_inference(literal: &Literal) -> Option<TypeKind> {
         Literal::Char { .. } => Some(TypeKind::Char),
         Literal::Bool(_) => Some(TypeKind::Bool),
         Literal::Duration { .. } => Some(TypeKind::Duration),
-        Literal::Int { suffix, .. } => suffix.as_deref().map_or(Some(TypeKind::I32), |suffix| {
-            numeric_literal_suffix_type(Some(suffix))
-        }),
+        Literal::Int(literal) => Some(literal.suffix().map_or(TypeKind::I32, TypeKind::from)),
         Literal::Float { suffix, .. } => suffix.map_or(Some(TypeKind::F64), |suffix| {
             numeric_literal_suffix_type(Some(suffix.as_str()))
         }),

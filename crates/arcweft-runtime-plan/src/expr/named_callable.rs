@@ -1,7 +1,7 @@
 use super::{RuntimePureHelperLookup, lower_runtime_expr_strict_with_helpers};
 use crate::function_values::RuntimeFunctionValueCandidate;
 use arcweft_core::{plan::RuntimePureHelper, value::RuntimeExpr};
-use arcweft_lang_hir::syntax::expr::CallArg;
+use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
 
 #[derive(Clone, Debug)]
 pub(super) struct PureHelperNamedPartialCall {
@@ -76,7 +76,7 @@ pub(super) fn lower_strict_named_callable_args(
     input_names: &[String],
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<PureHelperNamedCallLowering, String> {
-    let mut lowered = std::iter::repeat_with(|| None)
+    let mut lowered = std::iter::repeat_with(|| NamedCallableSlot::Missing)
         .take(input_names.len())
         .collect::<Vec<_>>();
     let mut positional_index = 0usize;
@@ -84,7 +84,9 @@ pub(super) fn lower_strict_named_callable_args(
     for arg in args {
         match arg {
             CallArg::Positional(value) => {
-                while positional_index < lowered.len() && lowered[positional_index].is_some() {
+                while positional_index < lowered.len()
+                    && !matches!(lowered[positional_index], NamedCallableSlot::Missing)
+                {
                     positional_index += 1;
                 }
                 let Some(slot) = lowered.get_mut(positional_index) else {
@@ -92,7 +94,9 @@ pub(super) fn lower_strict_named_callable_args(
                         "{callable_kind} `{callee}` received too many positional arguments"
                     ));
                 };
-                *slot = Some(lower_runtime_expr_strict_with_helpers(value, helpers)?);
+                *slot = NamedCallableSlot::Value(lower_runtime_expr_strict_with_helpers(
+                    value, helpers,
+                )?);
                 positional_index += 1;
             }
             CallArg::Named { name, value } => {
@@ -101,17 +105,45 @@ pub(super) fn lower_strict_named_callable_args(
                         "{callable_kind} `{callee}` has no input named `{name}`"
                     ));
                 };
-                if lowered[index].is_some() {
+                if !matches!(lowered[index], NamedCallableSlot::Missing) {
                     return Err(format!(
                         "{callable_kind} `{callee}` input `{name}` was provided more than once"
                     ));
                 }
-                lowered[index] = Some(lower_runtime_expr_strict_with_helpers(value, helpers)?);
+                lowered[index] = NamedCallableSlot::Value(lower_runtime_expr_strict_with_helpers(
+                    value, helpers,
+                )?);
             }
-            CallArg::Spread { .. } => {
-                return Err(format!(
-                    "{callable_kind} `{callee}` does not accept spread arguments in named calls"
+            CallArg::Spread { value } => {
+                let Some(slot_count) = fixed_literal_spread_slot_count(value) else {
+                    return Err(format!(
+                        "{callable_kind} `{callee}` requires a fixed-length literal spread when named arguments are present"
+                    ));
+                };
+                if slot_count == 0 {
+                    continue;
+                }
+                let spread = RuntimeExpr::SpreadArg(Box::new(
+                    lower_runtime_expr_strict_with_helpers(value, helpers)?,
                 ));
+                for slot_offset in 0..slot_count {
+                    while positional_index < lowered.len()
+                        && !matches!(lowered[positional_index], NamedCallableSlot::Missing)
+                    {
+                        positional_index += 1;
+                    }
+                    let Some(slot) = lowered.get_mut(positional_index) else {
+                        return Err(format!(
+                            "{callable_kind} `{callee}` received too many spread arguments"
+                        ));
+                    };
+                    *slot = if slot_offset == 0 {
+                        NamedCallableSlot::Value(spread.clone())
+                    } else {
+                        NamedCallableSlot::SpreadTail
+                    };
+                    positional_index += 1;
+                }
             }
         }
     }
@@ -120,12 +152,14 @@ pub(super) fn lower_strict_named_callable_args(
     let args = lowered
         .into_iter()
         .enumerate()
-        .map(|(index, value)| {
-            value.unwrap_or_else(|| {
+        .filter_map(|(index, slot)| match slot {
+            NamedCallableSlot::Value(value) => Some(value),
+            NamedCallableSlot::SpreadTail => None,
+            NamedCallableSlot::Missing => {
                 let name = input_names[index].clone();
                 missing.push(name.clone());
-                RuntimeExpr::Local(name)
-            })
+                Some(RuntimeExpr::Local(name))
+            }
         })
         .collect::<Vec<_>>();
 
@@ -138,5 +172,22 @@ pub(super) fn lower_strict_named_callable_args(
                 args,
             },
         ))
+    }
+}
+
+#[derive(Clone, Debug)]
+enum NamedCallableSlot {
+    Missing,
+    Value(RuntimeExpr),
+    /// A fixed literal spread occupies this input, but the executable spread
+    /// value is stored only in the first occupied slot.
+    SpreadTail,
+}
+
+fn fixed_literal_spread_slot_count(value: &Expr) -> Option<usize> {
+    match value {
+        Expr::BracketSeq(items) => Some(items.len()),
+        Expr::NumericBracketSeq(sequence) => Some(sequence.len()),
+        _ => None,
     }
 }

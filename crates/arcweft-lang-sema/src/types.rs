@@ -1,5 +1,5 @@
 use crate::effect_row::{EffectRow, EffectRowTail};
-use arcweft_lang_syntax::expr::LifetimeScopeKind;
+use arcweft_lang_syntax::expr::{IntSuffix, LifetimeScopeKind};
 
 /// Entity family used by semantic references and ID checks.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -166,6 +166,25 @@ pub enum TypeKind {
     Choice(Vec<TypeKind>),
     Unit,
     Never,
+}
+
+impl From<IntSuffix> for TypeKind {
+    fn from(suffix: IntSuffix) -> Self {
+        match suffix {
+            IntSuffix::I8 => Self::I8,
+            IntSuffix::I16 => Self::I16,
+            IntSuffix::I32 => Self::I32,
+            IntSuffix::I64 => Self::I64,
+            IntSuffix::I128 => Self::I128,
+            IntSuffix::ISize => Self::ISize,
+            IntSuffix::U8 => Self::U8,
+            IntSuffix::U16 => Self::U16,
+            IntSuffix::U32 => Self::U32,
+            IntSuffix::U64 => Self::U64,
+            IntSuffix::U128 => Self::U128,
+            IntSuffix::USize => Self::USize,
+        }
+    }
 }
 
 impl EntityType {
@@ -427,6 +446,22 @@ impl TypeKind {
                 | Self::U64
                 | Self::U128
                 | Self::USize
+        )
+    }
+
+    #[must_use]
+    pub const fn is_signed_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128 | Self::ISize
+        )
+    }
+
+    #[must_use]
+    pub const fn is_unsigned_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::U128 | Self::USize
         )
     }
 

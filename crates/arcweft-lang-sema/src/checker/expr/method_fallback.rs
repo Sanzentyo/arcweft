@@ -31,7 +31,9 @@ impl TypeChecker<'_> {
                 ));
             return Some(TypeKind::Named("_".to_owned()));
         }
-        let signature = candidates.into_iter().next()?.signature;
+        let DataLastMethodFallbackCandidate {
+            signature, shape, ..
+        } = candidates.into_iter().next()?;
         if !signature.checks_args() {
             return None;
         }
@@ -48,24 +50,26 @@ impl TypeChecker<'_> {
                 ));
             return Some(TypeKind::Named("_".to_owned()));
         }
-        let params = signature.params();
-        let supplied_arg_count = data_last_fallback_supplied_arg_count(args);
-        if params.len() != supplied_arg_count + 1 {
-            return None;
-        }
-        let (call_params, receiver_params) = params.split_at(supplied_arg_count);
-        let receiver_param = &receiver_params[0];
-        if !self.types_compatible(receiver_param.ty(), receiver_type) {
+        let call_params = &signature.params()[..shape.call_param_count];
+        if !self.types_compatible(&shape.receiver_type, receiver_type) {
             self.errors.push(TypeCheckError::argument_type_mismatch(
                 method_name,
-                receiver_param.name().unwrap_or("#receiver"),
-                receiver_param.ty().clone(),
+                shape.receiver_label.as_str(),
+                shape.receiver_type.clone(),
                 receiver_type.clone(),
             ));
             return Some(TypeKind::Named("_".to_owned()));
         }
         let arg_order = self.check_data_last_fallback_args(method_name, args, call_params);
-        self.check_function_effects(method_name);
+        if shape.invokes_body {
+            self.check_function_effects(method_name);
+        }
+        if shape.applies_returned_function {
+            self.record_function_return_effect_result(method_name, signature.return_type());
+            let effect_callable = self.last_checked_closure_effect_callable.take();
+            let returned_arity = signature.return_type().function_arity().unwrap_or_default();
+            self.record_function_value_effect_call(None, effect_callable, 1, returned_arity);
+        }
         self.record_typed_lowering_evidence(TypedLoweringEvidence {
             expression_id,
             kind: TypedLoweringEvidenceKind::DataLastMethodFallback {
@@ -74,7 +78,7 @@ impl TypeChecker<'_> {
                 arg_order,
             },
         });
-        Some(signature.return_type().clone())
+        Some(shape.result_type)
     }
 
     pub(super) fn warn_if_data_last_method_fallback_shadowed(
@@ -114,17 +118,35 @@ impl TypeChecker<'_> {
         args: &[CallArg],
     ) -> Vec<DataLastMethodFallbackCandidate> {
         let mut candidates = Vec::new();
+        // Data-last fallback follows ordinary lexical callable lookup. A local
+        // binding shadows module/environment callables with the same name, and
+        // a function alias retains the source signature's parameter groups and
+        // names through `local_callable_signatures`.
+        if self.locals.contains_key(method_name) {
+            if let Some(signature) = self.local_callable_signatures.get(method_name).cloned()
+                && let Some(shape) = self.data_last_fallback_shape(receiver_type, &signature, args)
+            {
+                candidates.push(DataLastMethodFallbackCandidate::new(
+                    "local",
+                    method_name,
+                    signature,
+                    shape,
+                ));
+            }
+            return candidates;
+        }
         if let Some(signature) = self.global_function_signatures.get(method_name).cloned()
-            && self.is_data_last_fallback_shape(receiver_type, &signature, args)
+            && let Some(shape) = self.data_last_fallback_shape(receiver_type, &signature, args)
         {
             candidates.push(DataLastMethodFallbackCandidate::new(
                 "module",
                 method_name,
                 signature,
+                shape,
             ));
         }
         if let Some(signature) = self.env.function_signature(method_name).cloned()
-            && self.is_data_last_fallback_shape(receiver_type, &signature, args)
+            && let Some(shape) = self.data_last_fallback_shape(receiver_type, &signature, args)
             && !candidates
                 .iter()
                 .any(|candidate| candidate.signature == signature)
@@ -133,6 +155,7 @@ impl TypeChecker<'_> {
                 "environment",
                 method_name,
                 signature,
+                shape,
             ));
         }
         candidates
@@ -143,21 +166,54 @@ impl TypeChecker<'_> {
         receiver_type: &TypeKind,
         signature: &FunctionSignature,
     ) -> bool {
-        let Some(param) = signature.params().last() else {
-            return false;
-        };
-        self.types_compatible(param.ty(), receiver_type)
+        signature
+            .params()
+            .last()
+            .is_some_and(|param| self.types_compatible(param.ty(), receiver_type))
+            || function_first_param(signature.return_type())
+                .is_some_and(|param| self.types_compatible(param, receiver_type))
     }
 
-    fn is_data_last_fallback_shape(
+    fn data_last_fallback_shape(
         &mut self,
         receiver_type: &TypeKind,
         signature: &FunctionSignature,
         args: &[CallArg],
-    ) -> bool {
-        signature.checks_args()
-            && signature.params().len() == data_last_fallback_supplied_arg_count(args) + 1
-            && self.is_data_last_fallback_candidate(receiver_type, signature)
+    ) -> Option<DataLastFallbackShape> {
+        if !signature.checks_args() {
+            return None;
+        }
+        let supplied_arg_count = data_last_fallback_supplied_arg_count(args);
+        if signature.params().len() == supplied_arg_count + 1 {
+            let receiver = signature.params().last()?;
+            if self.types_compatible(receiver.ty(), receiver_type) {
+                return Some(DataLastFallbackShape {
+                    call_param_count: supplied_arg_count,
+                    receiver_type: receiver.ty().clone(),
+                    receiver_label: receiver.name().unwrap_or("#receiver").to_owned(),
+                    result_type: signature.return_type().clone(),
+                    invokes_body: true,
+                    applies_returned_function: false,
+                });
+            }
+        }
+        if !Self::signature_call_supplies_current_group(signature, args) {
+            return None;
+        }
+        let (receiver_type_expected, result_type) =
+            apply_one_function_argument(signature.return_type())?;
+        let returned_function = signature.remaining_call_groups() == 0;
+        let completes_next_group = signature.remaining_call_groups() == 1
+            && signature.return_type().function_arity() == Some(1);
+        self.types_compatible(&receiver_type_expected, receiver_type)
+            .then_some(DataLastFallbackShape {
+                call_param_count: signature.params().len(),
+                receiver_type: receiver_type_expected,
+                receiver_label: "#receiver".to_owned(),
+                result_type,
+                invokes_body: returned_function || completes_next_group,
+                applies_returned_function: returned_function,
+            })
     }
 
     fn check_data_last_fallback_args(
@@ -363,17 +419,66 @@ enum ProvidedDataLastArg {
 #[derive(Clone, Debug)]
 struct DataLastMethodFallbackCandidate {
     signature: FunctionSignature,
+    shape: DataLastFallbackShape,
     label: String,
 }
 
 impl DataLastMethodFallbackCandidate {
-    fn new(source: &str, method_name: &str, signature: FunctionSignature) -> Self {
+    fn new(
+        source: &str,
+        method_name: &str,
+        signature: FunctionSignature,
+        shape: DataLastFallbackShape,
+    ) -> Self {
         let label = format!(
             "{source} fn `{method_name}` {}",
             function_signature_label(&signature)
         );
-        Self { signature, label }
+        Self {
+            signature,
+            shape,
+            label,
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+struct DataLastFallbackShape {
+    call_param_count: usize,
+    receiver_type: TypeKind,
+    receiver_label: String,
+    result_type: TypeKind,
+    invokes_body: bool,
+    applies_returned_function: bool,
+}
+
+fn function_first_param(ty: &TypeKind) -> Option<&TypeKind> {
+    let TypeKind::Function { params, .. } = ty else {
+        return None;
+    };
+    params.first()
+}
+
+fn apply_one_function_argument(ty: &TypeKind) -> Option<(TypeKind, TypeKind)> {
+    let TypeKind::Function {
+        params,
+        return_type,
+        effects,
+    } = ty
+    else {
+        return None;
+    };
+    let (receiver, remaining) = params.split_first()?;
+    let result = if remaining.is_empty() {
+        return_type.as_ref().clone()
+    } else {
+        TypeKind::function_with_effects(
+            remaining.iter().cloned(),
+            return_type.as_ref().clone(),
+            effects.clone(),
+        )
+    };
+    Some((receiver.clone(), result))
 }
 
 fn unsupported_fallback_arg_reason(args: &[CallArg]) -> Option<&'static str> {

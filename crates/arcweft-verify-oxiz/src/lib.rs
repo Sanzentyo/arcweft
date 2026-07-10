@@ -8,6 +8,7 @@ use arcweft_verify::smt::{
     ProofExpr, SmtBackend, SmtCheck, SmtError, SmtOutcome, SmtProblem, SmtSort, SmtSymbolId,
 };
 use oxiz_core::ast::TermId;
+use oxiz_core::smtlib::parse_term;
 use oxiz_solver::{Context, SolverResult};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -113,7 +114,14 @@ fn lower_expr(
 ) -> Result<TermId, String> {
     Ok(match expr {
         ProofExpr::Bool(value) => context.terms.mk_bool(*value),
-        ProofExpr::Int(value) => context.terms.mk_int(*value),
+        ProofExpr::Int(value) => {
+            parse_term(value.as_str(), &mut context.terms).map_err(|error| {
+                format!(
+                    "OxiZ rejected canonical SMT integer `{}`: {error}",
+                    value.as_str()
+                )
+            })?
+        }
         ProofExpr::Var(id) => *symbols
             .get(id)
             .ok_or_else(|| format!("undeclared symbol `{id}`"))?,
@@ -209,6 +217,7 @@ fn lower_exprs(
 mod tests {
     use super::*;
     use arcweft_verify::smt::SmtSymbol;
+    use oxiz_core::smtlib::Printer;
 
     #[test]
     fn boolean_identity_is_proven() {
@@ -256,6 +265,22 @@ mod tests {
             .expect("OxiZ checks LIA problem");
         assert_eq!(check.outcome, SmtOutcome::Sat);
         assert!(!check.model.is_empty());
+    }
+
+    #[test]
+    fn u128_max_literal_is_lowered_without_narrowing() {
+        let mut context = Context::new();
+        let term = lower_expr(
+            &mut context,
+            &BTreeMap::new(),
+            &ProofExpr::natural(u128::MAX),
+        )
+        .expect("OxiZ accepts the exact arbitrary-precision numeral");
+
+        assert_eq!(
+            Printer::new(&context.terms).print_term(term),
+            u128::MAX.to_string()
+        );
     }
 
     #[test]

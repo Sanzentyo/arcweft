@@ -1157,7 +1157,7 @@ impl TraitCatalogBuilder {
                             trait_id: impl_decl.trait_id,
                             signature: signature.clone(),
                             return_type,
-                            body: TraitMethodBody::new(body_statements, body_value.as_ref()),
+                            body: TraitMethodBody::new(body_statements, body_value.as_deref()),
                         },
                     );
                 }

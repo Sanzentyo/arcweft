@@ -134,6 +134,47 @@ pub struct SmtSymbol {
     pub source_label: Option<String>,
 }
 
+/// Canonical base-10 SMT integer literal.
+///
+/// SMT-LIB integers are arbitrary precision, so verifier IR must not narrow
+/// Arcweft `i128`/`u128` literals to a host `i64`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SmtInteger(String);
+
+impl SmtInteger {
+    /// Canonical signed decimal source retained by the verifier IR.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn is_valid(&self) -> bool {
+        let digits = self.0.strip_prefix('-').unwrap_or(&self.0);
+        !digits.is_empty()
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+            && (digits == "0" || !digits.starts_with('0'))
+            && self.0 != "-0"
+    }
+
+    fn emitted(&self) -> String {
+        self.0
+            .strip_prefix('-')
+            .map_or_else(|| self.0.clone(), |magnitude| format!("(- {magnitude})"))
+    }
+}
+
+impl From<i64> for SmtInteger {
+    fn from(value: i64) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<u128> for SmtInteger {
+    fn from(value: u128) -> Self {
+        Self(value.to_string())
+    }
+}
+
 impl SmtSymbol {
     pub fn new(id: impl Into<SmtSymbolId>, sort: SmtSort) -> Self {
         Self {
@@ -158,7 +199,7 @@ impl SmtSymbol {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ProofExpr {
     Bool(bool),
-    Int(i64),
+    Int(SmtInteger),
     Var(SmtSymbolId),
     Not {
         expr: Box<Self>,
@@ -219,8 +260,12 @@ impl ProofExpr {
         Self::Bool(value)
     }
 
-    pub const fn int(value: i64) -> Self {
-        Self::Int(value)
+    pub fn int(value: i64) -> Self {
+        Self::Int(value.into())
+    }
+
+    pub fn natural(value: u128) -> Self {
+        Self::Int(value.into())
     }
 
     pub fn var(id: impl Into<SmtSymbolId>) -> Self {
@@ -356,7 +401,8 @@ impl ProofExpr {
     pub fn sort(&self, symbols: &BTreeMap<SmtSymbolId, SmtSort>) -> Result<SmtSort, SmtError> {
         match self {
             Self::Bool(_) => Ok(SmtSort::Bool),
-            Self::Int(_) => Ok(SmtSort::Int),
+            Self::Int(value) if value.is_valid() => Ok(SmtSort::Int),
+            Self::Int(_) => Err(SmtError::new("invalid canonical SMT integer literal")),
             Self::Var(id) => symbols
                 .get(id)
                 .copied()
@@ -436,8 +482,7 @@ impl ProofExpr {
     pub fn emit_smt_lib(&self) -> String {
         match self {
             Self::Bool(value) => value.to_string(),
-            Self::Int(value) if *value < 0 => format!("(- {})", value.unsigned_abs()),
-            Self::Int(value) => value.to_string(),
+            Self::Int(value) => value.emitted(),
             Self::Var(id) => id.to_string(),
             Self::Not { expr } => format!("(not {})", expr.emit_smt_lib()),
             Self::Neg { expr } => format!("(- {})", expr.emit_smt_lib()),
@@ -869,6 +914,20 @@ mod tests {
         );
         assert!(SmtOutcome::Unsat.proves_claim());
         assert!(SmtOutcome::Sat.is_counterexample());
+    }
+
+    #[test]
+    fn integer_literals_preserve_u128_and_validate_canonical_decimal_form() {
+        let maximum = ProofExpr::natural(u128::MAX);
+        assert_eq!(maximum.sort(&BTreeMap::new()), Ok(SmtSort::Int));
+        assert_eq!(maximum.emit_smt_lib(), u128::MAX.to_string());
+        assert_eq!(
+            ProofExpr::int(i64::MIN).emit_smt_lib(),
+            "(- 9223372036854775808)"
+        );
+
+        let invalid = ProofExpr::Int(SmtInteger("01".to_owned()));
+        assert!(invalid.sort(&BTreeMap::new()).is_err());
     }
 
     #[test]

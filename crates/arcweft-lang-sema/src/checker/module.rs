@@ -26,7 +26,8 @@ use arcweft_lang_syntax::ast::items::{
 use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{
-    FnParam, FnSignature, TypeRef, parse_fn_signature, parse_type_ref,
+    FnParam, FnSignature, NonCanonicalPrimitiveSpelling, TypeRef, parse_fn_signature,
+    parse_type_ref,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -802,7 +803,7 @@ impl TypeChecker<'_> {
             let actual = self.with_expected_return(expected_return.as_ref(), |this| {
                 this.check_function_body_expr(
                     body_statements,
-                    body_value.as_ref(),
+                    body_value.as_deref(),
                     expected_return.as_ref(),
                 )
             });
@@ -1072,7 +1073,7 @@ impl TypeChecker<'_> {
             )));
         }
         if let TypeRef::Path(path) = ty
-            && let Some(diagnostic) = primitive_spelling_diagnostic(path)
+            && let Some(diagnostic) = NonCanonicalPrimitiveSpelling::classify(path)
         {
             self.errors
                 .push(TypeCheckError::new(diagnostic.message(path)));
@@ -1384,57 +1385,6 @@ fn default_inline_policy_label(expr: &Expr) -> String {
         ),
         _ => format!("{expr:?}"),
     }
-}
-
-enum PrimitiveSpellingDiagnostic {
-    CanonicalReplacement(&'static str),
-    ExplicitWidthInteger,
-    ExplicitWidthUnsignedInteger,
-    ExplicitWidthFloat,
-    ExplicitWidthNumber,
-}
-
-impl PrimitiveSpellingDiagnostic {
-    fn message(self, name: &str) -> String {
-        match self {
-            Self::CanonicalReplacement(canonical) => {
-                format!("`{name}` is not a canonical primitive type spelling; use `{canonical}`")
-            }
-            Self::ExplicitWidthInteger => {
-                format!(
-                    "`{name}` is not a concrete primitive type in Arcweft; use an explicit-width signed integer such as `i32` or `i64`"
-                )
-            }
-            Self::ExplicitWidthUnsignedInteger => {
-                format!(
-                    "`{name}` is not a concrete primitive type in Arcweft; use an explicit-width unsigned integer such as `u32` or `u64`"
-                )
-            }
-            Self::ExplicitWidthFloat => {
-                format!(
-                    "`{name}` is not a concrete primitive type in Arcweft; use an explicit-width float such as `f32` or `f64`"
-                )
-            }
-            Self::ExplicitWidthNumber => {
-                format!(
-                    "`{name}` is not a concrete primitive type in Arcweft; use an explicit-width numeric primitive such as `i32`, `u64`, `f32`, or `f64`"
-                )
-            }
-        }
-    }
-}
-
-fn primitive_spelling_diagnostic(name: &str) -> Option<PrimitiveSpellingDiagnostic> {
-    Some(match name {
-        "Bool" => PrimitiveSpellingDiagnostic::CanonicalReplacement("bool"),
-        "Char" => PrimitiveSpellingDiagnostic::CanonicalReplacement("char"),
-        "string" => PrimitiveSpellingDiagnostic::CanonicalReplacement("String"),
-        "int" | "Int" => PrimitiveSpellingDiagnostic::ExplicitWidthInteger,
-        "uint" | "Uint" | "UInt" => PrimitiveSpellingDiagnostic::ExplicitWidthUnsignedInteger,
-        "float" | "Float" => PrimitiveSpellingDiagnostic::ExplicitWidthFloat,
-        "Number" => PrimitiveSpellingDiagnostic::ExplicitWidthNumber,
-        _ => return None,
-    })
 }
 
 fn type_ref_contains_choice(ty: &TypeRef) -> bool {

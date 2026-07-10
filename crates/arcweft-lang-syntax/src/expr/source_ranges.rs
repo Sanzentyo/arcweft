@@ -1206,7 +1206,7 @@ mod tests {
     use super::*;
     use crate::{
         ast::pattern::Pattern,
-        expr::{DottedPath, Expr, Literal, MatchExprArm},
+        expr::{DottedPath, Expr, IntLiteral, IntRadix, IntSuffix, Literal, MatchExprArm},
     };
 
     #[test]
@@ -1231,8 +1231,8 @@ mod tests {
         let labels = ranges
             .into_iter()
             .filter_map(|range| match range.expr() {
-                Expr::Literal(Literal::Int { raw, .. }) => Some((
-                    raw.as_str(),
+                Expr::Literal(Literal::Int(literal)) => Some((
+                    literal.raw(),
                     &source[range.range().start()..range.range().end()],
                 )),
                 _ => None,
@@ -1249,12 +1249,12 @@ mod tests {
         );
     }
 
-    fn int_literal(raw: &str, value: i64) -> Expr {
-        Expr::Literal(Literal::Int {
-            raw: raw.to_owned(),
-            value,
-            suffix: Some("i64".to_owned()),
-        })
+    fn int_literal(raw: &str, _value: i64) -> Expr {
+        Expr::Literal(Literal::Int(IntLiteral::new(
+            raw,
+            IntRadix::Decimal,
+            Some(IntSuffix::I64),
+        )))
     }
 
     #[test]

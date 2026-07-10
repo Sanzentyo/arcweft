@@ -1,8 +1,48 @@
 use super::*;
+use crate::typed_evidence::{
+    RuntimeNumericType, RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence,
+    RuntimeTypedLoweringEvidenceKind,
+};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType};
 use arcweft_core::value::RuntimeIntrinsic;
-use arcweft_lang_hir::syntax::expr::Placeholder;
+use arcweft_lang_hir::syntax::expr::{IntSuffix, Placeholder};
+
+fn int(value: u128, suffix: Option<IntSuffix>) -> Expr {
+    Expr::Literal(Literal::Int(int_literal(value, suffix)))
+}
+
+fn int_literal(value: u128, suffix: Option<IntSuffix>) -> IntLiteral {
+    IntLiteral::decimal(value, suffix)
+}
+
+fn parsed_int_suffix(suffix: &str) -> IntSuffix {
+    IntSuffix::parse(suffix).expect("test uses a canonical integer suffix")
+}
+
+fn lower_with_numeric_evidence(
+    expr: &Expr,
+    evidence: &[RuntimeTypedLoweringEvidence],
+) -> Result<RuntimeExpr, String> {
+    let ids = BTreeMap::new();
+    let helpers = Vec::new();
+    let cursor = Cell::new(0);
+    lower_runtime_expr_strict_with_pure(
+        expr,
+        RuntimePureHelperLookup::new(&ids, &helpers)
+            .with_typed_lowering_evidence(evidence, &cursor),
+    )
+}
+
+fn resolved_numeric_evidence(
+    expression: usize,
+    target: RuntimeNumericType,
+) -> RuntimeTypedLoweringEvidence {
+    RuntimeTypedLoweringEvidence {
+        expression_id: RuntimeTypedExpressionId::from_index(expression),
+        kind: RuntimeTypedLoweringEvidenceKind::ResolvedNumericType { target },
+    }
+}
 
 #[test]
 fn strict_runtime_value_lowering_preserves_calls() {
@@ -21,16 +61,8 @@ fn strict_runtime_value_lowering_can_emit_pure_calls() {
     let expr = Expr::Call {
         callee: Box::new(Expr::Path("add".into())),
         args: vec![
-            CallArg::Positional(Expr::Literal(Literal::Int {
-                raw: "3i64".to_owned(),
-                value: 3,
-                suffix: Some("i64".to_owned()),
-            })),
-            CallArg::Positional(Expr::Literal(Literal::Int {
-                raw: "4i64".to_owned(),
-                value: 4,
-                suffix: Some("i64".to_owned()),
-            })),
+            CallArg::Positional(int(3, Some(IntSuffix::I64))),
+            CallArg::Positional(int(4, Some(IntSuffix::I64))),
         ],
     };
     let helpers = vec![add_i64_helper()];
@@ -59,19 +91,11 @@ fn strict_runtime_reorders_named_pure_helper_args_by_input_name() {
         args: vec![
             CallArg::Named {
                 name: "rhs".to_owned(),
-                value: Box::new(Expr::Literal(Literal::Int {
-                    raw: "4i64".to_owned(),
-                    value: 4,
-                    suffix: Some("i64".to_owned()),
-                })),
+                value: Box::new(int(4, Some(IntSuffix::I64))),
             },
             CallArg::Named {
                 name: "lhs".to_owned(),
-                value: Box::new(Expr::Literal(Literal::Int {
-                    raw: "3i64".to_owned(),
-                    value: 3,
-                    suffix: Some("i64".to_owned()),
-                })),
+                value: Box::new(int(3, Some(IntSuffix::I64))),
             },
         ],
     };
@@ -100,11 +124,7 @@ fn strict_runtime_lowers_named_missing_pure_helper_input_to_function() {
         callee: Box::new(Expr::Path("add".into())),
         args: vec![CallArg::Named {
             name: "rhs".to_owned(),
-            value: Box::new(Expr::Literal(Literal::Int {
-                raw: "4i64".to_owned(),
-                value: 4,
-                suffix: Some("i64".to_owned()),
-            })),
+            value: Box::new(int(4, Some(IntSuffix::I64))),
         }],
     };
     let helpers = vec![add_i64_helper()];
@@ -159,11 +179,7 @@ fn strict_runtime_lowers_partial_pure_helper_call_to_apply() {
     let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);
     let expr = Expr::Call {
         callee: Box::new(Expr::Path("add".into())),
-        args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
-            raw: "2i64".to_owned(),
-            value: 2,
-            suffix: Some("i64".to_owned()),
-        }))],
+        args: vec![CallArg::Positional(int(2, Some(IntSuffix::I64)))],
     };
 
     let lowered =
@@ -188,11 +204,7 @@ fn strict_runtime_lowers_expected_partial_placeholder_to_function_expr() {
     let expr = Expr::Binary {
         lhs: Box::new(Expr::Placeholder(Placeholder::Partial)),
         op: BinaryOp::Gt,
-        rhs: Box::new(Expr::Literal(Literal::Int {
-            raw: "80i64".to_owned(),
-            value: 80,
-            suffix: Some("i64".to_owned()),
-        })),
+        rhs: Box::new(int(80, Some(IntSuffix::I64))),
     };
     let expected = TypeRef::Function {
         params: vec![TypeRef::Path("i64".to_owned())],
@@ -249,11 +261,7 @@ fn strict_runtime_lowers_closure_to_function_expr() {
         body: Box::new(Expr::Binary {
             lhs: Box::new(Expr::Path("score".into())),
             op: BinaryOp::Gt,
-            rhs: Box::new(Expr::Literal(Literal::Int {
-                raw: "80i64".to_owned(),
-                value: 80,
-                suffix: Some("i64".to_owned()),
-            })),
+            rhs: Box::new(int(80, Some(IntSuffix::I64))),
         }),
     };
 
@@ -321,17 +329,9 @@ fn strict_runtime_lowers_expression_callee_call_to_apply() {
     let expr = Expr::Call {
         callee: Box::new(Expr::Call {
             callee: Box::new(Expr::Path("make_adder".into())),
-            args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
-                raw: "2i64".to_owned(),
-                value: 2,
-                suffix: Some("i64".to_owned()),
-            }))],
+            args: vec![CallArg::Positional(int(2, Some(IntSuffix::I64)))],
         }),
-        args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
-            raw: "5i64".to_owned(),
-            value: 5,
-            suffix: Some("i64".to_owned()),
-        }))],
+        args: vec![CallArg::Positional(int(5, Some(IntSuffix::I64)))],
     };
 
     let lowered = lower_runtime_expr_strict(&expr).expect("expression callee lowers");
@@ -393,23 +393,15 @@ fn strict_runtime_lowers_adapter_namespace_methods_to_external_calls() {
 }
 
 #[test]
-fn strict_runtime_substitutes_pipe_left_placeholder() {
+fn strict_runtime_binds_pipe_left_once() {
     let expr = Expr::Pipe {
         lhs: Box::new(Expr::Path("value".into())),
         rhs: Box::new(Expr::Call {
             callee: Box::new(Expr::Path("clamp".into())),
             args: vec![
-                CallArg::Positional(Expr::Literal(Literal::Int {
-                    raw: "0i64".to_owned(),
-                    value: 0,
-                    suffix: Some("i64".to_owned()),
-                })),
+                CallArg::Positional(int(0, Some(IntSuffix::I64))),
                 CallArg::Positional(Expr::Placeholder(Placeholder::PipeLeft)),
-                CallArg::Positional(Expr::Literal(Literal::Int {
-                    raw: "100i64".to_owned(),
-                    value: 100,
-                    suffix: Some("i64".to_owned()),
-                })),
+                CallArg::Positional(int(100, Some(IntSuffix::I64))),
             ],
         }),
     };
@@ -418,27 +410,29 @@ fn strict_runtime_substitutes_pipe_left_placeholder() {
 
     assert!(matches!(
         lowered,
-        RuntimeExpr::Call { callee, args }
-            if callee.as_label() == "clamp"
-                && matches!(args.as_slice(), [
-                    RuntimeExpr::Value(_),
-                    RuntimeExpr::Local(name),
-                    RuntimeExpr::Value(_),
-                ] if name == "value")
+        RuntimeExpr::Let { name, expr, body }
+            if name.starts_with('\0')
+                && matches!(expr.as_ref(), RuntimeExpr::Local(value) if value == "value")
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Call { callee, args }
+                        if callee.as_label() == "clamp"
+                            && matches!(args.as_slice(), [
+                                RuntimeExpr::Value(_),
+                                RuntimeExpr::Local(pipe),
+                                RuntimeExpr::Value(_),
+                            ] if pipe == &name)
+                )
     ));
 }
 
 #[test]
-fn strict_runtime_lowers_data_last_pipe_to_direct_call() {
+fn strict_runtime_keeps_data_last_pipe_as_two_stages() {
     let expr = Expr::Pipe {
         lhs: Box::new(Expr::Path("value".into())),
         rhs: Box::new(Expr::Call {
             callee: Box::new(Expr::Path("normalize".into())),
-            args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
-                raw: "2i64".to_owned(),
-                value: 2,
-                suffix: Some("i64".to_owned()),
-            }))],
+            args: vec![CallArg::Positional(int(2, Some(IntSuffix::I64)))],
         }),
     };
 
@@ -446,23 +440,64 @@ fn strict_runtime_lowers_data_last_pipe_to_direct_call() {
 
     assert!(matches!(
         lowered,
-        RuntimeExpr::Call { callee, args }
-            if callee.as_label() == "normalize"
-                && matches!(args.as_slice(), [
-                    RuntimeExpr::Value(_),
-                    RuntimeExpr::Local(name),
-                ] if name == "value")
+        RuntimeExpr::Let { name, expr, body }
+            if name.starts_with('\0')
+                && matches!(expr.as_ref(), RuntimeExpr::Local(value) if value == "value")
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Apply { callee, args }
+                        if matches!(
+                            callee.as_ref(),
+                            RuntimeExpr::Call { callee, args }
+                                if callee.as_label() == "normalize" && args.len() == 1
+                        ) && matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Local(pipe)] if pipe == &name
+                        )
+                )
     ));
+}
+
+#[test]
+fn nested_pipe_in_no_placeholder_rhs_uses_a_distinct_binding_depth() {
+    let expr = arcweft_lang_syntax::expr::parse_expr("outer |> (|| (inner |> (^, ^)))")
+        .expect("nested closure pipe parses");
+
+    let lowered = lower_runtime_expr_strict(&expr).expect("nested closure pipe lowers");
+
+    let RuntimeExpr::Let {
+        name: outer_name,
+        body,
+        ..
+    } = lowered
+    else {
+        panic!("outer pipe must own an exact-once binding")
+    };
+    let RuntimeExpr::Apply { callee, .. } = body.as_ref() else {
+        panic!("outer pipe must apply its RHS to the bound left value")
+    };
+    let RuntimeExpr::Function {
+        body: closure_body, ..
+    } = callee.as_ref()
+    else {
+        panic!("outer pipe RHS must remain a closure")
+    };
+    let RuntimeExpr::Let {
+        name: inner_name, ..
+    } = closure_body.as_ref()
+    else {
+        panic!("inner pipe must own an exact-once binding")
+    };
+
+    assert_ne!(outer_name, *inner_name);
+    assert!(outer_name.ends_with(".0"));
+    assert!(inner_name.ends_with(".1"));
 }
 
 #[test]
 fn strict_runtime_lowers_data_last_pipe_to_partial_helper_apply() {
     let expr = Expr::Pipe {
-        lhs: Box::new(Expr::Literal(Literal::Int {
-            raw: "2i64".to_owned(),
-            value: 2,
-            suffix: Some("i64".to_owned()),
-        })),
+        lhs: Box::new(int(2, Some(IntSuffix::I64))),
         rhs: Box::new(Expr::Path("add".into())),
     };
     let helpers = vec![add_i64_helper()];
@@ -474,32 +509,33 @@ fn strict_runtime_lowers_data_last_pipe_to_partial_helper_apply() {
 
     assert!(matches!(
         lowered,
-        RuntimeExpr::Apply { callee, args }
-            if matches!(
-                callee.as_ref(),
-                RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
-            ) && matches!(
-                args.as_slice(),
-                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
-            )
+        RuntimeExpr::Let { name, expr, body }
+            if name.starts_with('\0')
+                && matches!(
+                    expr.as_ref(),
+                    RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2)
+                ) && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Apply { callee, args }
+                        if matches!(
+                            callee.as_ref(),
+                            RuntimeExpr::Function { params, .. }
+                                if params.as_slice() == ["lhs", "rhs"]
+                        ) && matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Local(pipe)] if pipe == &name
+                        )
+                )
     ));
 }
 
 #[test]
 fn strict_runtime_lowers_data_last_pipe_call_to_exact_helper_call() {
     let expr = Expr::Pipe {
-        lhs: Box::new(Expr::Literal(Literal::Int {
-            raw: "2i64".to_owned(),
-            value: 2,
-            suffix: Some("i64".to_owned()),
-        })),
+        lhs: Box::new(int(2, Some(IntSuffix::I64))),
         rhs: Box::new(Expr::Call {
             callee: Box::new(Expr::Path("add".into())),
-            args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
-                raw: "1i64".to_owned(),
-                value: 1,
-                suffix: Some("i64".to_owned()),
-            }))],
+            args: vec![CallArg::Positional(int(1, Some(IntSuffix::I64)))],
         }),
     };
     let helpers = vec![add_i64_helper()];
@@ -509,15 +545,32 @@ fn strict_runtime_lowers_data_last_pipe_call_to_exact_helper_call() {
         lower_runtime_expr_strict_with_pure(&expr, RuntimePureHelperLookup::new(&ids, &helpers))
             .expect("data-last exact helper pipe lowers");
 
+    let RuntimeExpr::Let { name, expr, body } = lowered else {
+        panic!("pipe must bind its left value once")
+    };
+    assert!(name.starts_with('\0'));
     assert!(matches!(
-        lowered,
-        RuntimeExpr::PureCall { helper, args }
-            if helper == RuntimePureHelperId(0)
-                && matches!(
-                    args.as_slice(),
-                    [RuntimeExpr::Value(lhs), RuntimeExpr::Value(rhs)]
-                        if lhs == &RuntimeValue::i64(1) && rhs == &RuntimeValue::i64(2)
-                )
+        expr.as_ref(),
+        RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2)
+    ));
+    assert!(matches!(
+        body.as_ref(),
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Apply { callee, args }
+                    if matches!(
+                        callee.as_ref(),
+                        RuntimeExpr::Function { params, .. }
+                            if params.as_slice() == ["lhs", "rhs"]
+                    ) && matches!(
+                        args.as_slice(),
+                        [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(1)
+                    )
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Local(pipe)] if pipe == &name
+            )
     ));
 }
 
@@ -529,11 +582,7 @@ fn strict_runtime_lowers_partial_placeholder_map_body() {
         vec![CallArg::Positional(Expr::Binary {
             lhs: Box::new(Expr::Placeholder(Placeholder::Partial)),
             op: BinaryOp::Add,
-            rhs: Box::new(Expr::Literal(Literal::Int {
-                raw: "1i64".to_owned(),
-                value: 1,
-                suffix: Some("i64".to_owned()),
-            })),
+            rhs: Box::new(int(1, Some(IntSuffix::I64))),
         })],
     );
 
@@ -581,59 +630,6 @@ fn strict_runtime_lowers_partial_placeholder_filter_body() {
 }
 
 #[test]
-fn strict_runtime_lowers_data_last_filter_map_pipeline() {
-    let expr = Expr::Pipe {
-        lhs: Box::new(Expr::Pipe {
-            lhs: Box::new(Expr::Path("choices".into())),
-            rhs: Box::new(Expr::Call {
-                callee: Box::new(Expr::Path("filter".into())),
-                args: vec![CallArg::Positional(Expr::select(
-                    Expr::Placeholder(Placeholder::Partial),
-                    "enabled",
-                ))],
-            }),
-        }),
-        rhs: Box::new(Expr::Call {
-            callee: Box::new(Expr::Path("map".into())),
-            args: vec![CallArg::Positional(Expr::select(
-                Expr::Placeholder(Placeholder::Partial),
-                "label",
-            ))],
-        }),
-    };
-
-    let lowered = lower_runtime_expr_strict(&expr).expect("data-last pipeline lowers");
-
-    assert!(matches!(
-            lowered,
-            RuntimeExpr::Map { source, param, body }
-                if param == "_item"
-                    && matches!(source.as_ref(), RuntimeExpr::Filter { source, param, body }
-                        if param == "_item"
-                            && matches!(source.as_ref(), RuntimeExpr::Local(name) if name == "choices")
-                            && matches!(
-                                body.as_ref(),
-                                RuntimeExpr::Field { target, field }
-                                    if field == "enabled"
-                                        && matches!(
-                                            target.as_ref(),
-                                            RuntimeExpr::Local(name) if name == "_item"
-                                        )
-                            )
-                    )
-                    && matches!(
-                        body.as_ref(),
-                        RuntimeExpr::Field { target, field }
-                            if field == "label"
-                                && matches!(
-                                    target.as_ref(),
-                                    RuntimeExpr::Local(name) if name == "_item"
-                            )
-                )
-    ));
-}
-
-#[test]
 fn strict_runtime_unwraps_try_around_runtime_method_calls() {
     let expr = Expr::Try {
         expr: Box::new(Expr::selected_call(
@@ -657,16 +653,8 @@ fn strict_runtime_unwraps_try_around_runtime_method_calls() {
 #[test]
 fn strict_runtime_array_repeat_folds_literal_value_sequence() {
     let expr = Expr::ArrayRepeat {
-        value: Box::new(Expr::Literal(Literal::Int {
-            raw: "2i64".to_owned(),
-            value: 2,
-            suffix: Some("i64".to_owned()),
-        })),
-        len: Box::new(Expr::Literal(Literal::Int {
-            raw: "4".to_owned(),
-            value: 4,
-            suffix: None,
-        })),
+        value: Box::new(int(2, Some(IntSuffix::I64))),
+        len: Box::new(int(4, None)),
     };
 
     let lowered = lower_runtime_expr_strict(&expr).expect("array repeat lowers");
@@ -694,11 +682,7 @@ fn suffixed_integer_literals_lower_to_width_preserving_runtime_scalars() {
         ("u128", RuntimeValue::u128(7)),
         ("usize", RuntimeValue::usize(7)),
     ] {
-        let expr = Expr::Literal(Literal::Int {
-            raw: format!("7{suffix}"),
-            value: 7,
-            suffix: Some(suffix.to_owned()),
-        });
+        let expr = int(7, Some(parsed_int_suffix(suffix)));
 
         let lowered = lower_runtime_expr_strict(&expr).expect("suffixed integer literal lowers");
 
@@ -722,16 +706,8 @@ fn strict_runtime_bracket_seq_folds_literal_values_to_dense_storage() {
     ));
 
     let i64_expr = Expr::BracketSeq(vec![
-        Expr::Literal(Literal::Int {
-            raw: "1i64".to_owned(),
-            value: 1,
-            suffix: Some("i64".to_owned()),
-        }),
-        Expr::Literal(Literal::Int {
-            raw: "2i64".to_owned(),
-            value: 2,
-            suffix: Some("i64".to_owned()),
-        }),
+        int(1, Some(IntSuffix::I64)),
+        int(2, Some(IntSuffix::I64)),
     ]);
 
     let lowered = lower_runtime_expr_strict(&i64_expr).expect("i64 bracket seq lowers");
@@ -875,14 +851,7 @@ fn strict_runtime_lowers_std_float_constants_and_intrinsic_calls() {
 fn strict_runtime_field_lowering_uses_record_projection_when_ordinal_is_known() {
     let expr = Expr::select(
         Expr::RecordLiteral(vec![
-            (
-                "score".to_owned(),
-                Expr::Literal(Literal::Int {
-                    raw: "7".to_owned(),
-                    value: 7,
-                    suffix: None,
-                }),
-            ),
+            ("score".to_owned(), int(7, None)),
             (
                 "label".to_owned(),
                 Expr::Literal(Literal::String("ok".to_owned())),
@@ -903,18 +872,10 @@ fn strict_runtime_field_lowering_uses_record_projection_when_ordinal_is_known() 
 fn strict_runtime_tuple_index_lowering_uses_tuple_projection_when_ordinal_is_known() {
     let expr = Expr::Index {
         target: Box::new(Expr::Tuple(vec![
-            Expr::Literal(Literal::Int {
-                raw: "1".to_owned(),
-                value: 1,
-                suffix: None,
-            }),
+            int(1, None),
             Expr::Literal(Literal::Bool(true)),
         ])),
-        index: Box::new(Expr::Literal(Literal::Int {
-            raw: "1".to_owned(),
-            value: 1,
-            suffix: None,
-        })),
+        index: Box::new(int(1, None)),
     };
 
     let lowered = lower_runtime_expr_strict(&expr).expect("tuple index lowers");
@@ -927,10 +888,14 @@ fn strict_runtime_tuple_index_lowering_uses_tuple_projection_when_ordinal_is_kno
 
 #[test]
 fn numeric_bracket_seq_lowers_to_dense_i32_sequence() {
-    let expr = Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
-        vec![1, 2, 3],
-        None,
-    ));
+    let expr = Expr::NumericBracketSeq(
+        NumericBracketSeq::new(vec![
+            int_literal(1, None),
+            int_literal(2, None),
+            int_literal(3, None),
+        ])
+        .expect("test sequence uses one suffix"),
+    );
 
     let lowered = lower_runtime_expr_strict(&expr).expect("numeric seq lowers");
 
@@ -1013,9 +978,66 @@ fn suffixed_numeric_bracket_seq_lowers_to_width_specific_dense_sequence() {
 }
 
 fn lower_suffixed_numeric_seq(suffix: &str) -> RuntimeExpr {
-    let expr = Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
-        vec![1, 2, 3],
-        Some(suffix.to_owned()),
-    ));
+    let suffix = Some(parsed_int_suffix(suffix));
+    let expr = Expr::NumericBracketSeq(
+        NumericBracketSeq::new(vec![
+            int_literal(1, suffix),
+            int_literal(2, suffix),
+            int_literal(3, suffix),
+        ])
+        .expect("test sequence uses one suffix"),
+    );
     lower_runtime_expr_strict(&expr).expect("suffixed numeric seq lowers")
+}
+
+#[test]
+fn resolved_numeric_evidence_controls_unsuffixed_runtime_widths() {
+    let wide =
+        arcweft_lang_hir::syntax::expr::parse_expr("340282366920938463463374607431768211455")
+            .expect("u128 magnitude parses");
+    assert_eq!(
+        lower_with_numeric_evidence(
+            &wide,
+            &[resolved_numeric_evidence(0, RuntimeNumericType::U128)],
+        ),
+        Ok(RuntimeExpr::Value(RuntimeValue::u128(u128::MAX)))
+    );
+
+    let precise =
+        arcweft_lang_hir::syntax::expr::parse_expr("1_2.5_0").expect("underscored float parses");
+    assert_eq!(
+        lower_with_numeric_evidence(
+            &precise,
+            &[resolved_numeric_evidence(0, RuntimeNumericType::F32)],
+        ),
+        Ok(RuntimeExpr::Value(RuntimeValue::F32(12.5)))
+    );
+}
+
+#[test]
+fn resolved_numeric_sequence_evidence_controls_dense_item_width() {
+    let expr = arcweft_lang_hir::syntax::expr::parse_expr("[4294967296, 4294967297]")
+        .expect("wide numeric sequence parses");
+    let lowered = lower_with_numeric_evidence(
+        &expr,
+        &[resolved_numeric_evidence(0, RuntimeNumericType::U64)],
+    )
+    .expect("typed numeric sequence lowers");
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Value(RuntimeValue::Seq(seq))
+            if seq.as_u64_slice() == Some([4_294_967_296, 4_294_967_297].as_slice())
+    ));
+}
+
+#[test]
+fn resolved_numeric_evidence_preserves_expected_signed_minimum() {
+    let expr = arcweft_lang_hir::syntax::expr::parse_expr("-32768")
+        .expect("signed minimum expression parses");
+    let lowered = lower_with_numeric_evidence(
+        &expr,
+        &[resolved_numeric_evidence(1, RuntimeNumericType::I16)],
+    )
+    .expect("typed signed minimum lowers");
+    assert_eq!(lowered, RuntimeExpr::Value(RuntimeValue::i16(i16::MIN)));
 }

@@ -479,6 +479,11 @@ impl TypeChecker<'_> {
                 self.bind_local(name, binding_ty);
             }
             if let Some(name) = ident_pattern_name(pattern)
+                && let Some(signature) = self.callable_signature_for_function_expr(expr, ty)
+            {
+                self.bind_local_callable_signature(name, signature);
+            }
+            if let Some(name) = ident_pattern_name(pattern)
                 && let Some(callable) = self.closure_effect_callable_for_function_expr(expr, ty)
             {
                 self.bind_local_function_effect(name, callable);

@@ -6,10 +6,10 @@
 pub use crate::{
     checker::{
         ClosureCapture, ClosureCaptureInventory, DataLastMethodFallbackArg, ForIterationEvidence,
-        ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport, TypeCheckStats,
-        TypeExpressionId, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId, TypeJudgmentRule,
-        TypeJudgmentSubject, TypedLoweringEvidence, TypedLoweringEvidenceKind, analyze_types,
-        typecheck_hir, validate_typecheck_ready,
+        ForIterationEvidenceFamily, NumericFallback, NumericFallbackKind, StandardIteratorFamily,
+        TypeCheckReport, TypeCheckStats, TypeExpressionId, TypeJudgment, TypeJudgmentExpected,
+        TypeJudgmentId, TypeJudgmentRule, TypeJudgmentSubject, TypedLoweringEvidence,
+        TypedLoweringEvidenceKind, analyze_types, typecheck_hir, validate_typecheck_ready,
     },
     diagnostics::TypeCheckWarning,
     effect_analysis::{EffectTraceReport, EffectTraceSummary},

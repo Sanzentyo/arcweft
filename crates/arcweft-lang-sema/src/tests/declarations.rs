@@ -735,7 +735,29 @@ pub impl<T> Mappable for Option<T> {
 ",
     );
 
-    let Item::Trait(mappable) = &tree.items()[0] else {
+    assert_mappable_trait(&tree.items()[0]);
+
+    let Item::Trait(ord) = &tree.items()[1] else {
+        panic!("expected second trait item");
+    };
+    assert_eq!(ord.supertraits(), &["Eq".to_owned()]);
+
+    assert_mappable_impl(&tree.items()[2]);
+
+    let hir = lower_to_hir(&tree).expect("syntax-only trait/impl items do not block HIR");
+    assert!(hir.flows().is_empty());
+    assert!(matches!(
+        hir.declarations(),
+        [
+            HirTopLevelDecl::Trait(_),
+            HirTopLevelDecl::Trait(_),
+            HirTopLevelDecl::Impl(_)
+        ]
+    ));
+}
+
+fn assert_mappable_trait(item: &Item) {
+    let Item::Trait(mappable) = item else {
         panic!("expected trait item");
     };
     assert_eq!(mappable.visibility(), Some(Visibility::Public));
@@ -761,13 +783,10 @@ pub impl<T> Mappable for Option<T> {
                     .and_then(|group| group.params().first())
                     .is_some_and(|param| ident_pattern(param.pattern(), "self"))
     ));
+}
 
-    let Item::Trait(ord) = &tree.items()[1] else {
-        panic!("expected second trait item");
-    };
-    assert_eq!(ord.supertraits(), &["Eq".to_owned()]);
-
-    let Item::Impl(impl_item) = &tree.items()[2] else {
+fn assert_mappable_impl(item: &Item) {
+    let Item::Impl(impl_item) = item else {
         panic!("expected impl item");
     };
     assert_eq!(impl_item.visibility(), Some(Visibility::Public));
@@ -804,22 +823,11 @@ pub impl<T> Mappable for Option<T> {
                 && body.contains("match self")
                 && body_statements.is_empty()
                 && matches!(
-                    body_value.as_ref().map(AuthoredExpr::expr),
+                    body_value.as_deref().map(AuthoredExpr::expr),
                     Some(Expr::Match { .. })
                 )
     ));
     assert!(impl_item.body().contains("Some(x)"));
-
-    let hir = lower_to_hir(&tree).expect("syntax-only trait/impl items do not block HIR");
-    assert!(hir.flows().is_empty());
-    assert!(matches!(
-        hir.declarations(),
-        [
-            HirTopLevelDecl::Trait(_),
-            HirTopLevelDecl::Trait(_),
-            HirTopLevelDecl::Impl(_)
-        ]
-    ));
 }
 
 #[test]

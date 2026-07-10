@@ -15,7 +15,7 @@ use crate::cst::{
     split_top_level_arcweft_punctuation_once, split_top_level_punctuation,
     split_top_level_punctuation_once,
 };
-use crate::types::{parse_fn_signature, parse_type_ref, parse_where_clause_list};
+use crate::types::{parse_fn_signature, parse_where_clause_list};
 
 use super::headers::{
     parse_callable_kind, parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
@@ -29,7 +29,7 @@ use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
     parse_scope_authored_expr_body, parse_scope_authored_expr_body_for_dialect,
     parse_scope_authored_expr_body_with_base, parse_scope_authored_expr_body_with_base_for_dialect,
-    parse_scope_expr_body, split_top_level_binding,
+    parse_scope_expr_body, parse_type_ref_or_error, split_top_level_binding,
 };
 
 impl Parser<'_> {
@@ -163,15 +163,18 @@ impl Parser<'_> {
         let (visibility, signature_text) = parse_visibility_prefix(&signature_head);
         let (kind, signature_text) = parse_function_kind_and_signature(signature_text.trim());
         let signature_text = signature_text.to_owned();
-        let Ok(signature) = parse_fn_signature(&signature_text) else {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "invalid function signature",
-                ["fn name<'a>(...)"],
-                Some(signature_head.as_str()),
-                ["write the function item with a valid `fn` signature head"],
-            );
-            return None;
+        let signature = match parse_fn_signature(&signature_text) {
+            Ok(signature) => signature,
+            Err(error) => {
+                self.push_error(
+                    TextRange::new(start_line.start, start_line.end),
+                    &error.to_string(),
+                    ["fn name<'a>(...)"],
+                    Some(signature_head.as_str()),
+                    ["write the function item with a valid `fn` signature head"],
+                );
+                return None;
+            }
         };
         let contracts = parse_contract_clauses(&contract_lines);
         let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
@@ -234,20 +237,19 @@ impl Parser<'_> {
             .unwrap_or_else(|| "agent".to_owned());
         let signature_text = parse_agent_signature_text(&name, &signature_tail);
         let signature = match signature_text.as_deref() {
-            Some(text) => {
-                if let Ok(signature) = parse_fn_signature(text) {
-                    Some(signature)
-                } else {
+            Some(text) => match parse_fn_signature(text) {
+                Ok(signature) => Some(signature),
+                Err(error) => {
                     self.push_error(
                         TextRange::new(start_line.start, start_line.end),
-                        "invalid agent signature",
+                        &error.to_string(),
                         ["agent @agent.id name(...)"],
                         Some(agent_head.as_str()),
                         ["write the agent item with a valid function-style signature tail"],
                     );
                     return None;
                 }
-            }
+            },
             None => None,
         };
         let contracts = parse_contract_clauses(&contract_lines);
@@ -363,7 +365,7 @@ impl Parser<'_> {
             attrs,
             visibility,
             name.unwrap_or_default(),
-            parse_state_fields(&body),
+            parse_state_fields(&body, start_line.start, &mut self.errors),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -396,6 +398,7 @@ impl Parser<'_> {
             parse_trait_members(
                 body,
                 block.body_range.as_ref().map_or(0, |range| range.start),
+                &mut self.errors,
             ),
             TextRange::new(start_line.start, block.end),
         ))
@@ -437,6 +440,7 @@ impl Parser<'_> {
             members: parse_impl_members(
                 body,
                 block.body_range.as_ref().map_or(0, |range| range.start),
+                &mut self.errors,
             ),
             body: body.to_string(),
             range: TextRange::new(start_line.start, block.end),
@@ -464,7 +468,7 @@ impl Parser<'_> {
             attrs,
             visibility,
             name.unwrap_or_default(),
-            parse_struct_fields(&body),
+            parse_struct_fields(&body, start_line.start, &mut self.errors),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -492,7 +496,9 @@ impl Parser<'_> {
         let (visibility, rest) = parse_visibility_prefix(first);
         let rest = rest.trim_start().strip_prefix("type")?.trim();
         let (name, target) = split_top_level_binding(rest)?;
-        let target = parse_type_ref(target.trim()).ok()?;
+        let target_source = target.trim();
+        let target_base = start_line.start + raw.find(target_source).unwrap_or_default();
+        let target = parse_type_ref_or_error(target_source, target_base, &mut self.errors)?;
         let where_clauses = lines
             .filter_map(|line| line.strip_prefix("where "))
             .map(str::trim)
@@ -640,7 +646,7 @@ impl Parser<'_> {
             attrs,
             visibility,
             id,
-            parse_capability_fns(&body),
+            parse_capability_fns(&body, start_line.start, &mut self.errors),
             body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
@@ -664,7 +670,7 @@ impl Parser<'_> {
             abi,
             path,
             source,
-            parse_extern_mod_members(&body),
+            parse_extern_mod_members(&body, start_line.start, &mut self.errors),
             body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
@@ -695,18 +701,25 @@ pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
         .collect()
 }
 
-pub(super) fn parse_struct_fields(body: &str) -> Vec<StructField> {
+pub(super) fn parse_struct_fields(
+    body: &str,
+    body_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<StructField> {
     let mut docs = PendingDocLines::default();
     let mut fields = Vec::new();
-    for (line_index, item) in collect_logical_block_items(body).into_iter().enumerate() {
-        let item = item.trim();
-        if item.is_empty() {
+    for (line_index, item) in super::collect_logical_block_items_with_base(body, body_base)
+        .into_iter()
+        .enumerate()
+    {
+        let item_source = item.source.trim();
+        if item_source.is_empty() {
             continue;
         }
-        if docs.push_if_doc(item, line_index) {
+        if docs.push_if_doc(item_source, line_index) {
             continue;
         }
-        let parts = split_top_level_punctuation(item, ',');
+        let parts = split_top_level_punctuation(item_source, ',');
         for (part_index, part) in parts.into_iter().enumerate() {
             let line = part.trim();
             if line.is_empty() {
@@ -717,7 +730,9 @@ pub(super) fn parse_struct_fields(body: &str) -> Vec<StructField> {
                 continue;
             };
             let doc = if part_index == 0 { docs.take() } else { None };
-            if let Ok(ty) = parse_type_ref(ty.trim()) {
+            let ty_source = ty.trim();
+            let ty_base = item.base + item.source.find(ty_source).unwrap_or_default();
+            if let Some(ty) = parse_type_ref_or_error(ty_source, ty_base, errors) {
                 fields.push(StructField::new(doc, name.trim().to_owned(), ty));
             }
         }
@@ -725,13 +740,17 @@ pub(super) fn parse_struct_fields(body: &str) -> Vec<StructField> {
     fields
 }
 
-pub(super) fn parse_state_fields(body: &str) -> Vec<StateField> {
+pub(super) fn parse_state_fields(
+    body: &str,
+    body_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<StateField> {
     let mut docs = PendingDocLines::default();
-    collect_logical_block_items(body)
+    super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
         .enumerate()
         .filter_map(|(line_index, item)| {
-            let line = item.trim();
+            let line = item.source.trim();
             if line.is_empty() {
                 return None;
             }
@@ -742,7 +761,9 @@ pub(super) fn parse_state_fields(body: &str) -> Vec<StateField> {
             let (visibility, rest) = parse_visibility_prefix(line);
             let (left, default) = split_top_level_binding(rest)?;
             let (name, ty) = split_top_level_punctuation_once(left, ':')?;
-            parse_type_ref(ty.trim()).ok().map(|ty| {
+            let ty_source = ty.trim();
+            let ty_base = item.base + item.source.find(ty_source).unwrap_or_default();
+            parse_type_ref_or_error(ty_source, ty_base, errors).map(|ty| {
                 StateField::new(
                     docs.take(),
                     visibility,
@@ -1170,7 +1191,11 @@ fn parse_entry_route_binding(
     ))
 }
 
-fn parse_capability_fns(body: &str) -> Vec<CapabilityFn> {
+fn parse_capability_fns(
+    body: &str,
+    body_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<CapabilityFn> {
     let mut starts = body
         .match_indices("fn ")
         .map(|(index, _)| index)
@@ -1181,28 +1206,58 @@ fn parse_capability_fns(body: &str) -> Vec<CapabilityFn> {
     starts.push(body.len());
     starts
         .windows(2)
-        .filter_map(|window| parse_capability_fn(body[window[0]..window[1]].trim()))
+        .filter_map(|window| {
+            parse_capability_fn(
+                body[window[0]..window[1]].trim(),
+                body_base + window[0],
+                errors,
+            )
+        })
         .collect()
 }
 
-fn parse_capability_fn(item: &str) -> Option<CapabilityFn> {
+fn parse_capability_fn(
+    item: &str,
+    item_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<CapabilityFn> {
     let (signature_source, effects_source) =
         crate::cst::split_top_level_keyword_once(item, "effects");
-    let signature = parse_fn_signature(signature_source.trim()).ok()?;
+    let signature_source = signature_source.trim();
+    let signature = match parse_fn_signature(signature_source) {
+        Ok(signature) => signature,
+        Err(error) => {
+            errors.push(simple_error(
+                item_base,
+                signature_source.len(),
+                &error.to_string(),
+                "a valid capability function signature",
+            ));
+            return None;
+        }
+    };
     let effects = effects_source
         .map(parse_contract_expr_list)
         .unwrap_or_default();
     Some(CapabilityFn::new(signature, effects))
 }
 
-fn parse_extern_mod_members(body: &str) -> Vec<ExternModMember> {
-    collect_logical_block_items(body)
+fn parse_extern_mod_members(
+    body: &str,
+    body_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<ExternModMember> {
+    super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
-        .map(|item| parse_extern_mod_member(item.trim()))
+        .map(|item| parse_extern_mod_member(item.source.trim(), item.base, errors))
         .collect()
 }
 
-fn parse_extern_mod_member(item: &str) -> ExternModMember {
+fn parse_extern_mod_member(
+    item: &str,
+    item_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> ExternModMember {
     let item = item.trim_end_matches(';').trim();
     let (visibility, rest) = parse_visibility_prefix(item);
     let rest = rest.trim();
@@ -1228,7 +1283,15 @@ fn parse_extern_mod_member(item: &str) -> ExternModMember {
     }
     if rest.starts_with("fn ") {
         return parse_fn_signature(rest).map_or_else(
-            |_| ExternModMember::Raw(item.to_owned()),
+            |error| {
+                errors.push(simple_error(
+                    item_base,
+                    rest.len(),
+                    &error.to_string(),
+                    "a valid external function signature",
+                ));
+                ExternModMember::Raw(item.to_owned())
+            },
             |signature| ExternModMember::Function(ExternModFunction::new(visibility, signature)),
         );
     }
@@ -1236,26 +1299,42 @@ fn parse_extern_mod_member(item: &str) -> ExternModMember {
         && let Some((name, ty)) = split_top_level_punctuation_once(activity, ':')
         && let Some((name, tail)) = split_leading_ident(name.trim())
         && tail.trim().is_empty()
-        && let Ok(ty) = parse_type_ref(ty.trim())
     {
-        return ExternModMember::Activity(ExternModActivity::new(visibility, name, ty));
+        let ty_source = ty.trim();
+        let ty_base = item_base + item.find(ty_source).unwrap_or_default();
+        if let Some(ty) = parse_type_ref_or_error(ty_source, ty_base, errors) {
+            return ExternModMember::Activity(ExternModActivity::new(visibility, name, ty));
+        }
     }
     ExternModMember::Raw(item.to_owned())
 }
 
-pub(super) fn parse_trait_members(body: &str, body_base: usize) -> Vec<TraitMember> {
+pub(super) fn parse_trait_members(
+    body: &str,
+    body_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<TraitMember> {
     super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
         .filter(|item| !item.source.trim().is_empty())
-        .map(|item| parse_trait_member(item.source.trim(), item.base))
+        .map(|item| parse_trait_member(item.source.trim(), item.base, errors))
         .collect()
 }
 
-fn parse_trait_member(item: &str, item_base: usize) -> TraitMember {
+fn parse_trait_member(
+    item: &str,
+    item_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> TraitMember {
     let item = item.trim_end_matches(';').trim();
     if let Some(rest) = item.strip_prefix("type ") {
         let (name, value) = split_top_level_binding(rest).map_or((rest, None), |(name, value)| {
-            (name, parse_type_ref(value).ok())
+            let value_source = value.trim();
+            let value_base = item_base + item.find(value_source).unwrap_or_default();
+            (
+                name,
+                parse_type_ref_or_error(value_source, value_base, errors),
+            )
         });
         let (name, params) = parse_associated_type_head(name.trim());
         return TraitMember::AssociatedType {
@@ -1270,7 +1349,15 @@ fn parse_trait_member(item: &str, item_base: usize) -> TraitMember {
                 (head, Some((body, body_base)))
             });
         return parse_fn_signature(signature_source).map_or_else(
-            |_| TraitMember::Raw(item.to_owned()),
+            |error| {
+                errors.push(simple_error(
+                    item_base,
+                    signature_source.len(),
+                    &error.to_string(),
+                    "a valid trait function signature",
+                ));
+                TraitMember::Raw(item.to_owned())
+            },
             |signature| {
                 let (body, body_statements, body_value) = body.map_or_else(
                     || (None, Vec::new(), None),
@@ -1284,7 +1371,7 @@ fn parse_trait_member(item: &str, item_base: usize) -> TraitMember {
                     signature,
                     body,
                     body_statements,
-                    body_value,
+                    body_value: body_value.map(Box::new),
                 }
             },
         );
@@ -1292,19 +1379,30 @@ fn parse_trait_member(item: &str, item_base: usize) -> TraitMember {
     TraitMember::Raw(item.to_owned())
 }
 
-pub(super) fn parse_impl_members(body: &str, body_base: usize) -> Vec<ImplMember> {
+pub(super) fn parse_impl_members(
+    body: &str,
+    body_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<ImplMember> {
     super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
-        .map(|item| parse_impl_member(item.source.trim(), item.base))
+        .map(|item| parse_impl_member(item.source.trim(), item.base, errors))
         .collect()
 }
 
-fn parse_impl_member(item: &str, item_base: usize) -> ImplMember {
+fn parse_impl_member(
+    item: &str,
+    item_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> ImplMember {
     let item = item.trim_end_matches(';').trim();
     if let Some(rest) = item.strip_prefix("type ") {
-        if let Some((name, value)) = split_top_level_binding(rest)
-            && let Ok(value) = parse_type_ref(value)
-        {
+        if let Some((name, value)) = split_top_level_binding(rest) {
+            let value_source = value.trim();
+            let value_base = item_base + item.find(value_source).unwrap_or_default();
+            let Some(value) = parse_type_ref_or_error(value_source, value_base, errors) else {
+                return ImplMember::Raw(item.to_owned());
+            };
             let (name, params) = parse_associated_type_head(name);
             return ImplMember::AssociatedType {
                 name,
@@ -1322,7 +1420,15 @@ fn parse_impl_member(item: &str, item_base: usize) -> ImplMember {
         && head.starts_with("fn ")
     {
         return parse_fn_signature(head).map_or_else(
-            |_| ImplMember::Raw(item.to_owned()),
+            |error| {
+                errors.push(simple_error(
+                    item_base,
+                    head.len(),
+                    &error.to_string(),
+                    "a valid impl function signature",
+                ));
+                ImplMember::Raw(item.to_owned())
+            },
             |signature| {
                 let (body_statements, body_value) =
                     parse_scope_authored_expr_body_with_base(body, body_base);
@@ -1330,14 +1436,22 @@ fn parse_impl_member(item: &str, item_base: usize) -> ImplMember {
                     signature,
                     body: body.to_owned(),
                     body_statements,
-                    body_value,
+                    body_value: body_value.map(Box::new),
                 }
             },
         );
     }
     if item.starts_with("fn ") {
         return parse_fn_signature(item).map_or_else(
-            |_| ImplMember::Raw(item.to_owned()),
+            |error| {
+                errors.push(simple_error(
+                    item_base,
+                    item.len(),
+                    &error.to_string(),
+                    "a valid impl function signature",
+                ));
+                ImplMember::Raw(item.to_owned())
+            },
             |signature| ImplMember::Function {
                 signature,
                 body: String::new(),

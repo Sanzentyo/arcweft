@@ -447,7 +447,7 @@ impl TypeChecker<'_> {
             Expr::EntityRef(_)
             | Expr::Literal(Literal::String(_) | Literal::Bool(_))
             | Expr::Path(_) => {}
-            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
                 self.expect_expr_type(expr, &TypeKind::I64, "image param integer");
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
@@ -465,7 +465,7 @@ impl TypeChecker<'_> {
 
     fn check_presentation_image_ratio_or_milli_value(&mut self, expr: &Expr, context: &str) {
         match expr {
-            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
                 self.expect_expr_type(expr, &TypeKind::I32, context);
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
@@ -481,7 +481,7 @@ impl TypeChecker<'_> {
     fn check_presentation_viewport_dimension_value(&mut self, expr: &Expr) {
         match expr {
             Expr::Literal(Literal::UnitNumber { .. } | Literal::String(_)) => {}
-            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
                 self.expect_expr_type(expr, &TypeKind::I32, "viewport dimension");
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
@@ -498,7 +498,7 @@ impl TypeChecker<'_> {
             Expr::Literal(Literal::Duration { .. }) => {
                 self.expect_expr_type(expr, &TypeKind::Duration, "image playback time");
             }
-            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
                 self.expect_expr_type(expr, &TypeKind::I32, "image playback time seconds");
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
@@ -513,7 +513,7 @@ impl TypeChecker<'_> {
 
     fn check_presentation_image_transform_view_value(&mut self, expr: &Expr) {
         match expr {
-            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
                 self.expect_expr_type(expr, &TypeKind::I32, "image transform view milli");
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {

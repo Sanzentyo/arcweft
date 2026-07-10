@@ -161,14 +161,14 @@ pub(super) fn spread_item_type(ty: &TypeKind) -> Option<&TypeKind> {
 #[derive(Clone, Copy)]
 pub(super) enum FixedLiteralSpreadSlot<'a> {
     Expr(&'a Expr),
-    Int { suffix: Option<&'a str> },
+    Int(&'a arcweft_lang_syntax::expr::IntLiteral),
 }
 
 impl<'a> FixedLiteralSpreadSlot<'a> {
     pub(super) const fn source_expr(self) -> Option<&'a Expr> {
         match self {
             Self::Expr(expr) => Some(expr),
-            Self::Int { .. } => None,
+            Self::Int(_) => None,
         }
     }
 }
@@ -177,11 +177,9 @@ pub(super) fn fixed_literal_spread_slots(value: &Expr) -> Option<Vec<FixedLitera
     match value {
         Expr::BracketSeq(items) => Some(items.iter().map(FixedLiteralSpreadSlot::Expr).collect()),
         Expr::NumericBracketSeq(seq) => Some(
-            seq.values()
+            seq.literals()
                 .iter()
-                .map(|_| FixedLiteralSpreadSlot::Int {
-                    suffix: seq.suffix(),
-                })
+                .map(FixedLiteralSpreadSlot::Int)
                 .collect(),
         ),
         _ => None,

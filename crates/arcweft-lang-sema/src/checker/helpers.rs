@@ -100,7 +100,7 @@ pub(super) fn literal_type(literal: &Literal) -> Option<TypeKind> {
     match literal {
         Literal::String(_) => Some(TypeKind::String),
         Literal::Char { .. } => Some(TypeKind::Char),
-        Literal::Int { suffix, .. } => numeric_literal_suffix_type(suffix.as_deref()),
+        Literal::Int(literal) => literal.suffix().map(TypeKind::from),
         Literal::Float { suffix, .. } => {
             numeric_literal_suffix_type(suffix.as_ref().map(|suffix| suffix.as_str()))
         }
@@ -853,7 +853,9 @@ pub(super) fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
 
 pub(super) fn array_repeat_len_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(Literal::Int { value, .. }) if *value >= 0 => Some(value.to_string()),
+        Expr::Literal(Literal::Int(literal)) => {
+            literal.magnitude().ok().map(|value| value.to_string())
+        }
         _ => None,
     }
 }

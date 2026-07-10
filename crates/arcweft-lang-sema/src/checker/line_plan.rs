@@ -39,21 +39,24 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_line_plan_item(&mut self, item: &LinePlanItem) -> Option<TypeKind> {
         match item {
-            LinePlanItem::Init(statements)
-            | LinePlanItem::Stmt(Stmt::DeferBlock { statements, .. }) => self
-                .with_child_task_scope(false, |checker| {
-                    checker.check_line_plan_statements(statements)
-                }),
+            LinePlanItem::Init(statements) => self.with_child_task_scope(false, |checker| {
+                checker.check_line_plan_statements(statements)
+            }),
             LinePlanItem::Thread(thread) => self.check_thread_body(thread.body()),
             LinePlanItem::Stmt(stmt) => {
-                if matches!(stmt, Stmt::Yield(_)) {
+                if let Stmt::DeferBlock { statements, .. } = stmt.as_ref() {
+                    return self.with_child_task_scope(false, |checker| {
+                        checker.check_line_plan_statements(statements)
+                    });
+                }
+                if matches!(stmt.as_ref(), Stmt::Yield(_)) {
                     self.errors.push(TypeCheckError::new(
                         "`yield` cannot be used in a dialogue line plan; use `out` for line results"
                             .to_owned(),
                     ));
                     return None;
                 }
-                self.check_stmt(stmt);
+                self.check_stmt(stmt.as_ref());
                 None
             }
             LinePlanItem::On { trigger, body } => {

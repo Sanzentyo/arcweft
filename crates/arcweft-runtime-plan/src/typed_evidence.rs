@@ -26,6 +26,9 @@ pub struct RuntimeTypedLoweringEvidence {
 /// Runtime-plan decisions proven by type checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeTypedLoweringEvidenceKind {
+    /// Concrete primitive representation selected for a numeric literal or
+    /// compact integer sequence by semantic analysis.
+    ResolvedNumericType { target: RuntimeNumericType },
     /// A call expression's callee type checked as a function value.
     FunctionValueCall {
         callee: Option<String>,
@@ -47,12 +50,73 @@ pub enum RuntimeTypedLoweringEvidenceKind {
     },
 }
 
+/// Runtime-plan-local numeric primitive selected by the type checker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeNumericType {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    ISize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    F32,
+    F64,
+}
+
+impl RuntimeNumericType {
+    /// Canonical Arcweft source spelling of this numeric primitive.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::ISize => "isize",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+            Self::USize => "usize",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+        }
+    }
+}
+
+impl From<arcweft_lang_hir::syntax::expr::IntSuffix> for RuntimeNumericType {
+    fn from(suffix: arcweft_lang_hir::syntax::expr::IntSuffix) -> Self {
+        use arcweft_lang_hir::syntax::expr::IntSuffix;
+        match suffix {
+            IntSuffix::I8 => Self::I8,
+            IntSuffix::I16 => Self::I16,
+            IntSuffix::I32 => Self::I32,
+            IntSuffix::I64 => Self::I64,
+            IntSuffix::I128 => Self::I128,
+            IntSuffix::ISize => Self::ISize,
+            IntSuffix::U8 => Self::U8,
+            IntSuffix::U16 => Self::U16,
+            IntSuffix::U32 => Self::U32,
+            IntSuffix::U64 => Self::U64,
+            IntSuffix::U128 => Self::U128,
+            IntSuffix::USize => Self::USize,
+        }
+    }
+}
+
 /// Runtime argument order proven for a data-last method fallback call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeDataLastMethodFallbackArg {
-    /// Source method-call argument at the given index.
+    /// Source method-call argument in the fallback callable's first stage.
     CallArg { index: usize },
-    /// The method-call receiver appended as the data-last callable argument.
+    /// The method receiver applied as one separate final call group.
     Receiver,
 }
 
@@ -82,6 +146,22 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
                     } if expected_arg_count == &arg_count
                         && expected_callee.as_deref() == callee
                 )
+        })
+    }
+
+    pub(crate) fn resolved_numeric_type(
+        self,
+        expression_id: RuntimeTypedExpressionId,
+    ) -> Option<RuntimeNumericType> {
+        self.evidence.iter().find_map(|evidence| {
+            if evidence.expression_id != expression_id {
+                return None;
+            }
+            let RuntimeTypedLoweringEvidenceKind::ResolvedNumericType { target } = evidence.kind
+            else {
+                return None;
+            };
+            Some(target)
         })
     }
 

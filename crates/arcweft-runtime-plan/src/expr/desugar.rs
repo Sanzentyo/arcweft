@@ -146,69 +146,6 @@ fn substitute_pipe_left_arg(arg: &CallArg, lhs: &Expr) -> CallArg {
     }
 }
 
-pub(crate) fn expr_contains_pipe_left(expr: &Expr) -> bool {
-    match expr {
-        Expr::Placeholder(Placeholder::PipeLeft) => true,
-        Expr::Tuple(items) | Expr::BracketSeq(items) => items.iter().any(expr_contains_pipe_left),
-        Expr::ArrayRepeat { value, len }
-        | Expr::Binary {
-            lhs: value,
-            rhs: len,
-            ..
-        } => expr_contains_pipe_left(value) || expr_contains_pipe_left(len),
-        Expr::Call { callee, args } => {
-            expr_contains_pipe_left(callee) || args.iter().any(call_arg_contains_pipe_left)
-        }
-        Expr::Select(select) => expr_contains_pipe_left(select.target()),
-        Expr::Try { expr: target } => expr_contains_pipe_left(target),
-        Expr::Index { target, index } => {
-            expr_contains_pipe_left(target) || expr_contains_pipe_left(index)
-        }
-        Expr::Unary { expr, .. } | Expr::Await { expr, .. } | Expr::Closure { body: expr, .. } => {
-            expr_contains_pipe_left(expr)
-        }
-        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
-            .iter()
-            .any(|(_, value)| expr_contains_pipe_left(value)),
-        Expr::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
-            expr_contains_pipe_left(condition)
-                || expr_contains_pipe_left(then_branch)
-                || else_branch.as_deref().is_some_and(expr_contains_pipe_left)
-        }
-        Expr::IfLet {
-            expr,
-            guard,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            expr_contains_pipe_left(expr)
-                || guard.as_deref().is_some_and(expr_contains_pipe_left)
-                || expr_contains_pipe_left(then_branch)
-                || else_branch.as_deref().is_some_and(expr_contains_pipe_left)
-        }
-        Expr::Match { scrutinee, arms } => {
-            expr_contains_pipe_left(scrutinee)
-                || arms.iter().any(|arm| {
-                    arm.guard().is_some_and(expr_contains_pipe_left)
-                        || expr_contains_pipe_left(arm.value())
-                })
-        }
-        _ => false,
-    }
-}
-
-fn call_arg_contains_pipe_left(arg: &CallArg) -> bool {
-    match arg {
-        CallArg::Positional(value) => expr_contains_pipe_left(value),
-        CallArg::Named { value, .. } | CallArg::Spread { value } => expr_contains_pipe_left(value),
-    }
-}
-
 pub(super) fn substitute_partial_placeholder(expr: &Expr, param_name: &str) -> Expr {
     match expr {
         Expr::Placeholder(Placeholder::Partial) => Expr::Path(param_name.into()),

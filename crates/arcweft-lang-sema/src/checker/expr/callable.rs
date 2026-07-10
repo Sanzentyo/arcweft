@@ -1,3 +1,4 @@
+use super::support::FixedLiteralSpreadSlot;
 use super::{
     CallArg, EntityKind, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
@@ -7,7 +8,6 @@ use crate::checker::{CurriedSignatureCallValue, PendingCurriedHigherOrderArg};
 use crate::effect_model::CallableId;
 use crate::effect_row::EffectRow;
 use crate::env::FunctionParam;
-use arcweft_lang_syntax::expr::Literal;
 
 impl TypeChecker<'_> {
     pub(super) fn check_path_call_expr(
@@ -281,7 +281,7 @@ impl TypeChecker<'_> {
         let mut unsupported_arg_syntax = false;
         for arg in args {
             match arg {
-                CallArg::Positional(value) => supplied.push(FunctionValueArgSlot::Expr(value)),
+                CallArg::Positional(value) => supplied.push(FixedLiteralSpreadSlot::Expr(value)),
                 CallArg::Named { name, value } => {
                     unsupported_arg_syntax = true;
                     self.errors
@@ -295,15 +295,12 @@ impl TypeChecker<'_> {
                 }
                 CallArg::Spread { value } => match value.as_ref() {
                     Expr::BracketSeq(items) => {
-                        supplied.extend(items.iter().map(FunctionValueArgSlot::Expr));
+                        self.reserve_fixed_literal_spread_container_expr(value);
+                        supplied.extend(items.iter().map(FixedLiteralSpreadSlot::Expr));
                     }
                     Expr::NumericBracketSeq(seq) => {
-                        supplied.extend(seq.values().iter().map(|value| {
-                            FunctionValueArgSlot::Int {
-                                value: *value,
-                                suffix: seq.suffix(),
-                            }
-                        }));
+                        self.reserve_fixed_literal_spread_container_expr(value);
+                        supplied.extend(seq.literals().iter().map(FixedLiteralSpreadSlot::Int));
                     }
                     _ => {
                         unsupported_arg_syntax = true;
@@ -325,22 +322,10 @@ impl TypeChecker<'_> {
 
     fn check_function_value_arg_slot(
         &mut self,
-        slot: &FunctionValueArgSlot<'_>,
+        slot: &FixedLiteralSpreadSlot<'_>,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
-        match slot {
-            FunctionValueArgSlot::Expr(expr) => self.check_expr_with_expected(expr, expected),
-            FunctionValueArgSlot::Int { value, suffix } => {
-                let raw =
-                    suffix.map_or_else(|| value.to_string(), |suffix| format!("{value}{suffix}"));
-                let expr = Expr::Literal(Literal::Int {
-                    raw,
-                    value: *value,
-                    suffix: suffix.map(str::to_owned),
-                });
-                self.check_expr_with_expected(&expr, expected)
-            }
-        }
+        self.check_fixed_literal_spread_slot(*slot, expected)
     }
 }
 
@@ -364,23 +349,9 @@ struct FunctionValueCallCheck {
     arity_mismatch: bool,
 }
 
-enum FunctionValueArgSlot<'a> {
-    Expr(&'a Expr),
-    Int { value: i64, suffix: Option<&'a str> },
-}
-
 struct FunctionValueArgSlots<'a> {
-    supplied: Vec<FunctionValueArgSlot<'a>>,
+    supplied: Vec<FixedLiteralSpreadSlot<'a>>,
     unsupported_arg_syntax: bool,
-}
-
-impl<'a> FunctionValueArgSlot<'a> {
-    fn source_expr(&self) -> Option<&'a Expr> {
-        match self {
-            Self::Expr(expr) => Some(expr),
-            Self::Int { .. } => None,
-        }
-    }
 }
 
 fn function_value_args_have_fixed_positional_slots(args: &[CallArg]) -> bool {

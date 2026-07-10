@@ -1246,8 +1246,8 @@ impl TypeChecker<'_> {
     }
 
     fn check_wait_positive_u32_literal(&mut self, name: &str, value: &Expr) {
-        if let Expr::Literal(Literal::Int { value: literal, .. }) = value
-            && *literal < 1
+        if let Expr::Literal(Literal::Int(literal)) = value
+            && literal.magnitude().is_ok_and(|magnitude| magnitude < 1)
         {
             self.errors.push(TypeCheckError::new(format!(
                 "wait {name} must be at least 1"
