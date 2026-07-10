@@ -1,5 +1,6 @@
 pub mod choice;
 pub mod common;
+pub mod decoration;
 pub mod dialogue;
 pub mod flow;
 pub mod ids;

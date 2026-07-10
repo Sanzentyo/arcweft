@@ -36,7 +36,9 @@ test-crate crate:
     @cargo test -p {{ crate }} --quiet
 
 test-rich-text:
+    @cargo test -p arcweft-lang-syntax -p arcweft-lang-hir -p arcweft-lang-sema -p arcweft-runtime-plan --lib --tests --quiet
     @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet
+    @cargo run -p arcweft-cli --quiet -- check samples/rich-text-decorations.arcw
     @just test-cli-native
 
 test-rich-text-object-goal:

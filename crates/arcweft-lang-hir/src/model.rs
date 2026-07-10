@@ -2,6 +2,7 @@ use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
         common::{TextRange, Visibility},
+        decoration::DecorationItem,
         dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
@@ -76,6 +77,7 @@ pub struct HirAgent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirTopLevelDecl {
     Callable(CallableItem),
+    Decoration(DecorationItem),
     State(StateItem),
     Trait(TraitItem),
     Impl(ImplItem),

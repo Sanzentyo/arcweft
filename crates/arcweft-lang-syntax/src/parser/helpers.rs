@@ -1,6 +1,5 @@
 //! Shared parser helpers that are not tied to a single grammar family.
 
-use super::Parser;
 use super::control_flow::parse_named_block_expr;
 use super::headers::{
     parse_required_entity_ref_syntax, parse_required_id_ref, parse_visibility_prefix, simple_error,
@@ -9,6 +8,7 @@ use super::line_plan::parse_line_plan_body;
 use super::line_plan::parse_line_plan_body_with_body_base;
 use super::recovery::ParseError;
 use super::statements::parse_label_ref;
+use super::{Parser, parse_dialogue_content};
 use crate::ast::{
     common::{DocBlock, TextRange, UseItem, UseTree},
     dialogue::{LineArg, LineOptions, LineOptionsInit},
@@ -857,7 +857,7 @@ pub(super) fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
     let content = source[open + 1..close].trim();
     Some(Expr::DialogueCall {
         callee: Box::new(parse_expr_lossy(callee)),
-        content: content.to_owned(),
+        content: Box::new(parse_dialogue_content(content)),
         plan: None,
     })
 }

@@ -632,6 +632,48 @@ flow opening {
     }
 
     #[test]
+    fn hover_includes_expanded_decoration_style_contributions() {
+        let source = r##"
+decoration red(value = "#a8b5ff") {
+    color(value=value)
+}
+
+pub character alice {}
+
+flow opening {
+    alice: [decorate .red]colored[/decorate][p]
+}
+"##;
+        let mut store = DocumentStore::default();
+        let uri = "file:///story.arcw".parse().expect("uri");
+        let document = store.open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
+            },
+            PositionEncoding::Utf16,
+        );
+        let offset = source.find("colored").expect("decorated content offset");
+        let position = document.line_index().position_from_byte_offset(offset);
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let hover = hover(&profile, &document, position).expect("effective style hover");
+
+        match hover.contents {
+            HoverContents::Scalar(MarkedString::String(text)) => {
+                assert!(text.contains("effective dialogue style for `alice`"));
+                assert!(text.contains("active contributors:"));
+                assert!(text.contains("rich_text.text.color = #a8b5ff"));
+                assert!(text.contains("inline_span"));
+            }
+            other => panic!("unexpected hover contents: {other:?}"),
+        }
+    }
+
+    #[test]
     fn hover_describes_closed_flow_and_inferred_function_effect_rows() {
         let source = r#"
 extern capability fs {

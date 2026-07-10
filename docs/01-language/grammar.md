@@ -5,7 +5,10 @@ This is a compact summary of the current Arcweft surface grammar. It is intentio
 ## Lexical conventions
 
 ```text
-Ident        := /[A-Za-z_][A-Za-z0-9_]*/
+AsciiDigit   := '0' .. '9'
+IdentStart   := '_' | UnicodeAlphabetic
+IdentContinue:= IdentStart | AsciiDigit
+Ident        := IdentStart IdentContinue*
 IdentPath    := Ident ('.' Ident)*
 EntityRef    := '@' Ident ('.' Ident)* | '@<' EntityBody '>'
 EntityRefSyntax := EntityRef | FamilyRelativeEntityRef
@@ -143,6 +146,7 @@ ItemDecl     :=
   | HookDecl
   | MemoDecl
   | DialogueDefaultsDecl
+  | DecorationDecl
   | AssetDecl
   | ImageDecl
   | TypeDecl
@@ -181,6 +185,57 @@ They are not the recommended spelling for ordinary hand-authored asset
 references.
 Image payload packaging is still handled by the bundle image asset table, which
 records encoded files and decoded metadata.
+
+Reusable dialogue-text decorations use a compile-time declaration surface:
+
+```text
+DecorationDecl    := 'decoration' Ident DecorationParams DecorationBody
+DecorationParams  := '(' (DecorationParam (',' DecorationParam)* ','?)? ')'
+DecorationParam   := Ident ('=' DecorationConst)? | '...' Ident
+DecorationBody    := '{' Newline* DecorationBuilder
+                     (DecorationSeparator DecorationBuilder)*
+                     DecorationSeparator? '}'
+DecorationSeparator := Newline+ | (';' Newline*)
+DecorationBuilder := Ident CallArgs
+DecorationConst   := BoolLiteral | SignedDecorationNumber
+                   | String | '.' Ident | Ident
+SignedDecorationNumber := '-'? (IntLiteral | FloatLiteral | UnitNumber
+                                 | DurationLiteral)
+```
+
+The body is non-empty. Consecutive builders are separated by a physical newline
+or `;`; whitespace alone does not separate two builders. Builder call shapes
+are closed as follows:
+
+| Builder | Accepted call arguments |
+| --- | --- |
+| `em`, `strong` | none |
+| `color`, `font`, `size` | exactly one positional value or `value=...` |
+| `style` | one literal selector from `.italic`, `.oblique`, `.opacity`, `.layer`, `.meta`, `.z_index`, then named values and at most one rest spread |
+| `layout` | one literal selector from `.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, `.ruby_over`, `.ruby_under`, `.ruby_inter_character`, then named values and at most one rest spread |
+| `transform` | one literal selector from `.offset`, `.pos`, `.rotate`, `.scale`, `.skew`, then named values and at most one rest spread |
+| `effect` | one registry-extensible literal `.Ident` selector, then named values and at most one rest spread |
+| `decorate` | one literal module-local decoration `.Ident` selector, then named values and at most one rest spread |
+
+The selector position is never a parameter reference. The rest parameter, when
+present, must be last. Non-selector builder arguments may refer to declared
+parameters and may forward the rest bag with the ordinary `Expr...` call spread
+spelling. When that spread appears in `decorate(.target, rest...)`, the selected
+target declaration must itself declare a final rest parameter. This is checked
+eagerly while validating the declaration, even if a particular invocation would
+produce an empty bag: an open set of forwarded keys cannot bind to a target that
+declares only a closed set of named parameters. Decoration constants are closed
+authoring values, not runtime expressions. A bare identifier in a builder value
+is a parameter reference; raw registry words in a builder must be quoted so
+misspelled parameters remain diagnosable. Direct rich-text tag aliases are not
+accepted as decoration builder selectors; the table above is the canonical
+closed inventory.
+
+`DecorationRawToken` is the dialogue-tag-only escape hatch for renderer-owned
+payloads such as `#ff4050`, `0,1`, and `source-shader`. It must not contain
+whitespace, `#[`, `$(`, or `(`, `)`, `[`, `]`, `{`, `}`, `+`, `*`, or `/`, and
+it must not contain quote characters or be a dotted runtime path. Quoting is
+canonical whenever a value does not satisfy this closed token grammar.
 
 `image` declarations establish stable presentation-object ids such as
 `@image.sample.pulse_sprite`. Their bodies use the same flat fields as bounded
@@ -264,7 +319,7 @@ DialogueLine :=
     SpeakerRef CallArgs? ':' DialogueText
   | Callee CallArgs? '[' DialogueContent ']'
 
-CallArgs       := '(' CallArg (',' CallArg)* ','? ')'
+CallArgs       := '(' (CallArg (',' CallArg)* ','?)? ')'
 CallArg        := Expr | Ident '=' Expr | Expr '...'
 RelativeLineId := RelativeId | FamilyRelativeEntityRef
 LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
@@ -277,7 +332,14 @@ LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'rich_text' '=' Expr
                 | Ident '=' Expr
 DialogueText   := TextUntilLineEnd | Newline IndentedText
-DialogueContent:= TextAndDialogueTags*
+DialogueContent:= (TextAndDialogueTags | DecorationSpan)*
+DecorationSpan := '[' 'decorate' TagSpace '.' Ident
+                  (TagSpace DecorationTagArg)* ']'
+                  DialogueContent '[/decorate]'
+DecorationTagArg := Ident '=' DecorationTagValue
+DecorationTagValue := DecorationConst | DecorationRawToken
+DecorationRawToken := <safe token constrained above>
+TagSpace        := UnicodeWhitespace+
 
 LinePlanAttach := 'with' Block
                 | 'with' ':' Newline IndentedItems

@@ -5,7 +5,12 @@ use arcweft_render_text::{
 };
 
 pub(crate) fn param_from_value(value: &str) -> RichTextParam {
-    let value = trim_quotes(value);
+    let value = value.trim();
+    if matching_outer_quotes(value) {
+        return RichTextParam::Text {
+            value: trim_quotes(value).to_owned(),
+        };
+    }
     if value == "true" {
         return RichTextParam::Bool { value: true };
     }
@@ -75,13 +80,66 @@ pub(crate) fn milli_attr(attrs: &BTreeMap<String, String>, name: &str) -> Option
 }
 
 pub(crate) fn parse_attrs(source: &str) -> BTreeMap<String, String> {
-    source
-        .split_whitespace()
+    split_whitespace_attr_items(source)
+        .into_iter()
         .filter_map(|item| {
             let (key, value) = item.split_once('=')?;
             Some((key.to_owned(), trim_quotes(value).to_owned()))
         })
         .collect()
+}
+
+/// Parses named attributes while retaining outer quotes so parameter inference
+/// can distinguish authored strings from numeric, boolean, selector, and raw
+/// tokens. Metadata readers should continue to use [`parse_attrs`].
+pub(crate) fn parse_typed_attrs(source: &str) -> BTreeMap<String, String> {
+    split_whitespace_attr_items(source)
+        .into_iter()
+        .filter_map(|item| {
+            let (key, value) = item.split_once('=')?;
+            Some((key.to_owned(), value.to_owned()))
+        })
+        .collect()
+}
+
+/// Splits dialogue tag attributes without breaking quoted values or comma
+/// payloads such as `dir=0,1`.
+///
+/// Commas are deliberately not separators in dialogue-text mode. They remain
+/// renderer-owned parameter syntax, whereas declaration attributes parsed by
+/// [`parse_attr_args`] may use comma-separated item lists.
+fn split_whitespace_attr_items(source: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+    for ch in source.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+        match (quote, ch) {
+            (Some(_), '\\') => {
+                current.push(ch);
+                escaped = true;
+            }
+            (Some(active), next) if next == active => {
+                quote = None;
+                current.push(ch);
+            }
+            (None, '"' | '\'') => {
+                quote = Some(ch);
+                current.push(ch);
+            }
+            (None, next) if next.is_whitespace() => {
+                push_attr_item(&mut items, &mut current);
+            }
+            _ => current.push(ch),
+        }
+    }
+    push_attr_item(&mut items, &mut current);
+    items
 }
 
 pub(crate) fn parse_attr_args(source: &str) -> BTreeMap<String, String> {
@@ -143,4 +201,10 @@ pub(crate) fn trim_quotes(value: &str) -> &str {
                 .and_then(|value| value.strip_suffix('\''))
         })
         .unwrap_or(value)
+}
+
+fn matching_outer_quotes(value: &str) -> bool {
+    value.len() >= 2
+        && ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
 }

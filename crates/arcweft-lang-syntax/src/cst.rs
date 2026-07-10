@@ -47,6 +47,16 @@ pub type RowanTextRange = rowan::TextRange;
 /// Rowan text size type used by CST nodes and tokens.
 pub type TextSize = rowan::TextSize;
 
+/// Returns whether `value` is exactly one canonical Arcweft identifier token.
+///
+/// This shares the lossless lexer's Unicode-letter/underscore start rule and
+/// ASCII-digit continuation rule so semantic and lowering layers do not grow
+/// subtly different identifier predicates.
+pub fn is_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    chars.next().is_some_and(lexer::is_ident_start) && chars.all(lexer::is_ident_continue)
+}
+
 /// Lossless source line projected from CST line nodes.
 ///
 /// This is the typed parser's temporary event input while the full grammar is
@@ -183,6 +193,7 @@ pub(crate) enum CstTopLevelLineKind {
 pub(crate) enum CstTopLevelItemKind {
     Flow,
     Function,
+    Decoration,
     Agent,
     Callable,
     State,

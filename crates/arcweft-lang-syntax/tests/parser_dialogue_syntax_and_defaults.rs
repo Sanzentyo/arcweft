@@ -1,6 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{
-        dialogue::DialogueToken,
+        dialogue::{DialogueContent, DialogueToken},
         flow::{FlowItem, Stmt},
         items::Item,
     },
@@ -108,6 +108,44 @@ flow @flow.opening opening {
         &source[plan.range().as_range()],
         "    with:\n        out score + 1i64"
     );
+}
+
+#[test]
+fn multiline_let_dialogue_call_expr_range_slices_lf_and_crlf_source() {
+    let source_lf = "flow @flow.opening opening {\n    let result = alice.say()[\n        Intro\n        [.sparkle amp=2px]effect[/][p]\n    ]\n}\n";
+    for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+        let tree = parse_ok(source.clone());
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            expr: Expr::DialogueCall { content, .. },
+            expr_source: Some(expr_source),
+            expr_range: Some(expr_range),
+            ..
+        }) = &flow.body()[0]
+        else {
+            panic!("expected dialogue call let binding with source");
+        };
+
+        assert_eq!(
+            source[expr_range.as_range()].replace("\r\n", "\n"),
+            *expr_source
+        );
+        assert!(source[expr_range.as_range()].ends_with(']'));
+        let sparkle = content
+            .tokens()
+            .iter()
+            .find_map(|token| match token {
+                DialogueToken::InferredTag(tag) if tag.name() == ".sparkle" => Some(tag),
+                _ => None,
+            })
+            .expect("typed sparkle tag");
+        let sparkle_source = content
+            .source_range(sparkle.range())
+            .expect("expression dialogue provenance");
+        assert_eq!(&source[sparkle_source.as_range()], "[.sparkle amp=2px]");
+    }
 }
 
 #[test]
@@ -245,10 +283,158 @@ flow opening {
     assert_eq!(expr_tokens.len(), 2);
     assert!(matches!(expr_tokens[0].expr(), Expr::Binary { .. }));
     assert_eq!(expr_tokens[0].source(), "score + 1i64");
-    assert_eq!(&source[expr_tokens[0].range().as_range()], "score + 1i64");
+    assert_eq!(
+        &line.content().raw()[expr_tokens[0].range().as_range()],
+        "score + 1i64"
+    );
+    assert_eq!(
+        &source[line
+            .content()
+            .source_range(expr_tokens[0].range())
+            .expect("binary interpolation source range")
+            .as_range()],
+        "score + 1i64"
+    );
     assert!(matches!(expr_tokens[1].expr(), Expr::Path(path) if path == "player_name"));
     assert_eq!(expr_tokens[1].source(), "player_name");
-    assert_eq!(&source[expr_tokens[1].range().as_range()], "player_name");
+    assert_eq!(
+        &line.content().raw()[expr_tokens[1].range().as_range()],
+        "player_name"
+    );
+    assert_eq!(
+        &source[line
+            .content()
+            .source_range(expr_tokens[1].range())
+            .expect("path interpolation source range")
+            .as_range()],
+        "player_name"
+    );
+}
+
+fn assert_later_line_dialogue_ranges(source: &str, content: &DialogueContent) {
+    let expression = content
+        .tokens()
+        .iter()
+        .find_map(|token| match token {
+            DialogueToken::Expr(expression) => Some(expression),
+            _ => None,
+        })
+        .expect("later-line dialogue expression");
+    assert_eq!(
+        &content.raw()[expression.range().as_range()],
+        "score + 1i64"
+    );
+    assert_eq!(
+        &source[content
+            .source_range(expression.range())
+            .expect("projected expression range")
+            .as_range()],
+        "score + 1i64"
+    );
+
+    let tag = content
+        .tokens()
+        .iter()
+        .find_map(|token| match token {
+            DialogueToken::Tag(tag) if tag.name() == "decorate" => Some(tag),
+            _ => None,
+        })
+        .expect("later-line decorate tag");
+    assert_eq!(
+        &content.raw()[tag.range().as_range()],
+        "[decorate .warning mood=\"very urgent\"]"
+    );
+    assert_eq!(
+        &source[content
+            .source_range(tag.range())
+            .expect("projected tag range")
+            .as_range()],
+        "[decorate .warning mood=\"very urgent\"]"
+    );
+    let mood = tag
+        .arguments()
+        .iter()
+        .find(|argument| argument.name() == Some("mood"))
+        .expect("mood argument");
+    assert_eq!(
+        &content.raw()[mood.value().range().as_range()],
+        "\"very urgent\""
+    );
+    assert_eq!(
+        &source[content
+            .source_range(mood.value().range())
+            .expect("projected tag value range")
+            .as_range()],
+        "\"very urgent\""
+    );
+}
+
+fn speaker_content(tree: &arcweft_lang_syntax::ast::items::TypedSyntaxTree) -> &DialogueContent {
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+        panic!("expected speaker line");
+    };
+    line.content()
+}
+
+#[test]
+fn multiline_dialogue_ranges_project_across_lf_normalization() {
+    let source = r#"flow opening {
+    narrator: Iteration #[
+        score + 1i64
+    ] [decorate .warning mood="very urgent"]text[/decorate]
+}
+"#;
+    let tree = parse_ok(source);
+    let content = speaker_content(&tree);
+    assert!(content.raw().contains("#[\nscore + 1i64\n]"));
+    assert_later_line_dialogue_ranges(source, content);
+}
+
+#[test]
+fn multiline_dialogue_ranges_project_across_crlf_normalization() {
+    let source = "flow opening {\r\n    narrator: Iteration #[\r\n        score + 1i64\r\n    ] [decorate .warning mood=\"very urgent\"]text[/decorate]\r\n}\r\n";
+    let tree = parse_ok(source);
+    let content = speaker_content(&tree);
+    assert!(content.raw().contains("#[\nscore + 1i64\n]"));
+    assert_later_line_dialogue_ranges(source, content);
+}
+
+#[test]
+fn indented_dialogue_ranges_project_from_trimmed_lines() {
+    let source = r#"flow opening {
+    narrator:
+        Intro
+        #[score + 1i64] [decorate .warning mood="very urgent"]text[/decorate]
+}
+"#;
+    let tree = parse_ok(source);
+    let content = speaker_content(&tree);
+    assert_eq!(
+        content.raw(),
+        "Intro\n#[score + 1i64] [decorate .warning mood=\"very urgent\"]text[/decorate]"
+    );
+    assert_later_line_dialogue_ranges(source, content);
+}
+
+#[test]
+fn bracket_content_call_ranges_project_from_normalized_lines() {
+    let source = r#"flow opening {
+    alice.say()[Intro
+        #[score + 1i64] [decorate .warning mood="very urgent"]text[/decorate]
+    ]
+}
+"#;
+    let tree = parse_ok(source);
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::ContentCall(call) = &flow.body()[0] else {
+        panic!("expected content call");
+    };
+    assert_later_line_dialogue_ranges(source, call.content());
 }
 
 #[test]

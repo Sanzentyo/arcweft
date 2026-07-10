@@ -2,6 +2,7 @@
 
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+use arcweft_dialogue::rich_text::canonical_tag_name;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -512,13 +513,16 @@ impl RichTextStyle {
             "font" => Self::Font {
                 family: RichTextFontFamily::from_attrs(attrs),
             },
-            "size" => Self::Size {
-                points: attrs
-                    .split_whitespace()
-                    .next()
-                    .and_then(|value| value.parse::<u16>().ok()),
-                raw: attrs.to_owned(),
-            },
+            "size" => {
+                let value = scalar_tag_value(attrs);
+                Self::Size {
+                    points: value
+                        .split_whitespace()
+                        .next()
+                        .and_then(|value| value.parse::<u16>().ok()),
+                    raw: value.to_owned(),
+                }
+            }
             "speed" => Self::Speed {
                 value: attrs.to_owned(),
             },
@@ -581,25 +585,27 @@ impl RichTextStyle {
 }
 
 impl RichTextColor {
-    /// Parses authored color attributes into a deterministic color token.
+    /// Parses a direct scalar or canonical `value=...` attribute into a color.
     pub fn from_attrs(attrs: &str) -> Self {
-        parse_hex_color(attrs).unwrap_or_else(|| Self::Named {
-            name: trim_quoted(attrs).to_owned(),
+        let value = scalar_tag_value(attrs);
+        parse_hex_color(value).unwrap_or_else(|| Self::Named {
+            name: value.to_owned(),
         })
     }
 }
 
 impl RichTextFontFamily {
-    /// Parses authored font attributes into a typed font family request.
+    /// Parses a direct scalar or canonical `value=...` attribute into a font.
     pub fn from_attrs(attrs: &str) -> Self {
-        match trim_quoted(attrs).trim().to_ascii_lowercase().as_str() {
+        let value = scalar_tag_value(attrs);
+        match value.to_ascii_lowercase().as_str() {
             "" | "sans" | "sans-serif" | "sans_serif" | "ui-sans" => Self::SansSerif,
             "serif" | "ui-serif" => Self::Serif,
             "mono" | "monospace" | "ui-monospace" => Self::Monospace,
             "cursive" => Self::Cursive,
             "fantasy" => Self::Fantasy,
             _ => Self::Named {
-                name: trim_quoted(attrs).to_owned(),
+                name: value.to_owned(),
             },
         }
     }
@@ -607,12 +613,18 @@ impl RichTextFontFamily {
 
 fn parse_hex_color(value: &str) -> Option<RichTextColor> {
     let hex = value.trim().strip_prefix('#')?;
-    if hex.len() != 6 {
+    let bytes = hex.as_bytes();
+    if bytes.len() != 6 {
         return None;
     }
-    let red = u8::from_str_radix(&hex[0..2], 16).ok()?;
-    let green = u8::from_str_radix(&hex[2..4], 16).ok()?;
-    let blue = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    let channel = |high: u8, low: u8| {
+        let high = u8::try_from(char::from(high).to_digit(16)?).ok()?;
+        let low = u8::try_from(char::from(low).to_digit(16)?).ok()?;
+        Some((high << 4) | low)
+    };
+    let red = channel(bytes[0], bytes[1])?;
+    let green = channel(bytes[2], bytes[3])?;
+    let blue = channel(bytes[4], bytes[5])?;
     Some(RichTextColor::Rgb { red, green, blue })
 }
 
@@ -627,6 +639,12 @@ fn trim_quoted(value: &str) -> &str {
                 .and_then(|value| value.strip_suffix('\''))
         })
         .unwrap_or(trimmed)
+}
+
+fn scalar_tag_value(attrs: &str) -> &str {
+    let attrs = attrs.trim();
+    let value = attrs.strip_prefix("value=").map_or(attrs, str::trim);
+    trim_quoted(value)
 }
 
 impl RuntimeLineContext {
@@ -998,33 +1016,12 @@ fn remove_active_style(active_styles: &mut Vec<RichTextStyle>, name: &str) {
         active_styles.pop();
         return;
     }
-    let name = canonical_style_name(name);
+    let name = canonical_tag_name(name);
     if let Some(index) = active_styles
         .iter()
         .rposition(|style| style.tag_name() == name)
     {
         active_styles.remove(index);
-    }
-}
-
-/// Canonicalizes style end names used by authored aliases and inferred spans.
-pub fn canonical_style_name(name: &str) -> &str {
-    match name {
-        "" | "/" => "/",
-        "i" | "italic" | "oblique" | "slant" | "opacity" | "alpha" | "layer" | "object_layer"
-        | "meta" | "metadata" | "data" | "z" | "z_index" | "style" => "style",
-        "vertical"
-        | "vertical_rl"
-        | "vertical_lr"
-        | "horizontal_tb"
-        | "ruby_over"
-        | "ruby_under"
-        | "ruby_inter_character"
-        | "layout" => "layout",
-        "offset" | "pos" | "rotate" | "scale" | "transform" => "transform",
-        "wave" | "shake" | "arc" | "spin" | "pulse" | "motion" | "typewriter" | "jitter"
-        | "shader" | "host" | "effect" | "fx" => "effect",
-        other => other,
     }
 }
 
@@ -1253,6 +1250,43 @@ mod tests {
 
     fn line_id(value: &str) -> RuntimeLineId {
         RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+    }
+
+    #[test]
+    fn quoted_hex_color_uses_the_same_typed_rgb_value_as_unquoted_color() {
+        let expected = RichTextColor::Rgb {
+            red: 255,
+            green: 64,
+            blue: 80,
+        };
+
+        assert_eq!(RichTextColor::from_attrs("#ff4050"), expected);
+        assert_eq!(RichTextColor::from_attrs("\"#ff4050\""), expected);
+    }
+
+    #[test]
+    fn non_ascii_six_byte_color_payload_remains_named_without_panicking() {
+        let expected = RichTextColor::Named {
+            name: "#€abc".to_owned(),
+        };
+
+        assert_eq!(RichTextColor::from_attrs("#€abc"), expected);
+        assert_eq!(RichTextColor::from_attrs("\"#€abc\""), expected);
+    }
+
+    #[test]
+    fn canonical_scalar_tag_attrs_match_direct_values() {
+        for (name, direct, canonical) in [
+            ("color", "#a8b5ff", "value=\"#a8b5ff\""),
+            ("font", "\"Yu Gothic\"", "value=\"Yu Gothic\""),
+            ("size", "36", "value=36"),
+        ] {
+            assert_eq!(
+                RichTextStyle::from_tag(name, direct),
+                RichTextStyle::from_tag(name, canonical),
+                "{name} direct and canonical scalar forms must lower identically"
+            );
+        }
     }
 
     #[test]

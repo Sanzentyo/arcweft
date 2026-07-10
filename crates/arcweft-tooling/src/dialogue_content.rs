@@ -1,262 +1,475 @@
 use arcweft_lang_syntax::{
     ast::{
+        choice::{ChoiceAction, ChoiceItem, ChoicePlanItem},
+        common::TextRange,
         dialogue::DialogueContent,
-        flow::{FlowItem, Stmt},
-        items::Item,
+        flow::{AuthoredExpr, FlowItem, Stmt, WaitTarget},
+        items::{ImplMember, Item, TraitMember},
+        line_plan::{LinePlan, LinePlanItem},
     },
-    expr::Expr,
+    expr::{Expr, collect_dialogue_call_content_ranges, collect_expr_source_ranges},
     source::ParsedSource,
 };
 use std::ops::Range;
 
-use crate::dialogue_sugar::dialogue_content_source_base;
+/// One dialogue-content occurrence with a typed route back to document bytes.
+pub(crate) enum DialogueContentSite<'a> {
+    Parsed(&'a DialogueContent),
+    Expression {
+        raw: &'a str,
+        source_range: TextRange,
+    },
+}
 
-pub(crate) fn collect_dialogue_content_ranges(
-    source: &str,
-    parsed: &ParsedSource,
-) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    for item in parsed.typed_tree().items() {
-        collect_dialogue_content_ranges_from_item(source, item, &mut ranges);
+impl DialogueContentSite<'_> {
+    pub(crate) fn raw(&self) -> &str {
+        match self {
+            Self::Parsed(content) => content.raw(),
+            Self::Expression { raw, .. } => raw,
+        }
     }
+
+    pub(crate) fn source_range(&self, relative: TextRange) -> Option<TextRange> {
+        match self {
+            Self::Parsed(content) => content.source_range(relative),
+            Self::Expression { raw, source_range } => {
+                if relative.start() > relative.end() || relative.end() > raw.len() {
+                    return None;
+                }
+                Some(TextRange::new(
+                    source_range.start() + relative.start(),
+                    source_range.start() + relative.end(),
+                ))
+            }
+        }
+    }
+
+    fn authored_range(&self) -> Option<TextRange> {
+        self.source_range(TextRange::new(0, self.raw().len()))
+    }
+}
+
+pub(crate) fn visit_dialogue_contents<'a>(
+    parsed: &'a ParsedSource,
+    visit: impl FnMut(DialogueContentSite<'a>),
+) {
+    let mut visitor = DialogueContentVisitor {
+        source: parsed.source(),
+        visit,
+        visited_site_ranges: Vec::new(),
+    };
+    for item in parsed.typed_tree().items() {
+        visitor.visit_item(item);
+    }
+}
+
+pub(crate) fn collect_dialogue_content_ranges(parsed: &ParsedSource) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    visit_dialogue_contents(parsed, |site| {
+        if let Some(range) = site.authored_range() {
+            ranges.push(range.as_range());
+        }
+    });
     ranges
 }
 
-fn collect_dialogue_content_ranges_from_item(
-    source: &str,
-    item: &Item,
-    ranges: &mut Vec<Range<usize>>,
-) {
-    match item {
-        Item::Flow(flow) => {
-            for item in flow.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        Item::FlowItem(item) => {
-            collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-        }
-        _ => {}
-    }
+struct DialogueContentVisitor<'a, F> {
+    source: &'a str,
+    visit: F,
+    visited_site_ranges: Vec<TextRange>,
 }
 
-fn collect_dialogue_content_ranges_from_flow_item(
-    source: &str,
-    item: &FlowItem,
-    ranges: &mut Vec<Range<usize>>,
-) {
-    match item {
-        FlowItem::SpeakerLine(line) => push_dialogue_content_range(source, line.content(), ranges),
-        FlowItem::ContentCall(call) => push_dialogue_content_range(source, call.content(), ranges),
-        FlowItem::Scope(scope) => {
-            for item in scope.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+impl<'a, F> DialogueContentVisitor<'a, F>
+where
+    F: FnMut(DialogueContentSite<'a>),
+{
+    fn visit_item(&mut self, item: &'a Item) {
+        match item {
+            Item::Flow(flow) => self.visit_flow_items(flow.body()),
+            Item::FlowItem(item) => self.visit_flow_item(item),
+            Item::Function(function) => {
+                self.visit_stmts(function.body_statements());
+                if let Some(value) = function.body_value() {
+                    self.visit_authored_expr(value);
+                }
             }
-        }
-        FlowItem::If(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            Item::Agent(agent) => {
+                self.visit_stmts(agent.body_statements());
+                if let Some(value) = agent.body_value() {
+                    self.visit_authored_expr(value);
+                }
             }
-        }
-        FlowItem::IfLet(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            Item::Callable(callable) => self.visit_stmts(callable.body_statements()),
+            Item::Trait(trait_item) => {
+                for member in trait_item.members() {
+                    if let TraitMember::Function {
+                        body_statements,
+                        body_value,
+                        ..
+                    } = member
+                    {
+                        self.visit_stmts(body_statements);
+                        if let Some(value) = body_value {
+                            self.visit_authored_expr(value);
+                        }
+                    }
+                }
             }
+            Item::Impl(impl_item) => {
+                for member in impl_item.members() {
+                    if let ImplMember::Function {
+                        body_statements,
+                        body_value,
+                        ..
+                    } = member
+                    {
+                        self.visit_stmts(body_statements);
+                        if let Some(value) = body_value {
+                            self.visit_authored_expr(value);
+                        }
+                    }
+                }
+            }
+            Item::Hook(hook) => self.visit_stmts(hook.body_statements()),
+            Item::MemoFn(memo) => self.visit_stmts(memo.body_statements()),
+            Item::Parser(parser) => self.visit_stmts(parser.body_statements()),
+            Item::Source(source) => {
+                self.visit_stmts(source.body_statements());
+                for handler in source.handlers() {
+                    self.visit_stmts(handler.body());
+                }
+            }
+            Item::Decoration(_)
+            | Item::State(_)
+            | Item::Enum(_)
+            | Item::Struct(_)
+            | Item::TypeAlias(_)
+            | Item::EntityDecl(_)
+            | Item::Entry(_)
+            | Item::ExternCapability(_)
+            | Item::ExternMod(_)
+            | Item::Style(_)
+            | Item::DialogueDefaults(_)
+            | Item::Proof(_)
+            | Item::TrustedAxiom(_)
+            | Item::Test(_)
+            | Item::Bench(_)
+            | Item::Raw(_) => {}
         }
-        FlowItem::Match(block) => {
-            for arm in block.arms() {
-                for item in arm.body() {
-                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+    }
+
+    fn visit_flow_items(&mut self, items: &'a [FlowItem]) {
+        for item in items {
+            self.visit_flow_item(item);
+        }
+    }
+
+    fn visit_flow_item(&mut self, item: &'a FlowItem) {
+        match item {
+            FlowItem::SpeakerLine(line) => {
+                self.visit_parsed_content(line.content());
+            }
+            FlowItem::ContentCall(call) => {
+                self.visit_parsed_content(call.content());
+            }
+            FlowItem::Stmt(stmt) => self.visit_stmt(stmt),
+            FlowItem::Choice(choice) => self.visit_choice(choice),
+            FlowItem::If(block) => {
+                self.visit_authored_expr(block.condition_authored());
+                self.visit_flow_items(block.body());
+                self.visit_flow_items(block.else_body());
+            }
+            FlowItem::IfLet(block) => {
+                self.visit_authored_expr(block.expr_authored());
+                if let Some(guard) = block.guard_authored() {
+                    self.visit_authored_expr(guard);
+                }
+                self.visit_flow_items(block.body());
+                self.visit_flow_items(block.else_body());
+            }
+            FlowItem::Match(block) => {
+                self.visit_authored_expr(block.expr_authored());
+                for arm in block.arms() {
+                    if let Some(guard) = arm.guard_authored() {
+                        self.visit_authored_expr(guard);
+                    }
+                    self.visit_flow_items(arm.body());
+                }
+            }
+            FlowItem::Loop(block) => self.visit_flow_items(block.body()),
+            FlowItem::While(block) => {
+                self.visit_authored_expr(block.condition_authored());
+                self.visit_flow_items(block.body());
+            }
+            FlowItem::WhileLet(block) => {
+                self.visit_authored_expr(block.expr_authored());
+                if let Some(guard) = block.guard_authored() {
+                    self.visit_authored_expr(guard);
+                }
+                self.visit_flow_items(block.body());
+            }
+            FlowItem::For(block) => {
+                self.visit_authored_expr(block.source_authored());
+                self.visit_flow_items(block.body());
+            }
+            FlowItem::Select(block) => {
+                for branch in block.branches() {
+                    self.visit_flow_items(branch.body());
+                }
+            }
+            FlowItem::BorrowBlock(block) => self.visit_flow_items(block.body()),
+            FlowItem::SourceLocale(block) => self.visit_flow_items(block.body()),
+            FlowItem::Scope(block) => self.visit_flow_items(block.body()),
+            FlowItem::AwaitWith(await_with) => {
+                self.visit_authored_expr(await_with.expr_authored());
+                for branch in await_with.branches() {
+                    self.visit_flow_items(branch.body());
+                }
+            }
+            FlowItem::Include(_) | FlowItem::Raw(_) => {}
+        }
+    }
+
+    fn visit_choice(&mut self, choice: &'a arcweft_lang_syntax::ast::choice::ChoiceBlock) {
+        for item in choice.items() {
+            self.visit_choice_item(item);
+        }
+        if let Some(plan) = choice.plan() {
+            for item in plan.items() {
+                match item {
+                    ChoicePlanItem::Timeout { body, .. }
+                    | ChoicePlanItem::Cancel { body, .. }
+                    | ChoicePlanItem::OnSelect { body, .. } => self.visit_stmts(body),
+                    ChoicePlanItem::Option { .. } | ChoicePlanItem::Raw(_) => {}
                 }
             }
         }
-        FlowItem::Loop(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        FlowItem::While(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        FlowItem::WhileLet(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        FlowItem::For(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        FlowItem::Select(block) => {
-            for branch in block.branches() {
-                for item in branch.body() {
-                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+    }
+
+    fn visit_choice_item(&mut self, item: &'a ChoiceItem) {
+        match item {
+            ChoiceItem::If { items, .. } | ChoiceItem::For { items, .. } => {
+                for item in items {
+                    self.visit_choice_item(item);
                 }
             }
-        }
-        FlowItem::BorrowBlock(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        FlowItem::SourceLocale(block) => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        FlowItem::AwaitWith(await_with) => {
-            for branch in await_with.branches() {
-                for item in branch.body() {
-                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            ChoiceItem::Match { arms, .. } => {
+                for arm in arms {
+                    for item in arm.items() {
+                        self.visit_choice_item(item);
+                    }
                 }
             }
-        }
-        FlowItem::Stmt(stmt) => collect_dialogue_content_ranges_from_stmt(source, stmt, ranges),
-        FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
-    }
-}
-
-fn collect_dialogue_content_ranges_from_stmt(
-    source: &str,
-    stmt: &Stmt,
-    ranges: &mut Vec<Range<usize>>,
-) {
-    match stmt {
-        Stmt::Let {
-            expr,
-            expr_source,
-            expr_range,
-            ..
-        } => collect_dialogue_content_ranges_from_expr(
-            expr,
-            expr_source.as_deref(),
-            expr_range.as_ref(),
-            ranges,
-        ),
-        Stmt::LetElse { else_body, .. } => {
-            for stmt in else_body {
-                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
-            }
-        }
-        Stmt::Assign { target, expr } => {
-            collect_dialogue_content_ranges_from_expr(target.expr(), None, None, ranges);
-            collect_dialogue_content_ranges_from_expr(expr.expr(), None, None, ranges);
-        }
-        Stmt::LetScope { scope, .. } => {
-            for stmt in scope.statements() {
-                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
-            }
-        }
-        Stmt::LetLoop { block, .. } => {
-            for item in block.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        Stmt::LetAwait { await_with, .. } => {
-            for branch in await_with.branches() {
-                for item in branch.body() {
-                    collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
+            ChoiceItem::Option(option) => {
+                if let ChoiceAction::SelectBlock(statements) = option.action() {
+                    self.visit_stmts(statements);
                 }
             }
+            ChoiceItem::Let { .. } | ChoiceItem::Raw(_) => {}
         }
-        Stmt::Thread(thread) => {
-            for item in thread.body() {
-                collect_dialogue_content_ranges_from_flow_item(source, item, ranges);
-            }
-        }
-        Stmt::DeferBlock { statements, .. }
-        | Stmt::On {
-            body: statements, ..
-        }
-        | Stmt::UnsafeLifetime {
-            body: statements, ..
-        }
-        | Stmt::Loop {
-            body: statements, ..
-        }
-        | Stmt::While {
-            body: statements, ..
-        }
-        | Stmt::WhileLet {
-            body: statements, ..
-        }
-        | Stmt::For {
-            body: statements, ..
-        } => collect_dialogue_content_ranges_from_stmts(source, statements, ranges),
-        Stmt::If {
-            body, else_body, ..
-        } => {
-            collect_dialogue_content_ranges_from_stmts(source, body, ranges);
-            collect_dialogue_content_ranges_from_stmts(source, else_body, ranges);
-        }
-        Stmt::Match { arms, .. } => {
-            for arm in arms {
-                collect_dialogue_content_ranges_from_stmts(source, arm.body(), ranges);
-            }
-        }
-        Stmt::LetChoice { .. }
-        | Stmt::LetActionReceive { .. }
-        | Stmt::Return { expr: _, .. }
-        | Stmt::Out { .. }
-        | Stmt::Goto(_)
-        | Stmt::Defer { .. }
-        | Stmt::Yield(_)
-        | Stmt::Signal { .. }
-        | Stmt::LifetimeSet { .. }
-        | Stmt::Wait(_)
-        | Stmt::Close(_)
-        | Stmt::Select(_)
-        | Stmt::Break { .. }
-        | Stmt::Continue { .. }
-        | Stmt::Expr { expr: _, .. }
-        | Stmt::Raw(_) => {}
     }
-}
 
-fn collect_dialogue_content_ranges_from_stmts(
-    source: &str,
-    statements: &[Stmt],
-    ranges: &mut Vec<Range<usize>>,
-) {
-    for stmt in statements {
-        collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        match stmt {
+            Stmt::Let {
+                expr,
+                expr_source,
+                expr_range,
+                ..
+            }
+            | Stmt::Return {
+                expr,
+                expr_source,
+                expr_range,
+            }
+            | Stmt::Expr {
+                expr,
+                expr_source,
+                expr_range,
+            } => self.visit_sourced_expr(expr, expr_source.as_deref(), *expr_range),
+            Stmt::Assign { target, expr }
+            | Stmt::LifetimeSet { target, expr }
+            | Stmt::Signal {
+                target,
+                value: expr,
+            } => {
+                self.visit_authored_expr(target);
+                self.visit_authored_expr(expr);
+            }
+            Stmt::LetElse {
+                expr, else_body, ..
+            } => {
+                self.visit_authored_expr(expr);
+                self.visit_stmts(else_body);
+            }
+            Stmt::LetChoice { choice, .. } => self.visit_choice(choice),
+            Stmt::LetScope { scope, .. } => self.visit_stmts(scope.statements()),
+            Stmt::LetLoop { block, .. } => self.visit_flow_items(block.body()),
+            Stmt::LetAwait { await_with, .. } => {
+                self.visit_authored_expr(await_with.expr_authored());
+                for branch in await_with.branches() {
+                    self.visit_flow_items(branch.body());
+                }
+            }
+            Stmt::LetActionReceive { action, .. } => self.visit_authored_expr(action),
+            Stmt::Out { expr, .. }
+            | Stmt::Goto(expr)
+            | Stmt::Defer { expr, .. }
+            | Stmt::Yield(expr)
+            | Stmt::Close(expr)
+            | Stmt::Select(expr)
+            | Stmt::Break {
+                expr: Some(expr), ..
+            } => self.visit_authored_expr(expr),
+            Stmt::Thread(thread) => self.visit_flow_items(thread.body()),
+            Stmt::DeferBlock { statements, .. }
+            | Stmt::On {
+                body: statements, ..
+            }
+            | Stmt::UnsafeLifetime {
+                body: statements, ..
+            }
+            | Stmt::Loop { body: statements } => self.visit_stmts(statements),
+            Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
+                self.visit_authored_expr(expr);
+            }
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => {
+                self.visit_authored_expr(condition);
+                self.visit_stmts(body);
+                self.visit_stmts(else_body);
+            }
+            Stmt::While { condition, body } => {
+                self.visit_authored_expr(condition);
+                self.visit_stmts(body);
+            }
+            Stmt::WhileLet {
+                expr, guard, body, ..
+            } => {
+                self.visit_authored_expr(expr);
+                if let Some(guard) = guard {
+                    self.visit_authored_expr(guard);
+                }
+                self.visit_stmts(body);
+            }
+            Stmt::For { source, body, .. } => {
+                self.visit_authored_expr(source);
+                self.visit_stmts(body);
+            }
+            Stmt::Match { expr, arms } => {
+                self.visit_authored_expr(expr);
+                for arm in arms {
+                    if let Some(guard) = arm.guard_authored() {
+                        self.visit_authored_expr(guard);
+                    }
+                    self.visit_stmts(arm.body());
+                }
+            }
+            Stmt::Break { expr: None, .. } | Stmt::Continue { .. } | Stmt::Raw(_) => {}
+        }
     }
-}
 
-fn collect_dialogue_content_ranges_from_expr(
-    expr: &Expr,
-    expr_source: Option<&str>,
-    expr_range: Option<&arcweft_lang_syntax::ast::common::TextRange>,
-    ranges: &mut Vec<Range<usize>>,
-) {
-    match expr {
-        Expr::DialogueCall { content, .. } => {
-            let (Some(expr_source), Some(expr_range)) = (expr_source, expr_range) else {
-                return;
+    fn visit_stmts(&mut self, statements: &'a [Stmt]) {
+        for statement in statements {
+            self.visit_stmt(statement);
+        }
+    }
+
+    fn visit_parsed_content(&mut self, content: &'a DialogueContent) {
+        let Some(source_range) = content.source_range(TextRange::new(0, content.raw().len()))
+        else {
+            return;
+        };
+        if self.visited_site_ranges.contains(&source_range) {
+            return;
+        }
+        self.visited_site_ranges.push(source_range);
+        (self.visit)(DialogueContentSite::Parsed(content));
+    }
+
+    fn visit_authored_expr(&mut self, authored: &'a AuthoredExpr) {
+        self.visit_sourced_expr(authored.expr(), authored.source(), authored.range());
+    }
+
+    fn visit_sourced_expr(
+        &mut self,
+        expr: &'a Expr,
+        authored_source: Option<&str>,
+        authored_range: Option<TextRange>,
+    ) {
+        let (Some(authored_source), Some(authored_range)) = (authored_source, authored_range)
+        else {
+            return;
+        };
+        let Some(document_source) = self.source.get(authored_range.as_range()) else {
+            return;
+        };
+        if document_source != authored_source
+            && document_source.replace("\r\n", "\n") != authored_source
+        {
+            return;
+        }
+
+        let content_ranges =
+            collect_dialogue_call_content_ranges(expr, document_source, authored_range);
+        let expression_nodes = collect_expr_source_ranges(expr, document_source, authored_range);
+        for source_range in content_ranges {
+            if self.visited_site_ranges.contains(&source_range) {
+                continue;
+            }
+            let Some(raw) = self.source.get(source_range.as_range()) else {
+                continue;
             };
-            let Some(content_start) = expr_source.find(content) else {
-                return;
-            };
-            let start = expr_range.start() + content_start;
-            ranges.push(start..start + content.len());
+            self.visited_site_ranges.push(source_range);
+            (self.visit)(DialogueContentSite::Expression { raw, source_range });
         }
-        Expr::Try { expr } => {
-            collect_dialogue_content_ranges_from_expr(expr, expr_source, expr_range, ranges);
+        for expression in expression_nodes {
+            self.visit_expr_owned_bodies(expression.expr());
         }
-        _ => {}
     }
-}
 
-fn push_dialogue_content_range(
-    source: &str,
-    content: &DialogueContent,
-    ranges: &mut Vec<Range<usize>>,
-) {
-    let Some(base) = dialogue_content_source_base(source, content) else {
-        return;
-    };
-    ranges.push(base..base + content.raw().len());
+    fn visit_expr_owned_bodies(&mut self, expr: &'a Expr) {
+        match expr {
+            Expr::Block { statements, .. }
+            | Expr::ComputationBlock { statements, .. }
+            | Expr::MemoBlock { statements, .. }
+            | Expr::NamedBlock { statements, .. } => self.visit_stmts(statements),
+            Expr::Thread { block } => self.visit_flow_items(block.body()),
+            Expr::DialogueCall {
+                plan: Some(plan), ..
+            } => self.visit_line_plan(plan),
+            _ => {}
+        }
+    }
+
+    fn visit_line_plan(&mut self, plan: &'a LinePlan) {
+        self.visit_line_plan_items(plan.items());
+    }
+
+    fn visit_line_plan_items(&mut self, items: &'a [LinePlanItem]) {
+        for item in items {
+            match item {
+                LinePlanItem::Init(statements)
+                | LinePlanItem::On {
+                    body: statements, ..
+                } => self.visit_stmts(statements),
+                LinePlanItem::Thread(thread) => self.visit_flow_items(thread.body()),
+                LinePlanItem::Stmt(statement) => self.visit_stmt(statement),
+                LinePlanItem::CancelRule(rule) => self.visit_stmts(rule.action()),
+                LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+                    self.visit_line_plan_items(items);
+                }
+                LinePlanItem::Option { .. }
+                | LinePlanItem::Let { .. }
+                | LinePlanItem::Out(_)
+                | LinePlanItem::TimedCue { .. }
+                | LinePlanItem::Assert { .. }
+                | LinePlanItem::Expr(_)
+                | LinePlanItem::Raw(_) => {}
+            }
+        }
+    }
 }

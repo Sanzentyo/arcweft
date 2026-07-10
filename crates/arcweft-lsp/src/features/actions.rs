@@ -342,6 +342,7 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         }
         Item::Flow(_)
         | Item::Function(_)
+        | Item::Decoration(_)
         | Item::Agent(_)
         | Item::Callable(_)
         | Item::State(_)
@@ -554,10 +555,10 @@ fn flow_item_dialogue_option_insertion(
     offset: usize,
 ) -> Option<DialogueOptionInsertion> {
     items.iter().find_map(|item| match item {
-        FlowItem::SpeakerLine(line) if range_contains(line.content().range(), offset) => {
+        FlowItem::SpeakerLine(line) if line.content().content_offset(offset).is_some() => {
             speaker_line_option_insertion(source, line)
         }
-        FlowItem::ContentCall(call) if range_contains(call.content().range(), offset) => {
+        FlowItem::ContentCall(call) if call.content().content_offset(offset).is_some() => {
             content_call_option_insertion(source, call)
         }
         FlowItem::If(block) => nested_body_insertion(source, block, offset),
@@ -726,10 +727,6 @@ fn matching_open_paren(source: &str, close: usize) -> Option<usize> {
         }
     }
     None
-}
-
-fn range_contains(range: &TextRange, offset: usize) -> bool {
-    range.start() <= offset && offset <= range.end()
 }
 
 fn character_dialogue_style_edit(
@@ -1386,6 +1383,29 @@ mod tests {
                 replacement: "(text_color=rgb(\"#202122\"))".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn dialogue_option_insertion_maps_indented_multiline_lf_and_crlf_content() {
+        let source_lf = "flow opening {\n    alice:\n        Intro\n        Styled content[p]\n}\n";
+        for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+            let offset = source.find("Styled").expect("later dialogue content");
+            let insertion =
+                dialogue_option_insertion_at(&source, offset).expect("dialogue insertion");
+            let edit = insertion.edit_for_option("rich_text.ruby.size=14px");
+
+            assert_eq!(edit.start, source.find(':').expect("speaker colon"));
+            assert_eq!(edit.end, edit.start);
+            assert_eq!(edit.replacement, "(rich_text.ruby.size=14px)");
+
+            let line_start = source
+                .find("        Styled")
+                .expect("indented content line");
+            assert!(
+                dialogue_option_insertion_at(&source, line_start + 1).is_none(),
+                "removed indentation must not alias a normalized content byte"
+            );
+        }
     }
 
     #[test]

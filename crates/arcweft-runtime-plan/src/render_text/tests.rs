@@ -108,6 +108,70 @@ flow @flow.main main {
 }
 
 #[test]
+fn canonical_scalar_tags_match_short_and_direct_dialogue_styles() {
+    let lower = |content: &str| {
+        let source = format!(
+            "character @character.alice Alice as alice {{}}\n\nflow @flow.main main {{\n    alice: {content}\n}}\n"
+        );
+        let parsed = parse_source(&source);
+        let hir = lower_to_hir(parsed.typed_tree()).expect("scalar tag fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+        lower_dialogue_display(
+            line_id("say.scalar.tags"),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        )
+        .content
+        .nodes
+    };
+
+    let short_and_direct =
+        lower("[color #a8b5ff:夜][font \"Yu Gothic\"]字[/font][size 36]大[/size][p]");
+    let canonical = lower(
+        "[color value=\"#a8b5ff\"]夜[/color][font value=\"Yu Gothic\"]字[/font][size value=36]大[/size][p]",
+    );
+
+    assert_eq!(short_and_direct, canonical);
+    assert!(canonical.iter().any(|node| matches!(
+        node,
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 168,
+                    green: 181,
+                    blue: 255
+                }
+            }
+        }
+    )));
+    assert!(canonical.iter().any(|node| matches!(
+        node,
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Font {
+                family: RichTextFontFamily::Named { name }
+            }
+        } if name == "Yu Gothic"
+    )));
+    assert!(canonical.iter().any(|node| matches!(
+        node,
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Size {
+                points: Some(36),
+                raw
+            }
+        } if raw == "36"
+    )));
+}
+
+#[test]
 fn lowers_typed_dialogue_wait_and_rejects_invalid_duration() {
     let parsed = parse_source(
         r"
@@ -1476,6 +1540,91 @@ flow @flow.main main {
             && contribution.value == "14px"
             && !contribution.active
             && contribution.shadowed_by.is_some()
+    }));
+}
+
+#[test]
+fn multiline_inline_span_provenance_projects_lf_and_crlf_ranges() {
+    let source_lf = "character @character.alice Alice as alice {}\n\nflow @flow.main main {\n    alice:\n        Intro\n        [.ruby_over ruby_size=11px]|[夢](ゆめ)[/][p]\n}\n";
+    for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+        let inline_size_start = source.find("11px").expect("inline ruby size literal");
+        let parsed = parse_source(&source);
+        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let dialogue = hir
+            .flows()
+            .first()
+            .and_then(|flow| flow.body().first())
+            .and_then(|item| match item {
+                arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+                _ => None,
+            })
+            .expect("dialogue item");
+
+        let spec = lower_dialogue_display(
+            line_id("say.rich_text.multiline_inline"),
+            dialogue,
+            &DialogueDisplayDefaults::from_module(&hir),
+        );
+        assert!(spec.style_contributions.iter().any(|contribution| {
+            contribution.layer == RichTextCascadeLayer::InlineSpan
+                && contribution.path == "rich_text.ruby.size"
+                && contribution.value == "11px"
+                && contribution_source_range(contribution)
+                    == Some((inline_size_start, inline_size_start + 4))
+        }));
+    }
+}
+
+#[test]
+fn inline_effect_contributions_preserve_quoted_values_and_source_ranges() {
+    let source = r#"character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.sparkle note="contains ] safely" amp=2px]text[/][p]
+}
+"#;
+    let parsed = parse_source(source);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let dialogue = hir
+        .flows()
+        .first()
+        .and_then(|flow| flow.body().first())
+        .and_then(|item| match item {
+            arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+            _ => None,
+        })
+        .expect("dialogue item");
+    let spec = lower_dialogue_display(
+        line_id("say.rich_text.quoted_effect"),
+        dialogue,
+        &DialogueDisplayDefaults::from_module(&hir),
+    );
+
+    let selector_start = source.find("sparkle").expect("effect selector");
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::InlineSpan
+            && contribution.path == "rich_text.effect"
+            && contribution.value == "sparkle"
+            && contribution_source_range(contribution)
+                == Some((selector_start, selector_start + "sparkle".len()))
+    }));
+
+    let note_source = "\"contains ] safely\"";
+    let note_start = source.find(note_source).expect("quoted note value");
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::InlineSpan
+            && contribution.path == "rich_text.effect.sparkle.note"
+            && contribution.value == "contains ] safely"
+            && contribution_source_range(contribution)
+                == Some((note_start, note_start + note_source.len()))
+    }));
+
+    let amp_start = source.find("2px").expect("effect amplitude");
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::InlineSpan
+            && contribution.path == "rich_text.effect.sparkle.amp"
+            && contribution.value == "2px"
+            && contribution_source_range(contribution) == Some((amp_start, amp_start + 3))
     }));
 }
 

@@ -318,6 +318,25 @@ fn expands_dialogue_authoring_sugar_only_when_requested() {
 }
 
 #[test]
+fn short_scalar_tag_sugar_emits_the_canonical_value_form() {
+    let source = "flow @flow.opening opening {\n    alice: [color #a8b5ff:夜][p]\n}\n";
+    let expanded = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    )
+    .expect("format report");
+
+    assert!(
+        expanded
+            .output
+            .contains("[color value=\"#a8b5ff\"]夜[/color][p]")
+    );
+}
+
+#[test]
 fn expand_sugar_does_not_treat_dialogue_content_lines_as_speaker_sugar() {
     let source = "flow @flow.opening opening {\n    alice.say()[\n        cue: [raw: [p]や#[expr]をそのまま表示] と [! flash()][p]\n    ]\n}\n";
     let expanded = format_source(
@@ -367,6 +386,166 @@ fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
             .contains("[layout .vertical_rl]縦[/layout][p]")
     );
     assert!(report.output.contains("[page]"));
+}
+
+#[test]
+fn canonical_rich_text_preserves_explicit_decoration_spans() {
+    let source = "flow @flow.opening opening {\n    alice: [decorate .warning label=\"urgent warning\"]important[/decorate][.sparkle amp=2px]effect[/][p]\n}\n";
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: false,
+            canonical_rich_text: true,
+        },
+    )
+    .expect("format report");
+
+    assert!(
+        report
+            .output
+            .contains("[decorate .warning label=\"urgent warning\"]important[/decorate]")
+    );
+    assert!(
+        report
+            .output
+            .contains("[effect .sparkle amp=2px]effect[/effect]")
+    );
+}
+
+#[test]
+fn canonical_rich_text_preserves_closing_brackets_inside_quoted_arguments() {
+    let source = "flow @flow.opening opening {\n    alice: [.sparkle note=\"contains ] safely\"]text[/][p]\n}\n";
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: false,
+            canonical_rich_text: true,
+        },
+    )
+    .expect("format report");
+
+    assert!(
+        report
+            .output
+            .contains("[effect .sparkle note=\"contains ] safely\"]text[/effect][p]")
+    );
+}
+
+#[test]
+fn canonical_rich_text_projects_indented_multiline_lf_and_crlf_edits() {
+    let source_lf = "flow @flow.opening opening {\n    alice:\n        Intro\n        [.sparkle amp=2px]effect[/][p]\n}\n";
+    for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+        let report = format_source(
+            &source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(
+            report
+                .output
+                .contains("[effect .sparkle amp=2px]effect[/effect][p]")
+        );
+        assert!(report.output.contains("flow @flow.opening opening"));
+        assert!(report.output.contains("        Intro"));
+    }
+}
+
+#[test]
+fn canonical_rich_text_visits_flow_else_branches() {
+    let source_lf = "flow @flow.opening opening {\n    if ready {\n        alice: [.shake]then[/][p]\n    } else {\n        alice: [.pulse]else[/][p]\n    }\n    if let value = selected {\n        alice: [.wave]some[/][p]\n    } else {\n        alice: [.jitter]none[/][p]\n    }\n    if alternate {\n        alice: [.spin]first[/][p]\n    }\n    else {\n        alice: [.motion]second[/][p]\n    }\n}\n";
+    for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+        let report = format_source(
+            &source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(
+            report.output.contains("[effect .shake]then[/effect][p]"),
+            "{}",
+            report.output
+        );
+        assert!(report.output.contains("[effect .pulse]else[/effect][p]"));
+        assert!(report.output.contains("[effect .wave]some[/effect][p]"));
+        assert!(report.output.contains("[effect .jitter]none[/effect][p]"));
+        assert!(report.output.contains("[effect .spin]first[/effect][p]"));
+        assert!(report.output.contains("[effect .motion]second[/effect][p]"));
+    }
+}
+
+#[test]
+fn canonical_rich_text_uses_the_dialogue_delimiters_when_content_repeats_in_callee() {
+    let source = "flow @flow.opening opening {\n    let handles = try render(\"[.shake]effect[/][p]\")()[[.shake]effect[/][p]]\n}\n";
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: false,
+            canonical_rich_text: true,
+        },
+    )
+    .expect("format report");
+
+    assert!(report.output.contains("render(\"[.shake]effect[/][p]\")()"));
+    assert!(
+        report
+            .output
+            .contains("[[effect .shake]effect[/effect][p]]"),
+        "{}",
+        report.output
+    );
+    assert_eq!(report.output.matches("[effect .shake]").count(), 1);
+}
+
+#[test]
+fn canonical_rich_text_projects_multiline_dialogue_call_expressions_across_crlf() {
+    let source_lf = "flow @flow.opening opening {\n    let handles = alice.say()[\n        Intro\n        [.sparkle amp=2px]effect[/][p]\n    ]\n}\n";
+    for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+        let report = format_source(
+            &source,
+            FormatOptions {
+                expand_sugar: false,
+                canonical_rich_text: true,
+            },
+        )
+        .expect("format report");
+
+        assert!(
+            report
+                .output
+                .contains("[effect .sparkle amp=2px]effect[/effect][p]"),
+            "{}",
+            report.output
+        );
+        assert_eq!(report.output.contains("\r\n"), source.contains("\r\n"));
+    }
+}
+
+#[test]
+fn canonical_rich_text_visits_statement_bodies_outside_flows() {
+    let source = "fn render_notice() {\n    if ready {\n        let handles = alice.say()[[.shake]notice[/][p]]\n    }\n}\n";
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: false,
+            canonical_rich_text: true,
+        },
+    )
+    .expect("format report");
+
+    assert!(
+        report
+            .output
+            .contains("[[effect .shake]notice[/effect][p]]"),
+        "{}",
+        report.output
+    );
 }
 
 #[test]
@@ -468,6 +647,23 @@ fn canonical_rich_text_removes_marker_like_inferred_close() {
             .output
             .contains("[mark .keyword]word[effect .shake]there[/effect]")
     );
+    assert!(!report.output.contains("[/]"));
+}
+
+#[test]
+fn canonical_rich_text_uses_the_shared_reserved_marker_classification() {
+    let source = "flow @flow.opening opening {\n    alice: [.mark ignored=value]word[/][p]\n}\n";
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: false,
+            canonical_rich_text: true,
+        },
+    )
+    .expect("format report");
+
+    assert!(report.output.contains("[mark .mark]word[p]"));
+    assert!(!report.output.contains("[effect .mark"));
     assert!(!report.output.contains("[/]"));
 }
 
@@ -576,4 +772,23 @@ fn materializes_omitted_dialogue_ids_in_colon_call_and_flat_fences() {
             "=== line 地の文(id=@say.opening.narrator.rain.001, text_key=@text.opening.narrator.rain.001) ==="
         ));
     assert!(report.output.contains("=== with ==="));
+}
+
+#[test]
+fn canonical_rich_text_keeps_dialogue_call_ranges_after_natural_apostrophes() {
+    let source = "flow @flow.opening opening {\n    let handles = alice.say()[don't [decorate .warning]stop[/decorate] [.shake]now[/][p]]\n}\n";
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: false,
+            canonical_rich_text: true,
+        },
+    )
+    .expect("format report");
+
+    assert!(
+        report
+            .output
+            .contains("[don't [decorate .warning]stop[/decorate] [effect .shake]now[/effect][p]]")
+    );
 }

@@ -292,6 +292,11 @@ impl Parser<'_> {
                     items.push(Item::Function(function));
                 }
             }
+            CstTopLevelItemKind::Decoration => {
+                if let Some(decoration) = self.parse_decoration() {
+                    items.push(Item::Decoration(decoration));
+                }
+            }
             CstTopLevelItemKind::Agent => {
                 if let Some(agent) = self.parse_agent_item() {
                     items.push(Item::Agent(agent));
@@ -305,6 +310,7 @@ impl Parser<'_> {
                 if !matches!(
                     kind,
                     CstTopLevelItemKind::State
+                        | CstTopLevelItemKind::Decoration
                         | CstTopLevelItemKind::Trait
                         | CstTopLevelItemKind::Enum
                         | CstTopLevelItemKind::Struct
@@ -330,6 +336,7 @@ impl Parser<'_> {
     ) -> Option<Item> {
         match kind {
             CstTopLevelItemKind::Callable => self.parse_callable_item().map(Item::Callable),
+            CstTopLevelItemKind::Decoration => self.parse_decoration().map(Item::Decoration),
             CstTopLevelItemKind::State => self.parse_state_item().map(Item::State),
             CstTopLevelItemKind::Trait => self.parse_trait_item().map(Item::Trait),
             CstTopLevelItemKind::Impl => self.parse_impl_item().map(Item::Impl),

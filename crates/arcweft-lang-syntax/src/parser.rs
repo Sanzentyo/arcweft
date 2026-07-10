@@ -1,5 +1,8 @@
 use crate::ast::common::{DocBlock, ModuleDecl, TextRange, UseItem};
-use crate::ast::dialogue::{ContentCall, DialogueContent, SpeakerLine};
+use crate::ast::dialogue::{
+    ContentCall, DialogueContent, DialogueContentSourceMap, DialogueContentSourceSegment,
+    SpeakerLine,
+};
 use crate::ast::flow::{
     AuthoredExpr, BorrowBlock, Flow, FlowInit, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock,
     MatchArm, MatchBlock, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
@@ -19,7 +22,7 @@ use crate::cst::{
 use crate::expr::Expr;
 use crate::pattern::parse_pattern;
 use crate::source::ParsedSource;
-use crate::text::{parse_dialogue_text, parse_dialogue_text_at};
+use crate::text::parse_dialogue_text;
 use arcweft_source::{SourceAnchor, SourceName};
 use std::borrow::Cow;
 use std::ops::Range;
@@ -27,6 +30,7 @@ use std::ops::Range;
 pub mod await_;
 pub mod choice;
 pub mod control_flow;
+pub mod decoration;
 pub mod dialogue;
 pub mod flow;
 pub mod fragment;
@@ -93,14 +97,15 @@ pub(crate) fn parse_callback_block_expr_body(body: &str) -> Expr {
 /// Parses dialogue text content outside a full source document.
 ///
 /// This preserves the same token model used by speaker-line and content-call
-/// parsing. Diagnostics are intentionally discarded because callers already
-/// have an expression-level source range rather than a dialogue-text range.
+/// parsing, including recoverable text diagnostics with content-relative
+/// ranges. An owning expression or document parser supplies source projection.
 #[must_use]
-pub fn parse_dialogue_content_lossy(raw: impl Into<String>) -> DialogueContent {
+pub fn parse_dialogue_content(raw: impl Into<String>) -> DialogueContent {
     let raw = raw.into();
     let parsed = parse_dialogue_text(&raw);
-    let range = TextRange::new(0, raw.len());
-    DialogueContent::new(raw, parsed.into_tokens(), range)
+    let source_map = DialogueContentSourceMap::identity(raw.len(), 0);
+    let (tokens, diagnostics) = parsed.into_parts();
+    DialogueContent::new(raw, tokens, diagnostics, source_map)
 }
 
 fn parse_source_with_options(source: impl Into<String>, options: ParseOptions) -> ParsedSource {
@@ -156,6 +161,82 @@ struct Parser<'a> {
     syntax_stats: SyntaxParseStats,
     source_dialect: SourceDialect,
     current_module_path: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct MappedDialogueSource {
+    raw: String,
+    source_map: DialogueContentSourceMap,
+}
+
+#[derive(Debug)]
+pub(super) struct MappedDialogueSourceBuilder {
+    raw: String,
+    segments: Vec<DialogueContentSourceSegment>,
+    source_anchor: usize,
+    last_source_end: Option<usize>,
+    lines: usize,
+}
+
+impl MappedDialogueSource {
+    pub(super) fn slice(&self, range: TextRange) -> Option<Self> {
+        let raw = self.raw.get(range.as_range())?.to_owned();
+        let source_map = self.source_map.slice(range)?;
+        Some(Self { raw, source_map })
+    }
+
+    pub(super) fn trim(&self) -> Option<Self> {
+        let leading = self.raw.len() - self.raw.trim_start().len();
+        let trimmed = self.raw.trim();
+        self.slice(TextRange::new(leading, leading + trimmed.len()))
+    }
+}
+
+impl MappedDialogueSourceBuilder {
+    pub(super) const fn new(source_anchor: usize) -> Self {
+        Self {
+            raw: String::new(),
+            segments: Vec::new(),
+            source_anchor,
+            last_source_end: None,
+            lines: 0,
+        }
+    }
+
+    pub(super) fn push_line(&mut self, text: &str, source_range: TextRange) {
+        debug_assert_eq!(text.len(), source_range.end() - source_range.start());
+        if self.lines > 0 {
+            let boundary_start = self.last_source_end.unwrap_or(source_range.start());
+            let boundary_end = source_range.start();
+            debug_assert!(boundary_start <= boundary_end);
+            let content_start = self.raw.len();
+            self.raw.push('\n');
+            self.segments
+                .push(DialogueContentSourceSegment::normalized_newline(
+                    TextRange::new(content_start, content_start + 1),
+                    TextRange::new(boundary_start, boundary_end),
+                ));
+        }
+        if !text.is_empty() {
+            let content_start = self.raw.len();
+            self.raw.push_str(text);
+            self.segments.push(DialogueContentSourceSegment::copied(
+                TextRange::new(content_start, self.raw.len()),
+                source_range,
+            ));
+        }
+        self.last_source_end = Some(source_range.end());
+        self.lines += 1;
+    }
+
+    pub(super) fn finish(self) -> MappedDialogueSource {
+        let source_map =
+            DialogueContentSourceMap::new(self.segments, self.raw.len(), self.source_anchor);
+        MappedDialogueSource {
+            raw: self.raw,
+            source_map,
+        }
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -533,21 +614,27 @@ impl<'a> Parser<'a> {
         ));
     }
 
-    fn dialogue_content(&mut self, raw: String, range: TextRange) -> DialogueContent {
-        let parsed = parse_dialogue_text_at(&raw, range.start());
+    fn dialogue_content(&mut self, mapped: MappedDialogueSource) -> DialogueContent {
+        let parsed = parse_dialogue_text(&mapped.raw);
         for diagnostic in parsed.diagnostics() {
-            let diagnostic_range = TextRange::new(
-                range.start() + diagnostic.range().start(),
-                range.start() + diagnostic.range().end(),
-            );
+            let diagnostic_range = mapped
+                .source_map
+                .source_range(*diagnostic.range())
+                .unwrap_or_else(|| {
+                    TextRange::new(
+                        mapped.source_map.source_anchor(),
+                        mapped.source_map.source_anchor(),
+                    )
+                });
             self.push_error(
                 diagnostic_range,
                 diagnostic.message(),
                 ["valid dialogue text markup"],
-                raw.get(diagnostic.range().start()..diagnostic.range().end()),
+                mapped.raw.get(diagnostic.range().as_range()),
                 [diagnostic.recovery()],
             );
         }
-        DialogueContent::new(raw, parsed.into_tokens(), range)
+        let (tokens, diagnostics) = parsed.into_parts();
+        DialogueContent::new(mapped.raw, tokens, diagnostics, mapped.source_map)
     }
 }

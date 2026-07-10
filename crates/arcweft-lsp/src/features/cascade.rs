@@ -3,13 +3,16 @@ use arcweft_compiler::lower::lower_source_runtime_plan_with_stats_and_options;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
 use arcweft_lang_syntax::ast::common::TextRange;
-use arcweft_lang_syntax::ast::dialogue::{DialogueContent, LineOptions};
+use arcweft_lang_syntax::ast::dialogue::{
+    DialogueContent, DialogueTag, DialogueTagArg, DialogueToken, LineOptions,
+};
 use arcweft_lang_syntax::ast::flow::{
     AwaitWith, BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
     SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
 };
 use arcweft_lang_syntax::ast::items::Item;
 use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::text::{RichTextTagFamily, inferred_rich_text_tag_family};
 use arcweft_render_text::{
     LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };
@@ -152,8 +155,7 @@ fn collect_dialogues(module: &HirModule) -> Vec<&HirDialogue> {
 }
 
 fn dialogue_content_contains_offset(dialogue: &HirDialogue, offset: usize) -> bool {
-    let range = dialogue.content().range();
-    range.start() <= offset && offset <= range.end()
+    dialogue.content().content_offset(offset).is_some()
 }
 
 pub(crate) fn source_range(source: &RichTextSettingSource) -> Option<RichTextSourceRange> {
@@ -370,132 +372,69 @@ fn line_options_style_path(options: &LineOptions, offset: usize) -> Option<Strin
 }
 
 fn inline_content_style_path(content: &DialogueContent, offset: usize) -> Option<String> {
-    if !range_contains(content.range(), offset) {
-        return None;
-    }
-    let raw = content.raw();
-    let raw_start = content.range().start();
-    inline_tag_ranges(raw).into_iter().find_map(|tag_range| {
-        let absolute = TextRange::new(raw_start + tag_range.start, raw_start + tag_range.end);
-        if !range_contains(&absolute, offset) {
-            return None;
+    let content_offset = content.content_offset(offset)?;
+    content.tokens().iter().find_map(|token| match token {
+        DialogueToken::Tag(tag) if range_contains(&tag.range(), content_offset) => {
+            inline_tag_style_path(tag, false, content_offset)
         }
-        let inside = &raw[tag_range.start + '['.len_utf8()..tag_range.end - ']'.len_utf8()];
-        inline_tag_style_path(inside, raw_start + tag_range.start + '['.len_utf8(), offset)
+        DialogueToken::InferredTag(tag) if range_contains(&tag.range(), content_offset) => {
+            inline_tag_style_path(tag, true, content_offset)
+        }
+        _ => None,
     })
 }
 
-fn inline_tag_ranges(raw: &str) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    let mut cursor = 0usize;
-    while let Some(open_relative) = raw[cursor..].find('[') {
-        let open = cursor + open_relative;
-        let Some(close_relative) = raw[open + '['.len_utf8()..].find(']') else {
-            break;
-        };
-        let close = open + '['.len_utf8() + close_relative + ']'.len_utf8();
-        ranges.push(open..close);
-        cursor = close;
+fn inline_tag_style_path(tag: &DialogueTag, inferred: bool, offset: usize) -> Option<String> {
+    if inferred {
+        return inferred_inline_style_path(tag, offset);
     }
-    ranges
-}
 
-fn inline_tag_style_path(inside: &str, inside_start: usize, offset: usize) -> Option<String> {
-    let leading = inside.len() - inside.trim_start().len();
-    let trimmed = inside.trim();
-    if trimmed.is_empty() || trimmed.starts_with('/') || trimmed.starts_with('!') {
-        return None;
-    }
-    let trimmed_start = inside_start + leading;
-    if trimmed.starts_with('.') {
-        let (selector, attrs) = split_inline_name_attrs(trimmed);
-        let attrs_start = inline_attrs_start(trimmed, selector, trimmed_start);
-        return inferred_inline_style_path(
-            selector.trim_start_matches('.'),
-            attrs,
-            trimmed_start,
-            attrs_start,
-            offset,
-        );
-    }
-    let (name, attrs) = split_inline_name_attrs(trimmed);
-    let attrs_start = inline_attrs_start(trimmed, name, trimmed_start);
-    match name {
-        "style" => selected_inline_style_path(attrs, attrs_start, style_selector_path, offset),
-        "layout" => selected_inline_style_path(attrs, attrs_start, layout_selector_path, offset),
-        "transform" => {
-            selected_inline_style_path(attrs, attrs_start, transform_selector_path, offset)
-        }
-        "effect" | "fx" => {
-            selected_inline_style_path(attrs, attrs_start, effect_selector_path, offset)
-        }
+    match tag.name() {
+        "style" => selected_inline_style_path(tag, style_selector_path, offset),
+        "layout" => selected_inline_style_path(tag, layout_selector_path, offset),
+        "transform" => selected_inline_style_path(tag, transform_selector_path, offset),
+        "effect" | "fx" => selected_inline_style_path(tag, effect_selector_path, offset),
         "color" | "font" | "size" | "em" | "strong" | "i" | "italic" | "oblique" | "slant" => {
-            direct_inline_style_path(name, attrs, trimmed_start, attrs_start, offset)
+            direct_inline_style_path(tag, offset)
         }
         _ => None,
     }
 }
 
-fn split_inline_name_attrs(source: &str) -> (&str, &str) {
-    let mut parts = source.splitn(2, char::is_whitespace);
-    let name = parts.next().unwrap_or_default();
-    let attrs = parts.next().unwrap_or_default().trim();
-    (name, attrs)
-}
-
-fn inline_attrs_start(trimmed: &str, name: &str, trimmed_start: usize) -> usize {
-    trimmed_start + name.len() + trimmed[name.len()..].len()
-        - trimmed[name.len()..].trim_start().len()
-}
-
 fn selected_inline_style_path(
-    attrs: &str,
-    attrs_start: usize,
+    tag: &DialogueTag,
     path_for: fn(&str, &str, &str) -> Option<String>,
     offset: usize,
 ) -> Option<String> {
-    let (selector, selector_attrs) = split_selector_attrs_for_inline(attrs);
-    let selector_offset = attrs.find(selector).unwrap_or(0);
-    let selector_start = attrs_start + selector_offset;
-    let selector_attrs_start =
-        inline_attrs_start(&attrs[selector_offset..], selector, selector_start);
+    let selector = tag.arguments().first().and_then(|argument| {
+        argument
+            .name()
+            .is_none()
+            .then(|| dot_selector(argument.value().value(), argument.value().range()))
+            .flatten()
+    });
     selector_or_attr_path(
-        selector.trim_start_matches('.'),
-        selector_attrs,
-        selector_start,
-        selector_attrs_start,
+        selector.as_ref().map_or("", |(name, _)| *name),
+        selector.map(|(_, range)| range),
+        tag.arguments(),
         path_for,
         offset,
     )
 }
 
-fn inferred_inline_style_path(
-    selector: &str,
-    attrs: &str,
-    selector_start: usize,
-    attrs_start: usize,
-    offset: usize,
-) -> Option<String> {
-    let path_for = match selector {
-        "italic" | "oblique" => style_selector_path,
-        "horizontal_tb"
-        | "vertical_rl"
-        | "vertical_lr"
-        | "dir"
-        | "ruby_over"
-        | "ruby_under"
-        | "ruby_inter_character" => layout_selector_path,
-        "offset" | "pos" | "rotate" | "scale" | "skew" => transform_selector_path,
-        "wave" | "shake" | "arc" | "typewriter" | "jitter" | "shader" | "host" => {
-            effect_selector_path
-        }
-        _ => return None,
+fn inferred_inline_style_path(tag: &DialogueTag, offset: usize) -> Option<String> {
+    let (selector, selector_range) = dot_selector(tag.name(), tag.name_range())?;
+    let path_for = match inferred_rich_text_tag_family(selector, tag.attrs())? {
+        RichTextTagFamily::Style => style_selector_path,
+        RichTextTagFamily::Layout => layout_selector_path,
+        RichTextTagFamily::Transform => transform_selector_path,
+        RichTextTagFamily::Effect => effect_selector_path,
+        RichTextTagFamily::Marker => return None,
     };
     selector_or_attr_path(
         selector,
-        attrs,
-        selector_start,
-        attrs_start,
+        Some(selector_range),
+        tag.arguments(),
         path_for,
         offset,
     )
@@ -503,40 +442,38 @@ fn inferred_inline_style_path(
 
 fn selector_or_attr_path(
     selector: &str,
-    attrs: &str,
-    selector_start: usize,
-    attrs_start: usize,
+    selector_range: Option<TextRange>,
+    arguments: &[DialogueTagArg],
     path_for: fn(&str, &str, &str) -> Option<String>,
     offset: usize,
 ) -> Option<String> {
-    if selector_start <= offset && offset <= selector_start + selector.len() {
+    if selector_range.is_some_and(|range| range_contains(&range, offset)) {
         return path_for(selector, "", "");
     }
-    inline_attr_ranges(attrs, attrs_start)
-        .into_iter()
-        .find_map(|attr| {
-            (attr.value_range.start <= offset && offset <= attr.value_range.end)
-                .then(|| path_for(selector, &attr.name, &attr.value))
-                .flatten()
-        })
+    arguments.iter().find_map(|argument| {
+        let name = argument.name()?;
+        range_contains(&argument.value().range(), offset)
+            .then(|| path_for(selector, name, argument.value().value()))
+            .flatten()
+    })
 }
 
-fn direct_inline_style_path(
-    name: &str,
-    attrs: &str,
-    name_start: usize,
-    attrs_start: usize,
-    offset: usize,
-) -> Option<String> {
-    let value_range = if attrs.is_empty() {
-        name_start..name_start + name.len()
-    } else {
-        attrs_start..attrs_start + attrs.len()
-    };
-    if offset < value_range.start || offset > value_range.end {
+fn dot_selector(source: &str, range: TextRange) -> Option<(&str, TextRange)> {
+    let selector = source.strip_prefix('.')?;
+    let start = range.end().checked_sub(selector.len())?;
+    Some((selector, TextRange::new(start, range.end())))
+}
+
+fn direct_inline_style_path(tag: &DialogueTag, offset: usize) -> Option<String> {
+    let selected = range_contains(&tag.name_range(), offset)
+        || tag
+            .arguments()
+            .iter()
+            .any(|argument| range_contains(&argument.range(), offset));
+    if !selected {
         return None;
     }
-    match name {
+    match tag.name() {
         "color" => Some("rich_text.text.color".to_owned()),
         "font" => Some("rich_text.text.font".to_owned()),
         "size" => Some("rich_text.text.size".to_owned()),
@@ -544,17 +481,6 @@ fn direct_inline_style_path(
             Some("rich_text.text.style".to_owned())
         }
         _ => None,
-    }
-}
-
-fn split_selector_attrs_for_inline(attrs: &str) -> (&str, &str) {
-    let attrs = attrs.trim();
-    let mut parts = attrs.splitn(2, char::is_whitespace);
-    let first = parts.next().unwrap_or_default();
-    if first.starts_with('.') {
-        (first, parts.next().unwrap_or_default().trim())
-    } else {
-        ("", attrs)
     }
 }
 
@@ -612,34 +538,6 @@ fn effect_selector_path(selector: &str, name: &str, _value: &str) -> Option<Stri
     } else {
         Some(format!("rich_text.effect.{selector}.{name}"))
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct InlineAttrRange {
-    name: String,
-    value: String,
-    value_range: Range<usize>,
-}
-
-fn inline_attr_ranges(attrs: &str, attrs_start: usize) -> Vec<InlineAttrRange> {
-    let mut ranges = Vec::new();
-    let mut cursor = 0usize;
-    for part in attrs.split_whitespace() {
-        let part_start = attrs[cursor..]
-            .find(part)
-            .map_or(cursor, |relative| cursor + relative);
-        cursor = part_start + part.len();
-        let Some((name, value)) = part.split_once('=') else {
-            continue;
-        };
-        let value_start = attrs_start + part_start + name.len() + '='.len_utf8();
-        ranges.push(InlineAttrRange {
-            name: name.to_owned(),
-            value: value.to_owned(),
-            value_range: value_start..value_start + value.len(),
-        });
-    }
-    ranges
 }
 
 fn call_option_style_path(source: &str, range: &TextRange, offset: usize) -> Option<String> {
@@ -882,6 +780,83 @@ fn collect_flow_item_dialogues<'a>(items: &'a [HirFlowItem], dialogues: &mut Vec
             | HirFlowItem::LetChoice { .. }
             | HirFlowItem::LetScope { .. }
             | HirFlowItem::Include(_) => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::style_path_at;
+    use arcweft_lang_syntax::parser::parse_source;
+
+    #[test]
+    fn inline_style_paths_project_multiline_lf_and_crlf_offsets() {
+        let source_lf = "flow opening {\n    narrator:\n        Intro\n        [.ruby_over ruby_size=11px]text[/]\n}\n";
+        for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+            let offset = source.find("11px").expect("ruby size value") + 1;
+            let parsed = parse_source(&source);
+            assert!(
+                parsed.errors().is_empty(),
+                "unexpected parser errors: {:?}",
+                parsed.errors()
+            );
+            assert_eq!(
+                style_path_at(parsed.typed_tree().items(), offset).as_deref(),
+                Some("rich_text.ruby.size")
+            );
+        }
+    }
+
+    #[test]
+    fn inline_effect_paths_use_typed_ranges_for_quoted_closing_brackets() {
+        let source_lf = "flow opening {\n    narrator:\n        [.sparkle note=\"contains ] safely\" amp=2px]text[/]\n}\n";
+        for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+            let parsed = parse_source(&source);
+            assert!(
+                parsed.errors().is_empty(),
+                "unexpected parser errors: {:?}",
+                parsed.errors()
+            );
+
+            let selector_offset = source.find("sparkle").expect("effect selector") + 2;
+            assert_eq!(
+                style_path_at(parsed.typed_tree().items(), selector_offset).as_deref(),
+                Some("rich_text.effect")
+            );
+            let note_offset = source.find("safely").expect("quoted note") + 2;
+            assert_eq!(
+                style_path_at(parsed.typed_tree().items(), note_offset).as_deref(),
+                Some("rich_text.effect.sparkle.note")
+            );
+            let amp_offset = source.find("2px").expect("effect amplitude") + 1;
+            assert_eq!(
+                style_path_at(parsed.typed_tree().items(), amp_offset).as_deref(),
+                Some("rich_text.effect.sparkle.amp")
+            );
+        }
+    }
+
+    #[test]
+    fn inline_direct_style_paths_cover_named_argument_keys_and_values() {
+        let source_lf =
+            "flow opening {\n    narrator:\n        [color value=\"#ff4050\"]text[/color]\n}\n";
+        for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+            let parsed = parse_source(&source);
+            assert!(
+                parsed.errors().is_empty(),
+                "unexpected parser errors: {:?}",
+                parsed.errors()
+            );
+
+            for selected in ["value", "=", "#ff4050"] {
+                let offset = source.find(selected).expect("direct color argument")
+                    + selected.len().saturating_sub(1);
+                assert_eq!(
+                    style_path_at(parsed.typed_tree().items(), offset).as_deref(),
+                    Some("rich_text.text.color"),
+                    "selection `{selected}`"
+                );
+            }
         }
     }
 }

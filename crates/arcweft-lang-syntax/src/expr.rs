@@ -1,4 +1,5 @@
 use crate::ast::common::TextRange;
+use crate::ast::dialogue::DialogueContent;
 use crate::ast::flow::{FlowItem, Stmt, ThreadBlock, ThreadModifier};
 use crate::ast::ids::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, RelativeId, RelativeIdSpelling,
@@ -32,7 +33,9 @@ pub use numeric::{
     NumericBracketSeqError,
 };
 use numeric::{digit_matches_radix, split_number_suffix};
-pub use source_ranges::{ExprSourceRange, collect_expr_source_ranges};
+pub use source_ranges::{
+    ExprSourceRange, collect_dialogue_call_content_ranges, collect_expr_source_ranges,
+};
 
 /// Identifier segment used by expression paths and shorthand selectors.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -295,7 +298,7 @@ pub enum Expr {
     Select(SelectExpr),
     DialogueCall {
         callee: Box<Expr>,
-        content: String,
+        content: Box<DialogueContent>,
         plan: Option<LinePlan>,
     },
     Index {

@@ -23,7 +23,7 @@ pub(crate) fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
     let character_aliases = collect_character_aliases(&parsed);
     let speaker_presets =
         collect_speaker_preset_locals_from_typed_tree(&parsed, &character_aliases);
-    let dialogue_content_ranges = collect_dialogue_content_ranges(source, &parsed);
+    let dialogue_content_ranges = collect_dialogue_content_ranges(&parsed);
     let mut edits = Vec::new();
     edits.extend(declaration_identity_edits(source, &parsed));
     edits.extend(dialogue_defaults_nested_assignment_edits(source, &parsed));
@@ -64,7 +64,7 @@ pub(crate) fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
         }
     }
     let context = DialogueSugarContext::from_parsed(&parsed);
-    for edit in dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::All, &context) {
+    for edit in dialogue_text_sugar_edits(&parsed, DialogueSugarMode::All, &context) {
         if !edits.iter().any(|existing| edits_overlap(existing, &edit)) {
             edits.push(edit);
         }

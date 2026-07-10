@@ -254,6 +254,7 @@ For routine local execution through Justfile, use:
 
 ```bash
 just test-fast
+just test-rich-text
 just test-cli-native
 just test-visual-smoke
 just test-cli-check
@@ -262,9 +263,12 @@ just test-doc
 ```
 
 `just test-fast` is now a smoke route, not a full workspace route. It covers
-the core/render-text/text-layout/native-player library path used by rich-text
-and native capture work. `just test-rich-text` adds the direct native
-`agent observe` exact smoke slice. `just test-workspace` is the normal workspace
+the core/render-text/text-layout/native-render/native-player library path used
+by rich-text and native capture work. `just test-rich-text` covers syntax, HIR,
+semantic, and runtime-plan rich-text ownership first, then adds the
+render/layout/native libraries, the reusable-decoration sample check, and the
+direct native `agent observe` exact smoke slice.
+`just test-workspace` is the normal workspace
 fast path: it runs workspace lib/integration tests except the large
 `arcweft-cli --test check` binary, then runs CLI lib/bin tests plus lightweight
 CLI behavior and fixture integration tests. It intentionally does not run

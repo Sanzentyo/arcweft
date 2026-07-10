@@ -1,17 +1,19 @@
 use crate::labels::expr_label;
 use arcweft_core::plan::FlowRuntimeId;
 use arcweft_lang_hir::syntax::{
-    ast::{ids::EntityRef, line_plan::LinePlan},
+    ast::{dialogue::DialogueContent, ids::EntityRef, line_plan::LinePlan},
     expr::{CallArg, Expr, Literal},
 };
 
-pub(super) fn dialogue_call_parts(expr: &Expr) -> Option<(&Expr, &str, Option<&LinePlan>)> {
+pub(super) fn dialogue_call_parts(
+    expr: &Expr,
+) -> Option<(&Expr, &DialogueContent, Option<&LinePlan>)> {
     match expr {
         Expr::DialogueCall {
             callee,
             content,
             plan,
-        } => Some((callee.as_ref(), content.as_str(), plan.as_ref())),
+        } => Some((callee.as_ref(), content.as_ref(), plan.as_ref())),
         Expr::Try { expr } => dialogue_call_parts(expr),
         _ => None,
     }

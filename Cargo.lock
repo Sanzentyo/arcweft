@@ -889,6 +889,7 @@ dependencies = [
 name = "arcweft-lang-syntax"
 version = "0.1.0"
 dependencies = [
+ "arcweft-dialogue",
  "arcweft-source",
  "blake3",
  "rowan",
@@ -1127,6 +1128,7 @@ name = "arcweft-render-text"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-dialogue",
  "serde",
  "thiserror 2.0.18",
 ]

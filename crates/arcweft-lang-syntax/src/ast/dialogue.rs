@@ -2,14 +2,22 @@ use super::common::{TextRange, Visibility};
 use super::ids::{EntityRef, EntityRefSyntax, IdRef};
 use super::items::Attribute;
 use super::line_plan::LinePlan;
-use crate::expr::Expr;
+use crate::{expr::Expr, text::DialogueTextDiagnostic};
 use thiserror::Error;
+
+mod source_map;
+
+pub use source_map::{
+    DialogueContentSourceMap, DialogueContentSourceSegment, DialogueContentSourceSegmentKind,
+};
 
 /// Parsed dialogue content.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueContent {
     raw: String,
     tokens: Vec<DialogueToken>,
+    diagnostics: Vec<DialogueTextDiagnostic>,
+    source_map: DialogueContentSourceMap,
     range: TextRange,
 }
 
@@ -21,7 +29,7 @@ pub enum DialogueToken {
     Tag(DialogueTag),
     InferredTag(DialogueTag),
     Mark(LineMark),
-    EndTag(String),
+    EndTag(DialogueEndTag),
     InferredEndTag,
     Expr(DialogueExpr),
     Ruby { base: String, ruby: String },
@@ -40,7 +48,40 @@ pub struct DialogueExpr {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueTag {
     name: String,
+    name_range: TextRange,
     attrs: String,
+    arguments: Vec<DialogueTagArg>,
+    range: TextRange,
+    attrs_range: TextRange,
+}
+
+/// One positional or named argument in a dialogue tag.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DialogueTagArg {
+    Positional {
+        value: DialogueTagArgValue,
+    },
+    Named {
+        name: String,
+        name_range: Option<TextRange>,
+        value: DialogueTagArgValue,
+    },
+}
+
+/// Authored value and source range of a dialogue-tag argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueTagArgValue {
+    source: String,
+    value: String,
+    range: TextRange,
+}
+
+/// Authored dialogue end tag or a typed synthetic end from inline span sugar.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueEndTag {
+    name: String,
+    range: TextRange,
+    synthetic: bool,
 }
 
 /// Positive duration accepted by the `[w ...]` dialogue control.
@@ -204,8 +245,25 @@ pub enum DialogueDefaultAssignOp {
 }
 
 impl DialogueContent {
-    pub(crate) const fn new(raw: String, tokens: Vec<DialogueToken>, range: TextRange) -> Self {
-        Self { raw, tokens, range }
+    pub(crate) fn new(
+        raw: String,
+        tokens: Vec<DialogueToken>,
+        diagnostics: Vec<DialogueTextDiagnostic>,
+        source_map: DialogueContentSourceMap,
+    ) -> Self {
+        debug_assert_eq!(raw.len(), source_map.content_len());
+        let range = source_map
+            .source_range(TextRange::new(0, raw.len()))
+            .unwrap_or_else(|| {
+                TextRange::new(source_map.source_anchor(), source_map.source_anchor())
+            });
+        Self {
+            raw,
+            tokens,
+            diagnostics,
+            source_map,
+            range,
+        }
     }
 
     pub fn raw(&self) -> &str {
@@ -216,8 +274,40 @@ impl DialogueContent {
         &self.tokens
     }
 
+    /// Recoverable text-mode diagnostics retained with this typed content.
+    pub fn diagnostics(&self) -> &[DialogueTextDiagnostic] {
+        &self.diagnostics
+    }
+
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+
+    /// Provenance map for the normalized dialogue content.
+    pub const fn source_map(&self) -> &DialogueContentSourceMap {
+        &self.source_map
+    }
+
+    /// Projects a content-relative byte range into the original document.
+    pub fn source_range(&self, relative: TextRange) -> Option<TextRange> {
+        self.source_map.source_range(relative)
+    }
+
+    /// Maps an authored document byte offset into normalized content space.
+    /// Removed indentation and the interior byte of a CRLF terminator have no
+    /// corresponding content offset.
+    pub fn content_offset(&self, source_offset: usize) -> Option<usize> {
+        self.source_map.content_offset(source_offset)
+    }
+
+    pub(crate) fn replace_source_map(&mut self, source_map: DialogueContentSourceMap) {
+        debug_assert_eq!(self.raw.len(), source_map.content_len());
+        self.range = source_map
+            .source_range(TextRange::new(0, self.raw.len()))
+            .unwrap_or_else(|| {
+                TextRange::new(source_map.source_anchor(), source_map.source_anchor())
+            });
+        self.source_map = source_map;
     }
 }
 
@@ -244,16 +334,55 @@ impl DialogueExpr {
 }
 
 impl DialogueTag {
-    pub(crate) const fn new(name: String, attrs: String) -> Self {
-        Self { name, attrs }
+    pub(crate) const fn new(
+        name: String,
+        name_range: TextRange,
+        attrs: String,
+        arguments: Vec<DialogueTagArg>,
+        range: TextRange,
+        attrs_range: TextRange,
+    ) -> Self {
+        Self {
+            name,
+            name_range,
+            attrs,
+            arguments,
+            range,
+            attrs_range,
+        }
     }
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Authored tag-head range, relative to the owning dialogue content.
+    ///
+    /// The source spelling may be an alias or sugar token even when `name()`
+    /// exposes its canonical token name.
+    pub const fn name_range(&self) -> TextRange {
+        self.name_range
+    }
+
     pub fn attrs(&self) -> &str {
         &self.attrs
+    }
+
+    /// Parsed positional and named arguments in authored order.
+    pub fn arguments(&self) -> &[DialogueTagArg] {
+        &self.arguments
+    }
+
+    /// Full range including `[` and `]`, relative to the owning dialogue
+    /// content.
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+
+    /// Range of the raw attribute tail, in the tag range's coordinate space and
+    /// excluding surrounding whitespace.
+    pub const fn attrs_range(&self) -> TextRange {
+        self.attrs_range
     }
 
     /// Parses the positional or `time=` duration of a `[w ...]` tag.
@@ -311,6 +440,108 @@ impl DialogueTag {
             });
         }
         Ok(DialogueRevealSpeed { milli_cps })
+    }
+}
+
+impl DialogueTagArg {
+    /// Named argument key, or `None` for a positional argument.
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Positional { .. } => None,
+            Self::Named { name, .. } => Some(name),
+        }
+    }
+
+    /// Authored argument value.
+    pub const fn value(&self) -> &DialogueTagArgValue {
+        match self {
+            Self::Positional { value } | Self::Named { value, .. } => value,
+        }
+    }
+
+    /// Authored named-key range. Synthetic sugar arguments and positional
+    /// arguments have no key range.
+    pub const fn name_range(&self) -> Option<TextRange> {
+        match self {
+            Self::Positional { .. } => None,
+            Self::Named { name_range, .. } => *name_range,
+        }
+    }
+
+    /// Full argument range from key/value start through the value end.
+    pub const fn range(&self) -> TextRange {
+        match self {
+            Self::Positional { value } => value.range,
+            Self::Named {
+                name_range, value, ..
+            } => {
+                let start = match name_range {
+                    Some(range) => range.start(),
+                    None => value.range.start(),
+                };
+                TextRange::new(start, value.range.end())
+            }
+        }
+    }
+}
+
+impl DialogueTagArgValue {
+    pub(crate) fn new(source: String, value: String, range: TextRange) -> Self {
+        Self {
+            source,
+            value,
+            range,
+        }
+    }
+
+    /// Exact authored value source, including quotes when present.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Value with one matching outer quote pair removed.
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// Exact authored value range in the owning tag's coordinate space.
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl DialogueEndTag {
+    pub(crate) const fn new(name: String, range: TextRange) -> Self {
+        Self {
+            name,
+            range,
+            synthetic: false,
+        }
+    }
+
+    pub(crate) const fn synthetic(name: String, offset: usize) -> Self {
+        Self {
+            name,
+            range: TextRange::new(offset, offset),
+            synthetic: true,
+        }
+    }
+
+    /// Explicit family/name being closed.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Full authored range including `[` and `]`, or the zero-width insertion
+    /// point for an end synthesized from inline span sugar. The range uses the
+    /// owning dialogue content's coordinate space.
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+
+    /// Whether inline span sugar synthesized this end without an authored tag.
+    pub const fn is_synthetic(&self) -> bool {
+        self.synthetic
     }
 }
 

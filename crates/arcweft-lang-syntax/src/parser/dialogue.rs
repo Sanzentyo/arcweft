@@ -1,15 +1,17 @@
 use crate::ast::dialogue::{
-    DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultPath, DialogueDefaultsItem,
+    DialogueContentSourceMap, DialogueDefaultAssignOp, DialogueDefaultAssignment,
+    DialogueDefaultPath, DialogueDefaultsItem,
 };
+use crate::expr::{Expr, collect_dialogue_call_content_ranges};
 
 use super::headers::{parse_optional_decl_entity_ref, parse_visibility_prefix, simple_error};
 use super::{
     BlockStyle, ContentCall, ContentCallParse, CstLine, DialogueContent, FlowItem, LinePlan,
-    Parser, ScopeBlock, SpeakerLine, Stmt, TextRange, attach_plan_to_dialogue_expr,
-    contains_dialogue_expr, find_content_bracket, find_matching_punctuation,
-    find_top_level_punctuation, flat_block_head, indentation, is_with_brace_head,
-    parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy, parse_flat_fence,
-    parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
+    MappedDialogueSource, MappedDialogueSourceBuilder, Parser, ScopeBlock, SpeakerLine, Stmt,
+    TextRange, attach_plan_to_dialogue_expr, contains_dialogue_expr, find_content_bracket,
+    find_matching_punctuation, find_top_level_punctuation, flat_block_head, indentation,
+    is_with_brace_head, parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy,
+    parse_flat_fence, parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
     parse_line_plan_attachment_with_body_base, parse_with_brace_label, parse_with_indent_label,
     split_brace_item, split_brace_item_with_scan, split_call_head, split_leading_ident,
     split_speaker_line, split_top_level_binding, split_top_level_punctuation_once,
@@ -110,7 +112,12 @@ impl Parser<'_> {
         let trailing_leading = trailing_untrimmed.len() - trailing_untrimmed.trim_start().len();
         let trailing = trailing_untrimmed.trim();
         let line_leading = start.text.len() - start.text.trim_start().len();
-        let trailing_start = start.start + line_leading + close + 1 + trailing_leading;
+        let final_line = &self.events[cursor];
+        let final_line_trailing = final_line.text.len() - final_line.text.trim_end().len();
+        let close_end = final_line
+            .end
+            .checked_sub(final_line_trailing + trailing_untrimmed.len())?;
+        let trailing_start = close_end + trailing_leading;
         let inline_plan = self.take_trailing_line_plan(trailing, trailing_start, &mut cursor);
 
         self.index = cursor + 1;
@@ -130,20 +137,21 @@ impl Parser<'_> {
         let (pattern, ty) = parse_binding_pattern(pattern);
         let expr_start = start.start + line_leading + expr_offset + expr_leading;
         let (expr_source, expr_range) = plan_end
-            .and_then(|end| self.source_text_in_range(expr_start, end))
-            .map_or_else(
-                || {
+            .and_then(|end| {
+                self.source_text_in_range(expr_start, end).map(|source| {
                     (
-                        expr_source.to_owned(),
-                        TextRange::new(expr_start, expr_start + expr_source.len()),
+                        source.trim_end().to_owned(),
+                        TextRange::new(expr_start, end),
                     )
-                },
-                |source| {
-                    let source = source.trim_end().to_owned();
-                    let end = expr_start + source.len();
-                    (source, TextRange::new(expr_start, end))
-                },
-            );
+                })
+            })
+            .unwrap_or_else(|| {
+                (
+                    expr_source.to_owned(),
+                    TextRange::new(expr_start, close_end),
+                )
+            });
+        self.attach_dialogue_expr_content_source_map(&mut expr, &expr_source, expr_range);
         Some(Stmt::Let {
             pattern,
             ty,
@@ -154,22 +162,60 @@ impl Parser<'_> {
     }
 
     fn source_text_in_range(&self, start: usize, end: usize) -> Option<String> {
+        self.mapped_source_in_range(start, end)
+            .map(|mapped| mapped.raw)
+    }
+
+    fn mapped_source_in_range(&self, start: usize, end: usize) -> Option<MappedDialogueSource> {
         if start >= end {
             return None;
         }
-        let mut source = String::new();
+        let mut mapped = MappedDialogueSourceBuilder::new(start);
+        let mut found = false;
         for line in self.events.iter() {
             if line.end() <= start || line.start() >= end {
                 continue;
             }
-            if !source.is_empty() {
-                source.push('\n');
-            }
             let line_start = start.saturating_sub(line.start());
             let line_end = end.min(line.end()).saturating_sub(line.start());
-            source.push_str(line.text().get(line_start..line_end)?);
+            let text = line.text().get(line_start..line_end)?;
+            mapped.push_line(
+                text,
+                TextRange::new(line.start() + line_start, line.start() + line_end),
+            );
+            found = true;
         }
-        (!source.is_empty()).then_some(source)
+        found.then(|| mapped.finish())
+    }
+
+    fn attach_dialogue_expr_content_source_map(
+        &self,
+        expr: &mut Expr,
+        expr_source: &str,
+        expr_range: TextRange,
+    ) {
+        let Some(mapped_expr) = self
+            .mapped_source_in_range(expr_range.start(), expr_range.end())
+            .and_then(|mapped| mapped.trim())
+        else {
+            return;
+        };
+        if mapped_expr.raw != expr_source {
+            return;
+        }
+        let Some(content_range) = collect_dialogue_call_content_ranges(
+            expr,
+            &mapped_expr.raw,
+            TextRange::new(0, mapped_expr.raw.len()),
+        )
+        .into_iter()
+        .next() else {
+            return;
+        };
+        let Some(mapped_content) = mapped_expr.slice(content_range) else {
+            return;
+        };
+        replace_dialogue_call_content_source_map(expr, mapped_content.source_map);
     }
 
     pub(super) fn parse_content_call_or_speaker_line(&mut self) -> Option<FlowItem> {
@@ -184,11 +230,9 @@ impl Parser<'_> {
                 self.take_indented_dialogue(indentation(&line.text) + 1, line.start)
             } else {
                 let content_start = line.start + line_leading + content_relative;
-                let inline_content = self.take_inline_dialogue_content(inline_content);
-                self.dialogue_content(
-                    inline_content.clone(),
-                    TextRange::new(content_start, content_start + inline_content.len()),
-                )
+                let inline_content =
+                    self.take_inline_dialogue_content(inline_content, content_start);
+                self.dialogue_content(inline_content)
             };
             let plan = self.take_optional_line_plan();
             let option_args = args
@@ -226,7 +270,13 @@ impl Parser<'_> {
     fn try_take_content_call(&mut self) -> Option<ContentCallParse> {
         let start = self.current().clone();
         let line_leading = start.text.len() - start.text.trim_start().len();
-        let mut text = start.text.trim().to_owned();
+        let first_text = start.text.trim();
+        let first_start = start.start + line_leading;
+        let mut mapped_text = MappedDialogueSourceBuilder::new(first_start);
+        mapped_text.push_line(
+            first_text,
+            TextRange::new(first_start, first_start + first_text.len()),
+        );
         let mut end = start.end;
         let mut cursor = self.index;
         let mut bracket_delta = start.punctuation_deltas().bracket;
@@ -234,16 +284,23 @@ impl Parser<'_> {
         while bracket_delta > 0 && cursor + 1 < self.events.len() {
             cursor += 1;
             bracket_delta += self.events[cursor].punctuation_deltas().bracket;
-            text.push('\n');
-            text.push_str(self.events[cursor].text.trim_end());
-            end = self.events[cursor].end;
+            let line = &self.events[cursor];
+            let text = line.text.trim_end();
+            mapped_text.push_line(text, TextRange::new(line.start, line.start + text.len()));
+            end = line.end;
         }
+        let mapped_text = mapped_text.finish();
+        let text = &mapped_text.raw;
 
-        let open = find_content_bracket(&text)?;
-        let Some(close) = find_matching_punctuation(&text, open, '[', ']') else {
+        let open = find_content_bracket(text)?;
+        let Some(close) = find_matching_punctuation(text, open, '[', ']') else {
             self.index = cursor + 1;
+            let diagnostic_range = mapped_text
+                .source_map
+                .source_range(TextRange::new(open, text.len()))
+                .unwrap_or_else(|| TextRange::new(start.start + open, end));
             self.push_error(
-                TextRange::new(start.start + open, end),
+                diagnostic_range,
                 "unclosed dialogue content block",
                 ["]"],
                 Some(&text[open..]),
@@ -259,7 +316,6 @@ impl Parser<'_> {
         let (callee, args) = split_call_head(before);
         let args = args
             .map(|(args, relative)| (args, start.start + line_leading + before_start + relative));
-        let raw_content = text[open + 1..close].trim().to_owned();
         let trailing_untrimmed = &text[close + 1..];
         let trailing_leading = trailing_untrimmed.len() - trailing_untrimmed.trim_start().len();
         let trailing = trailing_untrimmed.trim();
@@ -267,13 +323,11 @@ impl Parser<'_> {
         let inline_plan = self.take_trailing_line_plan(trailing, trailing_start, &mut cursor);
         let trailing_block = inline_plan
             .is_none()
-            .then(|| self.take_trailing_bare_scope(&text, close, &mut cursor, start.start))
+            .then(|| self.take_trailing_bare_scope(text, close, &mut cursor, start.start))
             .flatten();
         self.index = cursor + 1;
-        let content = self.dialogue_content(
-            raw_content.clone(),
-            TextRange::new(start.start + open + 1, start.start + close),
-        );
+        let content_source = mapped_text.slice(TextRange::new(open + 1, close))?.trim()?;
+        let content = self.dialogue_content(content_source);
         let consumed_end = trailing_block
             .as_ref()
             .map_or(end, |block| block.range().end());
@@ -501,42 +555,53 @@ impl Parser<'_> {
     }
 
     fn take_indented_dialogue(&mut self, min_indent: usize, start: usize) -> DialogueContent {
-        let mut raw = String::new();
-        let mut end = start;
+        let mut content = MappedDialogueSourceBuilder::new(start);
         while self.index < self.events.len() {
-            let line = self.current();
+            let line = self.current().clone();
             if line.text.trim().is_empty() {
-                raw.push('\n');
+                content.push_line("", TextRange::new(line.end, line.end));
                 self.index += 1;
                 continue;
             }
             if indentation(&line.text) < min_indent || line.text.trim_start().starts_with("with") {
                 break;
             }
-            if !raw.is_empty() {
-                raw.push('\n');
-            }
-            raw.push_str(line.text.trim());
-            end = line.end;
+            let trimmed = line.text.trim();
+            let leading = line.text.len() - line.text.trim_start().len();
+            let source_start = line.start + leading;
+            content.push_line(
+                trimmed,
+                TextRange::new(source_start, source_start + trimmed.len()),
+            );
             self.index += 1;
         }
-        self.dialogue_content(raw.clone(), TextRange::new(start, end))
+        self.dialogue_content(content.finish())
     }
 
-    fn take_inline_dialogue_content(&mut self, first_line: &str) -> String {
-        let mut raw = first_line.to_owned();
+    fn take_inline_dialogue_content(
+        &mut self,
+        first_line: &str,
+        source_start: usize,
+    ) -> MappedDialogueSource {
+        let mut content = MappedDialogueSourceBuilder::new(source_start);
+        content.push_line(
+            first_line,
+            TextRange::new(source_start, source_start + first_line.len()),
+        );
         let mut expr_bracket_depth = dialogue_expr_bracket_depth(first_line, 0);
         while expr_bracket_depth > 0 && self.index < self.events.len() {
-            let line = self.current();
-            if !raw.is_empty() {
-                raw.push('\n');
-            }
+            let line = self.current().clone();
             let trimmed = line.text.trim();
-            raw.push_str(trimmed);
+            let leading = line.text.len() - line.text.trim_start().len();
+            let trimmed_start = line.start + leading;
+            content.push_line(
+                trimmed,
+                TextRange::new(trimmed_start, trimmed_start + trimmed.len()),
+            );
             expr_bracket_depth = dialogue_expr_bracket_depth(trimmed, expr_bracket_depth);
             self.index += 1;
         }
-        raw
+        content.finish()
     }
 
     fn take_indented_line_plan(
@@ -733,4 +798,12 @@ fn split_dialogue_default_assignment(
     }
     split_top_level_punctuation_once(source, '=')
         .map(|(name, value)| (name.trim(), DialogueDefaultAssignOp::Replace, value.trim()))
+}
+
+fn replace_dialogue_call_content_source_map(expr: &mut Expr, source_map: DialogueContentSourceMap) {
+    match expr {
+        Expr::DialogueCall { content, .. } => content.replace_source_map(source_map),
+        Expr::Try { expr } => replace_dialogue_call_content_source_map(expr, source_map),
+        _ => {}
+    }
 }

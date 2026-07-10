@@ -46,7 +46,7 @@ pub fn format_source_with_dialect(
 fn rich_text_canonical_edits(source: &str) -> Vec<TextEdit> {
     let parsed = parse_source(source);
     let context = DialogueSugarContext::from_parsed(&parsed);
-    dialogue_text_sugar_edits(source, &parsed, DialogueSugarMode::RichTextOnly, &context)
+    dialogue_text_sugar_edits(&parsed, DialogueSugarMode::RichTextOnly, &context)
 }
 
 fn agent_format_diagnostics(source: &str) -> Vec<ToolingDiagnostic> {

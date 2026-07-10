@@ -2,6 +2,7 @@ use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlanItem},
+        decoration::DecorationItem,
         dialogue::DialogueToken,
         flow::{
             AwaitWith, ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget,
@@ -90,6 +91,7 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         | HirTopLevelDecl::Proof(_)
         | HirTopLevelDecl::Struct(_)
         | HirTopLevelDecl::TrustedAxiom(_) => {}
+        HirTopLevelDecl::Decoration(item) => collect_decoration_decl(item, uses),
         HirTopLevelDecl::Entry(item) => collect_entry_decl(item, uses),
         HirTopLevelDecl::Test(item) => push_id_ref(uses, item.id()),
         HirTopLevelDecl::Bench(item) => push_id_ref(uses, item.id()),
@@ -176,6 +178,17 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
             }
         }
         HirTopLevelDecl::Style(item) => collect_style_decl(item, uses),
+    }
+}
+
+fn collect_decoration_decl(item: &DecorationItem, uses: &mut Vec<SymbolUse>) {
+    for param in item.params() {
+        if let Some(default) = param.default() {
+            collect_expr(default, uses);
+        }
+    }
+    for layer in item.layers() {
+        collect_expr(layer.expr(), uses);
     }
 }
 

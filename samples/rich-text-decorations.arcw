@@ -1,0 +1,33 @@
+pub surface character narrator {
+    display = "Narrator"
+    default_voice = auto
+}
+
+decoration emphasis(accent = "#ffd060") {
+    strong()
+    color(value=accent)
+}
+
+decoration notice(
+    accent,
+    amplitude = 2px,
+    seed = "notice",
+    ...effect_args,
+) {
+    decorate(.emphasis, accent=accent)
+    effect(.wave, amp=amplitude, seed=seed, effect_args...)
+}
+
+entry game {
+    goto @flow.rich_text_decorations
+}
+
+flow rich_text_decorations {
+    narrator.say()[
+        [decorate .notice accent="#ff6b8a" speed=2 label="urgent warning"]必須値、既定値、カスタム引数をまとめた装飾[/decorate][p]
+    ]
+
+    narrator.say()[
+        [decorate .notice accent="#78dce8" amplitude=4px seed="override"]既定値を上書きした装飾[/decorate][p]
+    ]
+}

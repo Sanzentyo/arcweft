@@ -4,6 +4,8 @@ use arcweft_source::SourceAnchor;
 use core::time::Duration;
 use thiserror::Error;
 
+pub mod rich_text;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpeakerRef {
     id: PublicId,

@@ -67,6 +67,10 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::Callable(item.clone()));
             }
+            Item::Decoration(item) => {
+                self.declarations
+                    .push(HirTopLevelDecl::Decoration(item.clone()));
+            }
             Item::Enum(item) => {
                 self.declarations.push(HirTopLevelDecl::Enum(item.clone()));
             }
@@ -292,6 +296,39 @@ pub dialogue defaults @dialogue.defaults.mobile {
         assert_eq!(defaults.attrs().len(), 1);
         assert_eq!(defaults.attrs()[0].name(), "profile");
         assert_eq!(defaults.attrs()[0].args(), Some("note=\"mobile defaults\""));
+    }
+
+    #[test]
+    fn lowering_preserves_typed_decoration_declarations() {
+        let tree = parse_source(
+            r##"
+/// Warning emphasis used by dialogue text.
+#[theme(dialogue)]
+decoration warning(accent = "#ff4050", required, ...custom) {
+    strong()
+    color(value=accent)
+    effect(.wave, custom...)
+}
+"##,
+        )
+        .into_typed_tree();
+
+        let hir = lower_to_hir(&tree).expect("decoration lowers to HIR");
+        let [crate::model::HirTopLevelDecl::Decoration(decoration)] = hir.declarations() else {
+            panic!("expected one decoration declaration");
+        };
+        assert_eq!(decoration.name(), "warning");
+        assert_eq!(
+            decoration
+                .doc()
+                .map(arcweft_lang_syntax::ast::common::DocBlock::text),
+            Some("Warning emphasis used by dialogue text.")
+        );
+        assert_eq!(decoration.attrs().len(), 1);
+        assert_eq!(decoration.params().len(), 3);
+        assert!(decoration.params()[2].is_rest());
+        assert_eq!(decoration.layers().len(), 3);
+        assert_eq!(hir.declarations()[0].cache_fact_tag(), "decoration");
     }
 
     #[test]

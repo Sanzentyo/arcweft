@@ -1,15 +1,19 @@
 use std::ops::Range;
 
 use arcweft_lang_hir::model::HirDialogue;
+use arcweft_lang_hir::syntax::ast::common::TextRange;
+use arcweft_lang_hir::syntax::ast::dialogue::{
+    DialogueContent, DialogueTag, DialogueTagArg, DialogueToken,
+};
 use arcweft_lang_hir::syntax::expr::Expr;
+use arcweft_lang_hir::syntax::text::{RichTextTagFamily, inferred_rich_text_tag_family};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextSourceRange,
     RichTextStyle, RichTextStyleContribution,
 };
 
-use super::attrs::trim_quotes;
 use super::raw::{source_with_relative_range, style_assignment_paths, style_assignments_from_raw};
-use super::tag::{InferredTagFamily, inferred_tag_family, split_selector_attrs};
+use super::tag::split_selector_attrs;
 
 pub(crate) struct LineOptionContribution<'a> {
     pub(crate) path: &'a str,
@@ -70,25 +74,32 @@ pub(crate) fn append_inline_span_contributions(
     target: &mut Vec<RichTextStyleContribution>,
     dialogue: &HirDialogue,
 ) {
+    let content = dialogue.content();
     target.extend(
-        inline_style_assignments(dialogue.content().raw(), dialogue.content().range().start())
+        inline_style_assignments(content)
             .into_iter()
-            .map(|assignment| RichTextStyleContribution {
-                path: assignment.path,
-                layer: RichTextCascadeLayer::InlineSpan,
-                source: RichTextSettingSource::SourceFile {
-                    item_id: dialogue.id().map(|id| id.body().to_owned()),
-                    public_id: dialogue.text_key().map(|id| id.body().to_owned()),
-                    range: Some(RichTextSourceRange {
-                        start: assignment.value_range.start,
-                        end: assignment.value_range.end,
-                    }),
-                },
-                op: RichTextAssignOp::Replace,
-                value: assignment.value,
-                style_index: None,
-                active: true,
-                shadowed_by: None,
+            .filter_map(|assignment| {
+                let source_range = content.source_range(TextRange::new(
+                    assignment.value_range.start,
+                    assignment.value_range.end,
+                ))?;
+                Some(RichTextStyleContribution {
+                    path: assignment.path,
+                    layer: RichTextCascadeLayer::InlineSpan,
+                    source: RichTextSettingSource::SourceFile {
+                        item_id: dialogue.id().map(|id| id.body().to_owned()),
+                        public_id: dialogue.text_key().map(|id| id.body().to_owned()),
+                        range: Some(RichTextSourceRange {
+                            start: source_range.start(),
+                            end: source_range.end(),
+                        }),
+                    },
+                    op: RichTextAssignOp::Replace,
+                    value: assignment.value,
+                    style_index: None,
+                    active: true,
+                    shadowed_by: None,
+                })
             }),
     );
 }
@@ -100,142 +111,136 @@ struct InlineStyleAssignment {
     value_range: Range<usize>,
 }
 
-fn inline_style_assignments(raw: &str, absolute_start: usize) -> Vec<InlineStyleAssignment> {
-    inline_tag_ranges(raw)
-        .into_iter()
-        .flat_map(|tag_range| {
-            let inside = &raw[tag_range.start + '['.len_utf8()..tag_range.end - ']'.len_utf8()];
-            inline_assignments_from_tag(inside, absolute_start + tag_range.start + '['.len_utf8())
+type InlineSelectorAssignmentBuilder =
+    fn(&str, &str, Range<usize>, Range<usize>, &[DialogueTagArg]) -> Vec<InlineStyleAssignment>;
+
+fn inline_style_assignments(content: &DialogueContent) -> Vec<InlineStyleAssignment> {
+    content
+        .tokens()
+        .iter()
+        .flat_map(|token| match token {
+            DialogueToken::Tag(tag) => inline_assignments_from_tag(tag, false),
+            DialogueToken::InferredTag(tag) => inline_assignments_from_tag(tag, true),
+            _ => Vec::new(),
         })
         .collect()
 }
 
-fn inline_tag_ranges(raw: &str) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    let mut cursor = 0usize;
-    while let Some(open_relative) = raw[cursor..].find('[') {
-        let open = cursor + open_relative;
-        let Some(close_relative) = raw[open + '['.len_utf8()..].find(']') else {
-            break;
+fn inline_assignments_from_tag(tag: &DialogueTag, inferred: bool) -> Vec<InlineStyleAssignment> {
+    if inferred {
+        let Some((selector, selector_range)) = dot_selector(tag.name(), tag.name_range()) else {
+            return Vec::new();
         };
-        let close = open + '['.len_utf8() + close_relative + ']'.len_utf8();
-        ranges.push(open..close);
-        cursor = close;
-    }
-    ranges
-}
-
-fn inline_assignments_from_tag(
-    inside: &str,
-    inside_absolute_start: usize,
-) -> Vec<InlineStyleAssignment> {
-    let leading = inside.len() - inside.trim_start().len();
-    let trimmed = inside.trim();
-    if trimmed.is_empty() || trimmed.starts_with('/') || trimmed.starts_with('!') {
-        return Vec::new();
-    }
-    let trimmed_start = inside_absolute_start + leading;
-    if trimmed.starts_with('.') {
-        let (selector, attrs) = split_tag_name_attrs_for_inline(trimmed);
-        let attrs_start = inline_attrs_start(trimmed, selector, trimmed_start);
         return inferred_inline_assignments(
-            selector.trim_start_matches('.'),
-            attrs,
-            trimmed_start,
-            attrs_start,
+            selector,
+            tag.attrs(),
+            selector_range,
+            tag.attrs_range().as_range(),
+            tag.arguments(),
         );
     }
 
-    let (name, attrs) = split_tag_name_attrs_for_inline(trimmed);
-    let attrs_start = inline_attrs_start(trimmed, name, trimmed_start);
-    match name {
-        "style" => {
-            selector_inline_assignments(attrs, attrs_start, style_selector_inline_assignments)
-        }
-        "layout" => {
-            selector_inline_assignments(attrs, attrs_start, layout_selector_inline_assignments)
-        }
-        "transform" => {
-            selector_inline_assignments(attrs, attrs_start, transform_selector_inline_assignments)
-        }
-        "effect" | "fx" => {
-            selector_inline_assignments(attrs, attrs_start, effect_selector_inline_assignments)
-        }
+    match tag.name() {
+        "style" => selector_inline_assignments(tag, style_selector_inline_assignments),
+        "layout" => selector_inline_assignments(tag, layout_selector_inline_assignments),
+        "transform" => selector_inline_assignments(tag, transform_selector_inline_assignments),
+        "effect" | "fx" => selector_inline_assignments(tag, effect_selector_inline_assignments),
         "color" | "font" | "size" | "em" | "strong" | "i" | "italic" | "oblique" | "slant" => {
-            direct_inline_assignments(name, attrs, trimmed_start, attrs_start)
+            direct_inline_assignments(tag)
         }
         _ => Vec::new(),
     }
 }
 
-fn split_tag_name_attrs_for_inline(source: &str) -> (&str, &str) {
-    let mut parts = source.splitn(2, char::is_whitespace);
-    let name = parts.next().unwrap_or_default();
-    let attrs = parts.next().unwrap_or_default().trim();
-    (name, attrs)
-}
-
-fn inline_attrs_start(trimmed: &str, name: &str, trimmed_start: usize) -> usize {
-    trimmed_start + name.len() + trimmed[name.len()..].len()
-        - trimmed[name.len()..].trim_start().len()
-}
-
 fn selector_inline_assignments(
-    attrs: &str,
-    attrs_start: usize,
-    build: fn(&str, &str, usize, usize) -> Vec<InlineStyleAssignment>,
+    tag: &DialogueTag,
+    build: InlineSelectorAssignmentBuilder,
 ) -> Vec<InlineStyleAssignment> {
-    let (selector, selector_attrs) = split_selector_attrs(attrs);
-    let selector_offset = attrs.find(selector).unwrap_or(0);
-    let selector_start = attrs_start + selector_offset;
-    let selector_attrs_start =
-        inline_attrs_start(&attrs[selector_offset..], selector, selector_start);
+    let (selector_source, selector_attrs) = split_selector_attrs(tag.attrs());
+    let selector = selector_source.trim_start_matches('.');
+    let selector_range = tag
+        .arguments()
+        .first()
+        .and_then(|argument| dot_selector(argument.value().value(), argument.value().range()))
+        .map_or_else(|| tag.attrs_range().as_range(), |(_, range)| range);
+    let attrs_range = argument_span(
+        tag.arguments()
+            .iter()
+            .filter(|argument| argument.name().is_some()),
+    )
+    .unwrap_or_else(|| selector_range.clone());
     build(
-        selector.trim_start_matches('.'),
+        selector,
         selector_attrs,
-        selector_start,
-        selector_attrs_start,
+        selector_range,
+        attrs_range,
+        tag.arguments(),
     )
 }
 
 fn inferred_inline_assignments(
     selector: &str,
     attrs: &str,
-    selector_start: usize,
-    attrs_start: usize,
+    selector_range: Range<usize>,
+    attrs_range: Range<usize>,
+    arguments: &[DialogueTagArg],
 ) -> Vec<InlineStyleAssignment> {
-    match inferred_tag_family(selector, attrs) {
-        Some(InferredTagFamily::Style) => {
-            style_selector_inline_assignments(selector, attrs, selector_start, attrs_start)
-        }
-        Some(InferredTagFamily::Layout) => {
-            layout_selector_inline_assignments(selector, attrs, selector_start, attrs_start)
-        }
-        Some(InferredTagFamily::Transform) => {
-            transform_selector_inline_assignments(selector, attrs, selector_start, attrs_start)
-        }
-        Some(InferredTagFamily::Effect) => {
-            effect_selector_inline_assignments(selector, attrs, selector_start, attrs_start)
-        }
-        Some(InferredTagFamily::Marker) | None => Vec::new(),
+    match inferred_rich_text_tag_family(selector, attrs) {
+        Some(RichTextTagFamily::Style) => style_selector_inline_assignments(
+            selector,
+            attrs,
+            selector_range,
+            attrs_range,
+            arguments,
+        ),
+        Some(RichTextTagFamily::Layout) => layout_selector_inline_assignments(
+            selector,
+            attrs,
+            selector_range,
+            attrs_range,
+            arguments,
+        ),
+        Some(RichTextTagFamily::Transform) => transform_selector_inline_assignments(
+            selector,
+            attrs,
+            selector_range,
+            attrs_range,
+            arguments,
+        ),
+        Some(RichTextTagFamily::Effect) => effect_selector_inline_assignments(
+            selector,
+            attrs,
+            selector_range,
+            attrs_range,
+            arguments,
+        ),
+        Some(RichTextTagFamily::Marker) | None => Vec::new(),
     }
 }
 
-fn direct_inline_assignments(
-    name: &str,
-    attrs: &str,
-    name_start: usize,
-    attrs_start: usize,
-) -> Vec<InlineStyleAssignment> {
-    let value_range = if attrs.is_empty() {
-        name_start..name_start + name.len()
+fn direct_inline_assignments(tag: &DialogueTag) -> Vec<InlineStyleAssignment> {
+    let scalar = matches!(tag.name(), "color" | "font" | "size");
+    let (value, value_range) = if scalar && let Some(argument) = tag.arguments().first() {
+        (
+            argument.value().value().to_owned(),
+            argument.value().range().as_range(),
+        )
     } else {
-        attrs_start..attrs_start + attrs.len()
-    };
-    let value = if attrs.is_empty() { name } else { attrs }
+        let value_range = if tag.attrs().is_empty() {
+            tag.name_range().as_range()
+        } else {
+            tag.attrs_range().as_range()
+        };
+        let value = if tag.attrs().is_empty() {
+            tag.name()
+        } else {
+            tag.attrs()
+        }
         .trim()
         .to_owned();
-    let path = match name {
+        (value, value_range)
+    };
+    let path = match tag.name() {
         "color" => "rich_text.text.color",
         "font" => "rich_text.text.font",
         "size" => "rich_text.text.size",
@@ -252,16 +257,17 @@ fn direct_inline_assignments(
 fn style_selector_inline_assignments(
     selector: &str,
     attrs: &str,
-    selector_start: usize,
-    attrs_start: usize,
+    selector_range: Range<usize>,
+    attrs_range: Range<usize>,
+    _arguments: &[DialogueTagArg],
 ) -> Vec<InlineStyleAssignment> {
     let value = if attrs.is_empty() { selector } else { attrs }
         .trim()
         .to_owned();
     let value_range = if attrs.is_empty() {
-        selector_start..selector_start + selector.len()
+        selector_range
     } else {
-        attrs_start..attrs_start + attrs.len()
+        attrs_range
     };
     vec![InlineStyleAssignment {
         path: "rich_text.text.style".to_owned(),
@@ -272,9 +278,10 @@ fn style_selector_inline_assignments(
 
 fn layout_selector_inline_assignments(
     selector: &str,
-    attrs: &str,
-    selector_start: usize,
-    attrs_start: usize,
+    _attrs: &str,
+    selector_range: Range<usize>,
+    _attrs_range: Range<usize>,
+    arguments: &[DialogueTagArg],
 ) -> Vec<InlineStyleAssignment> {
     let mut assignments = Vec::new();
     match selector {
@@ -282,20 +289,20 @@ fn layout_selector_inline_assignments(
             assignments.push(InlineStyleAssignment {
                 path: "rich_text.layout.writing_mode".to_owned(),
                 value: selector.to_owned(),
-                value_range: selector_start..selector_start + selector.len(),
+                value_range: selector_range.clone(),
             });
         }
         "ruby_over" | "ruby_under" | "ruby_inter_character" => {
             assignments.push(InlineStyleAssignment {
                 path: "rich_text.ruby.position".to_owned(),
                 value: selector.trim_start_matches("ruby_").to_owned(),
-                value_range: selector_start..selector_start + selector.len(),
+                value_range: selector_range,
             });
         }
         _ => {}
     }
     assignments.extend(
-        inline_attr_assignments(attrs, attrs_start)
+        inline_attr_assignments(arguments)
             .into_iter()
             .filter_map(|attr| {
                 let path = match attr.name.as_str() {
@@ -321,47 +328,45 @@ fn layout_selector_inline_assignments(
 
 fn transform_selector_inline_assignments(
     selector: &str,
-    attrs: &str,
-    selector_start: usize,
-    attrs_start: usize,
+    _attrs: &str,
+    selector_range: Range<usize>,
+    _attrs_range: Range<usize>,
+    arguments: &[DialogueTagArg],
 ) -> Vec<InlineStyleAssignment> {
     let mut assignments = vec![InlineStyleAssignment {
         path: "rich_text.transform.kind".to_owned(),
         value: selector.to_owned(),
-        value_range: selector_start..selector_start + selector.len(),
+        value_range: selector_range,
     }];
-    assignments.extend(
-        inline_attr_assignments(attrs, attrs_start)
-            .into_iter()
-            .map(|attr| InlineStyleAssignment {
-                path: format!("rich_text.transform.{}", attr.name),
-                value: attr.value,
-                value_range: attr.value_range,
-            }),
-    );
+    assignments.extend(inline_attr_assignments(arguments).into_iter().map(|attr| {
+        InlineStyleAssignment {
+            path: format!("rich_text.transform.{}", attr.name),
+            value: attr.value,
+            value_range: attr.value_range,
+        }
+    }));
     assignments
 }
 
 fn effect_selector_inline_assignments(
     selector: &str,
-    attrs: &str,
-    selector_start: usize,
-    attrs_start: usize,
+    _attrs: &str,
+    selector_range: Range<usize>,
+    _attrs_range: Range<usize>,
+    arguments: &[DialogueTagArg],
 ) -> Vec<InlineStyleAssignment> {
     let mut assignments = vec![InlineStyleAssignment {
         path: "rich_text.effect".to_owned(),
         value: selector.to_owned(),
-        value_range: selector_start..selector_start + selector.len(),
+        value_range: selector_range,
     }];
-    assignments.extend(
-        inline_attr_assignments(attrs, attrs_start)
-            .into_iter()
-            .map(|attr| InlineStyleAssignment {
-                path: format!("rich_text.effect.{selector}.{}", attr.name),
-                value: attr.value,
-                value_range: attr.value_range,
-            }),
-    );
+    assignments.extend(inline_attr_assignments(arguments).into_iter().map(|attr| {
+        InlineStyleAssignment {
+            path: format!("rich_text.effect.{selector}.{}", attr.name),
+            value: attr.value,
+            value_range: attr.value_range,
+        }
+    }));
     assignments
 }
 
@@ -372,23 +377,31 @@ struct InlineAttrAssignment {
     value_range: Range<usize>,
 }
 
-fn inline_attr_assignments(attrs: &str, attrs_start: usize) -> Vec<InlineAttrAssignment> {
-    let mut assignments = Vec::new();
-    let mut cursor = 0usize;
-    for part in attrs.split_whitespace() {
-        let part_start = attrs[cursor..]
-            .find(part)
-            .map_or(cursor, |relative| cursor + relative);
-        cursor = part_start + part.len();
-        let Some((name, value)) = part.split_once('=') else {
-            continue;
-        };
-        let value_start = attrs_start + part_start + name.len() + '='.len_utf8();
-        assignments.push(InlineAttrAssignment {
-            name: name.to_owned(),
-            value: trim_quotes(value).to_owned(),
-            value_range: value_start..value_start + value.len(),
-        });
-    }
-    assignments
+fn inline_attr_assignments(arguments: &[DialogueTagArg]) -> Vec<InlineAttrAssignment> {
+    arguments
+        .iter()
+        .filter_map(|argument| {
+            Some(InlineAttrAssignment {
+                name: argument.name()?.to_owned(),
+                value: argument.value().value().to_owned(),
+                value_range: argument.value().range().as_range(),
+            })
+        })
+        .collect()
+}
+
+fn dot_selector(source: &str, range: TextRange) -> Option<(&str, Range<usize>)> {
+    let selector = source.strip_prefix('.')?;
+    let start = range.end().checked_sub(selector.len())?;
+    Some((selector, start..range.end()))
+}
+
+fn argument_span<'a>(
+    mut arguments: impl Iterator<Item = &'a DialogueTagArg>,
+) -> Option<Range<usize>> {
+    let first = arguments.next()?.range();
+    let end = arguments
+        .last()
+        .map_or(first.end(), |arg| arg.range().end());
+    Some(first.start()..end)
 }

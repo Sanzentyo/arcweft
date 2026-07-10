@@ -1,5 +1,6 @@
 use super::{BinaryOp, CallArg, Expr, ExprOp, MatchExprArm, is_ident_continue};
 use crate::ast::common::TextRange;
+use crate::ast::dialogue::{DialogueContent, DialogueToken};
 use crate::ast::line_plan::{LinePlan, LinePlanItem};
 
 mod thread_body;
@@ -39,6 +40,49 @@ pub fn collect_expr_source_ranges<'a>(
     let mut ranges = Vec::new();
     collect_expr_source_ranges_inner(expr, source, source_range.start(), &mut ranges);
     ranges
+}
+
+/// Collects the authored document ranges of dialogue-call content bodies.
+///
+/// `source` must be the original source slice covered by `source_range`. The
+/// returned ranges exclude the outer `[` and `]` and surrounding whitespace.
+/// Delimiters are resolved structurally, so content text repeated in the
+/// callee cannot be mistaken for the dialogue body.
+pub fn collect_dialogue_call_content_ranges(
+    expr: &Expr,
+    source: &str,
+    source_range: TextRange,
+) -> Vec<TextRange> {
+    collect_expr_source_ranges(expr, source, source_range)
+        .into_iter()
+        .filter_map(|entry| {
+            let Expr::DialogueCall { content, .. } = entry.expr() else {
+                return None;
+            };
+            let start = entry.range().start().checked_sub(source_range.start())?;
+            let end = entry.range().end().checked_sub(source_range.start())?;
+            let dialogue_source = source.get(start..end)?;
+            let (content_source, content_base) =
+                dialogue_call_content_source(dialogue_source, entry.range().start())?;
+            authored_dialogue_content_matches(content_source, content.raw())
+                .then(|| TextRange::new(content_base, content_base + content_source.len()))
+        })
+        .collect()
+}
+
+fn authored_dialogue_content_matches(source: &str, parsed: &str) -> bool {
+    source == parsed || source.replace("\r\n", "\n") == parsed
+}
+
+fn dialogue_call_content_source(source: &str, base: usize) -> Option<(&str, usize)> {
+    let (source, base) = trim_source_with_base(source, base);
+    let content_open = find_top_level_char(source, '[')?;
+    let content_close = matching_delimiter_end(source, content_open, '[', ']')?;
+    let (content, content_base) = trim_source_with_base(
+        source.get(content_open + '['.len_utf8()..content_close - ']'.len_utf8())?,
+        base + content_open + '['.len_utf8(),
+    );
+    Some((content, content_base))
 }
 
 fn collect_expr_source_ranges_inner<'a>(
@@ -113,12 +157,25 @@ fn collect_container_expr_source_ranges<'a>(
             }
             true
         }
-        Expr::DialogueCall { callee, plan, .. } => {
-            if let Some((callee_source, callee_base, plan_body)) =
-                dialogue_call_source_parts(source, base)
-            {
-                collect_expr_source_ranges_inner(callee, callee_source, callee_base, ranges);
-                if let (Some(plan), Some((body_source, body_base))) = (plan, plan_body) {
+        Expr::DialogueCall {
+            callee,
+            content,
+            plan,
+        } => {
+            if let Some(parts) = dialogue_call_source_parts(source, base) {
+                collect_expr_source_ranges_inner(
+                    callee,
+                    parts.callee_source,
+                    parts.callee_base,
+                    ranges,
+                );
+                collect_dialogue_content_source_ranges(
+                    content,
+                    parts.content_source,
+                    parts.content_base,
+                    ranges,
+                );
+                if let (Some(plan), Some((body_source, body_base))) = (plan, parts.plan_body) {
                     collect_line_plan_source_ranges(plan, body_source, body_base, ranges);
                 }
             }
@@ -150,16 +207,53 @@ fn collect_container_expr_source_ranges<'a>(
     }
 }
 
-type DialogueCallSourceParts<'a> = (&'a str, usize, Option<(&'a str, usize)>);
+struct DialogueCallSourceParts<'a> {
+    callee_source: &'a str,
+    callee_base: usize,
+    content_source: &'a str,
+    content_base: usize,
+    plan_body: Option<(&'a str, usize)>,
+}
 
 fn dialogue_call_source_parts(source: &str, base: usize) -> Option<DialogueCallSourceParts<'_>> {
     let (source, base) = trim_source_with_base(source, base);
     let content_open = find_top_level_char(source, '[')?;
     let content_close = matching_delimiter_end(source, content_open, '[', ']')?;
+    let (content_source, content_base) = trim_source_with_base(
+        source.get(content_open + '['.len_utf8()..content_close - ']'.len_utf8())?,
+        base + content_open + '['.len_utf8(),
+    );
     let plan_source = source
         .get(content_close..)
         .and_then(|source| line_plan_body_source(source, base + content_close));
-    Some((&source[..content_open], base, plan_source))
+    Some(DialogueCallSourceParts {
+        callee_source: &source[..content_open],
+        callee_base: base,
+        content_source,
+        content_base,
+        plan_body: plan_source,
+    })
+}
+
+fn collect_dialogue_content_source_ranges<'a>(
+    content: &'a DialogueContent,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    if !authored_dialogue_content_matches(source, content.raw()) {
+        return;
+    }
+    for token in content.tokens() {
+        let DialogueToken::Expr(expr) = token else {
+            continue;
+        };
+        let range = expr.range().as_range();
+        let Some(expr_source) = source.get(range.clone()) else {
+            continue;
+        };
+        collect_expr_source_ranges_inner(expr.expr(), expr_source, base + range.start, ranges);
+    }
 }
 
 fn line_plan_body_source(source: &str, base: usize) -> Option<(&str, usize)> {
@@ -1102,38 +1196,25 @@ fn matching_delimiter_end(
     open: char,
     close: char,
 ) -> Option<usize> {
-    let mut in_string = false;
-    let mut in_char = false;
+    let mut in_quoted_literal = false;
     let mut escaped = false;
     let mut depth = 0usize;
     for (index, ch) in source
         .char_indices()
         .skip_while(|(index, _)| *index < open_start)
     {
-        if in_string {
+        if in_quoted_literal {
             if escaped {
                 escaped = false;
             } else if ch == '\\' {
                 escaped = true;
             } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        if in_char {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '\'' {
-                in_char = false;
+                in_quoted_literal = false;
             }
             continue;
         }
         if ch == '"' {
-            in_string = true;
-        } else if ch == '\'' {
-            in_char = true;
+            in_quoted_literal = true;
         } else if ch == open {
             depth += 1;
         } else if ch == close {
@@ -1146,20 +1227,20 @@ fn matching_delimiter_end(
     None
 }
 
+/// Expression delimiter state. Arcweft char literals use the same double-quoted
+/// payload as strings (`"x"c`); an apostrophe starts a lifetime, not a literal.
 #[derive(Default)]
 struct SourceScanState {
     paren: usize,
     bracket: usize,
     brace: usize,
-    in_string: bool,
-    in_char: bool,
+    in_quoted_literal: bool,
     escaped: bool,
 }
 
 impl SourceScanState {
     fn is_top_level_before(&self, ch: char) -> bool {
-        !self.in_string
-            && !self.in_char
+        !self.in_quoted_literal
             && self.paren == 0
             && self.bracket == 0
             && self.brace == 0
@@ -1167,29 +1248,18 @@ impl SourceScanState {
     }
 
     fn advance(&mut self, ch: char) {
-        if self.in_string {
+        if self.in_quoted_literal {
             if self.escaped {
                 self.escaped = false;
             } else if ch == '\\' {
                 self.escaped = true;
             } else if ch == '"' {
-                self.in_string = false;
-            }
-            return;
-        }
-        if self.in_char {
-            if self.escaped {
-                self.escaped = false;
-            } else if ch == '\\' {
-                self.escaped = true;
-            } else if ch == '\'' {
-                self.in_char = false;
+                self.in_quoted_literal = false;
             }
             return;
         }
         match ch {
-            '"' => self.in_string = true,
-            '\'' => self.in_char = true,
+            '"' => self.in_quoted_literal = true,
             '(' => self.paren += 1,
             ')' => self.paren = self.paren.saturating_sub(1),
             '[' => self.bracket += 1,
@@ -1206,7 +1276,11 @@ mod tests {
     use super::*;
     use crate::{
         ast::pattern::Pattern,
-        expr::{DottedPath, Expr, IntLiteral, IntRadix, IntSuffix, Literal, MatchExprArm},
+        expr::{
+            DottedPath, Expr, IntLiteral, IntRadix, IntSuffix, LifetimeKey, LifetimeScopeKind,
+            Literal, MatchExprArm,
+        },
+        parser::parse_dialogue_content,
     };
 
     #[test]
@@ -1288,6 +1362,29 @@ mod tests {
     }
 
     #[test]
+    fn dialogue_content_range_ignores_natural_apostrophes_around_rich_text_tags() {
+        let content = "don't [decorate .warning]stop[/decorate] [.shake]now[/][p]";
+        let source = format!("render('line.focus)[{content}]");
+        let expr = Expr::DialogueCall {
+            callee: Box::new(Expr::Call {
+                callee: Box::new(Expr::Path(DottedPath::single("render"))),
+                args: vec![CallArg::Positional(Expr::LifetimePath {
+                    key: LifetimeKey::new(LifetimeScopeKind::Line, vec!["focus".to_owned()]),
+                    optional: false,
+                })],
+            }),
+            content: Box::new(parse_dialogue_content(content)),
+            plan: None,
+        };
+
+        let ranges =
+            collect_dialogue_call_content_ranges(&expr, &source, TextRange::new(0, source.len()));
+
+        assert_eq!(ranges.len(), 1, "ranges: {ranges:?}");
+        assert_eq!(&source[ranges[0].as_range()], content);
+    }
+
+    #[test]
     fn line_plan_colon_let_block_does_not_absorb_following_items() {
         let source = "alice.say()[Choose again.]\n    with:\n        let cue = at(0.42s):\n            score + 3i64\n        out score + 2i64";
         let expr = Expr::DialogueCall {
@@ -1295,7 +1392,7 @@ mod tests {
                 callee: Box::new(Expr::Path(DottedPath::from("alice.say"))),
                 args: Vec::new(),
             }),
-            content: "Choose again.".to_owned(),
+            content: Box::new(parse_dialogue_content("Choose again.")),
             plan: Some(crate::ast::line_plan::LinePlan::new(
                 crate::ast::line_plan::BlockStyle::Indent,
                 vec![

@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTag, DialogueToken};
+use arcweft_lang_hir::syntax::{
+    ast::dialogue::{DialogueTag, DialogueToken},
+    text::{RichTextTagFamily, canonical_rich_text_tag_name, inferred_rich_text_tag_family},
+};
 use arcweft_render_text::{
     DialogueHostEvent, InlineFailurePolicy, Milli, RichTextAngle, RichTextControl,
     RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextInlineDirection,
@@ -13,13 +16,13 @@ use arcweft_render_text::{
 use crate::{errors::RuntimePlanLowerError, labels::expr_label};
 
 use super::attrs::{
-    angle_from_attrs, milli_attr, param_from_value, parse_attrs, transform_angle_attr, trim_quotes,
-    truthy_attr,
+    angle_from_attrs, milli_attr, param_from_value, parse_attrs, parse_typed_attrs,
+    transform_angle_attr, trim_quotes, truthy_attr,
 };
 use super::defaults::TextProxyTypeDefaults;
 use super::inline_failure::{inline_failure_policy, inline_fallback_source_label};
 
-pub(crate) fn lower_dialogue_token(
+pub(crate) fn lower_dialogue_token_parts(
     token: &DialogueToken,
     default_inline_failure_policy: Option<&InlineFailurePolicy>,
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
@@ -40,9 +43,9 @@ pub(crate) fn lower_dialogue_token(
                 },
             }]
         }
-        DialogueToken::EndTag(name) => {
+        DialogueToken::EndTag(end) => {
             vec![RichTextNode::StyleEnd {
-                name: canonical_end_tag(name).to_owned(),
+                name: canonical_rich_text_tag_name(end.name()).to_owned(),
             }]
         }
         DialogueToken::InferredEndTag => {
@@ -67,6 +70,48 @@ pub(crate) fn lower_dialogue_token(
             text: ch.to_string(),
         }],
     })
+}
+
+/// Lowers one declaration-time visual builder to the same typed style used by
+/// ordinary inline tags. Decorations intentionally reuse this boundary so the
+/// renderer never needs a parallel style model.
+pub(crate) fn lower_visual_decoration_layer(
+    builder: &str,
+    selector: Option<&str>,
+    attrs: &str,
+) -> Result<RichTextStyle, String> {
+    let nodes = match builder {
+        "em" | "strong" | "color" | "font" | "size" => vec![RichTextNode::StyleStart {
+            style: RichTextStyle::from_tag(builder, attrs),
+        }],
+        "style" => lower_style_selector(
+            selector.ok_or_else(|| "style decoration layer requires a selector".to_owned())?,
+            attrs,
+        ),
+        "layout" => lower_layout_selector(
+            selector.ok_or_else(|| "layout decoration layer requires a selector".to_owned())?,
+            attrs,
+        ),
+        "transform" => lower_transform_selector(
+            selector.ok_or_else(|| "transform decoration layer requires a selector".to_owned())?,
+            attrs,
+        ),
+        "effect" => lower_effect_selector(
+            selector.ok_or_else(|| "effect decoration layer requires a selector".to_owned())?,
+            attrs,
+        ),
+        other => return Err(format!("unsupported visual decoration layer `{other}`")),
+    };
+    match nodes.as_slice() {
+        [RichTextNode::StyleStart { style }] => Ok(style.clone()),
+        [RichTextNode::HostEvent { .. }] => Err(
+            "visual decoration effect cannot use `phase=host_event`; author a line event explicitly"
+                .to_owned(),
+        ),
+        _ => Err(format!(
+            "decoration layer `{builder}` did not lower to exactly one visual style"
+        )),
+    }
 }
 
 fn lower_tag(
@@ -175,12 +220,12 @@ fn lower_inferred_tag(
     if inferred_text_proxy_type(selector, tag.attrs(), text_proxies) {
         return lower_object_selector(selector, tag.attrs(), text_proxies);
     }
-    match inferred_tag_family(selector, tag.attrs()) {
-        Some(InferredTagFamily::Style) => lower_style_selector(selector, tag.attrs()),
-        Some(InferredTagFamily::Layout) => lower_layout_selector(selector, tag.attrs()),
-        Some(InferredTagFamily::Transform) => lower_transform_selector(selector, tag.attrs()),
-        Some(InferredTagFamily::Effect) => lower_effect_selector(selector, tag.attrs()),
-        Some(InferredTagFamily::Marker) | None => {
+    match inferred_rich_text_tag_family(selector, tag.attrs()) {
+        Some(RichTextTagFamily::Style) => lower_style_selector(selector, tag.attrs()),
+        Some(RichTextTagFamily::Layout) => lower_layout_selector(selector, tag.attrs()),
+        Some(RichTextTagFamily::Transform) => lower_transform_selector(selector, tag.attrs()),
+        Some(RichTextTagFamily::Effect) => lower_effect_selector(selector, tag.attrs()),
+        Some(RichTextTagFamily::Marker) | None => {
             vec![RichTextNode::Control {
                 control: RichTextControl::Mark {
                     name: tag.name().to_owned(),
@@ -199,35 +244,6 @@ fn inferred_text_proxy_type(
     object_proxy_type_name_attr(&attrs)
         .is_some_and(|type_name| text_proxies.contains_key(&type_name))
         || text_proxies.contains_key(selector)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum InferredTagFamily {
-    Style,
-    Layout,
-    Transform,
-    Effect,
-    Marker,
-}
-
-pub(crate) fn inferred_tag_family(selector: &str, attrs: &str) -> Option<InferredTagFamily> {
-    match selector {
-        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "meta"
-        | "metadata" | "data" | "z" | "z_index" => Some(InferredTagFamily::Style),
-        "horizontal_tb"
-        | "vertical_rl"
-        | "vertical_lr"
-        | "dir"
-        | "ruby_over"
-        | "ruby_under"
-        | "ruby_inter_character" => Some(InferredTagFamily::Layout),
-        "offset" | "pos" | "rotate" | "scale" | "skew" => Some(InferredTagFamily::Transform),
-        "wave" | "shake" | "arc" | "spin" | "pulse" | "motion" | "typewriter" | "jitter"
-        | "shader" | "host" => Some(InferredTagFamily::Effect),
-        "mark" => Some(InferredTagFamily::Marker),
-        _ if !attrs.trim().is_empty() => Some(InferredTagFamily::Effect),
-        _ => None,
-    }
 }
 
 fn lower_style_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
@@ -266,7 +282,7 @@ fn lower_style_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
             presentation: RichTextPresentationStyle {
                 opacity: None,
                 layer: None,
-                params: parse_attrs(attrs)
+                params: parse_typed_attrs(attrs)
                     .into_iter()
                     .map(|(key, value)| (key, param_from_value(&value)))
                     .collect(),
@@ -403,6 +419,7 @@ fn object_proxy_from_selector(
     attrs: &str,
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
 ) -> RichTextObjectProxy {
+    let typed_attrs = parse_typed_attrs(attrs);
     let attrs = parse_attrs(attrs);
     let explicit_type_name = object_proxy_type_name_attr(&attrs);
     let defaults = explicit_type_name
@@ -421,7 +438,7 @@ fn object_proxy_from_selector(
     };
     let mut params = defaults.map_or_else(BTreeMap::new, |defaults| defaults.params.clone());
     params.extend(
-        attrs
+        typed_attrs
             .iter()
             .filter(|(key, _)| !is_object_proxy_metadata_attr(key))
             .map(|(key, value)| (key.clone(), param_from_value(value))),
@@ -485,25 +502,6 @@ fn is_object_proxy_metadata_attr(key: &str) -> bool {
             | "hit"
             | "hit_test"
     )
-}
-
-fn canonical_end_tag(name: &str) -> &str {
-    match name {
-        "style" | "italic" | "i" | "oblique" | "slant" => "style",
-        "layout"
-        | "vertical"
-        | "vertical_rl"
-        | "vertical_lr"
-        | "horizontal_tb"
-        | "ruby_over"
-        | "ruby_under"
-        | "ruby_inter_character" => "layout",
-        "transform" | "offset" | "pos" | "rotate" | "scale" | "skew" => "transform",
-        "object" => "object",
-        "effect" | "fx" | "wave" | "shake" | "arc" | "spin" | "pulse" | "motion" | "typewriter"
-        | "jitter" | "shader" | "host" => "effect",
-        other => other,
-    }
 }
 
 pub(crate) fn split_selector_attrs(attrs: &str) -> (&str, &str) {
@@ -652,11 +650,12 @@ fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
 }
 
 fn effect_from_selector(selector: &str, attrs: &str) -> RichTextEffectDescriptor {
+    let typed_attrs = parse_typed_attrs(attrs);
     let attrs = parse_attrs(attrs);
     let id = effect_descriptor_id(selector, &attrs);
     RichTextEffectDescriptor {
         id,
-        params: attrs
+        params: typed_attrs
             .iter()
             .filter(|(key, _)| !is_effect_descriptor_metadata_attr(selector, key))
             .map(|(key, value)| (key.clone(), param_from_value(value)))
@@ -686,10 +685,11 @@ fn is_effect_descriptor_metadata_attr(selector: &str, key: &str) -> bool {
 }
 
 fn shader_from_attrs(attrs: &str) -> RichTextShaderRef {
+    let typed_attrs = parse_typed_attrs(attrs);
     let attrs = parse_attrs(attrs);
     RichTextShaderRef {
         id: attrs.get("id").cloned().unwrap_or_default(),
-        params: attrs
+        params: typed_attrs
             .iter()
             .filter(|(key, _)| !matches!(key.as_str(), "id" | "phase"))
             .map(|(key, value)| (key.clone(), param_from_value(value)))

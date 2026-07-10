@@ -26,6 +26,17 @@ pub dialogue defaults @dialogue:.defaults.full {
     }
 }
 
+decoration warning(
+    accent = "#ff4050",
+    amplitude = 2px,
+    seed = "fixture",
+    ...effect_args,
+) {
+    strong()
+    color(value=accent)
+    effect(.wave, amp=amplitude, seed=seed, effect_args...)
+}
+
 pub surface character @character.alice Alice as alice {
     default_voice = auto
     dialogue_style {
@@ -95,7 +106,7 @@ flow @flow.rich_text_full_grammar rich_text_full_grammar {
     ]
 
     alice.say(id=@say.full.004, voice=auto)[
-        装飾: [em:夢]、[strong:本当に]、[color #a8b5ff:夜]、[font serif]serif[/font]、[font "Yu Gothic"]游ゴシック[/font]、[size 36]大[/size]、[speed cps=24]速度[/speed]、[reset]reset後。[p]
+        装飾: [em:夢]、[strong:本当に]、[color #a8b5ff:夜]、[font serif]serif[/font]、[font "Yu Gothic"]游ゴシック[/font]、[size 36]大[/size]、[decorate .warning amplitude=4px speed=2]再利用装飾[/decorate]、[speed cps=24]速度[/speed]、[reset]reset後。[p]
     ]
 
     bob.say(id=@say.full.005, voice=auto)[

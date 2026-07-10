@@ -2211,6 +2211,37 @@ flow @flow.dialogue_source_ranges dialogue_source_ranges {
 }
 
 #[test]
+fn multiline_dialogue_interpolation_judgments_project_lf_and_crlf_ranges() {
+    let source_lf = "flow @flow.dialogue_multiline_ranges dialogue_multiline_ranges {\n    alice: Score #[\n        score + 1i64\n    ][p]\n}\n";
+    for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
+        let tree = parse_ok(&source);
+        let hir = lower_to_hir(&tree).expect("multiline dialogue range fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I64);
+        let report = analyze_types(&hir, &env);
+        assert!(
+            report.diagnostics.is_empty(),
+            "unexpected diagnostics: {:?}",
+            report.diagnostics
+        );
+        assert!(
+            report.judgments.iter().any(|judgment| {
+                matches!(
+                    (&judgment.subject, &judgment.ty),
+                    (TypeJudgmentSubject::Expr { kind, .. }, TypeKind::I64)
+                        if *kind == "binary"
+                            && judgment.source_range.is_some_and(
+                                |range| &source[range.as_range()] == "score + 1i64"
+                            )
+                )
+            }),
+            "later-line binary judgment should retain its authored range"
+        );
+    }
+}
+
+#[test]
 fn dialogue_call_line_plan_expression_judgments_carry_source_ranges() {
     let source = r"
 flow @flow.dialogue_call_plan_source_ranges dialogue_call_plan_source_ranges {

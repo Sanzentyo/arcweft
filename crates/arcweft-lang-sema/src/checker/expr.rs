@@ -8,12 +8,13 @@ use super::helpers::{
 };
 use super::{
     BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionSignature,
-    LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeExpressionId,
-    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, TypedLoweringEvidence,
-    TypedLoweringEvidenceKind, YieldContext, entity_syntax_kind,
+    Pattern, Stmt, TypeCheckError, TypeChecker, TypeExpressionId, TypeJudgmentRule,
+    TypeJudgmentSubject, TypeKind, TypedLoweringEvidence, TypedLoweringEvidenceKind, YieldContext,
+    entity_syntax_kind,
 };
 use crate::diagnostics::TraitDiagnostic;
 use crate::traits::TraitMethodResolution;
+use arcweft_lang_syntax::ast::dialogue::DialogueContent;
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, ThreadBlock};
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
@@ -34,6 +35,7 @@ mod range;
 mod signature_call;
 mod support;
 
+use super::line_plan::DialogueContentRangeMode;
 use builtin::BuiltinCallSpec;
 use partial::expr_contains_partial_placeholder;
 use support::{
@@ -185,9 +187,11 @@ impl TypeChecker<'_> {
                 self.check_call_expr(callee, args, expected, expression_id)
             }
             Expr::Select(select) => self.check_select_expr(expr, select),
-            Expr::DialogueCall { callee, plan, .. } => {
-                Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
-            }
+            Expr::DialogueCall {
+                callee,
+                content,
+                plan,
+            } => Some(self.check_dialogue_call_expr(callee, content, plan.as_ref())),
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs, expression_id),
             Expr::Try { expr } => self.check_try_expr(expr),
@@ -338,12 +342,22 @@ impl TypeChecker<'_> {
         TypeKind::Named("Record".to_owned())
     }
 
-    fn check_dialogue_call_expr(&mut self, callee: &Expr, plan: Option<&LinePlan>) -> TypeKind {
+    fn check_dialogue_call_expr(
+        &mut self,
+        callee: &Expr,
+        content: &DialogueContent,
+        plan: Option<&LinePlan>,
+    ) -> TypeKind {
         self.check_expr(callee);
+        let marks = self.check_dialogue_content(
+            content,
+            false,
+            DialogueContentRangeMode::PreRegisteredExpression,
+        );
         if let Some(plan) = plan {
-            self.available_lifetimes.push(LifetimeScopeKind::Line);
+            self.line_mark_stack.push(marks);
             let output = self.check_line_plan_output_type(plan);
-            self.available_lifetimes.pop();
+            self.line_mark_stack.pop();
             output.unwrap_or(TypeKind::Unit)
         } else {
             TypeKind::Unit

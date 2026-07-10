@@ -17,6 +17,9 @@ run with `arcw`.
   rich-text grammar sample covering ruby forms, interpolation, control tags,
   inferred dot selectors, explicit tag families, family-relative dialogue
   defaults, and line option overrides.
+- [rich-text-decorations.arcw](rich-text-decorations.arcw) - reusable visual
+  decoration declarations with required/default parameters, explicit custom
+  argument forwarding, and nested decoration composition.
 - [rich-text-profiled](rich-text-profiled/README.md) - project-shaped rich-text
   sample with launch profiles that select different `dialogue defaults`
   profiles for provenance-aware runtime-plan and LSP cascade checks.

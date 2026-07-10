@@ -2,7 +2,7 @@ use arcweft_core::plan::RuntimeLineId;
 use arcweft_lang_hir::model::HirDialogue;
 use arcweft_render_text::{
     InlineFailurePolicy, LineDisplayArg, LineDisplaySpec, RichTextCascadeLayer, RichTextDocument,
-    RichTextStyle, RichTextStyleContribution,
+    RichTextSettingSource, RichTextStyle, RichTextStyleContribution,
 };
 
 use crate::errors::RuntimePlanLowerError;
@@ -11,13 +11,16 @@ use crate::labels::expr_label;
 use super::contributions::{
     LineOptionContribution, append_inline_span_contributions, append_line_option_contributions,
 };
+use super::decoration::{
+    DecorationCatalog, DecorationInlineAssignment, DialogueDecorationExpander,
+    append_decoration_inline_contributions,
+};
 use super::defaults::{DialogueDisplayDefaults, DialogueSpeakerPreset};
 use super::entity_defaults::append_style_contributions;
 use super::inline_failure::{inline_default_from_named_expr, lower_default_inline_failure_policy};
 use super::raw::{dialogue_option_source, mark_shadowed_style_contributions, source_range};
 use super::speaker_preset::{effective_dialogue_window, speaker_preset_chain};
 use super::style_expr::{display_styles_from_expr, display_styles_from_named_expr};
-use super::tag::lower_dialogue_token;
 
 #[cfg(test)]
 pub(crate) fn lower_dialogue_display(
@@ -29,12 +32,36 @@ pub(crate) fn lower_dialogue_display(
         .expect("test dialogue fixture has valid render controls")
 }
 
+#[cfg(test)]
 pub(crate) fn lower_dialogue_display_with_speaker_presets(
     line: RuntimeLineId,
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
 ) -> Result<LineDisplaySpec, RuntimePlanLowerError> {
+    lower_dialogue_display_with_speaker_presets_and_decorations(
+        line,
+        dialogue,
+        defaults,
+        speaker_presets,
+        &DecorationCatalog::default(),
+    )
+}
+
+pub(crate) fn lower_dialogue_display_with_speaker_presets_and_decorations(
+    line: RuntimeLineId,
+    dialogue: &HirDialogue,
+    defaults: &DialogueDisplayDefaults,
+    speaker_presets: &[DialogueSpeakerPreset],
+    decorations: &DecorationCatalog,
+) -> Result<LineDisplaySpec, RuntimePlanLowerError> {
+    if let Some(diagnostic) = dialogue.content().diagnostics().first() {
+        return Err(RuntimePlanLowerError::new(format!(
+            "invalid dialogue content: {}; {}",
+            diagnostic.message(),
+            diagnostic.recovery()
+        )));
+    }
     let default_inline_failure_policy =
         lower_effective_inline_failure_policy(dialogue, defaults, speaker_presets);
     let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
@@ -42,13 +69,15 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
     let mut content = Vec::new();
+    let mut decoration_expander = DialogueDecorationExpander::new(decorations);
     for token in dialogue.content().tokens() {
-        content.extend(lower_dialogue_token(
+        content.extend(decoration_expander.lower_token(
             token,
             default_inline_failure_policy.as_ref(),
             &defaults.text_proxies,
         )?);
     }
+    let decoration_assignments = decoration_expander.finish()?;
     Ok(LineDisplaySpec {
         line,
         callee: dialogue.callee().to_owned(),
@@ -66,6 +95,7 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
             dialogue,
             defaults,
             speaker_presets,
+            &decoration_assignments,
         ),
         args: dialogue
             .args()
@@ -157,6 +187,7 @@ fn lower_effective_dialogue_style_contributions(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
+    decoration_assignments: &[DecorationInlineAssignment],
 ) -> Vec<RichTextStyleContribution> {
     let mut contributions = Vec::new();
     let mut base_offset = 0usize;
@@ -234,7 +265,23 @@ fn lower_effective_dialogue_style_contributions(
         );
     }
 
+    let inline_start = contributions.len();
     append_inline_span_contributions(&mut contributions, dialogue);
+    append_decoration_inline_contributions(&mut contributions, dialogue, decoration_assignments);
+    // Expanded decorations and ordinary tags share one inline cascade. Keep
+    // replacement precedence in authored order regardless of which lowering
+    // path produced each contribution.
+    contributions[inline_start..].sort_by_key(inline_contribution_source_start);
     mark_shadowed_style_contributions(&mut contributions);
     contributions
+}
+
+fn inline_contribution_source_start(contribution: &RichTextStyleContribution) -> usize {
+    match &contribution.source {
+        RichTextSettingSource::SourceFile {
+            range: Some(range), ..
+        } => range.start,
+        RichTextSettingSource::SourceFile { range: None, .. }
+        | RichTextSettingSource::EngineDefault { .. } => usize::MAX,
+    }
 }

@@ -29,7 +29,7 @@ use arcweft_lang_syntax::{
     ast::{
         choice::ChoiceAction,
         common::TextRange,
-        dialogue::DialogueToken,
+        dialogue::{DialogueContent, DialogueToken},
         flow::{AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax, IdRef},
         items::{EntityDeclKind, FunctionKind},
@@ -47,6 +47,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub mod borrow_state;
 pub mod choice;
+pub mod decoration;
 pub mod effects;
 pub mod expr;
 pub mod flow;
@@ -63,6 +64,7 @@ pub mod suspension;
 
 pub use module::analyze_types;
 
+use decoration::DecorationCatalog;
 use helpers::{
     await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
     entity_kind_for_decl, entity_syntax_kind, expr_path_label, ident_pattern_name,
@@ -401,6 +403,7 @@ struct TypeChecker<'a> {
     trait_catalog: TraitCatalog,
     trait_predicate_stack: Vec<Vec<TraitPredicate>>,
     flow_params: HashMap<String, HashSet<String>>,
+    decorations: DecorationCatalog,
     locals: HashMap<String, TypeKind>,
     local_scope_stack: Vec<LocalBindingSnapshot>,
     loop_stack: Vec<LoopContext>,
@@ -684,6 +687,7 @@ impl TypeChecker<'_> {
             trait_catalog: TraitCatalog::default(),
             trait_predicate_stack: Vec::new(),
             flow_params: HashMap::new(),
+            decorations: DecorationCatalog::default(),
             locals: HashMap::new(),
             local_scope_stack: Vec::new(),
             loop_stack: Vec::new(),

@@ -264,12 +264,19 @@ impl Parser<'_> {
         let head = &block.head;
         let head_base = trimmed_line_base(&start_line.text, start_line.start);
         let condition = head.strip_prefix("if")?.trim();
-        let body_base = head_base + head.len();
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(head_base + head.len(), |range| range.start);
         let (body_items, else_items) =
-            if let Some((then_body, else_body)) = split_embedded_else_body(&block.body) {
+            if let Some(bodies) = self.parse_embedded_else_flow_bodies(&block, body_base) {
+                bodies
+            } else if let Some((then_body, else_body, else_offset)) =
+                split_embedded_else_body_with_offset(&block.body)
+            {
                 (
-                    self.parse_flow_body(&then_body, body_base),
-                    self.parse_flow_body(&else_body, body_base),
+                    self.parse_flow_body(then_body, body_base),
+                    self.parse_flow_body(else_body, body_base + else_offset),
                 )
             } else {
                 let else_items = self
@@ -308,12 +315,19 @@ impl Parser<'_> {
         let (expr, guard) = split_top_level_keyword_once(expr_and_guard, "when");
         let expr = expr.trim();
         let guard = guard.map(str::trim);
-        let body_base = head_base + head.len();
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(head_base + head.len(), |range| range.start);
         let (body_items, else_items) =
-            if let Some((then_body, else_body)) = split_embedded_else_body(&block.body) {
+            if let Some(bodies) = self.parse_embedded_else_flow_bodies(&block, body_base) {
+                bodies
+            } else if let Some((then_body, else_body, else_offset)) =
+                split_embedded_else_body_with_offset(&block.body)
+            {
                 (
-                    self.parse_flow_body(&then_body, body_base),
-                    self.parse_flow_body(&else_body, body_base),
+                    self.parse_flow_body(then_body, body_base),
+                    self.parse_flow_body(else_body, body_base + else_offset),
                 )
             } else {
                 let else_items = self
@@ -332,6 +346,24 @@ impl Parser<'_> {
             else_items,
             TextRange::new(start_line.start, block.end),
         ))
+    }
+
+    fn parse_embedded_else_flow_bodies(
+        &mut self,
+        block: &CstBlockEvent<'_>,
+        body_base: usize,
+    ) -> Option<(Vec<FlowItem>, Vec<FlowItem>)> {
+        let body_lines = block.body_line_range.clone()?;
+        let else_line = (body_lines.start..body_lines.end).find(|index| {
+            self.events
+                .get(*index)
+                .is_some_and(|line| matches!(line.text.trim(), "} else {" | "} else{"))
+        })?;
+        let then_items =
+            self.parse_flow_body_from_line_range(body_lines.start..else_line, body_base)?;
+        let else_items =
+            self.parse_flow_body_from_line_range(else_line + 1..body_lines.end, body_base)?;
+        Some((then_items, else_items))
     }
 
     fn take_optional_statement_else_items(&mut self) -> Option<Vec<FlowItem>> {
@@ -354,8 +386,15 @@ impl Parser<'_> {
                 .parse_else_if_block()
                 .map(|block| vec![FlowItem::If(block)]);
         }
-        let (_, body, _, ok) = self.take_brace_block();
-        ok.then(|| self.parse_flow_body(&body, line.start))
+        let block = self.take_brace_block_event();
+        if !block.ok {
+            return None;
+        }
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(line.start + block.head.len(), |range| range.start);
+        Some(self.parse_flow_body_from_block(&block, body_base))
     }
 
     fn parse_else_if_block(&mut self) -> Option<IfBlock> {
@@ -1066,6 +1105,19 @@ fn split_embedded_else_body(body: &str) -> Option<(String, String)> {
         }
     }
     in_else.then(|| (then_lines.join("\n"), else_lines.join("\n")))
+}
+
+fn split_embedded_else_body_with_offset(body: &str) -> Option<(&str, &str, usize)> {
+    let mut line_start = 0usize;
+    for line in body.split_inclusive('\n') {
+        let line_without_ending = line.trim_end_matches(['\r', '\n']);
+        if matches!(line_without_ending.trim(), "} else {" | "} else{") {
+            let else_start = line_start + line.len();
+            return Some((&body[..line_start], &body[else_start..], else_start));
+        }
+        line_start += line.len();
+    }
+    None
 }
 
 pub(super) fn parse_stmt_lines(body: &str) -> Vec<Stmt> {

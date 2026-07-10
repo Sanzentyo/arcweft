@@ -1,8 +1,9 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
+use super::line_plan::DialogueContentRangeMode;
 use super::{
-    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FunctionKind,
-    FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
+    ActionParam, ActionSignature, DecorationCatalog, EffectScope, EntityKind, EnumVariantPayload,
+    FunctionKind, FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
     NominalTypeContext, Pattern, Stmt, TypeCheckEnv, TypeCheckError, TypeCheckReport,
     TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind, TypedLoweringEvidenceKind,
     YieldContext, choice_output_type, entity_kind_for_decl, entity_syntax_kind,
@@ -126,6 +127,7 @@ impl TypeChecker<'_> {
         self.register_effect_callables(module);
         self.bind_top_level_functions(module);
         self.flow_params = collect_flow_params(module);
+        self.decorations = DecorationCatalog::from_module(module, &mut self.errors);
 
         self.check_module_agents(module.agents());
         self.with_runtime_for_iteration_evidence(|this| {
@@ -614,6 +616,7 @@ impl TypeChecker<'_> {
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
             HirTopLevelDecl::DialogueDefaults(_)
+            | HirTopLevelDecl::Decoration(_)
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
@@ -1106,8 +1109,9 @@ impl TypeChecker<'_> {
         }
         self.check_dialogue_default_inline_failure_policy(dialogue);
         let marks = self.check_dialogue_content(
-            dialogue.content().tokens(),
+            dialogue.content(),
             dialogue_has_default_inline_failure_policy(dialogue),
+            DialogueContentRangeMode::ContentSourceMap,
         );
         self.with_line_runtime_scope(|checker| {
             if let Some(focus) = dialogue.focus() {

@@ -1,17 +1,25 @@
 //! Dialogue line-plan type checking.
 
-use super::helpers::let_else_bindings;
 use super::{
-    CallArg, CancelRuleSyntax, DialogueToken, Expr, LifetimeAccessMode, LifetimeScopeKind,
-    LinePlanItem, Pattern, Stmt, SuspensionBoundary, TriggerPattern, TypeCheckError, TypeChecker,
-    TypeKind, lifetime_key, merge_line_output,
+    CallArg, CancelRuleSyntax, DialogueContent, DialogueToken, Expr, LifetimeAccessMode,
+    LifetimeScopeKind, LinePlanItem, Pattern, Stmt, SuspensionBoundary, TriggerPattern,
+    TypeCheckError, TypeChecker, TypeKind, lifetime_key, merge_line_output,
 };
+use super::{decoration::DecorationSpanState, helpers::let_else_bindings};
 use arcweft_lang_syntax::ast::{
     flow::{AuthoredExpr, FlowItem, WaitTarget},
     line_plan::LinePlan,
 };
 use arcweft_lang_syntax::expr::parse_expr;
 use std::collections::HashSet;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum DialogueContentRangeMode {
+    /// Project inline-expression ranges through the content's document map.
+    ContentSourceMap,
+    /// The owning expression traversal already registered document ranges.
+    PreRegisteredExpression,
+}
 
 impl TypeChecker<'_> {
     pub(super) fn check_line_plan_output_type(&mut self, plan: &LinePlan) -> Option<TypeKind> {
@@ -225,18 +233,34 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_dialogue_content(
         &mut self,
-        tokens: &[DialogueToken],
+        content: &DialogueContent,
         has_default_inline_failure_policy: bool,
+        range_mode: DialogueContentRangeMode,
     ) -> HashSet<String> {
         let mut marks = HashSet::new();
-        for token in tokens {
+        let mut decoration_spans = DecorationSpanState::default();
+        if range_mode == DialogueContentRangeMode::PreRegisteredExpression {
+            self.errors
+                .extend(content.diagnostics().iter().map(|diagnostic| {
+                    TypeCheckError::new(format!(
+                        "invalid dialogue content: {}; {}",
+                        diagnostic.message(),
+                        diagnostic.recovery()
+                    ))
+                }));
+        }
+        for token in content.tokens() {
+            decoration_spans.observe(token, &self.decorations, &mut self.errors);
             match token {
                 DialogueToken::Expr(expr_token) => {
-                    self.register_expr_source_ranges(
-                        expr_token.expr(),
-                        Some(expr_token.source()),
-                        Some(expr_token.range()),
-                    );
+                    if range_mode == DialogueContentRangeMode::ContentSourceMap {
+                        self.register_projected_expr_source_ranges(
+                            expr_token.expr(),
+                            Some(expr_token.source()),
+                            Some(expr_token.range()),
+                            |range| content.source_range(range),
+                        );
+                    }
                     let expr_ty = self.check_expr(expr_token.expr());
                     reject_fallible_inline_value_without_failure_policy(
                         expr_token.expr(),
@@ -253,7 +277,7 @@ impl TypeChecker<'_> {
                         )));
                     }
                 }
-                DialogueToken::InferredTag(tag) if inferred_tag_is_mark(tag.name()) => {
+                DialogueToken::InferredTag(tag) if self.decorations.inferred_tag_is_mark(tag) => {
                     if !marks.insert(tag.name().to_owned()) {
                         self.errors.push(TypeCheckError::new(format!(
                             "duplicate dialogue mark `{}` in line content",
@@ -297,6 +321,7 @@ impl TypeChecker<'_> {
                 | DialogueToken::Escape(_) => {}
             }
         }
+        decoration_spans.finish(&mut self.errors);
         marks
     }
 
@@ -341,36 +366,6 @@ impl TypeChecker<'_> {
             }
         }
     }
-}
-
-fn inferred_tag_is_mark(name: &str) -> bool {
-    !matches!(
-        name.trim_start_matches('.'),
-        "italic"
-            | "oblique"
-            | "horizontal_tb"
-            | "vertical_rl"
-            | "vertical_lr"
-            | "dir"
-            | "ruby_over"
-            | "ruby_under"
-            | "ruby_inter_character"
-            | "offset"
-            | "pos"
-            | "rotate"
-            | "scale"
-            | "skew"
-            | "wave"
-            | "shake"
-            | "arc"
-            | "spin"
-            | "pulse"
-            | "motion"
-            | "typewriter"
-            | "jitter"
-            | "shader"
-            | "host"
-    )
 }
 
 fn reject_fallible_inline_value_without_failure_policy(

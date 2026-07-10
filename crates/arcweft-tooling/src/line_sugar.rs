@@ -81,7 +81,6 @@ pub(crate) fn speaker_line_edit(
 fn canonical_dialogue_text_for_speaker_line(text: &str) -> String {
     let edits = dialogue_text_canonical_edits(
         text,
-        0,
         DialogueSugarMode::All,
         &DialogueSugarContext::default(),
     );

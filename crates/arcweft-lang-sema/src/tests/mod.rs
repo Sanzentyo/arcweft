@@ -7,6 +7,7 @@ mod compile_gap_regressions;
 mod contracts;
 mod control_flow;
 mod declarations;
+mod decoration;
 mod diagnostics;
 mod dialogue;
 mod expressions;

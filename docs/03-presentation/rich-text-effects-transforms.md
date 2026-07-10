@@ -34,6 +34,15 @@ alice: [layout .vertical_rl jlreq=strict]縦書き[/layout][p]
 `[/]` closes the most recent inferred span. Zero-width markers canonicalize to
 `[mark .name]` and do not retain a closing tag.
 
+Reusable `decoration` declarations are an authoring/compiler abstraction, not
+a renderer-side effect class. For example, a declaration containing
+`strong()`, `color(value=accent)`, and `effect(.wave, amp=amplitude)` expands a
+`[decorate .name ...]...[/decorate]` span into the corresponding ordinary
+style starts and reverse-order style ends during runtime-plan lowering. The
+resulting `RichTextDocument`, bundle data, session saves, and renderer inputs
+therefore use the same `RichTextStyle` and `RichTextEffectDescriptor` values as
+hand-authored canonical tags.
+
 ---
 
 ## Effective presentation
@@ -215,12 +224,15 @@ only syntax that is unambiguous across all custom effects:
 - milli numeric values, including unit-like authoring tokens such as `px`,
   `deg`, and `ch`
 - selectors such as `.shake`
-- raw tokens for everything else
+- quoted strings as `Text`, preserving the distinction between `"2"` /
+  `"true"` and their unquoted integer / boolean forms
+- raw tokens for other unquoted values
 
 Custom renderer builtins own higher-level interpretation by parameter name.
 For example, wave may interpret `dir=0,1` as `Vec2`, while another effect may
 preserve the same token as raw text. This avoids hard-coding custom parameter
-grammars into dialogue parsing.
+grammars into dialogue parsing. Reusable decoration defaults, overrides, and
+forwarded custom arguments use this same parameter model.
 
 Expression-looking values are not inferred as expressions globally. Explicit
 expression parameters must use the documented expression form when the language

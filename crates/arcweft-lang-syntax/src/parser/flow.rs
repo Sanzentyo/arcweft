@@ -6,8 +6,8 @@ use super::headers::{
 use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
     CstLineEvents, CstPunctuationDeltas, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit,
-    FlowItem, Parser, RawSyntax, ScopeBlock, Stmt, SyntaxParseStats, TextRange,
-    UnsafeAuditInsertion, flat_block_head, indentation, is_await_with_head,
+    FlowItem, MappedDialogueSourceBuilder, Parser, RawSyntax, ScopeBlock, Stmt, SyntaxParseStats,
+    TextRange, UnsafeAuditInsertion, flat_block_head, indentation, is_await_with_head,
     is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
     parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
     parse_line_plan_attachment, parse_scope_head, parse_stmt_lines, parse_stmt_with_stats_and_base,
@@ -605,11 +605,41 @@ impl<'a> Parser<'a> {
         head: &str,
         head_start: usize,
     ) -> FlowItem {
+        let body_event_start = self.index + 1;
         let body = self.take_flat_block_body("line", line.start);
-        let (content_source, plan) = split_flat_line_content_and_plan(
+        let body_event_end = self.index.saturating_sub(1);
+        let body_anchor = self
+            .events
+            .get(body_event_start)
+            .map_or(line.end, |line| line.start);
+        let mut mapped_body = MappedDialogueSourceBuilder::new(body_anchor);
+        for body_line in self
+            .events
+            .iter()
+            .take(body_event_end)
+            .skip(body_event_start)
+        {
+            let text = body_line.text.trim_end();
+            mapped_body.push_line(
+                text,
+                TextRange::new(body_line.start, body_line.start + text.len()),
+            );
+        }
+        let mapped_body = mapped_body.finish();
+        let (_content_source, plan) = split_flat_line_content_and_plan(
             &body,
             TextRange::new(line.start, self.previous_end()),
         );
+        let mapped_content_len = split_flat_line_content_and_plan(
+            &mapped_body.raw,
+            TextRange::new(line.start, self.previous_end()),
+        )
+        .0
+        .len();
+        let mapped_content = mapped_body
+            .slice(TextRange::new(0, mapped_content_len))
+            .and_then(|content| content.trim())
+            .expect("flat dialogue content must remain inside its mapped body");
         let (callee, args) = split_call_head(head);
         let option_args = args
             .as_ref()
@@ -617,10 +647,7 @@ impl<'a> Parser<'a> {
         FlowItem::ContentCall(ContentCall::new(
             callee,
             parse_line_options(option_args, &mut self.errors),
-            self.dialogue_content(
-                content_source.trim().to_owned(),
-                TextRange::new(line.end, self.previous_end()),
-            ),
+            self.dialogue_content(mapped_content),
             plan,
             TextRange::new(line.start, self.previous_end()),
         ))

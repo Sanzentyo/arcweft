@@ -360,7 +360,7 @@ fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
     assert!(
         tokens
             .iter()
-            .all(|token| !matches!(token, DialogueToken::EndTag(name) if name == "ruby")),
+            .all(|token| !matches!(token, DialogueToken::EndTag(tag) if tag.name() == "ruby")),
         "bracket ruby end interpolation should be consumed, got {tokens:?}"
     );
 }
@@ -436,7 +436,7 @@ fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
             DialogueToken::Tag(tag),
             DialogueToken::Text(text),
             DialogueToken::EndTag(end)
-        ] if tag.name() == "em" && text == "夢" && end == "em"
+        ] if tag.name() == "em" && text == "夢" && end.name() == "em"
     )));
     assert!(tokens.windows(3).any(|window| matches!(
         window,
@@ -444,7 +444,7 @@ fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
             DialogueToken::Tag(tag),
             DialogueToken::Text(text),
             DialogueToken::EndTag(end)
-        ] if tag.name() == "color" && tag.attrs() == "value=\"#a8b5ff\"" && text == "夜" && end == "color"
+        ] if tag.name() == "color" && tag.attrs() == "value=\"#a8b5ff\"" && text == "夜" && end.name() == "color"
     )));
     assert!(
         tokens
@@ -575,6 +575,24 @@ flow @flow.opening opening {
         &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
     )
     .expect("shorthand mark is visible to line plan handler");
+}
+
+#[test]
+fn typechecker_does_not_register_custom_effect_selectors_as_marks() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice[One [.sparkle amp=1px]effect[/], two [.sparkle amp=2px]effects[/].[p]]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("custom effect selectors lower");
+
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
+    )
+    .expect("parameterized custom effect selectors are spans, not duplicate marks");
 }
 
 #[test]

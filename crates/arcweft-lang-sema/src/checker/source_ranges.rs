@@ -29,14 +29,27 @@ impl TypeChecker<'_> {
         expr_source: Option<&str>,
         expr_range: Option<TextRange>,
     ) {
+        self.register_projected_expr_source_ranges(expr, expr_source, expr_range, |range| {
+            Some(range)
+        });
+    }
+
+    pub(super) fn register_projected_expr_source_ranges(
+        &mut self,
+        expr: &Expr,
+        expr_source: Option<&str>,
+        expr_range: Option<TextRange>,
+        mut project: impl FnMut(TextRange) -> Option<TextRange>,
+    ) {
         let (Some(expr_source), Some(expr_range)) = (expr_source, expr_range) else {
             return;
         };
         for source_range in collect_expr_source_ranges(expr, expr_source, expr_range) {
-            self.expression_source_ranges.insert(
-                ExprNodeKey::from_expr(source_range.expr()),
-                source_range.range(),
-            );
+            let Some(document_range) = project(source_range.range()) else {
+                continue;
+            };
+            self.expression_source_ranges
+                .insert(ExprNodeKey::from_expr(source_range.expr()), document_range);
         }
     }
 
