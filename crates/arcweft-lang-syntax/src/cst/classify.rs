@@ -90,8 +90,8 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::Flow
     } else if looks_like_function_item(trimmed) {
         CstTopLevelItemKind::Function
-    } else if looks_like_decoration_item(trimmed) {
-        CstTopLevelItemKind::Decoration
+    } else if looks_like_removed_decoration_item(trimmed) {
+        CstTopLevelItemKind::RemovedDecoration
     } else if looks_like_agent_item(trimmed) {
         CstTopLevelItemKind::Agent
     } else if looks_like_callable_item(trimmed) {
@@ -183,7 +183,7 @@ pub(super) fn looks_like_function_item(trimmed: &str) -> bool {
         || rest.starts_with("stream fn ")
 }
 
-fn looks_like_decoration_item(trimmed: &str) -> bool {
+fn looks_like_removed_decoration_item(trimmed: &str) -> bool {
     visible_head(trimmed)
         .strip_prefix("decoration")
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))

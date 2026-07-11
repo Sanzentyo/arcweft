@@ -660,6 +660,7 @@ impl ViewProgramResource {
                 | ViewProgramInstruction::RepeatKeyed { .. }
                 | ViewProgramInstruction::Await { .. }
                 | ViewProgramInstruction::BindLocal { .. }
+                | ViewProgramInstruction::ApplyFx { .. }
                 | ViewProgramInstruction::BindHandler { .. }
                 | ViewProgramInstruction::AttachSemantic { .. } => {}
             }

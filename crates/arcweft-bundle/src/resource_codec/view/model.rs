@@ -2,6 +2,7 @@ use super::runtime_control_style::ViewRuntimeControlStyle;
 use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, DigestRef, SourceRangeRef};
+use arcweft_presentation::fx::FxId;
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use core::fmt;
@@ -104,6 +105,15 @@ pub enum ViewProgramInstruction {
         style: ViewStyleApplyRef,
         source: Option<SourceRangeRef>,
     },
+    /// Applies a resolved `#[fx] fn -> Fx` graph to the current retained node.
+    ApplyFx {
+        /// Package-qualified identity of the original Fx declaration.
+        fx: FxId,
+        arguments: Vec<ViewFxArgumentBindingRef>,
+        key_schema: Option<DigestRef>,
+        application_ordinal: u32,
+        source: Option<SourceRangeRef>,
+    },
     BindHandler {
         event: String,
         handler: String,
@@ -114,6 +124,13 @@ pub enum ViewProgramInstruction {
         label_text_source: Option<String>,
         source: Option<SourceRangeRef>,
     },
+}
+
+/// Typed reactive argument retained for one View-side Fx application.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewFxArgumentBindingRef {
+    pub parameter: String,
+    pub value_schema: DigestRef,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

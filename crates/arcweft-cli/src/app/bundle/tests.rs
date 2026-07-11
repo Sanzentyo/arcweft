@@ -106,6 +106,66 @@ flow test {
 }
 
 #[test]
+fn view_fx_modifier_lowers_typed_bindings_key_and_ordinal() {
+    use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+#[fx]
+fn notice(accent: Color) -> Fx {
+  Fx.text(color = accent)
+}
+
+#[fx]
+fn pulse(speed: f32) -> Fx {
+  Fx.transform(speed = speed)
+}
+
+view Warning(state: WarningState) {
+  Text("WARNING")
+    .fx(notice(accent = state.warning_color), key = state.warning_id)
+    .fx(pulse(speed = 1.5))
+}
+
+flow test {
+  view(@view:.Warning)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources_for_package(&hir, &[], "test-package")
+        .expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+    let applications = program
+        .instructions
+        .iter()
+        .filter_map(|instruction| match instruction {
+            ViewProgramInstruction::ApplyFx {
+                fx,
+                arguments,
+                key_schema,
+                application_ordinal,
+                ..
+            } => Some((fx, arguments, key_schema, application_ordinal)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(applications.len(), 2);
+    assert_eq!(applications[0].0.package(), "test-package");
+    assert_eq!(applications[0].0.function(), "notice");
+    assert_eq!(applications[0].1.len(), 1);
+    assert_eq!(applications[0].1[0].parameter, "accent");
+    assert!(applications[0].2.is_some());
+    assert_eq!(*applications[0].3, 0);
+    assert_eq!(applications[1].0.function(), "pulse");
+    assert_eq!(applications[1].1[0].parameter, "speed");
+    assert!(applications[1].2.is_none());
+    assert_eq!(*applications[1].3, 1);
+}
+
+#[test]
 fn view_local_let_input_handle_lowers_to_program_binding() {
     use arcweft_bundle::resource_codec::view::{ViewProgramInstruction, ViewTextSourceKind};
 

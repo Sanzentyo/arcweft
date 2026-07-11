@@ -2,7 +2,6 @@ use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
         common::{TextRange, Visibility},
-        decoration::DecorationItem,
         dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
@@ -57,6 +56,7 @@ pub struct HirFlow {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFunction {
     pub(crate) attributes: Vec<Attribute>,
+    pub(crate) module_path: Option<String>,
     pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
@@ -77,7 +77,6 @@ pub struct HirAgent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirTopLevelDecl {
     Callable(CallableItem),
-    Decoration(DecorationItem),
     State(StateItem),
     Trait(TraitItem),
     Impl(ImplItem),
@@ -435,6 +434,18 @@ impl HirFunction {
 
     pub fn name(&self) -> &str {
         self.signature.name()
+    }
+
+    /// Original qualified declaration name used as the stable function identity.
+    pub fn qualified_name(&self) -> String {
+        self.module_path.as_ref().map_or_else(
+            || self.name().to_owned(),
+            |module| format!("{module}.{}", self.name()),
+        )
+    }
+
+    pub fn module_path(&self) -> Option<&str> {
+        self.module_path.as_deref()
     }
 
     pub const fn signature(&self) -> &FnSignature {

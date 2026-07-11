@@ -4,6 +4,7 @@ pub mod errors;
 pub mod expr;
 pub mod flow;
 mod function_values;
+pub mod fx;
 pub mod host_request;
 pub mod labels;
 pub mod line_task;

@@ -266,7 +266,7 @@ just test-doc
 the core/render-text/text-layout/native-render/native-player library path used
 by rich-text and native capture work. `just test-rich-text` covers syntax, HIR,
 semantic, and runtime-plan rich-text ownership first, then adds the
-render/layout/native libraries, the reusable-decoration sample check, and the
+render/layout/native libraries, the reusable-Fx sample check, and the
 direct native `agent observe` exact smoke slice.
 `just test-workspace` is the normal workspace
 fast path: it runs workspace lib/integration tests except the large

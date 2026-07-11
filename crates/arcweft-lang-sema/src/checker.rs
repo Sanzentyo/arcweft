@@ -47,10 +47,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub mod borrow_state;
 pub mod choice;
-pub mod decoration;
 pub mod effects;
 pub mod expr;
 pub mod flow;
+pub mod fx;
 pub mod helpers;
 pub mod iterator;
 pub mod lifetime_access;
@@ -64,7 +64,7 @@ pub mod suspension;
 
 pub use module::analyze_types;
 
-use decoration::DecorationCatalog;
+use fx::FxCatalog;
 use helpers::{
     await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
     entity_kind_for_decl, entity_syntax_kind, expr_path_label, ident_pattern_name,
@@ -403,7 +403,7 @@ struct TypeChecker<'a> {
     trait_catalog: TraitCatalog,
     trait_predicate_stack: Vec<Vec<TraitPredicate>>,
     flow_params: HashMap<String, HashSet<String>>,
-    decorations: DecorationCatalog,
+    fx: FxCatalog,
     locals: HashMap<String, TypeKind>,
     local_scope_stack: Vec<LocalBindingSnapshot>,
     loop_stack: Vec<LoopContext>,
@@ -687,7 +687,7 @@ impl TypeChecker<'_> {
             trait_catalog: TraitCatalog::default(),
             trait_predicate_stack: Vec::new(),
             flow_params: HashMap::new(),
-            decorations: DecorationCatalog::default(),
+            fx: FxCatalog::default(),
             locals: HashMap::new(),
             local_scope_stack: Vec::new(),
             loop_stack: Vec::new(),

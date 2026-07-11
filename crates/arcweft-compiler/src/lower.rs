@@ -1,5 +1,3 @@
-use std::fmt;
-
 use arcweft_core::plan::{RuntimeIteratorEvidence, RuntimePlan, RuntimePureHelperOrigin};
 use arcweft_lang_hir::model::{HirFunction, HirModule};
 use arcweft_lang_sema::check::{
@@ -24,9 +22,6 @@ use arcweft_runtime_plan::typed_evidence::{
 use crate::trait_methods::{
     lower_runtime_trait_methods_from_typecheck, runtime_iterator_identity_witness_evidence,
     runtime_witness_evidence,
-};
-use crate::types::{
-    TextPureHelperCandidateError, TextPureHelperCandidateReport, TextPureHelperKind,
 };
 
 /// Lowers dialogue line plans from HIR into runtime task groups.
@@ -280,78 +275,4 @@ pub fn lower_source_pure_helper_candidate(
     origin: RuntimePureHelperOrigin,
 ) -> Result<PureHelperCandidate, PureHelperLowerError> {
     lower_pure_helper_candidate(function, origin)
-}
-
-/// Lowers checked HIR functions annotated for native text shader/effect/motion registries.
-pub fn lower_source_text_pure_helper_candidates(
-    hir: &HirModule,
-) -> Result<TextPureHelperCandidateReport, Vec<TextPureHelperCandidateError>> {
-    let mut report = TextPureHelperCandidateReport::default();
-    let mut errors = Vec::new();
-    for function in hir.functions() {
-        for kind in TextPureHelperKind::from_function(function) {
-            if !function.has_attribute("pure") {
-                errors.push(TextPureHelperCandidateError::MissingPureAttribute {
-                    kind,
-                    name: function.name().to_owned(),
-                });
-                continue;
-            }
-            match lower_source_pure_helper_candidate(function, RuntimePureHelperOrigin::Annotated) {
-                Ok(candidate) => report.push(kind, candidate),
-                Err(source) => {
-                    errors.push(TextPureHelperCandidateError::PureLower { kind, source });
-                }
-            }
-        }
-    }
-    if errors.is_empty() {
-        Ok(report)
-    } else {
-        Err(errors)
-    }
-}
-impl TextPureHelperKind {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Shader => "shader",
-            Self::Effect => "effect",
-            Self::Motion => "motion",
-        }
-    }
-
-    fn from_function(function: &HirFunction) -> impl Iterator<Item = Self> + '_ {
-        [
-            (
-                Self::Shader,
-                function.has_attribute("text_shader") || function.has_attribute("rich_text_shader"),
-            ),
-            (
-                Self::Effect,
-                function.has_attribute("text_effect") || function.has_attribute("rich_text_effect"),
-            ),
-            (
-                Self::Motion,
-                function.has_attribute("text_motion") || function.has_attribute("rich_text_motion"),
-            ),
-        ]
-        .into_iter()
-        .filter_map(|(kind, selected)| selected.then_some(kind))
-    }
-}
-
-impl fmt::Display for TextPureHelperKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl TextPureHelperCandidateReport {
-    fn push(&mut self, kind: TextPureHelperKind, candidate: PureHelperCandidate) {
-        match kind {
-            TextPureHelperKind::Shader => self.shaders.push(candidate),
-            TextPureHelperKind::Effect => self.effects.push(candidate),
-            TextPureHelperKind::Motion => self.motions.push(candidate),
-        }
-    }
 }

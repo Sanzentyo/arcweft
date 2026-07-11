@@ -336,20 +336,20 @@ fn assert_later_line_dialogue_ranges(source: &str, content: &DialogueContent) {
         .tokens()
         .iter()
         .find_map(|token| match token {
-            DialogueToken::Tag(tag) if tag.name() == "decorate" => Some(tag),
+            DialogueToken::Tag(tag) if tag.name() == "effect" => Some(tag),
             _ => None,
         })
-        .expect("later-line decorate tag");
+        .expect("later-line effect tag");
     assert_eq!(
         &content.raw()[tag.range().as_range()],
-        "[decorate .warning mood=\"very urgent\"]"
+        "[effect .warning mood=\"very urgent\"]"
     );
     assert_eq!(
         &source[content
             .source_range(tag.range())
             .expect("projected tag range")
             .as_range()],
-        "[decorate .warning mood=\"very urgent\"]"
+        "[effect .warning mood=\"very urgent\"]"
     );
     let mood = tag
         .arguments()
@@ -384,7 +384,7 @@ fn multiline_dialogue_ranges_project_across_lf_normalization() {
     let source = r#"flow opening {
     narrator: Iteration #[
         score + 1i64
-    ] [decorate .warning mood="very urgent"]text[/decorate]
+    ] [effect .warning mood="very urgent"]text[/effect]
 }
 "#;
     let tree = parse_ok(source);
@@ -395,7 +395,7 @@ fn multiline_dialogue_ranges_project_across_lf_normalization() {
 
 #[test]
 fn multiline_dialogue_ranges_project_across_crlf_normalization() {
-    let source = "flow opening {\r\n    narrator: Iteration #[\r\n        score + 1i64\r\n    ] [decorate .warning mood=\"very urgent\"]text[/decorate]\r\n}\r\n";
+    let source = "flow opening {\r\n    narrator: Iteration #[\r\n        score + 1i64\r\n    ] [effect .warning mood=\"very urgent\"]text[/effect]\r\n}\r\n";
     let tree = parse_ok(source);
     let content = speaker_content(&tree);
     assert!(content.raw().contains("#[\nscore + 1i64\n]"));
@@ -407,14 +407,14 @@ fn indented_dialogue_ranges_project_from_trimmed_lines() {
     let source = r#"flow opening {
     narrator:
         Intro
-        #[score + 1i64] [decorate .warning mood="very urgent"]text[/decorate]
+        #[score + 1i64] [effect .warning mood="very urgent"]text[/effect]
 }
 "#;
     let tree = parse_ok(source);
     let content = speaker_content(&tree);
     assert_eq!(
         content.raw(),
-        "Intro\n#[score + 1i64] [decorate .warning mood=\"very urgent\"]text[/decorate]"
+        "Intro\n#[score + 1i64] [effect .warning mood=\"very urgent\"]text[/effect]"
     );
     assert_later_line_dialogue_ranges(source, content);
 }
@@ -423,7 +423,7 @@ fn indented_dialogue_ranges_project_from_trimmed_lines() {
 fn bracket_content_call_ranges_project_from_normalized_lines() {
     let source = r#"flow opening {
     alice.say()[Intro
-        #[score + 1i64] [decorate .warning mood="very urgent"]text[/decorate]
+        #[score + 1i64] [effect .warning mood="very urgent"]text[/effect]
     ]
 }
 "#;

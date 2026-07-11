@@ -146,7 +146,6 @@ ItemDecl     :=
   | HookDecl
   | MemoDecl
   | DialogueDefaultsDecl
-  | DecorationDecl
   | AssetDecl
   | ImageDecl
   | TypeDecl
@@ -185,57 +184,6 @@ They are not the recommended spelling for ordinary hand-authored asset
 references.
 Image payload packaging is still handled by the bundle image asset table, which
 records encoded files and decoded metadata.
-
-Reusable dialogue-text decorations use a compile-time declaration surface:
-
-```text
-DecorationDecl    := 'decoration' Ident DecorationParams DecorationBody
-DecorationParams  := '(' (DecorationParam (',' DecorationParam)* ','?)? ')'
-DecorationParam   := Ident ('=' DecorationConst)? | '...' Ident
-DecorationBody    := '{' Newline* DecorationBuilder
-                     (DecorationSeparator DecorationBuilder)*
-                     DecorationSeparator? '}'
-DecorationSeparator := Newline+ | (';' Newline*)
-DecorationBuilder := Ident CallArgs
-DecorationConst   := BoolLiteral | SignedDecorationNumber
-                   | String | '.' Ident | Ident
-SignedDecorationNumber := '-'? (IntLiteral | FloatLiteral | UnitNumber
-                                 | DurationLiteral)
-```
-
-The body is non-empty. Consecutive builders are separated by a physical newline
-or `;`; whitespace alone does not separate two builders. Builder call shapes
-are closed as follows:
-
-| Builder | Accepted call arguments |
-| --- | --- |
-| `em`, `strong` | none |
-| `color`, `font`, `size` | exactly one positional value or `value=...` |
-| `style` | one literal selector from `.italic`, `.oblique`, `.opacity`, `.layer`, `.meta`, `.z_index`, then named values and at most one rest spread |
-| `layout` | one literal selector from `.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, `.ruby_over`, `.ruby_under`, `.ruby_inter_character`, then named values and at most one rest spread |
-| `transform` | one literal selector from `.offset`, `.pos`, `.rotate`, `.scale`, `.skew`, then named values and at most one rest spread |
-| `effect` | one registry-extensible literal `.Ident` selector, then named values and at most one rest spread |
-| `decorate` | one literal module-local decoration `.Ident` selector, then named values and at most one rest spread |
-
-The selector position is never a parameter reference. The rest parameter, when
-present, must be last. Non-selector builder arguments may refer to declared
-parameters and may forward the rest bag with the ordinary `Expr...` call spread
-spelling. When that spread appears in `decorate(.target, rest...)`, the selected
-target declaration must itself declare a final rest parameter. This is checked
-eagerly while validating the declaration, even if a particular invocation would
-produce an empty bag: an open set of forwarded keys cannot bind to a target that
-declares only a closed set of named parameters. Decoration constants are closed
-authoring values, not runtime expressions. A bare identifier in a builder value
-is a parameter reference; raw registry words in a builder must be quoted so
-misspelled parameters remain diagnosable. Direct rich-text tag aliases are not
-accepted as decoration builder selectors; the table above is the canonical
-closed inventory.
-
-`DecorationRawToken` is the dialogue-tag-only escape hatch for renderer-owned
-payloads such as `#ff4050`, `0,1`, and `source-shader`. It must not contain
-whitespace, `#[`, `$(`, or `(`, `)`, `[`, `]`, `{`, `}`, `+`, `*`, or `/`, and
-it must not contain quote characters or be a dotted runtime path. Quoting is
-canonical whenever a value does not satisfy this closed token grammar.
 
 `image` declarations establish stable presentation-object ids such as
 `@image.sample.pulse_sprite`. Their bodies use the same flat fields as bounded
@@ -332,13 +280,7 @@ LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'rich_text' '=' Expr
                 | Ident '=' Expr
 DialogueText   := TextUntilLineEnd | Newline IndentedText
-DialogueContent:= (TextAndDialogueTags | DecorationSpan)*
-DecorationSpan := '[' 'decorate' TagSpace '.' Ident
-                  (TagSpace DecorationTagArg)* ']'
-                  DialogueContent '[/decorate]'
-DecorationTagArg := Ident '=' DecorationTagValue
-DecorationTagValue := DecorationConst | DecorationRawToken
-DecorationRawToken := <safe token constrained above>
+DialogueContent:= (TextAndDialogueTags | FxTextSpan)*
 TagSpace        := UnicodeWhitespace+
 
 LinePlanAttach := 'with' Block
@@ -535,7 +477,10 @@ FunctionKind  := 'fn' | 'task fn' | 'dialogue fn' | 'stream fn'
 GenericParams := '<' GenericParam (',' GenericParam)* ','? '>'
 GenericParam  := Lifetime | IdentPath
 ParamGroup    := '(' Param (',' Param)* ','? ')'
-Param         := DocComment* Pattern ':' Type | DocComment* Pattern ':' '...' Type | 'self' | '&self' | '&mut self' | 'mut self'
+Param         := DocComment* Pattern ':' Type ParamDefault?
+               | DocComment* Pattern ':' '...' Type
+               | 'self' | '&self' | '&mut self' | 'mut self'
+ParamDefault  := '=' Expr
 ReturnType    := '->' Type
 WhereClause   := 'where' WherePredicate (',' WherePredicate)* ','?
 WherePredicate:= Type ':' Type ('+' Type)*
@@ -545,6 +490,14 @@ Multiple `ParamGroup` entries are curried parameter groups and are preserved as
 separate syntax groups. Unexpected tokens after the return type or where clause
 are syntax errors.
 
+`ParamDefault` is represented on the ordinary function parameter rather than
+by a second parameter AST. In the current language surface, only a simple
+identifier parameter on a `#[fx]` function may have a default. Its expression
+must be const-evaluable and must not refer to another parameter or runtime
+state. A default on another function kind or on a pattern parameter is a
+semantic error; this keeps the AST ready for a future general default-argument
+decision without implicitly adding that feature today.
+
 `param: ...T` declares one positional rest parameter. A signature may contain at
 most one rest parameter, it must be the last parameter of the final parameter
 group, and it cannot declare a default value. The function body sees the binding
@@ -552,6 +505,55 @@ as `Vec<T>`. Calls pass ordinary positional arguments and may splice an existing
 sequence into the rest tail with `expr...`, as in `log("loaded", fields...)`.
 Named rest is not part of this syntax slice. Rest element type may be an
 anonymous sum such as `fields: ...(String | i64 | Duration)`.
+
+### Presentation Fx functions
+
+Reusable static styling, animation, transforms, filters, masks, shaders, and
+transitions use one ordinary function surface:
+
+```text
+FxDecl       := '#[fx]' Visibility? 'fn' Ident FxParamGroup '->' 'Fx' Block
+FxParamGroup := '(' (FxParam (',' FxParam)* ','?)? ')'
+FxParam      := Ident ':' Type ('=' ConstExpr)?
+FxTextSpan   := '[fx' FxCall ']' DialogueContent '[/fx]'
+FxCall       := Path '(' (NamedArg (',' NamedArg)* ','?)? ')'
+```
+
+`#[fx]` is an argument-free marker on an ordinary, non-generic `fn`. It implies
+that the function is a pure, deterministic factory for an immutable `Fx`
+graph; writing `#[pure]` as a second attribute is neither required nor
+canonical. An Fx function has exactly one parameter group, no receiver, no
+rest parameter, and an explicit `Fx` return type. Public parameter types and
+defaults must be representable in the bundle Fx ABI.
+
+Fx entry calls are named-only. Required parameters have no default, optional
+parameters place their const-evaluable default in the function signature, and
+unknown, duplicate, missing, or positional arguments are diagnostics. The
+function body composes typed constructors such as `Fx.text`, `Fx.style`,
+`Fx.transform`, `Fx.filter`, `Fx.mask`, `Fx.shader`, `Fx.transition`,
+`Fx.conditional`, and ordered `Fx.stack`; it is not a second declaration or
+builder grammar.
+
+View expressions apply an Fx value with `.fx(value)` and may pass reactive
+argument expressions. Dialogue rich text applies the same function with
+`[fx path(arg=value)]...[/fx]`, but every inline argument must be a closed,
+const-evaluable value so localization, replay, and line caching remain stable.
+Dynamic rich-text presentation belongs on a View `RichText(...)` value through
+`.fx(...)`.
+
+An Fx function may call ordinary pure helpers and other Fx functions. It may
+not mutate state, send signals, perform I/O or capability calls, await tasks,
+read nondeterministic random or wall-clock values, construct View children, or
+emit actions/events. Composition cycles and graph expansion budgets are checked
+on the typed Fx call graph.
+
+The source identity is the original package plus qualified function name;
+imports and `pub use` aliases resolve to that declaration rather than creating
+another identity. No authored `@fx` id accompanies the function. The compiler
+derives a typed `FxId`, an ABI hash from its schema and renderer requirements,
+and a semantic hash from its body and referenced resources. Each application
+also receives a distinct deterministic `FxInstanceId` from its retained
+location/span identity and application ordinal.
 
 `stream fn` must declare `-> Stream<T, E>`. Hand-written stream transforms do
 not return `Source<T, E>`; live external sources use `source` declarations so
@@ -763,4 +765,3 @@ DivergingExpr := ReturnStmt | GotoStmt | BreakStmt | ContinueStmt | PanicStmt | 
 ```
 
 `!` coerces to any expected type. Diagnostics should normally say "this branch never returns" rather than exposing bottom-type theory to non-expert users.
-

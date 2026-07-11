@@ -6,6 +6,7 @@ use arcweft_lang_syntax::ast::items::{AgentItem, Attribute, FunctionItem, Item, 
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
     let mut state = HirLoweringState {
         attributes: tree.attrs().to_vec(),
+        module_path: tree.module().map(|module| module.path().to_owned()),
         source_len: Some(tree.source().len()),
         top_level_ranges: tree.items().iter().filter_map(Item::range).collect(),
         ..HirLoweringState::default()
@@ -20,6 +21,7 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
 #[derive(Default)]
 struct HirLoweringState {
     attributes: Vec<Attribute>,
+    module_path: Option<String>,
     source_len: Option<usize>,
     top_level_ranges: Vec<arcweft_lang_syntax::ast::common::TextRange>,
     flows: Vec<crate::model::HirFlow>,
@@ -40,7 +42,8 @@ impl HirLoweringState {
                 Err(err) => self.errors.push(err),
             },
             Item::Function(function) => {
-                self.functions.push(lower_function(function));
+                self.functions
+                    .push(lower_function(function, self.module_path.clone()));
             }
             Item::Agent(agent) => {
                 self.agents.push(lower_agent(agent));
@@ -66,10 +69,6 @@ impl HirLoweringState {
             Item::Callable(item) => {
                 self.declarations
                     .push(HirTopLevelDecl::Callable(item.clone()));
-            }
-            Item::Decoration(item) => {
-                self.declarations
-                    .push(HirTopLevelDecl::Decoration(item.clone()));
             }
             Item::Enum(item) => {
                 self.declarations.push(HirTopLevelDecl::Enum(item.clone()));
@@ -174,9 +173,10 @@ fn lower_agent(agent: &AgentItem) -> HirAgent {
     }
 }
 
-fn lower_function(function: &FunctionItem) -> HirFunction {
+fn lower_function(function: &FunctionItem, module_path: Option<String>) -> HirFunction {
     HirFunction {
         attributes: function.attrs().to_vec(),
+        module_path,
         kind: function.kind(),
         visibility: function.visibility(),
         signature: function.signature().clone(),
@@ -296,39 +296,6 @@ pub dialogue defaults @dialogue.defaults.mobile {
         assert_eq!(defaults.attrs().len(), 1);
         assert_eq!(defaults.attrs()[0].name(), "profile");
         assert_eq!(defaults.attrs()[0].args(), Some("note=\"mobile defaults\""));
-    }
-
-    #[test]
-    fn lowering_preserves_typed_decoration_declarations() {
-        let tree = parse_source(
-            r##"
-/// Warning emphasis used by dialogue text.
-#[theme(dialogue)]
-decoration warning(accent = "#ff4050", required, ...custom) {
-    strong()
-    color(value=accent)
-    effect(.wave, custom...)
-}
-"##,
-        )
-        .into_typed_tree();
-
-        let hir = lower_to_hir(&tree).expect("decoration lowers to HIR");
-        let [crate::model::HirTopLevelDecl::Decoration(decoration)] = hir.declarations() else {
-            panic!("expected one decoration declaration");
-        };
-        assert_eq!(decoration.name(), "warning");
-        assert_eq!(
-            decoration
-                .doc()
-                .map(arcweft_lang_syntax::ast::common::DocBlock::text),
-            Some("Warning emphasis used by dialogue text.")
-        );
-        assert_eq!(decoration.attrs().len(), 1);
-        assert_eq!(decoration.params().len(), 3);
-        assert!(decoration.params()[2].is_rest());
-        assert_eq!(decoration.layers().len(), 3);
-        assert_eq!(hir.declarations()[0].cache_fact_tag(), "decoration");
     }
 
     #[test]

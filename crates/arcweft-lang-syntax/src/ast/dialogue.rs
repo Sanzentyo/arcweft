@@ -55,6 +55,53 @@ pub struct DialogueTag {
     attrs_range: TextRange,
 }
 
+/// Language-owned semantic family of an authored dialogue tag.
+///
+/// Compiler layers compare this enum instead of rediscovering builtin tag
+/// spellings from raw names. Registry-extensible and inferred visual tags stay
+/// in [`DialogueTagKind::Span`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogueTagKind {
+    /// Apply one compiled Fx function to a `RichText` span.
+    Fx,
+    /// Clear active `RichText` presentation state.
+    Reset,
+    /// A control or marker that does not open a span.
+    Point,
+    /// An ordinary or registry-extensible `RichText` span.
+    Span,
+    /// Syntax whose semantic family is owned by another dialogue subsystem.
+    Other,
+}
+
+impl DialogueTagKind {
+    /// Classifies one canonical or inferred authored tag name.
+    pub fn from_name(name: &str) -> Self {
+        let inferred = name.starts_with('.');
+        let name = name.trim_start_matches('.');
+        match name {
+            "fx" => Self::Fx,
+            "reset" => Self::Reset,
+            "p" | "page" | "l" | "wait" | "r" | "nl" | "br" | "w" | "clear" | "er" | "cm"
+            | "speed" | "voice" | "face" | "pose" | "show" | "hide" | "move" | "scale"
+            | "rotate" | "anim" | "shake" | "at" | "call" | "signal" | "if" | "else" | "endif"
+            | "mark" => Self::Point,
+            "em" | "strong" | "color" | "font" | "size" | "style" | "layout" | "transform"
+            | "effect" | "shader" | "object" | "ruby" => Self::Span,
+            _ if name.is_empty() => Self::Other,
+            // Dot-selector effects and plugin-owned visual spans intentionally
+            // remain spans even though their registry identity is resolved later.
+            _ if inferred => Self::Span,
+            _ => Self::Other,
+        }
+    }
+
+    /// Whether this tag has no matching close operation.
+    pub const fn is_point(self) -> bool {
+        matches!(self, Self::Point | Self::Reset)
+    }
+}
+
 /// One positional or named argument in a dialogue tag.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DialogueTagArg {
@@ -356,6 +403,11 @@ impl DialogueTag {
         &self.name
     }
 
+    /// Typed semantic family of this tag.
+    pub fn kind(&self) -> DialogueTagKind {
+        DialogueTagKind::from_name(&self.name)
+    }
+
     /// Authored tag-head range, relative to the owning dialogue content.
     ///
     /// The source spelling may be an alias or sugar token even when `name()`
@@ -530,6 +582,11 @@ impl DialogueEndTag {
     /// Explicit family/name being closed.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Typed semantic family of the span being closed.
+    pub fn kind(&self) -> DialogueTagKind {
+        DialogueTagKind::from_name(&self.name)
     }
 
     /// Full authored range including `[` and `]`, or the zero-width insertion

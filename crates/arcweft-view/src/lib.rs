@@ -4,6 +4,7 @@ pub mod display;
 pub mod entity;
 pub mod fragment;
 pub mod frame;
+pub mod fx;
 pub mod handler;
 pub mod image;
 pub mod layout;
@@ -32,6 +33,10 @@ pub use fragment::{
     ViewFragmentBuilder,
 };
 pub use frame::ViewLayerOutput;
+pub use fx::{
+    RetainedViewFxApplication, RetainedViewFxTable, ViewFxArgumentBinding, ViewFxError,
+    ViewFxIdentity, ViewFxOrdinal,
+};
 pub use handler::{ViewHandlerInvocation, ViewHandlerRoute, ViewHandlerRouteTable};
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,

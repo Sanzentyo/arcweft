@@ -27,6 +27,7 @@ mod builtin;
 mod callable;
 mod closure;
 mod enum_variant;
+mod fx;
 mod method_fallback;
 mod partial;
 mod path;
@@ -686,6 +687,14 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
+        if let Some(name) = expr_path_label(callee)
+            && self.fx.is_definition(&name)
+        {
+            self.errors.extend(self.fx.call_errors(&name, args));
+        }
+        if let Some(ty) = self.check_fx_constructor_call(callee, args) {
+            return Some(ty);
+        }
         if let Some(ty) = self.check_enum_variant_call_expr(callee, args, expected) {
             return Some(ty);
         }
@@ -848,6 +857,14 @@ impl TypeChecker<'_> {
             BuiltinCallSpec::InlineFailureFallback => {
                 Some(TypeKind::Named("InlineFailure".to_owned()))
             }
+            BuiltinCallSpec::Color => {
+                self.check_homogeneous_builtin_args(name, args, &TypeKind::String, 1);
+                Some(TypeKind::Named("Color".to_owned()))
+            }
+            BuiltinCallSpec::FloatUnary => {
+                self.check_homogeneous_builtin_args(name, args, &TypeKind::F32, 1);
+                Some(TypeKind::F32)
+            }
             BuiltinCallSpec::Never => {
                 for arg in args {
                     self.check_expr(arg.value());
@@ -870,6 +887,10 @@ impl TypeChecker<'_> {
                 let input = intrinsic.input_type();
                 self.check_homogeneous_builtin_args(name, args, &input, intrinsic.arity());
                 Some(intrinsic.output_type())
+            }
+            BuiltinCallSpec::Vector(arity) => {
+                self.check_homogeneous_builtin_args(name, args, &TypeKind::F32, arity);
+                Some(TypeKind::Named(format!("Vec{arity}")))
             }
         }
     }
@@ -1121,6 +1142,19 @@ impl TypeChecker<'_> {
         method_name: &str,
         args: &[CallArg],
     ) -> InherentMethodCallOutcome {
+        if matches!(receiver_type, TypeKind::Named(name) if name == "FxSampleContext")
+            && method_name == "ordinal_phase"
+        {
+            if !args.is_empty() {
+                self.errors.push(TypeCheckError::new(
+                    "FxSampleContext.ordinal_phase accepts no arguments".to_owned(),
+                ));
+                for arg in args {
+                    self.check_expr(arg.value());
+                }
+            }
+            return InherentMethodCallOutcome::Checked(Some(TypeKind::F32));
+        }
         if method_name == "require_role" {
             return InherentMethodCallOutcome::Checked(
                 self.check_agent_object_require_role_method_call(receiver_type, args),
@@ -2258,7 +2292,7 @@ impl TypeChecker<'_> {
         )
         .then_some(expected)
         .flatten()
-        .filter(|ty| ty.is_integer() || ty.is_float() || *ty == &TypeKind::Duration);
+        .filter(|ty| ty.is_integer() || ty.is_float());
         let lhs_type = self.check_expr_with_expected(lhs, operand_expected);
         if op == BinaryOp::In {
             return self.check_in_binary_expr(lhs_type.as_ref(), rhs);
@@ -2296,10 +2330,7 @@ impl TypeChecker<'_> {
             BinaryOp::Gte | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Lt => {
                 match (lhs_type.as_ref(), rhs_type.as_ref()) {
                     (Some(lhs), Some(rhs))
-                        if lhs == rhs
-                            && (lhs.is_integer()
-                                || lhs.is_float()
-                                || lhs == &TypeKind::Duration) =>
+                        if lhs == rhs && (lhs.is_integer() || lhs.is_float()) =>
                     {
                         Some(TypeKind::Bool)
                     }
@@ -2332,16 +2363,13 @@ impl TypeChecker<'_> {
                 }
             },
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
-                if lhs_type == Some(TypeKind::Duration) && rhs_type == Some(TypeKind::Duration) {
-                    Some(TypeKind::Duration)
-                } else if matches!(
-                    (&lhs_type, &rhs_type),
-                    (Some(lhs), Some(rhs)) if lhs == rhs && (lhs.is_integer() || lhs.is_float())
-                ) {
-                    lhs_type
+                if let Some(result) =
+                    arithmetic_result_type(op, lhs_type.as_ref(), rhs_type.as_ref())
+                {
+                    Some(result)
                 } else {
                     self.errors.push(TypeCheckError::new(format!(
-                        "arithmetic expression operands must have a supported numeric or Duration type, found {} and {}",
+                        "arithmetic expression operands must have compatible numeric types or scale a unit value by a float, found {} and {}",
                         optional_type_kind_label(lhs_type.as_ref()),
                         optional_type_kind_label(rhs_type.as_ref())
                     )));
@@ -2419,5 +2447,23 @@ impl TypeChecker<'_> {
             ChoicePatternCoverage::All => true,
             ChoicePatternCoverage::Type(ty) => self.types_compatible(ty, alternative),
         }
+    }
+}
+
+fn arithmetic_result_type(
+    op: BinaryOp,
+    lhs: Option<&TypeKind>,
+    rhs: Option<&TypeKind>,
+) -> Option<TypeKind> {
+    let (lhs, rhs) = (lhs?, rhs?);
+    if lhs == rhs && (lhs.is_integer() || lhs.is_float()) {
+        return Some(lhs.clone());
+    }
+    match op {
+        BinaryOp::Mul if lhs.is_float() && is_unit_number_type(rhs) => Some(rhs.clone()),
+        BinaryOp::Mul | BinaryOp::Div if is_unit_number_type(lhs) && rhs.is_float() => {
+            Some(lhs.clone())
+        }
+        _ => None,
     }
 }

@@ -5,17 +5,17 @@ use arcweft_bundle::resource_codec::view::{
     ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp, StyleSourceIdentity,
     StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride, TextAssistPolicy,
     TextCapitalization, ViewAwaitBranchSpan, ViewChildSpan, ViewElementKind, ViewElementState,
-    ViewFocusAutoScrollPolicy, ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose,
-    ViewInputResource, ViewLayoutBoundsResource, ViewLogicalRect, ViewObserveClassification,
-    ViewProgramInstruction, ViewProgramResource, ViewResourceBudget, ViewResourceCompatibility,
-    ViewRuntimeTextBlockBounds, ViewScrollAxis, ViewScrollIndicatorsPolicy,
-    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
-    ViewSecureInputPolicy, ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStateSchemaHashRef,
-    ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewTextBlockResource, ViewTextResource,
-    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
-    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
-    ViewThemeResource, migrated_view_section_compatibility,
+    ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewHandlerRef, ViewInputKind,
+    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
+    ViewLogicalRect, ViewObserveClassification, ViewProgramInstruction, ViewProgramResource,
+    ViewResourceBudget, ViewResourceCompatibility, ViewRuntimeTextBlockBounds, ViewScrollAxis,
+    ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
+    ViewScrollRegionResource, ViewSecureInputPolicy, ViewSecureRedactionMetadata,
+    ViewSemanticTarget, ViewStateSchemaHashRef, ViewStyleDeclaration, ViewStyleResource,
+    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
+    ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    ViewThemeEnvironmentDefaults, ViewThemeResource, migrated_view_section_compatibility,
 };
 
 use arcweft_bundle::resource_codec::{
@@ -23,6 +23,7 @@ use arcweft_bundle::resource_codec::{
     ResourceWireType, SectionCodecBudget,
 };
 use arcweft_bundle::{BundleVirtualFileRef, BundleVirtualFileSpace};
+use arcweft_presentation::fx::FxId;
 
 #[test]
 fn view_element_inventory_owns_codec_tags_and_round_trips() {
@@ -78,6 +79,51 @@ fn view_resource_compact_sections_round_trip_with_deterministic_bytes() {
         ViewThemeResource::decode_canonical_section,
         &theme,
     );
+}
+
+#[test]
+fn view_fx_bindings_are_canonical_bounded_and_unique() {
+    let binding = |parameter: &str| ViewFxArgumentBindingRef {
+        parameter: parameter.to_owned(),
+        value_schema: DigestRef {
+            digest: BundleDigest::of(parameter.as_bytes()),
+        },
+    };
+    let instruction = |arguments| ViewProgramInstruction::ApplyFx {
+        fx: FxId::try_new("game", "ui.effects.notice").expect("valid Fx id"),
+        arguments,
+        key_schema: None,
+        application_ordinal: 0,
+        source: None,
+    };
+
+    let mut first = fixture_program();
+    first
+        .instructions
+        .push(instruction(vec![binding("speed"), binding("amplitude")]));
+    let mut second = fixture_program();
+    second
+        .instructions
+        .push(instruction(vec![binding("amplitude"), binding("speed")]));
+    assert_eq!(
+        first.encode_canonical_section().expect("first encodes"),
+        second.encode_canonical_section().expect("second encodes")
+    );
+
+    let mut duplicate = fixture_program();
+    duplicate
+        .instructions
+        .push(instruction(vec![binding("speed"), binding("speed")]));
+    assert!(duplicate.encode_canonical_section().is_err());
+
+    let bytes = first
+        .encode_canonical_section()
+        .expect("Fx program encodes");
+    let budget = ViewResourceBudget {
+        fx_arguments: 1,
+        ..ViewResourceBudget::default()
+    };
+    assert!(ViewProgramResource::decode_canonical_section_with_budget(&bytes, budget).is_err());
 }
 
 #[test]

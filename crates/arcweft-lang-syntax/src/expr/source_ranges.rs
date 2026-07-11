@@ -1363,7 +1363,7 @@ mod tests {
 
     #[test]
     fn dialogue_content_range_ignores_natural_apostrophes_around_rich_text_tags() {
-        let content = "don't [decorate .warning]stop[/decorate] [.shake]now[/][p]";
+        let content = "don't [fx warning()]stop[/fx] [.shake]now[/][p]";
         let source = format!("render('line.focus)[{content}]");
         let expr = Expr::DialogueCall {
             callee: Box::new(Expr::Call {

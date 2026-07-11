@@ -1,5 +1,11 @@
 # Reusable Rich-Text Decoration Declarations — 2026-07-11
 
+> Historical implementation record: the provisional `decoration` surface
+> described below has been removed and replaced without compatibility aliases
+> by typed `#[fx] fn ... -> Fx` entries. See
+> [Fx Function Presentation Graph](fx-function-presentation-graph-2026-07-11.md)
+> for the current implementation and verification evidence.
+
 ## Result
 
 Arcweft now has module-level, reusable visual-decoration declarations for

@@ -24,6 +24,7 @@ pub(in crate::app) fn validate_interactive_overflow_modifiers(
                 }
             }
             ViewModifier::Style(ViewStyleModifier::Named(_))
+            | ViewModifier::Fx(_)
             | ViewModifier::Part(_)
             | ViewModifier::Label(_)
             | ViewModifier::AgentTarget(_)

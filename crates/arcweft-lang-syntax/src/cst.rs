@@ -193,7 +193,7 @@ pub(crate) enum CstTopLevelLineKind {
 pub(crate) enum CstTopLevelItemKind {
     Flow,
     Function,
-    Decoration,
+    RemovedDecoration,
     Agent,
     Callable,
     State,

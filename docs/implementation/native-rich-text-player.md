@@ -107,38 +107,19 @@ visible pixels at `--capture-time 0`, visible pixels at a later pinned sample,
 and object color crops differ between two later samples. It also checks
 horizontal and `vertical_rl` `spin + pulse` runs, where animated rotation and
 scale alter the native object color crop between pinned samples while preserving
-vertical layout metadata. The same sample defines an Arcweft `#[text_motion]`
-`#[pure]` animation helper named `breath_orbit` and references it from
-`[.motion fn=breath_orbit ...]`; native capture resolves that function id through
-`RichTextMotionRegistry` and checks that the function-backed motion crop changes
-between pinned samples. The default registry provides `breath_orbit` and
-`elastic_bloom`, while `NativeOffscreenCaptureSession::motion_registry_mut`
-allows tests and adapters to register additional motion function IDs.
-`arcweft-compiler` now classifies source-local
-`#[text_motion]`, `#[text_effect]`, and `#[text_shader]` functions and lowers
-their `#[pure] fn(t: f32, glyph: f32, seed: f32) -> f32` bodies into categorized
-`PureHelperCandidate` lists. The renderer registry functions consume those
-compiler-owned candidates instead of receiving HIR or parsing source
-attributes. Native capture tests verify that Arcweft function bodies registered
-through `register_arcweft_pure_text_motions`,
-`register_arcweft_pure_text_effects`, and
-`register_arcweft_pure_text_shaders` change submitted glyph or framebuffer
-pixels. `[.source_drift ...]` style custom effect spans are resolved by the same
-native registry path as adapter-registered effects rather than by a parser
-special case. The same source-local effect ID owns glyph placement/color and
-framebuffer `post_process` entry points, so source-authored custom decorations
-can be exercised across visual phases without adapter-only duplicate IDs.
-Source-local shaders use the same ABI for `run_offscreen_pass`, `glyph_color`,
-and `post_process` shader refs, with shader params such as `time`, `seed`,
-`amount`, `dir`, and `color` kept as registry-owned parameters. The same
-source-local shader ID owns both glyph-pass and framebuffer post-process entry
-points, so a sample can exercise phase-specific rendering without registering
-separate adapter-only IDs. Missing motion functions, missing custom effects,
-and missing shader functions are diagnosed instead of being silently
-reinterpreted through a hash fallback. This keeps the debug surface honest for
-stacked reveal, glyph-placement, affine animation, function-backed animation,
-source-local custom effects/shaders, and host-dispatched effects instead of only
-checking each effect family in isolation.
+vertical layout metadata.
+
+Source `#[fx] fn ... -> Fx` declarations now compile into renderer-independent
+typed graphs, and RichText can expand their static text/color nodes. Dynamic
+`Fx.transform` samplers are deliberately not claimed as native-executable yet:
+the current renderer leaf has no typed closure program or `FxAbiHash` dispatch
+boundary. Dynamic Fx leaves keep the complete `FxId` in their observable
+selector so a function named `wave` cannot silently execute the unrelated
+built-in `.wave` implementation by basename collision. The remaining bundle
+graph transport and native/Web sampler ABI are specified in the linked Fx
+implementation note and follow-up request. Existing capture evidence in this
+document continues to cover the independent low-level rich-text effect
+descriptors and registered host effects only.
 Native window page changes reset the page-local effect clock and clear the
 renderer-local rich-text effect state store before preparing the next page. A
 cancelled or skipped line is therefore treated like a page/line replacement for

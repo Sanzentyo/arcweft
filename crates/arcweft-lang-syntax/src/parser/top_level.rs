@@ -292,10 +292,8 @@ impl Parser<'_> {
                     items.push(Item::Function(function));
                 }
             }
-            CstTopLevelItemKind::Decoration => {
-                if let Some(decoration) = self.parse_decoration() {
-                    items.push(Item::Decoration(decoration));
-                }
+            CstTopLevelItemKind::RemovedDecoration => {
+                self.reject_removed_decoration_decl(range);
             }
             CstTopLevelItemKind::Agent => {
                 if let Some(agent) = self.parse_agent_item() {
@@ -310,7 +308,6 @@ impl Parser<'_> {
                 if !matches!(
                     kind,
                     CstTopLevelItemKind::State
-                        | CstTopLevelItemKind::Decoration
                         | CstTopLevelItemKind::Trait
                         | CstTopLevelItemKind::Enum
                         | CstTopLevelItemKind::Struct
@@ -336,7 +333,6 @@ impl Parser<'_> {
     ) -> Option<Item> {
         match kind {
             CstTopLevelItemKind::Callable => self.parse_callable_item().map(Item::Callable),
-            CstTopLevelItemKind::Decoration => self.parse_decoration().map(Item::Decoration),
             CstTopLevelItemKind::State => self.parse_state_item().map(Item::State),
             CstTopLevelItemKind::Trait => self.parse_trait_item().map(Item::Trait),
             CstTopLevelItemKind::Impl => self.parse_impl_item().map(Item::Impl),
@@ -366,7 +362,26 @@ impl Parser<'_> {
             CstTopLevelItemKind::Flow
             | CstTopLevelItemKind::Agent
             | CstTopLevelItemKind::Function
+            | CstTopLevelItemKind::RemovedDecoration
             | CstTopLevelItemKind::FlowBodyItemOrRaw => None,
+        }
+    }
+
+    fn reject_removed_decoration_decl(&mut self, range: TextRange) {
+        let line = self.current().clone();
+        self.push_error(
+            range,
+            "`decoration` declarations were removed; define an ordinary `#[fx] fn ... -> Fx`",
+            ["#[fx] fn name(...) -> Fx { ... }"],
+            Some(line.text.trim()),
+            ["move typed parameters and defaults into the function signature, then return an Fx graph"],
+        );
+        self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
+        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
+        } else {
+            self.index += 1;
         }
     }
 

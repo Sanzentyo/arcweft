@@ -7,6 +7,7 @@ pub mod appearance;
 pub mod character;
 pub mod clipboard;
 pub mod focus;
+pub mod fx;
 pub mod gesture;
 pub mod hit;
 pub mod hover;

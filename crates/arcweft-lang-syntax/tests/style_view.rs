@@ -493,6 +493,81 @@ pub view FeedbackForm() {
 }
 
 #[test]
+fn view_fx_modifiers_keep_typed_calls_keys_and_authored_ordinals() {
+    let parsed = parse_source(
+        r#"
+pub view Warning(state: WarningState) {
+  Text("WARNING")
+    .fx(
+      notice(
+        accent = state.warning_color,
+        amplitude = 2px,
+      ),
+      key = state.warning_id,
+    )
+    .fx(pulse(speed = 1.5))
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("view View body");
+    let applications = view.fx_applications();
+
+    assert_eq!(applications.len(), 2);
+    assert_eq!(applications[0].ordinal().get(), 0);
+    assert!(applications[0].key().is_some());
+    assert_eq!(applications[1].ordinal().get(), 1);
+    assert!(applications[1].key().is_none());
+    assert!(matches!(
+        applications[0].call(),
+        arcweft_lang_syntax::expr::Expr::Call { args, .. }
+            if args.len() == 2
+                && args.iter().all(|arg| matches!(
+                    arg,
+                    arcweft_lang_syntax::expr::CallArg::Named { .. }
+                ))
+    ));
+}
+
+#[test]
+fn view_fx_rejects_positional_function_arguments_and_open_modifier_options() {
+    let parsed = parse_source(
+        r#"
+pub view InvalidFx() {
+  Text("WARNING")
+    .fx(notice("red"))
+    .fx(notice(), seed = 4)
+}
+"#,
+    );
+    let messages = parsed
+        .errors()
+        .iter()
+        .map(arcweft_lang_syntax::parser::recovery::ParseError::message)
+        .collect::<Vec<_>>();
+
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("named-only"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("unknown View `.fx` option `seed`"))
+    );
+}
+
+#[test]
 fn unsupported_view_element_names_are_rejected() {
     let parsed = parse_source(
         r#"

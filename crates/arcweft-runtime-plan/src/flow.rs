@@ -33,8 +33,8 @@ use crate::lowering_context::ExecutableLoweringLocation;
 use crate::pattern::lower_runtime_pattern_checked;
 use crate::pure::lower_pure_helper_candidates;
 use crate::render_text::{
-    DecorationCatalog, DialogueDisplayDefaults, DialogueSpeakerPreset,
-    lower_dialogue_display_with_speaker_presets_and_decorations, speaker_preset_from_let,
+    DialogueDisplayDefaults, DialogueSpeakerPreset, FxCatalog,
+    lower_dialogue_display_with_speaker_presets_and_fx, speaker_preset_from_let,
 };
 use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
@@ -488,7 +488,7 @@ pub(crate) fn lower_runtime_flows(
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
     options: &RuntimePlanLowerOptions,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
-    let decorations = DecorationCatalog::try_from_module(module).map_err(|error| vec![error])?;
+    let fx = FxCatalog::try_from_module(module).map_err(|error| vec![error])?;
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
         module,
         options.dialogue_defaults(),
@@ -499,7 +499,7 @@ pub(crate) fn lower_runtime_flows(
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
         display_defaults,
-        decorations,
+        fx,
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
         function_local_scopes: Vec::new(),
@@ -536,7 +536,7 @@ fn lower_agent_controller_flow(
     agent: &HirAgent,
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
 ) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
-    let decorations = DecorationCatalog::try_from_module(module).map_err(|error| vec![error])?;
+    let fx = FxCatalog::try_from_module(module).map_err(|error| vec![error])?;
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(module, None)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut lowerer = FlowRuntimeLowerer {
@@ -544,7 +544,7 @@ fn lower_agent_controller_flow(
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
         display_defaults,
-        decorations,
+        fx,
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
         function_local_scopes: Vec::new(),
@@ -584,7 +584,7 @@ struct FlowRuntimeLowerer<'helpers, 'functions, 'evidence> {
     line_task_groups: Vec<LineTaskGroup>,
     line_display_catalog: LineDisplayCatalog,
     display_defaults: DialogueDisplayDefaults,
-    decorations: DecorationCatalog,
+    fx: FxCatalog,
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
     presentation_handle_scopes: Vec<BTreeMap<String, PresentationHandleBinding>>,
     function_local_scopes: Vec<BTreeMap<String, usize>>,
@@ -1018,12 +1018,12 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             },
         );
         let active_speaker_presets = self.active_speaker_presets();
-        match lower_dialogue_display_with_speaker_presets_and_decorations(
+        match lower_dialogue_display_with_speaker_presets_and_fx(
             line.clone(),
             dialogue,
             &self.display_defaults,
             &active_speaker_presets,
-            &self.decorations,
+            &self.fx,
         ) {
             Ok(display) => self.line_display_catalog.push(display),
             Err(error) => self.errors.push(error),

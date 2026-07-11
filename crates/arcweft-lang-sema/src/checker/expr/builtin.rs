@@ -3,11 +3,14 @@ use crate::types::TypeKind;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum BuiltinCallSpec {
     AssertLike,
+    Color,
     Ensure,
+    FloatUnary,
     InlineFailureFallback,
     Math(MathIntrinsic),
     Never,
     StdFloat(StdFloatIntrinsic),
+    Vector(usize),
 }
 
 impl BuiltinCallSpec {
@@ -21,6 +24,11 @@ impl BuiltinCallSpec {
                 ["panic" | "fail" | "bail"] => Some(Self::Never),
                 ["ensure"] => Some(Self::Ensure),
                 ["assert" | "debug_assert"] => Some(Self::AssertLike),
+                ["rgb"] => Some(Self::Color),
+                ["sin" | "cos"] => Some(Self::FloatUnary),
+                ["vec2"] => Some(Self::Vector(2)),
+                ["vec3"] => Some(Self::Vector(3)),
+                ["vec4"] => Some(Self::Vector(4)),
                 _ => None,
             })
     }

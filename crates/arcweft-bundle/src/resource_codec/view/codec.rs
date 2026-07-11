@@ -26,6 +26,7 @@ const FIELD_VIEW_TRANSCRIPT: FieldId = FieldId(1);
 pub struct ViewResourceBudget {
     pub common: SectionCodecBudget,
     pub program_instructions: usize,
+    pub fx_arguments: usize,
     pub child_spans: usize,
     pub handlers: usize,
     pub state_schema_hashes: usize,
@@ -77,6 +78,7 @@ impl Default for ViewResourceBudget {
                 ..SectionCodecBudget::default()
             },
             program_instructions: 262_144,
+            fx_arguments: 1_000_000,
             child_spans: 262_144,
             handlers: 65_536,
             state_schema_hashes: 65_536,
@@ -165,6 +167,11 @@ impl ViewProgramResource {
     }
 
     fn canonicalize(&mut self) {
+        for instruction in &mut self.instructions {
+            if let ViewProgramInstruction::ApplyFx { arguments, .. } = instruction {
+                arguments.sort_by(|left, right| left.parameter.cmp(&right.parameter));
+            }
+        }
         self.handlers
             .sort_by(|left, right| left.handler_id.cmp(&right.handler_id));
         self.state_schema_hashes.sort_by(|left, right| {
@@ -203,7 +210,8 @@ impl ViewProgramResource {
         self.validate_scroll_regions()?;
         self.validate_surfaces()?;
         self.validate_text_blocks()?;
-        self.validate_focus_targets()
+        self.validate_focus_targets()?;
+        self.validate_fx_applications()
     }
 
     fn validate_budgets(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
@@ -211,6 +219,17 @@ impl ViewProgramResource {
             self.instructions.len(),
             budget.program_instructions,
             "view_program_instructions",
+        )?;
+        check_budget(
+            self.instructions
+                .iter()
+                .map(|instruction| match instruction {
+                    ViewProgramInstruction::ApplyFx { arguments, .. } => arguments.len(),
+                    _ => 0,
+                })
+                .sum::<usize>(),
+            budget.fx_arguments,
+            "view_fx_arguments",
         )?;
         check_budget(
             self.child_spans.len(),
@@ -425,6 +444,28 @@ impl ViewProgramResource {
                 return Err(SectionCodecError::NonCanonicalTable(
                     "view_focus_missing_target",
                 ));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_fx_applications(&self) -> Result<(), SectionCodecError> {
+        for instruction in &self.instructions {
+            let ViewProgramInstruction::ApplyFx { arguments, .. } = instruction else {
+                continue;
+            };
+            let mut parameters = BTreeSet::new();
+            for argument in arguments {
+                if !valid_identifier(&argument.parameter) {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_fx_argument_names",
+                    ));
+                }
+                if !parameters.insert(argument.parameter.as_str()) {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_fx_argument_bindings",
+                    ));
+                }
             }
         }
         Ok(())
@@ -1213,6 +1254,14 @@ fn reject_duplicates(
     Ok(())
 }
 
+fn valid_identifier(value: &str) -> bool {
+    let mut characters = value.chars();
+    characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_alphabetic())
+        && characters.all(|character| character == '_' || character.is_alphanumeric())
+}
+
 fn unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
     values
         .into_iter()
@@ -1238,7 +1287,8 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         | ViewProgramInstruction::Branch { .. }
         | ViewProgramInstruction::RepeatKeyed { .. }
         | ViewProgramInstruction::Await { .. }
-        | ViewProgramInstruction::BindLocal { .. } => Vec::new(),
+        | ViewProgramInstruction::BindLocal { .. }
+        | ViewProgramInstruction::ApplyFx { .. } => Vec::new(),
         ViewProgramInstruction::EmitText {
             text_source,
             style,

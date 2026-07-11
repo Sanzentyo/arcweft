@@ -2,8 +2,8 @@
 
 use super::line_plan::DialogueContentRangeMode;
 use super::{
-    ActionParam, ActionSignature, DecorationCatalog, EffectScope, EntityKind, EnumVariantPayload,
-    FunctionKind, FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
+    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FunctionKind,
+    FunctionSignature, FxCatalog, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
     NominalTypeContext, Pattern, Stmt, TypeCheckEnv, TypeCheckError, TypeCheckReport,
     TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind, TypedLoweringEvidenceKind,
     YieldContext, choice_output_type, entity_kind_for_decl, entity_syntax_kind,
@@ -127,7 +127,7 @@ impl TypeChecker<'_> {
         self.register_effect_callables(module);
         self.bind_top_level_functions(module);
         self.flow_params = collect_flow_params(module);
-        self.decorations = DecorationCatalog::from_module(module, &mut self.errors);
+        self.fx = FxCatalog::from_module(module, &mut self.errors);
 
         self.check_module_agents(module.agents());
         self.with_runtime_for_iteration_evidence(|this| {
@@ -252,6 +252,7 @@ impl TypeChecker<'_> {
             self.warn_public_signature_anonymous_sum(function);
             self.check_signature_type_refs(function.signature());
             let generic_names = signature_generic_names(function.signature());
+            self.check_function_parameter_defaults(function, &generic_names);
             let higher_order_param_scope = super::HigherOrderParamScope {
                 function_name: function.name().to_owned(),
                 callable: function_callable_id(function.name()),
@@ -360,6 +361,31 @@ impl TypeChecker<'_> {
                 expected,
             ),
             _ => self.check_authored_block_expr(statements, None),
+        }
+    }
+
+    fn check_function_parameter_defaults(
+        &mut self,
+        function: &HirFunction,
+        generic_names: &HashSet<String>,
+    ) {
+        for param in function
+            .signature()
+            .param_groups()
+            .iter()
+            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        {
+            let Some(default) = param.default() else {
+                continue;
+            };
+            if !function.has_attribute("fx") {
+                self.errors.push(TypeCheckError::new(format!(
+                    "default parameters are currently reserved for `#[fx]` functions; `{}` must make this argument explicit",
+                    function.name()
+                )));
+            }
+            let expected = function_param_local_type_with_generics(param, generic_names);
+            self.check_expr_with_expected(default, Some(&expected));
         }
     }
 
@@ -572,7 +598,7 @@ impl TypeChecker<'_> {
         for function in module.functions() {
             let contract = effect_contract_from_contracts(
                 function.contracts(),
-                function.has_attribute("pure"),
+                function.has_attribute("pure") || function.has_attribute("fx"),
                 &mut self.errors,
             );
             if let Some(effects) = contract.upper_bound() {
@@ -616,7 +642,6 @@ impl TypeChecker<'_> {
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
             HirTopLevelDecl::DialogueDefaults(_)
-            | HirTopLevelDecl::Decoration(_)
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
@@ -648,6 +673,7 @@ impl TypeChecker<'_> {
                     "entity declaration id",
                 );
                 self.check_view_action_invokes(item);
+                self.check_view_fx_applications(item);
             }
             HirTopLevelDecl::Callable(item) => {
                 self.clear_borrow_state();
@@ -713,6 +739,16 @@ impl TypeChecker<'_> {
         };
         for action in view.action_invokes() {
             self.check_view_action_invoke(&action);
+        }
+    }
+
+    fn check_view_fx_applications(&mut self, item: &EntityDeclItem) {
+        let Some(view) = item.view_body().and_then(|body| body.view()) else {
+            return;
+        };
+        for application in view.fx_applications() {
+            self.fx
+                .validate_view_application(application, &mut self.errors);
         }
     }
 

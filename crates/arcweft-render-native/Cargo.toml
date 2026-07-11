@@ -25,9 +25,7 @@ winit.workspace = true
 path = "src/lib.rs"
 
 [dev-dependencies]
-arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-image = { path = "../arcweft-image" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 
 [lints]
 workspace = true

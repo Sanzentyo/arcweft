@@ -9,6 +9,12 @@ repository.workspace = true
 [dependencies]
 arcweft-character = { path = "../arcweft-character" }
 arcweft-id = { path = "../arcweft-id" }
+blake3.workspace = true
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

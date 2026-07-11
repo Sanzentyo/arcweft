@@ -931,11 +931,37 @@ fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {
 #[cfg(test)]
 mod tests {
     use super::{find_dialogue_tag_boundary, parse_dialogue_text};
-    use crate::ast::{common::TextRange, dialogue::DialogueToken};
+    use crate::ast::{
+        common::TextRange,
+        dialogue::{DialogueTagKind, DialogueToken},
+    };
+
+    #[test]
+    fn dialogue_tags_expose_language_owned_semantic_kinds() {
+        let parsed = parse_dialogue_text("[fx notice()]x[/fx][reset][p]");
+        let kinds = parsed
+            .tokens()
+            .iter()
+            .filter_map(|token| match token {
+                DialogueToken::Tag(tag) => Some(tag.kind()),
+                DialogueToken::EndTag(tag) => Some(tag.kind()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            [
+                DialogueTagKind::Fx,
+                DialogueTagKind::Fx,
+                DialogueTagKind::Reset,
+                DialogueTagKind::Point,
+            ]
+        );
+    }
 
     #[test]
     fn parses_dialogue_tag_arguments_with_absolute_ranges() {
-        let source = "A[decorate .warning amplitude=4px mood=\"very urgent\"]text[/decorate]";
+        let source = "A[effect .warning amplitude=4px mood=\"very urgent\"]text[/effect]";
         let parsed = parse_dialogue_text(source);
         assert_eq!(parsed.diagnostics(), &[]);
 
@@ -943,13 +969,13 @@ mod tests {
             .tokens()
             .iter()
             .find_map(|token| match token {
-                DialogueToken::Tag(tag) if tag.name() == "decorate" => Some(tag),
+                DialogueToken::Tag(tag) if tag.name() == "effect" => Some(tag),
                 _ => None,
             })
-            .expect("decorate tag");
+            .expect("effect tag");
         assert_eq!(
             &source[tag.range().as_range()],
-            "[decorate .warning amplitude=4px mood=\"very urgent\"]"
+            "[effect .warning amplitude=4px mood=\"very urgent\"]"
         );
         assert_eq!(
             &source[tag.attrs_range().as_range()],
@@ -973,20 +999,20 @@ mod tests {
                 DialogueToken::EndTag(end) => Some(end),
                 _ => None,
             })
-            .expect("decorate end tag");
-        assert_eq!(end.name(), "decorate");
+            .expect("effect end tag");
+        assert_eq!(end.name(), "effect");
         assert!(!end.is_synthetic());
-        assert_eq!(&source[end.range().as_range()], "[/decorate]");
+        assert_eq!(&source[end.range().as_range()], "[/effect]");
     }
 
     #[test]
     fn named_argument_value_range_starts_after_the_assignment() {
-        let source = "[decorate .warning accent=accent]text[/decorate]";
+        let source = "[effect .warning accent=accent]text[/effect]";
         let parsed = parse_dialogue_text(source);
 
         assert_eq!(parsed.diagnostics(), &[]);
         let Some(DialogueToken::Tag(tag)) = parsed.tokens().first() else {
-            panic!("decorate tag");
+            panic!("effect tag");
         };
         let argument = &tag.arguments()[1];
         let name_range = argument.name_range().expect("authored name range");
@@ -998,7 +1024,7 @@ mod tests {
 
     #[test]
     fn reports_unterminated_dialogue_tag_quotes_and_recovers_the_tag() {
-        let source = "[decorate .warning mood=\"very urgent]text";
+        let source = "[effect .warning mood=\"very urgent]text";
         let parsed = parse_dialogue_text(source);
 
         assert_eq!(parsed.diagnostics().len(), 1);
@@ -1011,18 +1037,18 @@ mod tests {
         assert_eq!(&source[diagnostic_range.as_range()], "\"very urgent]");
         assert!(matches!(
             parsed.tokens().first(),
-            Some(DialogueToken::Tag(tag)) if tag.name() == "decorate"
+            Some(DialogueToken::Tag(tag)) if tag.name() == "effect"
         ));
     }
 
     #[test]
     fn quoted_closing_brackets_do_not_end_dialogue_tags() {
-        let source = "[decorate .warning note=\"contains ] safely\"]text[/decorate]";
+        let source = "[effect .warning note=\"contains ] safely\"]text[/effect]";
         let boundary = find_dialogue_tag_boundary(source, 0).expect("tag boundary");
         assert_eq!(&source[boundary.close()..boundary.end()], "]");
         assert_eq!(
             &source[..boundary.end()],
-            "[decorate .warning note=\"contains ] safely\"]"
+            "[effect .warning note=\"contains ] safely\"]"
         );
         assert_eq!(boundary.unterminated_quote_start(), None);
 
@@ -1030,9 +1056,9 @@ mod tests {
 
         assert_eq!(parsed.diagnostics(), &[]);
         let Some(DialogueToken::Tag(tag)) = parsed.tokens().first() else {
-            panic!("decorate tag");
+            panic!("effect tag");
         };
-        assert_eq!(&source[tag.name_range().as_range()], "decorate");
+        assert_eq!(&source[tag.name_range().as_range()], "effect");
         assert_eq!(tag.arguments()[1].value().value(), "contains ] safely");
     }
 
@@ -1075,7 +1101,7 @@ mod tests {
 
     #[test]
     fn unterminated_later_quote_recovers_at_its_own_closing_bracket() {
-        let source = "[decorate .warning note=\"safe ] here\" mood=\"unterminated]text";
+        let source = "[effect .warning note=\"safe ] here\" mood=\"unterminated]text";
         let parsed = parse_dialogue_text(source);
 
         assert_eq!(parsed.diagnostics().len(), 1);
@@ -1085,7 +1111,7 @@ mod tests {
             "\"unterminated]"
         );
         let Some(DialogueToken::Tag(tag)) = parsed.tokens().first() else {
-            panic!("recovered decorate tag");
+            panic!("recovered effect tag");
         };
         assert_eq!(tag.arguments()[1].value().value(), "safe ] here");
         assert_eq!(tag.arguments()[2].value().value(), "\"unterminated");

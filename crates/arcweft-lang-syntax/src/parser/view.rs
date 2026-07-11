@@ -4,8 +4,9 @@ use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
     ViewAction, ViewActionInvokeAction, ViewActionPayload, ViewArg, ViewAwait, ViewAwaitBranch,
     ViewAwaitBranchKind, ViewBody, ViewButton, ViewButtonLabel, ViewElement, ViewExpr, ViewForEach,
-    ViewIf, ViewImage, ViewLet, ViewMatch, ViewMatchArm, ViewModifier, ViewNavigationDirection,
-    ViewNavigationEdge, ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
+    ViewFxApplication, ViewFxApplicationOrdinal, ViewIf, ViewImage, ViewLet, ViewMatch,
+    ViewMatchArm, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
+    ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
 };
 use crate::cst::{
@@ -570,20 +571,37 @@ fn is_view_modifier_line(line: &str) -> bool {
 }
 
 fn collect_modifier_lines(lines: &[&str]) -> usize {
-    let first = lines.first().map_or("", |line| line.trim());
-    if !first.contains('{') {
-        return 1;
-    }
-    let mut depth = 0_i32;
+    let mut delimiters = Vec::new();
+    let mut quote = None;
+    let mut escaped = false;
     for (index, line) in lines.iter().enumerate() {
         for character in line.chars() {
+            if let Some(active_quote) = quote {
+                if escaped {
+                    escaped = false;
+                } else if character == '\\' {
+                    escaped = true;
+                } else if character == active_quote {
+                    quote = None;
+                }
+                continue;
+            }
             match character {
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                _ => {}
+                '"' => quote = Some(character),
+                '(' | '[' | '{' => delimiters.push(character),
+                ')' if delimiters.last() == Some(&'(') => {
+                    delimiters.pop();
+                }
+                ']' if delimiters.last() == Some(&'[') => {
+                    delimiters.pop();
+                }
+                '}' if delimiters.last() == Some(&'{') => {
+                    delimiters.pop();
+                }
+                _ => (),
             }
         }
-        if depth <= 0 {
+        if delimiters.is_empty() && quote.is_none() {
             return index + 1;
         }
     }
@@ -598,22 +616,38 @@ fn parse_view_chain(
 ) -> ParsedViewChain {
     let head = parse_view_head(lines[0], base, errors);
     let mut modifiers = Vec::new();
+    let mut fx_ordinal = 0_u32;
     let mut index = 1;
     while index < lines.len() {
         let line = lines[index];
-        if let Some((modifier, consumed)) =
-            parse_view_modifier(&lines[index..], base, module_path, errors)
-        {
+        let error_count = errors.len();
+        let rejected_consumed = if line.trim().starts_with(".fx") {
+            collect_modifier_lines(&lines[index..]).max(1)
+        } else {
+            1
+        };
+        if let Some((modifier, consumed)) = parse_view_modifier(
+            &lines[index..],
+            base,
+            module_path,
+            ViewFxApplicationOrdinal::new(fx_ordinal),
+            errors,
+        ) {
+            if matches!(modifier, ViewModifier::Fx(_)) {
+                fx_ordinal = fx_ordinal.saturating_add(1);
+            }
             modifiers.push(modifier);
             index += consumed.max(1);
         } else {
-            errors.push(simple_error(
-                base,
-                line.len(),
-                &format!("unsupported View modifier `{line}`"),
-                ".label(\"Text\") | .on_click { action.invoke(@action:.name) } | .style(@style:.name)",
-            ));
-            index += 1;
+            if errors.len() == error_count {
+                errors.push(simple_error(
+                    base,
+                    line.len(),
+                    &format!("unsupported View modifier `{line}`"),
+                    ".label(\"Text\") | .on_click { action.invoke(@action:.name) } | .style(@style:.name)",
+                ));
+            }
+            index += rejected_consumed;
         }
     }
     ParsedViewChain { head, modifiers }
@@ -688,9 +722,18 @@ fn parse_view_modifier(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    fx_ordinal: ViewFxApplicationOrdinal,
     errors: &mut Vec<ParseError>,
 ) -> Option<(ViewModifier, usize)> {
     let line = lines.first()?.trim();
+    if line.starts_with(".fx") {
+        let consumed = collect_modifier_lines(lines);
+        let source = lines[..consumed].join(" ");
+        let range = TextRange::new(base, base.saturating_add(source.len()));
+        let arguments = call_arg(source.trim(), ".fx")?;
+        return parse_view_fx_application(arguments, fx_ordinal, range, base, errors)
+            .map(|application| (ViewModifier::Fx(application), consumed));
+    }
     if let Some(value) = call_arg(line, ".style") {
         let (reference, trailing) = parse_view_style_ref(value, base, module_path, errors)?;
         if !trailing.trim().is_empty() {
@@ -758,6 +801,94 @@ fn parse_view_modifier(
         ));
     }
     None
+}
+
+fn parse_view_fx_application(
+    source: &str,
+    ordinal: ViewFxApplicationOrdinal,
+    range: TextRange,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<ViewFxApplication> {
+    let mut arguments = split_top_level_punctuation(source, ',')
+        .into_iter()
+        .map(str::trim)
+        .filter(|argument| !argument.is_empty());
+    let Some(call_source) = arguments.next() else {
+        errors.push(simple_error(
+            base,
+            source.len().max(1),
+            "View `.fx` needs an Fx function call",
+            ".fx(wave(amplitude = 2px))",
+        ));
+        return None;
+    };
+    if split_top_level_binding(call_source).is_some() {
+        errors.push(simple_error(
+            base,
+            call_source.len(),
+            "View `.fx` needs its Fx function call before `key`",
+            ".fx(wave(amplitude = 2px), key = enemy.id)",
+        ));
+        return None;
+    }
+
+    let call = parse_expr_lossy(call_source);
+    let Expr::Call { args, .. } = &call else {
+        errors.push(simple_error(
+            base,
+            call_source.len(),
+            "View `.fx` accepts only a reusable Fx function call",
+            ".fx(wave(amplitude = 2px))",
+        ));
+        return None;
+    };
+    if args
+        .iter()
+        .any(|argument| !matches!(argument, CallArg::Named { .. }))
+    {
+        errors.push(simple_error(
+            base,
+            call_source.len(),
+            "Fx function arguments are named-only",
+            "wave(amplitude = 2px, speed = 1.0)",
+        ));
+        return None;
+    }
+
+    let mut key = None;
+    for argument in arguments {
+        let Some((name, value)) = split_top_level_binding(argument) else {
+            errors.push(simple_error(
+                base,
+                argument.len(),
+                "View `.fx` accepts one Fx call and optional named `key`",
+                ".fx(wave(), key = enemy.id)",
+            ));
+            return None;
+        };
+        if name.trim() != "key" {
+            errors.push(simple_error(
+                base,
+                argument.len(),
+                &format!("unknown View `.fx` option `{}`", name.trim()),
+                ".fx(wave(), key = enemy.id)",
+            ));
+            return None;
+        }
+        if key.is_some() {
+            errors.push(simple_error(
+                base,
+                argument.len(),
+                "View `.fx` has more than one `key`",
+                ".fx(wave(), key = enemy.id)",
+            ));
+            return None;
+        }
+        key = Some(parse_expr_lossy(value.trim()));
+    }
+
+    Some(ViewFxApplication::new(call, key, ordinal, range))
 }
 
 fn view_event_modifier(lines: &[&str], line: &str) -> Option<(ViewModifier, usize)> {

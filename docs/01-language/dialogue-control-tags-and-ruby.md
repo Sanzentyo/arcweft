@@ -52,7 +52,7 @@ Arcweft has four tag-like forms in dialogue text:
 | `#[expr]`, `#[fmt(...)]`, `$(expr)` | pure content interpolation |
 | `[call ...]`, `[! ...]` | dialogue-safe function dispatch |
 | `[mark .name]`, `[.name]` | zero-width line-local marker for `with` handlers and waits |
-| `[decorate .name ...]...[/decorate]` | a declared, reusable visual-decoration span |
+| `[fx name(arg=value)]...[/fx]` | a typed reusable presentation-Fx span |
 
 Double brackets are not dialogue tags:
 
@@ -97,7 +97,7 @@ A module may still define a qualified function such as `my_tags.p`, but it canno
 | `if`, `else`, `endif` | local text conditional |
 | `raw` | literal no-parse span |
 | `fmt` | explicit DisplayText/content formatting function |
-| `decorate` | apply a declared reusable visual decoration |
+| `fx` | apply a declared reusable presentation Fx function |
 
 Project-specific aliases may map to these names, but canonical names remain reserved:
 
@@ -187,101 +187,59 @@ more than one field is set.
 
 ---
 
-## Reusable visual decorations
+## Reusable presentation Fx
 
-A top-level `decoration` declaration gives a name to an ordered group of
-visual rich-text layers. It is the canonical way to reuse combinations such as
-strong text, a color, and an effect without copying the same tags into every
-line:
+One ordinary `#[fx]` function defines a typed, reusable presentation treatment.
+Static text style and animated transforms use the same immutable `Fx` graph:
 
 ```arcw
-decoration warning(
-    accent = "#ff4050",
-    amplitude = 2px,
-    seed = "warning",
-    ...effect_args,
-) {
-    strong()
-    color(value=accent)
-    effect(.wave, amp=amplitude, seed=seed, effect_args...)
+#[fx]
+pub fn warning(
+    accent: Color = rgb("#ff4050"),
+    amplitude: Length = 2px,
+) -> Fx {
+    Fx.stack([
+        Fx.text(weight = .strong, color = accent),
+        wave(amplitude = amplitude),
+    ])
 }
 
-alice: [decorate .warning]既定値の警告[/decorate][p]
-alice: [decorate .warning accent="#ffd060" amplitude=4px speed=2]強い警告[/decorate][p]
+alice: [fx warning()]既定値の警告[/fx][p]
+alice: [fx warning(accent=rgb("#ffd060"), amplitude=4px)]強い警告[/fx][p]
 ```
 
-Decorations are module-local. The canonical declaration therefore has no
-visibility modifier; `pub decoration` is rejected instead of implying a
-cross-module selector/import contract that does not exist.
+The invocation after `fx` is a normal path-resolved call to a `#[fx]`
+function, not a dot selector or a separately registered decoration id. The
+function's original package and qualified name define its `FxId`; ordinary
+`use` and `pub use` provide name resolution without manufacturing another id.
 
-Parameters are named and compile-time only. `name` declares a required
-parameter, while `name = value` declares a default. Invocation arguments are
-named overrides; positional values after the leading decoration selector are
-rejected. A final `...effect_args` parameter explicitly captures additional
-custom named arguments. The body forwards that bag only where it writes
-`effect_args...`. Without a rest parameter, an unknown invocation argument is
-a diagnostic rather than an implicit renderer parameter.
+Fx parameters are typed and calls are named-only. A parameter without `=` is
+required; a parameter default is const-evaluable and cannot read another
+parameter or runtime state. Rest parameters and silently forwarded custom
+argument bags are not supported. Unknown, duplicate, missing, and positional
+arguments are diagnostics, which keeps completion, ABI checking, and renderer
+bindings on a closed schema.
 
-Defaults and overrides must close to deterministic rich-text parameter values:
-booleans, signed numeric/unit/duration tokens, strings, selectors, or raw
-identifier tokens. Character literals such as `"x"c` are not decoration values;
-use a string when a textual renderer parameter is intended. Invocation-only
-renderer payloads may also use one safe token such as
-`#ff4050`, `0,1`, or `source-shader`; quote values containing whitespace or
-reserved punctuation. Runtime expressions and dialogue interpolation are not
-accepted in a decoration declaration or invocation. Dynamic content remains
-ordinary `#[expr]` interpolation outside the style/effect descriptor.
-For effect and forwarded custom parameters, quoting is type-significant:
-`"2"` and `"true"` remain text, while `2` and `true` infer integer and boolean
-parameters.
+Dialogue-inline arguments must be closed values. Arbitrary state expressions
+inside a line would destabilize localization, line caching, replay, and
+tooling, so dynamic presentation belongs on a View-side `RichText(...)` value:
 
-Inside a builder call, a bare identifier denotes a declared decoration
-parameter. Quote registry-owned raw words (for example `origin="center"`) or
-use a selector where the builder requires one. This makes a misspelled
-parameter a diagnostic instead of silently turning it into an unrelated raw
-renderer token.
+```arcw
+RichText(message)
+    .fx(warning(accent = state.warning_color))
+```
 
-The declaration body is an outer-to-inner list of span builders. Supported
-builders are `em`, `strong`, `color`, `font`, `size`, `style`, `layout`,
-`transform`, `effect`, and `decorate` for composing another declared
-decoration. A nested decoration graph must be acyclic. Closing `[/decorate]`
-removes the expanded layers in reverse order as one authored span.
+`[/fx]` closes exactly the corresponding Fx span. Nested Fx calls compose in
+authored order, and the compiler rejects crossing or unmatched closes,
+composition cycles, and expansion-budget overflow. An Fx function is implicitly
+pure and deterministic: it cannot hide waits, pages, reveal-speed changes,
+marks, object proxies, host events, state mutation, actions, I/O, tasks, or
+View-child construction.
 
-Builder calls have fixed shapes: `em()` and `strong()` take no arguments;
-`color`, `font`, and `size` take exactly one positional value or `value=...`;
-and the remaining builders take one literal `.Ident` selector followed only by
-named values and at most one rest spread. A selector cannot be supplied through
-a parameter. `style` accepts `.italic`, `.oblique`, `.opacity`, `.layer`,
-`.meta`, and `.z_index`; `layout` accepts `.horizontal_tb`, `.vertical_rl`,
-`.vertical_lr`, `.dir`, `.ruby_over`, `.ruby_under`, and
-`.ruby_inter_character`; `transform` accepts `.offset`, `.pos`, `.rotate`,
-`.scale`, and `.skew`. These are canonical closed compiler inventories, so
-direct-tag aliases and misspellings are diagnostics instead of silently falling
-back to an unknown style, horizontal layout, or identity transform. Effect ids
-remain registry-extensible, while `decorate(.name, ...)` must select another
-declaration in the same module. Named invocation/custom-argument keys use the
-ordinary Unicode-aware `Ident` grammar even when a rest parameter is present.
-
-A nested `decorate(.target, rest...)` may forward a rest bag only when
-`.target` declares its own final rest parameter. Sema diagnoses the containing
-declaration eagerly when the target has only fixed named parameters, regardless
-of whether a particular call would supply any custom arguments. The bag denotes
-an open set of keys, so its unknown keys cannot bind to undeclared target
-parameters.
-
-To keep malformed or generated composition graphs deterministic, one
-decoration expansion is limited to 64 nested declarations, 16,384 visited
-declaration nodes, and 4,096 concrete rich-text layers. Sema and runtime-plan
-lowering use the same limits and report a structured compile error rather than
-recursing or allocating without a bound.
-
-Decoration bodies cannot contain page/wait controls, reveal-speed changes,
-marks, object proxies, calls, signals, conditionals, host events, or an effect
-whose phase is `host_event`. Those operations have runtime behavior or identity
-that cannot be safely hidden inside a visual style group. The explicit
-`[decorate .name]` family is canonical; bare `[name]` and `[.name]` keep their
-existing unknown-control, marker, and custom-effect meanings and are never
-silently reinterpreted as decoration calls.
+The removed `decoration`, `[decorate ...]`, `#[text_motion]`,
+`#[text_effect]`, and `#[text_shader]` surfaces are not compatibility aliases.
+They fail through ordinary parser/semantic diagnostics rather than being
+silently interpreted as Fx calls.
 
 ---
 

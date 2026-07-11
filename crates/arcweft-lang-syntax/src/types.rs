@@ -281,10 +281,20 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
     let (doc, source) = take_param_doc(source);
     let (pattern, ty) = split_top_level_punctuation_once(source, ':')
         .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
-    let (ty, default) = split_top_level_punctuation_once(ty, '=')
-        .map_or((ty.trim(), None), |(ty, default)| {
-            (ty.trim(), parse_expr(default.trim()).ok())
-        });
+    let (ty, default) = if let Some((ty, default)) = split_top_level_punctuation_once(ty, '=') {
+        let default = default.trim();
+        if default.is_empty() {
+            return Err(TypeParseError::new(
+                "function parameter default requires an expression",
+            ));
+        }
+        let default = parse_expr(default).map_err(|error| {
+            TypeParseError::new_owned(format!("invalid function parameter default: {error}"))
+        })?;
+        (ty.trim(), Some(default))
+    } else {
+        (ty.trim(), None)
+    };
     let (kind, ty) = ty
         .strip_prefix("...")
         .map_or((FnParamKind::Fixed, ty), |rest_ty| {
@@ -1028,5 +1038,9 @@ impl TypeParseError {
         Self {
             message: message.to_owned(),
         }
+    }
+
+    fn new_owned(message: String) -> Self {
+        Self { message }
     }
 }

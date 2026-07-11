@@ -342,7 +342,6 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         }
         Item::Flow(_)
         | Item::Function(_)
-        | Item::Decoration(_)
         | Item::Agent(_)
         | Item::Callable(_)
         | Item::State(_)

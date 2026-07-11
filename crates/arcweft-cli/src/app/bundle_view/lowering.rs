@@ -27,9 +27,9 @@ use arcweft_bundle::{
         ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewFocusDirection,
         ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy,
         ViewFocusNavigationEdge, ViewFocusNavigationResource, ViewFocusSkipPolicy,
-        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewInputResource,
-        ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule, ViewProgramResource,
-        ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
+        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewFxArgumentBindingRef,
+        ViewInputResource, ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule,
+        ViewProgramResource, ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
         ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
         ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
         ViewTextResource,
@@ -50,15 +50,18 @@ use arcweft_lang_syntax::{
         items::EntityDeclItem,
         view::{
             ViewAction, ViewActionPayload, ViewArg, ViewAwait, ViewAwaitBranchKind, ViewBody,
-            ViewButton, ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage,
-            ViewLet, ViewMatch, ViewMatchArm, ViewModifier, ViewNavigationDirection,
-            ViewNavigationInitial, ViewNavigationTarget, ViewNavigationTrap, ViewStyleModifier,
-            ViewText, ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
+            ViewButton, ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewFxApplication,
+            ViewIf, ViewImage, ViewLet, ViewMatch, ViewMatchArm, ViewModifier,
+            ViewNavigationDirection, ViewNavigationInitial, ViewNavigationTarget,
+            ViewNavigationTrap, ViewStyleModifier, ViewText, ViewTextControlPayloadField,
+            ViewTextField, ViewTextFieldMode,
         },
     },
     expr::{CallArg, Expr, Literal},
 };
+use arcweft_presentation::fx::FxId;
 use arcweft_view::ViewElementLayoutKind;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use super::super::bundle_view_layout::{
@@ -100,6 +103,7 @@ pub(in crate::app) enum ViewSidecarError {
 
 #[derive(Default)]
 struct ViewLoweringState {
+    fx_ids: BTreeMap<String, FxId>,
     instructions: Vec<ViewProgramInstruction>,
     text_sources: Vec<ViewTextSourceRecord>,
     input_options: Vec<ViewInputOptions>,
@@ -135,8 +139,10 @@ pub(in crate::app) fn view_sidecars(
     views: &[&EntityDeclItem],
     style_resource: Option<&ViewStyleResource>,
     source_image_objects: &[BundleImageObject],
+    fx_ids: BTreeMap<String, FxId>,
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
+        fx_ids,
         style_resource: style_resource.cloned(),
         source_image_objects: source_image_objects.to_vec(),
         ..ViewLoweringState::default()
@@ -644,4 +650,33 @@ pub(in crate::app) fn expr_source(expr: &Expr) -> String {
         Expr::EntityRef(reference) => normalize_style_ref(reference),
         other => format!("{other:?}"),
     }
+}
+
+fn lower_fx_application(
+    application: &ViewFxApplication,
+    fx_ids: &BTreeMap<String, FxId>,
+) -> Option<ViewProgramInstruction> {
+    let Expr::Call { callee, args } = application.call() else {
+        return None;
+    };
+    let function = callee.dotted_selector_label()?;
+    let name = function.rsplit('.').next().unwrap_or(&function);
+    let fx = fx_ids.get(name)?.clone();
+    let arguments = args
+        .iter()
+        .filter_map(|argument| match argument {
+            CallArg::Named { name, value } => Some(ViewFxArgumentBindingRef {
+                parameter: name.clone(),
+                value_schema: expr_schema_ref(value),
+            }),
+            CallArg::Positional(_) | CallArg::Spread { .. } => None,
+        })
+        .collect();
+    Some(ViewProgramInstruction::ApplyFx {
+        fx,
+        arguments,
+        key_schema: application.key().map(expr_schema_ref),
+        application_ordinal: application.ordinal().get(),
+        source: None,
+    })
 }

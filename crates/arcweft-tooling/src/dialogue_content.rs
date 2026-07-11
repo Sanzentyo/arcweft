@@ -139,8 +139,7 @@ where
                     self.visit_stmts(handler.body());
                 }
             }
-            Item::Decoration(_)
-            | Item::State(_)
+            Item::State(_)
             | Item::Enum(_)
             | Item::Struct(_)
             | Item::TypeAlias(_)

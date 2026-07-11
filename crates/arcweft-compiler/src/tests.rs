@@ -38,11 +38,9 @@ use crate::{
     lower::{
         lower_source_runtime_plan_with_stats_and_options,
         lower_source_runtime_plan_with_typecheck_stats_and_options,
-        lower_source_text_pure_helper_candidates,
     },
     parse::parse_source_text,
     source::compile_source,
-    types::{TextPureHelperCandidateError, TextPureHelperKind},
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -5348,59 +5346,5 @@ alice: Hello[p]
                 blue: 34
             }
         }]
-    );
-}
-
-#[test]
-fn lower_source_text_pure_helper_candidates_classifies_renderer_extensions() {
-    let parsed = parse_source_text(
-        r"
-#[text_shader]
-#[pure]
-fn glow(t: f32, glyph: f32, seed: f32) -> f32 {
-return t + glyph + seed
-}
-
-#[text_effect]
-#[pure]
-fn jitter(t: f32, glyph: f32, seed: f32) -> f32 {
-return t - glyph + seed
-}
-
-#[text_motion]
-#[pure]
-fn orbit(t: f32, glyph: f32, seed: f32) -> f32 {
-return t + glyph * seed
-}
-",
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-
-    let report =
-        lower_source_text_pure_helper_candidates(&hir).expect("text renderer helpers lower");
-
-    assert_eq!(report.shaders[0].name(), "glow");
-    assert_eq!(report.effects[0].name(), "jitter");
-    assert_eq!(report.motions[0].name(), "orbit");
-}
-
-#[test]
-fn lower_source_text_pure_helper_candidates_rejects_unpure_exports() {
-    let parsed = parse_source_text(
-        r"
-#[text_effect]
-fn drift(t: f32, glyph: f32, seed: f32) -> f32 {
-return t + glyph + seed
-}
-",
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-
-    assert_eq!(
-        lower_source_text_pure_helper_candidates(&hir),
-        Err(vec![TextPureHelperCandidateError::MissingPureAttribute {
-            kind: TextPureHelperKind::Effect,
-            name: "drift".to_owned(),
-        }])
     );
 }

@@ -379,43 +379,6 @@ pub(super) fn sample_breath_orbit(time_seconds: f32, noise: [f32; 2]) -> NativeA
     }
 }
 
-pub(super) fn sample_parametric_motion(
-    effect: &RichTextEffectDescriptor,
-    phase_time: f32,
-    noise: [f32; 2],
-) -> NativeAnimationSample {
-    match param_label(effect, "shape").as_deref() {
-        Some("elastic_bloom" | "elastic" | "bloom") => sample_elastic_bloom(phase_time, noise),
-        _ => sample_breath_orbit(phase_time, noise),
-    }
-}
-
-pub(super) fn apply_parametric_motion_sample(
-    effect: &RichTextEffectDescriptor,
-    sample: NativeAnimationSample,
-    placement: &mut NativeGlyphPlacement,
-) {
-    let amplitude = param_milli(effect, "amp")
-        .or_else(|| param_milli(effect, "radius"))
-        .unwrap_or(Milli(4000))
-        .as_f32();
-    let angle = param_milli(effect, "angle").unwrap_or(Milli(6000)).as_f32();
-    let scale_amplitude = param_milli(effect, "scale")
-        .or_else(|| param_milli(effect, "scale_amp"))
-        .or_else(|| param_milli(effect, "amount"))
-        .unwrap_or(Milli(80))
-        .as_f32()
-        .max(0.0);
-    apply_parametric_motion_sample_with_params(
-        effect,
-        sample,
-        amplitude,
-        angle,
-        scale_amplitude,
-        placement,
-    );
-}
-
 pub(super) fn apply_parametric_motion_sample_with_params(
     effect: &RichTextEffectDescriptor,
     sample: NativeAnimationSample,
@@ -431,51 +394,6 @@ pub(super) fn apply_parametric_motion_sample_with_params(
     placement.scale_x *= scale;
     placement.scale_y *= scale;
     apply_effect_affine_pivot(effect, RichTextTransformOrigin::GlyphCenter, placement);
-}
-
-pub(super) fn apply_pure_text_effect_color(ctx: &mut TextEffectGlyphContext<'_>, phase: f32) {
-    let amount = param_milli(ctx.effect, "amount")
-        .or_else(|| param_milli(ctx.effect, "amp"))
-        .unwrap_or(Milli::ONE)
-        .as_f32()
-        .clamp(0.0, 1.0);
-    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    let red = rounded_u8(180.0 + pulse * 75.0);
-    let green = rounded_u8(80.0 + (1.0 - pulse) * 95.0);
-    let blue = rounded_u8(220.0 + pulse * 35.0);
-    let alpha = rounded_u8(amount * 255.0).max(1);
-    ctx.placement.color = Some([red, green, blue, alpha]);
-}
-
-pub(super) fn apply_pure_text_effect_post_process(
-    effect: &RichTextEffectDescriptor,
-    phase: f32,
-    rgba: &mut [u8],
-) {
-    let amount = param_milli(effect, "amount")
-        .or_else(|| param_milli(effect, "amp"))
-        .unwrap_or(Milli(350))
-        .as_f32()
-        .clamp(0.0, 1.0);
-    if amount <= f32::EPSILON {
-        return;
-    }
-    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    let secondary = ((phase + 0.41) * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    let color = [
-        rounded_u8(180.0 + pulse * 75.0),
-        rounded_u8(120.0 + secondary * 105.0),
-        rounded_u8(210.0 + (1.0 - pulse) * 45.0),
-    ];
-    let blend = (amount * (0.3 + pulse * 0.7)).clamp(0.0, 1.0);
-    for pixel in rgba.chunks_exact_mut(4) {
-        if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
-            continue;
-        }
-        pixel[0] = blend_channel(pixel[0], color[0], blend);
-        pixel[1] = blend_channel(pixel[1], color[1], blend);
-        pixel[2] = blend_channel(pixel[2], color[2], blend);
-    }
 }
 
 pub(super) fn sample_elastic_bloom(time_seconds: f32, noise: [f32; 2]) -> NativeAnimationSample {
@@ -954,77 +872,6 @@ pub(super) fn native_glow_shader(
     .collect()
 }
 
-pub(super) fn pure_text_shader_glyph_passes(
-    shader: &RichTextShaderRef,
-    phase: f32,
-) -> Vec<NativeShaderGlyphPass> {
-    let resolved = resolve_shader_filter(shader);
-    let color = shader_param_color(shader, "color").map_or_else(
-        || pure_text_shader_color(phase, resolved.amount),
-        |[red, green, blue]| [red, green, blue, 255],
-    );
-    if shader.phase == RichTextEffectPhase::GlyphColor {
-        return vec![NativeShaderGlyphPass {
-            offset: [0.0, 0.0],
-            color,
-        }];
-    }
-    let direction = normalize_shader_direction(resolved.direction);
-    let side = [-direction[1], direction[0]];
-    let radius = (resolved.amount * 5.0).clamp(1.0, 14.0);
-    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    let alpha = rounded_u8((24.0 + pulse * 96.0) * resolved.amount.clamp(0.0, 1.0)).max(8);
-    [
-        [direction[0] * radius, direction[1] * radius],
-        [direction[0] * radius * -0.45, direction[1] * radius * -0.45],
-        [side[0] * radius * 0.55, side[1] * radius * 0.55],
-        [side[0] * radius * -0.55, side[1] * radius * -0.55],
-    ]
-    .into_iter()
-    .map(|offset| NativeShaderGlyphPass {
-        offset,
-        color: [color[0], color[1], color[2], alpha],
-    })
-    .collect()
-}
-
-pub(super) fn pure_text_shader_post_process(
-    shader: &RichTextShaderRef,
-    phase: f32,
-    rgba: &mut [u8],
-) {
-    let resolved = resolve_shader_filter(shader);
-    let amount = resolved.amount.clamp(0.0, 1.0);
-    if amount <= f32::EPSILON {
-        return;
-    }
-    let color = shader_param_color(shader, "color").unwrap_or_else(|| {
-        let [red, green, blue, _alpha] = pure_text_shader_color(phase, amount);
-        [red, green, blue]
-    });
-    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    let blend = (amount * (0.35 + pulse * 0.65)).clamp(0.0, 1.0);
-    for pixel in rgba.chunks_exact_mut(4) {
-        if pixel[3] == 0 || (pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0) {
-            continue;
-        }
-        pixel[0] = blend_channel(pixel[0], color[0], blend);
-        pixel[1] = blend_channel(pixel[1], color[1], blend);
-        pixel[2] = blend_channel(pixel[2], color[2], blend);
-    }
-}
-
-pub(super) fn pure_text_shader_color(phase: f32, amount: f32) -> [u8; 4] {
-    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    let secondary = ((phase + 0.37) * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    [
-        rounded_u8(80.0 + pulse * 175.0),
-        rounded_u8(120.0 + secondary * 110.0),
-        rounded_u8(220.0 + (1.0 - pulse) * 35.0),
-        rounded_u8((amount.clamp(0.0, 1.0) * 255.0).max(1.0)),
-    ]
-}
-
 pub(super) fn soft_glow_offset(
     shader: &NativeResolvedShaderFilter,
     pass: SoftGlowPass,
@@ -1131,10 +978,6 @@ pub(super) fn shader_param_milli(shader: &RichTextShaderRef, name: &str) -> Opti
 
 pub(super) fn shader_param_vec2(shader: &RichTextShaderRef, name: &str) -> Option<[f32; 2]> {
     param_as_vec2(shader.params.get(name)?)
-}
-
-pub(super) fn shader_param_seed(shader: &RichTextShaderRef, name: &str) -> Option<u64> {
-    shader.params.get(name).map(param_as_seed)
 }
 
 pub(super) fn shader_param_color(shader: &RichTextShaderRef, name: &str) -> Option<[u8; 3]> {

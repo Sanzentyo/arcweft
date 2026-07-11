@@ -211,6 +211,7 @@ pub(super) fn well_known_field_type(field: &str) -> Option<TypeKind> {
         "enabled" | "visible" | "ready" => TypeKind::Bool,
         "order" | "count" | "index" => TypeKind::I64,
         "ratio" => TypeKind::F64,
+        "time" => TypeKind::F32,
         "stage" => TypeKind::Named("StageApi".to_owned()),
         "label" | "disabled_reason" | "badge" | "hotkey" | "text" => TypeKind::String,
         _ => return None,

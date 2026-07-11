@@ -325,8 +325,9 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
     let mut image_objects = bundle_image_objects(&image_declarations)?;
+    let package = selection_package_identity(selection)?;
     let view_sidecars = collect_bundle_view_sidecars(authored_resources.content())?.merged(
-        collect_bundle_dsl_view_resources(&compiled.hir, &image_objects)?,
+        collect_bundle_dsl_view_resources_for_package(&compiled.hir, &image_objects, &package)?,
     );
     image_objects.extend(view_sidecars.image_objects.iter().cloned());
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
@@ -357,6 +358,35 @@ pub(in crate::app) fn compile_bundle_for_selection(
         bundle,
         entry_kinds,
     })
+}
+
+fn selection_package_identity(selection: &SourceSelection) -> Result<String, ExitCode> {
+    if let Some(manifest) = selection.resource_manifest() {
+        return arcweft_project_loader::project::load(manifest)
+            .map(|project| {
+                project
+                    .sources()
+                    .manifest()
+                    .package()
+                    .name()
+                    .as_str()
+                    .to_owned()
+            })
+            .map_err(|error| {
+                eprintln!("error: failed to resolve bundle package identity: {error}");
+                ExitCode::FAILURE
+            });
+    }
+    selection
+        .path()
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            eprintln!("error: direct bundle source has no package identity");
+            ExitCode::FAILURE
+        })
 }
 
 fn emit_bundle_verification_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
@@ -491,9 +521,18 @@ where
     })
 }
 
+#[cfg(test)]
 fn collect_bundle_dsl_view_resources(
     module: &HirModule,
     image_objects: &[BundleImageObject],
+) -> Result<BundleViewSidecars, ExitCode> {
+    collect_bundle_dsl_view_resources_for_package(module, image_objects, "test-package")
+}
+
+fn collect_bundle_dsl_view_resources_for_package(
+    module: &HirModule,
+    image_objects: &[BundleImageObject],
+    package: &str,
 ) -> Result<BundleViewSidecars, ExitCode> {
     let styles = module
         .declarations()
@@ -518,10 +557,24 @@ fn collect_bundle_dsl_view_resources(
         })
         .collect::<Vec<_>>();
     let style = dsl_view_style_resource(&styles)?;
-    let view_sidecars = view_sidecars(&views, style.as_ref(), image_objects).map_err(|error| {
-        eprintln!("{error}");
-        ExitCode::FAILURE
-    })?;
+    let fx_ids = module
+        .functions()
+        .iter()
+        .filter(|function| function.has_attribute("fx"))
+        .map(|function| {
+            arcweft_presentation::fx::FxId::try_new(package, function.qualified_name())
+                .map(|id| (function.name().to_owned(), id))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>, _>>()
+        .map_err(|error| {
+            eprintln!("error: invalid Fx identity: {error}");
+            ExitCode::FAILURE
+        })?;
+    let view_sidecars =
+        view_sidecars(&views, style.as_ref(), image_objects, fx_ids).map_err(|error| {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        })?;
     let mut sidecars = BundleViewSidecars {
         style,
         ..BundleViewSidecars::default()

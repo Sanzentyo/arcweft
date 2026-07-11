@@ -13,6 +13,7 @@ arcweft-character = { path = "../arcweft-character" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { workspace = true }
 arcweft-layout.workspace = true
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-serde-bridge = { workspace = true, optional = true }
 arcweft-view = { path = "../arcweft-view" }

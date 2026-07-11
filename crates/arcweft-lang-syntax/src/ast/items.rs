@@ -2,7 +2,6 @@ use crate::expr::Expr;
 use crate::types::{FnSignature, TypeRef, WhereClause};
 
 use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
-use super::decoration::DecorationItem;
 use super::dialogue::DialogueDefaultsItem;
 use super::flow::{AuthoredExpr, ContractClause, Flow, FlowItem, Stmt};
 use super::ids::{EntityRef, WikiLink};
@@ -27,7 +26,6 @@ pub struct TypedSyntaxTree {
 pub enum Item {
     Flow(Flow),
     Function(FunctionItem),
-    Decoration(DecorationItem),
     Agent(AgentItem),
     Callable(CallableItem),
     State(StateItem),
@@ -240,7 +238,6 @@ impl Item {
         match self {
             Self::Flow(item) => Some(*item.range()),
             Self::Function(item) => Some(*item.range()),
-            Self::Decoration(item) => Some(*item.range()),
             Self::Agent(item) => Some(*item.range()),
             Self::Callable(item) => Some(*item.range()),
             Self::State(item) => Some(*item.range()),

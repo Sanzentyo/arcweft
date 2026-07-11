@@ -11,12 +11,11 @@ use crate::labels::expr_label;
 use super::contributions::{
     LineOptionContribution, append_inline_span_contributions, append_line_option_contributions,
 };
-use super::decoration::{
-    DecorationCatalog, DecorationInlineAssignment, DialogueDecorationExpander,
-    append_decoration_inline_contributions,
-};
 use super::defaults::{DialogueDisplayDefaults, DialogueSpeakerPreset};
 use super::entity_defaults::append_style_contributions;
+use super::fx::{
+    DialogueFxExpander, FxCatalog, FxInlineAssignment, append_fx_inline_contributions,
+};
 use super::inline_failure::{inline_default_from_named_expr, lower_default_inline_failure_policy};
 use super::raw::{dialogue_option_source, mark_shadowed_style_contributions, source_range};
 use super::speaker_preset::{effective_dialogue_window, speaker_preset_chain};
@@ -39,21 +38,21 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
 ) -> Result<LineDisplaySpec, RuntimePlanLowerError> {
-    lower_dialogue_display_with_speaker_presets_and_decorations(
+    lower_dialogue_display_with_speaker_presets_and_fx(
         line,
         dialogue,
         defaults,
         speaker_presets,
-        &DecorationCatalog::default(),
+        &FxCatalog::default(),
     )
 }
 
-pub(crate) fn lower_dialogue_display_with_speaker_presets_and_decorations(
+pub(crate) fn lower_dialogue_display_with_speaker_presets_and_fx(
     line: RuntimeLineId,
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
-    decorations: &DecorationCatalog,
+    fx: &FxCatalog,
 ) -> Result<LineDisplaySpec, RuntimePlanLowerError> {
     if let Some(diagnostic) = dialogue.content().diagnostics().first() {
         return Err(RuntimePlanLowerError::new(format!(
@@ -69,15 +68,15 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets_and_decorations(
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
     let mut content = Vec::new();
-    let mut decoration_expander = DialogueDecorationExpander::new(decorations);
+    let mut fx_expander = DialogueFxExpander::new(fx);
     for token in dialogue.content().tokens() {
-        content.extend(decoration_expander.lower_token(
+        content.extend(fx_expander.lower_token(
             token,
             default_inline_failure_policy.as_ref(),
             &defaults.text_proxies,
         )?);
     }
-    let decoration_assignments = decoration_expander.finish()?;
+    let fx_assignments = fx_expander.finish()?;
     Ok(LineDisplaySpec {
         line,
         callee: dialogue.callee().to_owned(),
@@ -95,7 +94,7 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets_and_decorations(
             dialogue,
             defaults,
             speaker_presets,
-            &decoration_assignments,
+            &fx_assignments,
         ),
         args: dialogue
             .args()
@@ -187,7 +186,7 @@ fn lower_effective_dialogue_style_contributions(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
-    decoration_assignments: &[DecorationInlineAssignment],
+    fx_assignments: &[FxInlineAssignment],
 ) -> Vec<RichTextStyleContribution> {
     let mut contributions = Vec::new();
     let mut base_offset = 0usize;
@@ -267,8 +266,8 @@ fn lower_effective_dialogue_style_contributions(
 
     let inline_start = contributions.len();
     append_inline_span_contributions(&mut contributions, dialogue);
-    append_decoration_inline_contributions(&mut contributions, dialogue, decoration_assignments);
-    // Expanded decorations and ordinary tags share one inline cascade. Keep
+    append_fx_inline_contributions(&mut contributions, dialogue, fx_assignments);
+    // Expanded Fx layers and ordinary tags share one inline cascade. Keep
     // replacement precedence in authored order regardless of which lowering
     // path produced each contribution.
     contributions[inline_start..].sort_by_key(inline_contribution_source_start);

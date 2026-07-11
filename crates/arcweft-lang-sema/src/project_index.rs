@@ -982,7 +982,6 @@ fn index_top_level_declaration(
             index = index_view_style_entity(index, item, source_name)?;
         }
         HirTopLevelDecl::State(_)
-        | HirTopLevelDecl::Decoration(_)
         | HirTopLevelDecl::Trait(_)
         | HirTopLevelDecl::Impl(_)
         | HirTopLevelDecl::Enum(_)

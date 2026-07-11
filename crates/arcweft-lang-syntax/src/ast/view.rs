@@ -10,6 +10,10 @@ use crate::ast::ids::EntityRefSyntax;
 use crate::ast::pattern::Pattern;
 use crate::expr::{CallArg, Expr, Literal, MatchExprArm};
 
+mod fx;
+
+pub use fx::{ViewFxApplication, ViewFxApplicationOrdinal};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewBody {
     locals: Vec<ViewLocalState>,
@@ -206,6 +210,8 @@ pub enum ViewAwaitBranchKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewModifier {
     Style(ViewStyleModifier),
+    /// Applies one typed `#[fx] fn -> Fx` call to the preceding View value.
+    Fx(ViewFxApplication),
     Part(String),
     Label(Expr),
     AgentTarget(EntityRefSyntax),
@@ -214,8 +220,14 @@ pub enum ViewModifier {
     EnterKey(Expr),
     Enabled(Expr),
     Focusable(bool),
-    Property { name: String, value: Expr },
-    OnEvent { name: String, body: Expr },
+    Property {
+        name: String,
+        value: Expr,
+    },
+    OnEvent {
+        name: String,
+        body: Expr,
+    },
     Environment(Vec<ViewArg>),
     Focus(String),
     Navigation(ViewNavigationModifier),
@@ -339,6 +351,13 @@ impl ViewBody {
         let mut invokes = Vec::new();
         collect_action_invokes(&self.value, &mut invokes);
         invokes
+    }
+
+    /// Returns View-side Fx applications in authored depth-first order.
+    pub fn fx_applications(&self) -> Vec<&ViewFxApplication> {
+        let mut applications = Vec::new();
+        fx::collect_fx_applications(&self.value, &mut applications);
+        applications
     }
 
     pub const fn range(&self) -> TextRange {

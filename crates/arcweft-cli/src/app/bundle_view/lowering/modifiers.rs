@@ -25,6 +25,11 @@ pub(super) fn lower_modifiers(
                     source: None,
                 });
             }
+            ViewModifier::Fx(application) => {
+                if let Some(instruction) = super::lower_fx_application(application, &state.fx_ids) {
+                    state.instructions.push(instruction);
+                }
+            }
             ViewModifier::OnEvent { name, .. } => {
                 lower_event_handler_modifier(view_id, name, state);
             }
@@ -58,6 +63,11 @@ pub(super) fn lower_button_modifiers(
                     style,
                     source: None,
                 });
+            }
+            ViewModifier::Fx(application) => {
+                if let Some(instruction) = super::lower_fx_application(application, &state.fx_ids) {
+                    state.instructions.push(instruction);
+                }
             }
             ViewModifier::Part(_)
             | ViewModifier::Label(_)

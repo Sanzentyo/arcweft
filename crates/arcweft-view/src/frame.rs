@@ -1,8 +1,8 @@
 //! View frame output produced after retained fragment layout and semantics.
 
 use crate::{
-    DisplayList, LayoutResults, ViewError, ViewFragment, ViewHandlerRouteTable,
-    ViewSemanticFragment, ViewStyleTable,
+    DisplayList, LayoutResults, RetainedViewFxTable, ViewError, ViewFragment,
+    ViewHandlerRouteTable, ViewSemanticFragment, ViewStyleTable,
 };
 
 /// Per-layer View output ready for host-side frame commit validation.
@@ -12,6 +12,7 @@ pub struct ViewLayerOutput {
     semantics: ViewSemanticFragment,
     handlers: ViewHandlerRouteTable,
     styles: ViewStyleTable,
+    fx: RetainedViewFxTable,
 }
 
 impl ViewLayerOutput {
@@ -21,6 +22,7 @@ impl ViewLayerOutput {
             semantics,
             handlers: ViewHandlerRouteTable::default(),
             styles: ViewStyleTable::default(),
+            fx: RetainedViewFxTable::default(),
         }
     }
 
@@ -45,7 +47,15 @@ impl ViewLayerOutput {
             semantics,
             handlers,
             styles,
+            fx: RetainedViewFxTable::default(),
         })
+    }
+
+    /// Attaches retained Fx applications resolved for this View layer.
+    #[must_use]
+    pub fn with_fx(mut self, fx: RetainedViewFxTable) -> Self {
+        self.fx = fx;
+        self
     }
 
     pub const fn display(&self) -> &DisplayList {
@@ -64,6 +74,10 @@ impl ViewLayerOutput {
         &self.styles
     }
 
+    pub const fn fx(&self) -> &RetainedViewFxTable {
+        &self.fx
+    }
+
     pub fn into_parts(self) -> (DisplayList, ViewSemanticFragment) {
         (self.display, self.semantics)
     }
@@ -75,7 +89,14 @@ impl ViewLayerOutput {
         ViewSemanticFragment,
         ViewHandlerRouteTable,
         ViewStyleTable,
+        RetainedViewFxTable,
     ) {
-        (self.display, self.semantics, self.handlers, self.styles)
+        (
+            self.display,
+            self.semantics,
+            self.handlers,
+            self.styles,
+            self.fx,
+        )
     }
 }

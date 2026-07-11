@@ -2,9 +2,9 @@
 
 mod attrs;
 mod contributions;
-mod decoration;
 mod defaults;
 mod entity_defaults;
+mod fx;
 mod helpers;
 mod inline_failure;
 mod line;
@@ -17,9 +17,9 @@ mod tag;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use decoration::DecorationCatalog;
 pub(crate) use defaults::{DialogueDisplayDefaults, DialogueSpeakerPreset};
-pub(crate) use line::lower_dialogue_display_with_speaker_presets_and_decorations;
+pub(crate) use fx::FxCatalog;
+pub(crate) use line::lower_dialogue_display_with_speaker_presets_and_fx;
 pub(crate) use speaker_preset::speaker_preset_from_let;
 
 #[cfg(test)]

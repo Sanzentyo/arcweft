@@ -389,8 +389,8 @@ fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
 }
 
 #[test]
-fn canonical_rich_text_preserves_explicit_decoration_spans() {
-    let source = "flow @flow.opening opening {\n    alice: [decorate .warning label=\"urgent warning\"]important[/decorate][.sparkle amp=2px]effect[/][p]\n}\n";
+fn canonical_rich_text_preserves_explicit_fx_spans() {
+    let source = "flow @flow.opening opening {\n    alice: [fx warning(label=\"urgent warning\")]important[/fx][.sparkle amp=2px]effect[/][p]\n}\n";
     let report = format_source(
         source,
         FormatOptions {
@@ -403,7 +403,7 @@ fn canonical_rich_text_preserves_explicit_decoration_spans() {
     assert!(
         report
             .output
-            .contains("[decorate .warning label=\"urgent warning\"]important[/decorate]")
+            .contains("[fx warning(label=\"urgent warning\")]important[/fx]")
     );
     assert!(
         report
@@ -776,7 +776,7 @@ fn materializes_omitted_dialogue_ids_in_colon_call_and_flat_fences() {
 
 #[test]
 fn canonical_rich_text_keeps_dialogue_call_ranges_after_natural_apostrophes() {
-    let source = "flow @flow.opening opening {\n    let handles = alice.say()[don't [decorate .warning]stop[/decorate] [.shake]now[/][p]]\n}\n";
+    let source = "flow @flow.opening opening {\n    let handles = alice.say()[don't [fx warning()]stop[/fx] [.shake]now[/][p]]\n}\n";
     let report = format_source(
         source,
         FormatOptions {
@@ -789,6 +789,6 @@ fn canonical_rich_text_keeps_dialogue_call_ranges_after_natural_apostrophes() {
     assert!(
         report
             .output
-            .contains("[don't [decorate .warning]stop[/decorate] [effect .shake]now[/effect][p]]")
+            .contains("[don't [fx warning()]stop[/fx] [effect .shake]now[/effect][p]]")
     );
 }

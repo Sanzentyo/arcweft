@@ -1,10 +1,5 @@
 //! Native wgpu/glyphon renderer and capture adapter for Arcweft presentation frames.
 
-use arcweft_core::{
-    plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType},
-    pure::VmPureFunctionScratch,
-    value::RuntimeValue,
-};
 use arcweft_glyphon::{
     GlyphonAreaOptions, OwnedGlyphArea, ResolvedGlyph, VerticalGlyphHorizontalAlign,
     glyph_area_from_layout, horizontal_glyph_area_from_shaped_buffer,
@@ -63,18 +58,15 @@ mod window_page;
 
 use effect_execution::NativeEffectExecution;
 use effects::{
-    NativeSparkleEffect, apply_builtin_effect_post_process, apply_parametric_motion_sample,
+    NativeSparkleEffect, apply_builtin_effect_post_process,
     apply_presentation_effects_to_placement,
     apply_presentation_effects_to_placement_with_execution,
-    apply_presentation_to_placement_with_effects, apply_pure_text_effect_color,
-    apply_pure_text_effect_post_process, builtin_effect_phase_supported, deterministic_noise,
+    apply_presentation_to_placement_with_effects, builtin_effect_phase_supported,
     effect_applies_to_glyph_mask, effect_applies_to_renderer_glyph,
     effect_phase_applies_to_renderer_glyph, is_builtin_effect_id, native_screen_tint_post_process,
     native_soft_glow_shader, native_warm_glow_shader, observe_layout_shaders, param_bool,
-    param_milli, param_seed, pure_text_shader_glyph_passes, pure_text_shader_post_process,
-    resolve_shader_filter, sample_breath_orbit, sample_elastic_bloom, sample_parametric_motion,
-    shader_glyph_areas_for_ruby, shader_glyph_areas_for_text, shader_param_milli,
-    shader_param_seed, shader_phase_known, stable_text_hash,
+    param_milli, resolve_shader_filter, sample_breath_orbit, sample_elastic_bloom,
+    shader_glyph_areas_for_ruby, shader_glyph_areas_for_text, shader_phase_known,
 };
 use renderer::{
     NativeOffscreenTextRenderer, NativeRenderLayout, NativeRenderTarget,
@@ -784,30 +776,6 @@ pub struct RichTextMotionRegistry {
     functions: BTreeMap<String, RegisteredTextMotion>,
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
-pub enum RichTextMotionExportError {
-    #[error(
-        "text motion function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
-    )]
-    UnsupportedSignature { name: String },
-}
-
-#[derive(Clone, Debug, Error, PartialEq)]
-pub enum RichTextEffectExportError {
-    #[error(
-        "text effect function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
-    )]
-    UnsupportedSignature { name: String },
-}
-
-#[derive(Clone, Debug, Error, PartialEq)]
-pub enum RichTextShaderExportError {
-    #[error(
-        "text shader function `{name}` must have signature fn(t: f32, glyph: f32, seed: f32) -> f32"
-    )]
-    UnsupportedSignature { name: String },
-}
-
 impl RichTextMotionRegistry {
     pub fn insert_class(
         &mut self,
@@ -842,197 +810,6 @@ impl RichTextMotionRegistry {
             RegisteredTextMotion::Lambda(function) => function(ctx),
         })
     }
-}
-
-pub fn register_arcweft_pure_text_shaders(
-    registry: &mut RichTextShaderRegistry,
-    helpers: &[RuntimePureHelper],
-) -> Result<usize, RichTextShaderExportError> {
-    helpers.iter().try_fold(0usize, |exported, helper| {
-        register_arcweft_pure_text_shader(registry, helper)?;
-        Ok(exported.saturating_add(1))
-    })
-}
-
-fn register_arcweft_pure_text_shader(
-    registry: &mut RichTextShaderRegistry,
-    helper: &RuntimePureHelper,
-) -> Result<(), RichTextShaderExportError> {
-    if !arcweft_text_pure_f32_triplet_signature_supported(helper) {
-        return Err(RichTextShaderExportError::UnsupportedSignature {
-            name: helper.name.clone(),
-        });
-    }
-    let glyph_helper = helper.clone();
-    let post_process_helper = glyph_helper.clone();
-    let mut glyph_scratch = VmPureFunctionScratch::default();
-    let mut post_process_scratch = VmPureFunctionScratch::default();
-    registry.insert_combined_lambda(
-        helper.name.clone(),
-        move |ctx| {
-            let seed = shader_param_seed(ctx.shader, "seed").map_or(0.0, seed_bucket_as_f32);
-            let time = shader_param_milli(ctx.shader, "time")
-                .or_else(|| shader_param_milli(ctx.shader, "t"))
-                .or_else(|| shader_param_milli(ctx.shader, "phase"))
-                .unwrap_or_default()
-                .as_f32();
-            let phase = glyph_scratch
-                .evaluate_f32_slice(&glyph_helper, &[time, 0.0, seed])
-                .ok()
-                .as_ref()
-                .and_then(runtime_value_as_f32)
-                .filter(|value| value.is_finite())
-                .unwrap_or(time);
-            pure_text_shader_glyph_passes(ctx.shader, phase)
-        },
-        move |ctx, rgba| {
-            let seed = shader_param_seed(ctx.shader, "seed").map_or(0.0, seed_bucket_as_f32);
-            let time = shader_param_milli(ctx.shader, "time")
-                .or_else(|| shader_param_milli(ctx.shader, "t"))
-                .or_else(|| shader_param_milli(ctx.shader, "phase"))
-                .map_or(ctx.time_seconds, |value| ctx.time_seconds + value.as_f32());
-            let phase = post_process_scratch
-                .evaluate_f32_slice(&post_process_helper, &[time, 0.0, seed])
-                .ok()
-                .as_ref()
-                .and_then(runtime_value_as_f32)
-                .filter(|value| value.is_finite())
-                .unwrap_or(time);
-            pure_text_shader_post_process(ctx.shader, phase, rgba);
-        },
-    );
-    Ok(())
-}
-
-pub fn register_arcweft_pure_text_effects(
-    registry: &mut RichTextEffectRegistry,
-    helpers: &[RuntimePureHelper],
-) -> Result<usize, RichTextEffectExportError> {
-    helpers.iter().try_fold(0usize, |exported, helper| {
-        register_arcweft_pure_text_effect(registry, helper)?;
-        Ok(exported.saturating_add(1))
-    })
-}
-
-fn register_arcweft_pure_text_effect(
-    registry: &mut RichTextEffectRegistry,
-    helper: &RuntimePureHelper,
-) -> Result<(), RichTextEffectExportError> {
-    if !arcweft_text_pure_f32_triplet_signature_supported(helper) {
-        return Err(RichTextEffectExportError::UnsupportedSignature {
-            name: helper.name.clone(),
-        });
-    }
-    let glyph_helper = helper.clone();
-    let post_process_helper = glyph_helper.clone();
-    let mut glyph_scratch = VmPureFunctionScratch::default();
-    let mut post_process_scratch = VmPureFunctionScratch::default();
-    registry.insert_combined_lambda(
-        helper.name.clone(),
-        move |ctx| {
-            let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
-            let phase = glyph_scratch
-                .evaluate_f32_slice(
-                    &glyph_helper,
-                    &[
-                        ctx.time_seconds,
-                        usize_to_f32_saturating(ctx.glyph_index),
-                        seed,
-                    ],
-                )
-                .ok()
-                .as_ref()
-                .and_then(runtime_value_as_f32)
-                .filter(|value| value.is_finite())
-                .unwrap_or(ctx.time_seconds);
-            if ctx.effect.phase == RichTextEffectPhase::GlyphColor {
-                apply_pure_text_effect_color(ctx, phase);
-                return;
-            }
-            let effect_seed = param_seed(ctx.effect, "seed").unwrap_or(0)
-                ^ stable_text_hash(&glyph_helper.name)
-                ^ u64::try_from(ctx.run_index).unwrap_or(u64::MAX);
-            let noise = deterministic_noise(effect_seed, ctx.line_id, ctx.glyph_index, phase);
-            let sample = sample_parametric_motion(ctx.effect, phase, noise);
-            apply_parametric_motion_sample(ctx.effect, sample, ctx.placement);
-        },
-        move |ctx, rgba| {
-            let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
-            let phase = post_process_scratch
-                .evaluate_f32_slice(&post_process_helper, &[ctx.time_seconds, 0.0, seed])
-                .ok()
-                .as_ref()
-                .and_then(runtime_value_as_f32)
-                .filter(|value| value.is_finite())
-                .unwrap_or(ctx.time_seconds);
-            apply_pure_text_effect_post_process(ctx.effect, phase, rgba);
-        },
-    );
-    Ok(())
-}
-
-pub fn register_arcweft_pure_text_motions(
-    registry: &mut RichTextMotionRegistry,
-    helpers: &[RuntimePureHelper],
-) -> Result<usize, RichTextMotionExportError> {
-    helpers.iter().try_fold(0usize, |exported, helper| {
-        register_arcweft_pure_text_motion(registry, helper)?;
-        Ok(exported.saturating_add(1))
-    })
-}
-
-fn register_arcweft_pure_text_motion(
-    registry: &mut RichTextMotionRegistry,
-    helper: &RuntimePureHelper,
-) -> Result<(), RichTextMotionExportError> {
-    if !arcweft_text_pure_f32_triplet_signature_supported(helper) {
-        return Err(RichTextMotionExportError::UnsupportedSignature {
-            name: helper.name.clone(),
-        });
-    }
-    let helper = helper.clone();
-    let mut scratch = VmPureFunctionScratch::default();
-    registry.insert_lambda(helper.name.clone(), move |ctx| {
-        let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
-        let phase = scratch
-            .evaluate_f32_slice(
-                &helper,
-                &[
-                    ctx.sample_time,
-                    usize_to_f32_saturating(ctx.glyph_index),
-                    seed,
-                ],
-            )
-            .ok()
-            .as_ref()
-            .and_then(runtime_value_as_f32)
-            .filter(|value| value.is_finite())
-            .unwrap_or(ctx.sample_time);
-        sample_parametric_motion(ctx.effect, phase, ctx.noise)
-    });
-    Ok(())
-}
-
-fn arcweft_text_pure_f32_triplet_signature_supported(helper: &RuntimePureHelper) -> bool {
-    helper.input_types
-        == [
-            RuntimePureInputType::F32,
-            RuntimePureInputType::F32,
-            RuntimePureInputType::F32,
-        ]
-        && helper.output_type == RuntimePureOutputType::F32
-        && helper.scalar_eval_supported
-}
-
-fn runtime_value_as_f32(value: &RuntimeValue) -> Option<f32> {
-    match value {
-        RuntimeValue::F32(value) => Some(*value),
-        _ => None,
-    }
-}
-
-fn seed_bucket_as_f32(seed: u64) -> f32 {
-    f32::from(u16::try_from(seed & 0xffff).expect("masked seed fits u16"))
 }
 
 /// Builds the default native host effect registry used by native renderers.

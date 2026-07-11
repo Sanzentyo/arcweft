@@ -632,16 +632,17 @@ flow opening {
     }
 
     #[test]
-    fn hover_includes_expanded_decoration_style_contributions() {
+    fn hover_includes_expanded_fx_style_contributions() {
         let source = r##"
-decoration red(value = "#a8b5ff") {
-    color(value=value)
+#[fx]
+fn red(value: Color = rgb("#a8b5ff")) -> Fx {
+    Fx.text(color = value)
 }
 
 pub character alice {}
 
 flow opening {
-    alice: [decorate .red]colored[/decorate][p]
+    alice: [fx red()]colored[/fx][p]
 }
 "##;
         let mut store = DocumentStore::default();
@@ -657,7 +658,7 @@ flow opening {
             },
             PositionEncoding::Utf16,
         );
-        let offset = source.find("colored").expect("decorated content offset");
+        let offset = source.find("colored").expect("Fx content offset");
         let position = document.line_index().position_from_byte_offset(offset);
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
         let hover = hover(&profile, &document, position).expect("effective style hover");

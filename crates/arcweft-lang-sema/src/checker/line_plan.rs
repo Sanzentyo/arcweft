@@ -5,7 +5,7 @@ use super::{
     LifetimeScopeKind, LinePlanItem, Pattern, Stmt, SuspensionBoundary, TriggerPattern,
     TypeCheckError, TypeChecker, TypeKind, lifetime_key, merge_line_output,
 };
-use super::{decoration::DecorationSpanState, helpers::let_else_bindings};
+use super::{fx::FxSpanState, helpers::let_else_bindings};
 use arcweft_lang_syntax::ast::{
     flow::{AuthoredExpr, FlowItem, WaitTarget},
     line_plan::LinePlan,
@@ -238,7 +238,7 @@ impl TypeChecker<'_> {
         range_mode: DialogueContentRangeMode,
     ) -> HashSet<String> {
         let mut marks = HashSet::new();
-        let mut decoration_spans = DecorationSpanState::default();
+        let mut fx_spans = FxSpanState::default();
         if range_mode == DialogueContentRangeMode::PreRegisteredExpression {
             self.errors
                 .extend(content.diagnostics().iter().map(|diagnostic| {
@@ -250,7 +250,7 @@ impl TypeChecker<'_> {
                 }));
         }
         for token in content.tokens() {
-            decoration_spans.observe(token, &self.decorations, &mut self.errors);
+            fx_spans.observe(token, &self.fx, &mut self.errors);
             match token {
                 DialogueToken::Expr(expr_token) => {
                     if range_mode == DialogueContentRangeMode::ContentSourceMap {
@@ -277,7 +277,7 @@ impl TypeChecker<'_> {
                         )));
                     }
                 }
-                DialogueToken::InferredTag(tag) if self.decorations.inferred_tag_is_mark(tag) => {
+                DialogueToken::InferredTag(tag) if self.fx.inferred_tag_is_mark(tag) => {
                     if !marks.insert(tag.name().to_owned()) {
                         self.errors.push(TypeCheckError::new(format!(
                             "duplicate dialogue mark `{}` in line content",
@@ -321,7 +321,7 @@ impl TypeChecker<'_> {
                 | DialogueToken::Escape(_) => {}
             }
         }
-        decoration_spans.finish(&mut self.errors);
+        fx_spans.finish(&mut self.errors);
         marks
     }
 

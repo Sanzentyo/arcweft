@@ -30,7 +30,6 @@ use std::ops::Range;
 pub mod await_;
 pub mod choice;
 pub mod control_flow;
-pub mod decoration;
 pub mod dialogue;
 pub mod flow;
 pub mod fragment;

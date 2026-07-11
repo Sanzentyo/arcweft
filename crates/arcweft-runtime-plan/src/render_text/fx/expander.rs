@@ -1,37 +1,33 @@
-//! Stateful expansion of authored decoration spans within one dialogue line.
+//! Stateful expansion of authored Fx spans within one dialogue line.
 
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::syntax::{
-    ast::dialogue::{DialogueTag, DialogueTagArg, DialogueToken},
+    ast::dialogue::{DialogueTagKind, DialogueToken},
     text::canonical_rich_text_tag_name,
 };
 use arcweft_render_text::{InlineFailurePolicy, RichTextControl, RichTextNode, RichTextStyle};
 
 use crate::errors::RuntimePlanLowerError;
-
-use super::{
-    DecorationCatalog, DecorationInlineAssignment, contributions::inline_assignments,
-    decoration_error,
-};
 use crate::render_text::{defaults::TextProxyTypeDefaults, tag::lower_dialogue_token_parts};
 
-/// Treats a decoration as one authored span even though its product
-/// representation contains several ordinary style nodes.
-pub(crate) struct DialogueDecorationExpander<'catalog> {
-    catalog: &'catalog DecorationCatalog,
+use super::{FxCatalog, FxInlineAssignment, contributions::inline_assignments, fx_error};
+
+/// Expands one authored `[fx ...]` span atomically into ordinary style nodes.
+pub(crate) struct DialogueFxExpander<'catalog> {
+    catalog: &'catalog FxCatalog,
     open_spans: Vec<OpenSpan>,
-    inline_assignments: Vec<DecorationInlineAssignment>,
+    inline_assignments: Vec<FxInlineAssignment>,
 }
 
 #[derive(Clone, Debug)]
 enum OpenSpan {
     Style { name: String },
-    Decoration { name: String, ends: Vec<String> },
+    Fx { name: String, ends: Vec<String> },
 }
 
-impl<'catalog> DialogueDecorationExpander<'catalog> {
-    pub(crate) fn new(catalog: &'catalog DecorationCatalog) -> Self {
+impl<'catalog> DialogueFxExpander<'catalog> {
+    pub(crate) fn new(catalog: &'catalog FxCatalog) -> Self {
         Self {
             catalog,
             open_spans: Vec::new(),
@@ -46,41 +42,33 @@ impl<'catalog> DialogueDecorationExpander<'catalog> {
         text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
     ) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
         match token {
-            DialogueToken::Tag(tag) if tag.name() == "decorate" => {
-                let layers = self.catalog.expand_tag(tag)?;
-                let invocation_range = tag
-                    .arguments()
-                    .first()
-                    .map_or_else(|| tag.range(), |argument| argument.value().range());
+            DialogueToken::Tag(tag) if tag.kind() == DialogueTagKind::Fx => {
+                let (name, layers) = self.catalog.expand_tag(tag)?;
                 self.inline_assignments
-                    .extend(inline_assignments(&layers, invocation_range));
+                    .extend(inline_assignments(&layers, tag.attrs_range()));
                 let ends = layers
                     .iter()
                     .rev()
                     .map(|layer| layer.style.tag_name().to_owned())
                     .collect::<Vec<_>>();
-                self.open_spans.push(OpenSpan::Decoration {
-                    name: decoration_name_from_tag(tag),
-                    ends,
-                });
+                self.open_spans.push(OpenSpan::Fx { name, ends });
                 Ok(layers
                     .into_iter()
                     .map(|layer| RichTextNode::StyleStart { style: layer.style })
                     .collect())
             }
-            DialogueToken::EndTag(end) if end.name() == "decorate" => self.close_decoration(),
-            DialogueToken::InferredEndTag if self.has_open_decoration() => self
-                .close_inferred_inside_decoration(
-                    token,
-                    default_inline_failure_policy,
-                    text_proxies,
-                ),
-            DialogueToken::Tag(tag) if tag.name() == "reset" && self.has_open_decoration() => {
-                Err(decoration_error(
-                    "`[reset]` cannot clear styles from inside an open decoration span",
+            DialogueToken::EndTag(end) if end.kind() == DialogueTagKind::Fx => self.close_fx(),
+            DialogueToken::InferredEndTag if self.has_open_fx() => {
+                self.close_inferred_inside_fx(token, default_inline_failure_policy, text_proxies)
+            }
+            DialogueToken::Tag(tag)
+                if tag.kind() == DialogueTagKind::Reset && self.has_open_fx() =>
+            {
+                Err(fx_error(
+                    "`[reset]` cannot clear styles from inside an open Fx span",
                 ))
             }
-            DialogueToken::EndTag(end) if self.has_open_decoration() => self.close_nested_style(
+            DialogueToken::EndTag(end) if self.has_open_fx() => self.close_nested_style(
                 end.name(),
                 token,
                 default_inline_failure_policy,
@@ -96,40 +84,38 @@ impl<'catalog> DialogueDecorationExpander<'catalog> {
         }
     }
 
-    pub(crate) fn finish(self) -> Result<Vec<DecorationInlineAssignment>, RuntimePlanLowerError> {
+    pub(crate) fn finish(self) -> Result<Vec<FxInlineAssignment>, RuntimePlanLowerError> {
         let unclosed = self
             .open_spans
             .iter()
             .filter_map(|span| match span {
-                OpenSpan::Decoration { name, .. } => Some(name.as_str()),
+                OpenSpan::Fx { name, .. } => Some(name.as_str()),
                 OpenSpan::Style { .. } => None,
             })
             .collect::<Vec<_>>();
         if unclosed.is_empty() {
             Ok(self.inline_assignments)
         } else {
-            Err(decoration_error(format!(
-                "unclosed rich-text decoration span(s): {}",
+            Err(fx_error(format!(
+                "unclosed RichText Fx span(s): {}",
                 unclosed.join(", ")
             )))
         }
     }
 
-    fn close_decoration(&mut self) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
+    fn close_fx(&mut self) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
         match self.open_spans.pop() {
-            Some(OpenSpan::Decoration { ends, .. }) => Ok(ends
+            Some(OpenSpan::Fx { ends, .. }) => Ok(ends
                 .into_iter()
                 .map(|name| RichTextNode::StyleEnd { name })
                 .collect()),
             Some(span @ OpenSpan::Style { .. }) => {
                 self.open_spans.push(span);
-                Err(decoration_error(
-                    "`[/decorate]` crosses a rich-text span opened inside the decoration",
+                Err(fx_error(
+                    "`[/fx]` crosses a RichText span opened inside the Fx span",
                 ))
             }
-            None => Err(decoration_error(
-                "`[/decorate]` has no matching `[decorate ...]` opener",
-            )),
+            None => Err(fx_error("`[/fx]` has no matching `[fx ...]` opener")),
         }
     }
 
@@ -143,20 +129,20 @@ impl<'catalog> DialogueDecorationExpander<'catalog> {
         let canonical = canonical_rich_text_tag_name(name);
         match self.open_spans.last() {
             Some(OpenSpan::Style { name }) if name == canonical => {
-                let _ = self.open_spans.pop();
+                self.open_spans.pop();
                 lower_dialogue_token_parts(token, default_inline_failure_policy, text_proxies)
             }
-            Some(OpenSpan::Decoration { .. }) => Err(decoration_error(format!(
-                "`[/{name}]` cannot close an internal layer of an open decoration; close `[/decorate]`"
+            Some(OpenSpan::Fx { .. }) => Err(fx_error(format!(
+                "`[/{name}]` cannot close an internal Fx layer; close `[/fx]`"
             ))),
-            Some(OpenSpan::Style { name: open }) => Err(decoration_error(format!(
-                "mismatched rich-text close `[/{name}]` inside decoration; expected `[/{open}]`"
+            Some(OpenSpan::Style { name: open }) => Err(fx_error(format!(
+                "mismatched RichText close `[/{name}]` inside Fx span; expected `[/{open}]`"
             ))),
             None => lower_dialogue_token_parts(token, default_inline_failure_policy, text_proxies),
         }
     }
 
-    fn close_inferred_inside_decoration(
+    fn close_inferred_inside_fx(
         &mut self,
         token: &DialogueToken,
         default_inline_failure_policy: Option<&InlineFailurePolicy>,
@@ -164,20 +150,20 @@ impl<'catalog> DialogueDecorationExpander<'catalog> {
     ) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
         match self.open_spans.last() {
             Some(OpenSpan::Style { .. }) => {
-                let _ = self.open_spans.pop();
+                self.open_spans.pop();
                 lower_dialogue_token_parts(token, default_inline_failure_policy, text_proxies)
             }
-            Some(OpenSpan::Decoration { .. }) => Err(decoration_error(
-                "an explicit `[decorate ...]` span must close with `[/decorate]`",
+            Some(OpenSpan::Fx { .. }) => Err(fx_error(
+                "an explicit `[fx ...]` span must close with `[/fx]`",
             )),
             None => lower_dialogue_token_parts(token, default_inline_failure_policy, text_proxies),
         }
     }
 
-    fn has_open_decoration(&self) -> bool {
+    fn has_open_fx(&self) -> bool {
         self.open_spans
             .iter()
-            .any(|span| matches!(span, OpenSpan::Decoration { .. }))
+            .any(|span| matches!(span, OpenSpan::Fx { .. }))
     }
 
     fn track_open_styles(&mut self, nodes: &[RichTextNode]) {
@@ -185,9 +171,6 @@ impl<'catalog> DialogueDecorationExpander<'catalog> {
             let RichTextNode::StyleStart { style } = node else {
                 return None;
             };
-            // Speed is a point modifier that remains active until another
-            // speed/reset boundary or the end of the line. It is not a span
-            // that must close before the surrounding decoration.
             if matches!(style, RichTextStyle::Speed { .. }) {
                 return None;
             }
@@ -201,7 +184,7 @@ impl<'catalog> DialogueDecorationExpander<'catalog> {
         for node in nodes {
             match node {
                 RichTextNode::StyleEnd { name } if name == "/" => {
-                    let _ = self.open_spans.pop();
+                    self.open_spans.pop();
                 }
                 RichTextNode::StyleEnd { name } => {
                     let canonical = canonical_rich_text_tag_name(name);
@@ -218,15 +201,4 @@ impl<'catalog> DialogueDecorationExpander<'catalog> {
             }
         }
     }
-}
-
-fn decoration_name_from_tag(tag: &DialogueTag) -> String {
-    tag.arguments()
-        .first()
-        .and_then(|argument| match argument {
-            DialogueTagArg::Positional { value } => value.value().trim().strip_prefix('.'),
-            DialogueTagArg::Named { .. } => None,
-        })
-        .unwrap_or("<unknown>")
-        .to_owned()
 }

@@ -1,0 +1,59 @@
+pub surface character narrator {
+    display = "Narrator"
+    default_voice = auto
+}
+
+#[fx]
+pub fn wave(
+    amplitude: Length = 2px,
+    speed: f32 = 1.0,
+) -> Fx {
+    Fx.transform(
+        target = .glyph,
+        sample = |ctx| Transform2D {
+            translate_y:
+                sin(ctx.time * speed + ctx.ordinal_phase()) * amplitude,
+        },
+    )
+}
+
+#[fx]
+pub fn emphasis(
+    accent: Color = rgb("#ffd060"),
+) -> Fx {
+    Fx.text(
+        weight = .strong,
+        color = accent,
+    )
+}
+
+#[fx]
+pub fn notice(
+    accent: Color = rgb("#ff6b8a"),
+    amplitude: Length = 2px,
+    speed: f32 = 1.0,
+) -> Fx {
+    Fx.stack([
+        emphasis(accent = accent),
+        wave(amplitude = amplitude, speed = speed),
+    ])
+}
+
+pub view WarningPreview() {
+    Text("WARNING")
+        .fx(notice(accent = rgb("#78dce8"), amplitude = 4px))
+}
+
+entry game {
+    goto @flow.rich_text_fx
+}
+
+flow rich_text_fx {
+    narrator.say()[
+        [fx notice(accent=rgb("#ff6b8a"), speed=2.0)]必須値、既定値、合成を一つのFx関数にまとめた警告[/fx][p]
+    ]
+
+    narrator.say()[
+        [fx notice(accent=rgb("#78dce8"), amplitude=4px)]既定値を上書きした警告[/fx][p]
+    ]
+}

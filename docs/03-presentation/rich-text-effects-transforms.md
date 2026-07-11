@@ -34,14 +34,75 @@ alice: [layout .vertical_rl jlreq=strict]縦書き[/layout][p]
 `[/]` closes the most recent inferred span. Zero-width markers canonicalize to
 `[mark .name]` and do not retain a closing tag.
 
-Reusable `decoration` declarations are an authoring/compiler abstraction, not
-a renderer-side effect class. For example, a declaration containing
-`strong()`, `color(value=accent)`, and `effect(.wave, amp=amplitude)` expands a
-`[decorate .name ...]...[/decorate]` span into the corresponding ordinary
-style starts and reverse-order style ends during runtime-plan lowering. The
-resulting `RichTextDocument`, bundle data, session saves, and renderer inputs
-therefore use the same `RichTextStyle` and `RichTextEffectDescriptor` values as
-hand-authored canonical tags.
+Reusable presentation is authored as a typed `#[fx] fn ... -> Fx`. The same Fx
+value applies to a View with `.fx(value)` or to a rich-text span with
+`[fx call(...)]...[/fx]`:
+
+```arcw
+#[fx]
+pub fn notice(
+    accent: Color = rgb("#ff4050"),
+    amplitude: Length = 2px,
+) -> Fx {
+    Fx.stack([
+        Fx.text(weight = .strong, color = accent),
+        wave(amplitude = amplitude),
+    ])
+}
+
+Text("WARNING").fx(notice(accent = state.warning_color))
+alice: [fx notice(accent=rgb("#ff6b8a"))]WARNING[/fx][p]
+```
+
+This is the only reusable presentation declaration. There is no separate
+`decoration`, presentation-effect implementation, or View-modifier language.
+Static style and time-varying effects are ordered nodes in the same graph.
+
+### Fx graph boundary
+
+`Fx` is an immutable presentation-treatment graph. Its typed nodes include
+style/text style, transform, color, mask, filter, shader, transition,
+conditional selection, and ordered stack composition. These nodes reference
+the existing typed style, transform, filter, and shader contracts rather than
+reimplementing their semantics.
+
+`#[fx]` is an argument-free marker on an ordinary function. It registers the
+function as an Fx entry and implies pure, deterministic graph construction;
+authors do not also write `#[pure]`. The body may call ordinary pure helpers
+and other Fx functions, but may not mutate state, send signals, perform I/O or
+capability calls, await tasks, use nondeterministic random or wall-clock time,
+construct View children, or emit actions/events.
+
+Parameters are typed and Fx entry calls are named-only. Defaults live in the
+function signature, are const-evaluable, and cannot refer to other parameters
+or runtime state. Rest parameters are not supported. View applications may
+bind reactive values while preserving a compile-time graph shape; rich-text
+tag applications accept only closed values so localization, replay, and line
+caching remain deterministic.
+
+An Fx definition is identified by a typed `FxId` derived from its package and
+original qualified function name. Re-exports are aliases for resolution, not
+new identities. Bundles additionally retain an ABI hash for parameter/default
+and renderer-interface compatibility and a semantic hash for the body and
+resource bindings. Each View application or rich-text span derives a separate
+deterministic `FxInstanceId` from its retained location, authored ordinal, and
+optional local key; state and default seeds therefore do not collide between
+uses of the same definition.
+
+Extern Rust or WASM entries use the same declaration model:
+
+```arcw
+extern rust mod studio_fx from crate "studio_fx" {
+    #[fx]
+    pub fn bloom(
+        amount: f32 = 1.0,
+        radius: Length = 8px,
+    ) -> Fx
+}
+```
+
+The removed `decoration`, `#[text_motion]`, `#[text_effect]`, and
+`#[text_shader]` forms have no compatibility aliases.
 
 ---
 
@@ -175,13 +236,25 @@ through their animation-function registry. Unknown names must remain
 observable through renderer diagnostics and must not be silently reinterpreted
 as another fallback animation or nondeterministic host code.
 
-Native adapters can export Arcweft pure functions to that registry with
-`#[text_motion]` plus `#[pure]`. The first supported ABI is deliberately narrow:
-`fn(t: f32, glyph: f32, seed: f32) -> f32`. The return value is a deterministic
-phase sample used by the renderer motion sampler, while authored `.motion`
-parameters such as `amp`, `angle`, `scale`, `shape`, `speed`, and `phase` remain
-renderer-owned presentation parameters. This keeps custom animation debuggable
-without teaching the dialogue parser effect-specific expression grammars.
+Reusable motion is an Fx function whose body returns `Fx.transform` with a
+typed sampling closure. `ctx.time`, target-local ordinal/phase helpers, and the
+function's named parameters are explicit inputs to deterministic sampling:
+
+```arcw
+#[fx]
+pub fn wave(amplitude: Length = 2px, speed: f32 = 1.0) -> Fx {
+    Fx.transform(
+        target = .glyph,
+        sample = |ctx| Transform2D {
+            translate_y:
+                sin(ctx.time * speed + ctx.ordinal_phase()) * amplitude,
+        },
+    )
+}
+```
+
+Renderer adapters validate the Fx renderer interface and ABI hash instead of
+registering a separate source-language motion-function attribute.
 
 `.typewriter` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
@@ -228,11 +301,12 @@ only syntax that is unambiguous across all custom effects:
   `"true"` and their unquoted integer / boolean forms
 - raw tokens for other unquoted values
 
-Custom renderer builtins own higher-level interpretation by parameter name.
+Legacy low-level rich-text descriptors and renderer builtins own higher-level
+interpretation by parameter name.
 For example, wave may interpret `dir=0,1` as `Vec2`, while another effect may
 preserve the same token as raw text. This avoids hard-coding custom parameter
-grammars into dialogue parsing. Reusable decoration defaults, overrides, and
-forwarded custom arguments use this same parameter model.
+grammars into dialogue parsing. Reusable author-facing Fx parameters do not use
+this open raw-token model: they are a closed typed function schema.
 
 Expression-looking values are not inferred as expressions globally. Explicit
 expression parameters must use the documented expression form when the language

@@ -5,7 +5,6 @@ impl HirTopLevelDecl {
     pub const fn cache_fact_tag(&self) -> &'static str {
         match self {
             Self::Callable(_) => "callable",
-            Self::Decoration(_) => "decoration",
             Self::State(_) => "state",
             Self::Trait(_) => "trait",
             Self::Impl(_) => "impl",

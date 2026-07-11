@@ -72,10 +72,10 @@ pub(crate) fn lower_dialogue_token_parts(
     })
 }
 
-/// Lowers one declaration-time visual builder to the same typed style used by
-/// ordinary inline tags. Decorations intentionally reuse this boundary so the
+/// Lowers one compiled Fx node to the same typed style used by
+/// ordinary inline tags. Fx graphs intentionally reuse this boundary so the
 /// renderer never needs a parallel style model.
-pub(crate) fn lower_visual_decoration_layer(
+pub(crate) fn lower_visual_fx_layer(
     builder: &str,
     selector: Option<&str>,
     attrs: &str,
@@ -85,31 +85,31 @@ pub(crate) fn lower_visual_decoration_layer(
             style: RichTextStyle::from_tag(builder, attrs),
         }],
         "style" => lower_style_selector(
-            selector.ok_or_else(|| "style decoration layer requires a selector".to_owned())?,
+            selector.ok_or_else(|| "style Fx layer requires a selector".to_owned())?,
             attrs,
         ),
         "layout" => lower_layout_selector(
-            selector.ok_or_else(|| "layout decoration layer requires a selector".to_owned())?,
+            selector.ok_or_else(|| "layout Fx layer requires a selector".to_owned())?,
             attrs,
         ),
         "transform" => lower_transform_selector(
-            selector.ok_or_else(|| "transform decoration layer requires a selector".to_owned())?,
+            selector.ok_or_else(|| "transform Fx layer requires a selector".to_owned())?,
             attrs,
         ),
         "effect" => lower_effect_selector(
-            selector.ok_or_else(|| "effect decoration layer requires a selector".to_owned())?,
+            selector.ok_or_else(|| "effect Fx layer requires a selector".to_owned())?,
             attrs,
         ),
-        other => return Err(format!("unsupported visual decoration layer `{other}`")),
+        other => return Err(format!("unsupported visual Fx layer `{other}`")),
     };
     match nodes.as_slice() {
         [RichTextNode::StyleStart { style }] => Ok(style.clone()),
         [RichTextNode::HostEvent { .. }] => Err(
-            "visual decoration effect cannot use `phase=host_event`; author a line event explicitly"
+            "visual Fx effect cannot use `phase=host_event`; author a line event explicitly"
                 .to_owned(),
         ),
         _ => Err(format!(
-            "decoration layer `{builder}` did not lower to exactly one visual style"
+            "Fx layer `{builder}` did not lower to exactly one visual style"
         )),
     }
 }

@@ -461,6 +461,7 @@ dependencies = [
  "arcweft-data",
  "arcweft-interaction-model",
  "arcweft-layout",
+ "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-serde-bridge",
  "arcweft-view",
@@ -1054,6 +1055,10 @@ version = "0.1.0"
 dependencies = [
  "arcweft-character",
  "arcweft-id",
+ "blake3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1106,12 +1111,10 @@ dependencies = [
 name = "arcweft-render-native"
 version = "0.1.0"
 dependencies = [
- "arcweft-compiler",
  "arcweft-core",
  "arcweft-glyphon",
  "arcweft-image",
  "arcweft-render-text",
- "arcweft-runtime-plan",
  "arcweft-text-layout",
  "arcweft-view",
  "bytemuck",
@@ -1256,6 +1259,7 @@ dependencies = [
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
+ "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-source",
  "thiserror 2.0.18",

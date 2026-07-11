@@ -3,9 +3,9 @@ use arcweft_presentation::interaction::InteractionState;
 use arcweft_presentation::layer::{LayerId, LayerTree};
 use arcweft_presentation::semantic::SemanticTree;
 use arcweft_view::{
-    DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, ResolvedDisplayList, ViewError,
-    ViewHandlerInvocation, ViewHandlerRouteTable, ViewLayerOutput, ViewSemanticFragment,
-    ViewSemanticNode, ViewStyleTable,
+    DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, ResolvedDisplayList,
+    RetainedViewFxTable, ViewError, ViewHandlerInvocation, ViewHandlerRouteTable, ViewLayerOutput,
+    ViewSemanticFragment, ViewSemanticNode, ViewStyleTable,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -19,6 +19,7 @@ pub struct ViewFrameLayer {
     semantics: SemanticTree,
     handlers: ViewHandlerRouteTable,
     styles: ViewStyleTable,
+    fx: RetainedViewFxTable,
 }
 
 /// Ordered View frame payload ready for host renderer and Agent observation phases.
@@ -75,11 +76,12 @@ impl ViewFrameLayer {
             semantics,
             handlers: ViewHandlerRouteTable::default(),
             styles: ViewStyleTable::default(),
+            fx: RetainedViewFxTable::default(),
         }
     }
 
     pub fn from_output(layer: LayerId, output: ViewLayerOutput) -> Self {
-        let (display, semantic_fragment, handlers, styles) = output.into_frame_parts();
+        let (display, semantic_fragment, handlers, styles, fx) = output.into_frame_parts();
         let semantics = semantic_fragment.to_semantic_tree();
         Self {
             layer,
@@ -88,6 +90,7 @@ impl ViewFrameLayer {
             semantics,
             handlers,
             styles,
+            fx,
         }
     }
 
@@ -113,6 +116,10 @@ impl ViewFrameLayer {
 
     pub const fn styles(&self) -> &ViewStyleTable {
         &self.styles
+    }
+
+    pub const fn fx(&self) -> &RetainedViewFxTable {
+        &self.fx
     }
 
     pub fn dispatch_input(&self, input: &InputEvent) -> Vec<ViewHandlerInvocation> {
@@ -291,14 +298,16 @@ mod tests {
     use super::*;
     use crate::{PresentationActionDestination, dispatch_presentation_action};
     use arcweft_id::PublicId;
+    use arcweft_presentation::fx::FxId;
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::input::{ActionTarget, InteractionTarget};
     use arcweft_presentation::layer::{LayerKind, LayerNode, LayerOrder, RenderPhase};
     use arcweft_presentation::semantic::SemanticRole;
     use arcweft_view::{
         FragmentKind, ImageId, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
-        NodeKey, StyleId, ViewFragmentBuilder, ViewSemanticFragment, ViewSemanticFragmentBuilder,
-        ViewSemanticNode,
+        NodeKey, RetainedViewFxApplication, RetainedViewFxTable, StyleId, ValueSourceId,
+        ViewFragmentBuilder, ViewFxArgumentBinding, ViewFxIdentity, ViewFxOrdinal,
+        ViewSemanticFragment, ViewSemanticFragmentBuilder, ViewSemanticNode,
     };
 
     fn public_id(name: &str) -> PublicId {
@@ -383,6 +392,31 @@ mod tests {
             DisplayList::from_fragment(&fragment, &layouts).unwrap(),
             ViewSemanticFragment::default(),
         )
+    }
+
+    #[test]
+    fn frame_commit_retains_fx_instance_identity_and_bindings() {
+        let mut fx = RetainedViewFxTable::default();
+        fx.insert(
+            RetainedViewFxApplication::new(
+                FxId::try_new("game", "ui.effects.wave").unwrap(),
+                ViewFxIdentity::new(public_id("view.hud"), NodeKey(7), ViewFxOrdinal::new(1))
+                    .with_local_key("damage"),
+                vec![ViewFxArgumentBinding::new("amplitude", ValueSourceId(3))],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let frame = ViewFrameLayer::from_output(
+            layer_id("hud"),
+            ViewLayerOutput::new(DisplayList::default(), ViewSemanticFragment::default())
+                .with_fx(fx),
+        );
+
+        let retained = frame.fx().for_node(NodeKey(7)).next().unwrap();
+        assert_eq!(retained.ordinal(), ViewFxOrdinal::new(1));
+        assert_eq!(retained.local_key(), Some("damage"));
+        assert_eq!(retained.arguments()[0].parameter(), "amplitude");
     }
 
     #[test]
