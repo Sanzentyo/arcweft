@@ -14,6 +14,8 @@
 
 mod core;
 
+pub use arcweft_glyphon::PreparedTextId;
+
 pub mod compositing;
 
 pub use compositing::{
@@ -25,10 +27,8 @@ pub use compositing::{
     ViewMaskRepeat, ViewMaskSize, ViewPaintNode, ViewPoint, ViewShapeRadius,
 };
 pub use core::{
-    ViewAffine2D, ViewBorder, ViewCaretPrimitive, ViewClip, ViewColorRgba8,
-    ViewCompositionUnderline, ViewCornerRadii, ViewCornerRadius, ViewGlyphRun, ViewGradientStop,
-    ViewImagePrimitive, ViewLinearGradient, ViewPrimitive, ViewPrimitiveRange, ViewRoundedRect,
-    ViewScene, ViewSceneContext, ViewSelectionPrimitive, ViewSolidRect, ViewSurfaceBackground,
-    ViewSurfaceBorder, ViewSurfaceClip, ViewSurfacePaint, ViewTextFieldSceneStyle,
-    ViewUnderlineStyle,
+    ViewAffine2D, ViewBorder, ViewClip, ViewColorRgba8, ViewCornerRadii, ViewCornerRadius,
+    ViewGradientStop, ViewImagePrimitive, ViewLinearGradient, ViewPrimitive, ViewPrimitiveRange,
+    ViewRoundedRect, ViewScene, ViewSceneContext, ViewSolidRect, ViewSurfaceBackground,
+    ViewSurfaceBorder, ViewSurfaceClip, ViewSurfacePaint, ViewTextPrimitive,
 };

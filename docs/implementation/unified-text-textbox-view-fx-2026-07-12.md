@@ -314,6 +314,45 @@ capture rather than retained as a fallback. Runtime-host injection of
 additional typed render-resource programs also remains to be connected to the
 shared table before native provider loading can replace the old callback API.
 
+### Direct View prepared-text slice
+
+The renderer-facing half of Cut 6 now uses the canonical batch directly:
+
+- `ViewPrimitive::Text(ViewTextPrimitive { text: PreparedTextId })` replaces
+  `GlyphRun`, Selection, Caret, and CompositionUnderline variants. The
+  `PreparedViewGlyphRunHandoff` sidecar and its renderer resource table are
+  deleted rather than retained as compatibility vocabulary;
+- `ViewCompositor` supplies a grouped `ViewDirectRenderFrame` and invokes a
+  dedicated `ViewTextRenderer` exactly where the Text primitive occurs. The
+  shared renderer resolves the frame-local ID, rejects a missing item with
+  `ViewCompositorError::MissingPreparedText`, and submits the already shaped
+  glyphs without a View-specific layout or string registry;
+- `PreparedTextAffine` validates finite context matrices and [0, 1] opacity,
+  composes translation/scale/rotation with body, sideways, text-combine, and
+  ruby glyph transforms, and applies opacity once to glyph and Fx-pass alpha;
+- item clip and View clip are intersected in the active target coordinate
+  space. Selection rectangles render before glyphs, while caret and IME
+  composition underlines render afterward from the same interaction plan;
+- offscreen groups retain the parent coordinate space in a bounded pooled
+  target, preventing a bounds-sized texture from being stretched over the
+  parent. Device scale is retained for filters and glyph rasterization;
+- every prepared ID consumed by a View scene is excluded from the later
+  ordinary prepared range, while repeated uses inside View painter order remain
+  legal; and
+- the Takumi text bridge now carries `PreparedTextId` directly and emits Text
+  primitives rather than a renderer-local glyph-run descriptor.
+
+Local WGPU readback proves that Text changes pixels at its direct painter
+position, a later opaque primitive covers it exactly with no late duplicate
+submission, and transform, rectangular clip, context opacity, group opacity,
+and an offscreen group all remain effective. A separate readback proves that a
+missing ID returns the typed compositor failure rather than a no-op.
+
+Cut 6 remains open: the bundle `ViewRuntimeTextBlock` snapshot path still has to
+be replaced by an executable persistent per-mount View evaluator that resolves
+plain/localized/RichText/DisplayFrame sources before preparation. This slice
+does not misclassify that remaining producer work as complete.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally
@@ -473,6 +512,48 @@ records 1,246 Rust files / 623,404 physical Rust LOC, 0 errors, and 143
 warnings. The new shared resource module is 697 LOC, legacy descriptor
 normalization is 1,039 LOC, canonical dialogue preparation is 784 LOC, and the
 prepared renderer responsibility module is 171 LOC.
+
+Direct View prepared-text validation at Jujutsu change `rwoyplsl`:
+
+```bash
+cargo test -p arcweft-glyphon -p arcweft-render-wgpu \
+  -p arcweft-takumi-adapter --all-targets --no-fail-fast
+cargo test -p arcweft-render-wgpu --test prepared_text \
+  view_text_renders_at_primitive_position_without_late_duplicate_submission \
+  -- --ignored --exact --nocapture
+cargo test -p arcweft-render-wgpu --test prepared_text \
+  view_text_obeys_transform_clip_opacity_inside_offscreen_group \
+  -- --ignored --exact --nocapture
+cargo test -p arcweft-render-wgpu --test prepared_text \
+  missing_view_text_id_is_a_typed_compositor_failure \
+  -- --ignored --exact --nocapture
+cargo test -p arcweft-render-wgpu --test prepared_text \
+  view_text_interaction_paints_selection_before_glyphs_and_ime_after \
+  -- --ignored --exact --nocapture
+cargo test -p arcweft-render-wgpu --test view_box_shadow_gpu_smoke \
+  per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path \
+  -- --ignored --exact --nocapture
+cargo clippy -p arcweft-glyphon -p arcweft-render-wgpu \
+  -p arcweft-takumi-adapter --all-targets -- -D warnings
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-direct-view-text-2026-07-12
+```
+
+The focused suites, all four direct-text local-adapter WGPU readbacks, the
+offscreen-group shadow smoke, workspace all-features check/clippy, and
+`just test-fast` pass; the fast route reports 422 tests. The structural audit
+records 1,247 Rust files / 624,053 physical Rust LOC, 0
+errors, and 143 warnings. Changed production sizes are 816 LOC for canonical
+prepared-text data/submission, 250 LOC for the new View text callback, 263 LOC
+for shared prepared submission, 1,049 LOC for direct primitives, 1,557 LOC for
+the compositor, and 2,403 LOC for the still-tracked legacy-bearing renderer.
+No workspace dependency edge changed. The compositor and renderer remain
+warning-level ownership hotspots; their responsibilities are split between
+direct primitives, prepared text, View text, pass planning, and execution, and
+will shrink further as the old non-batch renderer paths are deleted.
 
 ## Non-goals
 

@@ -148,13 +148,13 @@ pub struct PreparedViewScene {
 
 /// Backend-neutral resource payloads required by one prepared `ViewScene`.
 ///
-/// The player/runtime adapter resolves URLs, bundle assets, and text handoffs
-/// before the frame reaches `arcweft-render-wgpu`; this type contains no I/O.
+/// The player/runtime adapter resolves URLs and bundle assets before the frame
+/// reaches `arcweft-render-wgpu`; text is referenced directly from the frame's
+/// canonical prepared batch, and this resource type contains no I/O.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PreparedViewSceneResources {
     images: Vec<PreparedViewImageResource>,
     masks: Vec<PreparedViewMaskResource>,
-    glyph_handoffs: Vec<PreparedViewGlyphRunHandoff>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -168,12 +168,6 @@ pub struct PreparedViewMaskResource {
     pub image: ViewMaskImage,
     pub frame: RenderImageFrame,
     pub channel: ViewMaskChannel,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PreparedViewGlyphRunHandoff {
-    pub run_index: u32,
-    pub prepared_text_index: u32,
 }
 
 /// Portable choice data supplied by a player/runtime adapter.
@@ -1062,20 +1056,12 @@ impl PreparedViewSceneResources {
         self.masks.push(mask);
     }
 
-    pub fn push_glyph_handoff(&mut self, handoff: PreparedViewGlyphRunHandoff) {
-        self.glyph_handoffs.push(handoff);
-    }
-
     pub fn images(&self) -> &[PreparedViewImageResource] {
         &self.images
     }
 
     pub fn masks(&self) -> &[PreparedViewMaskResource] {
         &self.masks
-    }
-
-    pub fn glyph_handoffs(&self) -> &[PreparedViewGlyphRunHandoff] {
-        &self.glyph_handoffs
     }
 }
 

@@ -134,6 +134,13 @@ pub struct PreparedTextSubmission {
     raster_scale: f32,
 }
 
+/// Validated affine and opacity applied to an immutable prepared item.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreparedTextAffine {
+    matrix: [f32; 6],
+    opacity: f32,
+}
+
 /// Structured prepared-text construction failure.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum PreparedTextError {
@@ -148,14 +155,79 @@ pub enum PreparedTextError {
     },
     #[error("prepared text clip contains invalid geometry")]
     InvalidClip,
+    #[error("prepared text submission affine contains a non-finite value")]
+    InvalidSubmissionAffine,
+    #[error("prepared text submission opacity {value} is outside [0, 1]")]
+    InvalidSubmissionOpacity { value: String },
     #[error(transparent)]
     RasterKey(#[from] GlyphonTextEngineError),
 }
 
 impl PreparedTextId {
     #[must_use]
+    pub const fn from_index(index: u32) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
     pub const fn index(self) -> u32 {
         self.0
+    }
+}
+
+impl PreparedTextAffine {
+    pub const IDENTITY: Self = Self {
+        matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        opacity: 1.0,
+    };
+
+    pub fn try_new(matrix: [f32; 6], opacity: f32) -> Result<Self, PreparedTextError> {
+        if matrix.iter().any(|value| !value.is_finite()) {
+            return Err(PreparedTextError::InvalidSubmissionAffine);
+        }
+        if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+            return Err(PreparedTextError::InvalidSubmissionOpacity {
+                value: opacity.to_string(),
+            });
+        }
+        Ok(Self { matrix, opacity })
+    }
+
+    #[must_use]
+    pub const fn matrix(self) -> [f32; 6] {
+        self.matrix
+    }
+
+    #[must_use]
+    pub const fn opacity(self) -> f32 {
+        self.opacity
+    }
+
+    fn point(self, point: Point) -> Point {
+        let [m11, m12, m21, m22, tx, ty] = self.matrix;
+        Point::new(
+            m11.mul_add(point.x, m21.mul_add(point.y, tx)),
+            m12.mul_add(point.x, m22.mul_add(point.y, ty)),
+        )
+    }
+
+    fn vector(self, vector: Vector) -> Vector {
+        let [m11, m12, m21, m22, _, _] = self.matrix;
+        Vector::new(
+            m11.mul_add(vector.x, m21 * vector.y),
+            m12.mul_add(vector.x, m22 * vector.y),
+        )
+    }
+
+    fn linear_affine(self) -> Affine2 {
+        let [m11, m12, m21, m22, _, _] = self.matrix;
+        Affine2::new([m11, m12, m21, m22, 0.0, 0.0])
+    }
+}
+
+impl Default for PreparedTextAffine {
+    fn default() -> Self {
+        Self::IDENTITY
     }
 }
 
@@ -480,6 +552,12 @@ impl PreparedTextItem {
     /// Builds glyphon instances from the current paint-only state.
     #[must_use]
     pub fn submission(&self) -> PreparedTextSubmission {
+        self.submission_with_affine(PreparedTextAffine::IDENTITY)
+    }
+
+    /// Builds glyphon instances under one validated View/compositor context.
+    #[must_use]
+    pub fn submission_with_affine(&self, affine: PreparedTextAffine) -> PreparedTextSubmission {
         let visible = self
             .glyphs
             .iter()
@@ -502,14 +580,12 @@ impl PreparedTextItem {
                 paint
                     .effects
                     .get(pass_index)
-                    .map(|pass| glyph_instance(*metadata, glyph, paint, Some(*pass)))
+                    .map(|pass| glyph_instance(*metadata, glyph, paint, Some(*pass), affine))
             }));
         }
-        glyphs.extend(
-            visible
-                .into_iter()
-                .map(|(metadata, (glyph, paint))| glyph_instance(metadata, glyph, paint, None)),
-        );
+        glyphs.extend(visible.into_iter().map(|(metadata, (glyph, paint))| {
+            glyph_instance(metadata, glyph, paint, None, affine)
+        }));
         PreparedTextSubmission {
             glyphs,
             raster_scale: self.raster_scale,
@@ -545,6 +621,7 @@ fn glyph_instance(
     glyph: &PreparedGlyph,
     paint: &TextGlyphPaint,
     effect: Option<ResolvedFxGlyphPass>,
+    affine: PreparedTextAffine,
 ) -> GlyphInstance {
     let mut transform = match glyph.orientation {
         GlyphOrientation::Upright => GlyphTransform::Identity,
@@ -556,6 +633,9 @@ fn glyph_instance(
     if !paint.transform.matrix_is_identity() {
         transform = transform.then_affine(paint.transform.affine());
     }
+    if affine != PreparedTextAffine::IDENTITY {
+        transform = transform.then_affine(affine.linear_affine());
+    }
     let [offset_x, offset_y] = effect.map_or([0.0, 0.0], |effect| {
         [effect.offset_x.pixels(), effect.offset_y.pixels()]
     });
@@ -563,8 +643,11 @@ fn glyph_instance(
         source: GlyphSource::Text {
             cache_key: glyph.cache_key,
         },
-        origin: Point::new(glyph.origin.x + offset_x, glyph.origin.y + offset_y),
-        advance: Vector::new(glyph.advance.width, glyph.advance.height),
+        origin: affine.point(Point::new(
+            glyph.origin.x + offset_x,
+            glyph.origin.y + offset_y,
+        )),
+        advance: affine.vector(Vector::new(glyph.advance.width, glyph.advance.height)),
         ink_bounds: Rect::new(
             glyph.ink_bounds.x - glyph.origin.x,
             glyph.ink_bounds.y - glyph.origin.y,
@@ -572,7 +655,11 @@ fn glyph_instance(
             glyph.ink_bounds.bottom() - glyph.origin.y,
         ),
         transform,
-        color: Some(glyph_color(paint, effect.map(|effect| effect.color))),
+        color: Some(glyph_color(
+            paint,
+            effect.map(|effect| effect.color),
+            affine.opacity,
+        )),
         metadata,
         cluster: Some(TextCluster {
             start: glyph.source_range.start,
@@ -582,7 +669,11 @@ fn glyph_instance(
     }
 }
 
-fn glyph_color(paint: &TextGlyphPaint, effect: Option<arcweft_presentation::fx::FxColor>) -> Color {
+fn glyph_color(
+    paint: &TextGlyphPaint,
+    effect: Option<arcweft_presentation::fx::FxColor>,
+    context_opacity: f32,
+) -> Color {
     let [red, green, blue, alpha] = effect.map_or_else(
         || paint.color.channels(),
         |color| {
@@ -599,7 +690,8 @@ fn glyph_color(paint: &TextGlyphPaint, effect: Option<arcweft_presentation::fx::
     });
     let opacity = f32::from(paint.opacity_milli) / 1_000.0
         * paint.transform.resolved().opacity().value().get()
-        * mask_coverage;
+        * mask_coverage
+        * context_opacity;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let alpha = (f32::from(alpha) * opacity).round() as u8;
     Color::rgba(red, green, blue, alpha)
@@ -627,8 +719,17 @@ fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
 #[cfg(test)]
 mod tests {
     use arcweft_presentation::fx::{FiniteF32, Opacity, ResolvedFxMask};
+    use arcweft_render_text::{RichTextRange, TextColor};
+    use arcweft_text_layout::{GlyphOrientation, LayoutPoint, LayoutRect, LayoutSize};
+    use glyphon::{
+        CacheKey, Color, GlyphTransform, Point, Vector, Weight,
+        cosmic_text::{CacheKeyFlags, fontdb},
+    };
 
-    use super::{PreparedTextError, TextGlyphPaint, TextPaintPlan};
+    use super::{
+        PreparedGlyph, PreparedGlyphSource, PreparedTextAffine, PreparedTextError, TextGlyphPaint,
+        TextPaintPlan, glyph_instance,
+    };
 
     #[test]
     fn paint_validation_accepts_only_closed_mask_payloads() {
@@ -655,6 +756,61 @@ mod tests {
                 glyph_index: 0,
                 opacity_milli: 1_001,
             })
+        ));
+    }
+
+    #[test]
+    fn view_affine_transforms_origin_advance_shape_and_opacity_once() {
+        let (cache_key, _, _) = CacheKey::new(
+            fontdb::ID::dummy(),
+            1,
+            30.0,
+            (0.0, 0.0),
+            Weight::NORMAL,
+            CacheKeyFlags::empty(),
+        );
+        let glyph = PreparedGlyph {
+            source: PreparedGlyphSource::Body { glyph_index: 0 },
+            origin: LayoutPoint::new(10.0, 20.0),
+            advance: LayoutSize::new(4.0, 6.0),
+            layout_bounds: LayoutRect::new(10.0, 20.0, 4.0, 6.0),
+            ink_bounds: LayoutRect::new(9.0, 18.0, 7.0, 9.0),
+            source_range: RichTextRange::new(0, 1),
+            cluster_index: 0,
+            orientation: GlyphOrientation::Upright,
+            inline_scale: 1.0,
+            cache_key,
+        };
+        let paint = TextGlyphPaint::opaque(TextColor::rgba(100, 120, 140, 200));
+        let affine = PreparedTextAffine::try_new([2.0, 0.0, 0.0, 3.0, 5.0, 7.0], 0.5)
+            .expect("finite affine");
+
+        let instance = glyph_instance(0, &glyph, &paint, None, affine);
+
+        assert_eq!(instance.origin, Point::new(25.0, 67.0));
+        assert_eq!(instance.advance, Vector::new(8.0, 18.0));
+        assert_eq!(instance.color, Some(Color::rgba(100, 120, 140, 100)));
+        let GlyphTransform::Affine(transform) = instance.transform else {
+            panic!("View scale must reach the glyph raster transform");
+        };
+        for (actual, expected) in transform
+            .values
+            .into_iter()
+            .zip([2.0, 0.0, 0.0, 3.0, 0.0, 0.0])
+        {
+            assert!((actual - expected).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn view_affine_rejects_non_finite_geometry_and_out_of_range_opacity() {
+        assert_eq!(
+            PreparedTextAffine::try_new([f32::NAN, 0.0, 0.0, 1.0, 0.0, 0.0], 1.0),
+            Err(PreparedTextError::InvalidSubmissionAffine)
+        );
+        assert!(matches!(
+            PreparedTextAffine::try_new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0], 1.1),
+            Err(PreparedTextError::InvalidSubmissionOpacity { .. })
         ));
     }
 }

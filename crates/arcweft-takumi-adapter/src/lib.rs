@@ -53,6 +53,6 @@ pub use style::{
     CssInvalidationClass, CssPropertyClass, DirectCssFeature, DirectCssSupport, TakumiCssBundle,
 };
 pub use text::{
-    ArcweftGlyphRun, ArcweftInlineParticipant, ArcweftInlineParticipantKind,
+    ArcweftInlineParticipant, ArcweftInlineParticipantKind, ArcweftPreparedText,
     ArcweftTextLayoutBridge, InlineMeasuredSize,
 };

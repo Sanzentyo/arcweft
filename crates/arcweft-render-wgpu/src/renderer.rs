@@ -1,6 +1,8 @@
 mod prepared_text;
+mod view_text;
 
 use prepared_text::render_prepared_text_range_with_renderer;
+use view_text::WgpuViewPreparedTextRenderer;
 
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::font_family::render_font_family;
@@ -44,7 +46,7 @@ pub struct SharedRenderer {
     image_bind_group_layout: wgpu::BindGroupLayout,
     image_pipeline: wgpu::RenderPipeline,
     image_sampler: wgpu::Sampler,
-    _glyphon_cache: Cache,
+    glyphon_cache: Cache,
     font_system: FontSystem,
     swash_cache: SwashCache,
     prepared_text_engine: Option<GlyphonTextEngine>,
@@ -53,6 +55,8 @@ pub struct SharedRenderer {
     text_renderer: TextRenderer,
     aux_text_renderers: Vec<TextRenderer>,
     view_compositor: ViewCompositor,
+    view_text_renderer: TextRenderer,
+    view_text_effect_compositor: ViewCompositor,
     view_direct_renderer: WgpuViewDirectPrimitiveRenderer,
     registered_font_bytes: usize,
 }
@@ -136,9 +140,12 @@ impl SharedRenderer {
         let mut atlas = TextAtlas::new(device, queue, &glyphon_cache, format);
         let text_renderer =
             TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
+        let view_text_renderer =
+            TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
         let (image_bind_group_layout, image_pipeline, image_sampler) =
             image_quad_pipeline(device, format);
         let view_compositor = ViewCompositor::new(device, queue, format);
+        let view_text_effect_compositor = ViewCompositor::new(device, queue, format);
         let view_direct_renderer = WgpuViewDirectPrimitiveRenderer::new(device, format);
         Self {
             format,
@@ -147,7 +154,7 @@ impl SharedRenderer {
             image_pipeline,
             image_sampler,
             viewport: Viewport::new(device, &glyphon_cache),
-            _glyphon_cache: glyphon_cache,
+            glyphon_cache,
             font_system: new_font_system(),
             swash_cache: SwashCache::new(),
             prepared_text_engine: None,
@@ -155,6 +162,8 @@ impl SharedRenderer {
             text_renderer,
             aux_text_renderers: Vec::new(),
             view_compositor,
+            view_text_renderer,
+            view_text_effect_compositor,
             view_direct_renderer,
             registered_font_bytes: 0,
         }
@@ -277,6 +286,16 @@ impl SharedRenderer {
         let mut direct_renderer = self
             .view_direct_renderer
             .for_resources(&prepared_view.resources);
+        let mut text_renderer = WgpuViewPreparedTextRenderer::new(
+            frame,
+            self.prepared_text_engine.as_mut(),
+            &self.glyphon_cache,
+            &mut self.atlas,
+            &mut self.view_text_renderer,
+            &mut self.view_text_effect_compositor,
+            &self.view_direct_renderer,
+            frame.viewport.physical_scale_factor_f32(),
+        );
         let result = self.view_compositor.render_scene(&mut ViewCompositorFrame {
             device,
             queue,
@@ -287,7 +306,9 @@ impl SharedRenderer {
                 frame.viewport.physical_width,
                 frame.viewport.physical_height,
             ),
+            device_pixel_ratio: frame.viewport.physical_scale_factor_f32(),
             direct_renderer: &mut direct_renderer,
+            text_renderer: &mut text_renderer,
             mask_textures: &mut mask_textures,
         });
         result?;
@@ -371,6 +392,18 @@ impl SharedRenderer {
             })
             .map(|paint| paint.text_range.clone())
             .collect::<Vec<_>>();
+        let excluded_prepared_text_ranges = filtered_text_ranges
+            .iter()
+            .cloned()
+            .chain(
+                frame
+                    .view_scenes()
+                    .iter()
+                    .flat_map(|prepared| prepared.scene.prepared_text_ids())
+                    .filter_map(|text| usize::try_from(text.index()).ok())
+                    .filter_map(|index| index.checked_add(1).map(|end| index..end)),
+            )
+            .collect::<Vec<_>>();
         let runtime_backdrop_source = self.prepare_runtime_control_backdrop_source(
             device,
             encoder,
@@ -425,7 +458,7 @@ impl SharedRenderer {
                 target: target_view,
                 frame,
                 range: 0..frame.prepared_text.len(),
-                excluded_ranges: &filtered_text_ranges,
+                excluded_ranges: &excluded_prepared_text_ranges,
             },
         )?;
         Ok(())

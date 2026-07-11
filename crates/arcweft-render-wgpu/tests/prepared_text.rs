@@ -1,3 +1,4 @@
+use arcweft_glyphon::{PreparedTextItem, TextCaretPaint, TextCompositionUnderline};
 use arcweft_presentation::{
     fx::{
         FiniteF32, FxColor, Length, Opacity, ResolvedFxGlyphPass, ResolvedFxMask,
@@ -5,12 +6,21 @@ use arcweft_presentation::{
     },
     hit::HitRect,
 };
+use arcweft_render_text::{RichTextRange, TextColor};
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderFontFamily, RenderPreferences,
-    RenderScene, RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight,
-    RenderViewport, SharedFramePlanContext,
+    ChoiceScroll, InteractionVisualState, PreparedFrame, PreparedViewScene, RenderChoiceItem,
+    RenderFontFamily, RenderPreferences, RenderScene, RenderTextBlock, RenderTextSelectionPolicy,
+    RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanContext,
 };
-use arcweft_render_wgpu::offscreen::SharedOffscreenCapture;
+use arcweft_render_wgpu::offscreen::{SharedOffscreenCapture, SharedOffscreenCaptureError};
+use arcweft_render_wgpu::renderer::SharedRendererError;
+use arcweft_render_wgpu::view_compositor::ViewCompositorError;
+use arcweft_render_wgpu::view_scene::{
+    ViewAffine2D, ViewClip, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup,
+    ViewPaintNode, ViewPrimitive, ViewPrimitiveRange, ViewScene, ViewSceneContext, ViewSolidRect,
+    ViewTextPrimitive,
+};
+use arcweft_text_layout::LayoutRect;
 
 const TEST_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
 
@@ -155,6 +165,325 @@ fn prepared_batch_renders_without_renderer_side_shaping() {
         .expect("prepared text captures");
 
     assert_ne!(baseline.rgba, rendered.rgba);
+}
+
+#[test]
+#[ignore = "requires a local wgpu adapter; exercised by the prepared-text Tier 2 gate"]
+fn view_text_renders_at_primitive_position_without_late_duplicate_submission() {
+    let mut planner = SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("project font registers");
+    let item = planner
+        .prepare_text_block(&block(), viewport())
+        .expect("ordinary text prepares");
+
+    let red_only = view_text_frame(&mut planner, None, false);
+    let text_over_red = view_text_frame(&mut planner, Some(&item), false);
+    let red_then_blue = view_text_frame(&mut planner, None, true);
+    let text_then_blue = view_text_frame(&mut planner, Some(&item), true);
+
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for View text painter-order smoke");
+        return;
+    };
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture registers identical project font bytes");
+    let red_only = capture
+        .capture_frame(&red_only)
+        .expect("red frame captures");
+    let text_over_red = capture
+        .capture_frame(&text_over_red)
+        .expect("View text frame captures");
+    let red_then_blue = capture
+        .capture_frame(&red_then_blue)
+        .expect("blue control frame captures");
+    let text_then_blue = capture
+        .capture_frame(&text_then_blue)
+        .expect("covered View text frame captures");
+
+    assert_ne!(
+        red_only.rgba, text_over_red.rgba,
+        "Text primitive must invoke the shared glyph renderer"
+    );
+    assert_eq!(
+        red_then_blue.rgba, text_then_blue.rgba,
+        "a later opaque primitive must cover Text, and the prepared item must not be submitted again"
+    );
+}
+
+#[test]
+#[ignore = "requires a local wgpu adapter; exercised by the prepared-text Tier 2 gate"]
+fn view_text_obeys_transform_clip_opacity_inside_offscreen_group() {
+    let mut planner = SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("project font registers");
+    let item = planner
+        .prepare_text_block(&block(), viewport())
+        .expect("ordinary text prepares");
+    let baseline = view_text_frame(&mut planner, None, false);
+    let opaque = grouped_view_text_frame(&mut planner, &item, 1.0, 1.0);
+    let translucent = grouped_view_text_frame(&mut planner, &item, 0.5, 0.5);
+
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for grouped View text smoke");
+        return;
+    };
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture registers identical project font bytes");
+    let baseline = capture.capture_frame(&baseline).expect("baseline captures");
+    let opaque = capture
+        .capture_frame(&opaque)
+        .expect("opaque group captures");
+    let translucent = capture
+        .capture_frame(&translucent)
+        .expect("translucent group captures");
+
+    assert_ne!(
+        opaque.rgba, translucent.rgba,
+        "both opacity scopes must apply"
+    );
+    let changed = baseline
+        .rgba
+        .chunks_exact(4)
+        .zip(translucent.rgba.chunks_exact(4))
+        .enumerate()
+        .filter_map(|(index, (before, after))| (before != after).then_some(index))
+        .collect::<Vec<_>>();
+    assert!(
+        !changed.is_empty(),
+        "grouped Text must reach the offscreen target"
+    );
+    let width = usize::try_from(translucent.width).expect("capture width fits");
+    assert!(
+        changed.into_iter().all(|index| {
+            let x = index % width;
+            let y = index / width;
+            (180..300).contains(&x) && (60..220).contains(&y)
+        }),
+        "transformed glyph pixels must remain inside the context clip"
+    );
+}
+
+#[test]
+#[ignore = "requires a local wgpu adapter; exercised by the prepared-text Tier 2 gate"]
+fn missing_view_text_id_is_a_typed_compositor_failure() {
+    let mut planner = SharedFramePlanContext::new();
+    let mut frame = planner
+        .prepare(&empty_scene())
+        .expect("base frame prepares");
+    let mut scene = ViewScene::new(viewport().logical_width, viewport().logical_height);
+    scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive {
+        text: arcweft_glyphon::PreparedTextId::from_index(7),
+    }));
+    scene.push_paint_node(ViewPaintNode::Direct(ViewSceneContext {
+        transform: ViewAffine2D::IDENTITY,
+        opacity: 1.0,
+        clip: None,
+        primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
+    }));
+    frame.push_view_scene(PreparedViewScene::new(scene));
+
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for missing View text smoke");
+        return;
+    };
+    let error = capture
+        .capture_frame(&frame)
+        .expect_err("missing prepared text must not become a no-op");
+
+    assert!(matches!(
+        error,
+        SharedOffscreenCaptureError::SharedRenderer(SharedRendererError::ViewCompositor(
+            ViewCompositorError::MissingPreparedText { text_index: 7 }
+        ))
+    ));
+}
+
+#[test]
+#[ignore = "requires a local wgpu adapter; exercised by the prepared-text Tier 2 gate"]
+fn view_text_interaction_paints_selection_before_glyphs_and_ime_after() {
+    let mut planner = SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("project font registers");
+    let mut item = planner
+        .prepare_text_block(&block(), viewport())
+        .expect("ordinary text prepares");
+    item.interaction.selection_rects = vec![LayoutRect::new(10.0, 20.0, 340.0, 100.0)];
+    item.interaction.selection_rgba = [0.0, 0.0, 1.0, 1.0];
+    item.interaction.caret = Some(TextCaretPaint {
+        bounds: LayoutRect::new(24.0, 34.0, 4.0, 24.0),
+        color: TextColor::rgba(255, 0, 0, 255),
+        visible: true,
+    });
+    item.interaction.composition_underlines = vec![TextCompositionUnderline {
+        source_range: RichTextRange::new(0, 1),
+        bounds: LayoutRect::new(20.0, 92.0, 100.0, 3.0),
+        color: TextColor::rgba(0, 255, 0, 255),
+        thickness: 3.0,
+    }];
+    let frame = view_text_frame(&mut planner, Some(&item), false);
+
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for View interaction smoke");
+        return;
+    };
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture registers identical project font bytes");
+    let capture = capture
+        .capture_frame(&frame)
+        .expect("interaction frame captures");
+
+    let outside_item_clip = capture_pixel(&capture, 30, 50);
+    assert!(
+        outside_item_clip[0] > outside_item_clip[2],
+        "selection must be intersected with the prepared item clip"
+    );
+    let caret = capture_pixel(&capture, 52, 80);
+    assert!(caret[0] > 220 && caret[1] < 32 && caret[2] < 32);
+    let underline = capture_pixel(&capture, 100, 186);
+    assert!(underline[1] > 220 && underline[0] < 32 && underline[2] < 32);
+    assert!(
+        capture_region(&capture, 60, 68, 520, 104).any(|pixel| pixel[0] > 80 && pixel[1] > 80),
+        "glyphs must remain visible over the opaque selection background"
+    );
+}
+
+fn view_text_frame(
+    planner: &mut SharedFramePlanContext,
+    item: Option<&PreparedTextItem>,
+    cover_text: bool,
+) -> PreparedFrame {
+    let mut frame = planner
+        .prepare(&empty_scene())
+        .expect("base frame prepares");
+    let mut scene = ViewScene::new(viewport().logical_width, viewport().logical_height);
+    let paint_bounds = HitRect::new(12.0, 20.0, 340.0, 100.0);
+    scene.push_primitive(ViewPrimitive::SolidRect(ViewSolidRect {
+        bounds: paint_bounds,
+        color: ViewColorRgba8 {
+            red: 96,
+            green: 12,
+            blue: 18,
+            alpha: 255,
+        },
+    }));
+    if let Some(item) = item {
+        let text = frame
+            .prepared_text
+            .push(item.clone())
+            .expect("prepared text index fits");
+        scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive { text }));
+    }
+    if cover_text {
+        scene.push_primitive(ViewPrimitive::SolidRect(ViewSolidRect {
+            bounds: paint_bounds,
+            color: ViewColorRgba8 {
+                red: 8,
+                green: 36,
+                blue: 148,
+                alpha: 255,
+            },
+        }));
+    }
+    let end = u32::try_from(scene.primitives().len()).expect("test primitive count fits");
+    scene.push_paint_node(ViewPaintNode::Direct(ViewSceneContext {
+        transform: ViewAffine2D::IDENTITY,
+        opacity: 1.0,
+        clip: None,
+        primitive_range: ViewPrimitiveRange { start: 0, end },
+    }));
+    frame.push_view_scene(PreparedViewScene::new(scene));
+    frame
+}
+
+fn grouped_view_text_frame(
+    planner: &mut SharedFramePlanContext,
+    item: &PreparedTextItem,
+    context_opacity: f32,
+    group_opacity: f32,
+) -> PreparedFrame {
+    let mut frame = planner
+        .prepare(&empty_scene())
+        .expect("base frame prepares");
+    let text = frame
+        .prepared_text
+        .push(item.clone())
+        .expect("prepared text index fits");
+    let mut scene = ViewScene::new(viewport().logical_width, viewport().logical_height);
+    scene.push_primitive(ViewPrimitive::SolidRect(ViewSolidRect {
+        bounds: HitRect::new(12.0, 20.0, 340.0, 100.0),
+        color: ViewColorRgba8 {
+            red: 96,
+            green: 12,
+            blue: 18,
+            alpha: 255,
+        },
+    }));
+    scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive { text }));
+    scene.push_paint_node(ViewPaintNode::Direct(ViewSceneContext {
+        transform: ViewAffine2D::IDENTITY,
+        opacity: 1.0,
+        clip: None,
+        primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
+    }));
+    let text_context = ViewPaintNode::Direct(ViewSceneContext {
+        transform: ViewAffine2D {
+            tx: 64.0,
+            ..ViewAffine2D::IDENTITY
+        },
+        opacity: context_opacity,
+        clip: Some(ViewClip::Rect(HitRect::new(90.0, 30.0, 60.0, 80.0))),
+        primitive_range: ViewPrimitiveRange { start: 1, end: 2 },
+    });
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
+            HitRect::new(70.0, 20.0, 100.0, 100.0),
+            ViewCompositingEffects {
+                opacity: group_opacity,
+                ..ViewCompositingEffects::default()
+            },
+        )
+        .with_children(vec![text_context]),
+    ));
+    frame.push_view_scene(PreparedViewScene::new(scene));
+    frame
+}
+
+fn capture_pixel(
+    capture: &arcweft_render_wgpu::offscreen::SharedFrameCapture,
+    x: usize,
+    y: usize,
+) -> [u8; 4] {
+    let width = usize::try_from(capture.width).expect("capture width fits");
+    let offset = y.saturating_mul(width).saturating_add(x).saturating_mul(4);
+    capture.rgba[offset..offset + 4]
+        .try_into()
+        .expect("pixel is present")
+}
+
+fn capture_region(
+    capture: &arcweft_render_wgpu::offscreen::SharedFrameCapture,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+) -> impl Iterator<Item = [u8; 4]> + '_ {
+    (y..y + height)
+        .flat_map(move |row| (x..x + width).map(move |column| capture_pixel(capture, column, row)))
 }
 
 fn empty_scene() -> RenderScene {

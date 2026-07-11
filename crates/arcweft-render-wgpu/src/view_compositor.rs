@@ -12,14 +12,13 @@ use crate::view_compositor_uniform::ViewCompositorUniform;
 use crate::view_effects::{ViewEffectPass, ViewFilterPassPlan, ViewTextureExtent};
 use crate::view_mask::{ViewMaskChainPlan, ViewMaskChannel, ViewMaskImagePlan, ViewMaskPlanError};
 use crate::view_scene::{
-    ViewBlendMode, ViewBoxShadowKind, ViewCompositingGroup, ViewFilter, ViewFilterList,
-    ViewMaskImage, ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
+    PreparedTextId, ViewBlendMode, ViewBoxShadowKind, ViewCompositingGroup, ViewFilter,
+    ViewFilterList, ViewMaskImage, ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
 };
 use arcweft_presentation::{
     fx::{ResolvedFxOffscreenPass, ResolvedFxPostProcess},
     hit::HitRect,
 };
-use num_traits::ToPrimitive;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
 
@@ -80,9 +79,8 @@ pub struct ViewCompositorTarget<'a> {
     /// Logical coordinate span represented by the target texture.
     ///
     /// Root/runtime targets usually map a physical texture back to the design
-    /// viewport. Offscreen group targets use their texture extent because they
-    /// are rendered as target-local logical pixels with any bucketed slack left
-    /// unused.
+    /// viewport. Offscreen group targets retain their logical visual bounds;
+    /// their textures may be larger because of device scale and pool bucketing.
     pub logical_extent: [f32; 2],
 }
 
@@ -94,8 +92,20 @@ pub struct ViewCompositorFrame<'a> {
     pub final_target: &'a wgpu::TextureView,
     pub scene: &'a ViewScene,
     pub target_extent: ViewTextureExtent,
+    pub device_pixel_ratio: f32,
     pub direct_renderer: &'a mut dyn ViewDirectPrimitiveRenderer,
+    pub text_renderer: &'a mut dyn ViewTextRenderer,
     pub mask_textures: &'a mut dyn ViewMaskTextureProvider,
+}
+
+/// Current compositor context passed to the shared prepared-text callback.
+pub struct ViewTextRenderFrame<'a> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub scene: &'a ViewScene,
+    pub context: &'a ViewSceneContext,
+    pub target: ViewCompositorTarget<'a>,
 }
 
 /// Inline backdrop filter request for prepared runtime controls.
@@ -146,12 +156,28 @@ pub(crate) struct ViewInlineBoxShadowFrame<'a> {
 pub trait ViewDirectPrimitiveRenderer {
     fn render_direct_range(
         &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        scene: &ViewScene,
-        context: &ViewSceneContext,
-        target: ViewCompositorTarget<'_>,
+        frame: &mut ViewDirectRenderFrame<'_>,
+    ) -> Result<(), ViewCompositorError>;
+}
+
+/// One direct painter callback with all borrowed frame resources grouped by
+/// responsibility instead of exposed as an argument list.
+pub struct ViewDirectRenderFrame<'a> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub scene: &'a ViewScene,
+    pub context: &'a ViewSceneContext,
+    pub target: ViewCompositorTarget<'a>,
+    pub text_renderer: &'a mut dyn ViewTextRenderer,
+}
+
+/// Renders one canonical prepared text item at its View painter position.
+pub trait ViewTextRenderer {
+    fn render_text(
+        &mut self,
+        frame: &mut ViewTextRenderFrame<'_>,
+        text: PreparedTextId,
     ) -> Result<(), ViewCompositorError>;
 }
 
@@ -207,8 +233,10 @@ pub enum ViewCompositorError {
     },
     #[error("missing view image resource for resource index {resource_index}")]
     MissingImageResource { resource_index: u32 },
-    #[error("view glyph run {run_index} has no explicit PreparedFrame text handoff")]
-    UnhandledGlyphRun { run_index: u32 },
+    #[error("view text references missing prepared text item {text_index}")]
+    MissingPreparedText { text_index: u32 },
+    #[error("view prepared text rendering failed: {reason}")]
+    TextRender { reason: Box<str> },
     #[error("unsupported view clip: {reason}")]
     UnsupportedClip { reason: Box<str> },
 }
@@ -249,7 +277,9 @@ struct ViewCompositorRenderState<'a> {
     encoder: &'a mut wgpu::CommandEncoder,
     scene: &'a ViewScene,
     direct_renderer: &'a mut dyn ViewDirectPrimitiveRenderer,
+    text_renderer: &'a mut dyn ViewTextRenderer,
     mask_textures: &'a mut dyn ViewMaskTextureProvider,
+    device_pixel_ratio: f32,
     stats: ViewCompositorStats,
 }
 
@@ -359,7 +389,9 @@ impl ViewCompositor {
             encoder: &mut *frame.encoder,
             scene: frame.scene,
             direct_renderer: &mut *frame.direct_renderer,
+            text_renderer: &mut *frame.text_renderer,
             mask_textures: &mut *frame.mask_textures,
+            device_pixel_ratio: frame.device_pixel_ratio,
             stats: ViewCompositorStats::default(),
         };
         state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
@@ -713,14 +745,17 @@ impl ViewCompositor {
         match node {
             ViewPaintNode::Direct(context) => {
                 state.stats.direct_ranges = state.stats.direct_ranges.saturating_add(1);
-                state.direct_renderer.render_direct_range(
-                    state.device,
-                    state.queue,
-                    state.encoder,
-                    state.scene,
-                    context,
-                    target,
-                )
+                state
+                    .direct_renderer
+                    .render_direct_range(&mut ViewDirectRenderFrame {
+                        device: state.device,
+                        queue: state.queue,
+                        encoder: state.encoder,
+                        scene: state.scene,
+                        context,
+                        target,
+                        text_renderer: state.text_renderer,
+                    })
             }
             ViewPaintNode::Group(group) => self.render_group(state, group, target),
         }
@@ -736,9 +771,12 @@ impl ViewCompositor {
         group: &ViewCompositingGroup,
         parent_target: ViewCompositorTarget<'_>,
     ) -> Result<(), ViewCompositorError> {
-        let visual_bounds = group.visual_bounds();
-        let group_extent = ViewTextureExtent::from_logical_bounds(visual_bounds, 1.0, 0.0)
-            .bucketed(self.max_extent);
+        // A group keeps the parent target's coordinate space. This makes
+        // transforms, text glyph positions, clips, and fullscreen shader
+        // passes agree without stretching a bounds-sized texture over the
+        // parent during composition. Pooling keeps this root-sized allocation
+        // bounded and reusable.
+        let group_extent = parent_target.extent;
         let mut group_target = self.pool.acquire(
             state.device,
             self.format,
@@ -753,36 +791,45 @@ impl ViewCompositor {
         self.render_box_shadows(
             state,
             &group_target,
-            group,
             &box_shadow_plan,
             ViewBoxShadowKind::Outer,
+            parent_target.origin_logical,
+            parent_target.logical_extent,
         );
 
         for child in &group.children {
             self.render_node(
                 state,
                 child,
-                group_target.as_target(
-                    [visual_bounds.x, visual_bounds.y],
-                    logical_extent_from_texture(group_target.extent),
-                ),
+                group_target.as_target(parent_target.origin_logical, parent_target.logical_extent),
             )?;
         }
 
         self.render_box_shadows(
             state,
             &group_target,
-            group,
             &box_shadow_plan,
             ViewBoxShadowKind::Inset,
+            parent_target.origin_logical,
+            parent_target.logical_extent,
         );
 
         group_target = self.apply_filter_plan(
             state,
             group_target,
-            &ViewFilterPassPlan::from_filter_list(&group.effects.filters, group_extent, 1.0),
+            &ViewFilterPassPlan::from_filter_list_fixed_extent(
+                &group.effects.filters,
+                group_extent,
+                state.device_pixel_ratio,
+            ),
         )?;
-        group_target = self.apply_clip_plan(state, group_target, group)?;
+        group_target = self.apply_clip_plan(
+            state,
+            group_target,
+            group,
+            parent_target.origin_logical,
+            parent_target.logical_extent,
+        )?;
         group_target = self.apply_mask_plan(state, group_target, group)?;
 
         let mut backdrop_target = None;
@@ -813,10 +860,10 @@ impl ViewCompositor {
             backdrop = self.apply_filter_plan(
                 state,
                 backdrop,
-                &ViewFilterPassPlan::from_filter_list(
+                &ViewFilterPassPlan::from_filter_list_fixed_extent(
                     &group.effects.backdrop_filters,
                     parent_target.extent,
-                    1.0,
+                    state.device_pixel_ratio,
                 ),
             )?;
             backdrop_target = Some(backdrop);
@@ -851,15 +898,12 @@ impl ViewCompositor {
         &mut self,
         state: &mut ViewCompositorRenderState<'_>,
         target: &ViewOffscreenTarget,
-        group: &ViewCompositingGroup,
         plan: &ViewBoxShadowPassPlan,
         kind: ViewBoxShadowKind,
+        origin_logical: [f32; 2],
+        logical_extent: [f32; 2],
     ) {
-        let visual_bounds = group.visual_bounds();
-        let target = target.as_target(
-            [visual_bounds.x, visual_bounds.y],
-            logical_extent_from_texture(target.extent),
-        );
+        let target = target.as_target(origin_logical, logical_extent);
         for pass in plan.passes_for_kind(kind) {
             self.run_shader_pass(
                 state.device,
@@ -964,6 +1008,8 @@ impl ViewCompositor {
         state: &mut ViewCompositorRenderState<'_>,
         source: ViewOffscreenTarget,
         group: &ViewCompositingGroup,
+        origin_logical: [f32; 2],
+        logical_extent: [f32; 2],
     ) -> Result<ViewOffscreenTarget, ViewCompositorError> {
         let plan =
             ViewClipGeometryPlan::from_clip_path(group.effects.clip_path.as_deref(), group.bounds)?;
@@ -976,7 +1022,6 @@ impl ViewCompositor {
             source.extent,
             "arcweft-view-clip-pass",
         );
-        let visual_bounds = group.visual_bounds();
         self.run_shader_pass(
             state.device,
             state.encoder,
@@ -985,11 +1030,7 @@ impl ViewCompositor {
                 backdrop: None,
                 mask: None,
                 output: &output.view,
-                uniform: ViewCompositorUniform::clip(
-                    &plan,
-                    logical_extent_from_texture(source.extent),
-                    [visual_bounds.x, visual_bounds.y],
-                ),
+                uniform: ViewCompositorUniform::clip(&plan, logical_extent, origin_logical),
                 load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                 blend_over_existing: false,
             },
@@ -1513,11 +1554,4 @@ fn extent3d(extent: ViewTextureExtent) -> wgpu::Extent3d {
         height: extent.height,
         depth_or_array_layers: 1,
     }
-}
-
-fn logical_extent_from_texture(extent: ViewTextureExtent) -> [f32; 2] {
-    [
-        extent.width.max(1).to_f32().unwrap_or(f32::MAX),
-        extent.height.max(1).to_f32().unwrap_or(f32::MAX),
-    ]
 }

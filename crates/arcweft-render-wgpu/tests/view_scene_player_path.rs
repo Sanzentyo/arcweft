@@ -1,13 +1,13 @@
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, PreparedViewGlyphRunHandoff, PreparedViewScene,
-    PreparedViewSceneResources, RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, PreparedViewScene, RenderPreferences, RenderScene,
+    RenderViewport, SharedFramePlanner,
 };
 use arcweft_render_wgpu::view_compositor::ViewCompositorPlan;
 use arcweft_render_wgpu::view_scene::{
-    ViewAffine2D, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup, ViewFilter,
-    ViewFilterList, ViewGlyphRun, ViewPaintNode, ViewPrimitive, ViewPrimitiveRange, ViewScene,
-    ViewSceneContext, ViewSolidRect,
+    PreparedTextId, ViewAffine2D, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup,
+    ViewFilter, ViewFilterList, ViewPaintNode, ViewPrimitive, ViewPrimitiveRange, ViewScene,
+    ViewSceneContext, ViewSolidRect, ViewTextPrimitive,
 };
 
 fn viewport() -> RenderViewport {
@@ -112,17 +112,10 @@ fn filter_and_backdrop_scene_plans_offscreen_and_one_backdrop_copy() {
 }
 
 #[test]
-fn glyph_run_requires_explicit_text_handoff() {
-    let mut resources = PreparedViewSceneResources::default();
-    resources.push_glyph_handoff(PreparedViewGlyphRunHandoff {
-        run_index: 7,
-        prepared_text_index: 0,
-    });
+fn text_primitive_references_canonical_prepared_item_directly() {
     let mut scene = ViewScene::new(320.0, 180.0);
-    scene.push_primitive(ViewPrimitive::GlyphRun(ViewGlyphRun {
-        run_index: 7,
-        bounds: HitRect::new(0.0, 0.0, 40.0, 20.0),
-        color: white(),
+    scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive {
+        text: PreparedTextId::from_index(0),
     }));
     scene.push_paint_node(ViewPaintNode::Direct(ViewSceneContext {
         transform: ViewAffine2D::default(),
@@ -131,7 +124,12 @@ fn glyph_run_requires_explicit_text_handoff() {
         primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
     }));
 
-    let prepared_view = PreparedViewScene::new(scene).with_resources(resources);
+    let prepared_view = PreparedViewScene::new(scene);
 
-    assert_eq!(prepared_view.resources.glyph_handoffs()[0].run_index, 7);
+    assert_eq!(
+        prepared_view.scene.primitives(),
+        [ViewPrimitive::Text(ViewTextPrimitive {
+            text: PreparedTextId::from_index(0),
+        })]
+    );
 }

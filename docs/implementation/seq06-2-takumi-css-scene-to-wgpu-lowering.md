@@ -44,10 +44,11 @@ requiring Takumi internals to grow Arcweft-specific fields.
 
 Arcweft text and TextField participants are represented to Takumi by an object
 replacement placeholder (`U+FFFC`) and an `ArcweftInlineParticipant` entry that
-stores measured width, height, baseline, and final `ViewGlyphRun` data. The final
-wgpu scene emits glyph runs from `ArcweftTextLayoutBridge`; Takumi is not asked
+stores measured width, height, baseline, and canonical `PreparedTextId` data. The
+final wgpu scene emits `ViewPrimitive::Text` values from
+`ArcweftTextLayoutBridge`; Takumi is not asked
 to perform final glyph layout or draw text into an RGBA surface. TextField caret,
-selection, and composition overlays stay in the seq06.1 `ViewScene` primitive path.
+selection, and composition geometry belongs to the referenced prepared item.
 
 ## Stacking lowering
 
@@ -77,7 +78,8 @@ primitives that already exist in the seq06 contract:
 - linear gradients;
 - rectangular and rounded clips;
 - opacity and affine transform;
-- text layout placeholders that route Arcweft glyph runs to `ViewGlyphRun`.
+- text layout placeholders that route Arcweft prepared items to
+  `ViewPrimitive::Text`.
 
 Box shadows are classified as paint-only, but the renderer support decision is
 kept explicit: they must be emitted only when the wgpu renderer grows a matching

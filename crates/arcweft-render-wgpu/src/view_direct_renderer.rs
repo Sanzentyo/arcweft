@@ -1,22 +1,21 @@
 //! Shared wgpu direct primitive renderer for `ViewScene` paint ranges.
 //!
 //! This module is intentionally renderer-owned. It consumes Arcweft-owned
-//! `ViewPrimitive` values, prepared image/mask resources, and explicit text
-//! handoff records. It does not parse CSS, inspect Takumi computed style, or
+//! `ViewPrimitive` values and prepared image/mask resources. It does not parse
+//! CSS, inspect Takumi computed style, or
 //! route View through platform-specific DOM/canvas fallback paths.
 
 use crate::geometry::{PreparedViewMaskResource, PreparedViewSceneResources, RenderImageFrame};
 use crate::view_compositor::{
-    ViewCompositorError, ViewCompositorTarget, ViewDirectPrimitiveRenderer,
-    ViewMaskTextureProvider, ViewMaskTextureView,
+    ViewCompositorError, ViewCompositorTarget, ViewDirectPrimitiveRenderer, ViewDirectRenderFrame,
+    ViewMaskTextureProvider, ViewMaskTextureView, ViewTextRenderFrame,
 };
 use crate::view_effects::ViewTextureExtent;
 use crate::view_mask::ViewMaskChannel;
 use crate::view_scene::{
-    ViewAffine2D, ViewBorder, ViewCaretPrimitive, ViewClip, ViewColorRgba8,
-    ViewCompositionUnderline, ViewCornerRadii, ViewCornerRadius, ViewGlyphRun, ViewImagePrimitive,
-    ViewLinearGradient, ViewMaskImage, ViewPrimitive, ViewRoundedRect, ViewScene, ViewSceneContext,
-    ViewSelectionPrimitive, ViewSolidRect, ViewUnderlineStyle,
+    ViewAffine2D, ViewBorder, ViewClip, ViewColorRgba8, ViewCornerRadii, ViewCornerRadius,
+    ViewImagePrimitive, ViewLinearGradient, ViewMaskImage, ViewPrimitive, ViewRoundedRect,
+    ViewScene, ViewSceneContext, ViewSolidRect,
 };
 use arcweft_presentation::hit::HitRect;
 use bytemuck::{Pod, Zeroable};
@@ -105,38 +104,33 @@ impl WgpuViewDirectPrimitiveRenderer {
             resources,
         }
     }
-}
 
-impl WgpuViewDirectPrimitiveRenderFrame<'_> {
-    fn color_pipeline(&self) -> &wgpu::RenderPipeline {
-        &self.renderer.color_pipeline
-    }
-
-    fn image_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.renderer.image_bind_group_layout
-    }
-
-    fn image_pipeline(&self) -> &wgpu::RenderPipeline {
-        &self.renderer.image_pipeline
-    }
-
-    fn image_sampler(&self) -> &wgpu::Sampler {
-        &self.renderer.image_sampler
-    }
-
-    fn image_frame(&self, resource_index: u32) -> Option<&RenderImageFrame> {
-        self.resources
-            .images()
-            .iter()
-            .find(|resource| resource.resource_index == resource_index)
-            .map(|resource| &resource.frame)
-    }
-
-    fn has_glyph_handoff(&self, run_index: u32) -> bool {
-        self.resources
-            .glyph_handoffs()
-            .iter()
-            .any(|handoff| handoff.run_index == run_index)
+    pub(crate) fn render_solid_rects(
+        &self,
+        frame: &mut ViewTextRenderFrame<'_>,
+        rects: &[ViewSolidRect],
+    ) -> Result<(), ViewCompositorError> {
+        let mut vertices = Vec::with_capacity(rects.len().saturating_mul(6));
+        for rect in rects {
+            push_solid_rect(
+                frame.scene,
+                frame.context,
+                frame.target,
+                rect,
+                &mut vertices,
+            );
+        }
+        self.render_colored_vertices(
+            &mut DirectRenderContext {
+                device: frame.device,
+                queue: frame.queue,
+                encoder: frame.encoder,
+                scene: frame.scene,
+                context: frame.context,
+                target: frame.target,
+            },
+            &vertices,
+        )
     }
 
     fn render_colored_vertices(
@@ -173,10 +167,40 @@ impl WgpuViewDirectPrimitiveRenderFrame<'_> {
                 multiview_mask: None,
             });
         apply_context_scissor(&mut pass, frame.scene, frame.context, frame.target)?;
-        pass.set_pipeline(self.color_pipeline());
+        pass.set_pipeline(&self.color_pipeline);
         pass.set_vertex_buffer(0, buffer.slice(..));
         pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
         Ok(())
+    }
+}
+
+impl WgpuViewDirectPrimitiveRenderFrame<'_> {
+    fn image_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.renderer.image_bind_group_layout
+    }
+
+    fn image_pipeline(&self) -> &wgpu::RenderPipeline {
+        &self.renderer.image_pipeline
+    }
+
+    fn image_sampler(&self) -> &wgpu::Sampler {
+        &self.renderer.image_sampler
+    }
+
+    fn image_frame(&self, resource_index: u32) -> Option<&RenderImageFrame> {
+        self.resources
+            .images()
+            .iter()
+            .find(|resource| resource.resource_index == resource_index)
+            .map(|resource| &resource.frame)
+    }
+
+    fn render_colored_vertices(
+        &self,
+        frame: &mut DirectRenderContext<'_, '_>,
+        vertices: &[ViewColorVertex],
+    ) -> Result<(), ViewCompositorError> {
+        self.renderer.render_colored_vertices(frame, vertices)
     }
 
     fn render_image_primitive(
@@ -251,17 +275,18 @@ impl WgpuViewDirectPrimitiveRenderFrame<'_> {
 impl ViewDirectPrimitiveRenderer for WgpuViewDirectPrimitiveRenderFrame<'_> {
     fn render_direct_range(
         &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        scene: &ViewScene,
-        context: &ViewSceneContext,
-        target: ViewCompositorTarget<'_>,
+        request: &mut ViewDirectRenderFrame<'_>,
     ) -> Result<(), ViewCompositorError> {
+        let device = request.device;
+        let queue = request.queue;
+        let scene = request.scene;
+        let context = request.context;
+        let target = request.target;
+        let text_renderer = &mut *request.text_renderer;
         let mut frame = DirectRenderContext {
             device,
             queue,
-            encoder,
+            encoder: &mut *request.encoder,
             scene,
             context,
             target,
@@ -293,19 +318,20 @@ impl ViewDirectPrimitiveRenderer for WgpuViewDirectPrimitiveRenderFrame<'_> {
                     colored.clear();
                     self.render_image_primitive(&mut frame, image)?;
                 }
-                ViewPrimitive::GlyphRun(run) => {
+                ViewPrimitive::Text(text) => {
                     self.render_colored_vertices(&mut frame, &colored)?;
                     colored.clear();
-                    ensure_glyph_handoff(self, run)?;
-                }
-                ViewPrimitive::Selection(selection) => {
-                    push_selection(scene, context, target, selection, &mut colored);
-                }
-                ViewPrimitive::Caret(caret) => {
-                    push_caret(scene, context, target, caret, &mut colored);
-                }
-                ViewPrimitive::CompositionUnderline(underline) => {
-                    push_composition_underline(scene, context, target, underline, &mut colored);
+                    text_renderer.render_text(
+                        &mut ViewTextRenderFrame {
+                            device,
+                            queue,
+                            encoder: &mut *frame.encoder,
+                            scene,
+                            context,
+                            target,
+                        },
+                        text.text,
+                    )?;
                 }
             }
         }
@@ -355,19 +381,6 @@ fn upload_mask_resource(
         extent: ViewTextureExtent::new(resource.frame.width, resource.frame.height),
         _texture: texture,
         view,
-    }
-}
-
-fn ensure_glyph_handoff(
-    renderer: &WgpuViewDirectPrimitiveRenderFrame<'_>,
-    run: &ViewGlyphRun,
-) -> Result<(), ViewCompositorError> {
-    if renderer.has_glyph_handoff(run.run_index) {
-        Ok(())
-    } else {
-        Err(ViewCompositorError::UnhandledGlyphRun {
-            run_index: run.run_index,
-        })
     }
 }
 
@@ -482,96 +495,6 @@ fn push_linear_gradient(
         gradient_color_at(gradient, t, context.opacity)
     });
     push_quad(scene, context, target, corners, colors, output);
-}
-
-fn push_selection(
-    scene: &ViewScene,
-    context: &ViewSceneContext,
-    target: ViewCompositorTarget<'_>,
-    selection: &ViewSelectionPrimitive,
-    output: &mut Vec<ViewColorVertex>,
-) {
-    push_rect_vertices(
-        scene,
-        context,
-        target,
-        selection.bounds,
-        [color_to_f32(selection.color, context.opacity); 4],
-        output,
-    );
-}
-
-fn push_caret(
-    scene: &ViewScene,
-    context: &ViewSceneContext,
-    target: ViewCompositorTarget<'_>,
-    caret: &ViewCaretPrimitive,
-    output: &mut Vec<ViewColorVertex>,
-) {
-    push_rect_vertices(
-        scene,
-        context,
-        target,
-        caret.bounds,
-        [color_to_f32(caret.color, context.opacity); 4],
-        output,
-    );
-}
-
-fn push_composition_underline(
-    scene: &ViewScene,
-    context: &ViewSceneContext,
-    target: ViewCompositorTarget<'_>,
-    underline: &ViewCompositionUnderline,
-    output: &mut Vec<ViewColorVertex>,
-) {
-    let thickness = underline.thickness.max(1.0);
-    let y = underline.bounds.y + underline.bounds.height - thickness;
-    let mut bounds = HitRect::new(underline.bounds.x, y, underline.bounds.width, thickness);
-    if underline.style == ViewUnderlineStyle::Dotted {
-        let dot = thickness * 2.0;
-        let mut x = bounds.x;
-        while x < underline.bounds.x + underline.bounds.width {
-            bounds.x = x;
-            bounds.width = dot.min(underline.bounds.x + underline.bounds.width - x);
-            push_rect_vertices(
-                scene,
-                context,
-                target,
-                bounds,
-                [color_to_f32(underline.color, context.opacity); 4],
-                output,
-            );
-            x += dot * 2.0;
-        }
-        return;
-    }
-    if underline.style == ViewUnderlineStyle::Dashed {
-        let dash = thickness * 4.0;
-        let mut x = bounds.x;
-        while x < underline.bounds.x + underline.bounds.width {
-            bounds.x = x;
-            bounds.width = dash.min(underline.bounds.x + underline.bounds.width - x);
-            push_rect_vertices(
-                scene,
-                context,
-                target,
-                bounds,
-                [color_to_f32(underline.color, context.opacity); 4],
-                output,
-            );
-            x += dash * 1.5;
-        }
-        return;
-    }
-    push_rect_vertices(
-        scene,
-        context,
-        target,
-        bounds,
-        [color_to_f32(underline.color, context.opacity); 4],
-        output,
-    );
 }
 
 fn push_rect_vertices(

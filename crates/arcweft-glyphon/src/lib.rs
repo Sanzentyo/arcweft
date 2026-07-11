@@ -4,8 +4,8 @@ mod prepared_text;
 mod text_engine;
 
 pub use prepared_text::{
-    PreparedGlyph, PreparedGlyphSource, PreparedTextBatch, PreparedTextError, PreparedTextId,
-    PreparedTextItem, PreparedTextSubmission, TextCaretPaint, TextCharacterBounds,
+    PreparedGlyph, PreparedGlyphSource, PreparedTextAffine, PreparedTextBatch, PreparedTextError,
+    PreparedTextId, PreparedTextItem, PreparedTextSubmission, TextCaretPaint, TextCharacterBounds,
     TextCompositionUnderline, TextGlyphPaint, TextGlyphTransform, TextInteractionPlan,
     TextPaintPlan,
 };

@@ -15,17 +15,19 @@ manually against current `main` after seq06.4k.2 and seq06.11a.
 Implemented changes:
 
 - Added `PreparedViewScene`, `PreparedViewSceneResources`,
-  `PreparedViewImageResource`, `PreparedViewMaskResource`, and
-  `PreparedViewGlyphRunHandoff` to `arcweft-render-wgpu::geometry`.
+  `PreparedViewImageResource`, and `PreparedViewMaskResource` to
+  `arcweft-render-wgpu::geometry`. The provisional glyph-run sidecar described
+  by the original cut was removed by the unified-text migration on 2026-07-12;
+  `ViewPrimitive::Text` now refers to `PreparedTextId` directly.
 - Added `PreparedFrame::with_view_scenes`, `push_view_scene`, and `view_scenes`.
 - Added `arcweft-render-wgpu::view_direct_renderer` with a wgpu direct primitive
   renderer and prepared mask texture provider.
 - Connected `SharedRenderer::render_to_view` to render attached View scenes
   through the existing `ViewCompositor`.
-- Added typed compositor errors for invalid primitive ranges, missing image
-  resources, unhandled glyph runs, and unsupported UI clips/primitives.
+- Added typed compositor errors for invalid primitive ranges, missing image or
+  prepared-text resources, and unsupported UI clips/primitives.
 - Added focused render-wgpu and render-web tests for the frame attachment,
-  compositor planning, glyph handoff evidence, and the no-DOM-overlay web
+  compositor planning, direct prepared-text evidence, and the no-DOM-overlay web
   contract.
 
 ## Validation

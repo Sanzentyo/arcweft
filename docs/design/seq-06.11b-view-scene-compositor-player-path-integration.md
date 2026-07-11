@@ -11,8 +11,7 @@ more `PreparedViewScene` values:
 PreparedFrame {
     rectangles,
     images,
-    text,
-    styled_paragraphs,
+    prepared_text,
     choices,
     view_scenes,
     ..
@@ -25,8 +24,8 @@ PreparedViewScene {
 ```
 
 `arcweft-render-wgpu` receives only Arcweft-owned renderer data: `ViewScene`,
-decoded image/mask frames, resource indices, mask channels, and explicit text
-handoff records. It does not depend on CSS, Takumi computed style, browser DOM,
+decoded image/mask frames, resource indices, mask channels, and canonical
+`PreparedTextId` references. It does not depend on CSS, Takumi computed style, browser DOM,
 native windows, filesystem, network, or bundle loading. Player/runtime adapters
 remain responsible for resolving external resources before a frame reaches the
 renderer.
@@ -41,18 +40,20 @@ their current behavior until their separate retained-View migration is complete.
 `SharedRenderer::render_to_view` is the only visual entrypoint. Its frame order
 is:
 
-1. prepare existing glyphon text;
-2. render the background rectangle and non-UI images;
-3. render each attached `PreparedViewScene` through `ViewCompositor::render_scene`;
-4. render existing overlay rectangles and glyphon text;
+1. render the background rectangle and non-UI images;
+2. render each attached `PreparedViewScene` through `ViewCompositor::render_scene`;
+3. invoke the shared glyph renderer at each `ViewPrimitive::Text` painter position;
+4. render prepared items not consumed by a View scene once in ordinary frame order;
 5. submit through the caller-owned native/web surface.
 
-`WgpuViewDirectPrimitiveRenderer` implements the existing compositor callback for
-direct primitive ranges. It supports solid rectangles, rounded rectangles,
-borders, linear gradients, image primitives, selection, caret, and composition
-underline geometry. `ViewPrimitive::GlyphRun` requires a matching
-`PreparedViewGlyphRunHandoff`; this cut does not fake text with rectangles or
-route text through a separate DOM/canvas path.
+`WgpuViewDirectPrimitiveRenderer` implements the compositor callback for direct
+primitive ranges. It supports solid rectangles, rounded rectangles, borders,
+linear gradients, image primitives, and `ViewPrimitive::Text(PreparedTextId)`.
+Text calls the shared prepared renderer with the active transform, opacity,
+clip, and offscreen target. Selection is painted before glyphs; caret and IME
+composition underlines are painted afterward from the same
+`PreparedTextItem::interaction` plan. Missing text identifiers are typed
+compositor failures rather than no-ops.
 
 ## Deferred Items
 

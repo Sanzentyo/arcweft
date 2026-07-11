@@ -1,13 +1,13 @@
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::view_compositor::{
-    ViewCompositor, ViewCompositorError, ViewCompositorFrame, ViewCompositorTarget,
-    ViewDirectPrimitiveRenderer, ViewNoMaskTextures,
+    ViewCompositor, ViewCompositorError, ViewCompositorFrame, ViewDirectPrimitiveRenderer,
+    ViewDirectRenderFrame, ViewNoMaskTextures, ViewTextRenderFrame, ViewTextRenderer,
 };
 use arcweft_render_wgpu::view_effects::ViewTextureExtent;
 use arcweft_render_wgpu::view_scene::{
-    ViewAffine2D, ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList, ViewBoxShadowRadii,
-    ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup, ViewPaintNode,
-    ViewPrimitiveRange, ViewScene, ViewSceneContext,
+    PreparedTextId, ViewAffine2D, ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList,
+    ViewBoxShadowRadii, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup,
+    ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
 };
 
 struct NoopDirectRenderer;
@@ -15,12 +15,19 @@ struct NoopDirectRenderer;
 impl ViewDirectPrimitiveRenderer for NoopDirectRenderer {
     fn render_direct_range(
         &mut self,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-        _encoder: &mut wgpu::CommandEncoder,
-        _scene: &ViewScene,
-        _context: &ViewSceneContext,
-        _target: ViewCompositorTarget<'_>,
+        _frame: &mut ViewDirectRenderFrame<'_>,
+    ) -> Result<(), ViewCompositorError> {
+        Ok(())
+    }
+}
+
+struct NoopTextRenderer;
+
+impl ViewTextRenderer for NoopTextRenderer {
+    fn render_text(
+        &mut self,
+        _frame: &mut ViewTextRenderFrame<'_>,
+        _text: PreparedTextId,
     ) -> Result<(), ViewCompositorError> {
         Ok(())
     }
@@ -155,6 +162,7 @@ fn per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_pat
     });
     let scene = smoke_scene();
     let mut direct_renderer = NoopDirectRenderer;
+    let mut text_renderer = NoopTextRenderer;
     let mut mask_textures = ViewNoMaskTextures;
     let mut compositor = ViewCompositor::new(&device, &queue, format);
     let mut frame = ViewCompositorFrame {
@@ -164,7 +172,9 @@ fn per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_pat
         final_target: &final_view,
         scene: &scene,
         target_extent: extent,
+        device_pixel_ratio: 1.0,
         direct_renderer: &mut direct_renderer,
+        text_renderer: &mut text_renderer,
         mask_textures: &mut mask_textures,
     };
 

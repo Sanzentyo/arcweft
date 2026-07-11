@@ -1,5 +1,6 @@
-use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::view_scene::{ViewColorRgba8, ViewGlyphRun, ViewPrimitive, ViewScene};
+use arcweft_render_wgpu::view_scene::{
+    PreparedTextId, ViewPrimitive, ViewScene, ViewTextPrimitive,
+};
 use arcweft_view::{NodeId, TextFieldId};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,10 +19,8 @@ pub enum ArcweftInlineParticipantKind {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ArcweftGlyphRun {
-    run_index: u32,
-    bounds: HitRect,
-    color: ViewColorRgba8,
+pub struct ArcweftPreparedText {
+    text: PreparedTextId,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,7 +28,7 @@ pub struct ArcweftInlineParticipant {
     node: NodeId,
     kind: ArcweftInlineParticipantKind,
     measured_size: InlineMeasuredSize,
-    glyph_runs: Vec<ArcweftGlyphRun>,
+    prepared_text: Vec<ArcweftPreparedText>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -59,33 +58,17 @@ impl InlineMeasuredSize {
     }
 }
 
-impl ArcweftGlyphRun {
-    pub fn new(run_index: u32, bounds: HitRect, color: ViewColorRgba8) -> Self {
-        Self {
-            run_index,
-            bounds,
-            color,
-        }
+impl ArcweftPreparedText {
+    pub const fn new(text: PreparedTextId) -> Self {
+        Self { text }
     }
 
-    pub fn run_index(&self) -> u32 {
-        self.run_index
-    }
-
-    pub fn bounds(&self) -> HitRect {
-        self.bounds
-    }
-
-    pub fn color(&self) -> ViewColorRgba8 {
-        self.color
+    pub const fn text(&self) -> PreparedTextId {
+        self.text
     }
 
     pub fn into_primitive(self) -> ViewPrimitive {
-        ViewPrimitive::GlyphRun(ViewGlyphRun {
-            run_index: self.run_index,
-            bounds: self.bounds,
-            color: self.color,
-        })
+        ViewPrimitive::Text(ViewTextPrimitive { text: self.text })
     }
 }
 
@@ -94,13 +77,13 @@ impl ArcweftInlineParticipant {
         node: NodeId,
         kind: ArcweftInlineParticipantKind,
         measured_size: InlineMeasuredSize,
-        glyph_runs: impl Into<Vec<ArcweftGlyphRun>>,
+        prepared_text: impl Into<Vec<ArcweftPreparedText>>,
     ) -> Self {
         Self {
             node,
             kind,
             measured_size,
-            glyph_runs: glyph_runs.into(),
+            prepared_text: prepared_text.into(),
         }
     }
 
@@ -116,8 +99,8 @@ impl ArcweftInlineParticipant {
         self.measured_size
     }
 
-    pub fn glyph_runs(&self) -> &[ArcweftGlyphRun] {
-        &self.glyph_runs
+    pub fn prepared_text(&self) -> &[ArcweftPreparedText] {
+        &self.prepared_text
     }
 
     pub fn object_replacement_text(&self) -> &'static str {
@@ -145,12 +128,12 @@ impl ArcweftTextLayoutBridge {
             .map(ArcweftInlineParticipant::object_replacement_text)
     }
 
-    pub fn emit_glyph_runs_for(&self, node: NodeId, scene: &mut ViewScene) -> bool {
+    pub fn emit_text_for(&self, node: NodeId, scene: &mut ViewScene) -> bool {
         let Some(participant) = self.get(node) else {
             return false;
         };
-        for run in participant.glyph_runs() {
-            scene.push_primitive(run.clone().into_primitive());
+        for text in participant.prepared_text() {
+            scene.push_primitive(text.clone().into_primitive());
         }
         true
     }
@@ -160,31 +143,18 @@ impl ArcweftTextLayoutBridge {
 mod tests {
     use super::*;
 
-    fn white() -> ViewColorRgba8 {
-        ViewColorRgba8 {
-            red: 255,
-            green: 255,
-            blue: 255,
-            alpha: 255,
-        }
-    }
-
     #[test]
-    fn glyph_runs_are_emitted_from_arcweft_text_layout() {
+    fn prepared_text_is_emitted_from_arcweft_text_layout() {
         let mut bridge = ArcweftTextLayoutBridge::default();
         bridge.insert(ArcweftInlineParticipant::new(
             NodeId(1),
             ArcweftInlineParticipantKind::Text,
             InlineMeasuredSize::new(24.0, 12.0, Some(9.0)),
-            [ArcweftGlyphRun::new(
-                3,
-                HitRect::new(0.0, 0.0, 24.0, 12.0),
-                white(),
-            )],
+            [ArcweftPreparedText::new(PreparedTextId::from_index(3))],
         ));
 
         let mut scene = ViewScene::new(320.0, 180.0);
-        assert!(bridge.emit_glyph_runs_for(NodeId(1), &mut scene));
+        assert!(bridge.emit_text_for(NodeId(1), &mut scene));
         assert_eq!(scene.primitives().len(), 1);
         assert_eq!(bridge.placeholder_text(NodeId(1)), Some("\u{fffc}"));
     }

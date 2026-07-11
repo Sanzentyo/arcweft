@@ -426,8 +426,8 @@ fn lower_node(
     if let Some(metadata) = refs.metadata.get_by_path(&path)
         && let Some(participant) = refs.text.get(metadata.node())
     {
-        for glyph_run in participant.glyph_runs() {
-            build.push_primitive(glyph_run.clone().into_primitive());
+        for text in participant.prepared_text() {
+            build.push_primitive(text.clone().into_primitive());
         }
     }
 

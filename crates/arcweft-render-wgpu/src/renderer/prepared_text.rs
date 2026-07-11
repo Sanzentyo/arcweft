@@ -7,8 +7,13 @@ use super::{
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::view_compositor::{ViewCompositor, ViewCompositorTarget, ViewPreparedTextEffectFrame};
 use crate::view_effects::ViewTextureExtent;
-use arcweft_glyphon::{GlyphonTextEngine, PreparedTextItem, PreparedTextSubmission};
-use glyphon::{FontSystem, SwashCache, TextAtlas, TextBounds, TextRenderer, Viewport};
+use arcweft_glyphon::{
+    GlyphonTextEngine, PreparedTextAffine, PreparedTextItem, PreparedTextSubmission,
+};
+use arcweft_text_layout::LayoutRect;
+use glyphon::{
+    Cache, FontSystem, Resolution, SwashCache, TextAtlas, TextBounds, TextRenderer, Viewport,
+};
 
 #[expect(
     clippy::too_many_arguments,
@@ -57,7 +62,7 @@ pub(super) fn render_prepared_text_range_with_renderer(
                 viewport,
                 swash_cache,
                 request.target,
-                item,
+                item.clip,
                 &submission,
             )?;
             continue;
@@ -86,7 +91,7 @@ pub(super) fn render_prepared_text_range_with_renderer(
             viewport,
             swash_cache,
             &effect_view,
-            item,
+            item.clip,
             &submission,
         )?;
         view_compositor.render_prepared_text_effects(&mut ViewPreparedTextEffectFrame {
@@ -110,6 +115,96 @@ pub(super) fn render_prepared_text_range_with_renderer(
 
 #[expect(
     clippy::too_many_arguments,
+    reason = "View text rendering binds one prepared item to the active compositor target."
+)]
+pub(super) fn render_prepared_text_item_with_affine(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    text_renderer: &mut TextRenderer,
+    engine: Option<&mut GlyphonTextEngine>,
+    cache: &Cache,
+    atlas: &mut TextAtlas,
+    effect_compositor: &mut ViewCompositor,
+    target: ViewCompositorTarget<'_>,
+    item: &PreparedTextItem,
+    affine: PreparedTextAffine,
+    clip: Option<LayoutRect>,
+    device_pixel_ratio: f32,
+) -> Result<(), SharedRendererError> {
+    let engine = engine.ok_or(SharedRendererError::MissingPreparedTextFonts)?;
+    let (font_system, swash_cache) = engine.raster_parts_mut();
+    let mut viewport = Viewport::new(device, cache);
+    viewport.update(
+        queue,
+        Resolution {
+            width: target.extent.width,
+            height: target.extent.height,
+        },
+    );
+    let submission = item.submission_with_affine(affine);
+    if item.paint.offscreen_passes.is_empty() && item.paint.post_processes.is_empty() {
+        return render_prepared_submission_with_renderer(
+            device,
+            queue,
+            encoder,
+            text_renderer,
+            font_system,
+            atlas,
+            &viewport,
+            swash_cache,
+            target.view,
+            clip,
+            &submission,
+        );
+    }
+
+    let effect_texture = runtime_control_filter_texture(
+        device,
+        effect_compositor.format(),
+        target.extent,
+        "arcweft-view-text-effect-input",
+    );
+    let effect_view = effect_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    clear_texture_view(
+        encoder,
+        &effect_view,
+        wgpu::Color::TRANSPARENT,
+        "arcweft-view-text-effect-clear",
+    );
+    render_prepared_submission_with_renderer(
+        device,
+        queue,
+        encoder,
+        text_renderer,
+        font_system,
+        atlas,
+        &viewport,
+        swash_cache,
+        &effect_view,
+        clip,
+        &submission,
+    )?;
+    effect_compositor.render_prepared_text_effects(&mut ViewPreparedTextEffectFrame {
+        device,
+        encoder,
+        source: ViewCompositorTarget {
+            texture: &effect_texture,
+            view: &effect_view,
+            extent: target.extent,
+            origin_logical: [0.0, 0.0],
+            logical_extent: target.logical_extent,
+        },
+        output: target.view,
+        offscreen_passes: &item.paint.offscreen_passes,
+        post_processes: &item.paint.post_processes,
+        device_pixel_ratio,
+    })?;
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
     reason = "One prepared submission borrows the shared glyph cache and caller render target."
 )]
 fn render_prepared_submission_with_renderer(
@@ -122,10 +217,10 @@ fn render_prepared_submission_with_renderer(
     viewport: &Viewport,
     swash_cache: &mut SwashCache,
     target: &wgpu::TextureView,
-    item: &PreparedTextItem,
+    clip: Option<LayoutRect>,
     submission: &PreparedTextSubmission,
 ) -> Result<(), SharedRendererError> {
-    let area = submission.glyph_area(prepared_text_bounds(item.clip, submission.raster_scale()));
+    let area = submission.glyph_area(prepared_text_bounds(clip, submission.raster_scale()));
     text_renderer
         .prepare_glyph_areas(
             device,
@@ -158,10 +253,7 @@ fn render_prepared_submission_with_renderer(
         .map_err(|error| SharedRendererError::TextRender(error.to_string()))
 }
 
-fn prepared_text_bounds(
-    clip: Option<arcweft_text_layout::LayoutRect>,
-    raster_scale: f32,
-) -> TextBounds {
+fn prepared_text_bounds(clip: Option<LayoutRect>, raster_scale: f32) -> TextBounds {
     clip.map_or_else(TextBounds::default, |clip| TextBounds {
         left: pixel_floor_as_i32(clip.x * raster_scale),
         top: pixel_floor_as_i32(clip.y * raster_scale),
