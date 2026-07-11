@@ -1166,6 +1166,7 @@ dependencies = [
 name = "arcweft-render-wgpu"
 version = "0.1.0"
 dependencies = [
+ "arcweft-core",
  "arcweft-glyphon",
  "arcweft-id",
  "arcweft-layout",

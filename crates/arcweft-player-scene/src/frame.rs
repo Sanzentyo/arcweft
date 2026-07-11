@@ -513,6 +513,17 @@ impl PlayerFramePlannerState {
         let frame = self.prepare_frame_with_runtime_text(scene, presentation, input)?;
         let mut frame = map_prepared_frame(frame, request, content_rect);
         self.shared.finalize_text(&mut frame)?;
+        if let Some(stage) = presentation
+            .dialogue
+            .as_ref()
+            .and_then(BundleDialoguePresentation::current_stage)
+        {
+            self.shared.finalize_dialogue_stage(
+                &mut frame,
+                stage,
+                request.dialogue_reveal_complete,
+            )?;
+        }
         Ok(frame)
     }
 

@@ -172,6 +172,52 @@ fn stage_resolution_borrows_the_frame_slice_and_retains_full_source_ranges() {
 }
 
 #[test]
+fn document_projection_rebases_runs_and_ruby_without_cloning_text() {
+    let source = RichTextDocument::new(vec![
+        RichTextNode::Text {
+            text: "前".to_owned(),
+        },
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Strong {
+                attrs: String::new(),
+            },
+        },
+        RichTextNode::Ruby {
+            base: "漢字".to_owned(),
+            ruby: "かんじ".to_owned(),
+        },
+        RichTextNode::Text {
+            text: "後".to_owned(),
+        },
+    ]);
+    let document = source
+        .resolve_document(&TextStyleCascade::default())
+        .expect("document resolves");
+    let prefix = "前".len();
+
+    let projected = document
+        .project(RichTextRange::new(prefix, document.text().len()))
+        .expect("projection resolves");
+
+    assert_eq!(projected.text(), "漢字後");
+    assert!(std::ptr::eq(
+        projected.text().as_ptr(),
+        document.text()[prefix..].as_ptr()
+    ));
+    assert_eq!(projected.source_origin(), prefix);
+    assert_eq!(projected.runs()[0].range(), RichTextRange::new(0, 6));
+    assert_eq!(
+        projected.runs()[0].source_range(),
+        RichTextRange::new(prefix, prefix + 6)
+    );
+    assert_eq!(projected.ruby()[0].base_range(), RichTextRange::new(0, 6));
+    assert_eq!(
+        projected.ruby()[0].source_base_range(),
+        RichTextRange::new(prefix, prefix + 6)
+    );
+}
+
+#[test]
 fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
     let layout = RichTextLayout {
         writing_mode: RichTextWritingMode::VerticalRl,

@@ -7,6 +7,7 @@ use arcweft_glyphon::{
 };
 use arcweft_id::PublicId;
 use arcweft_layout::ContentRect;
+use arcweft_presentation::fx::{FiniteF32Error, Transform2DError};
 use arcweft_presentation::hit::{HitRect, HitTree};
 use arcweft_presentation::input::{InteractionTarget, ViewportPoint};
 use arcweft_presentation::layer::{
@@ -27,6 +28,7 @@ use thiserror::Error;
 mod action_buttons;
 mod control_style;
 pub mod dialogue;
+mod dialogue_prepared;
 mod dialogue_timeline;
 mod focus_navigation;
 mod images;
@@ -692,6 +694,17 @@ pub enum FramePlanError {
     MissingProjectFonts,
     #[error("text metric `{field}` is not finite and representable in milli-pixels")]
     InvalidTextMetric { field: &'static str },
+    #[error("rich-text opacity {value} milli is outside [0, 1000]")]
+    InvalidRichTextOpacity { value: i32 },
+    #[error(transparent)]
+    InvalidFxNumber(#[from] FiniteF32Error),
+    #[error(transparent)]
+    InvalidFxTransform(#[from] Transform2DError),
+    #[error("rich-text effect `{effect}` has invalid parameter `{parameter}`")]
+    InvalidRichTextEffectParameter {
+        effect: String,
+        parameter: &'static str,
+    },
     #[error("failed to construct stable presentation id `{value}`")]
     InvalidId { value: String },
     #[error("semantic role {role:?} is not a text-input control")]
@@ -1286,6 +1299,33 @@ impl SharedFramePlanContext {
             }
         }
         self.prepare_selectable_text_blocks(frame);
+        Ok(())
+    }
+
+    /// Replaces the mapped dialogue paragraph with one canonical prepared item.
+    pub fn finalize_dialogue_stage(
+        &mut self,
+        frame: &mut PreparedFrame,
+        stage: arcweft_render_text::LineDisplayStage<'_>,
+        reveal_complete: bool,
+    ) -> Result<(), FramePlanError> {
+        let Some(engine) = self.prepared_text_engine.as_mut() else {
+            return Ok(());
+        };
+        let Some(paragraph) = frame.styled_paragraphs.first() else {
+            return Ok(());
+        };
+        let (item, complete) = dialogue_prepared::prepare_stage(
+            engine,
+            stage,
+            paragraph,
+            frame.viewport,
+            frame.preferences.reduce_motion,
+            reveal_complete,
+        )?;
+        frame.prepared_text.push(item)?;
+        frame.styled_paragraphs.clear();
+        frame.dialogue_reveal_complete = complete;
         Ok(())
     }
 

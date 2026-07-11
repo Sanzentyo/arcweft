@@ -643,6 +643,80 @@ impl<'a> ResolvedTextDocument<'a> {
     pub const fn revision(&self) -> TextDocumentRevision {
         self.revision
     }
+
+    /// Borrows a validated document-local subrange and rebases its metadata.
+    ///
+    /// This is used by display controls such as `[clear]`: the remaining text
+    /// starts again at the `TextBox` origin without cloning the source string or
+    /// rebuilding its style cascade.
+    pub fn project(
+        &self,
+        range: RichTextRange,
+    ) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
+        if range.start > range.end
+            || range.end > self.text.len()
+            || !self.text.is_char_boundary(range.start)
+            || !self.text.is_char_boundary(range.end)
+        {
+            return Err(TextResolveError::InvalidUtf8Range {
+                kind: "text projection",
+                index: 0,
+                start: range.start,
+                end: range.end,
+                text_len: self.text.len(),
+            });
+        }
+        let text =
+            self.text
+                .get(range.start..range.end)
+                .ok_or(TextResolveError::InvalidUtf8Range {
+                    kind: "text projection",
+                    index: 0,
+                    start: range.start,
+                    end: range.end,
+                    text_len: self.text.len(),
+                })?;
+        let runs = self
+            .runs
+            .iter()
+            .filter_map(|run| intersect(run.range, range).map(|clipped| (run, clipped)))
+            .map(|(run, clipped)| {
+                let source_start = run.source_range.start + clipped.start - run.range.start;
+                let source_range = RichTextRange::new(
+                    source_start,
+                    source_start + clipped.end.saturating_sub(clipped.start),
+                );
+                ResolvedTextRun::new(
+                    rebase(clipped, range.start),
+                    source_range,
+                    run.style.clone(),
+                    run.presentation.clone(),
+                    run.source,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let ruby = self
+            .ruby
+            .iter()
+            .filter(|annotation| contains(range, annotation.base_range))
+            .map(|annotation| {
+                ResolvedTextRuby::new(
+                    rebase(annotation.base_range, range.start),
+                    annotation.source_base_range,
+                    annotation.text.clone(),
+                    annotation.style.clone(),
+                    annotation.presentation.clone(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        ResolvedTextDocument::new(
+            text,
+            self.source_origin + range.start,
+            runs,
+            ruby,
+            self.revision,
+        )
+    }
 }
 
 /// Structured rejection raised while constructing canonical text.

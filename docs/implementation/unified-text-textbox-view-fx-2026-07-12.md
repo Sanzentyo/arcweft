@@ -230,6 +230,31 @@ call sites. They are intentionally visible migration inputs, not a second
 fallback inside the new prepared contract, and must be deleted as the remaining
 producers converge.
 
+### Canonical RichText dialogue-preparation slice
+
+The product dialogue path now uses the same prepared-text contract:
+
+- a display stage resolves directly to a borrowed `ResolvedTextDocument`, and
+  `[clear]` projects the remaining document back to the `TextBox` origin while
+  preserving clipped run/source ranges and contained ruby annotations;
+- vertical body text, shaped ruby, reveal visibility, selection geometry, and
+  raster keys are produced by one `TextLayout` and one `PreparedTextItem`;
+- reveal changes only glyph paint visibility. It no longer changes shaping or
+  the layout hash, and reduced motion completes reveal immediately;
+- static transforms and the built-in wave, shake, jitter, arc, spin, and pulse
+  effects are composed after layout. Their phase is based on
+  `TextLayoutGlyph::logical_ordinal`, never a UTF-8 byte offset, and shared
+  deterministic noise uses the presentation Fx seed/time bucket contract;
+- the long-lived product planner consumes the legacy mapped paragraph only as
+  a placement input, emits the prepared item, clears the old styled-paragraph
+  queue, and preserves painter order after ordinary prepared text.
+
+Cut 5 remains open: this slice deliberately exposes the remaining compiler
+problem rather than hiding it. User-authored Fx is still serialized into a
+legacy RichText effect descriptor, so typed applications, shared graph
+evaluation, shaders/filters/masks/offscreen passes, save reconciliation, and
+native registry deletion are the next implementation boundary.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally
@@ -320,6 +345,26 @@ new production responsibility modules are `prepared_text.rs` in
 `arcweft-glyphon` (651 LOC) and the ordinary-block lowering module in
 `arcweft-render-wgpu` (123 LOC). Existing renderer and geometry warnings remain
 tracked for removal/splitting as the legacy paths are deleted.
+
+Canonical RichText preparation validation at Jujutsu change `qmmymwws`:
+
+```bash
+cargo test -p arcweft-render-text --test resolved_document \
+  document_projection_rebases_runs_and_ruby_without_cloning_text -- --exact
+cargo test -p arcweft-render-wgpu --lib \
+  geometry::dialogue_prepared::tests -- --nocapture
+cargo test -p arcweft-player-scene --all-targets
+cargo clippy -p arcweft-render-text -p arcweft-presentation \
+  -p arcweft-render-wgpu -p arcweft-player-scene --all-targets -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-rich-dialogue-prepared-2026-07-12
+```
+
+All commands pass. The focused dialogue tests cover vertical ruby, paint-only
+reveal with a stable layout hash, `[clear]` projection, and logical-ordinal
+wave sampling. The structural audit records 1,240 Rust files / 620,106
+physical Rust LOC, 0 errors, and 143 warnings. The new dialogue-preparation
+module is 720 LOC, inside the ordinary responsibility-module target range.
 
 ## Non-goals
 

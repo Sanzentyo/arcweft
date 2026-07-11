@@ -382,7 +382,9 @@ impl FxSampleContext {
         FiniteF32::try_new(phase)
     }
 
-    pub(crate) fn deterministic_noise(self, bucket: i32) -> Result<FiniteF32, FiniteF32Error> {
+    /// Samples deterministic hash-noise from this instance seed, logical
+    /// ordinal, and an authored integer time bucket.
+    pub fn deterministic_noise(self, bucket: i32) -> Result<FiniteF32, FiniteF32Error> {
         let mut hasher = blake3::Hasher::new();
         hash_str(&mut hasher, "arcweft.fx-noise.v1");
         hasher.update(&self.deterministic_seed.to_le_bytes());
