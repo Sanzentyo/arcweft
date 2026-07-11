@@ -1,10 +1,11 @@
 use super::runtime_control_style::ViewRuntimeControlStyle;
 use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
-use crate::resource_codec::types::{CrossSectionRef, DigestRef, SourceRangeRef};
-use arcweft_presentation::fx::FxId;
+use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
+use arcweft_presentation::fx::{FxId, FxRuntimeType};
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
+use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,8 @@ use serde::{Deserialize, Serialize};
 pub struct ViewProgramResource {
     pub program_id: String,
     pub root_view: String,
+    pub value_programs: Vec<ViewValueProgram>,
+    pub value_inputs: Vec<ViewValueInputResource>,
     pub instructions: Vec<ViewProgramInstruction>,
     pub child_spans: Vec<ViewChildSpan>,
     pub handlers: Vec<ViewHandlerRef>,
@@ -70,26 +73,26 @@ pub enum ViewProgramInstruction {
     CallView {
         view: String,
         child_span: u32,
-        props_schema: Option<DigestRef>,
+        arguments: Vec<ViewCallArgumentBindingRef>,
         style: Option<String>,
         part: Option<String>,
         key: Option<u64>,
         source: Option<SourceRangeRef>,
     },
     Branch {
-        condition_schema: DigestRef,
+        condition_program: ViewValueProgramId,
         then_span: u32,
         else_span: Option<u32>,
         source: Option<SourceRangeRef>,
     },
     RepeatKeyed {
-        source_schema: DigestRef,
-        key_schema: DigestRef,
+        source_program: ViewValueProgramId,
+        key_program: ViewValueProgramId,
         body_span: u32,
         source: Option<SourceRangeRef>,
     },
     Await {
-        source_schema: DigestRef,
+        source_program: ViewValueProgramId,
         pending_branch: Option<ViewAwaitBranchSpan>,
         ready_branch: Option<ViewAwaitBranchSpan>,
         error_branch: Option<ViewAwaitBranchSpan>,
@@ -97,8 +100,8 @@ pub enum ViewProgramInstruction {
         source: Option<SourceRangeRef>,
     },
     BindLocal {
-        pattern_schema: DigestRef,
-        value_schema: DigestRef,
+        binding: String,
+        value_program: ViewValueProgramId,
         source: Option<SourceRangeRef>,
     },
     ApplyStyle {
@@ -110,7 +113,7 @@ pub enum ViewProgramInstruction {
         /// Package-qualified identity of the original Fx declaration.
         fx: FxId,
         arguments: Vec<ViewFxArgumentBindingRef>,
-        key_schema: Option<DigestRef>,
+        key_program: Option<ViewValueProgramId>,
         application_ordinal: u32,
         source: Option<SourceRangeRef>,
     },
@@ -130,12 +133,47 @@ pub enum ViewProgramInstruction {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewFxArgumentBindingRef {
     pub parameter: String,
-    pub value_schema: DigestRef,
+    pub value_program: ViewValueProgramId,
+}
+
+/// Typed positional or named argument retained for a nested View call.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewCallArgumentBindingRef {
+    pub ordinal: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub value_program: ViewValueProgramId,
+}
+
+/// One typed external value projected into the common View value-program schema.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewValueInputResource {
+    pub namespace: ViewValueInputNamespace,
+    pub slot: u16,
+    pub value_type: FxRuntimeType,
+    pub source: ViewValueInputSource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewValueInputNamespace {
+    Parameter,
+    State,
+}
+
+/// Closed static source inventory for a View value-program input slot.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ViewValueInputSource {
+    Projection { path: Vec<String> },
+    LifetimeProjection { scope: String, path: Vec<String> },
+    Local { name: String },
+    RepeatOrdinal { binding: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewAwaitBranchSpan {
-    pub pattern_schema: DigestRef,
+    pub start_offset: u32,
     pub body_span: u32,
 }
 
@@ -891,6 +929,8 @@ pub struct ViewTextSourceRecord {
 #[serde(rename_all = "snake_case")]
 pub enum ViewTextSourceKind {
     Literal { value: String },
+    Projection { path: Vec<String> },
+    Local { name: String },
     Localized { key: String, locale: Option<String> },
     RichTextDocument { document: CrossSectionRef },
     DisplayFrame { frame: CrossSectionRef },
@@ -1236,7 +1276,9 @@ impl ViewTextResource {
             .find(|source| source.public_id == public_id)
             .and_then(|source| match &source.kind {
                 ViewTextSourceKind::Literal { value } => Some(value.as_str()),
-                ViewTextSourceKind::Localized { .. }
+                ViewTextSourceKind::Projection { .. }
+                | ViewTextSourceKind::Local { .. }
+                | ViewTextSourceKind::Localized { .. }
                 | ViewTextSourceKind::RichTextDocument { .. }
                 | ViewTextSourceKind::DisplayFrame { .. } => None,
             })

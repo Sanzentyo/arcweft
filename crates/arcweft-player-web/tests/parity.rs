@@ -863,6 +863,8 @@ fn authored_view_program_resource() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.web_panel".to_owned(),
         root_view: "view.WebPanel".to_owned(),
+        value_programs: Vec::new(),
+        value_inputs: Vec::new(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),

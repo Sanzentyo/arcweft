@@ -33,6 +33,8 @@ fn view_input_resource_emits_runtime_text_control_shape() {
     let program = ViewProgramResource {
         program_id: "view.program.main".to_owned(),
         root_view: "view.root".to_owned(),
+        value_programs: Vec::new(),
+        value_inputs: Vec::new(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),
@@ -190,6 +192,8 @@ fn view_program_layout_bounds_override_stacked_runtime_text_control_fallback() {
     let program = ViewProgramResource {
         program_id: "view.program.feedback".to_owned(),
         root_view: "view.feedback".to_owned(),
+        value_programs: Vec::new(),
+        value_inputs: Vec::new(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),

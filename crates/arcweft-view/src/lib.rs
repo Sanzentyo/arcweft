@@ -54,8 +54,8 @@ pub use motion::{
 };
 pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{
-    ViewBranch, ViewCall, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
-    ViewElementTextInputKind, ViewEventBindingSpec, ViewExpressionId, ViewHandlerProgram,
+    ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind,
+    ViewElementSpec, ViewElementTextInputKind, ViewEventBindingSpec, ViewHandlerProgram,
     ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartExport, ViewPartId, ViewProgram,
     ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewStyleApply,
     ViewStylePatchId, ViewTextSpec,

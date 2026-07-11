@@ -22,12 +22,10 @@ pub(super) fn lower_text(
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     validate_interactive_overflow_modifiers("Text", text.modifiers(), false)?;
     let id = next_text_source_id(view_id, state);
-    let text_value = expr_source(text.source());
+    let (kind, text_value) = lower_text_source(text.source(), state)?;
     state.text_sources.push(ViewTextSourceRecord {
         public_id: id.clone(),
-        kind: ViewTextSourceKind::Literal {
-            value: text_value.clone(),
-        },
+        kind,
         source: None,
     });
     state.instructions.push(ViewProgramInstruction::EmitText {
@@ -36,7 +34,7 @@ pub(super) fn lower_text(
         part: first_part(text.modifiers()),
         source: None,
     });
-    lower_modifiers(view_id, text.modifiers(), state);
+    lower_modifiers(view_id, text.modifiers(), state)?;
     let frame = text_block_frame(&text_value, text.modifiers());
     let text_block_id = next_text_block_id(view_id, state);
     let view = Some(view_resource_id(view_id));
@@ -56,6 +54,65 @@ pub(super) fn lower_text(
     text_block.selection_policy = text_block_selection_policy(text.modifiers());
     state.text_blocks.push(text_block);
     Ok(frame)
+}
+
+fn lower_text_source(
+    source: &Expr,
+    state: &ViewLoweringState,
+) -> Result<(ViewTextSourceKind, String), ViewSidecarError> {
+    match source {
+        Expr::Literal(Literal::String(value)) | Expr::Raw(value) => Ok((
+            ViewTextSourceKind::Literal {
+                value: value.clone(),
+            },
+            value.clone(),
+        )),
+        Expr::Path(path) => {
+            let label = path.as_label();
+            if state.value_compiler.is_local(label) {
+                Ok((
+                    ViewTextSourceKind::Local {
+                        name: label.to_owned(),
+                    },
+                    String::new(),
+                ))
+            } else {
+                Ok((
+                    ViewTextSourceKind::Projection {
+                        path: path
+                            .segments()
+                            .iter()
+                            .map(|segment| segment.as_str().to_owned())
+                            .collect(),
+                    },
+                    String::new(),
+                ))
+            }
+        }
+        Expr::Select(_) => {
+            let label = source.dotted_selector_label().ok_or_else(|| {
+                ViewSidecarError::UnsupportedTextSource {
+                    expression: format!("{source:?}"),
+                }
+            })?;
+            Ok((
+                ViewTextSourceKind::Projection {
+                    path: label.split('.').map(str::to_owned).collect(),
+                },
+                String::new(),
+            ))
+        }
+        Expr::EntityRef(reference) => Ok((
+            ViewTextSourceKind::Localized {
+                key: normalize_entity_ref(reference),
+                locale: None,
+            },
+            String::new(),
+        )),
+        _ => Err(ViewSidecarError::UnsupportedTextSource {
+            expression: format!("{source:?}"),
+        }),
+    }
 }
 
 pub(super) fn lower_button(
@@ -87,7 +144,7 @@ pub(super) fn lower_button(
             key: None,
             source: None,
         });
-    lower_button_modifiers(view_id, button.modifiers(), state);
+    lower_button_modifiers(view_id, button.modifiers(), state)?;
     state
         .instructions
         .push(ViewProgramInstruction::CloseElement);
@@ -134,7 +191,7 @@ pub(super) fn lower_image(
         part: first_part(image.modifiers()),
         source: None,
     });
-    lower_modifiers(view_id, image.modifiers(), state);
+    lower_modifiers(view_id, image.modifiers(), state)?;
     let Some(source_id) = image_source_object_id(image.source()) else {
         return Ok(ViewLayoutFrame::zero());
     };

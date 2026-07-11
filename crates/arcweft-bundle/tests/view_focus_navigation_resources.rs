@@ -8,6 +8,8 @@ fn program() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.program.focus".to_owned(),
         root_view: "view.focus".to_owned(),
+        value_programs: Vec::new(),
+        value_inputs: Vec::new(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),

@@ -9,6 +9,8 @@ fn runtime_action_button_resolves_label_and_noop_action() {
     let program = ViewProgramResource {
         program_id: "view.program.test".to_owned(),
         root_view: "view.view.test".to_owned(),
+        value_programs: Vec::new(),
+        value_inputs: Vec::new(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),
@@ -58,6 +60,8 @@ fn runtime_action_button_resolves_action_invoke_action() {
     let program = ViewProgramResource {
         program_id: "view.program.test".to_owned(),
         root_view: "view.view.test".to_owned(),
+        value_programs: Vec::new(),
+        value_inputs: Vec::new(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),

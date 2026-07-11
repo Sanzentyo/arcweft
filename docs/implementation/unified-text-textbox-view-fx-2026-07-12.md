@@ -383,6 +383,49 @@ View bundle's digest-only references with actual program records, then mounts
 and evaluates that inventory in the runtime driver before emitting prepared
 text IDs in View painter order.
 
+### Executable View bundle inventory
+
+The bundle/compiler half of the persistent evaluator is now implemented:
+
+- `condition_schema`, `value_schema`, `source_schema`, `key_schema`,
+  `props_schema`, and the other digest-only expression fields are removed.
+  Instructions reference validated `ViewValueProgramId` records directly; no
+  dual reader, alias field, or format-version shim was added;
+- View source lowering compiles finite literals, typed state/local projections,
+  boolean and arithmetic operators, comparisons, explicit scalar intrinsics,
+  match conditions, keyed-repeat count/key values, await status projections,
+  nested View arguments, and reactive Fx arguments into the common closed
+  instruction model. Fx argument expectations come from the compiled
+  `FxDefinition` parameter schema rather than guessed names or raw tokens;
+- decimal/unit conversion happens once during compilation. Invalid numbers,
+  unsupported units, projection type conflicts, unsupported expression shapes,
+  and value-program limit failures are structured compile errors; there is no
+  zero or debug-string fallback;
+- the View program section stores typed external input-slot sources and rejects
+  incomplete coverage, duplicate slots, invalid projection paths, missing
+  program references, wrong condition/repeat result types, invalid stack
+  programs, and out-of-range control-flow spans during canonical decode;
+- text literals remain static graph data, while reactive plain text is retained
+  as a typed state/local text projection. Strings are not smuggled through the
+  numeric value stack;
+- await branches now retain both relative start and length, so authored branch
+  order cannot make runtime selection ambiguous; and
+- merging authored and DSL View resources rebases program IDs, parameter/state
+  slots, instruction references, child-span indices, and instruction ranges.
+  Independent resources therefore cannot collide when packed into one initial
+  View section.
+
+Direct tests execute the compiled `if`, repeat-count, and repeat-key programs
+through `ViewMountState`, prove dirty repeat ordinals change the key result,
+round-trip canonical bundle bytes, and reject missing/wrongly typed program
+references. The compiler module was split into a 675-line expression owner and
+a 272-line literal-conversion owner rather than leaving a new 1,000-line mixed
+responsibility file.
+
+Cut 6 remains open until the runtime driver owns these program/mount records,
+persists them in save state, resolves projected text, and emits prepared text
+IDs instead of `ViewRuntimeTextBlock` snapshots.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally
@@ -601,6 +644,49 @@ interaction, motion, and eight virtual-list integration tests. The structural
 audit records 1,248 Rust files / 624,856 physical Rust LOC, 0 errors, and 143
 warnings. The new value-runtime responsibility module is 736 LOC, within the
 preferred ordinary-module range. No workspace dependency edge changed.
+
+Executable View bundle-inventory validation at the succeeding working change:
+
+```bash
+cargo test -p arcweft-view --all-targets
+cargo test -p arcweft-bundle --all-targets --no-fail-fast
+cargo test -p arcweft-cli app::bundle::tests --lib
+cargo clippy -p arcweft-view -p arcweft-bundle -p arcweft-cli \
+  --all-targets -- -D warnings
+cargo test -p arcweft-lang-syntax -p arcweft-lang-sema --all-targets
+cargo test -p arcweft-runtime-plan render_text::fx --lib
+cargo test -p arcweft-lsp \
+  hover_includes_expanded_fx_style_contributions --lib -- --nocapture
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+CARGO_INCREMENTAL=0 CARGO_PROFILE_TEST_DEBUG=0 just test-workspace
+cargo clippy -p arcweft-runtime-plan -p arcweft-lsp -p arcweft-view \
+  -p arcweft-bundle -p arcweft-cli --all-targets -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-executable-view-bundle-2026-07-12
+```
+
+All commands pass. The bundle suite passes 80 unit tests and every integration
+suite, the focused CLI bundle suite passes 40 tests, and the View suite passes
+43 unit tests plus interaction, motion, and virtualization integration tests.
+The workspace fast path initially exposed two genuine regression fixtures. A
+positive semantic fixture still used `mod game::routes::opening`; it now uses
+the canonical dotted `mod game.routes.opening`, while the syntax suite retains
+its explicit rejection test for `mod game::opening`. The typed RichText Fx
+migration had also retained only Fx identity in LSP cascade provenance. Fx text
+properties are now resolved through the one shared evaluator at deterministic
+zero logical time with reduced motion, restoring the observable
+`rich_text.text.color` contribution without adding a second arithmetic path.
+The complete workspace rerun passes after both fixes.
+
+The structural audit records 1,250 Rust files / 626,656 physical Rust LOC, 0
+errors, and 143 warnings. Moving executable-inventory merge/rebasing into its
+225-line responsibility module reduced `bundle.rs` from the 2,513-LOC error
+state found by the first audit pass to 2,289 LOC. The expression compiler is
+675 LOC and exact literal conversion is 272 LOC. `target/` was removed once
+after mixed prior feature/profile builds had accumulated 288.58 GiB; the final
+workspace test used the same recipe feature set with incremental compilation
+and test debug symbols disabled solely to bound disposable artifact size.
 
 ## Non-goals
 

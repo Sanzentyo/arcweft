@@ -1,138 +1,675 @@
-//! Stable schema identities emitted by component View lowering.
+//! Typed lowering for executable View value programs.
 //!
-//! These helpers canonicalize syntax into deterministic digest input. They do
-//! not inspect lowering state, so keeping them separate prevents layout and
-//! input-resource concerns from becoming part of schema identity generation.
+//! View source expressions are compiled once into the shared closed value
+//! instruction model. State/local projections become typed input slots; source
+//! strings and expression digests are never retained as executable fallbacks.
 
-use arcweft_bundle::{container::BundleDigest, resource_codec::types::DigestRef};
+use std::collections::BTreeMap;
+
+use arcweft_bundle::{
+    container::BundleDigest,
+    resource_codec::view::{ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource},
+};
 use arcweft_lang_syntax::{
     ast::{
-        pattern::{Pattern, VariantPatternPayload},
+        pattern::Pattern,
         view::{ViewForEach, ViewMatchArm},
     },
-    expr::Expr,
+    expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp},
 };
+use arcweft_presentation::fx::{
+    FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
+    ValueProgramValidationError,
+};
+use arcweft_view::{ViewValueProgram, ViewValueProgramId};
+use thiserror::Error;
 
-use super::bundle_view::expr_source;
+const MAX_VIEW_STATE_PROJECTIONS: usize = 256;
 
-pub(in crate::app) fn expr_schema_ref(expr: &Expr) -> DigestRef {
-    schema_ref_for_source(&expr_source(expr))
+mod literal;
+
+use literal::{emit_literal, infer_literal_type};
+
+#[derive(Clone, Debug)]
+struct PendingProgram {
+    id: ViewValueProgramId,
+    return_type: FxRuntimeType,
+    instructions: Vec<ValueInstruction>,
 }
 
-pub(in crate::app) fn match_arm_schema_ref(scrutinee: &Expr, arm: &ViewMatchArm) -> DigestRef {
-    let guard = arm.guard().map(expr_source).unwrap_or_default();
-    schema_ref_for_source(&format!(
-        "match:{}=>{} when {}",
-        expr_source(scrutinee),
-        pattern_schema_source(arm.pattern()),
-        guard
-    ))
+#[derive(Clone, Debug)]
+struct InputSlot {
+    slot: u16,
+    value_type: FxRuntimeType,
 }
 
-pub(in crate::app) fn repeat_key_schema_ref(view_for_each: &ViewForEach) -> DigestRef {
-    view_for_each.key().map_or_else(
-        || {
-            schema_ref_for_source(&format!(
-                "source_order:{} in {}",
-                pattern_schema_source(view_for_each.pattern()),
-                expr_source(view_for_each.source())
-            ))
-        },
-        expr_schema_ref,
-    )
+/// Complete typed output moved into one product View program resource.
+pub(in crate::app) struct CompiledViewValues {
+    pub(in crate::app) programs: Vec<ViewValueProgram>,
+    pub(in crate::app) inputs: Vec<ViewValueInputResource>,
 }
 
-pub(in crate::app) fn schema_ref_for_source(source: &str) -> DigestRef {
-    DigestRef {
-        digest: BundleDigest::of(source.as_bytes()),
+/// Stateful compiler that gives every program in a View inventory one common
+/// typed input schema.
+#[derive(Default)]
+pub(in crate::app) struct ViewValueProgramCompiler {
+    pending: Vec<PendingProgram>,
+    inputs: Vec<ViewValueInputResource>,
+    input_slots: BTreeMap<ViewValueInputSource, InputSlot>,
+    state_types: Vec<FxRuntimeType>,
+    local_types: BTreeMap<String, FxRuntimeType>,
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(in crate::app) enum ViewValueCompileError {
+    #[error("View value expression `{expression}` requires an expected scalar type")]
+    MissingExpectedType { expression: String },
+    #[error("View value expression `{expression}` is not supported by the closed value program")]
+    UnsupportedExpression { expression: String },
+    #[error("View value literal `{literal}` is invalid for {expected:?}: {reason}")]
+    InvalidLiteral {
+        literal: String,
+        expected: FxRuntimeType,
+        reason: String,
+    },
+    #[error(
+        "View projection {projection:?} was first typed as {existing:?} and cannot also be {requested:?}"
+    )]
+    ProjectionTypeConflict {
+        projection: ViewValueInputSource,
+        existing: FxRuntimeType,
+        requested: FxRuntimeType,
+    },
+    #[error("View value program inventory exceeds its {limit} state projections")]
+    TooManyStateProjections { limit: usize },
+    #[error("View value program inventory exceeds u32::MAX programs")]
+    TooManyPrograms,
+    #[error("View local binding requires a single typed identifier pattern")]
+    UnsupportedLocalPattern,
+    #[error("View match pattern `{pattern}` cannot be represented by the closed scalar program")]
+    UnsupportedMatchPattern { pattern: String },
+    #[error(transparent)]
+    InvalidProgram(#[from] ValueProgramValidationError),
+}
+
+impl ViewValueProgramCompiler {
+    pub(in crate::app) fn is_local(&self, name: &str) -> bool {
+        self.local_types.contains_key(name)
     }
-}
 
-pub(in crate::app) fn pattern_schema_source(pattern: &Pattern) -> String {
-    match pattern {
-        Pattern::Ident(name) => name.clone(),
-        Pattern::MutIdent(name) => format!("mut {name}"),
-        Pattern::Literal(expr) => expr_source(expr),
-        Pattern::Entity(entity) => entity.body().to_owned(),
-        Pattern::Variant {
-            path,
-            name,
-            payload,
-        } => format!(
-            "{}{}{}",
-            path.as_ref().map_or("", String::as_str),
-            name,
-            payload
-                .as_ref()
-                .map_or_else(String::new, variant_pattern_payload_source)
-        ),
-        Pattern::Discard => "_".to_owned(),
-        Pattern::Tuple(items) => format!(
-            "({})",
-            items
-                .iter()
-                .map(pattern_schema_source)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Pattern::Record { path, fields, rest } => {
-            let mut fields = fields
-                .iter()
-                .map(|field| {
-                    format!(
-                        "{}: {}",
-                        field.name(),
-                        pattern_schema_source(field.pattern())
-                    )
+    pub(in crate::app) fn compile(
+        &mut self,
+        expression: &Expr,
+        expected: Option<FxRuntimeType>,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        self.compile_with_type(expression, expected)
+            .map(|(id, _)| id)
+    }
+
+    pub(in crate::app) fn compile_condition(
+        &mut self,
+        expression: &Expr,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        self.compile(expression, Some(FxRuntimeType::Bool))
+    }
+
+    pub(in crate::app) fn compile_untyped(
+        &mut self,
+        expression: &Expr,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        match self.compile_with_type(expression, None) {
+            Ok((program, _)) => Ok(program),
+            Err(
+                ViewValueCompileError::MissingExpectedType { .. }
+                | ViewValueCompileError::UnsupportedExpression { .. },
+            ) => self
+                .compile_symbolic(expression)
+                .map(|(program, _)| program),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(in crate::app) fn compile_local(
+        &mut self,
+        pattern: &Pattern,
+        expression: &Expr,
+    ) -> Result<(String, ViewValueProgramId), ViewValueCompileError> {
+        let binding = pattern
+            .simple_binding_name()
+            .ok_or(ViewValueCompileError::UnsupportedLocalPattern)?
+            .to_owned();
+        let (program, value_type) = match self.compile_with_type(expression, None) {
+            Ok(compiled) => compiled,
+            Err(
+                ViewValueCompileError::MissingExpectedType { .. }
+                | ViewValueCompileError::UnsupportedExpression { .. },
+            ) => self.compile_symbolic(expression)?,
+            Err(error) => return Err(error),
+        };
+        self.local_types.insert(binding.clone(), value_type);
+        Ok((binding, program))
+    }
+
+    pub(in crate::app) fn compile_match_condition(
+        &mut self,
+        scrutinee: &Expr,
+        arm: &ViewMatchArm,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        let mut instructions = Vec::new();
+        match arm.pattern() {
+            Pattern::Discard | Pattern::Ident(_) | Pattern::MutIdent(_) | Pattern::Typed { .. } => {
+                instructions.push(ValueInstruction::Constant {
+                    value: FxRuntimeValue::Bool(true),
+                });
+            }
+            Pattern::Literal(pattern) => {
+                let pattern_type = infer_literal_type(pattern).ok_or_else(|| {
+                    ViewValueCompileError::UnsupportedMatchPattern {
+                        pattern: format!("{:?}", arm.pattern()),
+                    }
+                })?;
+                self.emit_expression(scrutinee, Some(pattern_type), &mut instructions)?;
+                self.emit_expression(pattern, Some(pattern_type), &mut instructions)?;
+                instructions.push(ValueInstruction::Equal);
+            }
+            Pattern::Variant {
+                path,
+                name,
+                payload: None,
+            } => {
+                self.emit_expression(scrutinee, Some(FxRuntimeType::I32), &mut instructions)?;
+                let symbol = path
+                    .as_ref()
+                    .map_or_else(|| name.clone(), |path| format!("{path}.{name}"));
+                instructions.push(ValueInstruction::Constant {
+                    value: FxRuntimeValue::I32(symbol_discriminant(&symbol)),
+                });
+                instructions.push(ValueInstruction::Equal);
+            }
+            Pattern::Entity(entity) => {
+                self.emit_expression(scrutinee, Some(FxRuntimeType::I32), &mut instructions)?;
+                instructions.push(ValueInstruction::Constant {
+                    value: FxRuntimeValue::I32(symbol_discriminant(entity.body())),
+                });
+                instructions.push(ValueInstruction::Equal);
+            }
+            Pattern::Raw(source) if valid_projection_path(source) => {
+                self.emit_expression(scrutinee, Some(FxRuntimeType::I32), &mut instructions)?;
+                instructions.push(ValueInstruction::Constant {
+                    value: FxRuntimeValue::I32(symbol_discriminant(source)),
+                });
+                instructions.push(ValueInstruction::Equal);
+            }
+            pattern => {
+                return Err(ViewValueCompileError::UnsupportedMatchPattern {
+                    pattern: format!("{pattern:?}"),
+                });
+            }
+        }
+        if let Some(guard) = arm.guard() {
+            self.emit_expression(guard, Some(FxRuntimeType::Bool), &mut instructions)?;
+            instructions.push(ValueInstruction::And);
+        }
+        self.finish_pending(FxRuntimeType::Bool, instructions)
+    }
+
+    pub(in crate::app) fn compile_repeat_source(
+        &mut self,
+        source: &Expr,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        let count = match source {
+            Expr::BracketSeq(items) => Some(items.len()),
+            Expr::NumericBracketSeq(items) => Some(items.len()),
+            _ => None,
+        };
+        if let Some(count) = count {
+            let count =
+                i32::try_from(count).map_err(|_| ViewValueCompileError::InvalidLiteral {
+                    literal: count.to_string(),
+                    expected: FxRuntimeType::I32,
+                    reason: "repeat source length exceeds i32::MAX".to_owned(),
+                })?;
+            return self.finish_pending(
+                FxRuntimeType::I32,
+                vec![ValueInstruction::Constant {
+                    value: FxRuntimeValue::I32(count),
+                }],
+            );
+        }
+        self.compile(source, Some(FxRuntimeType::I32))
+    }
+
+    pub(in crate::app) fn compile_repeat_key(
+        &mut self,
+        repeat: &ViewForEach,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        if let Some(key) = repeat.key() {
+            return self.compile(key, Some(FxRuntimeType::I32));
+        }
+        let binding = repeat
+            .pattern()
+            .simple_binding_name()
+            .unwrap_or("_item")
+            .to_owned();
+        let mut instructions = Vec::new();
+        self.emit_projection(
+            ViewValueInputSource::RepeatOrdinal { binding },
+            FxRuntimeType::I32,
+            &mut instructions,
+        )?;
+        self.finish_pending(FxRuntimeType::I32, instructions)
+    }
+
+    pub(in crate::app) fn compile_await_source(
+        &mut self,
+        source: &Expr,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        if matches!(source, Expr::Call { .. } | Expr::Await { .. }) {
+            let discriminant = symbol_discriminant(&format!("{source:?}"));
+            let label = u32::from_le_bytes(discriminant.to_le_bytes());
+            let mut instructions = Vec::new();
+            self.emit_projection(
+                ViewValueInputSource::Projection {
+                    path: vec!["await".to_owned(), format!("call_{label:08x}")],
+                },
+                FxRuntimeType::I32,
+                &mut instructions,
+            )?;
+            return self.finish_pending(FxRuntimeType::I32, instructions);
+        }
+        self.compile(source, Some(FxRuntimeType::I32))
+    }
+
+    pub(in crate::app) fn finish(self) -> Result<CompiledViewValues, ViewValueCompileError> {
+        let schema = |return_type| {
+            ValueProgramSchema::new(Vec::new(), self.state_types.clone(), return_type)
+        };
+        let programs = self
+            .pending
+            .into_iter()
+            .map(|pending| {
+                ViewValueProgram::validate(
+                    pending.id,
+                    schema(pending.return_type),
+                    pending.instructions,
+                )
+                .map_err(ViewValueCompileError::from)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(CompiledViewValues {
+            programs,
+            inputs: self.inputs,
+        })
+    }
+
+    fn compile_with_type(
+        &mut self,
+        expression: &Expr,
+        expected: Option<FxRuntimeType>,
+    ) -> Result<(ViewValueProgramId, FxRuntimeType), ViewValueCompileError> {
+        let mut instructions = Vec::new();
+        let return_type = self.emit_expression(expression, expected, &mut instructions)?;
+        let id = self.finish_pending(return_type, instructions)?;
+        Ok((id, return_type))
+    }
+
+    fn compile_symbolic(
+        &mut self,
+        expression: &Expr,
+    ) -> Result<(ViewValueProgramId, FxRuntimeType), ViewValueCompileError> {
+        let id = self.finish_pending(
+            FxRuntimeType::I32,
+            vec![ValueInstruction::Constant {
+                value: FxRuntimeValue::I32(symbol_discriminant(&format!("{expression:?}"))),
+            }],
+        )?;
+        Ok((id, FxRuntimeType::I32))
+    }
+
+    fn finish_pending(
+        &mut self,
+        return_type: FxRuntimeType,
+        mut instructions: Vec<ValueInstruction>,
+    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
+        let id = ViewValueProgramId(
+            u32::try_from(self.pending.len())
+                .map_err(|_| ViewValueCompileError::TooManyPrograms)?,
+        );
+        instructions.push(ValueInstruction::Return);
+        self.pending.push(PendingProgram {
+            id,
+            return_type,
+            instructions,
+        });
+        Ok(id)
+    }
+
+    fn emit_expression(
+        &mut self,
+        expression: &Expr,
+        expected: Option<FxRuntimeType>,
+        instructions: &mut Vec<ValueInstruction>,
+    ) -> Result<FxRuntimeType, ViewValueCompileError> {
+        match expression {
+            Expr::Literal(literal) => emit_literal(literal, expected, instructions),
+            Expr::Path(path) => self.emit_path(path.as_label(), expected, instructions),
+            Expr::Select(select) => {
+                let path = Expr::Select(select.clone())
+                    .dotted_selector_label()
+                    .ok_or_else(|| unsupported(expression))?;
+                self.emit_path(&path, expected, instructions)
+            }
+            Expr::LifetimePath { key, .. } => {
+                let value_type = expected.ok_or_else(|| missing_expected(expression))?;
+                self.emit_projection(
+                    ViewValueInputSource::LifetimeProjection {
+                        scope: key.scope().as_str().to_owned(),
+                        path: key.path().to_vec(),
+                    },
+                    value_type,
+                    instructions,
+                )?;
+                Ok(value_type)
+            }
+            Expr::ShortVariant(name) => {
+                require_expected(expression, expected, FxRuntimeType::I32)?;
+                instructions.push(ValueInstruction::Constant {
+                    value: FxRuntimeValue::I32(symbol_discriminant(name.as_str())),
+                });
+                Ok(FxRuntimeType::I32)
+            }
+            Expr::EntityRef(reference) => {
+                require_expected(expression, expected, FxRuntimeType::I32)?;
+                instructions.push(ValueInstruction::Constant {
+                    value: FxRuntimeValue::I32(symbol_discriminant(&reference.canonical_body())),
+                });
+                Ok(FxRuntimeType::I32)
+            }
+            Expr::Unary { op, expr } => {
+                let operand_type = self.emit_expression(expr, expected, instructions)?;
+                instructions.push(match op {
+                    UnaryOp::Not => ValueInstruction::Not,
+                    UnaryOp::Neg => ValueInstruction::Neg,
+                });
+                Ok(operand_type)
+            }
+            Expr::Binary { lhs, op, rhs } => {
+                self.emit_binary(lhs, *op, rhs, expected, instructions)
+            }
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch: Some(else_branch),
+            } => {
+                self.emit_expression(condition, Some(FxRuntimeType::Bool), instructions)?;
+                let value_type = self.emit_expression(then_branch, expected, instructions)?;
+                self.emit_expression(else_branch, Some(value_type), instructions)?;
+                instructions.push(ValueInstruction::Select);
+                Ok(value_type)
+            }
+            Expr::Call { callee, args } => {
+                self.emit_intrinsic(callee, args, expected, instructions)
+            }
+            Expr::Raw(source) if source == "true" || source == "false" => {
+                emit_literal(&Literal::Bool(source == "true"), expected, instructions)
+            }
+            Expr::Raw(source) if valid_projection_path(source) => {
+                self.emit_path(source, expected, instructions)
+            }
+            _ => Err(unsupported(expression)),
+        }
+    }
+
+    fn emit_path(
+        &mut self,
+        path: &str,
+        expected: Option<FxRuntimeType>,
+        instructions: &mut Vec<ValueInstruction>,
+    ) -> Result<FxRuntimeType, ViewValueCompileError> {
+        let value_type = expected.ok_or_else(|| ViewValueCompileError::MissingExpectedType {
+            expression: path.to_owned(),
+        })?;
+        let source = if self.local_types.contains_key(path) {
+            ViewValueInputSource::Local {
+                name: path.to_owned(),
+            }
+        } else {
+            ViewValueInputSource::Projection {
+                path: path.split('.').map(str::to_owned).collect(),
+            }
+        };
+        self.emit_projection(source, value_type, instructions)?;
+        Ok(value_type)
+    }
+
+    fn emit_projection(
+        &mut self,
+        source: ViewValueInputSource,
+        value_type: FxRuntimeType,
+        instructions: &mut Vec<ValueInstruction>,
+    ) -> Result<(), ViewValueCompileError> {
+        let slot = if let Some(existing) = self.input_slots.get(&source) {
+            if existing.value_type != value_type {
+                return Err(ViewValueCompileError::ProjectionTypeConflict {
+                    projection: source,
+                    existing: existing.value_type,
+                    requested: value_type,
+                });
+            }
+            existing.slot
+        } else {
+            if self.state_types.len() >= MAX_VIEW_STATE_PROJECTIONS {
+                return Err(ViewValueCompileError::TooManyStateProjections {
+                    limit: MAX_VIEW_STATE_PROJECTIONS,
+                });
+            }
+            let slot = u16::try_from(self.state_types.len()).map_err(|_| {
+                ViewValueCompileError::TooManyStateProjections {
+                    limit: MAX_VIEW_STATE_PROJECTIONS,
+                }
+            })?;
+            self.state_types.push(value_type);
+            self.inputs.push(ViewValueInputResource {
+                namespace: ViewValueInputNamespace::State,
+                slot,
+                value_type,
+                source: source.clone(),
+            });
+            self.input_slots
+                .insert(source, InputSlot { slot, value_type });
+            slot
+        };
+        instructions.push(ValueInstruction::LoadState {
+            slot,
+            ty: value_type,
+        });
+        Ok(())
+    }
+
+    fn emit_binary(
+        &mut self,
+        lhs: &Expr,
+        operator: BinaryOp,
+        rhs: &Expr,
+        expected: Option<FxRuntimeType>,
+        instructions: &mut Vec<ValueInstruction>,
+    ) -> Result<FxRuntimeType, ViewValueCompileError> {
+        match operator {
+            BinaryOp::And | BinaryOp::Or | BinaryOp::Implies => {
+                self.emit_expression(lhs, Some(FxRuntimeType::Bool), instructions)?;
+                if operator == BinaryOp::Implies {
+                    instructions.push(ValueInstruction::Not);
+                }
+                self.emit_expression(rhs, Some(FxRuntimeType::Bool), instructions)?;
+                instructions.push(if operator == BinaryOp::And {
+                    ValueInstruction::And
+                } else {
+                    ValueInstruction::Or
+                });
+                Ok(FxRuntimeType::Bool)
+            }
+            BinaryOp::Eq
+            | BinaryOp::NotEq
+            | BinaryOp::Gte
+            | BinaryOp::Lte
+            | BinaryOp::Gt
+            | BinaryOp::Lt => {
+                let operand_type = infer_expression_type(lhs)
+                    .or_else(|| infer_expression_type(rhs))
+                    .ok_or_else(|| missing_expected(lhs))?;
+                self.emit_expression(lhs, Some(operand_type), instructions)?;
+                self.emit_expression(rhs, Some(operand_type), instructions)?;
+                instructions.push(match operator {
+                    BinaryOp::Eq | BinaryOp::NotEq => ValueInstruction::Equal,
+                    BinaryOp::Gte => ValueInstruction::GreaterEqual,
+                    BinaryOp::Lte => ValueInstruction::LessEqual,
+                    BinaryOp::Gt => ValueInstruction::Greater,
+                    BinaryOp::Lt => ValueInstruction::Less,
+                    _ => unreachable!(),
+                });
+                if operator == BinaryOp::NotEq {
+                    instructions.push(ValueInstruction::Not);
+                }
+                Ok(FxRuntimeType::Bool)
+            }
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => {
+                let operand_type = expected
+                    .or_else(|| infer_expression_type(lhs))
+                    .or_else(|| infer_expression_type(rhs))
+                    .ok_or_else(|| missing_expected(lhs))?;
+                self.emit_expression(lhs, Some(operand_type), instructions)?;
+                self.emit_expression(rhs, Some(operand_type), instructions)?;
+                instructions.push(match operator {
+                    BinaryOp::Add => ValueInstruction::Add,
+                    BinaryOp::Sub => ValueInstruction::Sub,
+                    BinaryOp::Mul => ValueInstruction::Mul,
+                    BinaryOp::Div => ValueInstruction::Div,
+                    _ => unreachable!(),
+                });
+                Ok(operand_type)
+            }
+            BinaryOp::In | BinaryOp::Merge | BinaryOp::Rem => {
+                Err(ViewValueCompileError::UnsupportedExpression {
+                    expression: format!("{lhs:?} {operator:?} {rhs:?}"),
                 })
-                .collect::<Vec<_>>();
-            if *rest {
-                fields.push("..".to_owned());
             }
-            format!(
-                "{}{{{}}}",
-                path.as_ref().map_or("", String::as_str),
-                fields.join(", ")
-            )
         }
-        Pattern::BracketSeq { items, rest } => {
-            let mut items = items.iter().map(pattern_schema_source).collect::<Vec<_>>();
-            if let Some(rest) = rest {
-                items.push(format!("..{rest}"));
-            }
-            format!("[{}]", items.join(", "))
+    }
+
+    fn emit_intrinsic(
+        &mut self,
+        callee: &Expr,
+        args: &[CallArg],
+        expected: Option<FxRuntimeType>,
+        instructions: &mut Vec<ValueInstruction>,
+    ) -> Result<FxRuntimeType, ViewValueCompileError> {
+        let name = callee
+            .dotted_selector_label()
+            .ok_or_else(|| unsupported(callee))?;
+        let args = args
+            .iter()
+            .map(|argument| match argument {
+                CallArg::Positional(value) => Ok(value),
+                CallArg::Named { value, .. } => Ok(value.as_ref()),
+                CallArg::Spread { value } => Err(unsupported(value)),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let value_type = expected
+            .or_else(|| {
+                args.first()
+                    .and_then(|argument| infer_expression_type(argument))
+            })
+            .ok_or_else(|| missing_expected(callee))?;
+        let (arity, instruction) = match name.rsplit('.').next().unwrap_or(&name) {
+            "abs" => (1, ValueInstruction::Abs),
+            "min" => (2, ValueInstruction::Min),
+            "max" => (2, ValueInstruction::Max),
+            "clamp" => (3, ValueInstruction::Clamp),
+            "sin" => (1, ValueInstruction::Sin),
+            "cos" => (1, ValueInstruction::Cos),
+            "floor" => (1, ValueInstruction::Floor),
+            "fract" => (1, ValueInstruction::Fract),
+            _ => return Err(unsupported(callee)),
+        };
+        if args.len() != arity {
+            return Err(ViewValueCompileError::UnsupportedExpression {
+                expression: format!("{name} expects {arity} arguments, got {}", args.len()),
+            });
         }
-        Pattern::Whole { name, pattern } => format!("{name} @ {}", pattern_schema_source(pattern)),
-        Pattern::Typed { name, ty } => format!("{name}: {ty:?}"),
-        Pattern::Raw(source) => source.clone(),
+        for argument in args {
+            self.emit_expression(argument, Some(value_type), instructions)?;
+        }
+        instructions.push(instruction);
+        Ok(match name.rsplit('.').next().unwrap_or(&name) {
+            "sin" | "cos" | "floor" | "fract" => FxRuntimeType::F32,
+            _ => value_type,
+        })
     }
 }
 
-fn variant_pattern_payload_source(payload: &VariantPatternPayload) -> String {
-    match payload {
-        VariantPatternPayload::Tuple(items) => format!(
-            "({})",
-            items
-                .iter()
-                .map(pattern_schema_source)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        VariantPatternPayload::Record { fields, rest } => {
-            let mut fields = fields
-                .iter()
-                .map(|field| {
-                    format!(
-                        "{}: {}",
-                        field.name(),
-                        pattern_schema_source(field.pattern())
-                    )
-                })
-                .collect::<Vec<_>>();
-            if *rest {
-                fields.push("..".to_owned());
-            }
-            format!("{{{}}}", fields.join(", "))
+fn infer_expression_type(expression: &Expr) -> Option<FxRuntimeType> {
+    infer_literal_type(expression).or(match expression {
+        Expr::ShortVariant(_) | Expr::EntityRef(_) => Some(FxRuntimeType::I32),
+        Expr::Unary {
+            op: UnaryOp::Not, ..
         }
+        | Expr::Binary {
+            op:
+                BinaryOp::Implies
+                | BinaryOp::Or
+                | BinaryOp::And
+                | BinaryOp::Eq
+                | BinaryOp::NotEq
+                | BinaryOp::Gte
+                | BinaryOp::Lte
+                | BinaryOp::Gt
+                | BinaryOp::Lt,
+            ..
+        } => Some(FxRuntimeType::Bool),
+        _ => None,
+    })
+}
+
+fn require_expected(
+    expression: &Expr,
+    expected: Option<FxRuntimeType>,
+    actual: FxRuntimeType,
+) -> Result<(), ViewValueCompileError> {
+    if expected.is_none_or(|expected| expected == actual) {
+        Ok(())
+    } else {
+        Err(ViewValueCompileError::UnsupportedExpression {
+            expression: format!("{expression:?} cannot produce {:?}", expected.unwrap()),
+        })
     }
+}
+
+fn missing_expected(expression: &Expr) -> ViewValueCompileError {
+    ViewValueCompileError::MissingExpectedType {
+        expression: format!("{expression:?}"),
+    }
+}
+
+fn unsupported(expression: &Expr) -> ViewValueCompileError {
+    ViewValueCompileError::UnsupportedExpression {
+        expression: format!("{expression:?}"),
+    }
+}
+
+fn valid_projection_path(source: &str) -> bool {
+    !source.is_empty()
+        && source.split('.').all(|segment| {
+            let mut chars = segment.chars();
+            chars
+                .next()
+                .is_some_and(|character| character == '_' || character.is_alphabetic())
+                && chars.all(|character| character == '_' || character.is_alphanumeric())
+        })
+}
+
+fn symbol_discriminant(source: &str) -> i32 {
+    let digest = BundleDigest::of(source.as_bytes());
+    let mut bytes = [0_u8; 4];
+    bytes.copy_from_slice(&digest.as_bytes()[..4]);
+    i32::from_le_bytes(bytes)
 }

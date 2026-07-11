@@ -137,7 +137,7 @@ pub(super) fn lower_text_field(
             key: None,
             source: None,
         });
-    lower_modifiers(view_id, field.modifiers(), state);
+    lower_modifiers(view_id, field.modifiers(), state)?;
     state
         .instructions
         .push(ViewProgramInstruction::CloseElement);

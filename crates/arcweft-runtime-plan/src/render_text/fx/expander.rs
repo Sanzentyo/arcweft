@@ -51,8 +51,14 @@ impl<'catalog> DialogueFxExpander<'catalog> {
                     .checked_add(1)
                     .ok_or_else(|| fx_error("too many Fx applications in one dialogue line"))?;
                 let (name, application) = self.catalog.bind_tag(tag, ordinal)?;
+                let definition = self
+                    .catalog
+                    .definitions
+                    .get(&name)
+                    .ok_or_else(|| fx_error(format!("unknown Fx function `{name}`")))?;
                 self.inline_assignments.push(FxInlineAssignment::new(
-                    application.definition().to_string(),
+                    definition,
+                    &application,
                     tag.attrs_range(),
                 ));
                 self.open_spans.push(OpenSpan::Fx {

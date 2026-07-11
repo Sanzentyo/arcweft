@@ -96,6 +96,9 @@ mod view_mounts;
 use stage_placement::{image_design_bounds, image_stage_placement};
 use view_mounts::{mounted_view_ids, mounted_view_matches};
 
+mod view_merge;
+use view_merge::merge_view_programs;
+
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct BundleOptions {
     path: Option<PathBuf>,
@@ -341,7 +344,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
         })?;
     let view_sidecars = collect_bundle_view_sidecars(authored_resources.content())?.merged(
         collect_bundle_dsl_view_resources_for_package(&compiled.hir, &image_objects, &package)?,
-    );
+    )?;
     image_objects.extend(view_sidecars.image_objects.iter().cloned());
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
     let bundle = attach_bundle_view_sidecars(
@@ -412,14 +415,23 @@ struct BundleViewSidecars {
 }
 
 impl BundleViewSidecars {
-    fn merged(mut self, other: Self) -> Self {
-        self.program = merge_optional(self.program, other.program, merge_view_programs);
+    fn merged(mut self, other: Self) -> Result<Self, ExitCode> {
+        self.program = match (self.program, other.program) {
+            (Some(left), Some(right)) => {
+                Some(merge_view_programs(left, right).map_err(|error| {
+                    eprintln!("error: failed to merge View value inventories: {error}");
+                    ExitCode::FAILURE
+                })?)
+            }
+            (Some(program), None) | (None, Some(program)) => Some(program),
+            (None, None) => None,
+        };
         self.text = merge_optional(self.text, other.text, merge_view_text);
         self.input = merge_optional(self.input, other.input, merge_view_input);
         self.style = merge_optional(self.style, other.style, merge_view_style);
         self.theme = self.theme.or(other.theme);
         self.image_objects.extend(other.image_objects);
-        self
+        Ok(self)
     }
 }
 
@@ -434,27 +446,6 @@ fn merge_optional<T>(
         (None, Some(right)) => Some(right),
         (None, None) => None,
     }
-}
-
-fn merge_view_programs(
-    mut left: ViewProgramResource,
-    right: ViewProgramResource,
-) -> ViewProgramResource {
-    left.instructions.extend(right.instructions);
-    left.child_spans.extend(right.child_spans);
-    left.handlers.extend(right.handlers);
-    left.state_schema_hashes.extend(right.state_schema_hashes);
-    left.exported_parts.extend(right.exported_parts);
-    left.semantic_targets.extend(right.semantic_targets);
-    left.layout_bounds.extend(right.layout_bounds);
-    left.scroll_regions.extend(right.scroll_regions);
-    left.surfaces.extend(right.surfaces);
-    left.text_blocks.extend(right.text_blocks);
-    left.action_buttons.extend(right.action_buttons);
-    left.focus_groups.extend(right.focus_groups);
-    left.focus_navigation.extend(right.focus_navigation);
-    left.adapter_requirements.extend(right.adapter_requirements);
-    left
 }
 
 fn merge_view_text(mut left: ViewTextResource, right: ViewTextResource) -> ViewTextResource {
@@ -563,21 +554,12 @@ fn collect_bundle_dsl_view_resources_for_package(
         })
         .collect::<Vec<_>>();
     let style = dsl_view_style_resource(&styles)?;
-    let fx_ids = module
-        .functions()
-        .iter()
-        .filter(|function| function.has_attribute("fx"))
-        .map(|function| {
-            arcweft_presentation::fx::FxId::try_new(package, function.qualified_name())
-                .map(|id| (function.name().to_owned(), id))
-        })
-        .collect::<Result<std::collections::BTreeMap<_, _>, _>>()
+    let fx_definitions = lower_fx_definitions_for_package(module, package).map_err(|error| {
+        eprintln!("error: failed to compile View-visible Fx definitions: {error}");
+        ExitCode::FAILURE
+    })?;
+    let view_sidecars = view_sidecars(&views, style.as_ref(), image_objects, &fx_definitions)
         .map_err(|error| {
-            eprintln!("error: invalid Fx identity: {error}");
-            ExitCode::FAILURE
-        })?;
-    let view_sidecars =
-        view_sidecars(&views, style.as_ref(), image_objects, fx_ids).map_err(|error| {
             eprintln!("{error}");
             ExitCode::FAILURE
         })?;
@@ -592,7 +574,7 @@ fn collect_bundle_dsl_view_resources_for_package(
         input: view_sidecars.input,
         theme: None,
         image_objects: view_sidecars.image_objects,
-    });
+    })?;
 
     Ok(sidecars)
 }

@@ -715,7 +715,7 @@ flow @flow.opening start {
     fn allow_attribute_suppresses_flow_module_mismatch() {
         let codes = lint_codes(
             r"
-mod route::opening
+mod route.opening
 
 #[allow(id::flow_module_mismatch)]
 flow @flow.prologue {
@@ -731,7 +731,7 @@ flow @flow.prologue {
         let codes = lint_codes(
             r"
 #![allow(id::flow_module_mismatch, style::redundant_decl_identity)]
-mod route::opening
+mod route.opening
 
 flow @flow.prologue prologue {
 }

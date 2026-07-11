@@ -290,7 +290,7 @@ fn rejects_relative_id_syntax_in_module_and_use_paths() {
 fn lints_deep_dot_run_relative_ids_and_module_flow_mismatch() {
     let tree = parse_ok(
         r"
-mod game::routes::opening
+mod game.routes.opening
 
 flow @flow.title title {
     scope outer {

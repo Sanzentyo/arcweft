@@ -1,4 +1,6 @@
 use crate::container::BundleDigest;
+use arcweft_presentation::fx::FxRuntimeType;
+use arcweft_view::{ViewValueProgramId, ViewValueProgramInventory};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -17,6 +19,7 @@ use super::model::{
     ViewInputOptions, ViewInputResource, ViewProgramInstruction, ViewProgramResource,
     ViewStyleApplyRef, ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart,
     ViewStyleValue, ViewTextResource, ViewTextSourceKind, ViewThemeResource,
+    ViewValueInputNamespace, ViewValueInputSource,
 };
 
 const FIELD_VIEW_TRANSCRIPT: FieldId = FieldId(1);
@@ -25,6 +28,9 @@ const FIELD_VIEW_TRANSCRIPT: FieldId = FieldId(1);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ViewResourceBudget {
     pub common: SectionCodecBudget,
+    pub value_programs: usize,
+    pub value_program_instructions: usize,
+    pub value_inputs: usize,
     pub program_instructions: usize,
     pub fx_arguments: usize,
     pub child_spans: usize,
@@ -77,6 +83,9 @@ impl Default for ViewResourceBudget {
                 depth: 64,
                 ..SectionCodecBudget::default()
             },
+            value_programs: 65_536,
+            value_program_instructions: 1_000_000,
+            value_inputs: 512,
             program_instructions: 262_144,
             fx_arguments: 1_000_000,
             child_spans: 262_144,
@@ -167,6 +176,10 @@ impl ViewProgramResource {
     }
 
     fn canonicalize(&mut self) {
+        self.value_programs
+            .sort_by_key(arcweft_view::ViewValueProgram::id);
+        self.value_inputs
+            .sort_by_key(|input| (input.namespace, input.slot));
         for instruction in &mut self.instructions {
             if let ViewProgramInstruction::ApplyFx { arguments, .. } = instruction {
                 arguments.sort_by(|left, right| left.parameter.cmp(&right.parameter));
@@ -204,7 +217,9 @@ impl ViewProgramResource {
 
     fn validate(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
         self.validate_budgets(budget)?;
+        self.validate_value_programs()?;
         self.validate_child_spans()?;
+        self.validate_control_flow_spans()?;
         self.validate_unique_ids()?;
         self.validate_layout_bounds()?;
         self.validate_scroll_regions()?;
@@ -215,6 +230,24 @@ impl ViewProgramResource {
     }
 
     fn validate_budgets(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
+        check_budget(
+            self.value_programs.len(),
+            budget.value_programs,
+            "view_value_programs",
+        )?;
+        check_budget(
+            self.value_inputs.len(),
+            budget.value_inputs,
+            "view_value_inputs",
+        )?;
+        check_budget(
+            self.value_programs
+                .iter()
+                .map(|program| program.program().instructions().len())
+                .sum::<usize>(),
+            budget.value_program_instructions,
+            "view_value_program_instructions",
+        )?;
         check_budget(
             self.instructions.len(),
             budget.program_instructions,
@@ -294,6 +327,94 @@ impl ViewProgramResource {
         Ok(())
     }
 
+    fn validate_value_programs(&self) -> Result<(), SectionCodecError> {
+        let inventory = ViewValueProgramInventory::from_programs(self.value_programs.clone())
+            .map_err(|_| SectionCodecError::NonCanonicalTable("view_value_program_inventory"))?;
+        self.validate_value_inputs(&inventory)?;
+        for instruction in &self.instructions {
+            match instruction {
+                ViewProgramInstruction::CallView { arguments, .. } => {
+                    for argument in arguments {
+                        validate_program(&inventory, argument.value_program, None)?;
+                    }
+                }
+                ViewProgramInstruction::Branch {
+                    condition_program, ..
+                } => validate_program(&inventory, *condition_program, Some(FxRuntimeType::Bool))?,
+                ViewProgramInstruction::RepeatKeyed {
+                    source_program,
+                    key_program,
+                    ..
+                } => {
+                    validate_program(&inventory, *source_program, Some(FxRuntimeType::I32))?;
+                    validate_program(&inventory, *key_program, Some(FxRuntimeType::I32))?;
+                }
+                ViewProgramInstruction::Await { source_program, .. } => {
+                    validate_program(&inventory, *source_program, None)?;
+                }
+                ViewProgramInstruction::BindLocal {
+                    binding,
+                    value_program,
+                    ..
+                } => {
+                    if !valid_identifier(binding) {
+                        return Err(SectionCodecError::NonCanonicalTable("view_local_binding"));
+                    }
+                    validate_program(&inventory, *value_program, None)?;
+                }
+                ViewProgramInstruction::ApplyFx {
+                    arguments,
+                    key_program,
+                    ..
+                } => {
+                    validate_optional_program(&inventory, *key_program, Some(FxRuntimeType::I32))?;
+                    for argument in arguments {
+                        validate_program(&inventory, argument.value_program, None)?;
+                    }
+                }
+                ViewProgramInstruction::OpenElement { .. }
+                | ViewProgramInstruction::CloseElement
+                | ViewProgramInstruction::EmitText { .. }
+                | ViewProgramInstruction::EmitImage { .. }
+                | ViewProgramInstruction::EmitCustom { .. }
+                | ViewProgramInstruction::ApplyStyle { .. }
+                | ViewProgramInstruction::BindHandler { .. }
+                | ViewProgramInstruction::AttachSemantic { .. } => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_value_inputs(
+        &self,
+        inventory: &ViewValueProgramInventory,
+    ) -> Result<(), SectionCodecError> {
+        let mut parameters = BTreeSet::new();
+        let mut state = BTreeSet::new();
+        for input in &self.value_inputs {
+            let (types, slots) = match input.namespace {
+                ViewValueInputNamespace::Parameter => {
+                    (inventory.parameter_types(), &mut parameters)
+                }
+                ViewValueInputNamespace::State => (inventory.state_types(), &mut state),
+            };
+            if !slots.insert(input.slot)
+                || types.get(usize::from(input.slot)).copied() != Some(input.value_type)
+                || !valid_value_input_source(&input.source)
+            {
+                return Err(SectionCodecError::NonCanonicalTable("view_value_inputs"));
+            }
+        }
+        if parameters.len() != inventory.parameter_types().len()
+            || state.len() != inventory.state_types().len()
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_value_input_coverage",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_child_spans(&self) -> Result<(), SectionCodecError> {
         self.child_spans.iter().try_for_each(|span| {
             if span.start_instruction > span.end_instruction
@@ -304,6 +425,51 @@ impl ViewProgramResource {
                 Ok(())
             }
         })
+    }
+
+    fn validate_control_flow_spans(&self) -> Result<(), SectionCodecError> {
+        for (index, instruction) in self.instructions.iter().enumerate() {
+            let body_start = index.saturating_add(1);
+            let valid_end = |offset: u32, span: u32| {
+                usize::try_from(offset)
+                    .ok()
+                    .and_then(|offset| body_start.checked_add(offset))
+                    .and_then(|start| {
+                        usize::try_from(span)
+                            .ok()
+                            .and_then(|span| start.checked_add(span))
+                    })
+                    .is_some_and(|end| end <= self.instructions.len())
+            };
+            let valid = match instruction {
+                ViewProgramInstruction::Branch {
+                    then_span,
+                    else_span,
+                    ..
+                } => {
+                    valid_end(0, *then_span)
+                        && else_span.is_none_or(|else_span| valid_end(*then_span, else_span))
+                }
+                ViewProgramInstruction::RepeatKeyed { body_span, .. } => valid_end(0, *body_span),
+                ViewProgramInstruction::Await {
+                    pending_branch,
+                    ready_branch,
+                    error_branch,
+                    denied_branch,
+                    ..
+                } => [pending_branch, ready_branch, error_branch, denied_branch]
+                    .into_iter()
+                    .flatten()
+                    .all(|branch| valid_end(branch.start_offset, branch.body_span)),
+                _ => true,
+            };
+            if !valid {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_control_flow_spans",
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn validate_unique_ids(&self) -> Result<(), SectionCodecError> {
@@ -523,7 +689,9 @@ impl ViewProgramResource {
     }
 
     fn record_count(&self) -> u32 {
-        saturating_u32(self.instructions.len())
+        saturating_u32(self.value_programs.len())
+            .saturating_add(saturating_u32(self.value_inputs.len()))
+            .saturating_add(saturating_u32(self.instructions.len()))
             .saturating_add(saturating_u32(self.layout_bounds.len()))
             .saturating_add(saturating_u32(self.action_buttons.len()))
             .saturating_add(saturating_u32(self.scroll_regions.len()))
@@ -875,7 +1043,21 @@ impl ViewTextResource {
                 .iter()
                 .map(|redaction| redaction.text_source.clone()),
             "view_text_redactions",
-        )
+        )?;
+        if self.sources.iter().all(|source| match &source.kind {
+            ViewTextSourceKind::Projection { path } => {
+                !path.is_empty() && path.iter().all(|segment| valid_identifier(segment))
+            }
+            ViewTextSourceKind::Local { name } => valid_identifier(name),
+            ViewTextSourceKind::Literal { .. }
+            | ViewTextSourceKind::Localized { .. }
+            | ViewTextSourceKind::RichTextDocument { .. }
+            | ViewTextSourceKind::DisplayFrame { .. } => true,
+        }) {
+            Ok(())
+        } else {
+            Err(SectionCodecError::NonCanonicalTable("view_text_projection"))
+        }
     }
 
     fn public_ids(&self) -> Vec<String> {
@@ -1239,6 +1421,32 @@ fn view_registry() -> Result<FieldRegistry, SectionCodecError> {
     )])
 }
 
+fn validate_optional_program(
+    inventory: &ViewValueProgramInventory,
+    id: Option<ViewValueProgramId>,
+    expected: Option<FxRuntimeType>,
+) -> Result<(), SectionCodecError> {
+    id.map_or(Ok(()), |id| validate_program(inventory, id, expected))
+}
+
+fn validate_program(
+    inventory: &ViewValueProgramInventory,
+    id: ViewValueProgramId,
+    expected: Option<FxRuntimeType>,
+) -> Result<(), SectionCodecError> {
+    let program = inventory
+        .get(id)
+        .ok_or(SectionCodecError::NonCanonicalTable(
+            "view_value_program_reference",
+        ))?;
+    if expected.is_some_and(|expected| expected != program.return_type()) {
+        return Err(SectionCodecError::NonCanonicalTable(
+            "view_value_program_return_type",
+        ));
+    }
+    Ok(())
+}
+
 fn reject_duplicates(
     values: impl IntoIterator<Item = String>,
     table: &'static str,
@@ -1260,6 +1468,21 @@ fn valid_identifier(value: &str) -> bool {
         .next()
         .is_some_and(|character| character == '_' || character.is_alphabetic())
         && characters.all(|character| character == '_' || character.is_alphanumeric())
+}
+
+fn valid_value_input_source(source: &ViewValueInputSource) -> bool {
+    match source {
+        ViewValueInputSource::Projection { path } => {
+            !path.is_empty() && path.iter().all(|segment| valid_identifier(segment))
+        }
+        ViewValueInputSource::LifetimeProjection { scope, path } => {
+            valid_identifier(scope)
+                && !path.is_empty()
+                && path.iter().all(|segment| valid_identifier(segment))
+        }
+        ViewValueInputSource::Local { name } => valid_identifier(name),
+        ViewValueInputSource::RepeatOrdinal { binding } => valid_identifier(binding),
+    }
 }
 
 fn unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -1391,6 +1614,8 @@ fn style_value_public_ids(value: &ViewStyleValue) -> Vec<String> {
 fn text_source_kind_public_ids(kind: &ViewTextSourceKind) -> impl Iterator<Item = String> + '_ {
     match kind {
         ViewTextSourceKind::Literal { .. }
+        | ViewTextSourceKind::Projection { .. }
+        | ViewTextSourceKind::Local { .. }
         | ViewTextSourceKind::RichTextDocument { .. }
         | ViewTextSourceKind::DisplayFrame { .. } => Vec::new(),
         ViewTextSourceKind::Localized { key, locale } => [Some(key.clone()), locale.clone()]

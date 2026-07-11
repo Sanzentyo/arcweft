@@ -667,7 +667,10 @@ flow opening {
             HoverContents::Scalar(MarkedString::String(text)) => {
                 assert!(text.contains("effective dialogue style for `alice`"));
                 assert!(text.contains("active contributors:"));
-                assert!(text.contains("rich_text.text.color = #a8b5ff"));
+                assert!(
+                    text.contains("rich_text.text.color = #a8b5ff"),
+                    "unexpected Fx hover:\n{text}"
+                );
                 assert!(text.contains("inline_span"));
             }
             other => panic!("unexpected hover contents: {other:?}"),

@@ -6,16 +6,17 @@ use super::{
     ViewFocusNavigationEdge, ViewFocusNavigationResource, ViewFocusSkipPolicy,
     ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewLoweringState, ViewModifier,
     ViewNavigationDirection, ViewNavigationInitial, ViewNavigationTarget, ViewNavigationTrap,
-    ViewPartStyleRule, ViewProgramInstruction, ViewStyleApplyRef, ViewStyleDeclaration,
-    ViewStyleModifier, ViewStyleSelector, ViewStyleValue, inline_style_properties,
-    next_focus_group_id, normalize_entity_ref, normalize_style_ref, view_resource_id,
+    ViewPartStyleRule, ViewProgramInstruction, ViewSidecarError, ViewStyleApplyRef,
+    ViewStyleDeclaration, ViewStyleModifier, ViewStyleSelector, ViewStyleValue,
+    inline_style_properties, next_focus_group_id, normalize_entity_ref, normalize_style_ref,
+    view_resource_id,
 };
 
 pub(super) fn lower_modifiers(
     view_id: &str,
     modifiers: &[ViewModifier],
     state: &mut ViewLoweringState,
-) {
+) -> Result<(), ViewSidecarError> {
     for modifier in modifiers {
         match modifier {
             ViewModifier::Style(style) => {
@@ -26,7 +27,7 @@ pub(super) fn lower_modifiers(
                 });
             }
             ViewModifier::Fx(application) => {
-                if let Some(instruction) = super::lower_fx_application(application, &state.fx_ids) {
+                if let Some(instruction) = super::lower_fx_application(application, state)? {
                     state.instructions.push(instruction);
                 }
             }
@@ -48,13 +49,14 @@ pub(super) fn lower_modifiers(
             | ViewModifier::Raw(_) => {}
         }
     }
+    Ok(())
 }
 
 pub(super) fn lower_button_modifiers(
     view_id: &str,
     modifiers: &[ViewModifier],
     state: &mut ViewLoweringState,
-) {
+) -> Result<(), ViewSidecarError> {
     for modifier in modifiers {
         match modifier {
             ViewModifier::Style(style) => {
@@ -65,7 +67,7 @@ pub(super) fn lower_button_modifiers(
                 });
             }
             ViewModifier::Fx(application) => {
-                if let Some(instruction) = super::lower_fx_application(application, &state.fx_ids) {
+                if let Some(instruction) = super::lower_fx_application(application, state)? {
                     state.instructions.push(instruction);
                 }
             }
@@ -87,6 +89,7 @@ pub(super) fn lower_button_modifiers(
             }
         }
     }
+    Ok(())
 }
 
 fn lower_event_handler_modifier(view_id: &str, name: &str, state: &mut ViewLoweringState) {

@@ -19,11 +19,14 @@ use arcweft_bundle::resource_codec::view::{
 };
 
 use arcweft_bundle::resource_codec::{
-    DigestRef, FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField,
-    ResourceWireType, SectionCodecBudget,
+    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
+    SectionCodecBudget,
 };
 use arcweft_bundle::{BundleVirtualFileRef, BundleVirtualFileSpace};
-use arcweft_presentation::fx::FxId;
+use arcweft_presentation::fx::{
+    FiniteF32, FxId, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
+};
+use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
 #[test]
 fn view_element_inventory_owns_codec_tags_and_round_trips() {
@@ -85,14 +88,12 @@ fn view_resource_compact_sections_round_trip_with_deterministic_bytes() {
 fn view_fx_bindings_are_canonical_bounded_and_unique() {
     let binding = |parameter: &str| ViewFxArgumentBindingRef {
         parameter: parameter.to_owned(),
-        value_schema: DigestRef {
-            digest: BundleDigest::of(parameter.as_bytes()),
-        },
+        value_program: ViewValueProgramId(1),
     };
     let instruction = |arguments| ViewProgramInstruction::ApplyFx {
         fx: FxId::try_new("game", "ui.effects.notice").expect("valid Fx id"),
         arguments,
-        key_schema: None,
+        key_program: None,
         application_ordinal: 0,
         source: None,
     };
@@ -124,6 +125,42 @@ fn view_fx_bindings_are_canonical_bounded_and_unique() {
         ..ViewResourceBudget::default()
     };
     assert!(ViewProgramResource::decode_canonical_section_with_budget(&bytes, budget).is_err());
+}
+
+#[test]
+fn view_value_program_references_require_existing_programs_and_result_types() {
+    let mut missing = fixture_program();
+    missing.instructions.push(ViewProgramInstruction::Branch {
+        condition_program: ViewValueProgramId(99),
+        then_span: 0,
+        else_span: None,
+        source: None,
+    });
+    assert!(missing.encode_canonical_section().is_err());
+
+    let mut wrong_type = fixture_program();
+    wrong_type
+        .instructions
+        .push(ViewProgramInstruction::Branch {
+            condition_program: ViewValueProgramId(0),
+            then_span: 0,
+            else_span: None,
+            source: None,
+        });
+    assert!(wrong_type.encode_canonical_section().is_err());
+
+    let mut malformed_input = fixture_program();
+    malformed_input.value_inputs.push(
+        arcweft_bundle::resource_codec::view::ViewValueInputResource {
+            namespace: arcweft_bundle::resource_codec::view::ViewValueInputNamespace::State,
+            slot: 0,
+            value_type: arcweft_presentation::fx::FxRuntimeType::I32,
+            source: arcweft_bundle::resource_codec::view::ViewValueInputSource::Projection {
+                path: vec!["state".to_owned(), String::new()],
+            },
+        },
+    );
+    assert!(malformed_input.encode_canonical_section().is_err());
 }
 
 #[test]
@@ -494,6 +531,14 @@ fn fixture_program() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.program.dialogue".to_owned(),
         root_view: "view.dialogue".to_owned(),
+        value_programs: vec![
+            constant_value_program(ViewValueProgramId(0), FxRuntimeValue::I32(1)),
+            constant_value_program(
+                ViewValueProgramId(1),
+                FxRuntimeValue::F32(FiniteF32::try_new(1.0).unwrap()),
+            ),
+        ],
+        value_inputs: vec![],
         instructions: vec![
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::Column,
@@ -510,20 +555,14 @@ fn fixture_program() -> ViewProgramResource {
                 source: None,
             },
             ViewProgramInstruction::Await {
-                source_schema: DigestRef {
-                    digest: BundleDigest::of(b"avatar-need-schema"),
-                },
+                source_program: ViewValueProgramId(0),
                 pending_branch: Some(ViewAwaitBranchSpan {
-                    pattern_schema: DigestRef {
-                        digest: BundleDigest::of(b"pending-pattern"),
-                    },
-                    body_span: 1,
+                    start_offset: 0,
+                    body_span: 0,
                 }),
                 ready_branch: Some(ViewAwaitBranchSpan {
-                    pattern_schema: DigestRef {
-                        digest: BundleDigest::of(b"ready-pattern"),
-                    },
-                    body_span: 1,
+                    start_offset: 0,
+                    body_span: 0,
                 }),
                 error_branch: None,
                 denied_branch: None,
@@ -585,6 +624,18 @@ fn fixture_program() -> ViewProgramResource {
         focus_navigation: Vec::new(),
         adapter_requirements: vec![],
     }
+}
+
+fn constant_value_program(id: ViewValueProgramId, value: FxRuntimeValue) -> ViewValueProgram {
+    ViewValueProgram::validate(
+        id,
+        ValueProgramSchema::new(vec![], vec![], value.value_type()),
+        vec![
+            ValueInstruction::Constant { value },
+            ValueInstruction::Return,
+        ],
+    )
+    .unwrap()
 }
 
 fn fixture_style() -> ViewStyleResource {

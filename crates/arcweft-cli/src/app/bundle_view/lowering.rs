@@ -24,8 +24,8 @@ use arcweft_bundle::{
     container::BundleDigest,
     resource_codec::{
         ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
-        ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewFocusDirection,
-        ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy,
+        ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
+        ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy,
         ViewFocusNavigationEdge, ViewFocusNavigationResource, ViewFocusSkipPolicy,
         ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewFxArgumentBindingRef,
         ViewInputResource, ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule,
@@ -59,7 +59,7 @@ use arcweft_lang_syntax::{
     },
     expr::{CallArg, Expr, Literal},
 };
-use arcweft_presentation::fx::FxId;
+use arcweft_presentation::fx::{FxDefinition, FxId, FxRuntimeType};
 use arcweft_view::ViewElementLayoutKind;
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -71,10 +71,7 @@ use super::super::bundle_view_layout::{
     text_block_frame, u32_to_i32_saturating,
 };
 use super::super::bundle_view_overflow::validate_interactive_overflow_modifiers;
-use super::super::bundle_view_schema::{
-    expr_schema_ref, match_arm_schema_ref, pattern_schema_source, repeat_key_schema_ref,
-    schema_ref_for_source,
-};
+use super::super::bundle_view_schema::{ViewValueCompileError, ViewValueProgramCompiler};
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::app) struct ViewBundleSidecars {
@@ -99,11 +96,18 @@ pub(in crate::app) enum ViewSidecarError {
         "error[AWF0618 view::scroll_axis_both_unsupported]: `{element}` cannot use `{value}` as a Scroll axis in this cut; use `.vertical` or `.horizontal` and keep two-axis scrolling behind a future typed contract"
     )]
     UnsupportedScrollBothAxis { element: String, value: String },
+    #[error(transparent)]
+    ValueProgram(#[from] ViewValueCompileError),
+    #[error("View call has more than 65,536 arguments")]
+    TooManyViewCallArguments,
+    #[error("View Text source `{expression}` is not a literal or typed text projection")]
+    UnsupportedTextSource { expression: String },
 }
 
 #[derive(Default)]
 struct ViewLoweringState {
-    fx_ids: BTreeMap<String, FxId>,
+    fx_definitions: BTreeMap<String, ViewFxDefinition>,
+    value_compiler: ViewValueProgramCompiler,
     instructions: Vec<ViewProgramInstruction>,
     text_sources: Vec<ViewTextSourceRecord>,
     input_options: Vec<ViewInputOptions>,
@@ -135,14 +139,20 @@ struct ViewLoweringState {
     patch_counter: u32,
 }
 
+#[derive(Clone)]
+struct ViewFxDefinition {
+    id: FxId,
+    parameters: Vec<(String, FxRuntimeType)>,
+}
+
 pub(in crate::app) fn view_sidecars(
     views: &[&EntityDeclItem],
     style_resource: Option<&ViewStyleResource>,
     source_image_objects: &[BundleImageObject],
-    fx_ids: BTreeMap<String, FxId>,
+    fx_definitions: &[FxDefinition],
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
-        fx_ids,
+        fx_definitions: view_fx_definitions(fx_definitions),
         style_resource: style_resource.cloned(),
         source_image_objects: source_image_objects.to_vec(),
         ..ViewLoweringState::default()
@@ -156,6 +166,7 @@ pub(in crate::app) fn view_sidecars(
         }
     }
     assign_action_button_bounds(&mut state);
+    let compiled_values = std::mem::take(&mut state.value_compiler).finish()?;
     if state.instructions.is_empty()
         && state.text_sources.is_empty()
         && state.input_options.is_empty()
@@ -177,6 +188,8 @@ pub(in crate::app) fn view_sidecars(
         program: Some(ViewProgramResource {
             program_id: format!("view.program.{}", first.id().body()),
             root_view: first.id().body().to_owned(),
+            value_programs: compiled_values.programs,
+            value_inputs: compiled_values.inputs,
             instructions: state.instructions,
             child_spans: Vec::new(),
             handlers: Vec::new(),
@@ -217,6 +230,25 @@ pub(in crate::app) fn view_sidecars(
     })
 }
 
+fn view_fx_definitions(definitions: &[FxDefinition]) -> BTreeMap<String, ViewFxDefinition> {
+    let mut result = BTreeMap::new();
+    for definition in definitions {
+        let schema = ViewFxDefinition {
+            id: definition.id().clone(),
+            parameters: definition
+                .parameters()
+                .iter()
+                .map(|parameter| (parameter.name().to_owned(), parameter.value_type()))
+                .collect(),
+        };
+        result.insert(definition.id().function().to_owned(), schema.clone());
+        if let Some(name) = definition.id().function().rsplit('.').next() {
+            result.insert(name.to_owned(), schema);
+        }
+    }
+    result
+}
+
 fn lower_view_body(
     view_id: &EntityRef,
     body: &ViewBody,
@@ -247,19 +279,37 @@ fn lower_view_expr(
         ViewExpr::TextField(field) => lower_text_field(view_id, field, state, layout)?,
         ViewExpr::Button(button) => lower_button(view_id, button, state, *layout)?,
         ViewExpr::Image(image) => lower_image(view_id, image, state, *layout)?,
-        ViewExpr::Let(view_let) => lower_view_let(view_let, state),
+        ViewExpr::Let(view_let) => lower_view_let(view_let, state)?,
         ViewExpr::Fragment(children) => lower_layout_column(view_id, children, state, *layout)?,
         ViewExpr::ViewCall(call) => {
+            let arguments = call
+                .args()
+                .iter()
+                .enumerate()
+                .map(|(ordinal, argument)| {
+                    let ordinal = u16::try_from(ordinal)
+                        .map_err(|_| ViewSidecarError::TooManyViewCallArguments)?;
+                    let (name, value) = match argument {
+                        ViewArg::Positional(value) => (None, value),
+                        ViewArg::Named { name, value } => (Some(name.clone()), value),
+                    };
+                    Ok(ViewCallArgumentBindingRef {
+                        ordinal,
+                        name,
+                        value_program: state.value_compiler.compile_untyped(value)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, ViewSidecarError>>()?;
             state.instructions.push(ViewProgramInstruction::CallView {
                 view: expr_source(call.view()),
                 child_span: 0,
-                props_schema: None,
+                arguments,
                 style: None,
                 part: first_part(call.modifiers()),
                 key: None,
                 source: None,
             });
-            lower_modifiers(view_id, call.modifiers(), state);
+            lower_modifiers(view_id, call.modifiers(), state)?;
             ViewLayoutFrame::zero()
         }
         ViewExpr::Raw(raw) => {
@@ -281,14 +331,20 @@ fn lower_view_expr(
     })
 }
 
-fn lower_view_let(view_let: &ViewLet, state: &mut ViewLoweringState) -> ViewLayoutFrame {
+fn lower_view_let(
+    view_let: &ViewLet,
+    state: &mut ViewLoweringState,
+) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    let (binding, value_program) = state
+        .value_compiler
+        .compile_local(view_let.pattern(), view_let.value())?;
     state.instructions.push(ViewProgramInstruction::BindLocal {
-        pattern_schema: schema_ref_for_source(&pattern_schema_source(view_let.pattern())),
-        value_schema: expr_schema_ref(view_let.value()),
+        binding,
+        value_program,
         source: None,
     });
     register_input_handle_binding(view_let, state);
-    ViewLayoutFrame::zero()
+    Ok(ViewLayoutFrame::zero())
 }
 
 fn lower_view_if(
@@ -297,9 +353,10 @@ fn lower_view_if(
     state: &mut ViewLoweringState,
     layout: &mut ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    let condition_program = state.value_compiler.compile_condition(branch.condition())?;
     let branch_index = state.instructions.len();
     state.instructions.push(ViewProgramInstruction::Branch {
-        condition_schema: expr_schema_ref(branch.condition()),
+        condition_program,
         then_span: 0,
         else_span: None,
         source: None,
@@ -321,7 +378,7 @@ fn lower_view_if(
     };
 
     state.instructions[branch_index] = ViewProgramInstruction::Branch {
-        condition_schema: expr_schema_ref(branch.condition()),
+        condition_program,
         then_span,
         else_span,
         source: None,
@@ -357,9 +414,12 @@ fn lower_view_match_arms(
     let Some((arm, remaining)) = arms.split_first() else {
         return Ok(ViewLayoutFrame::zero());
     };
+    let condition_program = state
+        .value_compiler
+        .compile_match_condition(scrutinee, arm)?;
     let branch_index = state.instructions.len();
     state.instructions.push(ViewProgramInstruction::Branch {
-        condition_schema: match_arm_schema_ref(scrutinee, arm),
+        condition_program,
         then_span: 0,
         else_span: None,
         source: None,
@@ -380,7 +440,7 @@ fn lower_view_match_arms(
     };
 
     state.instructions[branch_index] = ViewProgramInstruction::Branch {
-        condition_schema: match_arm_schema_ref(scrutinee, arm),
+        condition_program,
         then_span,
         else_span,
         source: None,
@@ -397,12 +457,16 @@ fn lower_view_for_each(
     state: &mut ViewLoweringState,
     layout: &mut ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    let source_program = state
+        .value_compiler
+        .compile_repeat_source(view_for_each.source())?;
+    let key_program = state.value_compiler.compile_repeat_key(view_for_each)?;
     let repeat_index = state.instructions.len();
     state
         .instructions
         .push(ViewProgramInstruction::RepeatKeyed {
-            source_schema: expr_schema_ref(view_for_each.source()),
-            key_schema: repeat_key_schema_ref(view_for_each),
+            source_program,
+            key_program,
             body_span: 0,
             source: None,
         });
@@ -410,8 +474,8 @@ fn lower_view_for_each(
     let body_frame = lower_view_expr(view_id, view_for_each.body(), state, layout)?;
     let body_span = usize_to_u32_saturating(state.instructions.len().saturating_sub(body_start));
     state.instructions[repeat_index] = ViewProgramInstruction::RepeatKeyed {
-        source_schema: expr_schema_ref(view_for_each.source()),
-        key_schema: repeat_key_schema_ref(view_for_each),
+        source_program,
+        key_program,
         body_span,
         source: None,
     };
@@ -424,9 +488,12 @@ fn lower_view_await(
     state: &mut ViewLoweringState,
     layout: &mut ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    let source_program = state
+        .value_compiler
+        .compile_await_source(view_await.source())?;
     let await_index = state.instructions.len();
     state.instructions.push(ViewProgramInstruction::Await {
-        source_schema: expr_schema_ref(view_await.source()),
+        source_program,
         pending_branch: None,
         ready_branch: None,
         error_branch: None,
@@ -445,7 +512,7 @@ fn lower_view_await(
         let mut branch_layout = *layout;
         let branch_frame = lower_view_expr(view_id, branch.value(), state, &mut branch_layout)?;
         let branch_span = ViewAwaitBranchSpan {
-            pattern_schema: schema_ref_for_source(&pattern_schema_source(branch.pattern())),
+            start_offset: usize_to_u32_saturating(start.saturating_sub(await_index + 1)),
             body_span: usize_to_u32_saturating(state.instructions.len().saturating_sub(start)),
         };
         match branch.kind() {
@@ -461,7 +528,7 @@ fn lower_view_await(
     }
 
     state.instructions[await_index] = ViewProgramInstruction::Await {
-        source_schema: expr_schema_ref(view_await.source()),
+        source_program,
         pending_branch,
         ready_branch,
         error_branch,
@@ -494,7 +561,7 @@ fn lower_element(
                 source: None,
             });
         let pushed_group = lower_navigation_group(view_id, element, state);
-        lower_modifiers(view_id, element.modifiers(), state);
+        lower_modifiers(view_id, element.modifiers(), state)?;
         let frame = match kind.layout_kind() {
             Some(ViewElementLayoutKind::Row) => {
                 lower_layout_row(view_id, element.children(), state, *layout)?
@@ -526,7 +593,7 @@ fn lower_element(
             part: first_part(element.modifiers()),
             source: None,
         });
-        lower_modifiers(view_id, element.modifiers(), state);
+        lower_modifiers(view_id, element.modifiers(), state)?;
         Ok(ViewLayoutFrame::zero())
     }
 }
@@ -654,29 +721,72 @@ pub(in crate::app) fn expr_source(expr: &Expr) -> String {
 
 fn lower_fx_application(
     application: &ViewFxApplication,
-    fx_ids: &BTreeMap<String, FxId>,
-) -> Option<ViewProgramInstruction> {
+    state: &mut ViewLoweringState,
+) -> Result<Option<ViewProgramInstruction>, ViewSidecarError> {
     let Expr::Call { callee, args } = application.call() else {
-        return None;
+        return Ok(None);
     };
-    let function = callee.dotted_selector_label()?;
+    let Some(function) = callee.dotted_selector_label() else {
+        return Ok(None);
+    };
     let name = function.rsplit('.').next().unwrap_or(&function);
-    let fx = fx_ids.get(name)?.clone();
+    let Some(definition) = state.fx_definitions.get(name).cloned() else {
+        return Ok(None);
+    };
     let arguments = args
         .iter()
-        .filter_map(|argument| match argument {
-            CallArg::Named { name, value } => Some(ViewFxArgumentBindingRef {
-                parameter: name.clone(),
-                value_schema: expr_schema_ref(value),
-            }),
-            CallArg::Positional(_) | CallArg::Spread { .. } => None,
+        .enumerate()
+        .map(|(ordinal, argument)| {
+            let (name, value, expected) = match argument {
+                CallArg::Named { name, value } => {
+                    let expected = definition
+                        .parameters
+                        .iter()
+                        .find_map(|(parameter, ty)| (parameter == name).then_some(*ty))
+                        .ok_or_else(|| ViewValueCompileError::UnsupportedExpression {
+                            expression: format!(
+                                "Fx `{}` has no typed parameter `{name}`",
+                                definition.id
+                            ),
+                        })?;
+                    (name.clone(), value.as_ref(), expected)
+                }
+                CallArg::Positional(value) => {
+                    let (name, expected) = definition.parameters.get(ordinal).ok_or_else(|| {
+                        ViewValueCompileError::UnsupportedExpression {
+                            expression: format!(
+                                "Fx `{}` has no positional parameter {ordinal}",
+                                definition.id
+                            ),
+                        }
+                    })?;
+                    (name.clone(), value, *expected)
+                }
+                CallArg::Spread { value } => {
+                    return Err(ViewValueCompileError::UnsupportedExpression {
+                        expression: format!(
+                            "Fx `{}` does not accept spread View argument `{value:?}`",
+                            definition.id
+                        ),
+                    }
+                    .into());
+                }
+            };
+            Ok(ViewFxArgumentBindingRef {
+                parameter: name,
+                value_program: state.value_compiler.compile(value, Some(expected))?,
+            })
         })
-        .collect();
-    Some(ViewProgramInstruction::ApplyFx {
-        fx,
+        .collect::<Result<Vec<_>, ViewSidecarError>>()?;
+    let key_program = application
+        .key()
+        .map(|key| state.value_compiler.compile(key, Some(FxRuntimeType::I32)))
+        .transpose()?;
+    Ok(Some(ViewProgramInstruction::ApplyFx {
+        fx: definition.id,
         arguments,
-        key_schema: application.key().map(expr_schema_ref),
+        key_program,
         application_ordinal: application.ordinal().get(),
         source: None,
-    })
+    }))
 }

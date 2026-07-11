@@ -8,7 +8,7 @@
 
 use crate::{
     CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, StyleId, TextSourceId, ViewId,
-    ViewProgramId,
+    ViewProgramId, ViewValueProgramId, ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct ViewProgram {
     id: ViewProgramId,
     view: ViewId,
+    value_programs: ViewValueProgramInventory,
     instructions: Vec<ViewInstruction>,
     exported_parts: Vec<ViewPartExport>,
     handler_programs: Vec<ViewHandlerProgram>,
@@ -27,6 +28,7 @@ pub struct ViewProgram {
 pub struct ViewProgramBuilder {
     id: ViewProgramId,
     view: ViewId,
+    value_programs: ViewValueProgramInventory,
     instructions: Vec<ViewInstruction>,
     exported_parts: Vec<ViewPartExport>,
     handler_programs: Vec<ViewHandlerProgram>,
@@ -240,26 +242,30 @@ pub struct ViewCustomSpec {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewCall {
     pub view: ViewId,
-    pub props: ViewExpressionId,
+    pub arguments: Vec<ViewCallArgument>,
     pub style: Option<StyleId>,
     pub part: Option<ViewPartId>,
     pub key: Option<ViewStableKey>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewExpressionId(pub u32);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewCallArgument {
+    pub ordinal: u16,
+    pub name: Option<String>,
+    pub value: ViewValueProgramId,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewBranch {
-    pub condition: ViewExpressionId,
+    pub condition: ViewValueProgramId,
     pub then_range: ViewInstructionRange,
     pub else_range: Option<ViewInstructionRange>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewRepeat {
-    pub source: ViewExpressionId,
-    pub key: ViewExpressionId,
+    pub source: ViewValueProgramId,
+    pub key: ViewValueProgramId,
     pub body: ViewInstructionRange,
 }
 
@@ -296,7 +302,7 @@ pub struct ViewSemanticSpec {
 pub struct ViewHandlerProgram {
     pub handler: HandlerId,
     pub target_action: Option<PublicId>,
-    pub body: ViewExpressionId,
+    pub body: ViewValueProgramId,
 }
 
 impl ViewInstructionRange {
@@ -323,6 +329,7 @@ impl ViewProgramBuilder {
         Self {
             id,
             view,
+            value_programs: ViewValueProgramInventory::default(),
             instructions: Vec::new(),
             exported_parts: Vec::new(),
             handler_programs: Vec::new(),
@@ -334,6 +341,10 @@ impl ViewProgramBuilder {
         let index = u32::try_from(self.instructions.len()).unwrap_or(u32::MAX);
         self.instructions.push(instruction);
         index
+    }
+
+    pub fn set_value_programs(&mut self, value_programs: ViewValueProgramInventory) {
+        self.value_programs = value_programs;
     }
 
     pub fn export_part(&mut self, export: ViewPartExport) {
@@ -351,6 +362,7 @@ impl ViewProgramBuilder {
             self.state_schema_hash,
             self.instructions,
         )
+        .with_value_programs(self.value_programs)
         .with_exported_parts(self.exported_parts)
         .with_handler_programs(self.handler_programs)
     }
@@ -366,11 +378,18 @@ impl ViewProgram {
         Self {
             id,
             view,
+            value_programs: ViewValueProgramInventory::default(),
             instructions,
             exported_parts: Vec::new(),
             handler_programs: Vec::new(),
             state_schema_hash,
         }
+    }
+
+    #[must_use]
+    pub fn with_value_programs(mut self, value_programs: ViewValueProgramInventory) -> Self {
+        self.value_programs = value_programs;
+        self
     }
 
     #[must_use]
@@ -399,6 +418,10 @@ impl ViewProgram {
 
     pub fn instructions(&self) -> &[ViewInstruction] {
         &self.instructions
+    }
+
+    pub const fn value_programs(&self) -> &ViewValueProgramInventory {
+        &self.value_programs
     }
 
     pub fn exported_parts(&self) -> &[ViewPartExport] {

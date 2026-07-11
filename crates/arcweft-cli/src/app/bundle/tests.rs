@@ -118,7 +118,7 @@ fn notice(accent: Color) -> Fx {
 
 #[fx]
 fn pulse(speed: f32) -> Fx {
-  Fx.transform(speed = speed)
+  Fx.text(opacity = speed)
 }
 
 view Warning(state: WarningState) {
@@ -144,10 +144,10 @@ flow test {
             ViewProgramInstruction::ApplyFx {
                 fx,
                 arguments,
-                key_schema,
+                key_program,
                 application_ordinal,
                 ..
-            } => Some((fx, arguments, key_schema, application_ordinal)),
+            } => Some((fx, arguments, key_program, application_ordinal)),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -239,10 +239,10 @@ flow test {
         matches!(
             instruction,
             ViewProgramInstruction::BindLocal {
-                pattern_schema: _,
-                value_schema: _,
+                binding,
+                value_program: _,
                 source: None
-            }
+            } if binding == "visitor_name"
         )
     }));
 
@@ -946,6 +946,118 @@ flow test {
             ..
         } if *then_span > 0 && *else_span > 0
     )));
+
+    assert_reactive_view_value_programs(&program);
+}
+
+fn assert_reactive_view_value_programs(
+    program: &arcweft_bundle::resource_codec::ViewProgramResource,
+) {
+    use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
+    use arcweft_presentation::fx::{FxEvaluationBudget, FxRuntimeValue, FxSampleContext, Seconds};
+    use arcweft_view::{
+        ViewMountAllocator, ViewMountState, ViewProgramId, ViewValueProgramInventory,
+    };
+
+    let condition_program = program
+        .instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::Branch {
+                condition_program, ..
+            } => Some(*condition_program),
+            _ => None,
+        })
+        .expect("if condition program");
+    let (source_program, key_program) = program
+        .instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::RepeatKeyed {
+                source_program,
+                key_program,
+                ..
+            } => Some((*source_program, *key_program)),
+            _ => None,
+        })
+        .expect("repeat value programs");
+    let inventory =
+        ViewValueProgramInventory::from_programs(program.value_programs.clone()).unwrap();
+    assert_eq!(
+        inventory.state_types(),
+        &[arcweft_presentation::fx::FxRuntimeType::I32]
+    );
+    let mut allocator = ViewMountAllocator::default();
+    let mut mount = ViewMountState::new(
+        allocator.allocate().unwrap(),
+        ViewProgramId(0),
+        0,
+        vec![],
+        vec![FxRuntimeValue::I32(0)],
+        &inventory,
+    )
+    .unwrap();
+    let context = FxSampleContext::from_elapsed(Seconds::ZERO, 0, 7, false);
+    let mut budget = FxEvaluationBudget::default();
+    assert_eq!(
+        mount
+            .evaluate(condition_program, &inventory, context, &mut budget)
+            .unwrap()
+            .value(),
+        FxRuntimeValue::Bool(true)
+    );
+    assert_eq!(
+        mount
+            .evaluate(source_program, &inventory, context, &mut budget)
+            .unwrap()
+            .value(),
+        FxRuntimeValue::I32(2)
+    );
+    assert_eq!(
+        mount
+            .evaluate(key_program, &inventory, context, &mut budget)
+            .unwrap()
+            .value(),
+        FxRuntimeValue::I32(0)
+    );
+    mount
+        .set_state(0, FxRuntimeValue::I32(9), &inventory)
+        .unwrap();
+    assert_eq!(
+        mount
+            .evaluate(key_program, &inventory, context, &mut budget)
+            .unwrap()
+            .value(),
+        FxRuntimeValue::I32(9)
+    );
+}
+
+#[test]
+fn view_text_state_projection_is_retained_as_typed_source() {
+    use arcweft_bundle::resource_codec::view::ViewTextSourceKind;
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+view StatusPanel(state: StatusState) {
+  Text(state.message)
+}
+
+flow test {
+  view(@view:.StatusPanel)
+}
+",
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let text = sidecars.text.expect("text sidecar");
+
+    assert_eq!(
+        text.sources[0].kind,
+        ViewTextSourceKind::Projection {
+            path: vec!["state".to_owned(), "message".to_owned()],
+        }
+    );
 }
 
 #[test]

@@ -48,8 +48,8 @@ pub use view::{
     CompactViewInputResource, CompactViewProgramResource, CompactViewStyleResource,
     CompactViewTextResource, CompactViewThemeResource, ViewActionButtonActionResource,
     ViewActionButtonResource, ViewActionPayloadResource, ViewActionTextControlPayloadField,
-    ViewAwaitBranchSpan, ViewFocusAutoScrollPolicy, ViewFocusDirection, ViewFocusGroupPolicy,
-    ViewFocusGroupResource, ViewFocusInitialPolicy, ViewFocusNavigationEdge,
+    ViewAwaitBranchSpan, ViewCallArgumentBindingRef, ViewFocusAutoScrollPolicy, ViewFocusDirection,
+    ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy, ViewFocusNavigationEdge,
     ViewFocusNavigationResource, ViewFocusSkipPolicy, ViewFocusTargetResolution,
     ViewFocusWrapPolicy, ViewFxArgumentBindingRef, ViewInputResource, ViewLayoutBoundsKind,
     ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule, ViewProgramResource,
@@ -68,6 +68,7 @@ pub use view::{
     ViewRuntimeTextControlOptions, ViewRuntimeTextSelection, ViewScrollAxis,
     ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
     ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
-    ViewTextResource, ViewThemeResource, migrated_view_section_compatibility,
+    ViewTextResource, ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource,
+    ViewValueInputSource, migrated_view_section_compatibility,
 };
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};
