@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
+const maxBlockedAdvances = 16;
 
 const contentTypes = new Map([
   [".awfb", "application/octet-stream"],
@@ -108,6 +109,32 @@ function collectConsoleErrors(page) {
 }
 
 async function openReady(browser, baseUrl, options = {}) {
+  const { page, errors } = await openBooted(browser, baseUrl, options);
+  await advanceDialogueToChoices(page);
+  try {
+    await page.waitForFunction(
+      () =>
+        window.__arcweftLastObservation?.choice_count > 0 &&
+        window.__arcweftLastObservation?.image_count >= 4 &&
+        window.__arcweftLastFrameObservation?.choice_count === 2 &&
+        window.__arcweftLastFrameObservation?.image_count === 4,
+      null,
+      { timeout: 10_000 },
+    );
+    await assertFrameObservation(page, await canvasViewport(page));
+  } catch (error) {
+    const state = await page.evaluate(() => ({
+      fatal: document.querySelector("#arcweft-fatal")?.textContent ?? null,
+      ready: document.querySelector("#arcweft-canvas")?.dataset.arcweftReady ?? null,
+      observation: window.__arcweftLastObservation ?? null,
+      frameObservation: window.__arcweftLastFrameObservation ?? null,
+    }));
+    throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
+  }
+  return { page, errors };
+}
+
+async function openBooted(browser, baseUrl, options = {}) {
   const viewport = options.viewport ?? { width: 1280, height: 720 };
   const page = await browser.newPage({
     viewport,
@@ -134,35 +161,33 @@ async function openReady(browser, baseUrl, options = {}) {
     }));
     throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
   }
-  await advanceDialogueToChoices(page);
-  try {
-    await page.waitForFunction(
-      () =>
-        window.__arcweftLastObservation?.choice_count > 0 &&
-        window.__arcweftLastObservation?.image_count >= 4 &&
-        window.__arcweftLastFrameObservation?.choice_count === 2 &&
-        window.__arcweftLastFrameObservation?.image_count === 4,
-      null,
-      { timeout: 10_000 },
-    );
-    await assertFrameObservation(page, await canvasViewport(page));
-  } catch (error) {
-    const state = await page.evaluate(() => ({
-      fatal: document.querySelector("#arcweft-fatal")?.textContent ?? null,
-      ready: document.querySelector("#arcweft-canvas")?.dataset.arcweftReady ?? null,
-      observation: window.__arcweftLastObservation ?? null,
-      frameObservation: window.__arcweftLastFrameObservation ?? null,
-    }));
-    throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
-  }
   return { page, errors };
+}
+
+async function advanceToDialoguePage(page, instance, pageIndex) {
+  await page.locator("#arcweft-canvas").focus();
+  for (let attempt = 0; attempt < maxBlockedAdvances; attempt += 1) {
+    const reached = await page.evaluate(
+      ({ expectedInstance, expectedPage }) => {
+        const dialogue = window.__arcweftLastObservation?.dialogue;
+        return dialogue?.instance === expectedInstance && dialogue?.page_index === expectedPage;
+      },
+      { expectedInstance: instance, expectedPage: pageIndex },
+    );
+    if (reached) {
+      return;
+    }
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(50);
+  }
+  fail(`dialogue instance ${instance} did not reach page ${pageIndex}`);
 }
 
 async function advanceDialogueToChoices(page) {
   await page.locator("#arcweft-canvas").focus();
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < maxBlockedAdvances; attempt += 1) {
     const state = await page.evaluate(() => ({
-      dialoguePresent: window.__arcweftLastObservation?.dialogue_present === true,
+      dialoguePresent: Boolean(window.__arcweftLastObservation?.dialogue),
       choiceCount: window.__arcweftLastObservation?.choice_count ?? 0,
       stopReason: window.__arcweftLastObservation?.stop_reason ?? null,
     }));
@@ -179,9 +204,9 @@ async function advanceDialogueToChoices(page) {
 
 async function finishBlockedDialogue(page) {
   await page.locator("#arcweft-canvas").focus();
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < maxBlockedAdvances; attempt += 1) {
     const state = await page.evaluate(() => ({
-      dialoguePresent: window.__arcweftLastObservation?.dialogue_present === true,
+      dialoguePresent: Boolean(window.__arcweftLastObservation?.dialogue),
       choiceCount: window.__arcweftLastObservation?.choice_count ?? 0,
       finished: window.__arcweftLastObservation?.finished === true,
       stopReason: window.__arcweftLastObservation?.stop_reason ?? null,
@@ -211,7 +236,7 @@ async function installDeterministicClock(page) {
 async function assertFrameObservation(page, expected) {
   const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
   expect(
-    frame?.schema_version === "arcweft.web_frame_observation.v1",
+    frame?.schema_version === "arcweft.web_frame_observation.v3",
     "unexpected frame observation schema",
   );
   expect(
@@ -238,25 +263,44 @@ async function assertFrameObservation(page, expected) {
       ].join(","),
     `unexpected image ids: ${JSON.stringify(frame.images)}`,
   );
+  const expectedChoices = expectedChoiceGeometry(expected);
   expect(
-    frame.choices.map((choice) => `${choice.option_id}:${choice.bounds.y_milli}`).join(",") ===
-      expectedChoiceGeometry(expected),
+    frame.choices.length === expectedChoices.length &&
+      frame.choices.every(
+        (choice, index) =>
+          choice.option_id === expectedChoices[index].optionId &&
+          Math.abs(choice.bounds.y_milli - expectedChoices[index].yMilli) <= 1,
+      ),
     `unexpected choice geometry: ${JSON.stringify(frame.choices)}`,
   );
 }
 
 function expectedChoiceGeometry(expected) {
-  const width = Math.min(Math.max(expected.logicalWidth * 0.52, 360), 760);
+  const referenceWidth = 1280;
+  const referenceHeight = 720;
+  const scale = Math.min(
+    expected.logicalWidth / referenceWidth,
+    expected.logicalHeight / referenceHeight,
+  );
+  const offsetY = (expected.logicalHeight - referenceHeight * scale) / 2;
+  const width = Math.min(Math.max(referenceWidth * 0.52, 360), 760);
   const itemHeight = 60;
   const gap = 12;
   const total = 2 * (itemHeight + gap) - gap;
-  const margin = Math.max(expected.logicalWidth * 0.045, 24);
-  const panelHeight = Math.min(Math.max(expected.logicalHeight * 0.28, 180), 320);
-  const panelY = expected.logicalHeight - panelHeight - margin;
+  const margin = Math.max(referenceWidth * 0.045, 24);
+  const panelHeight = Math.min(Math.max(referenceHeight * 0.28, 180), 320);
+  const panelY = referenceHeight - panelHeight - margin;
   const top = Math.max(panelY - total - 22, 36);
-  const first = Math.round(top * 1_000);
-  const second = Math.round((top + itemHeight + gap) * 1_000);
-  return `choice.web_demo.continue:${first},choice.web_demo.alternate:${second}`;
+  return [
+    {
+      optionId: "choice.web_demo.continue",
+      yMilli: Math.round((offsetY + top * scale) * 1_000),
+    },
+    {
+      optionId: "choice.web_demo.alternate",
+      yMilli: Math.round((offsetY + (top + itemHeight + gap) * scale) * 1_000),
+    },
+  ];
 }
 
 async function canvasViewport(page) {
@@ -297,6 +341,34 @@ async function main() {
   });
 
   try {
+    await runSmoke("[p] advances within the same dialogue line before the next line", async () => {
+      const { page, errors } = await openBooted(browser, baseUrl);
+      try {
+        await page.waitForFunction(
+          () =>
+            window.__arcweftLastObservation?.dialogue?.page_count === 2 &&
+            window.__arcweftLastObservation?.dialogue?.page_index === 0,
+        );
+        const first = await page.evaluate(() => window.__arcweftLastObservation.dialogue);
+        await advanceToDialoguePage(page, first.instance, 1);
+        const second = await page.evaluate(() => window.__arcweftLastObservation.dialogue);
+        expect(second.instance === first.instance, "[p] replaced the dialogue occurrence");
+        expect(second.stage_index > first.stage_index, "[p] did not advance the dialogue stage");
+        const visibleText = await page.evaluate(() => {
+          const frame = window.__arcweftLastFrameObservation;
+          return [
+            ...(frame?.text?.map((item) => item.text) ?? []),
+            ...(frame?.styled_paragraphs?.map((item) => item.text) ?? []),
+          ].join("");
+        });
+        expect(visibleText.includes("同じdialogue lineの2ページ目"), "second page is not visible");
+        expect(!visibleText.includes("語り手は明朝体"), "first page remained visible after [p]");
+        expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
+      } finally {
+        await page.close();
+      }
+    });
+
     await runSmoke("dialogue and choice are WebGPU canvas content, not DOM game View", async () => {
       const { page, errors } = await openReady(browser, baseUrl, {
         deterministicClock: Boolean(process.env.ARW_WEB_PARITY_DIR),

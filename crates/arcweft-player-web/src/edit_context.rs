@@ -3,6 +3,9 @@
 //! This module owns browser `EditContext` feature detection and event
 //! normalization. It never installs hidden DOM text-entry fallbacks.
 
+use arcweft_player_text_input::text_input_dispatch::{
+    TextInputDispatchError, web_edit_context_capabilities,
+};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_index::{TextIndexError, TextIndexSnapshot};
 use arcweft_presentation::text_input::{
@@ -12,9 +15,6 @@ use arcweft_presentation::text_input::{
     TextInputFocusGeneration, TextInputOperation, TextInputSecurityPolicy, TextInputSerial,
     TextInputSessionId, TextRange, TextRevision, TextSelectionAffinity, TextUtf16Offset,
     WebTextInputApiSupport,
-};
-use arcweft_runtime_host::text_input_dispatch::{
-    TextInputDispatchError, web_edit_context_capabilities,
 };
 use thiserror::Error;
 

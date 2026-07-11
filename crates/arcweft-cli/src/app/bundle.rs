@@ -362,16 +362,8 @@ pub(in crate::app) fn compile_bundle_for_selection(
 
 fn selection_package_identity(selection: &SourceSelection) -> Result<String, ExitCode> {
     if let Some(manifest) = selection.resource_manifest() {
-        return arcweft_project_loader::project::load(manifest)
-            .map(|project| {
-                project
-                    .sources()
-                    .manifest()
-                    .package()
-                    .name()
-                    .as_str()
-                    .to_owned()
-            })
+        return arcweft_project_loader::project::load_project_manifest(manifest)
+            .map(|project| project.package().name().as_str().to_owned())
             .map_err(|error| {
                 eprintln!("error: failed to resolve bundle package identity: {error}");
                 ExitCode::FAILURE

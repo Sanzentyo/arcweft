@@ -12,6 +12,10 @@ pub use trace::NativeTextInputTraceOptions;
 
 use self::backend::NativeTextInputBackendIdentity;
 use self::trace::NativeTextInputTraceWriter;
+use arcweft_player_text_input::{
+    PlayerTextInputBridgeCore, PlayerTextInputFocusedControl, PlayerTextInputSyncPhase,
+    TextInputDispatchError,
+};
 #[cfg(test)]
 use arcweft_presentation::input::InteractionTarget;
 #[cfg(test)]
@@ -20,10 +24,6 @@ use arcweft_presentation::text_input::{
     TextControlWriteBack, TextInput, TextInputBlurPolicy, TextInputCapabilities,
     TextInputClientSnapshot, TextInputGeometrySnapshot, TextInputKeyDisposition,
     TextInputSecurityPolicy,
-};
-use arcweft_runtime_host::{
-    PlayerTextInputBridgeCore, PlayerTextInputFocusedControl, PlayerTextInputSyncPhase,
-    TextInputDispatchError,
 };
 use thiserror::Error;
 

@@ -25,6 +25,7 @@ mod windows_sample {
         WindowsTsfImeBridge, WindowsTsfImeError,
     };
     use arcweft_id::PublicId;
+    use arcweft_player_text_input::TextInputDispatchState;
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::input::{InputEpoch, InteractionTarget};
     use arcweft_presentation::text_editor::{
@@ -34,7 +35,6 @@ mod windows_sample {
         TextInputBlurPolicy, TextInputFocusGeneration, TextInputKeyDisposition, TextInputOptions,
         TextInputPrivacy, TextInputSessionId,
     };
-    use arcweft_runtime_host::text_input_dispatch::TextInputDispatchState;
     use clap::Parser;
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use serde::Serialize;

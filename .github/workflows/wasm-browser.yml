@@ -8,7 +8,6 @@ permissions:
 
 jobs:
   native:
-    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +16,8 @@ jobs:
           toolchain: 1.96.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install the checked-in task runner
+        run: cargo install just --version 1.49.0 --locked
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace --all-targets --all-features
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -26,7 +27,6 @@ jobs:
       - run: cargo test -p arcweft-player-web
 
   wasm-build:
-    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
       - name: Build a fresh portable bundle from Arcweft source
         run: >-
           cargo run -p arcweft-cli --
-          bundle web/demo.arcw
+          bundle --manifest-path web/arcw.toml --profile main
           --output web/demo.awfb
       - name: Check every portable/Web crate for wasm32
         run: |
@@ -88,7 +88,6 @@ jobs:
             target/arcweft-player-web.wasm32.tree.txt
 
   browser-webgpu:
-    if: ${{ false }}
     # This is a required repository check backed by a real GPU/WebGPU runner.
     # Do not replace it with a DOM/CPU-only smoke or a skip-on-no-GPU job.
     needs: wasm-build
@@ -115,7 +114,6 @@ jobs:
           path: web/test-results/
 
   semantic-and-visual-parity:
-    if: ${{ false }}
     # Commit 2 and Commit 3 turn this into a hard gate. The checked-in parity
     # harness must run the same generated .awfb and identical font bytes through
     # native and browser hosts, then compare runtime events/status plus approved
@@ -131,6 +129,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install the checked-in task runner
+        run: cargo install just --version 1.49.0 --locked
       - name: Install browser smoke dependencies
         working-directory: web
         run: npm ci

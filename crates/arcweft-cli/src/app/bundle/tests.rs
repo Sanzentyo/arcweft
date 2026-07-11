@@ -166,6 +166,52 @@ flow test {
 }
 
 #[test]
+fn profile_bundle_package_identity_does_not_require_default_source_root() {
+    let unique = format!(
+        "arcweft-bundle-package-identity-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock follows epoch")
+            .as_nanos()
+    );
+    let root = std::env::temp_dir().join(unique);
+    fs::create_dir_all(&root).expect("fixture root creates");
+    let manifest_path = root.join("arcw.toml");
+    fs::write(
+        &manifest_path,
+        r#"
+default = "main"
+
+[package]
+name = "launch-only"
+version = "0.1.0"
+
+[profiles.main]
+kind = "game"
+source = "demo.arcw"
+"#,
+    )
+    .expect("fixture manifest writes");
+    fs::write(root.join("demo.arcw"), "flow main { return () }").expect("profile source writes");
+
+    let selection = resolve_source_selection(
+        None,
+        &ProfileOptions {
+            profile: Some("main".to_owned()),
+            manifest: manifest_path,
+        },
+    )
+    .expect("profile resolves");
+    assert_eq!(
+        selection_package_identity(&selection).expect("package identity resolves"),
+        "launch-only"
+    );
+
+    fs::remove_dir_all(root).expect("fixture root removes");
+}
+
+#[test]
 fn view_local_let_input_handle_lowers_to_program_binding() {
     use arcweft_bundle::resource_codec::view::{ViewProgramInstruction, ViewTextSourceKind};
 

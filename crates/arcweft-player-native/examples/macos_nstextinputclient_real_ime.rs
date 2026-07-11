@@ -28,6 +28,7 @@ mod app {
         MacosTextInputAdapter,
     };
     use arcweft_id::PublicId;
+    use arcweft_player_text_input::TextInputDispatchState;
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::input::{InputEpoch, InteractionTarget, RawInputKind};
     use arcweft_presentation::text_editor::{
@@ -40,7 +41,6 @@ mod app {
         TextInputAdapterKind, TextInputBlurPolicy, TextInputCapabilities, TextInputFocusGeneration,
         TextInputKeyDisposition, TextInputSessionId, TextRange, TextWritingMode,
     };
-    use arcweft_runtime_host::TextInputDispatchState;
     use std::env;
 
     const SAMPLE_SESSION: TextInputSessionId = TextInputSessionId(0x0604_c200);

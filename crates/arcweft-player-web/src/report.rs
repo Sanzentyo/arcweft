@@ -8,7 +8,7 @@ use arcweft_render_wgpu::renderer::{
     StyledParagraphLineBox, StyledParagraphRevealState, StyledParagraphSpanEvidence,
     StyledParagraphStyleEvidence, StyledParagraphTransformSupport,
 };
-use arcweft_runtime_driver::session::BundleSessionStep;
+use arcweft_runtime_driver::{dialogue::BundlePresentationTransition, session::BundleSessionStep};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -27,7 +27,8 @@ pub struct WebObservationReport {
     pub finished: bool,
     pub diagnostics: Vec<String>,
     pub presentation_revision: u64,
-    pub dialogue_present: bool,
+    pub dialogue: Option<WebDialogueObservation>,
+    pub presentation_transitions: Vec<BundlePresentationTransition>,
     pub choice_count: usize,
     pub image_count: usize,
     pub flow_event_count: usize,
@@ -36,10 +37,20 @@ pub struct WebObservationReport {
     pub queued_task_events: usize,
 }
 
+/// Input-gated dialogue state exposed for browser integration tests and hosts.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebDialogueObservation {
+    pub instance: u64,
+    pub stage_index: u32,
+    pub page_index: Option<u32>,
+    pub page_count: usize,
+    pub waiting_for_advance: bool,
+}
+
 impl WebObservationReport {
     pub fn from_step(step: &BundleSessionStep, queued_task_events: usize) -> Self {
         Self {
-            schema_version: "arcweft.web_observation.v2".to_owned(),
+            schema_version: "arcweft.web_observation.v3".to_owned(),
             step_index: step.index,
             logical_tick: step.clock.tick().0,
             logical_dt_millis: step.clock.dt_millis(),
@@ -48,7 +59,20 @@ impl WebObservationReport {
             finished: step.finished,
             diagnostics: step.diagnostics.clone(),
             presentation_revision: step.presentation.revision,
-            dialogue_present: step.presentation.dialogue.is_some(),
+            dialogue: step
+                .presentation
+                .dialogue
+                .as_ref()
+                .map(|dialogue| WebDialogueObservation {
+                    instance: dialogue.instance().get(),
+                    stage_index: dialogue.stage_index().get(),
+                    page_index: dialogue
+                        .page_index()
+                        .map(arcweft_runtime_driver::dialogue::DialoguePageIndex::get),
+                    page_count: dialogue.page_count(),
+                    waiting_for_advance: dialogue.is_waiting_for_advance(),
+                }),
+            presentation_transitions: step.presentation_transitions.clone(),
             choice_count: step.presentation.choices.len(),
             image_count: step.presentation.images.len(),
             flow_event_count: step.flow_events.len(),

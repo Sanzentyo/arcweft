@@ -5,7 +5,7 @@
 //! activation, snapshot and geometry publication, blur policy, dispatch-state
 //! validation, key-shortcut admission, and validated edit extraction.
 
-use crate::{TextInputDispatchError, TextInputDispatchState};
+use crate::text_input_dispatch::{TextInputDispatchError, TextInputDispatchState};
 #[cfg(test)]
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::input::{InputEpoch, RawInputKind};

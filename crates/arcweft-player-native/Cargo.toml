@@ -25,6 +25,7 @@ arcweft-id = { path = "../arcweft-id" }
 arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-layout.workspace = true
 arcweft-player-scene = { path = "../arcweft-player-scene" }
+arcweft-player-text-input = { path = "../arcweft-player-text-input" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }

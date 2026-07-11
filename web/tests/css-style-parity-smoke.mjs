@@ -166,7 +166,7 @@ async function openReady(browser, baseUrl, checkpoint) {
   try {
     await page.waitForFunction(
       (needsDetailedStyle) =>
-        window.__arcweftLastObservation?.dialogue_present === true &&
+        Boolean(window.__arcweftLastObservation?.dialogue) &&
         window.__arcweftLastFrameObservation?.image_count === 0 &&
         (() => {
           const frame = window.__arcweftLastFrameObservation;

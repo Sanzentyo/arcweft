@@ -101,10 +101,10 @@ flow main {
     image(@image.generated.webp_pulse)
 
     narrator(id=@say.web_demo.narrator, voice=auto):
-        語り手は明朝体と薄い桃色で表示される。既定のタイプライター表示で、WASMでもnativeでも同じ速度で文字が現れる。[p]
+        語り手は明朝体と薄い桃色で表示される。既定のタイプライター表示で、WASMでもnativeでも同じ速度で文字が現れる。[p]これは同じdialogue lineの2ページ目で、次の入力までは次のlineへ進まない。
 
     zunda_guide(id=@say.web_demo.guide, voice=auto, look=.normal):
-        こちらはキャラクターsurfaceの色とフォントを使う行なのだ。[.wave amp=4px freq=8]波打つ文字[/]と、右上のアニメーション画像も同じフレーム計画で動いているのだ。[p]
+        こちらはキャラクターsurfaceの色とフォントを使う行なのだ。[.wave amp=4px freq=8]波打つ文字[/]と、右上のアニメーション画像も同じフレーム計画で動いているのだ。
 
     choice @choice.web_demo {
         @choice.web_demo.continue "このまま進む" -> @flow.done
@@ -114,6 +114,6 @@ flow main {
 
 flow done {
     zunda_guide(id=@say.web_demo.done, voice=auto, look=.smile):
-        choiceの当たり判定と見た目が一致したのだ。スクロールしてもボタンの場所は上下しないのだ。[p]
+        choiceの当たり判定と見た目が一致したのだ。スクロールしてもボタンの場所は上下しないのだ。
     return "done"
 }

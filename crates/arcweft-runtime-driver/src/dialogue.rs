@@ -200,6 +200,12 @@ impl BundleDialoguePresentation {
             .and_then(|stage| DialoguePageIndex::from_usize(stage.page_index()))
     }
 
+    /// Number of logical pages in this dialogue occurrence.
+    #[must_use]
+    pub fn page_count(&self) -> usize {
+        self.frame.page_count()
+    }
+
     #[must_use]
     pub const fn is_waiting_for_advance(&self) -> bool {
         self.waiting_for_advance

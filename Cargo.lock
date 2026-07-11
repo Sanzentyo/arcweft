@@ -976,6 +976,7 @@ dependencies = [
  "arcweft-interaction-model",
  "arcweft-layout",
  "arcweft-player-scene",
+ "arcweft-player-text-input",
  "arcweft-presentation",
  "arcweft-render-native",
  "arcweft-render-text",
@@ -1018,6 +1019,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-player-text-input"
+version = "0.1.0"
+dependencies = [
+ "arcweft-id",
+ "arcweft-presentation",
+ "arcweft-view",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-player-web"
 version = "0.1.0"
 dependencies = [
@@ -1029,12 +1040,12 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-layout",
  "arcweft-player-scene",
+ "arcweft-player-text-input",
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-render-web",
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
- "arcweft-runtime-host",
  "arcweft-runtime-plan",
  "futures-channel",
  "js-sys",

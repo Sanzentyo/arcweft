@@ -10,6 +10,10 @@ use crate::edit_context::{
     WebEditContextAdapter, WebEditContextError, WebEditContextFeatureDetection,
     WebEditContextTextUpdate,
 };
+use arcweft_player_text_input::{
+    PlayerTextInputBridgeCore, PlayerTextInputEdit, PlayerTextInputFocusedControl,
+    PlayerTextInputSyncPhase,
+};
 use arcweft_presentation::hit::HitRect;
 #[cfg(test)]
 use arcweft_presentation::input::InteractionTarget;
@@ -21,10 +25,6 @@ use arcweft_presentation::text_input::{
     TextUtf16Offset,
 };
 use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextInputTarget};
-use arcweft_runtime_host::{
-    PlayerTextInputBridgeCore, PlayerTextInputEdit, PlayerTextInputFocusedControl,
-    PlayerTextInputSyncPhase,
-};
 use serde::Serialize;
 use std::collections::VecDeque;
 use thiserror::Error;
@@ -214,7 +214,7 @@ pub enum WebRuntimeTextInputBridgeError {
     #[error("Web EditContext adapter failed: {0}")]
     EditContext(#[from] WebEditContextError),
     #[error("Web text-input dispatch failed: {0}")]
-    Dispatch(#[from] arcweft_runtime_host::TextInputDispatchError),
+    Dispatch(#[from] arcweft_player_text_input::TextInputDispatchError),
     #[error("Web text-input dispatch emitted a non-text raw event")]
     NonTextDispatchOutput,
     #[error("unknown Web text-input command `{0}`")]

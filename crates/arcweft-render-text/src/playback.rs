@@ -241,6 +241,16 @@ impl LineDisplayFrame {
         self.stage_descriptors().len()
     }
 
+    /// Number of logical pages represented by the input-gated stages.
+    #[must_use]
+    pub fn page_count(&self) -> usize {
+        self.stage_descriptors()
+            .iter()
+            .map(|stage| stage.page_index)
+            .max()
+            .map_or(0, |last| last.saturating_add(1))
+    }
+
     /// Returns one display stage by zero-based authored order.
     #[must_use]
     pub fn stage(&self, index: usize) -> Option<LineDisplayStage<'_>> {
@@ -811,6 +821,7 @@ mod tests {
 
         let stages = frame.stages();
         assert_eq!(stages.len(), 3);
+        assert_eq!(frame.page_count(), 2);
         assert_eq!(stages[0].text(), "A");
         assert_eq!(stages[0].page_index(), 0);
         assert_eq!(stages[0].reveal_start(), 0);
@@ -837,6 +848,7 @@ mod tests {
         ]);
 
         assert_eq!(frame.stage_count(), 1);
+        assert_eq!(frame.page_count(), 1);
         assert_eq!(frame.stage(0).expect("stage").text(), "終端");
     }
 

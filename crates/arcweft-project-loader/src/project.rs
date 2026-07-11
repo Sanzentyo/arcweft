@@ -126,6 +126,17 @@ pub fn load_authored_resource_roots(
     Ok(resources.resolve(project_root))
 }
 
+/// Loads package metadata from an explicit `arcw.toml` without requiring its
+/// default source root to exist.
+///
+/// Launch-profile manifests may point directly at a source outside `src/`.
+/// Callers that only need package identity must not trigger project source
+/// discovery as a side effect.
+pub fn load_project_manifest(manifest_path: &Path) -> Result<ProjectManifest, ProjectLoadError> {
+    let manifest_source = read_to_string(manifest_path)?;
+    ProjectManifest::parse_toml(&manifest_source).map_err(ProjectLoadError::from)
+}
+
 /// Loads one explicit `arcw.toml` and all `.arcw` sources under its source root.
 pub fn load(manifest_path: &Path) -> Result<LoadedProject, ProjectLoadError> {
     let manifest_source = read_to_string(manifest_path)?;
@@ -367,8 +378,8 @@ fn read_to_string(path: &Path) -> Result<String, ProjectLoadError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProjectLoadError, inferred_module_path};
-    use std::path::Path;
+    use super::{ProjectLoadError, inferred_module_path, load_project_manifest};
+    use std::{fs, path::Path};
 
     #[test]
     fn maps_flat_files_without_mod_rs_layout() {
@@ -389,5 +400,39 @@ mod tests {
             inferred_module_path(root, Path::new("src/game/mod.arcw")),
             Err(ProjectLoadError::ModFileLayout { .. })
         ));
+    }
+
+    #[test]
+    fn loads_package_metadata_without_enumerating_default_source_root() {
+        let unique = format!(
+            "arcweft-project-manifest-metadata-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock follows epoch")
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&root).expect("fixture root creates");
+        let manifest_path = root.join("arcw.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+[package]
+name = "launch-only"
+version = "0.1.0"
+
+[profiles.main]
+kind = "game"
+source = "demo.arcw"
+"#,
+        )
+        .expect("fixture manifest writes");
+
+        let manifest =
+            load_project_manifest(&manifest_path).expect("package metadata loads without src");
+        assert_eq!(manifest.package().name().as_str(), "launch-only");
+
+        fs::remove_dir_all(root).expect("fixture root removes");
     }
 }

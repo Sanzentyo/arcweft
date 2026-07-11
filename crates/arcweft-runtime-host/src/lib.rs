@@ -6,10 +6,8 @@ pub mod capabilities;
 pub mod clipboard_host;
 pub mod native_system;
 pub mod native_task;
-pub mod player_text_input_bridge;
 pub mod presentation_dispatch;
 pub mod stats;
-pub mod text_input_dispatch;
 pub mod view_frame;
 
 pub use activity_host::{
@@ -32,10 +30,6 @@ pub use native_task::{
     INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeFileRoots, NativeSchedulerStats,
     NativeTaskBridge, NativeTaskClassCounts, NativeTaskStats, internal_scheduler_manifest,
 };
-pub use player_text_input_bridge::{
-    PlayerTextInputBridgeCore, PlayerTextInputEdit, PlayerTextInputFocusedControl,
-    PlayerTextInputHostCommandSink, PlayerTextInputSync, PlayerTextInputSyncPhase,
-};
 pub use presentation_dispatch::{
     DispatchedPresentationAction, PresentationActionDestination, PresentationActionDispatchError,
     PresentationActionDispatchPlan, PresentationActionEffectTarget,
@@ -50,11 +44,6 @@ pub use stats::{
     RuntimeExecutorMathStatsSummary, RuntimeExecutorPureAccelerationSummary,
     RuntimeExecutorPureCompileStatsSummary, RuntimeExecutorPureConfigSummary,
     RuntimeExecutorPureWorkerSummary, RuntimeExecutorStats, runtime_executor_stats,
-};
-pub use text_input_dispatch::{
-    FocusedTextInputSession, TextInputDispatchError, TextInputDispatchOutput,
-    TextInputDispatchState, TextInputFocusTransaction, dispatch_event_suppresses_shortcuts,
-    web_edit_context_capabilities,
 };
 pub use view_frame::{
     ViewFrameCommit, ViewFrameCommitBuilder, ViewFrameCommitError, ViewFrameImageItem,

@@ -1,0 +1,21 @@
+[package]
+name = "arcweft-player-text-input"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-presentation = { path = "../arcweft-presentation" }
+thiserror.workspace = true
+
+[dev-dependencies]
+arcweft-id = { path = "../arcweft-id" }
+arcweft-view = { path = "../arcweft-view" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

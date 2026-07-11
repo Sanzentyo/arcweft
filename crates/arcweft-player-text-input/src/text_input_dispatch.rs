@@ -1,4 +1,4 @@
-//! Runtime-host validation and dispatch for platform IME adapters.
+//! Sans-I/O validation and dispatch for platform IME adapters.
 //!
 //! This module remains Sans I/O: platform-specific TSF/AppKit/Wayland/
 //! Android/iOS/Web objects are represented only by typed adapter events from
@@ -16,7 +16,7 @@ use arcweft_presentation::text_input::{
 };
 use thiserror::Error;
 
-/// Active text-input focus transaction tracked by the runtime host.
+/// Active text-input focus transaction tracked by a player.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FocusedTextInputSession {
     session: TextInputSessionId,
@@ -30,7 +30,7 @@ pub struct FocusedTextInputSession {
     composition_active: bool,
 }
 
-/// Runtime-host state for one presentation focus owner.
+/// Dispatch state for one presentation focus owner.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TextInputDispatchState {
     active: Option<FocusedTextInputSession>,
@@ -52,7 +52,7 @@ pub struct TextInputDispatchOutput {
     key_disposition: TextInputKeyDisposition,
 }
 
-/// Runtime-host rejection reason for platform IME callbacks.
+/// Rejection reason for platform IME callbacks.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum TextInputDispatchError {
     #[error("no active text-input session")]
@@ -94,9 +94,9 @@ impl TextInputDispatchState {
 
     /// Activates a platform text-input session from a `TextField` snapshot.
     ///
-    /// Secure fields are redacted before the host command leaves runtime-host
-    /// dispatch, while the active state still remembers that incoming batches
-    /// must be hashed/replayed as sensitive text.
+    /// Secure fields are redacted before host commands leave this boundary,
+    /// while the active dispatch state still remembers that incoming batches
+    /// must be hashed and replayed as sensitive text.
     pub fn activate(&mut self, snapshot: &TextInputClientSnapshot) -> TextInputFocusTransaction {
         self.activate_with_capabilities(snapshot, TextInputCapabilities::all_supported())
     }
