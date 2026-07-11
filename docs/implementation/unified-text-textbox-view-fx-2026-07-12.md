@@ -145,11 +145,11 @@ implementation cut now contains:
 - the common `FxDiagnostic` contract is carried directly in Web observations
   and projected with stable code/severity/Fx identity into Agent observations.
 
-The shaped layout contract, real project-font glyphon shaper, and canonical
-`ResolvedTextDocument` consumer now exist. Prepared text batching, View Fx
-evaluator/application mounting, RichText shared-plan execution, renderer
-migration, and TextBox convergence remain open. The overall goal therefore
-remains active.
+The shaped layout contract, real project-font glyphon shaper, canonical
+`ResolvedTextDocument` consumer, and first product `PreparedTextBatch` path now
+exist. RichText and stateless/legacy text producers, View Fx
+evaluator/application mounting, direct View painter order, capture convergence,
+and TextBox convergence remain open. The overall goal therefore remains active.
 
 ### Shaped-layout implementation slice
 
@@ -189,6 +189,46 @@ Cut 3 remains open because `LaidOutText`, `layout_frame`, and the old
 `LaidOutText -> GlyphArea` adapter still have live renderer/native call sites.
 They will be removed directly when those call sites move to
 `PreparedTextBatch`; this slice does not add a compatibility wrapper.
+
+### Prepared-batch ordinary-text slice
+
+The first product path for Cut 4 is implemented:
+
+- `PreparedTextBatch` owns frame-local, painter-ordered `PreparedTextItem`
+  values addressed by `PreparedTextId`; each item carries the one canonical
+  `TextLayout`, resolved raster keys, paint plan, interaction geometry, clip,
+  and physical raster scale;
+- paint retains per-glyph visibility, color, opacity, finite affine transform,
+  glyph masks, offscreen operations, and post-process operations. Invalid
+  phase/opacity/clip data fails through `PreparedTextError` rather than being
+  ignored or replaced by a fallback;
+- body and ruby glyphs are submitted together from the same layout. Vertical
+  quarter-turn orientation can be composed with the shared post-layout affine
+  transform without reshaping or changing the layout hash;
+- `SharedFramePlanContext` converts mapped ordinary `RenderTextBlock` inputs
+  to `ResolvedTextDocument -> TextLayout -> PreparedTextItem`, preserves source
+  selection and character geometry, and resolves scale-specific glyph cache
+  keys once per prepared frame;
+- long-lived native/Web product planners finalize after viewport mapping, so
+  project-font registration produces an empty legacy ordinary-text queue and a
+  populated prepared batch at the final viewport coordinate system. A direct
+  player-scene test covers this registered-font route;
+- `SharedRenderer` paints prepared glyph areas directly and uses the same
+  prepared ranges for normal and filtered runtime-control passes; the ignored
+  adapter-dependent GPU smoke was run explicitly and confirmed that the batch
+  changes captured pixels without renderer-side shaping;
+- selection adapters and Web observation counts now derive from the prepared
+  item interaction plan; shape-cache hit/miss/entry counts are exposed through
+  the shared planner statistics;
+- renderer unit tests were moved to the renderer responsibility submodule when
+  the structural gate detected the production file above 2,500 physical LOC.
+  The production file is now 2,447 LOC and the final audit has no errors.
+
+Cut 4 remains open because the no-font stateless facade, public legacy
+`PreparedFrame::text`, and styled-paragraph/RichText producers still have live
+call sites. They are intentionally visible migration inputs, not a second
+fallback inside the new prepared contract, and must be deleted as the remaining
+producers converge.
 
 ## Required validation
 
@@ -257,6 +297,29 @@ module. The 1,150-line glyphon engine remains below the production warning
 threshold; its cache, project-font inventory, shaping, and raster-key
 responsibilities remain internal to that one engine and will be reconsidered
 when the legacy adapter is removed from the crate facade.
+
+Prepared-batch slice validation at Jujutsu change `oyvzyvzo`:
+
+```bash
+cargo test -p arcweft-glyphon --all-targets
+cargo test -p arcweft-render-wgpu --test prepared_text
+cargo test -p arcweft-player-scene --all-targets
+cargo test -p arcweft-render-wgpu --test prepared_text \
+  prepared_batch_renders_without_renderer_side_shaping -- --ignored --exact
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-prepared-batch-2026-07-12
+```
+
+All commands pass. `just test-fast` passes the same 422 focused tests, and the
+explicit WebGPU smoke passes on the local adapter. The structural audit records
+1,239 Rust files / 619,203 physical Rust LOC, 0 errors, and 143 warnings. The
+new production responsibility modules are `prepared_text.rs` in
+`arcweft-glyphon` (651 LOC) and the ordinary-block lowering module in
+`arcweft-render-wgpu` (123 LOC). Existing renderer and geometry warnings remain
+tracked for removal/splitting as the legacy paths are deleted.
 
 ## Non-goals
 

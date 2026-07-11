@@ -1996,6 +1996,12 @@ pub(super) fn glyph_transform_affine(transform: GlyphTransform) -> [f32; 6] {
         GlyphTransform::Rotate90Cw => [0.0, 1.0, -1.0, 0.0, 0.0, 0.0],
         GlyphTransform::Rotate90Ccw => [0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
         GlyphTransform::Affine(affine) => affine.values,
+        GlyphTransform::Rotate90CwThenAffine(affine) => {
+            compose_affine(affine.values, [0.0, 1.0, -1.0, 0.0, 0.0, 0.0])
+        }
+        GlyphTransform::Rotate90CcwThenAffine(affine) => {
+            compose_affine(affine.values, [0.0, -1.0, 1.0, 0.0, 0.0, 0.0])
+        }
     }
 }
 

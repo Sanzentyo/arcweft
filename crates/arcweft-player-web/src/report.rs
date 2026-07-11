@@ -254,7 +254,9 @@ impl WebFrameObservationReport {
             },
             rectangle_count: frame.rectangles.len(),
             image_count: frame.images.len(),
-            text_count: frame.text.len() + frame.styled_paragraphs.len(),
+            text_count: frame.prepared_text.len()
+                + frame.text.len()
+                + frame.styled_paragraphs.len(),
             styled_paragraph_count: frame.styled_paragraphs.len(),
             choice_count: frame.choices.len(),
             images: frame

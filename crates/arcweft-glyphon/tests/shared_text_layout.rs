@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use arcweft_glyphon::GlyphonTextEngine;
+use arcweft_glyphon::{GlyphonTextEngine, PreparedTextBatch};
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
     ResolvedTextStyle, RichTextInlineDirection, RichTextPresentation, RichTextRange,
@@ -187,5 +187,38 @@ fn vertical_text_combine_sideways_latin_and_ruby_share_shaped_geometry() {
         layout
             .bounds
             .is_some_and(|bounds| bounds.intersects(layout.ruby[0].ruby_bounds))
+    );
+}
+
+#[test]
+fn prepared_batch_reuses_layout_for_paint_and_interaction() {
+    let document = one_run_document("office 日本", horizontal_style(), Vec::new(), 5);
+    let mut engine = engine();
+    let layout =
+        layout_document(&document, request(400.0, 100.0), &mut engine).expect("text lays out");
+    let layout_hash = layout.hash;
+    let mut item = engine
+        .prepare_layout(layout, None, None, 2.0)
+        .expect("layout prepares");
+
+    assert_eq!(item.glyphs.len(), item.paint.glyphs.len());
+    assert!(!item.interaction.character_bounds.is_empty());
+    let original_count = item.submission().glyphs().len();
+    item.paint.glyphs[0].visible = false;
+    let submission = item.submission();
+    assert_eq!(submission.glyphs().len() + 1, original_count);
+    assert_eq!(item.layout.hash, layout_hash);
+    let first_font_size = match submission.glyphs()[0].source {
+        glyphon::GlyphSource::Text { cache_key } => f32::from_bits(cache_key.font_size_bits),
+        glyphon::GlyphSource::Custom { .. } => panic!("text preparation emitted custom glyph"),
+    };
+    assert!((first_font_size - 48.0).abs() < f32::EPSILON);
+
+    let mut batch = PreparedTextBatch::default();
+    let id = batch.push(item).expect("batch index fits");
+    assert_eq!(id.index(), 0);
+    assert_eq!(
+        batch.get(id).map(|item| item.layout.hash),
+        Some(layout_hash)
     );
 }

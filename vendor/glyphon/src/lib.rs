@@ -206,17 +206,62 @@ pub enum GlyphTransform {
     Rotate90Ccw,
     /// Full affine glyph-local transform.
     Affine(Affine2),
+    /// Rotate clockwise, then apply a full affine transform.
+    Rotate90CwThenAffine(Affine2),
+    /// Rotate counter-clockwise, then apply a full affine transform.
+    Rotate90CcwThenAffine(Affine2),
 }
 
 impl GlyphTransform {
+    /// Composes an affine transform after this glyph-local transform.
+    #[must_use]
+    pub fn then_affine(self, next: Affine2) -> Self {
+        match self {
+            Self::Identity => Self::Affine(next),
+            Self::Rotate90Cw => Self::Rotate90CwThenAffine(next),
+            Self::Rotate90Ccw => Self::Rotate90CcwThenAffine(next),
+            Self::Affine(first) => Self::Affine(Affine2::new(compose_affine(
+                first.values,
+                next.values,
+            ))),
+            Self::Rotate90CwThenAffine(first) => Self::Rotate90CwThenAffine(Affine2::new(
+                compose_affine(first.values, next.values),
+            )),
+            Self::Rotate90CcwThenAffine(first) => Self::Rotate90CcwThenAffine(Affine2::new(
+                compose_affine(first.values, next.values),
+            )),
+        }
+    }
+
     pub(crate) fn matrix_for_size(self, width: f32, height: f32) -> [f32; 6] {
         match self {
             Self::Identity => Affine2::IDENTITY.values,
             Self::Rotate90Cw => [0.0, 1.0, -1.0, 0.0, 0.0, width],
             Self::Rotate90Ccw => [0.0, -1.0, 1.0, 0.0, height, 0.0],
             Self::Affine(affine) => affine.values,
+            Self::Rotate90CwThenAffine(affine) => compose_affine(
+                [0.0, 1.0, -1.0, 0.0, 0.0, width],
+                affine.values,
+            ),
+            Self::Rotate90CcwThenAffine(affine) => compose_affine(
+                [0.0, -1.0, 1.0, 0.0, height, 0.0],
+                affine.values,
+            ),
         }
     }
+}
+
+fn compose_affine(first: [f32; 6], next: [f32; 6]) -> [f32; 6] {
+    let [a1, b1, c1, d1, e1, f1] = first;
+    let [a2, b2, c2, d2, e2, f2] = next;
+    [
+        a2 * a1 + b2 * c1,
+        a2 * b1 + b2 * d1,
+        c2 * a1 + d2 * c1,
+        c2 * b1 + d2 * d1,
+        a2 * e1 + b2 * f1 + e2,
+        c2 * e1 + d2 * f1 + f2,
+    ]
 }
 
 /// Logical cluster metadata retained for renderer consumers.
@@ -321,6 +366,18 @@ mod tests {
         assert_eq!(
             GlyphTransform::Rotate90Ccw.matrix_for_size(10.0, 20.0),
             [0.0, -1.0, 1.0, 0.0, 20.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn glyph_transform_composes_affine_after_quarter_turn() {
+        let transform = GlyphTransform::Rotate90Cw.then_affine(Affine2::new([
+            2.0, 0.0, 0.0, 3.0, 5.0, 7.0,
+        ]));
+
+        assert_eq!(
+            transform.matrix_for_size(10.0, 20.0),
+            [0.0, 2.0, -3.0, 0.0, 5.0, 37.0]
         );
     }
 }

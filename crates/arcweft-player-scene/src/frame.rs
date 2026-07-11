@@ -471,29 +471,49 @@ impl PlayerFramePlannerState {
         };
         let content_rect = fit.content_rect(request.viewport)?;
         let mut scene = PlayerFramePlanner::render_scene(input, design_request)?;
-        let mut frame = map_prepared_frame(
-            self.prepare_frame_with_runtime_text(&scene, design_request.presentation, input)?,
+        let mut frame = self.prepare_mapped_frame(
+            &scene,
+            design_request.presentation,
+            input,
             request,
             content_rect,
-        );
+        )?;
         if input.ensure_choice_focus(&frame) {
             scene = PlayerFramePlanner::render_scene(input, design_request)?;
-            frame = map_prepared_frame(
-                self.prepare_frame_with_runtime_text(&scene, design_request.presentation, input)?,
+            frame = self.prepare_mapped_frame(
+                &scene,
+                design_request.presentation,
+                input,
                 request,
                 content_rect,
-            );
+            )?;
         }
         if input.apply_pending_text_pointer_selection(&frame)? {
             let scene = PlayerFramePlanner::render_scene(input, design_request)?;
-            let frame = map_prepared_frame(
-                self.prepare_frame_with_runtime_text(&scene, design_request.presentation, input)?,
+            let frame = self.prepare_mapped_frame(
+                &scene,
+                design_request.presentation,
+                input,
                 request,
                 content_rect,
-            );
+            )?;
             return Ok(PlayerPreparedFrame { scene, frame });
         }
         Ok(PlayerPreparedFrame { scene, frame })
+    }
+
+    fn prepare_mapped_frame(
+        &mut self,
+        scene: &RenderScene,
+        presentation: &BundlePresentationSnapshot,
+        input: &InputController,
+        request: PlayerFrameRequest<'_>,
+        content_rect: Option<ContentRect>,
+    ) -> Result<PreparedFrame, PlayerFrameError> {
+        let frame = self.prepare_frame_with_runtime_text(scene, presentation, input)?;
+        let mut frame = map_prepared_frame(frame, request, content_rect);
+        self.shared.finalize_text(&mut frame)?;
+        Ok(frame)
     }
 
     fn prepare_frame_with_runtime_text(
@@ -512,7 +532,6 @@ impl PlayerFramePlannerState {
         frame
             .text
             .extend(render_text_blocks(input, scene, &presentation.text_blocks));
-        self.shared.prepare_selectable_text_blocks(&mut frame);
         surfaces::push_runtime_surfaces(&mut frame, scene, &presentation.surfaces);
         Ok(frame)
     }

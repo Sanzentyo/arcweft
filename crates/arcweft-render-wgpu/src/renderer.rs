@@ -16,6 +16,7 @@ use crate::view_direct_renderer::{
 };
 use crate::view_effects::ViewTextureExtent;
 use crate::view_scene::ViewBoxShadowKind;
+use arcweft_glyphon::{GlyphonTextEngine, GlyphonTextEngineError};
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_text::RichTextRange;
 use bytemuck::{Pod, Zeroable};
@@ -42,6 +43,7 @@ pub struct SharedRenderer {
     _glyphon_cache: Cache,
     font_system: FontSystem,
     swash_cache: SwashCache,
+    prepared_text_engine: Option<GlyphonTextEngine>,
     viewport: Viewport,
     atlas: TextAtlas,
     text_renderer: TextRenderer,
@@ -56,6 +58,10 @@ pub struct SharedRenderer {
 pub enum SharedRendererError {
     #[error("font bytes must not be empty")]
     EmptyFont,
+    #[error("prepared text requires registered project fonts")]
+    MissingPreparedTextFonts,
+    #[error("prepared text font registration failed: {0}")]
+    PreparedTextFont(#[from] GlyphonTextEngineError),
     #[error("glyphon text preparation failed: {0}")]
     TextPrepare(String),
     #[error("glyphon text rendering failed: {0}")]
@@ -96,6 +102,13 @@ struct TextRangeRenderRequest<'a> {
     excluded_text_ranges: &'a [Range<usize>],
 }
 
+struct PreparedTextRangeRenderRequest<'a> {
+    target: &'a wgpu::TextureView,
+    frame: &'a PreparedFrame,
+    range: Range<usize>,
+    excluded_ranges: &'a [Range<usize>],
+}
+
 struct TextRenderState<'a> {
     font_system: &'a mut FontSystem,
     atlas: &'a mut TextAtlas,
@@ -133,6 +146,7 @@ impl SharedRenderer {
             _glyphon_cache: glyphon_cache,
             font_system: new_font_system(),
             swash_cache: SwashCache::new(),
+            prepared_text_engine: None,
             atlas,
             text_renderer,
             aux_text_renderers: Vec::new(),
@@ -155,6 +169,14 @@ impl SharedRenderer {
     pub fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), SharedRendererError> {
         if bytes.is_empty() {
             return Err(SharedRendererError::EmptyFont);
+        }
+        if let Some(engine) = &mut self.prepared_text_engine {
+            engine.register_project_font(bytes.clone())?;
+        } else {
+            self.prepared_text_engine = Some(GlyphonTextEngine::from_project_fonts(
+                "und",
+                vec![bytes.clone()],
+            )?);
         }
         let set_primary_sans = self.registered_font_bytes == 0;
         self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
@@ -389,6 +411,17 @@ impl SharedRenderer {
                 text_range: 0..frame.text.len(),
                 styled_paragraph_range: styled_paragraphs,
                 excluded_text_ranges: &filtered_text_ranges,
+            },
+        )?;
+        self.render_prepared_text_range(
+            device,
+            queue,
+            encoder,
+            &PreparedTextRangeRenderRequest {
+                target: target_view,
+                frame,
+                range: 0..frame.prepared_text.len(),
+                excluded_ranges: &filtered_text_ranges,
             },
         )?;
         Ok(())
@@ -676,6 +709,21 @@ impl SharedRenderer {
                 excluded_text_ranges: &[],
             },
         )?;
+        render_prepared_text_range_with_renderer(
+            device,
+            queue,
+            encoder,
+            text_renderer,
+            self.prepared_text_engine.as_mut(),
+            &mut self.atlas,
+            &self.viewport,
+            &PreparedTextRangeRenderRequest {
+                target: &control_view,
+                frame,
+                range: paint.text_range.clone(),
+                excluded_ranges: &[],
+            },
+        )?;
         let logical_extent = frame_logical_extent(frame);
         let source = ViewCompositorTarget {
             texture: &control_texture,
@@ -769,6 +817,25 @@ impl SharedRenderer {
                 swash_cache: &mut self.swash_cache,
                 viewport: &self.viewport,
             },
+            request,
+        )
+    }
+
+    fn render_prepared_text_range(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        request: &PreparedTextRangeRenderRequest<'_>,
+    ) -> Result<(), SharedRendererError> {
+        render_prepared_text_range_with_renderer(
+            device,
+            queue,
+            encoder,
+            &mut self.text_renderer,
+            self.prepared_text_engine.as_mut(),
+            &mut self.atlas,
+            &self.viewport,
             request,
         )
     }
@@ -923,6 +990,89 @@ fn render_text_ranges_with_renderer(
 
 fn text_index_is_excluded(index: usize, excluded: &[Range<usize>]) -> bool {
     excluded.iter().any(|range| range.contains(&index))
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Prepared glyph submission shares renderer atlas and project-font state."
+)]
+fn render_prepared_text_range_with_renderer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    text_renderer: &mut TextRenderer,
+    engine: Option<&mut GlyphonTextEngine>,
+    atlas: &mut TextAtlas,
+    viewport: &Viewport,
+    request: &PreparedTextRangeRenderRequest<'_>,
+) -> Result<(), SharedRendererError> {
+    let range = request.range.clone();
+    let items = slice_range(request.frame.prepared_text.items(), range.clone())
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, item)| {
+            let index = range.start + offset;
+            (!text_index_is_excluded(index, request.excluded_ranges)).then_some(item)
+        })
+        .collect::<Vec<_>>();
+    if items.is_empty() {
+        return Ok(());
+    }
+    let submissions = items
+        .iter()
+        .map(|item| item.submission())
+        .collect::<Vec<_>>();
+    let areas = items
+        .iter()
+        .zip(&submissions)
+        .map(|(item, submission)| {
+            submission.glyph_area(prepared_text_bounds(item.clip, submission.raster_scale()))
+        })
+        .collect::<Vec<_>>();
+    let engine = engine.ok_or(SharedRendererError::MissingPreparedTextFonts)?;
+    let (font_system, swash_cache) = engine.raster_parts_mut();
+    text_renderer
+        .prepare_glyph_areas(
+            device,
+            queue,
+            font_system,
+            atlas,
+            viewport,
+            areas,
+            swash_cache,
+        )
+        .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))?;
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("arcweft-shared-prepared-text-render-pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: request.target,
+            resolve_target: None,
+            depth_slice: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    text_renderer
+        .render(atlas, viewport, &mut pass)
+        .map_err(|error| SharedRendererError::TextRender(error.to_string()))
+}
+
+fn prepared_text_bounds(
+    clip: Option<arcweft_text_layout::LayoutRect>,
+    raster_scale: f32,
+) -> TextBounds {
+    clip.map_or_else(TextBounds::default, |clip| TextBounds {
+        left: pixel_floor_as_i32(clip.x * raster_scale),
+        top: pixel_floor_as_i32(clip.y * raster_scale),
+        right: pixel_ceil_as_i32(clip.right() * raster_scale),
+        bottom: pixel_ceil_as_i32(clip.bottom() * raster_scale),
+    })
 }
 
 fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {
@@ -2294,168 +2444,4 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 ";
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::geometry::{RenderGlyphTransformKind, RenderTextReveal, RenderTextSelectionPolicy};
-
-    #[test]
-    fn plain_text_block_spacing_stays_compact_in_wide_buffer() {
-        let mut font_system = new_font_system();
-        let block = RenderTextBlock {
-            target: None,
-            text: "Alpha beta".to_owned(),
-            bounds: HitRect::new(0.0, 0.0, 400.0, 40.0),
-            clip_bounds: None,
-            buffer_width: Some(400.0),
-            buffer_height: Some(40.0),
-            font_size: 20.0,
-            line_height: 24.0,
-            font_family: RenderFontFamily::SansSerif,
-            weight: RenderTextWeight::Regular,
-            slant: RenderTextSlant::Upright,
-            rgba: [255, 255, 255, 255],
-            selection_policy: RenderTextSelectionPolicy::Disabled,
-            selection: None,
-            selection_rgba: [0.0, 0.0, 0.0, 0.0],
-        };
-
-        let buffer = text_buffer(&mut font_system, &block);
-        let right_edge = layout_text_right_edge(&buffer);
-
-        assert!(right_edge > 20.0, "text did not produce visible glyphs");
-        assert!(
-            right_edge < 220.0,
-            "text layout should not stretch word spacing across the full buffer: {right_edge}"
-        );
-    }
-
-    #[test]
-    fn styled_paragraph_spacing_stays_compact_in_wide_buffer() {
-        let mut font_system = new_font_system();
-        let paragraph = RenderStyledParagraph {
-            text: "Alpha beta".to_owned(),
-            bounds: HitRect::new(0.0, 0.0, 400.0, 40.0),
-            default_style: RenderTextStyle {
-                font_size: 20.0,
-                line_height: 24.0,
-                color: [255, 255, 255, 255],
-                font_family: RenderFontFamily::SansSerif,
-                weight: RenderTextWeight::Regular,
-                slant: RenderTextSlant::Upright,
-            },
-            spans: Vec::new(),
-            reveal: RenderTextReveal {
-                visible_end: 10,
-                complete: true,
-            },
-            glyph_transforms: Vec::new(),
-            visual_time_millis: 0,
-        };
-
-        let buffer = styled_paragraph_buffer(&mut font_system, &paragraph);
-        let right_edge = layout_text_right_edge(&buffer);
-
-        assert!(right_edge > 20.0, "text did not produce visible glyphs");
-        assert!(
-            right_edge < 220.0,
-            "styled paragraph layout should not stretch word spacing across the full buffer: {right_edge}"
-        );
-    }
-
-    #[test]
-    fn motion_overlay_keeps_transformed_text_after_hard_break() {
-        let mut font_system = new_font_system();
-        let text = "Captured the view-backed brief.\nIdea42".to_owned();
-        let brief_start = "Captured the view-backed brief.\n".len();
-        let brief_end = text.len();
-        let brief_style = RenderTextStyle {
-            font_size: 38.0,
-            line_height: 51.3,
-            color: [255, 64, 80, 255],
-            font_family: RenderFontFamily::SansSerif,
-            weight: RenderTextWeight::Bold,
-            slant: RenderTextSlant::Italic,
-        };
-        let paragraph = RenderStyledParagraph {
-            text,
-            bounds: HitRect::new(32.0, 300.0, 760.0, 180.0),
-            default_style: RenderTextStyle {
-                font_size: 25.0,
-                line_height: 34.0,
-                color: [255, 255, 255, 255],
-                font_family: RenderFontFamily::SansSerif,
-                weight: RenderTextWeight::Regular,
-                slant: RenderTextSlant::Upright,
-            },
-            spans: vec![RenderStyledTextSpan {
-                range: RichTextRange::new(brief_start, brief_end),
-                style: brief_style,
-                node_index: 2,
-            }],
-            reveal: RenderTextReveal {
-                visible_end: brief_end,
-                complete: true,
-            },
-            glyph_transforms: vec![RenderGlyphTransformSpan {
-                range: RichTextRange::new(brief_start, brief_end),
-                motion: RenderGlyphMotion {
-                    kind: RenderGlyphTransformKind::Wave,
-                    amplitude: 5.0,
-                    frequency: 7.0,
-                },
-                node_index: 2,
-            }],
-            visual_time_millis: 1_000,
-        };
-
-        let layout_buffer = styled_paragraph_buffer(&mut font_system, &paragraph);
-        let overlays = styled_paragraph_motion_overlays(&layout_buffer, &paragraph);
-        let overlay_text = overlays
-            .iter()
-            .map(|overlay| overlay.text.as_str())
-            .collect::<String>();
-
-        assert_eq!(overlay_text, "Idea42");
-        assert!(overlays.iter().all(|overlay| {
-            overlay.top > paragraph.bounds.y + paragraph.default_style.line_height * 0.5
-        }));
-    }
-
-    #[test]
-    fn text_bounds_are_scaled_to_physical_pixels() {
-        let bounds = HitRect::new(10.25, 20.5, 100.25, 40.25);
-
-        assert_eq!(
-            scale_text_bounds(bounds, 2.0),
-            TextBounds {
-                left: 20,
-                top: 41,
-                right: 221,
-                bottom: 122,
-            }
-        );
-    }
-
-    #[test]
-    fn text_bounds_keep_default_scale_pixel_rounding() {
-        let bounds = HitRect::new(10.25, 20.5, 100.25, 40.25);
-
-        assert_eq!(
-            scale_text_bounds(bounds, 1.0),
-            TextBounds {
-                left: 10,
-                top: 20,
-                right: 111,
-                bottom: 61,
-            }
-        );
-    }
-
-    fn layout_text_right_edge(buffer: &Buffer) -> f32 {
-        buffer
-            .layout_runs()
-            .flat_map(|run| run.glyphs.iter())
-            .map(|glyph| glyph.x + glyph.w)
-            .fold(0.0_f32, f32::max)
-    }
-}
+mod tests;

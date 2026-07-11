@@ -136,6 +136,9 @@ impl TextControlFontContext {
             text_control_layout_cache_hits: self.layout_cache_hits,
             text_control_layout_cache_misses: self.layout_cache_misses,
             text_control_layout_cache_entries: self.layout_cache.len(),
+            prepared_text_shape_cache_hits: 0,
+            prepared_text_shape_cache_misses: 0,
+            prepared_text_shape_cache_entries: 0,
         }
     }
 

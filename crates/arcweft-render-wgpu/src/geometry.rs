@@ -1,6 +1,10 @@
 use crate::convert::saturating_usize_as_f32;
 use crate::view_mask::ViewMaskChannel;
 use crate::view_scene::{ViewMaskImage, ViewScene};
+use arcweft_glyphon::{
+    GlyphonTextEngine, GlyphonTextEngineError, PreparedTextBatch, PreparedTextError,
+    PreparedTextId, PreparedTextItem,
+};
 use arcweft_id::PublicId;
 use arcweft_layout::ContentRect;
 use arcweft_presentation::hit::{HitRect, HitTree};
@@ -15,6 +19,8 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextCharacterBounds, TextGeometryTransform, TextInputClientSnapshot,
     TextInputGeometrySnapshot, TextRange,
 };
+use arcweft_render_text::TextResolveError;
+use arcweft_text_layout::TextLayoutError;
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -24,6 +30,7 @@ pub mod dialogue;
 mod dialogue_timeline;
 mod focus_navigation;
 mod images;
+mod prepared_text;
 mod scroll;
 mod text_controls;
 pub use action_buttons::{PreparedActionButton, RenderActionButton, RenderActionButtonAction};
@@ -508,6 +515,9 @@ pub struct PreparedFrame {
     pub hits: HitTree,
     pub rectangles: Vec<PaintRect>,
     pub images: Vec<RenderImage>,
+    /// Canonical pre-shaped text renderer input.
+    pub prepared_text: PreparedTextBatch,
+    /// Legacy pending text blocks removed as producers migrate to `prepared_text`.
     pub text: Vec<RenderTextBlock>,
     pub selectable_text_blocks: Vec<PreparedSelectableTextBlock>,
     pub styled_paragraphs: Vec<RenderStyledParagraph>,
@@ -648,6 +658,7 @@ pub struct SharedFramePlanner;
 #[derive(Debug, Default)]
 pub struct SharedFramePlanContext {
     text_control_font_context: text_controls::TextControlFontContext,
+    prepared_text_engine: Option<GlyphonTextEngine>,
 }
 
 /// Counters exposed by the stateful frame planner.
@@ -657,6 +668,9 @@ pub struct SharedFramePlanStats {
     pub text_control_layout_cache_hits: u64,
     pub text_control_layout_cache_misses: u64,
     pub text_control_layout_cache_entries: usize,
+    pub prepared_text_shape_cache_hits: u64,
+    pub prepared_text_shape_cache_misses: u64,
+    pub prepared_text_shape_cache_entries: usize,
 }
 
 /// Invalid frame inputs rejected before GPU work.
@@ -666,6 +680,18 @@ pub enum FramePlanError {
     EmptyViewport,
     #[error("font bytes must not be empty")]
     EmptyFont,
+    #[error(transparent)]
+    PreparedTextFont(#[from] GlyphonTextEngineError),
+    #[error(transparent)]
+    PreparedText(#[from] PreparedTextError),
+    #[error(transparent)]
+    ResolveText(#[from] TextResolveError),
+    #[error(transparent)]
+    LayoutText(#[from] TextLayoutError<GlyphonTextEngineError>),
+    #[error("prepared text requires registered project fonts")]
+    MissingProjectFonts,
+    #[error("text metric `{field}` is not finite and representable in milli-pixels")]
+    InvalidTextMetric { field: &'static str },
     #[error("failed to construct stable presentation id `{value}`")]
     InvalidId { value: String },
     #[error("semantic role {role:?} is not a text-input control")]
@@ -1062,12 +1088,27 @@ impl SharedFramePlanContext {
     }
 
     pub fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), FramePlanError> {
+        if let Some(engine) = &mut self.prepared_text_engine {
+            engine.register_project_font(bytes.clone())?;
+        } else {
+            self.prepared_text_engine = Some(GlyphonTextEngine::from_project_fonts(
+                "und",
+                vec![bytes.clone()],
+            )?);
+        }
         self.text_control_font_context.register_font_bytes(bytes)
     }
 
     #[must_use]
     pub fn stats(&self) -> SharedFramePlanStats {
-        self.text_control_font_context.stats()
+        let mut stats = self.text_control_font_context.stats();
+        if let Some(engine) = &self.prepared_text_engine {
+            let prepared = engine.cache_stats();
+            stats.prepared_text_shape_cache_hits = prepared.hits;
+            stats.prepared_text_shape_cache_misses = prepared.misses;
+            stats.prepared_text_shape_cache_entries = prepared.entries;
+        }
+        stats
     }
 
     /// # Panics
@@ -1143,6 +1184,7 @@ impl SharedFramePlanContext {
             hits,
             rectangles,
             images: build_retained_images(scene),
+            prepared_text: PreparedTextBatch::default(),
             text,
             selectable_text_blocks: Vec::new(),
             styled_paragraphs,
@@ -1178,7 +1220,96 @@ impl SharedFramePlanContext {
                 selectable_text_blocks.push(prepared);
             }
         }
+        for item in frame.prepared_text.items() {
+            let interaction = &item.interaction;
+            if !interaction.selection_enabled {
+                continue;
+            }
+            let Some(target) = interaction.target.clone() else {
+                continue;
+            };
+            frame
+                .rectangles
+                .extend(interaction.selection_rects.iter().map(|bounds| {
+                    PaintRect::new(
+                        HitRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
+                        interaction.selection_rgba,
+                    )
+                }));
+            let bounds = interaction.container_bounds.unwrap_or_else(|| {
+                item.layout
+                    .bounds
+                    .unwrap_or(arcweft_text_layout::LayoutRect::new(0.0, 0.0, 0.0, 0.0))
+            });
+            let character_bounds = interaction
+                .character_bounds
+                .iter()
+                .map(|character| {
+                    TextCharacterBounds::new(
+                        TextRange::new(
+                            TextByteOffset(
+                                u32::try_from(character.source_range.start).unwrap_or(u32::MAX),
+                            ),
+                            TextByteOffset(
+                                u32::try_from(character.source_range.end).unwrap_or(u32::MAX),
+                            ),
+                        ),
+                        HitRect::new(
+                            character.bounds.x,
+                            character.bounds.y,
+                            character.bounds.width,
+                            character.bounds.height,
+                        ),
+                    )
+                })
+                .collect();
+            selectable_text_blocks.push(PreparedSelectableTextBlock {
+                target,
+                text: interaction.text.clone(),
+                bounds: HitRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
+                clip_bounds: item
+                    .clip
+                    .map(|clip| HitRect::new(clip.x, clip.y, clip.width, clip.height)),
+                character_bounds,
+            });
+        }
         frame.selectable_text_blocks = selectable_text_blocks;
+    }
+
+    /// Converts all mapped ordinary text blocks to the single prepared batch.
+    pub fn finalize_text(&mut self, frame: &mut PreparedFrame) -> Result<(), FramePlanError> {
+        if self.prepared_text_engine.is_some() {
+            let blocks = std::mem::take(&mut frame.text);
+            for block in blocks {
+                let item = self.prepare_text_block(&block, frame.viewport)?;
+                frame.prepared_text.push(item)?;
+            }
+        }
+        self.prepare_selectable_text_blocks(frame);
+        Ok(())
+    }
+
+    /// Prepares one ordinary text block without renderer-side reshaping.
+    pub fn prepare_text_block(
+        &mut self,
+        block: &RenderTextBlock,
+        viewport: RenderViewport,
+    ) -> Result<PreparedTextItem, FramePlanError> {
+        let engine = self
+            .prepared_text_engine
+            .as_mut()
+            .ok_or(FramePlanError::MissingProjectFonts)?;
+        prepared_text::prepare_text_block(engine, block, viewport)
+    }
+
+    /// Appends one ordinary prepared item to the frame batch.
+    pub fn push_prepared_text_block(
+        &mut self,
+        frame: &mut PreparedFrame,
+        block: &RenderTextBlock,
+    ) -> Result<PreparedTextId, FramePlanError> {
+        let item = self.prepare_text_block(block, frame.viewport)?;
+        frame.prepared_text.push(item).map_err(FramePlanError::from)
     }
 }
 

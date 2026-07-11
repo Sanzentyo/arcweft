@@ -61,7 +61,7 @@ pub struct GlyphRasterKey {
 }
 
 /// Structured failure from project-font registration, shaping, or raster preparation.
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum GlyphonTextEngineError {
     #[error("project font inventory must contain at least one font resource")]
     EmptyFontInventory,
@@ -101,6 +101,8 @@ pub enum GlyphonTextEngineError {
     InvalidGlyphFontSize,
     #[error("stable glyph key contains unsupported cache flags {flags:#x}")]
     UnsupportedCacheFlags { flags: u32 },
+    #[error("glyph raster scale must be finite and positive")]
+    InvalidRasterScale,
 }
 
 /// Shared CPU text engine used by native, Web, and headless preparation.
@@ -287,12 +289,31 @@ impl GlyphonTextEngine {
         &mut self.swash_cache
     }
 
+    /// Paired mutable raster state used by glyphon submission.
+    pub fn raster_parts_mut(&mut self) -> (&mut FontSystem, &mut SwashCache) {
+        (&mut self.font_system, &mut self.swash_cache)
+    }
+
     /// Resolves an Arcweft-stable key to a renderer-local glyphon cache key.
     pub fn prepare_raster_key(
         &self,
         key: ShapedGlyphKey,
         position: LayoutPoint,
     ) -> Result<GlyphRasterKey, GlyphonTextEngineError> {
+        self.prepare_raster_key_for_scale(key, position, 1.0)
+    }
+
+    /// Resolves a stable key at one frame's physical raster scale while
+    /// retaining logical layout coordinates in the prepared item.
+    pub fn prepare_raster_key_for_scale(
+        &self,
+        key: ShapedGlyphKey,
+        position: LayoutPoint,
+        raster_scale: f32,
+    ) -> Result<GlyphRasterKey, GlyphonTextEngineError> {
+        if !raster_scale.is_finite() || raster_scale <= 0.0 {
+            return Err(GlyphonTextEngineError::InvalidRasterScale);
+        }
         let font_id = self
             .database_ids
             .get(&key.face)
@@ -303,7 +324,7 @@ impl GlyphonTextEngine {
                 glyph_id: key.glyph_id,
             }
         })?;
-        let font_size = f32::from_bits(key.font_size_bits);
+        let font_size = f32::from_bits(key.font_size_bits) * raster_scale;
         if !font_size.is_finite() || font_size <= 0.0 {
             return Err(GlyphonTextEngineError::InvalidGlyphFontSize);
         }
@@ -313,7 +334,7 @@ impl GlyphonTextEngine {
             font_id,
             glyph_id,
             font_size,
-            (position.x, position.y),
+            (position.x * raster_scale, position.y * raster_scale),
             Weight(key.font_weight),
             flags,
         );

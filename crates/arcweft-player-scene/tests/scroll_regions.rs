@@ -12,7 +12,8 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeSurfaceBounds, ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds,
 };
 use arcweft_player_scene::{
-    frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest},
+    fonts::{DEFAULT_PLAYER_FONT_BYTES, PlayerFontSet},
+    frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
     images::BundleImageCatalog,
     input::{
         InputController, InputControllerSnapshot, InputControllerSnapshotError,
@@ -471,6 +472,57 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         text.clip_bounds,
         Some(prepared.frame.scroll_regions[0].bounds)
     );
+}
+
+#[test]
+fn registered_player_planner_finalizes_runtime_text_into_prepared_batch() {
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.text_blocks.push(ViewRuntimeTextBlock {
+        public_id: "text.block.prepared".to_owned(),
+        target: "text.block.prepared".to_owned(),
+        view: Some("view.PreparedText".to_owned()),
+        containing_scroll_region: None,
+        text: "Prepared text".to_owned(),
+        bounds: ViewRuntimeTextBlockBounds::from_px(24, 32, 240, 48),
+        selection_policy: ViewTextSelectionPolicy::Enabled,
+        style: ViewRuntimeControlStyle::default(),
+    });
+    let images = BundleImageCatalog::empty();
+    let mut input = InputController::default();
+    let mut planner = PlayerFramePlannerState::new();
+    PlayerFontSet::single(DEFAULT_PLAYER_FONT_BYTES.to_vec())
+        .register_with_planner(&mut planner)
+        .expect("project font registers");
+
+    let prepared = planner
+        .prepare(
+            &mut input,
+            PlayerFrameRequest {
+                presentation: &presentation,
+                images: &images,
+                viewport: RenderViewport {
+                    logical_width: 640.0,
+                    logical_height: 360.0,
+                    physical_width: 1_280,
+                    physical_height: 720,
+                    scale_factor: 2.0,
+                },
+                fit: PlayerFrameFit::raw(),
+                image_time_millis: 0,
+                visual_time_millis: 0,
+                dialogue_reveal_complete: false,
+                preferences: RenderPreferences::default(),
+            },
+        )
+        .expect("registered frame prepares");
+
+    assert!(prepared.frame.text.is_empty());
+    assert_eq!(prepared.frame.prepared_text.len(), 1);
+    let item = &prepared.frame.prepared_text.items()[0];
+    assert_eq!(item.interaction.text, "Prepared text");
+    assert!(item.interaction.selection_enabled);
+    assert_px(item.interaction.container_bounds.unwrap().x, 24.0);
+    assert!((item.submission().raster_scale() - 2.0).abs() < f32::EPSILON);
 }
 
 #[test]
