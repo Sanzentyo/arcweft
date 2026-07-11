@@ -145,11 +145,50 @@ implementation cut now contains:
 - the common `FxDiagnostic` contract is carried directly in Web observations
   and projected with stable code/severity/Fx identity into Agent observations.
 
-The shaped layout data contract and a preliminary `ResolvedTextDocument`
-consumer now exist, but the real glyphon shaper, prepared text batch, View Fx
+The shaped layout contract, real project-font glyphon shaper, and canonical
+`ResolvedTextDocument` consumer now exist. Prepared text batching, View Fx
 evaluator/application mounting, RichText shared-plan execution, renderer
 migration, and TextBox convergence remain open. The overall goal therefore
 remains active.
+
+### Shaped-layout implementation slice
+
+The first half of Cut 3 is now implemented without enabling a parallel legacy
+fallback:
+
+- `GlyphonTextEngine` starts from an empty `fontdb`, registers only the exact
+  ordered project font bytes, uses an empty platform-fallback policy, and owns
+  one `FontSystem`, `SwashCache`, bounded shaped-run cache, stable
+  `FontFaceId` mapping, and renderer-local raster-key preparation boundary;
+- the shape cache key contains exact font inventory/features, engine and run
+  locale, source text, family stack, size, line height, weight, slant,
+  letter/word spacing, writing mode, and inline direction while excluding
+  source offset and paint-only color; cached source ranges are rebased on
+  return;
+- cosmic-text shaped clusters now provide ligatures, combining marks, bidi
+  visual order, fallback faces, actual advances, and Swash raster ink bounds;
+  missing glyphs, failed rasterization, invalid metrics, invalid cache flags,
+  and negative word-spacing advances are structured errors rather than clamps
+  or zero fallbacks;
+- `layout_document` uses actual shaped cluster metrics for horizontal and
+  vertical placement, hard-line tracking, visual line/column identity,
+  text-combine scaling, sideways Latin rotation geometry, and JLREQ
+  line-head/line-end protection at overflow;
+- `TextLayoutGlyph` now separates raster `ink_bounds` from logical
+  `layout_bounds` used by hit/selection geometry; ruby owns shaped glyph keys,
+  origins, bounds, and collision-adjusted tracks inside `TextLayout` instead
+  of requiring a renderer-native second layout;
+- the layout hash includes the exact font inventory, revision, constraints,
+  resolved layout style, final body geometry, ruby geometry, orientations,
+  scales, and stable glyph keys while excluding paint color;
+- real bundled Japanese/emoji/Latin project-font tests cover deterministic
+  hash parity, fallback, ligatures, combining marks, explicit RTL, hard breaks,
+  CJK, vertical text-combine, sideways Latin, and shaped ruby.
+
+Cut 3 remains open because `LaidOutText`, `layout_frame`, and the old
+`LaidOutText -> GlyphArea` adapter still have live renderer/native call sites.
+They will be removed directly when those call sites move to
+`PreparedTextBatch`; this slice does not add a compatibility wrapper.
 
 ## Required validation
 
@@ -196,6 +235,28 @@ adapter/device-dependent Tier 2 visual tests remain ignored by the normal
 workspace gate as required by the test policy. The final Cut 2 structural audit
 records 1,231 Rust files / 615,563 physical Rust LOC, 0 errors, and 144
 warnings in the linked audit directory.
+
+Shaped-layout slice validation at Jujutsu change `qslpmxxq`:
+
+```bash
+cargo test -p arcweft-text-layout --all-targets
+cargo test -p arcweft-glyphon --all-targets
+cargo clippy -p arcweft-text-layout -p arcweft-glyphon --all-targets -- -D warnings
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-shaped-layout-2026-07-12
+```
+
+All commands pass. `just test-fast` passes 422 focused tests across its five
+suites. The structural audit records 1,235 Rust files / 617,860 physical Rust
+LOC, 0 errors, and 144 warnings. New responsibilities are split across the
+787-line document placer, 470-line ruby placer, and 221-line layout hash
+module. The 1,150-line glyphon engine remains below the production warning
+threshold; its cache, project-font inventory, shaping, and raster-key
+responsibilities remain internal to that one engine and will be reconsidered
+when the legacy adapter is removed from the crate facade.
 
 ## Non-goals
 

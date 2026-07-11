@@ -1,4 +1,11 @@
-//! Adapter from Arcweft Sans I/O text layout geometry to glyphon `GlyphArea`.
+//! Shared project-font shaping, raster-key preparation, and glyphon adaptation.
+
+mod text_engine;
+
+pub use text_engine::{
+    GlyphRasterKey, GlyphonTextEngine, GlyphonTextEngineError, TextShapeCacheLimits,
+    TextShapeCacheStats,
+};
 
 use arcweft_text_layout::{GlyphOrientation, LaidOutGlyph, LaidOutText};
 use glyphon::{

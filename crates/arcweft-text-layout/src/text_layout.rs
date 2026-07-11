@@ -47,9 +47,28 @@ pub struct TextLayoutGlyph {
     pub logical_ordinal: u32,
     pub origin: LayoutPoint,
     pub advance: LayoutSize,
+    /// Logical character/cell geometry used by hit testing and selection.
+    pub layout_bounds: LayoutRect,
     pub ink_bounds: LayoutRect,
     pub orientation: GlyphOrientation,
     pub vertical_form: GlyphVerticalForm,
+    /// Horizontal scale selected by vertical text-combine placement.
+    pub inline_scale: f32,
+    pub shape_key: ShapedGlyphKey,
+}
+
+/// One shaped glyph belonging to ruby annotation text rather than document
+/// source text.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TextLayoutRubyGlyph {
+    pub text_range: RichTextRange,
+    pub cluster_index: u32,
+    pub origin: LayoutPoint,
+    pub advance: LayoutSize,
+    pub layout_bounds: LayoutRect,
+    pub ink_bounds: LayoutRect,
+    pub orientation: GlyphOrientation,
+    pub inline_scale: f32,
     pub shape_key: ShapedGlyphKey,
 }
 
@@ -61,6 +80,7 @@ pub struct TextLayoutRuby {
     pub text: String,
     pub base_bounds: LayoutRect,
     pub ruby_bounds: LayoutRect,
+    pub glyphs: Vec<TextLayoutRubyGlyph>,
     pub writing_mode: RichTextWritingMode,
     pub style: ResolvedTextStyle,
     pub presentation: RichTextPresentation,

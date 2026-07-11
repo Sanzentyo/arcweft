@@ -5,7 +5,9 @@
 //! renderer-specific buffers.
 
 mod config;
+mod document_hash;
 mod document_layout;
+mod document_ruby;
 mod effects;
 mod geometry;
 mod horizontal;
@@ -39,7 +41,7 @@ pub use shaping::{
 };
 pub use text_layout::{
     TextLayout, TextLayoutGlyph, TextLayoutGlyphSource, TextLayoutHash, TextLayoutLine,
-    TextLayoutRuby, TextLayoutRun, TextLayoutSourceMap,
+    TextLayoutRuby, TextLayoutRubyGlyph, TextLayoutRun, TextLayoutSourceMap,
 };
 pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
 

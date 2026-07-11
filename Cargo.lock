@@ -807,8 +807,10 @@ dependencies = [
  "arcweft-core",
  "arcweft-render-text",
  "arcweft-text-layout",
+ "blake3",
  "glyphon",
  "thiserror 2.0.18",
+ "unicode-script",
 ]
 
 [[package]]

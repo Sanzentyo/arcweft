@@ -258,6 +258,19 @@ impl ResolvedTextStyle {
         self
     }
 
+    /// Replaces font-size and line-height metrics while preserving every
+    /// other resolved style field.
+    pub fn with_font_metrics(
+        mut self,
+        font_size_milli: u32,
+        line_height_milli: u32,
+    ) -> Result<Self, TextResolveError> {
+        self.font_size_milli = font_size_milli;
+        self.line_height_milli = line_height_milli;
+        self.validate()?;
+        Ok(self)
+    }
+
     #[must_use]
     pub fn font_families(&self) -> &[TextFontFamily] {
         &self.font_families

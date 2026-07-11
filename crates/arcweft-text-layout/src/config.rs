@@ -12,6 +12,9 @@ pub enum TextLayoutError<E = std::convert::Infallible>
 where
     E: StdError + 'static,
 {
+    /// Host constraints contain non-finite or negative geometry.
+    #[error("text layout request contains invalid geometry")]
+    InvalidRequestGeometry,
     /// A display-map range did not align with the resolved frame text.
     #[error("display range {range:?} is not valid for the resolved text")]
     InvalidRange {
@@ -25,6 +28,16 @@ where
         #[source]
         source: E,
     },
+    /// The selected shaping backend rejected one ruby annotation.
+    #[error("text shaper rejected ruby annotation {ruby_index}: {source}")]
+    ShapeRuby {
+        ruby_index: usize,
+        #[source]
+        source: E,
+    },
+    /// Derived ruby font metrics violated the resolved-style contract.
+    #[error("ruby annotation {ruby_index} has invalid resolved font metrics")]
+    InvalidRubyStyle { ruby_index: usize },
     /// A shaper returned a source range outside its requested run.
     #[error("shaped glyph {glyph_index} in run {run_index} has invalid source range {range:?}")]
     InvalidShapedRange {
@@ -36,6 +49,19 @@ where
     #[error("shaped glyph {glyph_index} in run {run_index} has invalid geometry")]
     InvalidShapedGeometry {
         run_index: usize,
+        glyph_index: usize,
+    },
+    /// A shaper returned a ruby-text range outside its annotation.
+    #[error("shaped glyph {glyph_index} in ruby {ruby_index} has invalid text range {range:?}")]
+    InvalidRubyShapedRange {
+        ruby_index: usize,
+        glyph_index: usize,
+        range: RichTextRange,
+    },
+    /// Shaping returned non-finite or negative ruby geometry.
+    #[error("shaped glyph {glyph_index} in ruby {ruby_index} has invalid geometry")]
+    InvalidRubyShapedGeometry {
+        ruby_index: usize,
         glyph_index: usize,
     },
 }
