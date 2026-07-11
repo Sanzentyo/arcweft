@@ -69,6 +69,21 @@ use game.prelude.*
 }
 
 #[test]
+fn namespace_separator_is_rejected_in_module_paths() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        "mod game::opening\nflow @flow.opening opening { return }\n",
+    );
+
+    assert_eq!(parsed.errors().len(), 1);
+    assert!(
+        parsed.errors()[0]
+            .message()
+            .contains("module paths use `.` separators")
+    );
+    assert!(parsed.typed_tree().module().is_none());
+}
+
+#[test]
 fn use_tree_exposes_typed_module_prefixes() {
     let tree = parse_ok(
         r"

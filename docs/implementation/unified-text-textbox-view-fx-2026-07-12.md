@@ -186,12 +186,12 @@ cargo +nightly -Zscript tools/structure-audit.rs --root . \
   --write docs/implementation/structure-audits/unified-text-fx-contracts-2026-07-12
 ```
 
-All commands pass. `just test-workspace` initially found one typed-module-path
-regression after 500/501 semantic fixtures: the established
-`mod game::opening` namespace spelling had not been canonicalized with the
-dotted spelling. The path parser now maps both spellings to the same typed
-module identity, its focused parser test passes, the 501-fixture semantic suite
-passes, and the complete workspace rerun passes in 553.5 seconds. Existing
+All commands pass. `just test-workspace` initially found one stale
+`mod game::opening` spelling after 500/501 semantic fixtures. The final grammar
+uses dotted module paths, so the fixture is now `mod game.opening`; the parser
+rejects `::` through a structured diagnostic, and the module-tail lint reads
+the typed path instead of splitting source text. The focused parser test, the
+501-fixture semantic suite, and the complete workspace rerun pass. Existing
 adapter/device-dependent Tier 2 visual tests remain ignored by the normal
 workspace gate as required by the test policy. The final Cut 2 structural audit
 records 1,231 Rust files / 615,563 physical Rust LOC, 0 errors, and 144

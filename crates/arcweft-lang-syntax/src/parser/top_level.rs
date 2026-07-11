@@ -20,6 +20,7 @@ use crate::ast::{
         ViewStyleEnvironmentPredicateDecl, ViewStyleRuleDecl, ViewStyleSelectorPartDecl,
         ViewStyleTokenDecl, ViewStyleValueDecl,
     },
+    module_path::ModulePath,
     style::StyleSyntax,
 };
 use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind, split_top_level_punctuation};
@@ -127,8 +128,30 @@ impl Parser<'_> {
                 ["use `self::`, `super::`, or `crate::` for module-relative paths"],
             );
             false
+        } else if path.contains("::") {
+            self.push_error(
+                range,
+                "module paths use `.` separators; `::` is not Arcweft module syntax",
+                ["mod game.routes.opening"],
+                Some(path.trim()),
+                ["replace each `::` with `.`"],
+            );
+            false
         } else {
-            true
+            let normalized = normalize_module_path(path.trim());
+            match normalized.parse::<ModulePath>() {
+                Ok(_) => true,
+                Err(error) => {
+                    self.push_error(
+                        range,
+                        &format!("invalid module path: {error}"),
+                        ["mod game.routes.opening"],
+                        Some(path.trim()),
+                        ["use identifiers separated by `.`"],
+                    );
+                    false
+                }
+            }
         }
     }
 

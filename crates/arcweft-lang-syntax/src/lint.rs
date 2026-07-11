@@ -150,8 +150,10 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut 
                     lints,
                 );
             }
-            if let (Some(module), Some(id)) = (tree.module(), flow.id()) {
-                let module_tail = module.path().rsplit("::").next();
+            if let (Some(module), Some(id)) = (tree.module(), flow.id())
+                && let Ok(module_path) = module.module_path()
+            {
+                let module_tail = module_path.last_segment();
                 let id_tail = id.body().rsplit('.').next();
                 if module_tail != id_tail
                     && !allows_lint(

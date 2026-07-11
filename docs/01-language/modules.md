@@ -7,12 +7,7 @@ mod game.logic.affection
 mod crate.game.routes.opening
 mod self.routes.opening
 mod super.shared
-mod game::opening
 ```
-
-File-level `mod` declarations also accept `::` as a namespace separator for
-the established declaration spelling. The typed path and formatter canonicalize
-both spellings to the dotted form; they do not create distinct modules.
 
 item はデフォルト private。
 
