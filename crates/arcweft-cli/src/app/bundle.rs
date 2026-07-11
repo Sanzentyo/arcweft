@@ -42,6 +42,7 @@ use arcweft_bundle::{
     BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
     BundleVirtualFileRef, BundleVirtualFileSpace,
     container::{BundleDigest, BundleView, ReadBudget},
+    fx_definitions::FxDefinitions,
     patch::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
@@ -78,6 +79,7 @@ use arcweft_runtime_host::{
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
     run_bundle_with_native_adapters,
 };
+use arcweft_runtime_plan::fx::lower_fx_definitions_for_package;
 use arcweft_source::SourceName;
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
@@ -326,6 +328,17 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let image_declarations = parse_declared_image_objects(&source);
     let mut image_objects = bundle_image_objects(&image_declarations)?;
     let package = selection_package_identity(selection)?;
+    let fx_definitions = lower_fx_definitions_for_package(&compiled.hir, &package)
+        .map_err(|error| {
+            eprintln!("error: failed to compile Fx definitions: {error}");
+            ExitCode::FAILURE
+        })
+        .and_then(|definitions| {
+            FxDefinitions::try_new(definitions).map_err(|error| {
+                eprintln!("error: failed to build Fx definitions inventory: {error}");
+                ExitCode::FAILURE
+            })
+        })?;
     let view_sidecars = collect_bundle_view_sidecars(authored_resources.content())?.merged(
         collect_bundle_dsl_view_resources_for_package(&compiled.hir, &image_objects, &package)?,
     );
@@ -348,6 +361,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
             compiled.line_display_catalog,
         )
         .with_product_awbc(compiled.product_awbc)
+        .with_fx_definitions(fx_definitions)
         .with_adapter_manifests(adapter_manifests)
         .with_virtual_files(virtual_files)
         .with_image_assets(image_assets)

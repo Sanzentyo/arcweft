@@ -67,6 +67,7 @@ pub enum BundleSectionKind {
     ViewText,
     ViewInput,
     ViewTheme,
+    FxDefinitions,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -360,6 +361,7 @@ impl BundleSectionKind {
             Self::ViewText => 18,
             Self::ViewInput => 19,
             Self::ViewTheme => 20,
+            Self::FxDefinitions => 21,
         }
     }
 
@@ -385,6 +387,7 @@ impl BundleSectionKind {
             18 => Some(Self::ViewText),
             19 => Some(Self::ViewInput),
             20 => Some(Self::ViewTheme),
+            21 => Some(Self::FxDefinitions),
             _ => None,
         }
     }
@@ -392,7 +395,7 @@ impl BundleSectionKind {
     pub const fn is_executable(self) -> bool {
         matches!(
             self,
-            Self::ProgramBytecode | Self::RuntimeTypes | Self::Entrypoints
+            Self::ProgramBytecode | Self::RuntimeTypes | Self::Entrypoints | Self::FxDefinitions
         )
     }
 
@@ -423,7 +426,8 @@ impl BundleSectionKind {
             | Self::ViewProgram
             | Self::ViewStyle
             | Self::ViewInput
-            | Self::ViewTheme => ContentResidency::Startup,
+            | Self::ViewTheme
+            | Self::FxDefinitions => ContentResidency::Startup,
             Self::AssetBlob
             | Self::SourceMap
             | Self::DebugSymbols
@@ -442,7 +446,9 @@ impl BundleSectionKind {
             | Self::PatchPlan
             | Self::ViewInput => crate::patch::PatchCompatibility::RestartRequired,
             Self::ProgramBytecode => crate::patch::PatchCompatibility::CodeCompatible,
-            Self::HotSwapMap => crate::patch::PatchCompatibility::CodeGenerational,
+            Self::HotSwapMap | Self::FxDefinitions => {
+                crate::patch::PatchCompatibility::CodeGenerational
+            }
             Self::ContentCatalog
             | Self::DisplayCatalog
             | Self::AudioGraph

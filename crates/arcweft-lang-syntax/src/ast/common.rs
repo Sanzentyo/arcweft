@@ -1,5 +1,6 @@
-use super::module_path::{ModulePath, ModulePathError};
+use super::module_path::{ModulePath, ModulePathError, ModuleSegment};
 use core::{ops::Range, str::FromStr};
+use thiserror::Error;
 
 /// Half-open byte range in the original source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +30,46 @@ pub struct UseTree {
     source: String,
     module_path_prefix: ModulePath,
     exact_module_prefix: bool,
+    kind: UseTreeKind,
+}
+
+/// Typed selection performed by one `use` tree.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UseTreeKind {
+    /// A path whose final segment is resolved as either a module or an item.
+    Path {
+        path: ModulePath,
+        alias: Option<ModuleSegment>,
+    },
+    /// Every visible item exported by one module.
+    Glob { module: ModulePath },
+    /// An explicit set of names exported by one module.
+    Group {
+        module: ModulePath,
+        names: Vec<UseName>,
+    },
+}
+
+/// One name selected from a grouped `use` tree.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UseName {
+    name: ModuleSegment,
+    alias: Option<ModuleSegment>,
+}
+
+/// Invalid typed `use` tree.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum UseTreeError {
+    #[error(transparent)]
+    ModulePath(#[from] ModulePathError),
+    #[error("grouped use tree `{spelling}` must end with `}}`")]
+    UnterminatedGroup { spelling: String },
+    #[error("grouped use tree `{spelling}` must select at least one name")]
+    EmptyGroup { spelling: String },
+    #[error("grouped use tree `{spelling}` contains an empty name")]
+    EmptyGroupName { spelling: String },
+    #[error("use binding `{binding}` contains more than one `as` alias")]
+    MultipleAliases { binding: String },
 }
 
 /// Markdown documentation comment collected from consecutive `///` lines.
@@ -115,15 +156,49 @@ impl UseItem {
 
 impl UseTree {
     /// Parses a normalized import tree and extracts its module prefix.
-    pub fn parse(source: impl Into<String>) -> Result<Self, ModulePathError> {
+    pub fn parse(source: impl Into<String>) -> Result<Self, UseTreeError> {
         let source = normalize_parent_module_root(&source.into());
-        let module_prefix_source = use_tree_module_prefix_source(&source);
-        let module_path_prefix = ModulePath::from_str(module_prefix_source)?;
-        let exact_module_prefix = source.contains(".{") || source.ends_with(".*");
+        let (module_path_prefix, exact_module_prefix, kind) =
+            if let Some(group_start) = source.find(".{") {
+                let Some(group_source) = source
+                    .get(group_start + 2..)
+                    .and_then(|tail| tail.strip_suffix('}'))
+                else {
+                    return Err(UseTreeError::UnterminatedGroup { spelling: source });
+                };
+                let module = ModulePath::from_str(source[..group_start].trim())?;
+                let bindings = group_source.split(',').map(str::trim).collect::<Vec<_>>();
+                let trailing_comma = bindings.last().is_some_and(|binding| binding.is_empty());
+                let selected = if trailing_comma {
+                    &bindings[..bindings.len().saturating_sub(1)]
+                } else {
+                    bindings.as_slice()
+                };
+                if selected.iter().any(|binding| binding.is_empty()) {
+                    return Err(UseTreeError::EmptyGroupName { spelling: source });
+                }
+                let names = selected
+                    .iter()
+                    .copied()
+                    .map(parse_use_name)
+                    .collect::<Result<Vec<_>, _>>()?;
+                if names.is_empty() {
+                    return Err(UseTreeError::EmptyGroup { spelling: source });
+                }
+                (module.clone(), true, UseTreeKind::Group { module, names })
+            } else if let Some(module_source) = source.strip_suffix(".*") {
+                let module = ModulePath::from_str(module_source.trim())?;
+                (module.clone(), true, UseTreeKind::Glob { module })
+            } else {
+                let (path_source, alias) = parse_use_binding(&source)?;
+                let path = ModulePath::from_str(path_source)?;
+                (path.clone(), false, UseTreeKind::Path { path, alias })
+            };
         Ok(Self {
             source,
             module_path_prefix,
             exact_module_prefix,
+            kind,
         })
     }
 
@@ -144,6 +219,11 @@ impl UseTree {
     pub fn module_path_prefix(&self) -> &ModulePath {
         &self.module_path_prefix
     }
+
+    /// Structured path, glob, or grouped selection represented by this tree.
+    pub const fn kind(&self) -> &UseTreeKind {
+        &self.kind
+    }
 }
 
 fn normalize_parent_module_root(path: &str) -> String {
@@ -151,12 +231,43 @@ fn normalize_parent_module_root(path: &str) -> String {
         .map_or_else(|| path.to_owned(), |tail| format!("super.{tail}"))
 }
 
-fn use_tree_module_prefix_source(source: &str) -> &str {
-    let without_alias = source.split_once(" as ").map_or(source, |(path, _)| path);
-    let grouped = without_alias
-        .find(".{")
-        .map_or(without_alias, |index| &without_alias[..index]);
-    grouped.strip_suffix(".*").unwrap_or(grouped).trim()
+impl UseName {
+    pub fn name(&self) -> &ModuleSegment {
+        &self.name
+    }
+
+    pub const fn alias(&self) -> Option<&ModuleSegment> {
+        self.alias.as_ref()
+    }
+
+    /// Name introduced into the importing module.
+    pub fn binding_name(&self) -> &ModuleSegment {
+        self.alias.as_ref().unwrap_or(&self.name)
+    }
+}
+
+fn parse_use_name(binding: &str) -> Result<UseName, UseTreeError> {
+    let (name, alias) = parse_use_binding(binding)?;
+    Ok(UseName {
+        name: ModuleSegment::new(name.to_owned())?,
+        alias,
+    })
+}
+
+fn parse_use_binding(binding: &str) -> Result<(&str, Option<ModuleSegment>), UseTreeError> {
+    let mut pieces = binding.split(" as ");
+    let name = pieces.next().unwrap_or_default().trim();
+    let alias = pieces
+        .next()
+        .map(str::trim)
+        .map(|alias| ModuleSegment::new(alias.to_owned()))
+        .transpose()?;
+    if pieces.next().is_some() {
+        return Err(UseTreeError::MultipleAliases {
+            binding: binding.to_owned(),
+        });
+    }
+    Ok((name, alias))
 }
 
 impl DocBlock {

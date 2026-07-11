@@ -7,7 +7,12 @@ mod game.logic.affection
 mod crate.game.routes.opening
 mod self.routes.opening
 mod super.shared
+mod game::opening
 ```
+
+File-level `mod` declarations also accept `::` as a namespace separator for
+the established declaration spelling. The typed path and formatter canonicalize
+both spellings to the dotted form; they do not create distinct modules.
 
 item はデフォルト private。
 
@@ -97,6 +102,18 @@ use super.common.{route_gate}
 `lazy use` and `eager use` are removed syntax. `use` introduces names only.
 Compiler-owned build demand and content availability decide when bodies,
 artifacts, and runtime content are built or mounted.
+
+Callable declarations have one typed original identity made from the canonical
+package, canonical declaration module, and declaration name. Direct paths,
+grouped imports, glob imports, aliases, and `pub use` bind names to that same
+identity; an alias or re-export never creates a second declaration identity.
+This identity is also the input to derived contracts such as `FxId`.
+
+If two glob or grouped imports introduce the same unqualified name for
+different callable declarations, the import table retains both candidates and
+an unqualified use is an ambiguity error. A qualified path remains usable to
+disambiguate them. Private declarations cannot be imported from another
+module, and a re-export cannot widen the visibility of its target.
 
 `@.generated` / `@..generated` / `@super.generated` のような relative ID 形式は import path
 ではなく ID 文脈専用なので使わない。

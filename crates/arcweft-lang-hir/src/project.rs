@@ -1,6 +1,9 @@
 //! Multi-module HIR container and transitional crate-level link view.
 
 use crate::model::HirModule;
+use crate::symbol::{
+    CallableLinkError, CallablePackageId, CallablePackageIdError, CallableSymbolTable,
+};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -15,12 +18,15 @@ pub struct HirProjectModule {
 /// Module-preserving HIR for one Arcweft package.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirProject {
+    package: CallablePackageId,
     modules: BTreeMap<CanonicalModulePath, HirModule>,
 }
 
 /// Invalid module-preserving HIR project.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum HirProjectError {
+    #[error(transparent)]
+    InvalidPackage(#[from] CallablePackageIdError),
     #[error("HIR project contains duplicate module `{module}`")]
     DuplicateModule { module: CanonicalModulePath },
     #[error("HIR project does not contain the crate root module")]
@@ -28,7 +34,8 @@ pub enum HirProjectError {
 }
 
 impl HirProjectModule {
-    pub const fn new(path: CanonicalModulePath, hir: HirModule) -> Self {
+    pub fn new(path: CanonicalModulePath, mut hir: HirModule) -> Self {
+        hir.assign_declaration_module(&path);
         Self { path, hir }
     }
 
@@ -47,8 +54,10 @@ impl HirProjectModule {
 
 impl HirProject {
     pub fn new(
+        package: impl Into<String>,
         modules: impl IntoIterator<Item = HirProjectModule>,
     ) -> Result<Self, HirProjectError> {
+        let package = CallablePackageId::try_new(package)?;
         let mut module_map = BTreeMap::new();
         for module in modules {
             let (path, hir) = module.into_parts();
@@ -60,8 +69,13 @@ impl HirProject {
             return Err(HirProjectError::MissingRootModule);
         }
         Ok(Self {
+            package,
             modules: module_map,
         })
+    }
+
+    pub const fn package(&self) -> &CallablePackageId {
+        &self.package
     }
 
     pub fn modules(&self) -> impl ExactSizeIterator<Item = (&CanonicalModulePath, &HirModule)> {
@@ -70,6 +84,11 @@ impl HirProject {
 
     pub fn module(&self, path: &CanonicalModulePath) -> Option<&HirModule> {
         self.modules.get(path)
+    }
+
+    /// Builds the package's ordinary/Fx callable alias table.
+    pub fn callable_symbols(&self) -> Result<CallableSymbolTable, Vec<CallableLinkError>> {
+        CallableSymbolTable::build(self)
     }
 
     /// Builds the current crate-global semantic-pass view.
@@ -100,6 +119,18 @@ impl HirProject {
 }
 
 impl HirModule {
+    fn assign_declaration_module(&mut self, path: &CanonicalModulePath) {
+        for flow in &mut self.flows {
+            flow.module_path = Some(path.clone());
+        }
+        for function in &mut self.functions {
+            function.module_path = Some(path.clone());
+        }
+        for agent in &mut self.agents {
+            agent.module_path = Some(path.clone());
+        }
+    }
+
     /// Appends declarations and executable bodies from another source module.
     ///
     /// Source-level attributes are intentionally not promoted to crate-level
@@ -130,16 +161,28 @@ mod tests {
             &parse_source("#![generated(tool)]\nflow @root root {}").into_typed_tree(),
         )
         .unwrap();
-        let child = lower_to_hir(&parse_source("flow @child child {}").into_typed_tree()).unwrap();
+        let child = lower_to_hir(
+            &parse_source("flow @child child {}\npub fn helper() -> i32 { 1 }").into_typed_tree(),
+        )
+        .unwrap();
         let child_path =
             CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
-        let project = HirProject::new([
-            HirProjectModule::new(CanonicalModulePath::crate_root(), root),
-            HirProjectModule::new(child_path, child),
-        ])
+        let project = HirProject::new(
+            "game",
+            [
+                HirProjectModule::new(CanonicalModulePath::crate_root(), root),
+                HirProjectModule::new(child_path, child),
+            ],
+        )
         .unwrap();
         let linked = project.linked_module();
         assert_eq!(linked.attributes().len(), 1);
         assert_eq!(linked.flows().len(), 2);
+        assert_eq!(project.package().as_str(), "game");
+        let child = project
+            .modules()
+            .find_map(|(path, module)| (!path.is_crate_root()).then_some(module))
+            .expect("child module");
+        assert_eq!(child.functions()[0].qualified_name(), "child.helper");
     }
 }

@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-render-text = { path = "../arcweft-render-text" }
 
+blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 unicode-linebreak.workspace = true

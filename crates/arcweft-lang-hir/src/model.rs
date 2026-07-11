@@ -1,7 +1,8 @@
 use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
-        common::{TextRange, Visibility},
+        common::{TextRange, UseItem, Visibility},
         dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
@@ -31,6 +32,7 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirModule {
     pub(crate) attributes: Vec<Attribute>,
+    pub(crate) uses: Vec<UseItem>,
     pub(crate) source_len: Option<usize>,
     pub(crate) top_level_ranges: Vec<TextRange>,
     pub(crate) flows: Vec<HirFlow>,
@@ -44,6 +46,7 @@ pub struct HirModule {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFlow {
     pub(crate) attributes: Vec<Attribute>,
+    pub(crate) module_path: Option<CanonicalModulePath>,
     pub(crate) id: Option<EntityRef>,
     pub(crate) name: Option<String>,
     pub(crate) signature: Option<FnSignature>,
@@ -56,7 +59,7 @@ pub struct HirFlow {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFunction {
     pub(crate) attributes: Vec<Attribute>,
-    pub(crate) module_path: Option<String>,
+    pub(crate) module_path: Option<CanonicalModulePath>,
     pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
@@ -70,6 +73,7 @@ pub struct HirFunction {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirAgent {
     pub(crate) attributes: Vec<Attribute>,
+    pub(crate) module_path: Option<CanonicalModulePath>,
     pub(crate) item: AgentItem,
 }
 
@@ -326,6 +330,11 @@ impl HirModule {
         &self.attributes
     }
 
+    /// Source-level imports retained for module-aware symbol linking.
+    pub fn uses(&self) -> &[UseItem] {
+        &self.uses
+    }
+
     pub const fn source_len(&self) -> Option<usize> {
         self.source_len
     }
@@ -388,6 +397,10 @@ impl HirFlow {
             .any(|attribute| attribute.name() == name)
     }
 
+    pub const fn module_path(&self) -> Option<&CanonicalModulePath> {
+        self.module_path.as_ref()
+    }
+
     pub const fn id(&self) -> Option<&EntityRef> {
         self.id.as_ref()
     }
@@ -440,12 +453,12 @@ impl HirFunction {
     pub fn qualified_name(&self) -> String {
         self.module_path.as_ref().map_or_else(
             || self.name().to_owned(),
-            |module| format!("{module}.{}", self.name()),
+            |module| crate::symbol::qualified_name(module, self.name()),
         )
     }
 
-    pub fn module_path(&self) -> Option<&str> {
-        self.module_path.as_deref()
+    pub const fn module_path(&self) -> Option<&CanonicalModulePath> {
+        self.module_path.as_ref()
     }
 
     pub const fn signature(&self) -> &FnSignature {
@@ -478,6 +491,10 @@ impl HirAgent {
         self.attributes
             .iter()
             .any(|attribute| attribute.name() == name)
+    }
+
+    pub const fn module_path(&self) -> Option<&CanonicalModulePath> {
+        self.module_path.as_ref()
     }
 
     pub const fn item(&self) -> &AgentItem {

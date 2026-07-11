@@ -1,5 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{
+        common::UseTreeKind,
         flow::{FlowItem, Stmt},
         items::{Item, RawSyntaxFamily},
     },
@@ -84,16 +85,46 @@ use self.prelude.*
         "super.shared"
     );
     assert!(tree.uses()[0].tree().module_path_is_exact());
+    let UseTreeKind::Group { module, names } = tree.uses()[0].tree().kind() else {
+        panic!("expected grouped use tree");
+    };
+    assert_eq!(module.to_string(), "super.shared");
+    assert_eq!(names.len(), 2);
+    assert_eq!(names[0].name().as_str(), "alpha");
+    assert_eq!(names[0].binding_name().as_str(), "alpha");
     assert_eq!(
         tree.uses()[1].tree().module_path_prefix().to_string(),
         "crate.game.routes.opening"
     );
     assert!(!tree.uses()[1].tree().module_path_is_exact());
+    let UseTreeKind::Path { path, alias } = tree.uses()[1].tree().kind() else {
+        panic!("expected aliased path use tree");
+    };
+    assert_eq!(path.to_string(), "crate.game.routes.opening");
+    assert_eq!(
+        alias
+            .as_ref()
+            .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str),
+        Some("opening_route")
+    );
     assert_eq!(
         tree.uses()[2].tree().module_path_prefix().to_string(),
         "self.prelude"
     );
     assert!(tree.uses()[2].tree().module_path_is_exact());
+    let UseTreeKind::Glob { module } = tree.uses()[2].tree().kind() else {
+        panic!("expected glob use tree");
+    };
+    assert_eq!(module.to_string(), "self.prelude");
+}
+
+#[test]
+fn malformed_grouped_use_reports_a_structured_parse_diagnostic() {
+    let parsed = arcweft_lang_syntax::parser::parse_source("use game.effects.{wave,,pulse}\n");
+
+    assert_eq!(parsed.errors().len(), 1);
+    assert!(parsed.errors()[0].message().contains("empty name"));
+    assert!(parsed.typed_tree().uses().is_empty());
 }
 
 #[test]

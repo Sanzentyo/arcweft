@@ -1,11 +1,15 @@
-use super::{
-    HORIZONTAL_RUBY_HTML_OVERLAP_EM, LaidOutGlyph, LaidOutRuby, LayoutRect, RichTextRubyPosition,
-    RichTextWritingMode, RubyMetrics, TextLayoutConfig, VERTICAL_RUBY_HTML_OVERLAP_EM,
-    max_ruby_chars_per_vertical_segment, ranges_overlap, ruby_metrics,
-    ruby_metrics_from_presentation, ruby_position, union_bounds, usize_to_f32,
-    vertical_ruby_continuation_track_step,
+use crate::{
+    LaidOutGlyph, LaidOutRuby, LayoutRect, TextLayoutConfig,
+    geometry::{ranges_overlap, union_bounds, usize_to_f32},
+    ruby_metrics::{
+        HORIZONTAL_RUBY_HTML_OVERLAP_EM, RubyMetrics, VERTICAL_RUBY_HTML_OVERLAP_EM,
+        max_ruby_chars_per_vertical_segment, ruby_metrics, ruby_metrics_from_presentation,
+        ruby_position, vertical_ruby_continuation_track_step,
+    },
 };
-use arcweft_render_text::{LineDisplayFrame, RichTextRubyAnnotation};
+use arcweft_render_text::{
+    LineDisplayFrame, RichTextRubyAnnotation, RichTextRubyPosition, RichTextWritingMode,
+};
 
 pub(super) fn layout_ruby(
     frame: &LineDisplayFrame,

@@ -42,7 +42,12 @@ use arcweft_player_scene::frame::{
     PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest, PlayerPreparedFrame,
 };
 use arcweft_player_scene::{images::BundleImageCatalog, input::InputController};
-use arcweft_presentation::{hit::HitRect, image::ImageObjectFit, semantic::SemanticRole};
+use arcweft_presentation::{
+    fx::{FxDiagnostic, FxDiagnosticSeverity},
+    hit::HitRect,
+    image::ImageObjectFit,
+    semantic::SemanticRole,
+};
 use arcweft_render_text::{Milli, RichTextParam};
 use arcweft_render_wgpu::{
     geometry::{
@@ -165,9 +170,15 @@ pub(super) fn observe_native_player_runtime(
         step_input.task_events = std::mem::take(&mut runtime.task_events);
         let step = runtime.session.step_with_clock(clock, step_input);
         let finished = step.finished;
+        let fx_diagnostics = &step.presentation.fx_diagnostics;
         diagnostics.extend(
             step.diagnostics
                 .iter()
+                .filter(|message| {
+                    !fx_diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.message.as_str() == message.as_str())
+                })
                 .cloned()
                 .map(|message| AgentDiagnostic {
                     step: step.index,
@@ -177,6 +188,11 @@ pub(super) fn observe_native_player_runtime(
                     effect_id: None,
                     message,
                 }),
+        );
+        diagnostics.extend(
+            fx_diagnostics
+                .iter()
+                .map(|diagnostic| agent_fx_diagnostic(step.index, diagnostic)),
         );
         task_request_count = task_request_count.saturating_add(step.requested_tasks.len());
         runtime.task_events = if finished {
@@ -230,6 +246,24 @@ pub(super) fn observe_native_player_runtime(
         report,
         image_frames,
     })
+}
+
+fn agent_fx_diagnostic(step: usize, diagnostic: &FxDiagnostic) -> AgentDiagnostic {
+    AgentDiagnostic {
+        step,
+        severity: match diagnostic.severity {
+            FxDiagnosticSeverity::Error => AgentDiagnosticSeverity::Error,
+            FxDiagnosticSeverity::Warning => AgentDiagnosticSeverity::Warning,
+        },
+        source: Some("fx".to_owned()),
+        code: Some(diagnostic.code.as_str().to_owned()),
+        effect_id: diagnostic
+            .context
+            .definition
+            .as_ref()
+            .map(ToString::to_string),
+        message: diagnostic.message.clone(),
+    }
 }
 
 fn complete_player_runtime_tasks(

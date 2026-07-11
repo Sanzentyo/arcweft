@@ -161,7 +161,8 @@ impl ProductSectionCodecKind {
             | BundleSectionKind::DebugSymbols
             | BundleSectionKind::NormalizedSource
             | BundleSectionKind::HotSwapMap
-            | BundleSectionKind::PatchPlan => None,
+            | BundleSectionKind::PatchPlan
+            | BundleSectionKind::FxDefinitions => None,
         }
     }
 

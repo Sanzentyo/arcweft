@@ -2,6 +2,7 @@ use crate::container::{
     BundleDigest, BundleKind as ContainerBundleKind, BundleSectionKind, BundleView,
     ContentResidency, ExternalSectionPayload, ReadBudget, SectionId, SectionInput, encode_bundle,
 };
+use crate::fx_definitions::FxDefinitions;
 use crate::resource_codec::runtime::{
     AdapterRequirementsSection as CompactAdapterRequirementsSection,
     EntrypointsSection as CompactEntrypointsSection,
@@ -106,6 +107,7 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     .chain(optional_view_text_section(bundle)?)
     .chain(optional_view_input_section(bundle)?)
     .chain(optional_view_theme_section(bundle)?)
+    .chain(optional_fx_definitions_section(bundle)?)
     .collect::<Vec<_>>();
     encode_bundle(container_kind(bundle.bundle_kind), &manifest, sections).map_err(|error| {
         BundleCodecError::EncodeAwfb {
@@ -175,6 +177,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     let view_text = optional_view_text(&view, external_sections)?;
     let view_input = optional_view_input(&view, external_sections)?;
     let view_theme = optional_view_theme(&view, external_sections)?;
+    let fx_definitions = optional_fx_definitions(&view, external_sections)?.unwrap_or_default();
 
     Ok(ArcweftBundle {
         schema_version: product_manifest.schema_version,
@@ -191,6 +194,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         },
         product_awbc: Some(product_awbc),
         display: display.display,
+        fx_definitions,
         adapter_manifests: adapters.adapter_manifests,
         virtual_files: assets.virtual_files,
         image_assets: assets.image_assets,
@@ -330,6 +334,22 @@ fn optional_view_theme_section(
     )
 }
 
+fn optional_fx_definitions_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    if bundle.fx_definitions.is_empty() {
+        return Ok(None);
+    }
+    bundle
+        .fx_definitions
+        .encode_canonical_section()
+        .map(|bytes| optional_section(BundleSectionKind::FxDefinitions, bytes))
+        .map(Some)
+        .map_err(|source| BundleCodecError::EncodeAwfb {
+            message: source.to_string(),
+        })
+}
+
 fn optional_view_section(
     kind: BundleSectionKind,
     encode: Option<Result<Vec<u8>, crate::resource_codec::SectionCodecError>>,
@@ -458,6 +478,38 @@ fn optional_view_theme(
         BundleSectionKind::ViewTheme,
         CompactViewThemeResource::decode_canonical_section,
     )
+}
+
+fn optional_fx_definitions(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<FxDefinitions>, BundleCodecError> {
+    let mut matches = view
+        .sections()
+        .iter()
+        .filter(|descriptor| descriptor.known_kind() == Some(BundleSectionKind::FxDefinitions));
+    let Some(descriptor) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(BundleCodecError::DecodeAwfb {
+            message: "AWFB bundle contains multiple FxDefinitions sections".to_owned(),
+        });
+    }
+    let bytes = view
+        .decoded_section_with_external_payloads(descriptor.id(), external_sections)
+        .map_err(|source| BundleCodecError::DecodeAwfb {
+            message: source.to_string(),
+        })?
+        .ok_or_else(|| BundleCodecError::DecodeAwfb {
+            message: "AWFB FxDefinitions section is external and cannot be decoded inline"
+                .to_owned(),
+        })?;
+    FxDefinitions::decode_canonical_section(&bytes)
+        .map(Some)
+        .map_err(|source| BundleCodecError::DecodeAwfb {
+            message: source.to_string(),
+        })
 }
 
 fn required_compact_payload<T>(
@@ -645,6 +697,7 @@ mod tests {
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
         SectionInput, encode_bundle,
     };
+    use crate::fx_definitions::FxDefinitions;
     use crate::resource_codec::{
         CompactContentCatalogSection, CompactDisplayCatalogSection, CompactSourceMapSection,
     };
@@ -659,6 +712,7 @@ mod tests {
         AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::bytecode::BytecodeProgram;
+    use arcweft_presentation::fx::{FxDefinition, FxGraph, FxId, FxNode};
     use arcweft_render_text::LineDisplayCatalog;
     use std::path::Path;
 
@@ -726,6 +780,32 @@ mod tests {
                 .product_awbc(),
             bundle.product_awbc()
         );
+    }
+
+    #[test]
+    fn awfb_product_round_trips_first_class_fx_definitions_section() {
+        let definition = FxDefinition::new(
+            FxId::try_new("test", "fx.pulse").expect("valid Fx ID"),
+            Vec::new(),
+            FxGraph::new(vec![FxNode::Text {
+                properties: Vec::new(),
+            }]),
+        )
+        .expect("valid Fx definition");
+        let bundle = empty_bundle()
+            .with_fx_definitions(FxDefinitions::try_new([definition]).expect("valid Fx inventory"));
+        let bytes = bundle
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("AWFB encodes");
+        let view = BundleView::parse(&bytes, ReadBudget::default()).expect("AWFB parses");
+        assert!(
+            view.sections()
+                .iter()
+                .any(|section| { section.known_kind() == Some(BundleSectionKind::FxDefinitions) })
+        );
+
+        let decoded = super::from_awfb_slice(&bytes).expect("AWFB decodes");
+        assert_eq!(decoded.fx_definitions, bundle.fx_definitions);
     }
 
     #[test]

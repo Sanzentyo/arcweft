@@ -208,7 +208,11 @@ impl FromStr for ModulePath {
         if source.is_empty() {
             return Err(ModulePathError::Empty);
         }
-        let raw = source.split('.').collect::<Vec<_>>();
+        // File-level `mod` declarations may use the namespace separator while
+        // import paths use dots. Both spell the same typed path and canonical
+        // formatting uses dots.
+        let canonical_source = source.replace("::", ".");
+        let raw = canonical_source.split('.').collect::<Vec<_>>();
         if raw.iter().any(|segment| segment.is_empty()) {
             return Err(ModulePathError::EmptySegment {
                 path: source.to_owned(),
@@ -327,5 +331,14 @@ mod tests {
                 .resolve_from(&current),
             Err(ModulePathError::EscapesCrate { .. })
         ));
+    }
+
+    #[test]
+    fn namespace_and_dot_separators_produce_the_same_typed_path() {
+        let namespace = "game::opening".parse::<ModulePath>().unwrap();
+        let dotted = "game.opening".parse::<ModulePath>().unwrap();
+
+        assert_eq!(namespace, dotted);
+        assert_eq!(namespace.to_string(), "game.opening");
     }
 }

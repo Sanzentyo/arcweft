@@ -2,6 +2,7 @@
 
 pub mod character_package;
 pub mod container;
+pub mod fx_definitions;
 pub mod logical_identity;
 pub mod patch;
 mod product;
@@ -10,6 +11,7 @@ pub mod release;
 pub mod resource_codec;
 
 use crate::character_package::BundleCharacterPackage;
+use crate::fx_definitions::FxDefinitions;
 use crate::resource_codec::{
     ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
 };
@@ -51,6 +53,8 @@ pub struct ArcweftBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_awbc: Option<BundleAwbcProgram>,
     pub display: LineDisplayCatalog,
+    #[serde(default, skip_serializing_if = "FxDefinitions::is_empty")]
+    pub fx_definitions: FxDefinitions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapter_manifests: Vec<BundleAdapterManifest>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -536,6 +540,7 @@ impl ArcweftBundle {
             },
             product_awbc: None,
             display,
+            fx_definitions: FxDefinitions::default(),
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
             image_assets: Vec::new(),
@@ -615,6 +620,12 @@ impl ArcweftBundle {
     #[must_use]
     pub fn with_audio_graph(mut self, graph: AudioGraph) -> Self {
         self.audio = Some(graph);
+        self
+    }
+
+    #[must_use]
+    pub fn with_fx_definitions(mut self, definitions: FxDefinitions) -> Self {
+        self.fx_definitions = definitions;
         self
     }
 

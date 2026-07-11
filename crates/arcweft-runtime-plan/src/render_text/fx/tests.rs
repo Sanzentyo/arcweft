@@ -73,7 +73,10 @@ fn transform_fx_keeps_complete_identity_instead_of_matching_a_builtin_basename()
         r"
 #[fx]
 fn wave(amplitude: Length = 2px) -> Fx {
-    Fx.transform(target = .glyph, amplitude = amplitude)
+    Fx.transform(
+        target = .glyph,
+        sample = |ctx| Transform2D { translate_y: amplitude },
+    )
 }
 ",
     );

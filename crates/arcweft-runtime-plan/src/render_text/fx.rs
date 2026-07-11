@@ -10,7 +10,9 @@ use arcweft_lang_hir::{
         expr::{CallArg, Expr, parse_expr},
     },
 };
-use arcweft_presentation::fx::{FxDefinition, FxGraph, FxNode, FxProperty, FxValue};
+use arcweft_presentation::fx::{
+    FxDefinition, FxGraph, FxNode, FxProperty, FxRuntimeValue, FxStaticValue,
+};
 use arcweft_render_text::RichTextStyle;
 
 use crate::{
@@ -107,7 +109,7 @@ impl FxCatalog {
 fn bind_invocation(
     definition: &FxDefinition,
     args: &[CallArg],
-) -> Result<BTreeMap<String, FxValue>, RuntimePlanLowerError> {
+) -> Result<Vec<FxRuntimeValue>, RuntimePlanLowerError> {
     let mut supplied = BTreeMap::new();
     for arg in args {
         let CallArg::Named { name, value } = arg else {
@@ -122,21 +124,18 @@ fn bind_invocation(
                 crate::labels::expr_label(value)
             )));
         }
-        if supplied
-            .insert(name.clone(), closed_expr_to_fx_value(value))
-            .is_some()
-        {
+        if supplied.insert(name.clone(), value.as_ref()).is_some() {
             return Err(fx_error(format!(
                 "Fx function `{}` receives duplicate argument `{name}`",
                 definition.id().function()
             )));
         }
     }
-    let mut bindings = BTreeMap::new();
+    let mut bindings = Vec::with_capacity(definition.parameters().len());
     for parameter in definition.parameters() {
         let value = supplied.remove(parameter.name()).map_or_else(
             || {
-                parameter.default().cloned().ok_or_else(|| {
+                parameter.default().copied().ok_or_else(|| {
                     fx_error(format!(
                         "Fx function `{}` is missing required argument `{}`",
                         definition.id().function(),
@@ -144,9 +143,9 @@ fn bind_invocation(
                     ))
                 })
             },
-            Ok,
+            |expr| closed_expr_to_fx_value(expr, parameter.value_type()),
         )?;
-        bindings.insert(parameter.name().to_owned(), value);
+        bindings.push(value);
     }
     if let Some(unknown) = supplied.keys().next() {
         return Err(fx_error(format!(
@@ -159,7 +158,7 @@ fn bind_invocation(
 
 fn instantiate_graph(
     graph: &FxGraph,
-    bindings: &BTreeMap<String, FxValue>,
+    bindings: &[FxRuntimeValue],
 ) -> Result<FxGraph, RuntimePlanLowerError> {
     Ok(FxGraph::new(
         graph
@@ -172,7 +171,7 @@ fn instantiate_graph(
 
 fn instantiate_node(
     node: &FxNode,
-    bindings: &BTreeMap<String, FxValue>,
+    bindings: &[FxRuntimeValue],
 ) -> Result<FxNode, RuntimePlanLowerError> {
     let properties = |properties: &[FxProperty]| {
         properties
@@ -186,9 +185,15 @@ fn instantiate_node(
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
     };
     Ok(match node {
-        FxNode::Style(values) => FxNode::Style(properties(values)?),
-        FxNode::Text(values) => FxNode::Text(properties(values)?),
-        FxNode::Color(values) => FxNode::Color(properties(values)?),
+        FxNode::Style { properties: values } => FxNode::Style {
+            properties: properties(values)?,
+        },
+        FxNode::Text { properties: values } => FxNode::Text {
+            properties: properties(values)?,
+        },
+        FxNode::Color { properties: values } => FxNode::Color {
+            properties: properties(values)?,
+        },
         FxNode::Transform {
             fx,
             properties: values,
@@ -217,6 +222,20 @@ fn instantiate_node(
             fx: fx.clone(),
             properties: properties(values)?,
         },
+        FxNode::OffscreenPass {
+            fx,
+            properties: values,
+        } => FxNode::OffscreenPass {
+            fx: fx.clone(),
+            properties: properties(values)?,
+        },
+        FxNode::PostProcess {
+            fx,
+            properties: values,
+        } => FxNode::PostProcess {
+            fx: fx.clone(),
+            properties: properties(values)?,
+        },
         FxNode::Transition {
             fx,
             properties: values,
@@ -233,31 +252,33 @@ fn instantiate_node(
             then_graph: instantiate_graph(then_graph, bindings)?,
             else_graph: instantiate_graph(else_graph, bindings)?,
         },
-        FxNode::Stack(children) => FxNode::Stack(
-            children
+        FxNode::Stack { children } => FxNode::Stack {
+            children: children
                 .iter()
                 .map(|child| instantiate_graph(child, bindings))
                 .collect::<Result<Vec<_>, _>>()?,
-        ),
+        },
     })
 }
 
 fn instantiate_value(
-    value: &FxValue,
-    bindings: &BTreeMap<String, FxValue>,
-) -> Result<FxValue, RuntimePlanLowerError> {
+    value: &FxStaticValue,
+    bindings: &[FxRuntimeValue],
+) -> Result<FxStaticValue, RuntimePlanLowerError> {
     Ok(match value {
-        FxValue::Parameter(name) => bindings
-            .get(name)
-            .cloned()
-            .ok_or_else(|| fx_error(format!("unbound Fx parameter `{name}`")))?,
-        FxValue::List(values) => FxValue::List(
+        FxStaticValue::Parameter(slot) => FxStaticValue::Runtime(
+            bindings
+                .get(usize::from(slot.index))
+                .copied()
+                .ok_or_else(|| fx_error(format!("unbound Fx parameter slot `{}`", slot.index)))?,
+        ),
+        FxStaticValue::List(values) => FxStaticValue::List(
             values
                 .iter()
                 .map(|value| instantiate_value(value, bindings))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        FxValue::Record(properties) => FxValue::Record(
+        FxStaticValue::Record(properties) => FxStaticValue::Record(
             properties
                 .iter()
                 .map(|property| {
@@ -292,14 +313,16 @@ fn lower_node(
     invocation_range: TextRange,
 ) -> Result<Vec<ExpandedFxLayer>, RuntimePlanLowerError> {
     match node {
-        FxNode::Text(properties) => lower_text(properties, invocation_range),
-        FxNode::Color(properties) => lower_color(properties, invocation_range),
-        FxNode::Style(properties) => lower_style(properties, invocation_range),
+        FxNode::Text { properties } => lower_text(properties, invocation_range),
+        FxNode::Color { properties } => lower_color(properties, invocation_range),
+        FxNode::Style { properties } => lower_style(properties, invocation_range),
         FxNode::Transform { fx, properties } => {
             lower_effect_node(properties, fx, FxLayerKind::Transform, invocation_range)
         }
         FxNode::Mask { fx, properties }
         | FxNode::Filter { fx, properties }
+        | FxNode::OffscreenPass { fx, properties }
+        | FxNode::PostProcess { fx, properties }
         | FxNode::Transition { fx, properties } => {
             lower_effect_node(properties, fx, FxLayerKind::Effect, invocation_range)
         }
@@ -309,13 +332,17 @@ fn lower_node(
             then_graph,
             else_graph,
         } => match condition {
-            FxValue::Bool(true) => lower_graph(owner, then_graph, invocation_range),
-            FxValue::Bool(false) => lower_graph(owner, else_graph, invocation_range),
+            FxStaticValue::Runtime(FxRuntimeValue::Bool(true)) => {
+                lower_graph(owner, then_graph, invocation_range)
+            }
+            FxStaticValue::Runtime(FxRuntimeValue::Bool(false)) => {
+                lower_graph(owner, else_graph, invocation_range)
+            }
             _ => Err(fx_error(
                 "RichText Fx conditions must resolve to a closed boolean",
             )),
         },
-        FxNode::Stack(children) => children.iter().try_fold(Vec::new(), |mut layers, child| {
+        FxNode::Stack { children } => children.iter().try_fold(Vec::new(), |mut layers, child| {
             layers.extend(lower_graph(owner, child, invocation_range)?);
             Ok(layers)
         }),
@@ -330,14 +357,16 @@ fn lower_text(
     for property in properties {
         let value = value_label(property.value());
         let (builder, kind, attrs) = match property.name() {
-            "weight" if value.trim_start_matches('.') == "strong" => {
+            "weight"
+                if matches!(
+                    property.value(),
+                    FxStaticValue::Runtime(FxRuntimeValue::I32(weight)) if *weight >= 600
+                ) =>
+            {
                 ("strong", FxLayerKind::Strong, String::new())
             }
-            "style" if value.trim_start_matches('.') == "em" => {
-                ("em", FxLayerKind::Em, String::new())
-            }
             "color" => ("color", FxLayerKind::Color, format!("value={value}")),
-            "font" => ("font", FxLayerKind::Font, format!("value={value}")),
+            "font_family" => ("font", FxLayerKind::Font, format!("value={value}")),
             "size" => ("size", FxLayerKind::Size, format!("value={value}")),
             other => {
                 return Err(fx_error(format!(
@@ -367,8 +396,8 @@ fn lower_color(
 ) -> Result<Vec<ExpandedFxLayer>, RuntimePlanLowerError> {
     let property = properties
         .iter()
-        .find(|property| matches!(property.name(), "value" | "color"))
-        .ok_or_else(|| fx_error("Fx.color requires `value = ...`"))?;
+        .find(|property| matches!(property.name(), "tint" | "multiply"))
+        .ok_or_else(|| fx_error("Fx.color requires `tint = ...` or `multiply = ...`"))?;
     lower_text(
         &[FxProperty::new("color", property.value().clone())],
         invocation_range,
@@ -466,23 +495,21 @@ fn properties_to_arguments(
         .collect()
 }
 
-fn value_label(value: &FxValue) -> String {
+fn value_label(value: &FxStaticValue) -> String {
     match value {
-        FxValue::Bool(value) => value.to_string(),
-        FxValue::Integer(value) | FxValue::Decimal(value) | FxValue::Binding(value) => {
-            value.clone()
-        }
-        FxValue::String(value) => value.clone(),
-        FxValue::Scalar { value, unit } | FxValue::Duration { value, unit } => {
-            format!("{value}{unit}")
-        }
-        FxValue::Selector(value) => format!(".{value}"),
-        FxValue::Parameter(value) => format!("${value}"),
-        FxValue::List(values) => format!(
+        FxStaticValue::Runtime(value) => runtime_value_label(*value),
+        FxStaticValue::Resource(value) => value.as_str().to_owned(),
+        FxStaticValue::String(value) => value.clone(),
+        FxStaticValue::Selector(value) => format!(".{value}"),
+        FxStaticValue::Target(value) => format!(".{value:?}").to_ascii_lowercase(),
+        FxStaticValue::Phase(value) => format!(".{value:?}").to_ascii_lowercase(),
+        FxStaticValue::Parameter(value) => format!("$slot{}:{:?}", value.index, value.ty),
+        FxStaticValue::Sampler(_) => "<typed-sampler>".to_owned(),
+        FxStaticValue::List(values) => format!(
             "[{}]",
             values.iter().map(value_label).collect::<Vec<_>>().join(",")
         ),
-        FxValue::Record(properties) => format!(
+        FxStaticValue::Record(properties) => format!(
             "{{{}}}",
             properties
                 .iter()
@@ -491,6 +518,44 @@ fn value_label(value: &FxValue) -> String {
                 .join(",")
         ),
     }
+}
+
+fn runtime_value_label(value: FxRuntimeValue) -> String {
+    match value {
+        FxRuntimeValue::Bool(value) => value.to_string(),
+        FxRuntimeValue::I32(value) => value.to_string(),
+        FxRuntimeValue::F32(value) => value.to_string(),
+        FxRuntimeValue::Length(value) => format!("{}px", value.pixels()),
+        FxRuntimeValue::Angle(value) => format!("{}rad", value.radians()),
+        FxRuntimeValue::Seconds(value) => format!("{}s", value.seconds()),
+        FxRuntimeValue::Color(value) => format!(
+            "#{:02x}{:02x}{:02x}{:02x}",
+            color_channel(value.red()),
+            color_channel(value.green()),
+            color_channel(value.blue()),
+            color_channel(value.alpha())
+        ),
+        FxRuntimeValue::Vec2(value) => format!("{},{}", value.x, value.y),
+        FxRuntimeValue::Transform2D(value) => format!(
+            "Transform2D(translate_x={}px,translate_y={}px,scale_x={},scale_y={},rotation={}rad,origin_x={}px,origin_y={}px,opacity={})",
+            value.translate_x.pixels(),
+            value.translate_y.pixels(),
+            value.scale_x,
+            value.scale_y,
+            value.rotation.radians(),
+            value.origin_x.pixels(),
+            value.origin_y.pixels(),
+            value.opacity
+        ),
+    }
+}
+
+fn color_channel(value: arcweft_presentation::fx::Opacity) -> u8 {
+    (value.value().get() * 255.0)
+        .round()
+        .to_string()
+        .parse::<u8>()
+        .unwrap_or(u8::MAX)
 }
 
 fn callee_name(expr: &Expr) -> Option<&str> {

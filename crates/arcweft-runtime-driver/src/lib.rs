@@ -7,6 +7,7 @@
 pub mod clock;
 pub mod dialogue;
 pub mod display;
+pub mod fx_runtime;
 pub mod generation_runtime;
 pub mod presentation_handles;
 pub mod session;

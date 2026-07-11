@@ -1,12 +1,31 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
 use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::ast::items::{AgentItem, Attribute, FunctionItem, Item, TypedSyntaxTree};
+use arcweft_lang_syntax::ast::{
+    items::{AgentItem, Attribute, FunctionItem, Item, TypedSyntaxTree},
+    module_path::CanonicalModulePath,
+};
 
 /// Lowers a parsed syntax tree into HIR-facing structures.
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
+    let module_path = tree
+        .module()
+        .map(|module| {
+            module
+                .module_path()
+                .and_then(|path| path.resolve_declaration_for(&CanonicalModulePath::crate_root()))
+                .map_err(|error| {
+                    HirLowerError::new(
+                        format!("module path cannot be lowered: {error}"),
+                        Some(*module.range()),
+                    )
+                })
+        })
+        .transpose()
+        .map_err(|error| vec![error])?;
     let mut state = HirLoweringState {
         attributes: tree.attrs().to_vec(),
-        module_path: tree.module().map(|module| module.path().to_owned()),
+        uses: tree.uses().to_vec(),
+        module_path,
         source_len: Some(tree.source().len()),
         top_level_ranges: tree.items().iter().filter_map(Item::range).collect(),
         ..HirLoweringState::default()
@@ -21,7 +40,8 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
 #[derive(Default)]
 struct HirLoweringState {
     attributes: Vec<Attribute>,
-    module_path: Option<String>,
+    uses: Vec<arcweft_lang_syntax::ast::common::UseItem>,
+    module_path: Option<CanonicalModulePath>,
     source_len: Option<usize>,
     top_level_ranges: Vec<arcweft_lang_syntax::ast::common::TextRange>,
     flows: Vec<crate::model::HirFlow>,
@@ -36,7 +56,8 @@ impl HirLoweringState {
     fn lower_item(&mut self, item: &Item) {
         match item {
             Item::Flow(flow) => match lower_flow(flow) {
-                Ok(flow) => {
+                Ok(mut flow) => {
+                    flow.module_path.clone_from(&self.module_path);
                     self.flows.push(flow);
                 }
                 Err(err) => self.errors.push(err),
@@ -46,7 +67,8 @@ impl HirLoweringState {
                     .push(lower_function(function, self.module_path.clone()));
             }
             Item::Agent(agent) => {
-                self.agents.push(lower_agent(agent));
+                self.agents
+                    .push(lower_agent(agent, self.module_path.clone()));
             }
             Item::FlowItem(item) => match lower_flow_item(item) {
                 Ok(item) => {
@@ -152,6 +174,7 @@ impl HirLoweringState {
         if self.errors.is_empty() {
             Ok(HirModule {
                 attributes: self.attributes,
+                uses: self.uses,
                 source_len: self.source_len,
                 top_level_ranges: self.top_level_ranges,
                 flows: self.flows,
@@ -166,14 +189,18 @@ impl HirLoweringState {
     }
 }
 
-fn lower_agent(agent: &AgentItem) -> HirAgent {
+fn lower_agent(agent: &AgentItem, module_path: Option<CanonicalModulePath>) -> HirAgent {
     HirAgent {
         attributes: agent.attrs().to_vec(),
+        module_path,
         item: agent.clone(),
     }
 }
 
-fn lower_function(function: &FunctionItem, module_path: Option<String>) -> HirFunction {
+fn lower_function(
+    function: &FunctionItem,
+    module_path: Option<CanonicalModulePath>,
+) -> HirFunction {
     HirFunction {
         attributes: function.attrs().to_vec(),
         module_path,

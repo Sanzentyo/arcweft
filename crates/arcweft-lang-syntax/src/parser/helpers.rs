@@ -77,7 +77,7 @@ impl PendingDocLines {
 pub(super) fn parse_use_line(
     trimmed: &str,
     range: TextRange,
-) -> Result<Option<UseItem>, crate::ast::module_path::ModulePathError> {
+) -> Result<Option<UseItem>, crate::ast::common::UseTreeError> {
     let (visibility, rest) = parse_visibility_prefix(trimmed);
     let rest = rest.trim_start();
     let Some(tree) = rest.strip_prefix("use ") else {

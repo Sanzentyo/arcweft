@@ -7,12 +7,14 @@
 use crate::display::BundlePresentationSnapshot;
 use crate::swap::GenerationId;
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::logical_identity::LogicalBundleIdentity;
 use arcweft_core::awbc::fiber::{FiberState, FiberStateError};
 use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
+use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::virtualization::ViewVirtualizationSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -107,6 +109,8 @@ pub enum BundleSessionSaveError {
     },
     #[error("invalid presentation snapshot in session save: {message}")]
     Presentation { message: String },
+    #[error("invalid Fx runtime snapshot in session save: {diagnostic:?}")]
+    Fx { diagnostic: Box<FxDiagnostic> },
     #[error("invalid Product AWBC fiber snapshot in session save: {message}")]
     Fiber { message: String },
     #[error("invalid runtime value in session save at {path}: {message}")]
@@ -137,7 +141,14 @@ impl From<ArcweftRuntimeExecutorSnapshotError> for BundleSessionSaveError {
 
 pub(crate) fn validate_presentation_snapshot(
     snapshot: &BundlePresentationSnapshot,
+    definitions: &FxDefinitions,
 ) -> Result<(), BundleSessionSaveError> {
+    snapshot
+        .fx
+        .validate_for_definitions(definitions)
+        .map_err(|error| BundleSessionSaveError::Fx {
+            diagnostic: Box::new(error.diagnostic()),
+        })?;
     if let Some(dialogue) = &snapshot.dialogue {
         dialogue
             .frame()

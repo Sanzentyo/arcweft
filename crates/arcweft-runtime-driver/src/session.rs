@@ -8,6 +8,7 @@ use crate::display::{
     BundlePresentationResources, BundlePresentationSnapshot, DisplayResolution,
     resolve_display_frames,
 };
+use crate::fx_runtime::BundleFxRuntimeError;
 use crate::generation_runtime::{
     GenerationRuntimeError, GenerationRuntimeImage, GenerationRuntimeTable,
 };
@@ -28,6 +29,7 @@ use crate::task::{
 };
 use crate::text_control_writeback::RuntimeTextControlWriteBack;
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleView, ReadBudget};
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::patch::{
     BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchMaterializedTarget,
     PatchValidationError, apply_patch_bundle, decode_patch_bundle,
@@ -73,6 +75,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
 
+mod fx;
 mod virtualization;
 
 pub use self::virtualization::BundleVirtualListMountError;
@@ -195,6 +198,7 @@ pub struct BundleSession {
     runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
+    fx_definitions: FxDefinitions,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     pending_presentation_inputs: Vec<BundlePresentationInput>,
@@ -328,6 +332,8 @@ pub enum BundleHotSwapError {
     GenerationRuntime(#[from] GenerationRuntimeError),
     #[error("hot-swap View virtualization contract changed: {message}")]
     ViewVirtualization { message: String },
+    #[error(transparent)]
+    FxRuntime(#[from] BundleFxRuntimeError),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -476,6 +482,7 @@ impl BundleSession {
         let runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics.clone();
         let focus_groups = runtime.focus_groups.clone();
         let focus_navigation = runtime.focus_navigation.clone();
+        let fx_definitions = runtime.fx_definitions.clone();
         let source_label = runtime.source_label.clone();
 
         Ok(Self {
@@ -495,6 +502,7 @@ impl BundleSession {
             runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
+            fx_definitions,
             options,
             pending_input_events: Vec::new(),
             pending_presentation_inputs: Vec::new(),
@@ -767,6 +775,15 @@ impl BundleSession {
                 })?;
             }
         }
+        if compatibility == SwapCompatibility::ContentOnly
+            && let Err(error) = self
+                .presentation
+                .fx
+                .validate_for_definitions(&next_runtime.fx_definitions)
+        {
+            self.presentation.record_fx_error(&error);
+            return Err(error.into());
+        }
 
         self.swap
             .prepare_with_compatibility(next_generation, compatibility)
@@ -790,6 +807,7 @@ impl BundleSession {
                 self.focus_groups.clone_from(&next_runtime.focus_groups);
                 self.focus_navigation
                     .clone_from(&next_runtime.focus_navigation);
+                self.fx_definitions.clone_from(&next_runtime.fx_definitions);
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -945,6 +963,7 @@ impl BundleSession {
         clock: RuntimeClockStep,
         input: BundleStepInput,
     ) -> BundleSessionStep {
+        self.presentation.advance_fx_clock(clock.dt_millis());
         self.swap.enter_runtime_step();
         let PreparedBundleStepInput {
             runtime,
@@ -993,6 +1012,7 @@ impl BundleSession {
             &line_effects,
             &mut diagnostics,
         );
+        self.append_fx_diagnostics(&mut diagnostics);
         let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
@@ -1266,7 +1286,7 @@ impl BundleSession {
         if !blockers.is_empty() {
             return Err(BundleSessionSaveError::NonQuiescent { blockers });
         }
-        validate_presentation_snapshot(&self.presentation)?;
+        validate_presentation_snapshot(&self.presentation, &self.fx_definitions)?;
         validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
         let active = self.active_generation();
         let product_program = self.executor.product_awbc_program().ok_or_else(|| {
@@ -1337,7 +1357,7 @@ impl BundleSession {
         snapshot: BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
         self.validate_session_save_generation(&snapshot.generation)?;
-        validate_presentation_snapshot(&snapshot.presentation)?;
+        validate_presentation_snapshot(&snapshot.presentation, &self.fx_definitions)?;
         let active_generation = self.active_generation().id;
         let BundleSessionExecutorSnapshot { generation, state } = snapshot.executor;
         if generation != active_generation {
@@ -1513,6 +1533,7 @@ impl BundleSession {
         self.runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics;
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;
+        self.fx_definitions = runtime.fx_definitions;
     }
 
     fn prune_runtime_images(&mut self) {
@@ -1690,6 +1711,7 @@ struct SessionRuntime {
     runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
+    fx_definitions: FxDefinitions,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1721,6 +1743,7 @@ struct SessionRuntimeResources {
     runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
+    fx_definitions: FxDefinitions,
 }
 
 fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
@@ -1779,6 +1802,7 @@ impl SessionRuntime {
             runtime_control_style_diagnostics: resources.runtime_control_style_diagnostics,
             focus_groups: resources.focus_groups,
             focus_navigation: resources.focus_navigation,
+            fx_definitions: resources.fx_definitions,
         })
     }
 
@@ -1805,6 +1829,7 @@ impl SessionRuntime {
                 runtime_control_style_diagnostics: self.runtime_control_style_diagnostics.clone(),
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
+                fx_definitions: self.fx_definitions.clone(),
             },
         )
         .map_err(BundleEntryStartError::from)
@@ -1894,6 +1919,7 @@ fn build_session_runtime(
             runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
+            fx_definitions: bundle.fx_definitions.clone(),
         },
     )
     .map_err(BundleSessionError::from)

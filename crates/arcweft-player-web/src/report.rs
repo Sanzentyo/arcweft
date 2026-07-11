@@ -1,3 +1,4 @@
+use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, RenderFontFamily, RenderGlyphTransformKind, RenderImage, RenderStyledParagraph,
     RenderTextBlock, RenderTextSlant, RenderTextWeight,
@@ -26,6 +27,7 @@ pub struct WebObservationReport {
     pub status: String,
     pub finished: bool,
     pub diagnostics: Vec<String>,
+    pub fx_diagnostics: Vec<FxDiagnostic>,
     pub presentation_revision: u64,
     pub dialogue: Option<WebDialogueObservation>,
     pub presentation_transitions: Vec<BundlePresentationTransition>,
@@ -58,6 +60,7 @@ impl WebObservationReport {
             status: step.status_label.clone(),
             finished: step.finished,
             diagnostics: step.diagnostics.clone(),
+            fx_diagnostics: step.presentation.fx_diagnostics.clone(),
             presentation_revision: step.presentation.revision,
             dialogue: step
                 .presentation

@@ -1,4 +1,5 @@
 use arcweft_bundle::container::{BundleView, ReadBudget};
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
 };
@@ -19,6 +20,10 @@ use arcweft_core::{
 };
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
+};
+use arcweft_presentation::fx::{
+    FiniteF32, FxAbiHash, FxDefinition, FxDiagnosticCode, FxGraph, FxGraphChildPath, FxId,
+    FxInstanceId, FxParameter, FxRuntimeType, FxRuntimeValue,
 };
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_driver::{
@@ -85,6 +90,73 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
         .export_session_save_bytes()
         .expect("restored session save exports");
     assert_eq!(save, restored_save);
+}
+
+#[test]
+fn fx_instances_and_logical_time_restore_atomically_with_the_session() {
+    let definition = fx_definition();
+    let bundle = product_bundle_with_label("entry.main", "fx-save.arcw")
+        .with_fx_definitions(FxDefinitions::try_new([definition.clone()]).expect("Fx inventory"));
+    let bytes = bundle
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("AWFB encodes");
+    let mut session = product_session_from_bytes(&bytes);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 250).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let instance = FxInstanceId::derive(definition.id(), ["view.hud", "node.1", "fx.0"]);
+    session
+        .retain_fx_instance(
+            definition.id(),
+            instance,
+            vec![FxRuntimeValue::F32(
+                FiniteF32::try_new(1.5).expect("finite"),
+            )],
+            FxGraphChildPath::try_new(vec![2, 4]).expect("child path"),
+            Some(b"authored-seed"),
+        )
+        .expect("Fx activates");
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 750).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let expected = session.snapshot_session().expect("snapshot exports");
+    assert_eq!(
+        expected.presentation.fx.logical_time.seconds().value(),
+        FiniteF32::ONE
+    );
+    assert_eq!(expected.presentation.fx.instances.len(), 1);
+
+    let save = session
+        .export_session_save_bytes()
+        .expect("Fx session save exports");
+    let mut restored = product_session_from_bytes(&bytes);
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect("Fx session save imports");
+    assert_eq!(restored.fx_runtime(), &expected.presentation.fx);
+
+    let before_rejection = restored
+        .snapshot_session()
+        .expect("restored snapshot exports");
+    let mut invalid = before_rejection.clone();
+    invalid.runtime.source_label = "must not leak".to_owned();
+    invalid.presentation.fx.instances[0].abi_hash = FxAbiHash::derive(["wrong"]);
+    let error = restored
+        .restore_session_snapshot(invalid)
+        .expect_err("ABI mismatch is rejected");
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::Fx { diagnostic }
+            if diagnostic.code == FxDiagnosticCode::AbiMismatch
+    ));
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("rejected restore leaves state unchanged"),
+        before_rejection
+    );
 }
 
 #[test]
@@ -549,6 +621,15 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
         LineDisplayCatalog::default(),
     )
     .with_product_awbc(minimal_awbc_program(entry))
+}
+
+fn fx_definition() -> FxDefinition {
+    FxDefinition::new(
+        FxId::try_new("test", "pulse").expect("Fx identity"),
+        vec![FxParameter::try_new("speed", FxRuntimeType::F32, None).expect("Fx parameter")],
+        FxGraph::default(),
+    )
+    .expect("Fx definition")
 }
 
 fn view_handle(

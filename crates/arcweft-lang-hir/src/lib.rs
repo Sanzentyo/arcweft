@@ -16,6 +16,7 @@ pub mod lower_flow;
 pub mod lower_ids;
 pub mod model;
 pub mod project;
+pub mod symbol;
 
 /// Syntax types intentionally exposed through a namespace instead of flat
 /// crate-root re-exports, so downstream crates can see which layer owns a type.

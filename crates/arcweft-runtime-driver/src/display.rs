@@ -2,6 +2,7 @@ use crate::dialogue::{
     BundleDialoguePresentation, BundlePresentationTransition, DialogueAdvanceRejection,
     DialogueAdvanceTarget, DialogueInstanceId,
 };
+use crate::fx_runtime::{BundleFxRuntimeError, BundleFxRuntimeSnapshot};
 use crate::presentation_handles::{
     PresentationHandleDiagnostic, PresentationHandleRecord, apply_presentation_handle_operations,
     apply_presentation_image_handles, filter_presentation_action_buttons,
@@ -23,6 +24,7 @@ use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::FlowEvent;
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StagePlacement, StageRect};
+use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -78,6 +80,11 @@ pub struct BundlePresentationSnapshot {
     pub focus_groups: Vec<ViewRuntimeFocusGroup>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub focus_navigation: Vec<ViewRuntimeFocusNavigation>,
+    /// Activation-relative logical clock and complete live Fx save state.
+    pub fx: BundleFxRuntimeSnapshot,
+    /// Typed failures consumed unchanged by native, Web, headless, and Agent observers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fx_diagnostics: Vec<FxDiagnostic>,
 }
 
 /// Runtime resources that affect portable presentation state.
@@ -114,6 +121,24 @@ pub fn resolve_display_frames(
 }
 
 impl BundlePresentationSnapshot {
+    pub(crate) fn advance_fx_clock(&mut self, milliseconds: u64) {
+        match self.fx.advance_millis(milliseconds) {
+            Ok(()) => {
+                self.fx_diagnostics.clear();
+                self.revision = self.revision.saturating_add(1);
+            }
+            Err(error) => self.record_fx_error(&error),
+        }
+    }
+
+    pub(crate) fn record_fx_error(&mut self, error: &BundleFxRuntimeError) {
+        let diagnostic = error.diagnostic();
+        if self.fx_diagnostics.as_slice() != [diagnostic.clone()] {
+            self.fx_diagnostics = vec![diagnostic];
+            self.revision = self.revision.saturating_add(1);
+        }
+    }
+
     pub(crate) fn update(
         &mut self,
         resolution: &DisplayResolution,
@@ -314,6 +339,8 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("text_blocks", &self.text_blocks)
             .field("focus_groups", &self.focus_groups)
             .field("focus_navigation", &self.focus_navigation)
+            .field("fx", &self.fx)
+            .field("fx_diagnostics", &self.fx_diagnostics)
             .finish()
     }
 }

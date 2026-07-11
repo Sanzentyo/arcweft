@@ -9,6 +9,7 @@ use crate::{hir, lower, parse};
 use arcweft_lang_hir::{
     model::HirModule,
     project::{HirProject, HirProjectModule},
+    symbol::CallableSymbolTable,
 };
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
 use arcweft_lang_syntax::{
@@ -94,6 +95,7 @@ pub struct CompiledProject {
     modules: Vec<CompiledProjectModule>,
     units: Vec<ProjectCompileUnitSummary>,
     hir_project: HirProject,
+    callable_symbols: CallableSymbolTable,
     linked_hir: HirModule,
     typecheck_report: TypeCheckReport,
     line_task_groups: Vec<LoweredLineTaskGroup>,
@@ -273,6 +275,10 @@ impl CompiledProject {
         &self.hir_project
     }
 
+    pub const fn callable_symbols(&self) -> &CallableSymbolTable {
+        &self.callable_symbols
+    }
+
     pub const fn linked_hir(&self) -> &HirModule {
         &self.linked_hir
     }
@@ -362,6 +368,7 @@ where
     let (modules, summaries) = compile_project_units(project, cache)?;
 
     let hir_project = HirProject::new(
+        project.manifest().package().name().as_str(),
         modules
             .iter()
             .map(|module| HirProjectModule::new(module.module.clone(), module.hir.clone())),
@@ -373,6 +380,15 @@ where
                 Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
                     .with_code("hir.project"),
             ],
+        )
+    })?;
+    let callable_symbols = hir_project.callable_symbols().map_err(|errors| {
+        linked_error(
+            ProjectCompileStage::HirProject,
+            errors.into_iter().map(|error| {
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("hir.callable_symbol")
+            }),
         )
     })?;
     let linked_hir = hir_project.linked_module();
@@ -416,6 +432,7 @@ where
         modules,
         units: summaries,
         hir_project,
+        callable_symbols,
         linked_hir,
         typecheck_report,
         line_task_groups,
