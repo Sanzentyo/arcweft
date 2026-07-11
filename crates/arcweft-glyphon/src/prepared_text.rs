@@ -3,7 +3,10 @@
 use std::collections::BTreeMap;
 
 use arcweft_presentation::{
-    fx::{FiniteF32, FxPhase, ResolvedFxOperation, ResolvedTransform2D},
+    fx::{
+        FiniteF32, ResolvedFxGlyphPass, ResolvedFxMask, ResolvedFxOffscreenPass,
+        ResolvedFxPostProcess, ResolvedTransform2D,
+    },
     input::InteractionTarget,
 };
 use arcweft_render_text::{RichTextRange, TextColor};
@@ -66,8 +69,8 @@ pub struct PreparedTextItem {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TextPaintPlan {
     pub glyphs: Vec<TextGlyphPaint>,
-    pub offscreen_passes: Vec<ResolvedFxOperation>,
-    pub post_processes: Vec<ResolvedFxOperation>,
+    pub offscreen_passes: Vec<ResolvedFxOffscreenPass>,
+    pub post_processes: Vec<ResolvedFxPostProcess>,
 }
 
 /// Paint for one body or ruby glyph in prepared order.
@@ -77,9 +80,9 @@ pub struct TextGlyphPaint {
     pub opacity_milli: u16,
     pub color: TextColor,
     pub transform: TextGlyphTransform,
-    /// Typed glyph-phase operations not reducible to color/affine fields.
-    pub effects: Vec<ResolvedFxOperation>,
-    pub masks: Vec<ResolvedFxOperation>,
+    /// Closed additional raster passes emitted before the main glyph.
+    pub effects: Vec<ResolvedFxGlyphPass>,
+    pub masks: Vec<ResolvedFxMask>,
 }
 
 /// Resolved finite affine/opacity transform applied after layout orientation.
@@ -143,14 +146,6 @@ pub enum PreparedTextError {
         glyph_index: usize,
         opacity_milli: u16,
     },
-    #[error("glyph paint {glyph_index} mask operation has phase {actual:?}")]
-    InvalidMaskPhase { glyph_index: usize, actual: FxPhase },
-    #[error("glyph paint {glyph_index} effect operation has phase {actual:?}")]
-    InvalidGlyphEffectPhase { glyph_index: usize, actual: FxPhase },
-    #[error("offscreen operation {index} has phase {actual:?}")]
-    InvalidOffscreenPhase { index: usize, actual: FxPhase },
-    #[error("post-process operation {index} has phase {actual:?}")]
-    InvalidPostProcessPhase { index: usize, actual: FxPhase },
     #[error("prepared text clip contains invalid geometry")]
     InvalidClip,
     #[error(transparent)]
@@ -307,48 +302,6 @@ impl TextPaintPlan {
                     opacity_milli: paint.opacity_milli,
                 });
             }
-            if let Some(operation) = paint
-                .effects
-                .iter()
-                .find(|operation| operation.phase() != FxPhase::GlyphColor)
-            {
-                return Err(PreparedTextError::InvalidGlyphEffectPhase {
-                    glyph_index,
-                    actual: operation.phase(),
-                });
-            }
-            if let Some(operation) = paint
-                .masks
-                .iter()
-                .find(|operation| operation.phase() != FxPhase::GlyphMask)
-            {
-                return Err(PreparedTextError::InvalidMaskPhase {
-                    glyph_index,
-                    actual: operation.phase(),
-                });
-            }
-        }
-        if let Some((index, operation)) = self
-            .offscreen_passes
-            .iter()
-            .enumerate()
-            .find(|(_, operation)| operation.phase() != FxPhase::OffscreenPass)
-        {
-            return Err(PreparedTextError::InvalidOffscreenPhase {
-                index,
-                actual: operation.phase(),
-            });
-        }
-        if let Some((index, operation)) = self
-            .post_processes
-            .iter()
-            .enumerate()
-            .find(|(_, operation)| operation.phase() != FxPhase::PostProcess)
-        {
-            return Err(PreparedTextError::InvalidPostProcessPhase {
-                index,
-                actual: operation.phase(),
-            });
         }
         Ok(())
     }
@@ -527,14 +480,36 @@ impl PreparedTextItem {
     /// Builds glyphon instances from the current paint-only state.
     #[must_use]
     pub fn submission(&self) -> PreparedTextSubmission {
-        let glyphs = self
+        let visible = self
             .glyphs
             .iter()
             .zip(&self.paint.glyphs)
             .enumerate()
             .filter(|(_, (_, paint))| paint.visible && paint.opacity_milli > 0)
-            .map(|(metadata, (glyph, paint))| glyph_instance(metadata, glyph, paint))
-            .collect();
+            .collect::<Vec<_>>();
+        let effect_pass_count = visible
+            .iter()
+            .map(|(_, (_, paint))| paint.effects.len())
+            .max()
+            .unwrap_or_default();
+        let mut glyphs = Vec::with_capacity(
+            visible
+                .len()
+                .saturating_mul(effect_pass_count.saturating_add(1)),
+        );
+        for pass_index in 0..effect_pass_count {
+            glyphs.extend(visible.iter().filter_map(|(metadata, (glyph, paint))| {
+                paint
+                    .effects
+                    .get(pass_index)
+                    .map(|pass| glyph_instance(*metadata, glyph, paint, Some(*pass)))
+            }));
+        }
+        glyphs.extend(
+            visible
+                .into_iter()
+                .map(|(metadata, (glyph, paint))| glyph_instance(metadata, glyph, paint, None)),
+        );
         PreparedTextSubmission {
             glyphs,
             raster_scale: self.raster_scale,
@@ -565,7 +540,12 @@ impl PreparedTextSubmission {
     }
 }
 
-fn glyph_instance(metadata: usize, glyph: &PreparedGlyph, paint: &TextGlyphPaint) -> GlyphInstance {
+fn glyph_instance(
+    metadata: usize,
+    glyph: &PreparedGlyph,
+    paint: &TextGlyphPaint,
+    effect: Option<ResolvedFxGlyphPass>,
+) -> GlyphInstance {
     let mut transform = match glyph.orientation {
         GlyphOrientation::Upright => GlyphTransform::Identity,
         GlyphOrientation::SidewaysCw => GlyphTransform::Rotate90Cw,
@@ -576,11 +556,14 @@ fn glyph_instance(metadata: usize, glyph: &PreparedGlyph, paint: &TextGlyphPaint
     if !paint.transform.matrix_is_identity() {
         transform = transform.then_affine(paint.transform.affine());
     }
+    let [offset_x, offset_y] = effect.map_or([0.0, 0.0], |effect| {
+        [effect.offset_x.pixels(), effect.offset_y.pixels()]
+    });
     GlyphInstance {
         source: GlyphSource::Text {
             cache_key: glyph.cache_key,
         },
-        origin: Point::new(glyph.origin.x, glyph.origin.y),
+        origin: Point::new(glyph.origin.x + offset_x, glyph.origin.y + offset_y),
         advance: Vector::new(glyph.advance.width, glyph.advance.height),
         ink_bounds: Rect::new(
             glyph.ink_bounds.x - glyph.origin.x,
@@ -589,7 +572,7 @@ fn glyph_instance(metadata: usize, glyph: &PreparedGlyph, paint: &TextGlyphPaint
             glyph.ink_bounds.bottom() - glyph.origin.y,
         ),
         transform,
-        color: Some(glyph_color(paint)),
+        color: Some(glyph_color(paint, effect.map(|effect| effect.color))),
         metadata,
         cluster: Some(TextCluster {
             start: glyph.source_range.start,
@@ -599,13 +582,32 @@ fn glyph_instance(metadata: usize, glyph: &PreparedGlyph, paint: &TextGlyphPaint
     }
 }
 
-fn glyph_color(paint: &TextGlyphPaint) -> Color {
-    let [red, green, blue, alpha] = paint.color.channels();
+fn glyph_color(paint: &TextGlyphPaint, effect: Option<arcweft_presentation::fx::FxColor>) -> Color {
+    let [red, green, blue, alpha] = effect.map_or_else(
+        || paint.color.channels(),
+        |color| {
+            [
+                unit_to_u8(color.red().value().get()),
+                unit_to_u8(color.green().value().get()),
+                unit_to_u8(color.blue().value().get()),
+                unit_to_u8(color.alpha().value().get()),
+            ]
+        },
+    );
+    let mask_coverage = paint.masks.iter().fold(1.0, |coverage, mask| {
+        coverage * mask.effective_coverage().value().get()
+    });
     let opacity = f32::from(paint.opacity_milli) / 1_000.0
-        * paint.transform.resolved().opacity().value().get();
+        * paint.transform.resolved().opacity().value().get()
+        * mask_coverage;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let alpha = (f32::from(alpha) * opacity).round() as u8;
     Color::rgba(red, green, blue, alpha)
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn unit_to_u8(value: f32) -> u8 {
+    (value * 255.0).round() as u8
 }
 
 fn validate_clip(clip: Option<LayoutRect>) -> Result<(), PreparedTextError> {
@@ -624,42 +626,34 @@ fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_presentation::fx::{
-        FxCapabilitySet, FxDiagnosticContext, FxPhase, FxTarget, ResolvedFxOperation,
-        ResolvedFxPlan, ResolvedValueOperation,
-    };
+    use arcweft_presentation::fx::{FiniteF32, Opacity, ResolvedFxMask};
 
     use super::{PreparedTextError, TextGlyphPaint, TextPaintPlan};
 
     #[test]
-    fn paint_validation_rejects_wrong_phase_without_silent_fallback() {
-        let context = FxDiagnosticContext::default();
-        let operation = ResolvedFxOperation::Values(ResolvedValueOperation::new(
-            arcweft_presentation::fx::FxRendererInterface::Color,
-            FxPhase::GlyphColor,
-            FxTarget::Glyph,
-            Vec::new(),
-        ));
-        let plan = ResolvedFxPlan::resolve_application(
-            &context,
-            &FxCapabilitySet::canonical(),
-            vec![operation.clone()],
-        );
-        assert!(plan.is_conformant());
+    fn paint_validation_accepts_only_closed_mask_payloads() {
         let paint = TextPaintPlan {
             glyphs: vec![TextGlyphPaint {
-                masks: vec![operation],
+                masks: vec![ResolvedFxMask {
+                    coverage: Opacity::try_new(FiniteF32::try_new(0.5).expect("finite"))
+                        .expect("opacity"),
+                    invert: false,
+                }],
                 ..TextGlyphPaint::opaque(arcweft_render_text::TextColor::default())
             }],
             offscreen_passes: Vec::new(),
             post_processes: Vec::new(),
         };
 
+        assert_eq!(paint.validate(1), Ok(()));
+
+        let mut invalid = paint;
+        invalid.glyphs[0].opacity_milli = 1_001;
         assert!(matches!(
-            paint.validate(1),
-            Err(PreparedTextError::InvalidMaskPhase {
+            invalid.validate(1),
+            Err(PreparedTextError::InvalidOpacity {
                 glyph_index: 0,
-                actual: FxPhase::GlyphColor,
+                opacity_milli: 1_001,
             })
         ));
     }

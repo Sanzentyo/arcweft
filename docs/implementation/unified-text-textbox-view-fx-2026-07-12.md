@@ -276,11 +276,43 @@ legacy effect label:
   proves that one authored sampler keeps its live instance across steps and
   changes the canonical glyph paint without changing renderer arithmetic.
 
-Cut 5 remains open because shader uniforms, masks, filters, offscreen passes,
-and post-process operations are retained in `TextPaintPlan` but are not all
-executed by the shared GPU compositor yet. The legacy native registries and
-legacy styled-paragraph/stateless paths therefore remain scheduled for direct
-removal after compositor convergence.
+### Shared Fx compositor slice
+
+Prepared paint is now executable rather than metadata-only:
+
+- presentation owns closed finite `ResolvedFxGlyphPass`, `ResolvedFxMask`,
+  `ResolvedFxOffscreenPass`, and `ResolvedFxPostProcess` contracts plus one
+  deterministic `FxRenderResourceTable`; backends no longer receive raw graph
+  operations or callback-shaped shader data;
+- the shared table resolves `soft_glow`, `warm_glow`, `screen_tint`, and the
+  authored `@shader.source_glow` program identically for native, Web, headless,
+  and offscreen rendering. Unknown resources and invalid uniform schemas emit
+  typed diagnostics rather than becoming no-ops;
+- glyphon emits additional glow/color passes before the main glyph and applies
+  constant glyph-mask coverage to the same body/ruby glyph keys, orientations,
+  affine transforms, opacity, and reveal visibility;
+- `SharedRenderer` isolates only effectful prepared items, preserves item
+  painter order, executes blur/brightness/contrast/saturation through the
+  existing View filter machinery, runs tint/displacement/sparkle post-process
+  programs in the shared compositor shader, and composites back over the
+  existing scene target;
+- legacy RichText descriptors are normalized once in the shared preparation
+  module. Wave/shake/jitter/arc/spin/pulse, sparkle, the two retained motion
+  programs, typewriter, legacy shader references, and their post-process forms
+  no longer require native arithmetic to reach the normal player path;
+- the source-to-product parity fixture now compiles both glyph and post-process
+  `Fx.shader` nodes, retains one live Fx instance, and proves the resulting
+  passes are present in the canonical prepared item;
+- renderer submission was split into a 171-line responsibility module after
+  the main renderer crossed the 2,500-LOC structural error threshold. The
+  renderer returned to 2,370 LOC and the audit reports no error-level files.
+
+Cut 5 remains open because `arcweft-render-native` still contains the old
+effect/shader/motion registries and its legacy capture renderer still consumes
+`LineDisplayFrame`. Those APIs will be deleted with shared prepared-frame
+capture rather than retained as a fallback. Runtime-host injection of
+additional typed render-resource programs also remains to be connected to the
+shared table before native provider loading can replace the old callback API.
 
 ## Required validation
 
@@ -416,6 +448,31 @@ records 1,243 Rust files / 621,309 physical Rust LOC, 0 errors, and 143
 warnings. The dialogue preparation implementation is 974 LOC and its 316 LOC
 test suite is a child responsibility module; the new application and graph
 evaluator modules are 180 and 435 LOC respectively.
+
+Shared Fx compositor validation at the succeeding working change:
+
+```bash
+cargo test -p arcweft-presentation -p arcweft-glyphon \
+  -p arcweft-render-wgpu --all-targets
+cargo test -p arcweft-render-wgpu --test prepared_text \
+  prepared_batch_renders_without_renderer_side_shaping -- --ignored --exact --nocapture
+cargo test -p arcweft-player-web --test parity \
+  authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator \
+  -- --exact --nocapture
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-shared-fx-compositor-2026-07-12
+```
+
+All commands pass. The explicit local-adapter smoke confirms that glyph pass,
+mask, blur, and post-process data changes captured pixels through the actual
+WGPU shader path. `just test-fast` passes 422 tests. The structural audit
+records 1,246 Rust files / 623,404 physical Rust LOC, 0 errors, and 143
+warnings. The new shared resource module is 697 LOC, legacy descriptor
+normalization is 1,039 LOC, canonical dialogue preparation is 784 LOC, and the
+prepared renderer responsibility module is 171 LOC.
 
 ## Non-goals
 

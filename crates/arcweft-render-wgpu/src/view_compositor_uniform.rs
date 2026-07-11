@@ -11,6 +11,7 @@ use crate::view_mask::{
     ViewMaskGradientPlan, ViewMaskSamplingPlan,
 };
 use crate::view_scene::{ViewBoxShadowKind, ViewBoxShadowRadii, ViewColorRgba8, ViewFillRule};
+use arcweft_presentation::fx::{FxColor, ResolvedFxDisplacementKind, ResolvedFxPostProcess};
 use bytemuck::{Pod, Zeroable};
 use num_traits::ToPrimitive;
 
@@ -24,6 +25,9 @@ const PASS_CLIP: u32 = 6;
 const PASS_BOX_SHADOW: u32 = 7;
 const PASS_MASK_GRADIENT: u32 = 8;
 const PASS_CLIPPED_COMPOSITE: u32 = 9;
+const PASS_TEXT_TINT: u32 = 10;
+const PASS_TEXT_DISPLACEMENT: u32 = 11;
+const PASS_TEXT_SPARKLE: u32 = 12;
 const OUTPUT_ENCODING_LINEAR: u32 = 0;
 const OUTPUT_ENCODING_SRGB: u32 = 1;
 
@@ -39,7 +43,7 @@ pub(crate) struct ViewCompositorUniform {
     gradient_stops: [[f32; 4]; MAX_MASK_GRADIENT_STOPS],
     pass_kind: u32,
     output_encoding: u32,
-    _padding: [u32; 2],
+    seed_words: [u32; 2],
 }
 
 impl ViewCompositorUniform {
@@ -109,6 +113,66 @@ impl ViewCompositorUniform {
             params0: [step_x, step_y, radius_px.max(0.0), 0.0],
             pass_kind: PASS_BLUR,
             ..Self::from_matrix(ViewColorMatrix::identity())
+        }
+    }
+
+    pub(crate) fn text_post_process(
+        pass: ResolvedFxPostProcess,
+        extent: ViewTextureExtent,
+        device_pixel_ratio: f32,
+    ) -> Self {
+        match pass {
+            ResolvedFxPostProcess::Tint { color, amount } => Self {
+                params0: fx_color_to_unit(color),
+                params1: [amount.value().get(), 0.0, 0.0, 0.0],
+                pass_kind: PASS_TEXT_TINT,
+                ..Self::from_matrix(ViewColorMatrix::identity())
+            },
+            ResolvedFxPostProcess::Displacement {
+                displacement,
+                amplitude,
+                period,
+                phase_radians,
+                direction,
+                seed,
+            } => Self {
+                params0: [
+                    amplitude.pixels() * device_pixel_ratio,
+                    period.pixels() * device_pixel_ratio,
+                    phase_radians.get(),
+                    match displacement {
+                        ResolvedFxDisplacementKind::Wave => 0.0,
+                        ResolvedFxDisplacementKind::Shake => 1.0,
+                        ResolvedFxDisplacementKind::Jitter => 2.0,
+                    },
+                ],
+                params1: [direction.x.get(), direction.y.get(), 0.0, 0.0],
+                params2: [
+                    dimension_to_f32(extent.width),
+                    dimension_to_f32(extent.height),
+                    0.0,
+                    0.0,
+                ],
+                seed_words: split_seed(seed),
+                pass_kind: PASS_TEXT_DISPLACEMENT,
+                ..Self::from_matrix(ViewColorMatrix::identity())
+            },
+            ResolvedFxPostProcess::Sparkle {
+                amount,
+                phase_radians,
+                seed,
+            } => Self {
+                params0: [amount.value().get(), phase_radians.get(), 0.0, 0.0],
+                params2: [
+                    dimension_to_f32(extent.width),
+                    dimension_to_f32(extent.height),
+                    0.0,
+                    0.0,
+                ],
+                seed_words: split_seed(seed),
+                pass_kind: PASS_TEXT_SPARKLE,
+                ..Self::from_matrix(ViewColorMatrix::identity())
+            },
         }
     }
 
@@ -302,7 +366,7 @@ impl ViewCompositorUniform {
             gradient_stops: [[0.0; 4]; MAX_MASK_GRADIENT_STOPS],
             pass_kind: PASS_COMPOSITE,
             output_encoding: OUTPUT_ENCODING_LINEAR,
-            _padding: [0; 2],
+            seed_words: [0; 2],
         }
     }
 }
@@ -428,6 +492,23 @@ fn rgba_to_unit(color: ViewColorRgba8) -> [f32; 4] {
         f32::from(color.green) / 255.0,
         f32::from(color.blue) / 255.0,
         f32::from(color.alpha) / 255.0,
+    ]
+}
+
+fn fx_color_to_unit(color: FxColor) -> [f32; 4] {
+    [
+        color.red().value().get(),
+        color.green().value().get(),
+        color.blue().value().get(),
+        color.alpha().value().get(),
+    ]
+}
+
+fn split_seed(seed: u64) -> [u32; 2] {
+    let [low_0, low_1, low_2, low_3, high_0, high_1, high_2, high_3] = seed.to_le_bytes();
+    [
+        u32::from_le_bytes([low_0, low_1, low_2, low_3]),
+        u32::from_le_bytes([high_0, high_1, high_2, high_3]),
     ]
 }
 

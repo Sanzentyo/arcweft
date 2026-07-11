@@ -7,24 +7,25 @@ use arcweft_glyphon::{
     TextPaintPlan,
 };
 use arcweft_presentation::fx::{
-    Angle, FiniteF32, FxApplication, FxApplicationResolver, FxCapabilitySet, FxDiagnostic,
-    FxDiagnosticCode, FxDiagnosticContext, FxEvaluationBudget, FxGraphEvaluator, FxInstanceId,
-    FxNamedValue, FxRendererInterface, FxResolvedValue, FxRuntimeValue, FxSampleContext, FxTarget,
-    Length, ResolvedFxOperation, ResolvedFxPlan, ResolvedTransform2D, Seconds, Transform2D,
+    FxApplication, FxApplicationResolver, FxCapabilitySet, FxDiagnostic, FxDiagnosticCode,
+    FxDiagnosticContext, FxEvaluationBudget, FxGraphEvaluator, FxInstanceId, FxNamedValue,
+    FxRenderResourceError, FxRenderResourceTable, FxRendererInterface, FxResolvedValue,
+    FxRuntimeValue, FxTarget, ResolvedFxMask, ResolvedFxOffscreenPass, ResolvedFxOperation,
+    ResolvedFxPlan, ResolvedFxPostProcess,
 };
 use arcweft_render_text::{
     LineDisplayStage, Milli, ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun,
-    ResolvedTextStyle, RichTextAngle, RichTextEffectDescriptor, RichTextEffectPhase,
-    RichTextEffectTarget, RichTextParam, RichTextPresentation, RichTextRange, RichTextTransform,
-    RichTextTransformOrigin, TextColor, TextFontFamily, TextSlant, TextStyleCascade, TextWeight,
+    ResolvedTextStyle, RichTextAngle, RichTextPresentation, RichTextRange, TextColor,
+    TextFontFamily, TextSlant, TextStyleCascade, TextWeight,
 };
-use arcweft_text_layout::{
-    LayoutPoint, LayoutRect, LayoutSize, TextLayoutRequest, layout_document,
-};
+use arcweft_text_layout::{LayoutPoint, LayoutSize, TextLayoutRequest, layout_document};
 use num_traits::ToPrimitive;
 
 use super::{
     FramePlanError, RenderStyledParagraph, RenderViewport,
+    dialogue_legacy_fx::{
+        apply_glyph_paint as apply_legacy_glyph_paint, collect_frame_passes, presentation_transform,
+    },
     dialogue_timeline::{DialogueRevealPolicy, evaluate_dialogue_reveal},
     prepared_text::{hit_rect_to_layout_rect, resolved_style},
 };
@@ -34,8 +35,9 @@ struct DialogueFxEvaluator<'a> {
     capabilities: FxCapabilitySet,
     budgets: BTreeMap<FxInstanceId, FxEvaluationBudget>,
     diagnostics: Vec<FxDiagnostic>,
-    offscreen_passes: Vec<ResolvedFxOperation>,
-    post_processes: Vec<ResolvedFxOperation>,
+    resources: FxRenderResourceTable,
+    offscreen_passes: Vec<ResolvedFxOffscreenPass>,
+    post_processes: Vec<ResolvedFxPostProcess>,
     reduce_motion: bool,
 }
 
@@ -46,6 +48,7 @@ impl<'a> DialogueFxEvaluator<'a> {
             capabilities: FxCapabilitySet::canonical(),
             budgets: BTreeMap::new(),
             diagnostics: Vec::new(),
+            resources: FxRenderResourceTable::arcweft_builtins(),
             offscreen_passes: Vec::new(),
             post_processes: Vec::new(),
             reduce_motion,
@@ -101,17 +104,66 @@ impl<'a> DialogueFxEvaluator<'a> {
         }
     }
 
-    fn retain_frame_operations(&mut self, plan: &ResolvedFxPlan) {
+    fn retain_frame_operations(
+        &mut self,
+        application: &FxApplication,
+        plan: &ResolvedFxPlan,
+    ) -> bool {
+        let mut offscreen_passes = Vec::new();
+        let mut post_processes = Vec::new();
         for operation in plan.offscreen() {
-            push_unique(&mut self.offscreen_passes, operation.clone());
+            let ResolvedFxOperation::Values(operation) = operation else {
+                self.unsupported(
+                    application,
+                    "offscreen transform operation is not executable",
+                );
+                return false;
+            };
+            let result = match operation.interface {
+                FxRendererInterface::Filter => ResolvedFxOffscreenPass::from_operation(operation)
+                    .map(|pass| {
+                        if !pass.is_identity() {
+                            push_unique(&mut offscreen_passes, pass);
+                        }
+                    }),
+                FxRendererInterface::ShaderUniform => {
+                    self.resources.resolve_shader(operation).map(|_| ())
+                }
+                _ => Err(FxRenderResourceError::WrongInterface {
+                    actual: operation.interface,
+                }),
+            };
+            if let Err(error) = result {
+                self.unsupported(application, error.to_string());
+                return false;
+            }
         }
         for operation in plan.post_process() {
-            push_unique(&mut self.post_processes, operation.clone());
+            let ResolvedFxOperation::Values(operation) = operation else {
+                self.unsupported(
+                    application,
+                    "post-process transform operation is not executable",
+                );
+                return false;
+            };
+            let output = match self.resources.resolve_shader(operation) {
+                Ok(output) => output,
+                Err(error) => {
+                    self.unsupported(application, error.to_string());
+                    return false;
+                }
+            };
+            for pass in output.post_processes {
+                push_unique(&mut post_processes, pass);
+            }
         }
+        self.offscreen_passes.extend(offscreen_passes);
+        self.post_processes.extend(post_processes);
+        true
     }
 }
 
-fn push_unique(target: &mut Vec<ResolvedFxOperation>, operation: ResolvedFxOperation) {
+fn push_unique<T: PartialEq>(target: &mut Vec<T>, operation: T) {
     if !target.contains(&operation) {
         target.push(operation);
     }
@@ -229,7 +281,9 @@ fn apply_before_layout_fx(
             fx.unsupported(&application, message);
             continue;
         }
-        fx.retain_frame_operations(&plan);
+        if !fx.retain_frame_operations(&application, &plan) {
+            continue;
+        }
         style = candidate_style;
         presentation = candidate_presentation;
     }
@@ -401,8 +455,21 @@ pub(super) fn prepare_stage(
         paragraph.visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0
     };
     let mut paint = TextPaintPlan::from_layout(&layout);
-    paint.offscreen_passes.append(&mut fx.offscreen_passes);
-    paint.post_processes.append(&mut fx.post_processes);
+    let (legacy_post_processes, legacy_diagnostics) = collect_frame_passes(
+        layout
+            .runs
+            .iter()
+            .map(|run| &run.presentation)
+            .chain(layout.ruby.iter().map(|ruby| &ruby.presentation)),
+        effect_seconds,
+        &fx.resources,
+    )?;
+    for diagnostic in legacy_diagnostics {
+        fx.record(diagnostic);
+    }
+    for pass in legacy_post_processes {
+        push_unique(&mut fx.post_processes, pass);
+    }
     apply_body_paint(
         &layout,
         &mut paint,
@@ -411,6 +478,8 @@ pub(super) fn prepare_stage(
         reduce_motion,
         &mut fx,
     )?;
+    paint.offscreen_passes.append(&mut fx.offscreen_passes);
+    paint.post_processes.append(&mut fx.post_processes);
     apply_ruby_paint(
         &layout,
         &mut paint,
@@ -440,6 +509,14 @@ fn apply_body_paint(
     reduce_motion: bool,
     fx: &mut DialogueFxEvaluator<'_>,
 ) -> Result<(), FramePlanError> {
+    let mut run_ordinals = BTreeMap::<u32, usize>::new();
+    let run_counts = layout
+        .glyphs
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, glyph| {
+            *counts.entry(glyph.run_index).or_insert(0usize) += 1;
+            counts
+        });
     for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
         let run = usize::try_from(glyph.run_index)
             .ok()
@@ -460,6 +537,23 @@ fn apply_body_paint(
             reduce_motion,
         )?);
         apply_glyph_fx(&run.presentation, glyph.logical_ordinal, glyph_paint, fx)?;
+        let run_ordinal = run_ordinals.entry(glyph.run_index).or_default();
+        let diagnostics = apply_legacy_glyph_paint(
+            &run.presentation,
+            glyph.logical_ordinal,
+            *run_ordinal,
+            run_counts
+                .get(&glyph.run_index)
+                .copied()
+                .unwrap_or_default(),
+            effect_seconds,
+            glyph_paint,
+            &fx.resources,
+        )?;
+        *run_ordinal = run_ordinal.saturating_add(1);
+        for diagnostic in diagnostics {
+            fx.record(diagnostic);
+        }
     }
     Ok(())
 }
@@ -494,12 +588,28 @@ fn apply_ruby_paint(
                 reduce_motion,
             )?);
             apply_glyph_fx(&annotation.presentation, logical_ordinal, glyph_paint, fx)?;
+            let diagnostics = apply_legacy_glyph_paint(
+                &annotation.presentation,
+                logical_ordinal,
+                glyph_ordinal,
+                annotation.glyphs.len(),
+                effect_seconds,
+                glyph_paint,
+                &fx.resources,
+            )?;
+            for diagnostic in diagnostics {
+                fx.record(diagnostic);
+            }
             paint_index += 1;
         }
     }
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Transactional glyph Fx dispatch validates every closed phase before committing paint."
+)]
 fn apply_glyph_fx(
     presentation: &RichTextPresentation,
     logical_ordinal: u32,
@@ -540,9 +650,20 @@ fn apply_glyph_fx(
                 ResolvedFxOperation::Values(operation)
                     if operation.interface == FxRendererInterface::ShaderUniform =>
                 {
-                    candidate
-                        .effects
-                        .push(ResolvedFxOperation::Values(operation.clone()));
+                    match fx.resources.resolve_shader(operation) {
+                        Ok(output) if output.post_processes.is_empty() => {
+                            candidate.effects.extend(output.glyph_passes);
+                        }
+                        Ok(_) => {
+                            unsupported =
+                                Some("glyph shader resolved a non-glyph post-process".to_owned());
+                            break;
+                        }
+                        Err(error) => {
+                            unsupported = Some(error.to_string());
+                            break;
+                        }
+                    }
                 }
                 ResolvedFxOperation::Values(_) => {
                     unsupported = Some(format!(
@@ -554,12 +675,48 @@ fn apply_glyph_fx(
             }
         }
         if unsupported.is_none() {
+            for operation in plan.offscreen() {
+                let ResolvedFxOperation::Values(operation) = operation else {
+                    continue;
+                };
+                if operation.interface != FxRendererInterface::ShaderUniform {
+                    continue;
+                }
+                match fx.resources.resolve_shader(operation) {
+                    Ok(output) if output.post_processes.is_empty() => {
+                        candidate.effects.extend(output.glyph_passes);
+                    }
+                    Ok(_) => {
+                        unsupported =
+                            Some("offscreen glyph shader resolved a post-process pass".to_owned());
+                        break;
+                    }
+                    Err(error) => {
+                        unsupported = Some(error.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+        if unsupported.is_none() {
             for operation in plan.mask() {
                 if matches!(
                     operation.target(),
                     FxTarget::Node | FxTarget::Content | FxTarget::Line | FxTarget::Glyph
                 ) {
-                    candidate.masks.push(operation.clone());
+                    let ResolvedFxOperation::Values(operation) = operation else {
+                        unsupported = Some(
+                            "RichText glyph mask cannot execute a transform operation".to_owned(),
+                        );
+                        break;
+                    };
+                    match ResolvedFxMask::from_operation(operation) {
+                        Ok(mask) => candidate.masks.push(mask),
+                        Err(error) => {
+                            unsupported = Some(error.to_string());
+                            break;
+                        }
+                    }
                 } else {
                     unsupported = Some(format!(
                         "RichText glyph mask cannot target {:?}",
@@ -625,349 +782,6 @@ fn presentation_opacity(presentation: &RichTextPresentation) -> Result<u16, Fram
         .ok()
         .filter(|value| *value <= 1_000)
         .ok_or(FramePlanError::InvalidRichTextOpacity { value })
-}
-
-fn presentation_transform(
-    presentation: &RichTextPresentation,
-    glyph_bounds: LayoutRect,
-    glyph_advance: LayoutSize,
-    run_bounds: LayoutRect,
-    logical_ordinal: u32,
-    effect_seconds: f32,
-    reduce_motion: bool,
-) -> Result<ResolvedTransform2D, FramePlanError> {
-    let mut resolved = ResolvedTransform2D::identity();
-    if let Some(transform) = &presentation.transform {
-        resolved = resolved.then(resolve_authored_transform(
-            transform,
-            glyph_bounds,
-            glyph_advance,
-            run_bounds,
-        )?)?;
-    }
-    for effect in &presentation.effects {
-        if let Some(transform) = builtin_effect_transform(
-            effect,
-            glyph_bounds,
-            glyph_advance,
-            run_bounds,
-            logical_ordinal,
-            effect_seconds,
-            reduce_motion,
-        )? {
-            resolved = resolved.then(transform.resolve()?)?;
-        }
-    }
-    Ok(resolved)
-}
-
-fn resolve_authored_transform(
-    transform: &RichTextTransform,
-    glyph_bounds: LayoutRect,
-    glyph_advance: LayoutSize,
-    run_bounds: LayoutRect,
-) -> Result<ResolvedTransform2D, FramePlanError> {
-    let [origin_x, origin_y] = transform_origin(
-        transform.origin,
-        transform.target,
-        glyph_bounds,
-        glyph_advance,
-        run_bounds,
-    );
-    Ok(Transform2D {
-        translate_x: Length::try_pixels(transform.translate.x.as_f32())?,
-        translate_y: Length::try_pixels(transform.translate.y.as_f32())?,
-        scale_x: FiniteF32::try_new(transform.scale.x.as_f32())?,
-        scale_y: FiniteF32::try_new(transform.scale.y.as_f32())?,
-        skew_x: Angle::try_degrees(f64::from(transform.skew.x.as_f32()))?,
-        skew_y: Angle::try_degrees(f64::from(transform.skew.y.as_f32()))?,
-        rotation: Angle::try_degrees(f64::from(transform.rotate.as_degrees_f32()))?,
-        origin_x: Length::try_pixels(origin_x)?,
-        origin_y: Length::try_pixels(origin_y)?,
-        opacity: FiniteF32::ONE,
-    }
-    .resolve()?)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn builtin_effect_transform(
-    effect: &RichTextEffectDescriptor,
-    glyph_bounds: LayoutRect,
-    glyph_advance: LayoutSize,
-    run_bounds: LayoutRect,
-    logical_ordinal: u32,
-    effect_seconds: f32,
-    reduce_motion: bool,
-) -> Result<Option<Transform2D>, FramePlanError> {
-    if effect.phase != RichTextEffectPhase::GlyphTransform {
-        return Ok(None);
-    }
-    let mut transform = Transform2D::default();
-    let mut origin = RichTextTransformOrigin::GlyphCenter;
-    match effect.id.as_str() {
-        "wave" => {
-            let amplitude = effect_value(effect, "amp", 4.0)?;
-            let period = effect_value(effect, "period", 12.0)?;
-            if period <= 0.0 {
-                return Err(invalid_effect_parameter(effect, "period"));
-            }
-            let speed = effect_value_alias(effect, "speed", "freq", 1.0)?;
-            let authored_phase = effect_value(effect, "phase", 0.0)?;
-            let direction = effect_direction(effect, [0.0, 1.0])?;
-            let phase = (logical_ordinal.to_f32().unwrap_or(f32::MAX) / period
-                + effect_seconds * speed
-                + authored_phase)
-                * std::f32::consts::TAU;
-            let delta = amplitude * phase.sin();
-            transform.translate_x = Length::try_pixels(direction[0] * delta)?;
-            transform.translate_y = Length::try_pixels(direction[1] * delta)?;
-        }
-        "shake" | "jitter" => {
-            let amplitude = effect_value(effect, "amp", 2.0)?;
-            let speed = effect_value(effect, "speed", 16.0)?;
-            let bucket = if effect.id == "jitter" || reduce_motion {
-                0
-            } else {
-                (effect_seconds * speed)
-                    .floor()
-                    .to_i32()
-                    .ok_or_else(|| invalid_effect_parameter(effect, "speed"))?
-            };
-            let context = FxSampleContext::from_elapsed(
-                Seconds::try_seconds(effect_seconds)?,
-                logical_ordinal,
-                effect_seed(effect),
-                reduce_motion,
-            );
-            let x = context.deterministic_noise(bucket)?.get() * 2.0 - 1.0;
-            let y = context
-                .deterministic_noise(bucket.wrapping_add(0x51f1_5e5d))?
-                .get()
-                * 2.0
-                - 1.0;
-            transform.translate_x = Length::try_pixels(x * amplitude)?;
-            transform.translate_y = Length::try_pixels(y * amplitude)?;
-        }
-        "arc" => {
-            let radius = effect_value(effect, "radius", 120.0)?;
-            let start = effect_value(effect, "start", 0.0)?;
-            let step = effect_value(effect, "step", 8.0)?;
-            let angle = (start + step * logical_ordinal.to_f32().unwrap_or(f32::MAX)).to_radians();
-            transform.translate_x = Length::try_pixels(radius * angle.cos())?;
-            transform.translate_y = Length::try_pixels(radius * angle.sin())?;
-            transform.rotation = Angle::try_radians(angle + std::f32::consts::FRAC_PI_2)?;
-        }
-        "spin" => {
-            let angle = effect_value_alias(effect, "angle", "amp", 6.0)?;
-            let speed = effect_value(effect, "speed", 1.0)?;
-            let phase = effect_value(effect, "phase", 0.0)?;
-            let sample = (effect_seconds * speed + phase) * std::f32::consts::TAU;
-            transform.rotation = Angle::try_degrees(f64::from(angle * sample.sin()))?;
-            origin = effect_origin(effect)?.unwrap_or(RichTextTransformOrigin::Center);
-        }
-        "pulse" => {
-            let amplitude = effect_value_alias(effect, "amp", "amount", 0.08)?;
-            if amplitude < 0.0 {
-                return Err(invalid_effect_parameter(effect, "amp"));
-            }
-            let speed = effect_value(effect, "speed", 1.0)?;
-            let phase = effect_value(effect, "phase", 0.0)?;
-            let sample = (effect_seconds * speed + phase) * std::f32::consts::TAU;
-            let scale = 1.0 + amplitude * (sample.sin() * 0.5 + 0.5);
-            transform.scale_x = FiniteF32::try_new(scale)?;
-            transform.scale_y = FiniteF32::try_new(scale)?;
-            origin = effect_origin(effect)?.unwrap_or(RichTextTransformOrigin::Center);
-        }
-        _ => return Ok(None),
-    }
-    let [origin_x, origin_y] = transform_origin(
-        origin,
-        effect.target,
-        glyph_bounds,
-        glyph_advance,
-        run_bounds,
-    );
-    transform.origin_x = Length::try_pixels(origin_x)?;
-    transform.origin_y = Length::try_pixels(origin_y)?;
-    Ok(Some(transform))
-}
-
-fn transform_origin(
-    origin: RichTextTransformOrigin,
-    target: RichTextEffectTarget,
-    glyph_bounds: LayoutRect,
-    glyph_advance: LayoutSize,
-    run_bounds: LayoutRect,
-) -> [f32; 2] {
-    let target_bounds = match target {
-        RichTextEffectTarget::Glyph => glyph_bounds,
-        RichTextEffectTarget::Document
-        | RichTextEffectTarget::Line
-        | RichTextEffectTarget::Sentence
-        | RichTextEffectTarget::Run
-        | RichTextEffectTarget::TextBox
-        | RichTextEffectTarget::Screen => run_bounds,
-    };
-    let global = match origin {
-        RichTextTransformOrigin::BaselineStart => [target_bounds.x, target_bounds.y],
-        RichTextTransformOrigin::BaselineCenter => [
-            glyph_bounds.x + glyph_advance.width * 0.5,
-            glyph_bounds.y + glyph_advance.height * 0.5,
-        ],
-        RichTextTransformOrigin::Center | RichTextTransformOrigin::GlyphCenter => [
-            target_bounds.x + target_bounds.width * 0.5,
-            target_bounds.y + target_bounds.height * 0.5,
-        ],
-    };
-    [global[0] - glyph_bounds.x, global[1] - glyph_bounds.y]
-}
-
-fn effect_value(
-    effect: &RichTextEffectDescriptor,
-    name: &'static str,
-    default: f32,
-) -> Result<f32, FramePlanError> {
-    effect
-        .params
-        .get(name)
-        .map(|value| effect_param_value(effect, name, value))
-        .transpose()
-        .map(|value| value.unwrap_or(default))
-}
-
-fn effect_value_alias(
-    effect: &RichTextEffectDescriptor,
-    name: &'static str,
-    alias: &'static str,
-    default: f32,
-) -> Result<f32, FramePlanError> {
-    if effect.params.contains_key(name) {
-        effect_value(effect, name, default)
-    } else {
-        effect_value(effect, alias, default)
-    }
-}
-
-fn effect_param_value(
-    effect: &RichTextEffectDescriptor,
-    name: &'static str,
-    value: &RichTextParam,
-) -> Result<f32, FramePlanError> {
-    let parsed = match value {
-        RichTextParam::Int { value } => value.to_f32(),
-        RichTextParam::Milli { value } => Some(value.as_f32()),
-        RichTextParam::Raw { value } | RichTextParam::Text { value } => {
-            let value = value.trim();
-            let numeric = ["px", "deg", "ms", "s", "ch"]
-                .iter()
-                .find_map(|suffix| value.strip_suffix(suffix))
-                .unwrap_or(value)
-                .trim();
-            numeric
-                .parse::<f32>()
-                .ok()
-                .filter(|value| value.is_finite())
-        }
-        RichTextParam::Bool { .. }
-        | RichTextParam::Vec2 { .. }
-        | RichTextParam::Selector { .. }
-        | RichTextParam::Expr { .. } => None,
-    };
-    parsed.ok_or_else(|| invalid_effect_parameter(effect, name))
-}
-
-fn effect_direction(
-    effect: &RichTextEffectDescriptor,
-    default: [f32; 2],
-) -> Result<[f32; 2], FramePlanError> {
-    if let Some(value) = effect.params.get("dir") {
-        return match value {
-            RichTextParam::Vec2 { value } => Ok([value.x.as_f32(), value.y.as_f32()]),
-            RichTextParam::Raw { value } | RichTextParam::Text { value } => {
-                let (x, y) = value
-                    .split_once(',')
-                    .ok_or_else(|| invalid_effect_parameter(effect, "dir"))?;
-                Ok([
-                    x.trim()
-                        .parse()
-                        .map_err(|_| invalid_effect_parameter(effect, "dir"))?,
-                    y.trim()
-                        .parse()
-                        .map_err(|_| invalid_effect_parameter(effect, "dir"))?,
-                ])
-            }
-            _ => Err(invalid_effect_parameter(effect, "dir")),
-        };
-    }
-    if let Some(value) = effect.params.get("axis") {
-        let axis = match value {
-            RichTextParam::Raw { value }
-            | RichTextParam::Text { value }
-            | RichTextParam::Selector { value } => value.trim().trim_start_matches('.'),
-            _ => return Err(invalid_effect_parameter(effect, "axis")),
-        };
-        return match axis {
-            "x" => Ok([1.0, 0.0]),
-            "y" => Ok([0.0, 1.0]),
-            _ => Err(invalid_effect_parameter(effect, "axis")),
-        };
-    }
-    Ok(default)
-}
-
-fn effect_origin(
-    effect: &RichTextEffectDescriptor,
-) -> Result<Option<RichTextTransformOrigin>, FramePlanError> {
-    let Some(value) = effect.params.get("origin") else {
-        return Ok(None);
-    };
-    let value = match value {
-        RichTextParam::Raw { value }
-        | RichTextParam::Text { value }
-        | RichTextParam::Selector { value } => value.trim().trim_start_matches('.'),
-        _ => return Err(invalid_effect_parameter(effect, "origin")),
-    };
-    match value {
-        "baseline_start" | "start" => Ok(Some(RichTextTransformOrigin::BaselineStart)),
-        "baseline_center" => Ok(Some(RichTextTransformOrigin::BaselineCenter)),
-        "center" => Ok(Some(RichTextTransformOrigin::Center)),
-        "glyph_center" | "glyph" => Ok(Some(RichTextTransformOrigin::GlyphCenter)),
-        _ => Err(invalid_effect_parameter(effect, "origin")),
-    }
-}
-
-fn effect_seed(effect: &RichTextEffectDescriptor) -> u64 {
-    let Some(seed) = effect.params.get("seed") else {
-        return 0;
-    };
-    match seed {
-        RichTextParam::Bool { value } => u64::from(*value),
-        RichTextParam::Int { value } => u64::from_ne_bytes(value.to_ne_bytes()),
-        RichTextParam::Milli { value } => u64::from_ne_bytes(i64::from(value.0).to_ne_bytes()),
-        RichTextParam::Vec2 { value } => {
-            u64::from_ne_bytes(i64::from(value.x.0).to_ne_bytes())
-                ^ u64::from_ne_bytes(i64::from(value.y.0).to_ne_bytes()).rotate_left(17)
-        }
-        RichTextParam::Raw { value }
-        | RichTextParam::Text { value }
-        | RichTextParam::Selector { value }
-        | RichTextParam::Expr { source: value } => value
-            .as_bytes()
-            .iter()
-            .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-                (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
-            }),
-    }
-}
-
-fn invalid_effect_parameter(
-    effect: &RichTextEffectDescriptor,
-    parameter: &'static str,
-) -> FramePlanError {
-    FramePlanError::InvalidRichTextEffectParameter {
-        effect: effect.id.clone(),
-        parameter,
-    }
 }
 
 #[cfg(test)]

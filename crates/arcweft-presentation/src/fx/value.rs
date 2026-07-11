@@ -400,6 +400,16 @@ impl FxColor {
         }
     }
 
+    /// Creates a linear channel value from deterministic 8-bit RGBA input.
+    pub fn from_rgba8([red, green, blue, alpha]: [u8; 4]) -> Self {
+        fn channel(value: u8) -> Opacity {
+            let value = FiniteF32::try_new(f32::from(value) / 255.0)
+                .expect("normalized u8 channel is finite");
+            Opacity::try_new(value).expect("normalized u8 channel is in range")
+        }
+        Self::new(channel(red), channel(green), channel(blue), channel(alpha))
+    }
+
     pub const fn red(self) -> Opacity {
         self.red
     }

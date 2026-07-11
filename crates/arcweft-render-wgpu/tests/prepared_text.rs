@@ -1,4 +1,10 @@
-use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::{
+    fx::{
+        FiniteF32, FxColor, Length, Opacity, ResolvedFxGlyphPass, ResolvedFxMask,
+        ResolvedFxOffscreenPass, ResolvedFxPostProcess,
+    },
+    hit::HitRect,
+};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderFontFamily, RenderPreferences,
     RenderScene, RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight,
@@ -101,10 +107,34 @@ fn prepared_batch_renders_without_renderer_side_shaping() {
     let mut frame = planner
         .prepare(&empty_scene())
         .expect("empty frame prepares");
-    let baseline = frame.clone();
-    let item = planner
+    let mut baseline = frame.clone();
+    let mut item = planner
         .prepare_text_block(&block(), viewport())
         .expect("ordinary text prepares");
+    baseline
+        .prepared_text
+        .push(item.clone())
+        .expect("baseline item index fits");
+    let half = Opacity::try_new(FiniteF32::try_new(0.5).expect("finite")).expect("opacity");
+    item.paint.glyphs[0].effects.push(ResolvedFxGlyphPass::new(
+        Length::try_pixels(3.0).expect("offset"),
+        Length::try_pixels(2.0).expect("offset"),
+        FxColor::from_rgba8([120, 200, 255, 180]),
+    ));
+    item.paint.glyphs[0].masks.push(ResolvedFxMask {
+        coverage: half,
+        invert: false,
+    });
+    item.paint.offscreen_passes.push(ResolvedFxOffscreenPass {
+        blur_radius: Length::try_pixels(1.5).expect("blur"),
+        brightness: FiniteF32::ONE,
+        contrast: FiniteF32::ONE,
+        saturation: FiniteF32::ONE,
+    });
+    item.paint.post_processes.push(ResolvedFxPostProcess::Tint {
+        color: FxColor::from_rgba8([255, 80, 120, 255]),
+        amount: half,
+    });
     frame
         .prepared_text
         .push(item)

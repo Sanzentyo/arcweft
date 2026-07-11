@@ -188,6 +188,7 @@ fn canonical_supports(target: FxTarget, interface: FxRendererInterface) -> bool 
             interface,
             Interface::Transform
                 | Interface::GeometryTransform
+                | Interface::ShaderUniform
                 | Interface::PostProcess
                 | Interface::Transition
         ),

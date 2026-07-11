@@ -15,6 +15,7 @@ pub mod identity;
 pub mod plan;
 pub mod program;
 pub mod provider;
+pub mod render_resource;
 pub mod state;
 pub mod value;
 
@@ -51,6 +52,11 @@ pub use program::{
 pub use provider::{
     FxProvider, FxProviderDescriptor, FxProviderError, FxProviderKind, FxProviderLimits,
     FxProviderOutput, FxProviderRegistry, FxProviderRequest,
+};
+pub use render_resource::{
+    FxRenderProgram, FxRenderResourceError, FxRenderResourceTable, ResolvedFxDisplacementKind,
+    ResolvedFxGlyphPass, ResolvedFxMask, ResolvedFxOffscreenPass, ResolvedFxPostProcess,
+    ResolvedFxResourceOutput,
 };
 pub use state::{
     FX_MAX_GRAPH_CHILD_DEPTH, FX_MAX_PROVIDER_STATE_VALUES, FX_MAX_PROVIDER_STATES_PER_INSTANCE,

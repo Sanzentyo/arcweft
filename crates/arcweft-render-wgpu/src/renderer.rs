@@ -1,3 +1,7 @@
+mod prepared_text;
+
+use prepared_text::render_prepared_text_range_with_renderer;
+
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::font_family::render_font_family;
 use crate::font_system::{load_font_data_and_maybe_set_primary_sans, new_font_system};
@@ -717,6 +721,7 @@ impl SharedRenderer {
             self.prepared_text_engine.as_mut(),
             &mut self.atlas,
             &self.viewport,
+            &mut self.view_compositor,
             &PreparedTextRangeRenderRequest {
                 target: &control_view,
                 frame,
@@ -836,6 +841,7 @@ impl SharedRenderer {
             self.prepared_text_engine.as_mut(),
             &mut self.atlas,
             &self.viewport,
+            &mut self.view_compositor,
             request,
         )
     }
@@ -990,89 +996,6 @@ fn render_text_ranges_with_renderer(
 
 fn text_index_is_excluded(index: usize, excluded: &[Range<usize>]) -> bool {
     excluded.iter().any(|range| range.contains(&index))
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Prepared glyph submission shares renderer atlas and project-font state."
-)]
-fn render_prepared_text_range_with_renderer(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    encoder: &mut wgpu::CommandEncoder,
-    text_renderer: &mut TextRenderer,
-    engine: Option<&mut GlyphonTextEngine>,
-    atlas: &mut TextAtlas,
-    viewport: &Viewport,
-    request: &PreparedTextRangeRenderRequest<'_>,
-) -> Result<(), SharedRendererError> {
-    let range = request.range.clone();
-    let items = slice_range(request.frame.prepared_text.items(), range.clone())
-        .iter()
-        .enumerate()
-        .filter_map(|(offset, item)| {
-            let index = range.start + offset;
-            (!text_index_is_excluded(index, request.excluded_ranges)).then_some(item)
-        })
-        .collect::<Vec<_>>();
-    if items.is_empty() {
-        return Ok(());
-    }
-    let submissions = items
-        .iter()
-        .map(|item| item.submission())
-        .collect::<Vec<_>>();
-    let areas = items
-        .iter()
-        .zip(&submissions)
-        .map(|(item, submission)| {
-            submission.glyph_area(prepared_text_bounds(item.clip, submission.raster_scale()))
-        })
-        .collect::<Vec<_>>();
-    let engine = engine.ok_or(SharedRendererError::MissingPreparedTextFonts)?;
-    let (font_system, swash_cache) = engine.raster_parts_mut();
-    text_renderer
-        .prepare_glyph_areas(
-            device,
-            queue,
-            font_system,
-            atlas,
-            viewport,
-            areas,
-            swash_cache,
-        )
-        .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))?;
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("arcweft-shared-prepared-text-render-pass"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: request.target,
-            resolve_target: None,
-            depth_slice: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
-    text_renderer
-        .render(atlas, viewport, &mut pass)
-        .map_err(|error| SharedRendererError::TextRender(error.to_string()))
-}
-
-fn prepared_text_bounds(
-    clip: Option<arcweft_text_layout::LayoutRect>,
-    raster_scale: f32,
-) -> TextBounds {
-    clip.map_or_else(TextBounds::default, |clip| TextBounds {
-        left: pixel_floor_as_i32(clip.x * raster_scale),
-        top: pixel_floor_as_i32(clip.y * raster_scale),
-        right: pixel_ceil_as_i32(clip.right() * raster_scale),
-        bottom: pixel_ceil_as_i32(clip.bottom() * raster_scale),
-    })
 }
 
 fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {

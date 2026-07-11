@@ -223,10 +223,17 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
             .iter()
             .any(|glyph| { glyph.transform.resolved().translation()[1].pixels().abs() > 0.001 })
     );
+    assert!(
+        item.paint
+            .glyphs
+            .iter()
+            .all(|glyph| !glyph.effects.is_empty())
+    );
+    assert_eq!(item.paint.post_processes.len(), 1);
 }
 
 fn authored_rich_text_fx_bundle() -> ArcweftBundle {
-    const SOURCE: &str = r"
+    const SOURCE: &str = r##"
 #[fx]
 fn wave(amplitude: Length = 3px) -> Fx {
   Fx.stack([
@@ -237,13 +244,23 @@ fn wave(amplitude: Length = 3px) -> Fx {
         translate_y: sin(ctx.time + ctx.ordinal_phase()) * amplitude,
       },
     ),
+    Fx.shader(
+      @shader.source_glow,
+      stage = .glyph_color,
+      uniforms = { amount: 0.9, color: rgb("#6040ff") },
+    ),
+    Fx.shader(
+      @shader.source_glow,
+      stage = .post_process,
+      uniforms = { amount: 0.65, color: rgb("#40b0ff") },
+    ),
   ])
 }
 
 flow opening {
   narrator: [fx wave()]typed Fx[/fx][p]
 }
-";
+"##;
     let parsed = parse_source(SOURCE);
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_to_hir(parsed.typed_tree()).expect("typed Fx fixture lowers to HIR");

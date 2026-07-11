@@ -12,10 +12,13 @@ use crate::view_compositor_uniform::ViewCompositorUniform;
 use crate::view_effects::{ViewEffectPass, ViewFilterPassPlan, ViewTextureExtent};
 use crate::view_mask::{ViewMaskChainPlan, ViewMaskChannel, ViewMaskImagePlan, ViewMaskPlanError};
 use crate::view_scene::{
-    ViewBlendMode, ViewBoxShadowKind, ViewCompositingGroup, ViewFilterList, ViewMaskImage,
-    ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
+    ViewBlendMode, ViewBoxShadowKind, ViewCompositingGroup, ViewFilter, ViewFilterList,
+    ViewMaskImage, ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
 };
-use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::{
+    fx::{ResolvedFxOffscreenPass, ResolvedFxPostProcess},
+    hit::HitRect,
+};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
@@ -117,6 +120,17 @@ pub(crate) struct ViewInlineForegroundFilterFrame<'a> {
     pub filters: &'a ViewFilterList,
     pub device_pixel_ratio: f32,
     pub logical_extent: [f32; 2],
+}
+
+/// Shared effect request for one prepared text item.
+pub(crate) struct ViewPreparedTextEffectFrame<'a> {
+    pub device: &'a wgpu::Device,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub source: ViewCompositorTarget<'a>,
+    pub output: &'a wgpu::TextureView,
+    pub offscreen_passes: &'a [ResolvedFxOffscreenPass],
+    pub post_processes: &'a [ResolvedFxPostProcess],
+    pub device_pixel_ratio: f32,
 }
 
 /// Inline box-shadow request for prepared runtime controls.
@@ -526,6 +540,110 @@ impl ViewCompositor {
             .saturating_sub(pool_reuses_at_start);
         self.pool.release(foreground);
         Ok(stats)
+    }
+
+    pub(crate) fn render_prepared_text_effects(
+        &mut self,
+        frame: &mut ViewPreparedTextEffectFrame<'_>,
+    ) -> Result<(), ViewCompositorError> {
+        let mut stats = ViewCompositorStats::default();
+        let mut current = self.pool.acquire(
+            frame.device,
+            self.format,
+            frame.source.extent,
+            "arcweft-prepared-text-effect-source",
+        );
+        frame.encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: frame.source.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &current.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            extent3d(frame.source.extent),
+        );
+
+        let filters = ViewFilterList::new(frame.offscreen_passes.iter().flat_map(|pass| {
+            let mut filters = Vec::with_capacity(4);
+            if pass.blur_radius.pixels() > 0.0 {
+                filters.push(ViewFilter::Blur {
+                    radius_px: pass.blur_radius.pixels(),
+                });
+            }
+            if pass.brightness != arcweft_presentation::fx::FiniteF32::ONE {
+                filters.push(ViewFilter::Brightness(pass.brightness.get()));
+            }
+            if pass.contrast != arcweft_presentation::fx::FiniteF32::ONE {
+                filters.push(ViewFilter::Contrast(pass.contrast.get()));
+            }
+            if pass.saturation != arcweft_presentation::fx::FiniteF32::ONE {
+                filters.push(ViewFilter::Saturate(pass.saturation.get()));
+            }
+            filters
+        }));
+        if !filters.is_empty() {
+            current = self.apply_filter_plan_to_target(
+                frame.device,
+                frame.encoder,
+                &mut stats,
+                current,
+                &ViewFilterPassPlan::from_filter_list_fixed_extent(
+                    &filters,
+                    frame.source.extent,
+                    frame.device_pixel_ratio,
+                ),
+            )?;
+        }
+
+        for post_process in frame.post_processes {
+            let output = self.pool.acquire(
+                frame.device,
+                self.format,
+                current.extent,
+                "arcweft-prepared-text-post-process",
+            );
+            self.run_shader_pass(
+                frame.device,
+                frame.encoder,
+                &ShaderPassInputs {
+                    source: &current.view,
+                    backdrop: None,
+                    mask: None,
+                    output: &output.view,
+                    uniform: ViewCompositorUniform::text_post_process(
+                        *post_process,
+                        current.extent,
+                        frame.device_pixel_ratio,
+                    ),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    blend_over_existing: false,
+                },
+            );
+            self.pool.release(current);
+            current = output;
+        }
+
+        self.run_shader_pass(
+            frame.device,
+            frame.encoder,
+            &ShaderPassInputs {
+                source: &current.view,
+                backdrop: None,
+                mask: None,
+                output: frame.output,
+                uniform: ViewCompositorUniform::composite(1.0, ViewBlendShaderMode::Normal),
+                load: wgpu::LoadOp::Load,
+                blend_over_existing: true,
+            },
+        );
+        self.pool.release(current);
+        Ok(())
     }
 
     pub(crate) fn render_inline_box_shadow(

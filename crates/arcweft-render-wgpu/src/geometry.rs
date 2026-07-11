@@ -28,6 +28,7 @@ use thiserror::Error;
 mod action_buttons;
 mod control_style;
 pub mod dialogue;
+mod dialogue_legacy_fx;
 mod dialogue_prepared;
 mod dialogue_timeline;
 mod focus_navigation;

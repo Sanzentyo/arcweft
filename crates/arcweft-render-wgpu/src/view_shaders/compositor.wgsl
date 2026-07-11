@@ -13,8 +13,8 @@ struct ViewCompositorUniform {
     gradient_stops: array<vec4<f32>, 8>,
     pass_kind: u32,
     output_encoding: u32,
-    _padding1: u32,
-    _padding2: u32,
+    seed_low: u32,
+    seed_high: u32,
 };
 
 @group(0) @binding(0) var source_texture: texture_2d<f32>;
@@ -33,6 +33,9 @@ const PASS_CLIP: u32 = 6u;
 const PASS_BOX_SHADOW: u32 = 7u;
 const PASS_MASK_GRADIENT: u32 = 8u;
 const PASS_CLIPPED_COMPOSITE: u32 = 9u;
+const PASS_TEXT_TINT: u32 = 10u;
+const PASS_TEXT_DISPLACEMENT: u32 = 11u;
+const PASS_TEXT_SPARKLE: u32 = 12u;
 const OUTPUT_ENCODING_SRGB: u32 = 1u;
 const PI: f32 = 3.141592653589793;
 const TAU: f32 = 6.283185307179586;
@@ -82,6 +85,64 @@ fn blur_color(uv: vec2<f32>) -> vec4<f32> {
     color = color + source_color(uv + offset * 3.2307692308) * 0.0702702703;
     color = color + source_color(uv - offset * 3.2307692308) * 0.0702702703;
     return color;
+}
+
+fn hash_u32(value_in: u32) -> f32 {
+    var value = value_in;
+    value = value ^ (value >> 16u);
+    value = value * 0x7feb352du;
+    value = value ^ (value >> 15u);
+    value = value * 0x846ca68bu;
+    value = value ^ (value >> 16u);
+    return f32(value & 0x00ffffffu) / 16777215.0;
+}
+
+fn text_tint_color(source: vec4<f32>) -> vec4<f32> {
+    if (source.a <= 0.0 || all(source.rgb == vec3<f32>(0.0))) { return source; }
+    let amount = clamp(uniform_data.params1.x, 0.0, 1.0);
+    return vec4<f32>(mix(source.rgb, uniform_data.params0.rgb, vec3<f32>(amount)), source.a);
+}
+
+fn text_displacement_color(uv: vec2<f32>) -> vec4<f32> {
+    let extent = max(uniform_data.params2.xy, vec2<f32>(1.0));
+    let position = uv * extent;
+    let direction = uniform_data.params1.xy;
+    let axis = select(position.x, position.y, abs(direction.x) >= abs(direction.y));
+    let amplitude = uniform_data.params0.x;
+    let period = max(uniform_data.params0.y, 0.0001);
+    let phase = uniform_data.params0.z;
+    let displacement_kind = u32(uniform_data.params0.w);
+    var delta = sin(axis / period * TAU + phase) * amplitude;
+    if (displacement_kind != 0u) {
+        let time_key = select(u32(abs(phase) * 1000.0), 0u, displacement_kind == 2u);
+        let row_key = u32(max(round(axis), 0.0));
+        let noise = hash_u32(
+            row_key ^ uniform_data.seed_low ^ (uniform_data.seed_high * 0x9e3779b9u) ^ time_key,
+        );
+        delta = (noise * 2.0 - 1.0) * amplitude;
+    }
+    let sample_uv = clamp(uv - direction * delta / extent, vec2<f32>(0.0), vec2<f32>(1.0));
+    return source_color(sample_uv);
+}
+
+fn text_sparkle_color(uv: vec2<f32>, source: vec4<f32>) -> vec4<f32> {
+    if (source.a <= 0.0 || all(source.rgb == vec3<f32>(0.0))) { return source; }
+    let extent = max(uniform_data.params2.xy, vec2<f32>(1.0));
+    let pixel = vec2<u32>(max(floor(uv * extent), vec2<f32>(0.0)));
+    let phase = uniform_data.params0.y;
+    let phase_key = u32(abs(phase) * 1000.0);
+    let noise = hash_u32(
+        pixel.x * 0x9e3779b9u ^ pixel.y * 0x85ebca6bu ^ uniform_data.seed_low
+            ^ uniform_data.seed_high ^ phase_key,
+    );
+    let seed_phase = f32(uniform_data.seed_low & 0xffu) * 0.001;
+    let shimmer = sin(phase + seed_phase * TAU) * 0.5 + 0.5;
+    let amount = clamp(uniform_data.params0.x, 0.0, 1.0);
+    let pulse = clamp((noise + shimmer) * amount, 0.0, 1.0);
+    let red = mix(source.r, 1.0, pulse * 0.45);
+    let green = mix(source.g, 225.0 / 255.0, pulse * 0.35);
+    let blue = mix(source.b, 1.0, pulse * 0.55);
+    return vec4<f32>(red, green, blue, source.a);
 }
 
 fn shadow_color(uv: vec2<f32>) -> vec4<f32> {
@@ -576,6 +637,13 @@ fn fragment_color(in: VertexOut) -> vec4<f32> {
         let coverage = clipped_rect_coverage(in.uv);
         let opacity = clamp(uniform_data.params0.x, 0.0, 1.0);
         return vec4<f32>(source.rgb, source.a * opacity * coverage);
+    }
+    if (uniform_data.pass_kind == PASS_TEXT_TINT) { return text_tint_color(source); }
+    if (uniform_data.pass_kind == PASS_TEXT_DISPLACEMENT) {
+        return text_displacement_color(in.uv);
+    }
+    if (uniform_data.pass_kind == PASS_TEXT_SPARKLE) {
+        return text_sparkle_color(in.uv, source);
     }
     if (uniform_data.pass_kind == PASS_BLEND) {
         let backdrop = backdrop_color(in.uv);
