@@ -33,10 +33,14 @@ text-input dependency boundary.
   and Rayon into the WASM graph. The shared dispatch and lifecycle now live in
   `arcweft-player-text-input`, with the dependency direction
   `native/web -> player-text-input -> presentation`.
-- The checked-in WASM workflow had every job disabled with `if: false`. The
-  native, wasm-build, real-WebGPU, and parity jobs are active again. The WASM
-  dependency inventory rejects native host, native renderer, JIT, Rayon, and
-  desktop automation dependencies using the target-specific Cargo graph.
+- The formerly disabled WASM workflow was briefly activated to validate its
+  runner contract. GitHub Actions run `29154987754` showed that the workflow
+  mixed portable/WASM validation with unprovisioned Linux native dependencies:
+  the workspace job required EGL through `khronos-egl`, while the native CLI
+  bundle step required ALSA through `alsa-sys`. Both failed before browser
+  validation. The workflow has therefore been removed until native bundle
+  tooling and target-specific validation are designed as separate jobs with
+  explicit runner prerequisites.
 
 ## Remaining Fx execution gap
 
@@ -101,3 +105,18 @@ Commands and results:
 - Web IME contract/glue/geometry/bridge tests: passed. Its separate rendered
   smoke reported `environment_blocked` because that browser process exposed no
   WebGPU adapter; it did not install a DOM fallback.
+
+## Withdrawn CI attempt
+
+The removed `.github/workflows/wasm-browser.yml` must not be restored by merely
+installing arbitrary system packages. A replacement needs two independent
+contracts:
+
+1. Build the bundle with a portable CLI feature set that does not pull audio,
+   native windowing, EGL, or other platform adapters into the WASM job.
+2. Run native all-feature coverage only on a runner whose EGL, ALSA, display,
+   audio, and GPU prerequisites are intentional and documented.
+
+The local fresh-WASM and real-browser evidence above remains valid; the failed
+run was a workflow/runner-boundary failure, not a failure of the produced WASM
+artifact.
