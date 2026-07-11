@@ -11,13 +11,14 @@ use arcweft_render_text::{InlineFailurePolicy, RichTextControl, RichTextNode, Ri
 use crate::errors::RuntimePlanLowerError;
 use crate::render_text::{defaults::TextProxyTypeDefaults, tag::lower_dialogue_token_parts};
 
-use super::{FxCatalog, FxInlineAssignment, contributions::inline_assignments, fx_error};
+use super::{FxCatalog, FxInlineAssignment, fx_error};
 
 /// Expands one authored `[fx ...]` span atomically into ordinary style nodes.
 pub(crate) struct DialogueFxExpander<'catalog> {
     catalog: &'catalog FxCatalog,
     open_spans: Vec<OpenSpan>,
     inline_assignments: Vec<FxInlineAssignment>,
+    next_fx_ordinal: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -32,6 +33,7 @@ impl<'catalog> DialogueFxExpander<'catalog> {
             catalog,
             open_spans: Vec::new(),
             inline_assignments: Vec::new(),
+            next_fx_ordinal: 0,
         }
     }
 
@@ -43,19 +45,23 @@ impl<'catalog> DialogueFxExpander<'catalog> {
     ) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
         match token {
             DialogueToken::Tag(tag) if tag.kind() == DialogueTagKind::Fx => {
-                let (name, layers) = self.catalog.expand_tag(tag)?;
-                self.inline_assignments
-                    .extend(inline_assignments(&layers, tag.attrs_range()));
-                let ends = layers
-                    .iter()
-                    .rev()
-                    .map(|layer| layer.style.tag_name().to_owned())
-                    .collect::<Vec<_>>();
-                self.open_spans.push(OpenSpan::Fx { name, ends });
-                Ok(layers
-                    .into_iter()
-                    .map(|layer| RichTextNode::StyleStart { style: layer.style })
-                    .collect())
+                let ordinal = self.next_fx_ordinal;
+                self.next_fx_ordinal = self
+                    .next_fx_ordinal
+                    .checked_add(1)
+                    .ok_or_else(|| fx_error("too many Fx applications in one dialogue line"))?;
+                let (name, application) = self.catalog.bind_tag(tag, ordinal)?;
+                self.inline_assignments.push(FxInlineAssignment::new(
+                    application.definition().to_string(),
+                    tag.attrs_range(),
+                ));
+                self.open_spans.push(OpenSpan::Fx {
+                    name,
+                    ends: vec!["fx".to_owned()],
+                });
+                Ok(vec![RichTextNode::StyleStart {
+                    style: RichTextStyle::Fx { application },
+                }])
             }
             DialogueToken::EndTag(end) if end.kind() == DialogueTagKind::Fx => self.close_fx(),
             DialogueToken::InferredEndTag if self.has_open_fx() => {

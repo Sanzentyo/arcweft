@@ -77,6 +77,8 @@ pub struct TextGlyphPaint {
     pub opacity_milli: u16,
     pub color: TextColor,
     pub transform: TextGlyphTransform,
+    /// Typed glyph-phase operations not reducible to color/affine fields.
+    pub effects: Vec<ResolvedFxOperation>,
     pub masks: Vec<ResolvedFxOperation>,
 }
 
@@ -143,6 +145,8 @@ pub enum PreparedTextError {
     },
     #[error("glyph paint {glyph_index} mask operation has phase {actual:?}")]
     InvalidMaskPhase { glyph_index: usize, actual: FxPhase },
+    #[error("glyph paint {glyph_index} effect operation has phase {actual:?}")]
+    InvalidGlyphEffectPhase { glyph_index: usize, actual: FxPhase },
     #[error("offscreen operation {index} has phase {actual:?}")]
     InvalidOffscreenPhase { index: usize, actual: FxPhase },
     #[error("post-process operation {index} has phase {actual:?}")]
@@ -256,6 +260,7 @@ impl TextGlyphPaint {
             opacity_milli: 1_000,
             color,
             transform: TextGlyphTransform::IDENTITY,
+            effects: Vec::new(),
             masks: Vec::new(),
         }
     }
@@ -300,6 +305,16 @@ impl TextPaintPlan {
                 return Err(PreparedTextError::InvalidOpacity {
                     glyph_index,
                     opacity_milli: paint.opacity_milli,
+                });
+            }
+            if let Some(operation) = paint
+                .effects
+                .iter()
+                .find(|operation| operation.phase() != FxPhase::GlyphColor)
+            {
+                return Err(PreparedTextError::InvalidGlyphEffectPhase {
+                    glyph_index,
+                    actual: operation.phase(),
                 });
             }
             if let Some(operation) = paint

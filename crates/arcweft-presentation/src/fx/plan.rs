@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     capability::{FxCapabilitySet, FxPhase, FxRendererInterface, FxTarget},
     diagnostic::{FxDiagnostic, FxDiagnosticCode, FxDiagnosticContext},
+    graph::FxResourceId,
     value::{FxRuntimeValue, ResolvedTransform2D},
 };
 
@@ -22,11 +23,23 @@ pub enum FxInteractionGeometry {
     ViewportCoordinates,
 }
 
-/// Named typed value in a resolved renderer operation.
+/// Closed value in a resolved renderer operation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct FxNamedRuntimeValue {
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FxResolvedValue {
+    Runtime(FxRuntimeValue),
+    Resource(FxResourceId),
+    Selector(String),
+    String(String),
+    List(Vec<FxResolvedValue>),
+    Record(Vec<FxNamedValue>),
+}
+
+/// Named closed value in a resolved renderer operation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FxNamedValue {
     pub name: String,
-    pub value: FxRuntimeValue,
+    pub value: FxResolvedValue,
 }
 
 /// Resolved affine operation.
@@ -45,7 +58,7 @@ pub struct ResolvedValueOperation {
     pub interface: FxRendererInterface,
     pub phase: FxPhase,
     pub target: FxTarget,
-    pub values: Vec<FxNamedRuntimeValue>,
+    pub values: Vec<FxNamedValue>,
 }
 
 /// Arcweft-owned operation returned by builtin, Rust, and WASM providers.
@@ -68,12 +81,16 @@ pub struct ResolvedFxPlan {
     diagnostics: Vec<FxDiagnostic>,
 }
 
-impl FxNamedRuntimeValue {
-    pub fn new(name: impl Into<String>, value: FxRuntimeValue) -> Self {
+impl FxNamedValue {
+    pub fn new(name: impl Into<String>, value: FxResolvedValue) -> Self {
         Self {
             name: name.into(),
             value,
         }
+    }
+
+    pub fn runtime(name: impl Into<String>, value: FxRuntimeValue) -> Self {
+        Self::new(name, FxResolvedValue::Runtime(value))
     }
 }
 
@@ -107,7 +124,7 @@ impl ResolvedValueOperation {
         interface: FxRendererInterface,
         phase: FxPhase,
         target: FxTarget,
-        values: Vec<FxNamedRuntimeValue>,
+        values: Vec<FxNamedValue>,
     ) -> Self {
         Self {
             interface,
@@ -142,6 +159,14 @@ impl ResolvedFxOperation {
 }
 
 impl ResolvedFxPlan {
+    /// Creates a failed application plan without committing partial output.
+    pub fn from_diagnostic(diagnostic: FxDiagnostic) -> Self {
+        Self {
+            diagnostics: vec![diagnostic],
+            ..Self::default()
+        }
+    }
+
     /// Validates an entire application before committing any operation.
     pub fn resolve_application(
         context: &FxDiagnosticContext,

@@ -7,6 +7,7 @@ use crate::{
     RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
     parse_z_index_token,
 };
+use arcweft_presentation::fx::FxApplication;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -57,6 +58,10 @@ pub enum RichTextStyle {
     },
     Presentation {
         presentation: RichTextPresentationStyle,
+    },
+    /// Typed reusable Fx graph application retained until shared evaluation.
+    Fx {
+        application: FxApplication,
     },
     Unknown {
         name: String,
@@ -191,6 +196,7 @@ impl RichTextStyle {
             Self::Transform { .. } => "transform",
             Self::Object { .. } => "object",
             Self::Effect { .. } | Self::Shader { .. } => "effect",
+            Self::Fx { .. } => "fx",
             Self::Unknown { name, .. } => name,
         }
     }
@@ -243,6 +249,7 @@ pub fn presentation_from_styles<'a>(
                 RichTextStyle::Effect { effect } => out.effects.push(effect.clone()),
                 RichTextStyle::Shader { shader } => out.shaders.push(shader.clone()),
                 RichTextStyle::Object { proxy } => out.object_proxies.push(proxy.clone()),
+                RichTextStyle::Fx { application } => out.fx.push(application.clone()),
                 RichTextStyle::Presentation { presentation } => {
                     if let Some(opacity) = presentation.opacity {
                         out.opacity = Some(opacity);

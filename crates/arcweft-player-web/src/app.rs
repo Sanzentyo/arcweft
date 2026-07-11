@@ -612,6 +612,7 @@ fn prepare_web_player_frame(
     host_millis: u64,
 ) -> Result<arcweft_render_wgpu::geometry::PreparedFrame, WebPlayerError> {
     let presentation = state.session.presentation();
+    let fx_definitions = state.session.fx_definitions();
     let dialogue_visual = state.dialogue_visual_clock.progress(
         presentation.dialogue.as_ref(),
         host_millis,
@@ -623,6 +624,7 @@ fn prepare_web_player_frame(
             &mut state.input,
             PlayerFrameRequest {
                 presentation,
+                fx_definitions,
                 images: &state.images,
                 viewport,
                 fit: state.frame_fit,

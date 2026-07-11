@@ -1,3 +1,4 @@
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
     RgbaColor, ViewElementKind, ViewRuntimeControlCornerRadius, ViewRuntimeControlRadii,
     ViewTextSelectionPolicy,
@@ -32,6 +33,11 @@ fn assert_px(actual: f32, expected: f32) {
         (actual - expected).abs() <= 0.001,
         "expected {expected}px, got {actual}px"
     );
+}
+
+fn empty_fx_definitions() -> &'static FxDefinitions {
+    static DEFINITIONS: std::sync::OnceLock<FxDefinitions> = std::sync::OnceLock::new();
+    DEFINITIONS.get_or_init(FxDefinitions::default)
 }
 
 #[test]
@@ -74,6 +80,7 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
         &mut input,
         PlayerFrameRequest {
             presentation: &presentation,
+            fx_definitions: empty_fx_definitions(),
             images: &images,
             viewport: RenderViewport {
                 logical_width: 320.0,
@@ -142,6 +149,7 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
     let mut input = InputController::default();
     let request = PlayerFrameRequest {
         presentation: &presentation,
+        fx_definitions: empty_fx_definitions(),
         images: &images,
         viewport: RenderViewport {
             logical_width: 1280.0,
@@ -237,6 +245,7 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
     let mut input = InputController::default();
     let request = PlayerFrameRequest {
         presentation: &presentation,
+        fx_definitions: empty_fx_definitions(),
         images: &images,
         viewport: RenderViewport {
             logical_width: 320.0,
@@ -314,6 +323,7 @@ fn hidden_overflow_scroll_region_keeps_offset_at_zero() {
     let mut input = InputController::default();
     let request = PlayerFrameRequest {
         presentation: &presentation,
+        fx_definitions: empty_fx_definitions(),
         images: &images,
         viewport: RenderViewport {
             logical_width: 1280.0,
@@ -367,6 +377,7 @@ fn horizontal_scroll_region_tracks_x_offset_and_snapshot() {
     let mut input = InputController::default();
     let request = PlayerFrameRequest {
         presentation: &presentation,
+        fx_definitions: empty_fx_definitions(),
         images: &images,
         viewport: RenderViewport {
             logical_width: 1280.0,
@@ -441,6 +452,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
     let mut input = InputController::default();
     let request = PlayerFrameRequest {
         presentation: &presentation,
+        fx_definitions: empty_fx_definitions(),
         images: &images,
         viewport: RenderViewport {
             logical_width: 1280.0,
@@ -499,6 +511,7 @@ fn registered_player_planner_finalizes_runtime_text_into_prepared_batch() {
             &mut input,
             PlayerFrameRequest {
                 presentation: &presentation,
+                fx_definitions: empty_fx_definitions(),
                 images: &images,
                 viewport: RenderViewport {
                     logical_width: 640.0,

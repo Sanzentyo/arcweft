@@ -705,7 +705,9 @@ impl NativeSceneState {
     ) -> Result<arcweft_player_scene::frame::PlayerPreparedFrame, NativeSceneWindowError> {
         let viewport = self.viewport();
         let elapsed = self.elapsed_millis();
-        let presentation = self.runtime.session().presentation();
+        let session = self.runtime.session();
+        let presentation = session.presentation();
+        let fx_definitions = session.fx_definitions();
         let dialogue_visual =
             self.dialogue_visual_clock
                 .progress(presentation.dialogue.as_ref(), elapsed, None);
@@ -713,6 +715,7 @@ impl NativeSceneState {
             &mut self.input,
             PlayerFrameRequest {
                 presentation,
+                fx_definitions,
                 images: self.runtime.images(),
                 viewport,
                 fit: self.frame_fit,

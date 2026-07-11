@@ -519,6 +519,8 @@ pub struct PreparedFrame {
     pub images: Vec<RenderImage>,
     /// Canonical pre-shaped text renderer input.
     pub prepared_text: PreparedTextBatch,
+    /// Typed shared-Fx evaluation/capability diagnostics for this exact frame.
+    pub fx_diagnostics: Vec<arcweft_presentation::fx::FxDiagnostic>,
     /// Legacy pending text blocks removed as producers migrate to `prepared_text`.
     pub text: Vec<RenderTextBlock>,
     pub selectable_text_blocks: Vec<PreparedSelectableTextBlock>,
@@ -705,6 +707,8 @@ pub enum FramePlanError {
         effect: String,
         parameter: &'static str,
     },
+    #[error("Fx logical ordinal {actual} exceeds the u32 runtime domain")]
+    FxOrdinalOverflow { actual: usize },
     #[error("failed to construct stable presentation id `{value}`")]
     InvalidId { value: String },
     #[error("semantic role {role:?} is not a text-input control")]
@@ -1198,6 +1202,7 @@ impl SharedFramePlanContext {
             rectangles,
             images: build_retained_images(scene),
             prepared_text: PreparedTextBatch::default(),
+            fx_diagnostics: Vec::new(),
             text,
             selectable_text_blocks: Vec::new(),
             styled_paragraphs,
@@ -1308,6 +1313,7 @@ impl SharedFramePlanContext {
         frame: &mut PreparedFrame,
         stage: arcweft_render_text::LineDisplayStage<'_>,
         reveal_complete: bool,
+        fx_resolver: &dyn arcweft_presentation::fx::FxApplicationResolver,
     ) -> Result<(), FramePlanError> {
         let Some(engine) = self.prepared_text_engine.as_mut() else {
             return Ok(());
@@ -1315,15 +1321,17 @@ impl SharedFramePlanContext {
         let Some(paragraph) = frame.styled_paragraphs.first() else {
             return Ok(());
         };
-        let (item, complete) = dialogue_prepared::prepare_stage(
+        let (item, complete, diagnostics) = dialogue_prepared::prepare_stage(
             engine,
             stage,
             paragraph,
             frame.viewport,
             frame.preferences.reduce_motion,
             reveal_complete,
+            fx_resolver,
         )?;
         frame.prepared_text.push(item)?;
+        frame.fx_diagnostics.extend(diagnostics);
         frame.styled_paragraphs.clear();
         frame.dialogue_reveal_complete = complete;
         Ok(())

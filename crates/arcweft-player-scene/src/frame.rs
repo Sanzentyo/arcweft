@@ -4,9 +4,14 @@ use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigatio
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::ViewTextSelectionPolicy;
 use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
+use arcweft_presentation::fx::{
+    FxApplication, FxApplicationResolver, FxDiagnostic, FxDiagnosticCode, FxDiagnosticContext,
+    FxEvaluationBinding,
+};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_editor::TextEditorError;
@@ -30,6 +35,7 @@ mod surfaces;
 #[derive(Clone, Copy, Debug)]
 pub struct PlayerFrameRequest<'a> {
     pub presentation: &'a BundlePresentationSnapshot,
+    pub fx_definitions: &'a FxDefinitions,
     pub images: &'a BundleImageCatalog,
     pub viewport: RenderViewport,
     pub fit: PlayerFrameFit,
@@ -37,6 +43,52 @@ pub struct PlayerFrameRequest<'a> {
     pub visual_time_millis: u64,
     pub dialogue_reveal_complete: bool,
     pub preferences: RenderPreferences,
+}
+
+struct DialogueFxResolver<'a> {
+    dialogue: &'a BundleDialoguePresentation,
+    definitions: &'a FxDefinitions,
+    runtime: &'a arcweft_runtime_driver::fx_runtime::BundleFxRuntimeSnapshot,
+}
+
+impl FxApplicationResolver for DialogueFxResolver<'_> {
+    fn resolve<'a>(
+        &'a self,
+        application: &FxApplication,
+    ) -> Result<FxEvaluationBinding<'a>, Box<FxDiagnostic>> {
+        let instance_id = self.dialogue.fx_instance_id(application);
+        let context = FxDiagnosticContext {
+            definition: Some(application.definition().clone()),
+            instance: Some(instance_id),
+            source_range: application.source_range(),
+            ..FxDiagnosticContext::default()
+        };
+        let definition = self
+            .definitions
+            .get(application.definition())
+            .ok_or_else(|| {
+                Box::new(FxDiagnostic::error(
+                    FxDiagnosticCode::MissingDefinition,
+                    context.clone(),
+                    format!(
+                        "bundle has no definition `{}` for RichText application",
+                        application.definition()
+                    ),
+                ))
+            })?;
+        let instance = self.runtime.instance(instance_id).ok_or_else(|| {
+            Box::new(FxDiagnostic::error(
+                FxDiagnosticCode::ProgramValidation,
+                context,
+                "runtime did not retain the RichText Fx application instance",
+            ))
+        })?;
+        Ok(FxEvaluationBinding {
+            definition,
+            instance,
+            runtime_time: self.runtime.logical_time,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -513,15 +565,19 @@ impl PlayerFramePlannerState {
         let frame = self.prepare_frame_with_runtime_text(scene, presentation, input)?;
         let mut frame = map_prepared_frame(frame, request, content_rect);
         self.shared.finalize_text(&mut frame)?;
-        if let Some(stage) = presentation
-            .dialogue
-            .as_ref()
-            .and_then(BundleDialoguePresentation::current_stage)
+        if let Some(dialogue) = presentation.dialogue.as_ref()
+            && let Some(stage) = dialogue.current_stage()
         {
+            let fx_resolver = DialogueFxResolver {
+                dialogue,
+                definitions: request.fx_definitions,
+                runtime: &presentation.fx,
+            };
             self.shared.finalize_dialogue_stage(
                 &mut frame,
                 stage,
                 request.dialogue_reveal_complete,
+                &fx_resolver,
             )?;
         }
         Ok(frame)

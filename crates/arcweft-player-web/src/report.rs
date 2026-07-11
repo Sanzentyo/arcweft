@@ -94,6 +94,8 @@ impl WebObservationReport {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebFrameObservationReport {
     pub schema_version: String,
+    /// Diagnostics produced while evaluating the exact prepared frame.
+    pub fx_diagnostics: Vec<FxDiagnostic>,
     pub viewport: WebFrameViewport,
     pub rectangle_count: usize,
     pub image_count: usize,
@@ -245,6 +247,7 @@ impl WebFrameObservationReport {
 
         Ok(Self {
             schema_version: "arcweft.web_frame_observation.v3".to_owned(),
+            fx_diagnostics: frame.fx_diagnostics.clone(),
             viewport: WebFrameViewport {
                 logical_width_milli: f64_milli(f64::from(frame.viewport.logical_width)),
                 logical_height_milli: f64_milli(f64::from(frame.viewport.logical_height)),

@@ -175,6 +175,16 @@ impl From<AwbcEntryId> for BundleEntryStart {
     }
 }
 
+fn dialogue_fx_instances(
+    dialogue: &crate::dialogue::BundleDialoguePresentation,
+) -> std::collections::BTreeSet<arcweft_presentation::fx::FxInstanceId> {
+    dialogue
+        .frame()
+        .fx_applications()
+        .map(|application| dialogue.fx_instance_id(application))
+        .collect()
+}
+
 /// Minimal observable handle for a newly started foreground entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StartedForegroundEntry {
@@ -1143,6 +1153,12 @@ impl BundleSession {
         line_effects: &[LineEffectRequest],
         diagnostics: &mut Vec<String>,
     ) {
+        let previous_dialogue_fx = self
+            .presentation
+            .dialogue
+            .as_ref()
+            .map(dialogue_fx_instances)
+            .unwrap_or_default();
         let presentation_handle_diagnostics = self.presentation.update(
             display,
             status,
@@ -1163,6 +1179,57 @@ impl BundleSession {
                 .iter()
                 .map(ToString::to_string),
         );
+        self.reconcile_dialogue_fx(&previous_dialogue_fx);
+    }
+
+    fn reconcile_dialogue_fx(
+        &mut self,
+        previous: &std::collections::BTreeSet<arcweft_presentation::fx::FxInstanceId>,
+    ) {
+        let applications = self
+            .presentation
+            .dialogue
+            .as_ref()
+            .map(|dialogue| {
+                dialogue
+                    .frame()
+                    .fx_applications()
+                    .cloned()
+                    .map(|application| (dialogue.fx_instance_id(&application), application))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let current = applications
+            .iter()
+            .map(|(instance, _)| *instance)
+            .collect::<std::collections::BTreeSet<_>>();
+        let before = self.presentation.fx.clone();
+        for instance in previous.difference(&current) {
+            self.presentation.fx.remove_instance(*instance);
+        }
+        let mut failures = self.presentation.fx_diagnostics.clone();
+        for (instance, application) in applications {
+            if let Err(error) = self.presentation.fx.retain_instance(
+                &self.fx_definitions,
+                application.definition(),
+                instance,
+                application.parameters().to_vec(),
+                arcweft_presentation::fx::FxGraphChildPath::default(),
+                None,
+            ) {
+                let diagnostic = error.diagnostic();
+                if !failures.contains(&diagnostic) {
+                    failures.push(diagnostic);
+                }
+            }
+        }
+        if self.presentation.fx != before {
+            self.presentation.revision = self.presentation.revision.saturating_add(1);
+        }
+        if self.presentation.fx_diagnostics != failures {
+            self.presentation.fx_diagnostics = failures;
+            self.presentation.revision = self.presentation.revision.saturating_add(1);
+        }
     }
 
     fn dispatch_requested_tasks(

@@ -249,11 +249,38 @@ The product dialogue path now uses the same prepared-text contract:
   a placement input, emits the prepared item, clears the old styled-paragraph
   queue, and preserves painter order after ordinary prepared text.
 
-Cut 5 remains open: this slice deliberately exposes the remaining compiler
-problem rather than hiding it. User-authored Fx is still serialized into a
-legacy RichText effect descriptor, so typed applications, shared graph
-evaluation, shaders/filters/masks/offscreen passes, save reconciliation, and
-native registry deletion are the next implementation boundary.
+### Typed RichText Fx lifecycle and shared evaluation slice
+
+The compiler/runtime/renderer boundary no longer serializes an Fx graph into a
+legacy effect label:
+
+- `[fx call(...)]` now retains one bounded `FxApplication` containing the
+  canonical `FxId`, typed parameter values, authored ordinal, and source range;
+  sampler programs and nested graphs remain in the bundle definition;
+- runtime reconciliation derives a stage-independent instance from the
+  dialogue occurrence, line identity, and authored ordinal. A retained line
+  keeps activation logical time and deterministic seed while only parameter
+  slots refresh, and removed occurrences release their instances;
+- the shared `FxGraphEvaluator` evaluates static values, parameter slots,
+  samplers, conditional branches, and authored stacks under one per-instance
+  frame budget. An application either commits its complete resolved plan or
+  emits a typed diagnostic with no partial operation;
+- resolved operation values now retain resources, selectors, strings, lists,
+  and records as closed typed values rather than dropping everything except
+  runtime scalars;
+- canonical dialogue preparation applies `Fx.text` before shaping and typed
+  transform/color/mask operations after layout using logical glyph ordinals.
+  Frame-time diagnostics are exposed in prepared frames, Web frame
+  observations, and Agent observations;
+- a source-to-HIR-to-runtime-plan-to-bundle-to-session-to-prepared-glyph test
+  proves that one authored sampler keeps its live instance across steps and
+  changes the canonical glyph paint without changing renderer arithmetic.
+
+Cut 5 remains open because shader uniforms, masks, filters, offscreen passes,
+and post-process operations are retained in `TextPaintPlan` but are not all
+executed by the shared GPU compositor yet. The legacy native registries and
+legacy styled-paragraph/stateless paths therefore remain scheduled for direct
+removal after compositor convergence.
 
 ## Required validation
 
@@ -365,6 +392,30 @@ reveal with a stable layout hash, `[clear]` projection, and logical-ordinal
 wave sampling. The structural audit records 1,240 Rust files / 620,106
 physical Rust LOC, 0 errors, and 143 warnings. The new dialogue-preparation
 module is 720 LOC, inside the ordinary responsibility-module target range.
+
+Typed RichText Fx validation at Jujutsu change `twnzxlzw`:
+
+```bash
+cargo test -p arcweft-presentation graph_evaluator -- --nocapture
+cargo test -p arcweft-runtime-plan render_text::fx -- --nocapture
+cargo test -p arcweft-render-wgpu --lib \
+  geometry::dialogue_prepared::tests -- --nocapture
+cargo test -p arcweft-runtime-driver --all-targets
+cargo test -p arcweft-player-web --test parity \
+  authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator \
+  -- --exact --nocapture
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-typed-richtext-fx-2026-07-12
+```
+
+All commands pass. `just test-fast` passes 422 tests. The structural audit
+records 1,243 Rust files / 621,309 physical Rust LOC, 0 errors, and 143
+warnings. The dialogue preparation implementation is 974 LOC and its 316 LOC
+test suite is a child responsibility module; the new application and graph
+evaluator modules are 180 and 435 LOC respectively.
 
 ## Non-goals
 

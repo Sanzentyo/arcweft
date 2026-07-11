@@ -12,6 +12,8 @@ pub mod rich_effects;
 pub mod rich_text;
 pub mod style;
 
+pub use arcweft_presentation::fx::FxApplication;
+
 mod resolve_frame;
 
 pub use catalog::{

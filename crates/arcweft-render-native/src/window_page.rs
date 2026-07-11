@@ -915,6 +915,7 @@ pub(super) fn apply_style(mut native: NativeTextStyle, style: &RichTextStyle) ->
         | RichTextStyle::Presentation { .. }
         | RichTextStyle::Effect { .. }
         | RichTextStyle::Shader { .. }
+        | RichTextStyle::Fx { .. }
         | RichTextStyle::Object { .. }
         | RichTextStyle::Unknown { .. } => {}
     }

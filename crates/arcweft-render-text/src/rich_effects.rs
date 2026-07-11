@@ -4,6 +4,7 @@
 //! native/browser renderers resolve effect IDs, shader IDs, stateful classes,
 //! and mutable closures through their own registries.
 
+use arcweft_presentation::fx::FxApplication;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -333,6 +334,9 @@ pub struct RichTextPresentation {
     pub effects: Vec<RichTextEffectDescriptor>,
     #[serde(default)]
     pub shaders: Vec<RichTextShaderRef>,
+    /// Typed applications evaluated by the shared presentation evaluator.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fx: Vec<FxApplication>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_proxies: Vec<RichTextObjectProxy>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -360,6 +364,7 @@ impl RichTextPresentation {
         }
         self.effects.extend(other.effects);
         self.shaders.extend(other.shaders);
+        self.fx.extend(other.fx);
         self.object_proxies.extend(other.object_proxies);
         self.params.extend(other.params);
         self.italic |= other.italic;

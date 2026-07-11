@@ -7,6 +7,7 @@ use crate::{
     presentation_from_styles,
 };
 use arcweft_dialogue::rich_text::canonical_tag_name;
+use arcweft_presentation::fx::FxColor;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
 use thiserror::Error;
@@ -155,6 +156,27 @@ impl TextColor {
     }
 }
 
+impl From<FxColor> for TextColor {
+    fn from(value: FxColor) -> Self {
+        fn channel(value: arcweft_presentation::fx::Opacity) -> u8 {
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "Opacity is validated in [0, 1] before deterministic u8 quantization"
+            )]
+            {
+                (value.value().get() * 255.0).round() as u8
+            }
+        }
+        Self::rgba(
+            channel(value.red()),
+            channel(value.green()),
+            channel(value.blue()),
+            channel(value.alpha()),
+        )
+    }
+}
+
 impl Default for TextColor {
     fn default() -> Self {
         Self::rgba(245, 245, 245, 255)
@@ -215,6 +237,16 @@ impl ResolvedTextStyle {
     pub const fn with_weight(mut self, weight: TextWeight) -> Self {
         self.weight = weight;
         self
+    }
+
+    /// Replaces the ordered project-font family stack.
+    pub fn with_font_families(
+        mut self,
+        font_families: Vec<TextFontFamily>,
+    ) -> Result<Self, TextResolveError> {
+        self.font_families = font_families;
+        self.validate()?;
+        Ok(self)
     }
 
     /// Sets the resolved font slant.
@@ -355,6 +387,7 @@ impl ResolvedTextStyle {
             | RichTextStyle::Transform { .. }
             | RichTextStyle::Effect { .. }
             | RichTextStyle::Shader { .. }
+            | RichTextStyle::Fx { .. }
             | RichTextStyle::Object { .. }
             | RichTextStyle::Presentation { .. }
             | RichTextStyle::Unknown { .. } => {}

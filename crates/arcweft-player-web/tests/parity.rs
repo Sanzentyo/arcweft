@@ -1,3 +1,4 @@
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
     ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
@@ -16,7 +17,8 @@ use arcweft_core::{bytecode::BytecodeProgram, plan::RuntimePlan};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_player_scene::{
-    frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest},
+    fonts::PlayerFontSet,
+    frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
     images::BundleImageCatalog,
     input::{InputController, InputPointerModifiers},
 };
@@ -38,7 +40,10 @@ use arcweft_render_wgpu::renderer::StyledParagraphEvidenceFontContext;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_runtime_plan::flow::lower_runtime_plan;
+use arcweft_runtime_plan::{
+    flow::{lower_runtime_plan, lower_runtime_plan_with_stats},
+    fx::lower_fx_definitions,
+};
 use std::collections::BTreeMap;
 
 #[test]
@@ -135,6 +140,130 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
         ]
     );
     assert!(report.text.iter().any(|text| text.text == "ずんだガイド"));
+}
+
+#[test]
+fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator() {
+    let bundle = authored_rich_text_fx_bundle();
+    let mut session = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            flow: Some("opening".to_owned()),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("Fx session starts");
+
+    let first = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(first.diagnostics.is_empty(), "{:?}", first.diagnostics);
+    assert!(first.presentation.fx_diagnostics.is_empty());
+    let [activated] = first.presentation.fx.instances.as_slice() else {
+        panic!("dialogue activates exactly one Fx instance");
+    };
+    let activated = activated.clone();
+    let second = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let [retained] = second.presentation.fx.instances.as_slice() else {
+        panic!("dialogue retains exactly one Fx instance");
+    };
+    assert_eq!(retained.instance, activated.instance);
+    assert_eq!(
+        retained.activation_logical_time,
+        activated.activation_logical_time
+    );
+    assert_eq!(retained.deterministic_seed, activated.deterministic_seed);
+
+    let mut planner = PlayerFramePlannerState::new();
+    PlayerFontSet::bundled_default()
+        .register_with_planner(&mut planner)
+        .expect("project fonts register");
+    let mut input = InputController::default();
+    let prepared = planner
+        .prepare(
+            &mut input,
+            PlayerFrameRequest {
+                presentation: &second.presentation,
+                fx_definitions: &bundle.fx_definitions,
+                images: &BundleImageCatalog::empty(),
+                viewport: parity_test_viewport(),
+                fit: PlayerFrameFit::raw(),
+                image_time_millis: 32,
+                visual_time_millis: 32,
+                dialogue_reveal_complete: true,
+                preferences: RenderPreferences::default(),
+            },
+        )
+        .expect("shared Fx frame prepares")
+        .frame;
+
+    assert!(
+        prepared.fx_diagnostics.is_empty(),
+        "{:?}",
+        prepared.fx_diagnostics
+    );
+    let item = prepared
+        .prepared_text
+        .items()
+        .last()
+        .expect("dialogue appends a canonical prepared item");
+    assert!(
+        item.layout
+            .runs
+            .iter()
+            .all(|run| run.style.weight() == arcweft_render_text::TextWeight::Bold)
+    );
+    assert!(
+        item.paint
+            .glyphs
+            .iter()
+            .any(|glyph| { glyph.transform.resolved().translation()[1].pixels().abs() > 0.001 })
+    );
+}
+
+fn authored_rich_text_fx_bundle() -> ArcweftBundle {
+    const SOURCE: &str = r"
+#[fx]
+fn wave(amplitude: Length = 3px) -> Fx {
+  Fx.stack([
+    Fx.text(weight = .strong),
+    Fx.transform(
+      target = .glyph,
+      sample = |ctx| Transform2D {
+        translate_y: sin(ctx.time + ctx.ordinal_phase()) * amplitude,
+      },
+    ),
+  ])
+}
+
+flow opening {
+  narrator: [fx wave()]typed Fx[/fx][p]
+}
+";
+    let parsed = parse_source(SOURCE);
+    assert_eq!(parsed.errors(), &[]);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("typed Fx fixture lowers to HIR");
+    let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
+    let definitions =
+        FxDefinitions::try_new(lower_fx_definitions(&hir).expect("Fx definitions lower"))
+            .expect("Fx inventory");
+    let product_awbc = AwbcLowerer::new(
+        &report.plan,
+        &report.line_display_catalog,
+        "web-rich-text-fx.arcw",
+    )
+    .lower()
+    .expect("product AWBC lowers")
+    .program;
+    let mut bundle = bundle_from_runtime_plan(&report.plan, SOURCE, "web-rich-text-fx.arcw")
+        .with_product_awbc(product_awbc)
+        .with_fx_definitions(definitions);
+    bundle.display = report.line_display_catalog;
+    bundle
 }
 
 #[test]
@@ -502,6 +631,7 @@ fn authored_view_flow_player_frame(
         input,
         PlayerFrameRequest {
             presentation: &presentation,
+            fx_definitions: &bundle.fx_definitions,
             images: &images,
             viewport: parity_test_viewport(),
             fit: PlayerFrameFit::raw(),

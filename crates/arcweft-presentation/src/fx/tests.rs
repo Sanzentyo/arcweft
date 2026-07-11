@@ -3,14 +3,16 @@ use std::collections::BTreeSet;
 use serde::Deserialize;
 
 use super::{
-    Angle, FX_GOLDEN_ANGLE_RAD, FiniteF32, FxCapabilitySet, FxDefinition, FxDefinitionError,
-    FxDiagnosticCode, FxDiagnosticContext, FxEvaluationBudget, FxEvaluationError, FxGraph,
-    FxGraphChildPath, FxId, FxInstanceId, FxInstanceSnapshot, FxLogicalTime, FxNode, FxNodeKind,
-    FxParameter, FxParameterSlot, FxPhase, FxProviderError, FxProviderLimits, FxProviderOutput,
-    FxRendererInterface, FxRuntimeType, FxRuntimeValue, FxSampleContext, FxSamplerProgram,
-    FxSemanticHash, FxStaticType, FxStaticValue, FxTarget, Length, ResolvedFxOperation,
-    ResolvedFxPlan, ResolvedTransform2D, Seconds, Transform2D, ValueInstruction,
-    ValueProgramInputs, ValueProgramSchema, ValueProgramValidationError, derive_deterministic_seed,
+    Angle, FX_GOLDEN_ANGLE_RAD, FiniteF32, FxApplication, FxCapabilitySet, FxDefinition,
+    FxDefinitionError, FxDiagnosticCode, FxDiagnosticContext, FxEvaluationBinding,
+    FxEvaluationBudget, FxEvaluationError, FxGraph, FxGraphChildPath, FxGraphEvaluator, FxId,
+    FxInstanceId, FxInstanceSnapshot, FxLogicalTime, FxNode, FxNodeKind, FxParameter,
+    FxParameterSlot, FxPhase, FxProperty, FxProviderError, FxProviderLimits, FxProviderOutput,
+    FxRendererInterface, FxResolvedValue, FxRuntimeType, FxRuntimeValue, FxSampleContext,
+    FxSamplerProgram, FxSemanticHash, FxStaticType, FxStaticValue, FxTarget, Length,
+    ResolvedFxOperation, ResolvedFxPlan, ResolvedTransform2D, Seconds, Transform2D,
+    ValueInstruction, ValueProgramInputs, ValueProgramSchema, ValueProgramValidationError,
+    derive_deterministic_seed,
 };
 
 // Keep local constructors terse so tests emphasize the typed contracts.
@@ -535,6 +537,129 @@ fn provider_output_enforces_typed_operation_budget() {
     assert_eq!(
         output.try_push(operation),
         Err(FxProviderError::OutputBudgetExceeded { limit: 1 })
+    );
+}
+
+#[test]
+fn graph_evaluator_resolves_typed_values_and_transform_sampler_in_authored_order() {
+    let id = FxId::try_new("game", "dialogue.wave").expect("Fx id");
+    let transform = Transform2D {
+        translate_y: length(4.0),
+        ..Transform2D::default()
+    };
+    let graph = FxGraph::try_new(vec![
+        FxNode::Text {
+            properties: vec![FxProperty::new("weight", FxRuntimeValue::I32(700).into())],
+        },
+        FxNode::Transform {
+            fx: id.clone(),
+            properties: vec![
+                FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
+                FxProperty::new(
+                    "sampler",
+                    FxStaticValue::Sampler(sampler(
+                        FxRuntimeType::Transform2D,
+                        vec![
+                            ValueInstruction::Constant {
+                                value: FxRuntimeValue::Transform2D(transform),
+                            },
+                            ValueInstruction::Return,
+                        ],
+                    )),
+                ),
+            ],
+        },
+    ])
+    .expect("typed graph");
+    let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
+    let application = FxApplication::try_new(id.clone(), Vec::new(), 2, None).expect("application");
+    let instance_id = application.derive_instance_id(["dialogue", "line.opening", "occurrence.1"]);
+    let instance = FxInstanceSnapshot {
+        instance: instance_id,
+        definition: id,
+        abi_hash: definition.abi_hash(),
+        activation_logical_time: FxLogicalTime::zero(),
+        deterministic_seed: 9,
+        parameters: Vec::new(),
+        child_path: FxGraphChildPath::default(),
+        provider_state: Vec::new(),
+    };
+    let mut budget = FxEvaluationBudget::new(32);
+    let plan = FxGraphEvaluator::evaluate(
+        &application,
+        FxEvaluationBinding {
+            definition: &definition,
+            instance: &instance,
+            runtime_time: FxLogicalTime::try_new(seconds(1.0)).expect("runtime time"),
+        },
+        7,
+        false,
+        false,
+        &FxCapabilitySet::canonical(),
+        &mut budget,
+    );
+
+    assert!(plan.is_conformant(), "{:?}", plan.diagnostics());
+    let [ResolvedFxOperation::Values(text)] = plan.layout() else {
+        panic!("text operation is retained before layout");
+    };
+    assert_eq!(
+        text.values[0].value,
+        FxResolvedValue::Runtime(FxRuntimeValue::I32(700))
+    );
+    let [ResolvedFxOperation::Transform(transform)] = plan.glyph() else {
+        panic!("transform sampler resolves at glyph phase");
+    };
+    assert_eq!(transform.transform.translation()[1], length(4.0));
+}
+
+#[test]
+fn graph_evaluator_budget_failure_commits_no_partial_operations() {
+    let id = FxId::try_new("game", "too.expensive").expect("Fx id");
+    let graph = FxGraph::try_new(vec![
+        FxNode::Text {
+            properties: vec![FxProperty::new("weight", FxRuntimeValue::I32(700).into())],
+        },
+        FxNode::Color {
+            properties: vec![FxProperty::new(
+                "opacity",
+                FxRuntimeValue::F32(finite(0.5)).into(),
+            )],
+        },
+    ])
+    .expect("typed graph");
+    let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
+    let application = FxApplication::try_new(id.clone(), Vec::new(), 0, None).expect("application");
+    let instance = FxInstanceSnapshot {
+        instance: application.derive_instance_id(["view", "node.1"]),
+        definition: id,
+        abi_hash: definition.abi_hash(),
+        activation_logical_time: FxLogicalTime::zero(),
+        deterministic_seed: 0,
+        parameters: Vec::new(),
+        child_path: FxGraphChildPath::default(),
+        provider_state: Vec::new(),
+    };
+    let mut budget = FxEvaluationBudget::new(1);
+    let plan = FxGraphEvaluator::evaluate(
+        &application,
+        FxEvaluationBinding {
+            definition: &definition,
+            instance: &instance,
+            runtime_time: FxLogicalTime::zero(),
+        },
+        0,
+        false,
+        false,
+        &FxCapabilitySet::canonical(),
+        &mut budget,
+    );
+
+    assert!(plan.layout().is_empty());
+    assert!(plan.glyph().is_empty());
+    assert_eq!(
+        plan.diagnostics()[0].code,
+        FxDiagnosticCode::EvaluationBudgetExceeded
     );
 }
 

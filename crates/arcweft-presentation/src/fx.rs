@@ -5,10 +5,12 @@
 //! diagnostics.  Backends consume resolved operations; they do not implement
 //! their own sampler arithmetic.
 
+pub mod application;
 pub mod capability;
 pub mod diagnostic;
 mod evaluator;
 pub mod graph;
+mod graph_evaluator;
 pub mod identity;
 pub mod plan;
 pub mod program;
@@ -16,6 +18,9 @@ pub mod provider;
 pub mod state;
 pub mod value;
 
+pub use application::{
+    FxApplication, FxApplicationError, FxApplicationResolver, FxEvaluationBinding,
+};
 pub use capability::{
     FxCapability, FxCapabilitySet, FxPhase, FxRendererInterface, FxRendererInterfaceSet, FxTarget,
 };
@@ -28,11 +33,12 @@ pub use graph::{
     FxDefinitionError, FxGraph, FxGraphError, FxNode, FxNodeKind, FxParameter, FxParameterSlot,
     FxProperty, FxResourceId, FxStaticType, FxStaticValue,
 };
+pub use graph_evaluator::FxGraphEvaluator;
 pub use identity::{
     FxAbiHash, FxId, FxIdError, FxInstanceId, FxPackageId, FxQualifiedName, FxSemanticHash,
 };
 pub use plan::{
-    FxInteractionGeometry, FxNamedRuntimeValue, ResolvedFxOperation, ResolvedFxPlan,
+    FxInteractionGeometry, FxNamedValue, FxResolvedValue, ResolvedFxOperation, ResolvedFxPlan,
     ResolvedTransformOperation, ResolvedValueOperation,
 };
 pub use program::{

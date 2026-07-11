@@ -467,6 +467,7 @@ fn apply_text_style(mut style: RenderTextStyle, rich_style: &RichTextStyle) -> R
         | RichTextStyle::Presentation { .. }
         | RichTextStyle::Effect { .. }
         | RichTextStyle::Shader { .. }
+        | RichTextStyle::Fx { .. }
         | RichTextStyle::Object { .. }
         | RichTextStyle::Unknown { .. } => {}
     }

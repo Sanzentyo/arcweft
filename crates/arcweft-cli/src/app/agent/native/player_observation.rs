@@ -211,6 +211,7 @@ pub(super) fn observe_native_player_runtime(
     })?;
     let prepared_runtime = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
     let prepared = &prepared_runtime.prepared;
+    append_frame_fx_diagnostics(&mut diagnostics, &prepared.frame, step.index);
     let viewport = player_observed_viewport(prepared);
     let mut objects =
         player_observed_objects(prepared, &step.presentation, step.index, &viewport, options);
@@ -266,6 +267,30 @@ fn agent_fx_diagnostic(step: usize, diagnostic: &FxDiagnostic) -> AgentDiagnosti
     }
 }
 
+fn append_frame_fx_diagnostics(
+    diagnostics: &mut Vec<AgentDiagnostic>,
+    frame: &PreparedFrame,
+    step: usize,
+) {
+    let additions = frame
+        .fx_diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            !diagnostics.iter().any(|existing| {
+                existing.code.as_deref() == Some(diagnostic.code.as_str())
+                    && existing.effect_id
+                        == diagnostic
+                            .context
+                            .definition
+                            .as_ref()
+                            .map(ToString::to_string)
+            })
+        })
+        .map(|diagnostic| agent_fx_diagnostic(step, diagnostic))
+        .collect::<Vec<_>>();
+    diagnostics.extend(additions);
+}
+
 fn complete_player_runtime_tasks(
     host: Option<&mut NativeTaskBridge>,
     requested_tasks: &[HostTaskDispatch],
@@ -316,6 +341,7 @@ fn prepare_player_runtime_frame(
             &mut runtime.input,
             PlayerFrameRequest {
                 presentation,
+                fx_definitions: runtime.session.fx_definitions(),
                 images: &runtime.images,
                 viewport: player_observe_viewport(options),
                 fit: PlayerFrameFit::raw(),

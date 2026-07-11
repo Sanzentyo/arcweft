@@ -1,6 +1,7 @@
 //! Portable, input-gated dialogue playback state.
 
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_presentation::fx::{FxApplication, FxInstanceId};
 use arcweft_render_text::{LineDisplayFrame, LineDisplayStage};
 use serde::{Deserialize, Serialize};
 
@@ -192,6 +193,14 @@ impl BundleDialoguePresentation {
         self.stage
             .as_usize()
             .and_then(|index| self.frame.stage(index))
+    }
+
+    /// Derives stage-independent identity for one application in this line occurrence.
+    #[must_use]
+    pub fn fx_instance_id(&self, application: &FxApplication) -> FxInstanceId {
+        let occurrence = format!("occurrence.{}", self.instance.get());
+        let line = self.frame.line.canonical_label();
+        application.derive_instance_id(["dialogue", line.as_str(), occurrence.as_str()])
     }
 
     #[must_use]

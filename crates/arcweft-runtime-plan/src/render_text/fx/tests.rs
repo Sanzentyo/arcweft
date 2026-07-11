@@ -17,7 +17,7 @@ fn catalog(source: &str) -> FxCatalog {
 }
 
 #[test]
-fn rich_text_fx_expands_static_text_layers_and_defaults() {
+fn rich_text_fx_retains_typed_application_and_defaults() {
     let catalog = catalog(
         r##"
 #[fx]
@@ -35,11 +35,11 @@ fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
             _ => None,
         })
         .expect("Fx tag");
-    let (name, layers) = catalog.expand_tag(tag).expect("Fx tag expands");
+    let (name, application) = catalog.bind_tag(tag, 3).expect("Fx tag binds");
     assert_eq!(name, "emphasis");
-    assert_eq!(layers.len(), 2);
-    assert_eq!(layers[0].style.tag_name(), "strong");
-    assert_eq!(layers[1].style.tag_name(), "color");
+    assert_eq!(application.definition().to_string(), "crate::emphasis");
+    assert_eq!(application.authored_ordinal(), 3);
+    assert_eq!(application.parameters().len(), 1);
 }
 
 #[test]
@@ -62,13 +62,13 @@ fn emphasis(accent: Color) -> Fx {
         })
         .expect("Fx tag");
     let error = catalog
-        .expand_tag(tag)
+        .bind_tag(tag, 0)
         .expect_err("runtime binding is not a closed RichText value");
     assert!(error.to_string().contains("state.color"));
 }
 
 #[test]
-fn transform_fx_keeps_complete_identity_instead_of_matching_a_builtin_basename() {
+fn transform_fx_keeps_sampler_graph_identity_instead_of_a_legacy_label() {
     let catalog = catalog(
         r"
 #[fx]
@@ -89,7 +89,23 @@ fn wave(amplitude: Length = 2px) -> Fx {
             _ => None,
         })
         .expect("Fx tag");
-    let (_, layers) = catalog.expand_tag(tag).expect("Fx tag expands");
+    let (_, application) = catalog.bind_tag(tag, 0).expect("Fx tag binds");
 
-    assert_eq!(layers[0].selector.as_deref(), Some("crate::wave"));
+    assert_eq!(application.definition().to_string(), "crate::wave");
+    let definition = catalog
+        .definitions
+        .get("wave")
+        .expect("compiled definition remains in catalog");
+    let [arcweft_presentation::fx::FxNode::Transform { properties, .. }] =
+        definition.graph().nodes()
+    else {
+        panic!("wave keeps one typed transform node");
+    };
+    assert!(properties.iter().any(|property| {
+        property.name() == "sampler"
+            && matches!(
+                property.value(),
+                arcweft_presentation::fx::FxStaticValue::Sampler(_)
+            )
+    }));
 }

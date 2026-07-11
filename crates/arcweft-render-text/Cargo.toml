@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 arcweft-dialogue = { path = "../arcweft-dialogue" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
