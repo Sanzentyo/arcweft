@@ -4,20 +4,15 @@
 //! allocation, and exact save/observation records. It does not measure
 //! content, evaluate View expressions, or perform platform I/O.
 
-use crate::program::{ViewStableKey, ViewVirtualAxis};
+use crate::{
+    ViewMountAllocator, ViewMountId,
+    program::{ViewStableKey, ViewVirtualAxis},
+};
 use arcweft_id::PublicId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use thiserror::Error;
-
-/// Runtime-allocated occurrence of one mounted View.
-///
-/// Program identity is insufficient because one program may be mounted more
-/// than once. The numeric value is intentionally private: only
-/// `ViewVirtualizationRuntime` allocates new occurrences.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct ViewMountId(u64);
 
 /// Authored Scroll target that owns a virtualized list's primary-axis offset.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -118,7 +113,7 @@ pub struct ViewVirtualList {
 /// Independent virtual-list instances plus their monotonic mount allocator.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ViewVirtualizationRuntime {
-    next_mount_id: u64,
+    mount_allocator: ViewMountAllocator,
     mounts: BTreeMap<ViewMountId, ViewVirtualList>,
 }
 
@@ -183,12 +178,6 @@ pub enum ViewVirtualizationError {
         next_mount_id: u64,
         greatest_mount_id: u64,
     },
-}
-
-impl ViewMountId {
-    pub const fn get(self) -> u64 {
-        self.0
-    }
 }
 
 impl ViewVirtualScrollTarget {
@@ -518,12 +507,14 @@ impl ViewVirtualizationRuntime {
         viewport_extent_milli: u32,
         items: Vec<ViewVirtualItem>,
     ) -> Result<ViewMountId, ViewVirtualizationError> {
-        let next_mount_id = self
-            .next_mount_id
-            .checked_add(1)
-            .ok_or(ViewVirtualizationError::MountIdExhausted)?;
-        let mount = ViewMountId(self.next_mount_id);
-        let list = ViewVirtualList::new(mount, scroll_target, axis, viewport_extent_milli, items)?;
+        let candidate = ViewMountId::from_allocated(self.mount_allocator.next());
+        let list =
+            ViewVirtualList::new(candidate, scroll_target, axis, viewport_extent_milli, items)?;
+        let mount = self
+            .mount_allocator
+            .allocate()
+            .map_err(|_| ViewVirtualizationError::MountIdExhausted)?;
+        debug_assert_eq!(mount, candidate);
         match self.mounts.entry(mount) {
             Entry::Vacant(entry) => {
                 entry.insert(list);
@@ -532,7 +523,6 @@ impl ViewVirtualizationRuntime {
                 return Err(ViewVirtualizationError::MountIdCollision { mount });
             }
         }
-        self.next_mount_id = next_mount_id;
         Ok(mount)
     }
 
@@ -554,7 +544,7 @@ impl ViewVirtualizationRuntime {
 
     pub fn snapshot(&self) -> ViewVirtualizationSnapshot {
         ViewVirtualizationSnapshot {
-            next_mount_id: self.next_mount_id,
+            next_mount_id: self.mount_allocator.next(),
             mounts: self
                 .mounts
                 .values()
@@ -583,15 +573,15 @@ impl ViewVirtualizationRuntime {
             }
             mounts.insert(saved.mount, ViewVirtualList::from_snapshot(saved)?);
         }
-        if let Some(greatest) = mounts.keys().next_back().copied()
-            && snapshot.next_mount_id <= greatest.get()
-        {
-            return Err(ViewVirtualizationError::SnapshotMountAllocatorNotFresh {
-                next_mount_id: snapshot.next_mount_id,
-                greatest_mount_id: greatest.get(),
-            });
-        }
-        self.next_mount_id = snapshot.next_mount_id;
+        let greatest = mounts.keys().next_back().copied();
+        self.mount_allocator
+            .restore_cursor(snapshot.next_mount_id, greatest)
+            .map_err(
+                |_| ViewVirtualizationError::SnapshotMountAllocatorNotFresh {
+                    next_mount_id: snapshot.next_mount_id,
+                    greatest_mount_id: greatest.map_or(0, ViewMountId::get),
+                },
+            )?;
         self.mounts = mounts;
         Ok(())
     }

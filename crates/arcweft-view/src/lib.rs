@@ -17,6 +17,7 @@ pub mod style;
 pub mod style_authoring;
 pub mod text_field;
 pub mod text_source;
+pub mod value_program;
 pub mod view;
 pub mod virtualization;
 
@@ -75,9 +76,14 @@ pub use text_field::{
     TextFieldSpec, TextFieldVisualBuffer,
 };
 pub use text_source::{ViewRichTextHandle, ViewTextByteRange, ViewTextSource, ViewTextSourceTable};
+pub use value_program::{
+    ViewMountSnapshot, ViewMountState, ViewValueEvaluation, ViewValueEvaluationError,
+    ViewValueEvaluationStatus, ViewValueInventoryError, ViewValueProgram, ViewValueProgramId,
+    ViewValueProgramInventory, ViewValueSlotSnapshot,
+};
 pub use view::{
-    RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewProgramId, ViewRegistry,
-    ViewSchemaId,
+    RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewMountAllocationError,
+    ViewMountAllocator, ViewMountId, ViewProgramId, ViewRegistry, ViewSchemaId,
 };
 /// Stable key for one retained View fragment node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

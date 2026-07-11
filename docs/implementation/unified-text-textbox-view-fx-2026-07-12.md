@@ -353,6 +353,36 @@ be replaced by an executable persistent per-mount View evaluator that resolves
 plain/localized/RichText/DisplayFrame sources before preparation. This slice
 does not misclassify that remaining producer work as complete.
 
+### Persistent View value-evaluation substrate
+
+The first evaluator half of Cut 6 is now an executable Sans I/O contract in
+`arcweft-view`:
+
+- `ViewValueProgram` is a distinct validated owner over the common typed value
+  instruction model and View-specific instruction, constant, stack, and slot
+  limits. Deserialization revalidates the complete program instead of trusting
+  serialized derived state;
+- `ViewValueProgramInventory` rejects duplicate IDs and requires one common
+  parameter/state input schema for all programs owned by a mounted View;
+- `ViewMountId` is now the general occurrence identity rather than a type owned
+  only by list virtualization, and the monotonic allocator is shared as an
+  explicit View boundary type;
+- each `ViewMountState` owns parameter/state values, monotonic slot revisions,
+  and program results. A cached result is reused only when every slot actually
+  consumed by that program has the same revision, so unrelated dirty slots do
+  not trigger evaluation;
+- mount snapshots retain program identity, state-schema hash, typed values, and
+  revisions. Restore validates identity, schema, counts, and every value type
+  before constructing replacement state; caches are deliberately rebuilt; and
+- focused tests cover dependency-level invalidation, independent mounts,
+  snapshot validation, invalid serialized stack programs, and preservation of
+  the existing virtual-list allocator semantics after moving mount identity.
+
+This substrate does not by itself complete Cut 6. The next slice replaces the
+View bundle's digest-only references with actual program records, then mounts
+and evaluates that inventory in the runtime driver before emitting prepared
+text IDs in View painter order.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally
@@ -554,6 +584,23 @@ No workspace dependency edge changed. The compositor and renderer remain
 warning-level ownership hotspots; their responsibilities are split between
 direct primitives, prepared text, View text, pass planning, and execution, and
 will shrink further as the old non-batch renderer paths are deleted.
+
+Persistent View value-runtime validation at the succeeding working change:
+
+```bash
+cargo test -p arcweft-view --all-targets
+cargo clippy -p arcweft-view --all-targets -- -D warnings
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-view-value-runtime-2026-07-12
+```
+
+All commands pass. The focused suite includes 43 unit tests plus the retained
+interaction, motion, and eight virtual-list integration tests. The structural
+audit records 1,248 Rust files / 624,856 physical Rust LOC, 0 errors, and 143
+warnings. The new value-runtime responsibility module is 736 LOC, within the
+preferred ordinary-module range. No workspace dependency edge changed.
 
 ## Non-goals
 
