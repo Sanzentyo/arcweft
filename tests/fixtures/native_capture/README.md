@@ -17,6 +17,16 @@ This directory contains intentionally checked-in native-renderer image fixtures.
   text-combine-upright digits, sideways Latin, and capture-time controlled
   typewriter visibility. Its PNG and raw crops are generated in tests rather
   than checked in as stable goldens.
+- `unified_text_effects_migration_baseline.arcw` is the temporary migration
+  witness for fixed-time wave, shake, jitter, typewriter, spin, pulse, shader,
+  post-process, host effect, source Fx transform, and vertical-effect output.
+  It deliberately uses only resolvable resources at the baseline revision;
+  generated images live in the migration evidence packet until the shared path
+  replaces them.
+- `unified_text_reveal_vertical_migration_baseline.arcw` keeps the reveal,
+  stacked motion, and vertical-effect rows inside the visible two-line region
+  of the legacy standard TextBox so fixed-time captures contain actual pixels
+  for those features rather than clipped authored content.
 - `vertical_tutr_golden.png` is the Windows native `arcw agent observe`
   framebuffer golden generated from that source with the `MS Mincho` font.
   The JLREQ preset and `vertical_lr` ruby/text-combine PNGs are generated the
