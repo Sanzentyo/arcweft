@@ -17,6 +17,7 @@ use crate::{
     fx::{closed_expr_to_fx_value, lower_fx_definitions_for_package},
 };
 
+pub(crate) mod builtins;
 mod contributions;
 mod expander;
 
@@ -30,6 +31,7 @@ pub(crate) use expander::DialogueFxExpander;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FxCatalog {
     definitions: BTreeMap<String, FxDefinition>,
+    definitions_by_id: BTreeMap<arcweft_presentation::fx::FxId, FxDefinition>,
 }
 
 impl FxCatalog {
@@ -43,7 +45,20 @@ impl FxCatalog {
         package: &str,
     ) -> Result<Self, RuntimePlanLowerError> {
         let mut definitions = BTreeMap::new();
+        let mut definitions_by_id = BTreeMap::new();
         for definition in lower_fx_definitions_for_package(module, package)? {
+            if definitions_by_id
+                .insert(definition.id().clone(), definition.clone())
+                .is_some()
+            {
+                return Err(fx_error(format!(
+                    "duplicate Fx definition `{}`",
+                    definition.id()
+                )));
+            }
+            if definition.id().package() != package {
+                continue;
+            }
             let name = definition
                 .id()
                 .function()
@@ -55,7 +70,10 @@ impl FxCatalog {
                 return Err(fx_error(format!("duplicate Fx function `{name}`")));
             }
         }
-        Ok(Self { definitions })
+        Ok(Self {
+            definitions,
+            definitions_by_id,
+        })
     }
 
     fn bind_tag(
@@ -89,6 +107,45 @@ impl FxCatalog {
         )
         .map_err(|error| fx_error(error.to_string()))?;
         Ok((name.to_owned(), application))
+    }
+
+    fn bind_builtin(
+        &self,
+        selector: &str,
+        attrs: &str,
+        tag: &DialogueTag,
+        authored_ordinal: u32,
+    ) -> Result<Option<(String, FxApplication, Option<FxDefinition>)>, RuntimePlanLowerError> {
+        let compiled = builtins::compile_builtin_rich_text_fx(selector, attrs)?;
+        let (id, definition) = match compiled {
+            builtins::BuiltinRichTextFx::HostEvent => return Ok(None),
+            builtins::BuiltinRichTextFx::Definition(definition) => {
+                let retained = self.definitions_by_id.get(definition.id()).ok_or_else(|| {
+                    fx_error(format!(
+                        "bundled definition `{}` was not collected from the dialogue inventory",
+                        definition.id()
+                    ))
+                })?;
+                if retained != &definition {
+                    return Err(fx_error(format!(
+                        "bundled definition `{}` changed between inventory and line lowering",
+                        definition.id()
+                    )));
+                }
+                (definition.id().clone(), Some(definition))
+            }
+            builtins::BuiltinRichTextFx::MissingDefinition(id) => (id, None),
+        };
+        let range = tag.attrs_range();
+        let start = u32::try_from(range.start())
+            .map_err(|_| fx_error("Fx source range start exceeds u32"))?;
+        let end =
+            u32::try_from(range.end()).map_err(|_| fx_error("Fx source range end exceeds u32"))?;
+        let source_range = FxSourceRange::try_new(start, end).map_err(fx_error)?;
+        let application =
+            FxApplication::try_new(id, Vec::new(), authored_ordinal, Some(source_range))
+                .map_err(|error| fx_error(error.to_string()))?;
+        Ok(Some((selector.to_owned(), application, definition)))
     }
 }
 

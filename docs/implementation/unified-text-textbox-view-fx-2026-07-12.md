@@ -1535,6 +1535,62 @@ smokes pass, and the native CLI recipe passes its additional selected rich-text
 capture case. The structural audit records 1,244 Rust files / 613,593 physical
 Rust LOC, 0 errors, and 128 warnings; no dependency edge changed.
 
+### Typed RichText built-in Fx compilation slice
+
+The RichText wave, shake, jitter, arc, spin, pulse, motion, typewriter,
+sparkle, shader, and post-process surface now compiles into ordinary typed
+`FxDefinition` graphs. Reachable dialogue tags are collected from nested HIR
+flow bodies into the same bundle inventory as authored `#[fx]` functions. Each
+line retains a zero-parameter `FxApplication` whose definition ID is derived
+from the complete canonical semantic key; the inventory and line lowering
+must reproduce an identical definition or lowering fails.
+
+Built-ins use the shared value-program evaluator for time, logical glyph
+ordinal, checked integer noise buckets, typed transforms, masks, and colors.
+The new `FloorToI32` and `MakeColor` instructions reject overflow and invalid
+opacity channels through structured diagnostics; they do not clamp or return
+zero. Shader resources and post-process operations resolve through the shared
+typed renderer-resource table. An unknown shorthand keeps its exact missing
+definition identity, while `phase=host_event` remains a typed host event; a
+visual `.host id=sparkle` spelling no longer falls back to a built-in basename.
+
+The removed `run` effect target and `state`/`scope`/`state_scope` metadata now
+fail with structured lowering errors. Project samples use `content` and stable
+per-occurrence `FxInstanceId` ownership. Inferred text-proxy structs retain
+priority over generic inferred-effect classification. The sema span tracker
+also distinguishes authored empty-attribute tags such as `[strong]` and `[em]`
+from inferred dot-tag marks, so nested formatting inside an Fx span is checked
+against its real authored stack. The built-in compiler is split into a
+652-line graph composer, a 197-line typed attribute parser, and a 190-line
+sampler-expression builder.
+
+Validation at Jujutsu working change `pzllnvpo`:
+
+```bash
+cargo test -p arcweft-presentation -p arcweft-render-text \
+  -p arcweft-runtime-plan --all-targets --no-fail-fast
+cargo clippy -p arcweft-presentation -p arcweft-render-text \
+  -p arcweft-runtime-plan --all-targets --all-features -- -D warnings
+cargo test -p arcweft-lang-sema --all-targets
+cargo clippy -p arcweft-lang-sema --all-targets --all-features -- -D warnings
+target/debug/arcw.exe check samples/rich-text-full-grammar.arcw
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-builtin-fx-compiler-2026-07-12
+```
+
+All listed commands pass. The presentation/render-text/runtime-plan suites pass
+361 tests and the sema suites pass 510 tests. The full RichText grammar sample
+passes direct CLI check. The effects-animation sample remains blocked by its
+already documented unresolved `shader.source_glow` entity, and the
+modern-feedback project now passes the corrected span check before reaching
+its independent pre-existing untyped `player_viewport` effect-boundary error.
+The structural audit records 1,249 Rust files / 615,551 physical Rust LOC, 0
+errors, and 128 warnings; the four affected crates retain fan-out/fan-in counts
+of 7/8, 6/17, 5/16, and 9/7 respectively, with no Cargo edge change. Cut 5 remains open for
+direct deletion of the provisional public effect/shader descriptors and the
+renderer-side `dialogue_legacy_fx` interpreter now superseded by this typed
+path.
+
 ## Non-goals
 
 There are no deferred items from the supplied implementation directive. Typst

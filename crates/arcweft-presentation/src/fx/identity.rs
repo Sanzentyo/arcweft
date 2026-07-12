@@ -62,6 +62,24 @@ impl FxId {
         })
     }
 
+    /// Derives a collision-resistant identity for an Arcweft-owned typed
+    /// builtin whose complete semantics are represented by `semantic_key`.
+    pub fn derive_builtin(family: &str, semantic_key: &[u8]) -> Result<Self, FxIdError> {
+        let family = FxQualifiedName::try_new(family.to_owned())?;
+        let mut hasher = blake3::Hasher::new();
+        hash_str(&mut hasher, "arcweft.fx-builtin.v1");
+        hash_str(&mut hasher, family.as_str());
+        hash_bytes(&mut hasher, semantic_key);
+        let digest = hasher.finalize();
+        let mut suffix = String::with_capacity(65);
+        suffix.push('h');
+        for byte in digest.as_bytes() {
+            use fmt::Write as _;
+            write!(&mut suffix, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        Self::try_new("arcweft.builtin", format!("{}.{suffix}", family.as_str()))
+    }
+
     pub fn package(&self) -> &str {
         self.package.as_str()
     }

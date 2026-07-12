@@ -9,7 +9,8 @@ use super::{
     },
     state::FxSampleContext,
     value::{
-        Angle, FiniteF32, FxRuntimeType, FxRuntimeValue, FxVec2, Length, Seconds, Transform2D,
+        Angle, FiniteF32, FxColor, FxRuntimeType, FxRuntimeValue, FxVec2, Length, Opacity, Seconds,
+        Transform2D,
     },
 };
 
@@ -105,11 +106,21 @@ fn execute_operator(
             })?;
             stack.push(FxRuntimeValue::F32(noise));
         }
+        ValueInstruction::FloorToI32 => {
+            let FxRuntimeValue::F32(value) = pop_one(index, stack)? else {
+                return Err(FxEvaluationError::InvalidProgramState { instruction: index });
+            };
+            stack.push(FxRuntimeValue::I32(floor_to_i32(index, value)?));
+        }
         ValueInstruction::MakeVec2 => {
             let (FxRuntimeValue::F32(x), FxRuntimeValue::F32(y)) = pop_two(index, stack)? else {
                 return Err(FxEvaluationError::InvalidProgramState { instruction: index });
             };
             stack.push(FxRuntimeValue::Vec2(FxVec2 { x, y }));
+        }
+        ValueInstruction::MakeColor => {
+            let color = make_color(index, stack)?;
+            stack.push(FxRuntimeValue::Color(color));
         }
         ValueInstruction::MakeTransform2D => {
             let transform = make_transform(index, stack)?;
@@ -124,6 +135,44 @@ fn execute_operator(
         }
     }
     Ok(())
+}
+
+fn floor_to_i32(index: usize, value: FiniteF32) -> Result<i32, FxEvaluationError> {
+    let floored = f64::from(value.get().floor());
+    if floored < f64::from(i32::MIN) || floored > f64::from(i32::MAX) {
+        return Err(FxEvaluationError::IntegerConversion {
+            instruction: index,
+            operation: "floor_to_i32",
+        });
+    }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the finite floored value is checked against the complete i32 range"
+    )]
+    Ok(floored as i32)
+}
+
+fn make_color(index: usize, stack: &mut Vec<FxRuntimeValue>) -> Result<FxColor, FxEvaluationError> {
+    let values = pop_many(index, stack, 4)?;
+    let [
+        FxRuntimeValue::F32(red),
+        FxRuntimeValue::F32(green),
+        FxRuntimeValue::F32(blue),
+        FxRuntimeValue::F32(alpha),
+    ] = values.as_slice()
+    else {
+        return Err(FxEvaluationError::InvalidProgramState { instruction: index });
+    };
+    let channel = |value| {
+        Opacity::try_new(value)
+            .map_err(|_| FxEvaluationError::InvalidOpacity { instruction: index })
+    };
+    Ok(FxColor::new(
+        channel(*red)?,
+        channel(*green)?,
+        channel(*blue)?,
+        channel(*alpha)?,
+    ))
 }
 
 fn execute_unary(

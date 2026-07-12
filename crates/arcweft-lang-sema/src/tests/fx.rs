@@ -209,6 +209,23 @@ flow main {
 }
 
 #[test]
+fn explicit_rich_text_tags_are_not_reclassified_as_inferred_marks() {
+    typecheck(
+        r#"
+surface character narrator {
+    display = "Narrator"
+    default_voice = auto
+}
+
+flow main {
+    narrator[ [effect .wave][color #ff4050][strong][em][size 42]warning[/size][/em][/strong][/color][/effect][p] ]
+}
+"#,
+    )
+    .expect("explicit empty-attribute spans retain their authored nesting");
+}
+
+#[test]
 fn view_and_rich_text_fx_calls_reject_incompatible_closed_arguments() {
     let errors = typecheck(
         r#"

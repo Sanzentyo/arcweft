@@ -41,10 +41,24 @@ pub fn lower_fx_definitions_for_package(
         .filter(|function| function.has_attribute("fx"))
         .map(|function| (function.name().to_owned(), function))
         .collect::<BTreeMap<_, _>>();
-    functions
+    let mut definitions = functions
         .values()
         .map(|function| compile_definition(function, package, &functions))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    definitions.extend(crate::render_text::builtin_rich_text_fx_definitions(
+        module,
+    )?);
+    definitions.sort_by(|left, right| left.id().cmp(right.id()));
+    if let Some(pair) = definitions
+        .windows(2)
+        .find(|pair| pair[0].id() == pair[1].id())
+    {
+        return Err(RuntimePlanLowerError::new(format!(
+            "duplicate Fx definition `{}`",
+            pair[0].id()
+        )));
+    }
+    Ok(definitions)
 }
 
 fn compile_definition(

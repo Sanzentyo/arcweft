@@ -193,7 +193,7 @@ fn lower_inferred_tag(
     }
 }
 
-fn inferred_text_proxy_type(
+pub(crate) fn inferred_text_proxy_type(
     selector: &str,
     attrs: &str,
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,

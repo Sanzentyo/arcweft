@@ -73,8 +73,12 @@ pub enum ValueInstruction {
     Select,
     /// Pops one `I32` bucket and hashes it with the context seed and ordinal.
     HashNoise,
+    /// Floors one finite `F32` and converts it to `I32`, rejecting overflow.
+    FloorToI32,
     /// Pops dimensionless `x` and `y` values in authored order.
     MakeVec2,
+    /// Pops linear red, green, blue, and alpha `F32` values in authored order.
+    MakeColor,
     /// Pops all ten [`super::Transform2D`] fields in declaration order.
     MakeTransform2D,
     Return,
@@ -221,6 +225,11 @@ pub enum FxEvaluationError {
     },
     #[error("integer `{operation}` overflow at instruction {instruction}")]
     IntegerOverflow {
+        instruction: usize,
+        operation: &'static str,
+    },
+    #[error("integer `{operation}` conversion is out of range at instruction {instruction}")]
+    IntegerConversion {
         instruction: usize,
         operation: &'static str,
     },
@@ -485,7 +494,11 @@ fn validate_program(
             ValueInstruction::HashNoise => {
                 validate_unary(index, "hash_noise", &mut stack, hash_noise_result)?;
             }
+            ValueInstruction::FloorToI32 => {
+                validate_unary(index, "floor_to_i32", &mut stack, floor_to_i32_result)?;
+            }
             ValueInstruction::MakeVec2 => validate_make_vec2(index, &mut stack)?,
+            ValueInstruction::MakeColor => validate_make_color(index, &mut stack)?,
             ValueInstruction::MakeTransform2D => validate_make_transform(index, &mut stack)?,
             ValueInstruction::Return => {
                 if index + 1 != instructions.len() {
@@ -669,6 +682,23 @@ fn validate_make_vec2(
     }
 }
 
+fn validate_make_color(
+    instruction: usize,
+    stack: &mut Vec<FxRuntimeType>,
+) -> Result<(), ValueProgramValidationError> {
+    let operands = pop_types(instruction, stack, 4)?;
+    if operands == [FxRuntimeType::F32; 4] {
+        stack.push(FxRuntimeType::Color);
+        Ok(())
+    } else {
+        Err(ValueProgramValidationError::InvalidOperands {
+            instruction,
+            operation: "make_color",
+            operands,
+        })
+    }
+}
+
 fn validate_make_transform(
     instruction: usize,
     stack: &mut Vec<FxRuntimeType>,
@@ -822,6 +852,10 @@ fn hash_noise_result(ty: FxRuntimeType) -> Option<FxRuntimeType> {
     (ty == FxRuntimeType::I32).then_some(FxRuntimeType::F32)
 }
 
+fn floor_to_i32_result(ty: FxRuntimeType) -> Option<FxRuntimeType> {
+    (ty == FxRuntimeType::F32).then_some(FxRuntimeType::I32)
+}
+
 fn hash_instruction(hasher: &mut blake3::Hasher, instruction: &ValueInstruction) {
     let tag = match instruction {
         ValueInstruction::Constant { value } => {
@@ -871,6 +905,8 @@ fn hash_instruction(hasher: &mut blake3::Hasher, instruction: &ValueInstruction)
         ValueInstruction::MakeVec2 => 27,
         ValueInstruction::MakeTransform2D => 28,
         ValueInstruction::Return => 29,
+        ValueInstruction::FloorToI32 => 30,
+        ValueInstruction::MakeColor => 31,
     };
     hasher.update(&[tag]);
 }

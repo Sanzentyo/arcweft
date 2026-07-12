@@ -113,7 +113,7 @@ entry game {
 
 flow rich_text_effects_animation {
     lumi.say(id=@say.effects.shader, voice=auto, look=.focus)[
-        Shader: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]soft glow shader[/color][/effect]、[effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm glow shader[/color][/effect]、[fx source_glow(amount=0.9, color=rgb("#6040ff"))]source shader[/fx]、[fx source_post_glow(amount=0.65, color=rgb("#40b0ff"))]source post shader[/fx]、[effect .shader id=soft_glow amount=1 phase=glyph_color]glyph color shader[/effect]、[effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post process shader[/effect] と、[.host id=sparkle amp=1.5px seed=shader-demo state_scope=run]host sparkle[/]、[.host id=sparkle phase=glyph_color seed=color-demo state_scope=glyph]色sparkle[/] を同時に表示する。[p]
+        Shader: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]soft glow shader[/color][/effect]、[effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm glow shader[/color][/effect]、[fx source_glow(amount=0.9, color=rgb("#6040ff"))]source shader[/fx]、[fx source_post_glow(amount=0.65, color=rgb("#40b0ff"))]source post shader[/fx]、[effect .shader id=soft_glow amount=1 phase=glyph_color]glyph color shader[/effect]、[effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post process shader[/effect] と、[.sparkle amp=1.5px seed=shader-demo]sparkle[/]、[.sparkle phase=glyph_color seed=color-demo]色sparkle[/] を同時に表示する。[p]
     ]
 
     lumi.say(id=@say.effects.post, voice=auto, look=.focus)[
@@ -121,11 +121,11 @@ flow rich_text_effects_animation {
     ]
 
     iris.say(id=@say.effects.motion, voice=auto, look=.bright)[
-        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]ゆらゆら波[/]、[.shake amp=2px seed=voice-shake state_scope=glyph target=glyph phase=glyph_transform]文字が揺れる[/]、[effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform state_scope=glyph]jitter[/effect]、[.sparkle amp=2px seed=custom-sparkle state_scope=run]sparkle[/]。[r]Fx関数: [fx breath_orbit(amplitude=5px, speed=0.75)]関数motion[/fx]、[fx source_drift(amplitude=5px, speed=0.8)]関数transform[/fx]。Event: [.host id=beat phase=host_event channel=debug]host cue[/]。[p]
+        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]ゆらゆら波[/]、[.shake amp=2px seed=voice-shake target=glyph phase=glyph_transform]文字が揺れる[/]、[effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform]jitter[/effect]、[.sparkle amp=2px seed=custom-sparkle]sparkle[/]。[r]Fx関数: [fx breath_orbit(amplitude=5px, speed=0.75)]関数motion[/fx]、[fx source_drift(amplitude=5px, speed=0.8)]関数transform[/fx]。Event: [.host id=beat phase=host_event channel=debug]host cue[/]。[p]
     ]
 
     lumi.say(id=@say.effects.reveal, voice=auto, look=.smile)[
-        Reveal: [.typewriter cps=5 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask]遅れて一文字ずつ見えるtypewriter[/] と [.typewriter cps=4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo state_scope=glyph target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo state_scope=run]重ね掛けtypewriter[/][/][/][/]。[r]さらに [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"][.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.12 speed=1.1 origin=glyph_center target=glyph]縦回転[/][/][/]ABC2026[/font][/]。[p]
+        Reveal: [.typewriter cps=5 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask]遅れて一文字ずつ見えるtypewriter[/] と [.typewriter cps=4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo]重ね掛けtypewriter[/][/][/][/]。[r]さらに [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"][.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.12 speed=1.1 origin=glyph_center target=glyph]縦回転[/][/][/]ABC2026[/font][/]。[p]
     ]
 
     return "rich_text_effects_animation"

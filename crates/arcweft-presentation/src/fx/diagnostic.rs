@@ -151,6 +151,7 @@ impl FxDiagnostic {
             FxEvaluationError::InvalidOpacity { .. } => FxDiagnosticCode::InvalidOpacity,
             FxEvaluationError::NonFiniteResult { .. }
             | FxEvaluationError::IntegerOverflow { .. }
+            | FxEvaluationError::IntegerConversion { .. }
             | FxEvaluationError::InvalidClampBounds { .. } => FxDiagnosticCode::NumericNonFinite,
             FxEvaluationError::InvalidProgramState { .. } => FxDiagnosticCode::ProgramValidation,
         };

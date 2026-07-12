@@ -74,8 +74,17 @@ pub enum ResolvedFxPostProcess {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FxRenderProgram {
-    Glow { color: FxColor },
-    Tint { color: FxColor, amount: Opacity },
+    Glow {
+        color: FxColor,
+    },
+    Tint {
+        color: FxColor,
+        amount: Opacity,
+    },
+    Displacement {
+        displacement: ResolvedFxDisplacementKind,
+    },
+    Sparkle,
 }
 
 /// Stable typed program table shared by native, Web, headless, and capture.
@@ -275,6 +284,53 @@ impl FxRenderResourceTable {
                     amount: opacity_from_unit(0.25),
                 },
             ),
+            (
+                "arcweft.post.wave",
+                FxRenderProgram::Displacement {
+                    displacement: ResolvedFxDisplacementKind::Wave,
+                },
+            ),
+            (
+                "arcweft.post.shake",
+                FxRenderProgram::Displacement {
+                    displacement: ResolvedFxDisplacementKind::Shake,
+                },
+            ),
+            (
+                "arcweft.post.jitter",
+                FxRenderProgram::Displacement {
+                    displacement: ResolvedFxDisplacementKind::Jitter,
+                },
+            ),
+            ("arcweft.post.sparkle", FxRenderProgram::Sparkle),
+            (
+                "arcweft.post.tint.arc",
+                FxRenderProgram::Tint {
+                    color: rgb(210, 190, 255),
+                    amount: opacity_from_unit(0.18),
+                },
+            ),
+            (
+                "arcweft.post.tint.spin",
+                FxRenderProgram::Tint {
+                    color: rgb(170, 220, 255),
+                    amount: opacity_from_unit(0.18),
+                },
+            ),
+            (
+                "arcweft.post.tint.pulse",
+                FxRenderProgram::Tint {
+                    color: rgb(255, 220, 150),
+                    amount: opacity_from_unit(0.18),
+                },
+            ),
+            (
+                "arcweft.post.tint.motion",
+                FxRenderProgram::Tint {
+                    color: rgb(255, 170, 220),
+                    amount: opacity_from_unit(0.18),
+                },
+            ),
         ] {
             table
                 .insert(
@@ -397,8 +453,83 @@ impl FxRenderProgram {
         match self {
             Self::Glow { color } => resolve_glow(invocation, phase, color),
             Self::Tint { color, amount } => resolve_tint(invocation, phase, color, amount),
+            Self::Displacement { displacement } => {
+                resolve_displacement(invocation, phase, displacement)
+            }
+            Self::Sparkle => resolve_sparkle(invocation, phase),
         }
     }
+}
+
+fn resolve_displacement(
+    invocation: &ShaderInvocation,
+    phase: FxPhase,
+    displacement: ResolvedFxDisplacementKind,
+) -> Result<ResolvedFxResourceOutput, FxRenderResourceError> {
+    invocation.require_uniform_schema(&["amplitude", "period", "phase", "direction", "seed"])?;
+    if phase != FxPhase::PostProcess {
+        return Err(FxRenderResourceError::UnsupportedPhase {
+            resource: invocation.resource.as_str().to_owned(),
+            phase,
+        });
+    }
+    let amplitude = shader_length(invocation, "amplitude")?.unwrap_or(Length::ZERO);
+    if amplitude.pixels() < 0.0 {
+        return Err(FxRenderResourceError::InvalidNonNegative {
+            property: "amplitude".to_owned(),
+        });
+    }
+    let period = shader_length(invocation, "period")?
+        .unwrap_or(Length::try_pixels(64.0).expect("builtin period is finite"));
+    if period.pixels() <= 0.0 {
+        return Err(FxRenderResourceError::InvalidNonNegative {
+            property: "period".to_owned(),
+        });
+    }
+    let phase_radians = shader_f32(invocation, "phase")?.unwrap_or(FiniteF32::ZERO);
+    let direction = normalized(shader_vec2(invocation, "direction")?.unwrap_or(FxVec2 {
+        x: FiniteF32::ONE,
+        y: FiniteF32::ZERO,
+    }))?;
+    let seed = shader_i32(invocation, "seed")?.unwrap_or(0);
+    Ok(ResolvedFxResourceOutput {
+        post_processes: vec![ResolvedFxPostProcess::Displacement {
+            displacement,
+            amplitude,
+            period,
+            phase_radians,
+            direction,
+            seed: u64::from_ne_bytes(i64::from(seed).to_ne_bytes()),
+        }],
+        ..ResolvedFxResourceOutput::default()
+    })
+}
+
+fn resolve_sparkle(
+    invocation: &ShaderInvocation,
+    phase: FxPhase,
+) -> Result<ResolvedFxResourceOutput, FxRenderResourceError> {
+    invocation.require_uniform_schema(&["amount", "phase", "seed"])?;
+    if phase != FxPhase::PostProcess {
+        return Err(FxRenderResourceError::UnsupportedPhase {
+            resource: invocation.resource.as_str().to_owned(),
+            phase,
+        });
+    }
+    let amount = opacity(
+        shader_f32(invocation, "amount")?.unwrap_or(FiniteF32::ZERO),
+        "amount",
+    )?;
+    let phase_radians = shader_f32(invocation, "phase")?.unwrap_or(FiniteF32::ZERO);
+    let seed = shader_i32(invocation, "seed")?.unwrap_or(0);
+    Ok(ResolvedFxResourceOutput {
+        post_processes: vec![ResolvedFxPostProcess::Sparkle {
+            amount,
+            phase_radians,
+            seed: u64::from_ne_bytes(i64::from(seed).to_ne_bytes()),
+        }],
+        ..ResolvedFxResourceOutput::default()
+    })
 }
 
 fn resolve_glow(
@@ -506,6 +637,34 @@ fn shader_f32(
 ) -> Result<Option<FiniteF32>, FxRenderResourceError> {
     invocation.uniform(name)?.map_or(Ok(None), |value| {
         let FxResolvedValue::Runtime(FxRuntimeValue::F32(value)) = value else {
+            return Err(FxRenderResourceError::InvalidProperty {
+                property: name.to_owned(),
+            });
+        };
+        Ok(Some(*value))
+    })
+}
+
+fn shader_i32(
+    invocation: &ShaderInvocation,
+    name: &str,
+) -> Result<Option<i32>, FxRenderResourceError> {
+    invocation.uniform(name)?.map_or(Ok(None), |value| {
+        let FxResolvedValue::Runtime(FxRuntimeValue::I32(value)) = value else {
+            return Err(FxRenderResourceError::InvalidProperty {
+                property: name.to_owned(),
+            });
+        };
+        Ok(Some(*value))
+    })
+}
+
+fn shader_length(
+    invocation: &ShaderInvocation,
+    name: &str,
+) -> Result<Option<Length>, FxRenderResourceError> {
+    invocation.uniform(name)?.map_or(Ok(None), |value| {
+        let FxResolvedValue::Runtime(FxRuntimeValue::Length(value)) = value else {
             return Err(FxRenderResourceError::InvalidProperty {
                 property: name.to_owned(),
             });

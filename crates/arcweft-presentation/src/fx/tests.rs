@@ -354,6 +354,137 @@ fn evaluator_rejects_nonfinite_arithmetic_without_clamping() {
 }
 
 #[test]
+fn floor_to_i32_is_checked_before_hash_noise() {
+    let program = sampler(
+        FxRuntimeType::F32,
+        vec![
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(finite(3.75)),
+            },
+            ValueInstruction::FloorToI32,
+            ValueInstruction::HashNoise,
+            ValueInstruction::Return,
+        ],
+    );
+    let value = program
+        .evaluate(
+            ValueProgramInputs {
+                parameters: &[],
+                state: &[],
+            },
+            context(0.0, 2),
+            &mut FxEvaluationBudget::default(),
+        )
+        .expect("finite bucket evaluates");
+    assert_eq!(
+        value,
+        FxRuntimeValue::F32(
+            context(0.0, 2)
+                .deterministic_noise(3)
+                .expect("same typed noise context")
+        )
+    );
+
+    let overflow = sampler(
+        FxRuntimeType::I32,
+        vec![
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(finite(f32::MAX)),
+            },
+            ValueInstruction::FloorToI32,
+            ValueInstruction::Return,
+        ],
+    );
+    assert!(matches!(
+        overflow.evaluate(
+            ValueProgramInputs {
+                parameters: &[],
+                state: &[],
+            },
+            context(0.0, 0),
+            &mut FxEvaluationBudget::default(),
+        ),
+        Err(FxEvaluationError::IntegerConversion {
+            instruction: 1,
+            operation: "floor_to_i32"
+        })
+    ));
+}
+
+#[test]
+fn make_color_validates_each_channel_without_clamping() {
+    let program = sampler(
+        FxRuntimeType::Color,
+        vec![
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(finite(0.25)),
+            },
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(finite(0.5)),
+            },
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(finite(0.75)),
+            },
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(FiniteF32::ONE),
+            },
+            ValueInstruction::MakeColor,
+            ValueInstruction::Return,
+        ],
+    );
+    let value = program
+        .evaluate(
+            ValueProgramInputs {
+                parameters: &[],
+                state: &[],
+            },
+            context(0.0, 0),
+            &mut FxEvaluationBudget::default(),
+        )
+        .expect("closed color evaluates");
+    let FxRuntimeValue::Color(color) = value else {
+        panic!("declared Color result");
+    };
+    assert_eq!(color.red().value(), finite(0.25));
+    assert_eq!(color.green().value(), finite(0.5));
+    assert_eq!(color.blue().value(), finite(0.75));
+    assert_eq!(color.alpha().value(), FiniteF32::ONE);
+
+    let invalid = sampler(
+        FxRuntimeType::Color,
+        vec![
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(finite(1.5)),
+            },
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(FiniteF32::ZERO),
+            },
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(FiniteF32::ZERO),
+            },
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::F32(FiniteF32::ONE),
+            },
+            ValueInstruction::MakeColor,
+            ValueInstruction::Return,
+        ],
+    );
+    assert_eq!(
+        invalid
+            .evaluate(
+                ValueProgramInputs {
+                    parameters: &[],
+                    state: &[],
+                },
+                context(0.0, 0),
+                &mut FxEvaluationBudget::default(),
+            )
+            .expect_err("out-of-range channel fails"),
+        FxEvaluationError::InvalidOpacity { instruction: 4 }
+    );
+}
+
+#[test]
 fn sin_sampler_uses_logical_time_and_golden_ordinal_phase() {
     let program = sampler(
         FxRuntimeType::F32,

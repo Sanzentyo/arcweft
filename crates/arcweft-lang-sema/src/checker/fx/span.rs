@@ -62,7 +62,9 @@ impl FxSpanState {
     }
 
     fn open_rich_text(&mut self, tag: &DialogueTag, catalog: &FxCatalog) {
-        if tag.kind() != DialogueTagKind::Span || catalog.inferred_tag_is_mark(tag) {
+        if tag.kind() != DialogueTagKind::Span
+            || (tag.name().starts_with('.') && catalog.inferred_tag_is_mark(tag))
+        {
             return;
         }
         self.open.push(OpenSpan::RichText {

@@ -195,8 +195,7 @@ impl RichTextStyle {
             Self::Layout { .. } => "layout",
             Self::Transform { .. } => "transform",
             Self::Object { .. } => "object",
-            Self::Effect { .. } | Self::Shader { .. } => "effect",
-            Self::Fx { .. } => "fx",
+            Self::Effect { .. } | Self::Shader { .. } | Self::Fx { .. } => "effect",
             Self::Unknown { name, .. } => name,
         }
     }

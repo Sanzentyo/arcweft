@@ -9,9 +9,12 @@ use arcweft_lang_hir::syntax::{
 use arcweft_render_text::{InlineFailurePolicy, RichTextControl, RichTextNode, RichTextStyle};
 
 use crate::errors::RuntimePlanLowerError;
-use crate::render_text::{defaults::TextProxyTypeDefaults, tag::lower_dialogue_token_parts};
+use crate::render_text::{
+    defaults::TextProxyTypeDefaults,
+    tag::{inferred_text_proxy_type, lower_dialogue_token_parts},
+};
 
-use super::{FxCatalog, FxInlineAssignment, fx_error};
+use super::{FxCatalog, FxInlineAssignment, builtins::builtin_selector, fx_error};
 
 /// Expands one authored `[fx ...]` span atomically into ordinary style nodes.
 pub(crate) struct DialogueFxExpander<'catalog> {
@@ -23,8 +26,20 @@ pub(crate) struct DialogueFxExpander<'catalog> {
 
 #[derive(Clone, Debug)]
 enum OpenSpan {
-    Style { name: String },
-    Fx { name: String, ends: Vec<String> },
+    Style {
+        name: String,
+    },
+    Fx {
+        name: String,
+        close: FxClose,
+        ends: Vec<String>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum FxClose {
+    Explicit(String),
+    Inferred,
 }
 
 impl<'catalog> DialogueFxExpander<'catalog> {
@@ -43,6 +58,48 @@ impl<'catalog> DialogueFxExpander<'catalog> {
         default_inline_failure_policy: Option<&InlineFailurePolicy>,
         text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
     ) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
+        let inferred_proxy = matches!(
+            token,
+            DialogueToken::InferredTag(tag)
+                if inferred_text_proxy_type(
+                    tag.name().trim_start_matches('.'),
+                    tag.attrs(),
+                    text_proxies,
+                )
+        );
+        if !inferred_proxy && let Some((selector, attrs)) = builtin_selector(token) {
+            let (DialogueToken::Tag(tag) | DialogueToken::InferredTag(tag)) = token else {
+                unreachable!("builtin selector only classifies opener tags");
+            };
+            let ordinal = self.next_fx_ordinal;
+            if let Some((name, application, definition)) =
+                self.catalog.bind_builtin(selector, attrs, tag, ordinal)?
+            {
+                self.next_fx_ordinal = self
+                    .next_fx_ordinal
+                    .checked_add(1)
+                    .ok_or_else(|| fx_error("too many Fx applications in one dialogue line"))?;
+                if let Some(definition) = definition {
+                    self.inline_assignments.push(FxInlineAssignment::new(
+                        &definition,
+                        &application,
+                        tag.attrs_range(),
+                    ));
+                }
+                self.open_spans.push(OpenSpan::Fx {
+                    name,
+                    close: match token {
+                        DialogueToken::InferredTag(_) => FxClose::Inferred,
+                        DialogueToken::Tag(tag) => FxClose::Explicit(tag.name().to_owned()),
+                        _ => unreachable!("builtin selector only classifies opener tags"),
+                    },
+                    ends: vec!["fx".to_owned()],
+                });
+                return Ok(vec![RichTextNode::StyleStart {
+                    style: RichTextStyle::Fx { application },
+                }]);
+            }
+        }
         match token {
             DialogueToken::Tag(tag) if tag.kind() == DialogueTagKind::Fx => {
                 let ordinal = self.next_fx_ordinal;
@@ -63,12 +120,17 @@ impl<'catalog> DialogueFxExpander<'catalog> {
                 ));
                 self.open_spans.push(OpenSpan::Fx {
                     name,
+                    close: FxClose::Explicit("fx".to_owned()),
                     ends: vec!["fx".to_owned()],
                 });
                 Ok(vec![RichTextNode::StyleStart {
                     style: RichTextStyle::Fx { application },
                 }])
             }
+            DialogueToken::EndTag(end) if self.top_fx_closes_explicitly(end.name()) => {
+                self.close_fx()
+            }
+            DialogueToken::InferredEndTag if self.top_fx_closes_inferred() => self.close_fx(),
             DialogueToken::EndTag(end) if end.kind() == DialogueTagKind::Fx => self.close_fx(),
             DialogueToken::InferredEndTag if self.has_open_fx() => {
                 self.close_inferred_inside_fx(token, default_inline_failure_policy, text_proxies)
@@ -176,6 +238,26 @@ impl<'catalog> DialogueFxExpander<'catalog> {
         self.open_spans
             .iter()
             .any(|span| matches!(span, OpenSpan::Fx { .. }))
+    }
+
+    fn top_fx_closes_explicitly(&self, name: &str) -> bool {
+        matches!(
+            self.open_spans.last(),
+            Some(OpenSpan::Fx {
+                close: FxClose::Explicit(expected),
+                ..
+            }) if expected == canonical_rich_text_tag_name(name)
+        )
+    }
+
+    fn top_fx_closes_inferred(&self) -> bool {
+        matches!(
+            self.open_spans.last(),
+            Some(OpenSpan::Fx {
+                close: FxClose::Inferred,
+                ..
+            })
+        )
     }
 
     fn track_open_styles(&mut self, nodes: &[RichTextNode]) {

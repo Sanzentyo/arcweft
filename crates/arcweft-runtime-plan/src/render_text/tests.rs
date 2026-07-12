@@ -4,15 +4,25 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, Milli,
-    RichTextCascadeLayer, RichTextColor, RichTextControl, RichTextEffectPhase,
-    RichTextEffectTarget, RichTextFontFamily, RichTextJlreqStrictness, RichTextLayout,
-    RichTextNode, RichTextParam, RichTextRubyPosition, RichTextSettingSource, RichTextSourceRange,
-    RichTextStateScope, RichTextStyle, RichTextStyleContribution, RichTextTransformOrigin,
-    RichTextWritingMode, RuntimeLineContext,
+    RichTextCascadeLayer, RichTextColor, RichTextControl, RichTextEffectTarget, RichTextFontFamily,
+    RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam, RichTextRubyPosition,
+    RichTextSettingSource, RichTextSourceRange, RichTextStyle, RichTextStyleContribution,
+    RichTextTransformOrigin, RichTextWritingMode, RuntimeLineContext,
 };
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
+fn lower_dialogue_display_with_module_fx(
+    line: RuntimeLineId,
+    dialogue: &arcweft_lang_hir::model::HirDialogue,
+    defaults: &DialogueDisplayDefaults,
+    module: &arcweft_lang_hir::model::HirModule,
+) -> arcweft_render_text::LineDisplaySpec {
+    let fx = FxCatalog::try_from_module(module).expect("test Fx inventory compiles");
+    lower_dialogue_display_with_speaker_presets_and_fx(line, dialogue, defaults, &[], &fx)
+        .expect("test dialogue fixture has valid typed Fx")
 }
 
 #[test]
@@ -281,13 +291,13 @@ fn assert_has_host_event(nodes: &[RichTextNode], predicate: impl Fn(&DialogueHos
 }
 
 #[test]
-fn inferred_dot_rich_text_lowers_custom_attr_selector_to_effect_presentation() {
+fn inferred_dot_builtin_lowers_to_typed_fx_application() {
     let parsed = parse_source(
         r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.sparkle amp=2px dir=0,1 pattern=a,b,c seed=dialogue target=glyph phase=layout_transform state_scope=global]BC[/]D[p]
+    alice: A[.sparkle amp=2px speed=1.25 seed=dialogue target=glyph phase=glyph_color]BC[/]D[p]
 }
 ",
     );
@@ -302,10 +312,11 @@ flow @flow.main main {
         })
         .expect("dialogue item");
 
-    let spec = lower_dialogue_display(
+    let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.001"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
+        &hir,
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -321,42 +332,21 @@ flow @flow.main main {
                 .is_some_and(|text| text == "BC")
         })
         .expect("effect text run");
-    let effect = effect_run
+    let application = effect_run
         .presentation
-        .effects
+        .fx
         .first()
-        .expect("effect presentation");
+        .expect("typed Fx presentation");
 
-    assert_eq!(effect.id, "sparkle");
-    assert_eq!(effect.target, RichTextEffectTarget::Glyph);
-    assert_eq!(effect.phase, RichTextEffectPhase::LayoutTransform);
-    assert_eq!(effect.state_scope, RichTextStateScope::Global);
-    assert_eq!(
-        effect.params.get("amp"),
-        Some(&RichTextParam::Milli { value: Milli(2000) })
-    );
-    assert_eq!(
-        effect.params.get("dir"),
-        Some(&RichTextParam::Raw {
-            value: "0,1".to_owned()
-        })
-    );
-    assert_eq!(
-        effect.params.get("pattern"),
-        Some(&RichTextParam::Raw {
-            value: "a,b,c".to_owned()
-        })
-    );
-    assert_eq!(
-        effect.params.get("seed"),
-        Some(&RichTextParam::Raw {
-            value: "dialogue".to_owned()
-        })
-    );
+    assert_eq!(application.definition().package(), "arcweft.builtin");
     assert!(
-        !effect.params.contains_key("state_scope"),
-        "state_scope is descriptor metadata and should not be forwarded as a custom effect param"
+        application
+            .definition()
+            .function()
+            .starts_with("rich_text.sparkle.")
     );
+    assert!(application.parameters().is_empty());
+    assert!(effect_run.presentation.effects.is_empty());
     let plain_run = frame
         .display_map
         .text_runs
@@ -368,7 +358,7 @@ flow @flow.main main {
                 .is_some_and(|text| text == "D")
         })
         .expect("plain text run after inferred close");
-    assert!(plain_run.presentation.effects.is_empty());
+    assert!(plain_run.presentation.fx.is_empty());
 }
 
 #[test]
@@ -439,7 +429,7 @@ fn hard_break_before_styled_interpolation_preserves_value_run() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: Captured[r][effect .wave amp=5px target=run phase=glyph_transform][color #ff4050][strong][em][size 38]#[brief][/size][/em][/strong][/color][/effect]
+    alice: Captured[r][effect .wave amp=5px target=content phase=glyph_transform][color #ff4050][strong][em][size 38]#[brief][/size][/em][/strong][/color][/effect]
 }
 ",
     );
@@ -454,10 +444,11 @@ flow @flow.main main {
         })
         .expect("dialogue item");
 
-    let spec = lower_dialogue_display(
+    let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.styled_interpolation_after_break"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
+        &hir,
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::new(vec![
@@ -481,8 +472,13 @@ flow @flow.main main {
         })
         .expect("brief interpolation run");
     assert!(brief_run.presentation.italic);
-    assert_eq!(brief_run.presentation.effects.len(), 1);
-    assert_eq!(brief_run.presentation.effects[0].id, "wave");
+    assert_eq!(brief_run.presentation.fx.len(), 1);
+    assert!(
+        brief_run.presentation.fx[0]
+            .definition()
+            .function()
+            .starts_with("rich_text.wave.")
+    );
     assert!(
         brief_run
             .styles
@@ -770,10 +766,11 @@ flow @flow.main main {
         })
         .expect("dialogue item");
 
-    let spec = lower_dialogue_display(
+    let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.object.proxy.inferred"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
+        &hir,
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -833,10 +830,10 @@ flow @flow.main main {
         })
     );
 
-    assert_run_has_effect_without_object_proxy(&frame, "FX", "sparkle");
+    assert_run_has_fx_without_object_proxy(&frame, "FX", "sparkle");
 }
 
-fn assert_run_has_effect_without_object_proxy(
+fn assert_run_has_fx_without_object_proxy(
     frame: &arcweft_render_text::LineDisplayFrame,
     text: &str,
     effect_id: &str,
@@ -851,15 +848,14 @@ fn assert_run_has_effect_without_object_proxy(
                 .get(run.range.start..run.range.end)
                 .is_some_and(|run_text| run_text == text)
         })
-        .expect("custom effect run remains effect");
+        .expect("typed Fx run remains distinct from object proxies");
     assert!(effect_run.presentation.object_proxies.is_empty());
-    assert!(
-        effect_run
-            .presentation
-            .effects
-            .iter()
-            .any(|effect| effect.id == effect_id)
-    );
+    assert!(effect_run.presentation.fx.iter().any(|application| {
+        application
+            .definition()
+            .function()
+            .starts_with(&format!("rich_text.{effect_id}."))
+    }));
 }
 
 #[test]
@@ -999,14 +995,14 @@ flow @flow.main main {
 }
 
 #[test]
-fn host_effect_selector_resolves_registry_id_from_metadata_attrs() {
+fn builtin_and_unknown_shorthand_retain_exact_fx_identity() {
     let parsed = parse_source(
         r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.host id=sparkle amp=2px target=glyph]BC[/]D[p]
-    alice: X[effect .host name=.nudge amount=3px]YZ[/effect]Q[p]
+    alice: A[.sparkle amp=2px target=glyph]BC[/]D[p]
+    alice: X[effect .nudge amount=3px]YZ[/effect]Q[p]
 }
 ",
     );
@@ -1024,10 +1020,11 @@ flow @flow.main main {
         })
         .collect::<Vec<_>>();
 
-    let inferred = lower_dialogue_display(
+    let inferred = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.host.inferred"),
         dialogues[0],
         &defaults,
+        &hir,
     )
     .resolve_frame(&RuntimeLineContext::default())
     .expect("inferred host frame resolves");
@@ -1041,21 +1038,22 @@ flow @flow.main main {
                 .get(run.range.start..run.range.end)
                 .is_some_and(|text| text == "BC")
         })
-        .and_then(|run| run.presentation.effects.first())
-        .expect("inferred host effect");
+        .and_then(|run| run.presentation.fx.first())
+        .expect("inferred built-in Fx");
 
-    assert_eq!(inferred_effect.id, "sparkle");
-    assert_eq!(inferred_effect.target, RichTextEffectTarget::Glyph);
-    assert_eq!(
-        inferred_effect.params.get("amp"),
-        Some(&RichTextParam::Milli { value: Milli(2000) })
+    assert_eq!(inferred_effect.definition().package(), "arcweft.builtin");
+    assert!(
+        inferred_effect
+            .definition()
+            .function()
+            .starts_with("rich_text.sparkle.")
     );
-    assert!(!inferred_effect.params.contains_key("id"));
 
-    let explicit = lower_dialogue_display(
+    let explicit = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.host.explicit"),
         dialogues[1],
         &defaults,
+        &hir,
     )
     .resolve_frame(&RuntimeLineContext::default())
     .expect("explicit host frame resolves");
@@ -1069,15 +1067,17 @@ flow @flow.main main {
                 .get(run.range.start..run.range.end)
                 .is_some_and(|text| text == "YZ")
         })
-        .and_then(|run| run.presentation.effects.first())
-        .expect("explicit host effect");
+        .and_then(|run| run.presentation.fx.first())
+        .expect("unknown effect retains a typed application");
 
-    assert_eq!(explicit_effect.id, "nudge");
-    assert_eq!(
-        explicit_effect.params.get("amount"),
-        Some(&RichTextParam::Milli { value: Milli(3000) })
+    assert_eq!(explicit_effect.definition().package(), "arcweft.builtin");
+    assert!(
+        explicit_effect
+            .definition()
+            .function()
+            .starts_with("rich_text.nudge.")
     );
-    assert!(!explicit_effect.params.contains_key("name"));
+    assert_ne!(inferred_effect.definition(), explicit_effect.definition());
 }
 
 #[test]
@@ -1101,10 +1101,11 @@ flow @flow.main main {
             _ => None,
         })
         .expect("dialogue item");
-    let spec = lower_dialogue_display(
+    let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.effect.end"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
+        &hir,
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -1121,7 +1122,11 @@ flow @flow.main main {
         })
         .expect("plain text run after explicit selector end");
 
-    assert!(plain_run.presentation.effects.is_empty());
+    assert!(
+        plain_run.presentation.fx.is_empty(),
+        "explicit selector close leaked Fx into the following run: {plain_run:#?}; document: {:#?}",
+        spec.content
+    );
 }
 
 #[test]
@@ -1576,11 +1581,11 @@ fn multiline_inline_span_provenance_projects_lf_and_crlf_ranges() {
 }
 
 #[test]
-fn inline_effect_contributions_preserve_quoted_values_and_source_ranges() {
+fn inline_fx_contribution_preserves_typed_definition_and_authored_range() {
     let source = r#"character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: [.sparkle note="contains ] safely" amp=2px]text[/][p]
+    alice: [.sparkle seed="contains ] safely" amp=2px]text[/][p]
 }
 "#;
     let parsed = parse_source(source);
@@ -1594,38 +1599,33 @@ flow @flow.main main {
             _ => None,
         })
         .expect("dialogue item");
-    let spec = lower_dialogue_display(
+    let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.quoted_effect"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
+        &hir,
     );
 
-    let selector_start = source.find("sparkle").expect("effect selector");
-    assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::InlineSpan
-            && contribution.path == "rich_text.effect"
-            && contribution.value == "sparkle"
-            && contribution_source_range(contribution)
-                == Some((selector_start, selector_start + "sparkle".len()))
-    }));
-
-    let note_source = "\"contains ] safely\"";
-    let note_start = source.find(note_source).expect("quoted note value");
-    assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::InlineSpan
-            && contribution.path == "rich_text.effect.sparkle.note"
-            && contribution.value == "contains ] safely"
-            && contribution_source_range(contribution)
-                == Some((note_start, note_start + note_source.len()))
-    }));
-
-    let amp_start = source.find("2px").expect("effect amplitude");
-    assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::InlineSpan
-            && contribution.path == "rich_text.effect.sparkle.amp"
-            && contribution.value == "2px"
-            && contribution_source_range(contribution) == Some((amp_start, amp_start + 3))
-    }));
+    let attrs_start = source.find("seed=").expect("effect attributes");
+    let attrs_end = source.find("]text").expect("effect opener end");
+    let definition = spec
+        .style_contributions
+        .iter()
+        .find(|contribution| {
+            contribution.layer == RichTextCascadeLayer::InlineSpan
+                && contribution
+                    .path
+                    .starts_with("rich_text.fx.arcweft.builtin::rich_text.sparkle.")
+        })
+        .expect("typed definition contribution");
+    assert_eq!(
+        definition.path.trim_start_matches("rich_text.fx."),
+        definition.value
+    );
+    assert_eq!(
+        contribution_source_range(definition),
+        Some((attrs_start, attrs_end))
+    );
 }
 
 #[test]
