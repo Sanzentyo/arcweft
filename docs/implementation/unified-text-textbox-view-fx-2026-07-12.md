@@ -1495,6 +1495,46 @@ layer object. These failures are unrelated to the removed option, but the
 object-ID mismatch is a real capture-contract defect and is the immediately
 following Cut 9 repair rather than a waived failure.
 
+### Layer capture identity regression closure
+
+The follow-on repair distinguishes direct scope roots from descendant pixel
+coverage. A `dialogue` layer selects the TextBox as its published object; its
+glyph/cluster/ruby descendants still contribute coverage because they overwrite
+the retained object-ID attachment in painter order, but their colors are
+canonicalized to the owning selected root in the scoped layer attachment.
+`selected_capture.mask.object_ids` is carried from the same root selection, so
+pixels and metadata cannot drift through separate reconstruction logic.
+
+Object scope continues to publish exactly the requested object identity even
+when overlapping rich-text elements are included for complete coverage. View
+scope retains each directly referenced object identity. Parent traversal is
+bounded by the observed object inventory, so malformed cyclic ancestry cannot
+stall capture.
+
+The old smoke expectation that a selected layer color image was an unmasked
+framebuffer crop was corrected to the already documented and implemented
+`masked_framebuffer_crop`; this is independently verified by nonempty pixels,
+crop geometry, attachment flags, and selected-source metadata.
+
+Validation at Jujutsu working change `vkwpxwkn`:
+
+```bash
+cargo test -p arcweft-cli --lib --all-features \
+  shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage
+cargo test -p arcweft-cli --test check --all-features \
+  agent_observe_native::visual_smoke -- --nocapture
+just test-cli-native
+cargo test -p arcweft-cli --lib --all-features
+cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-layer-capture-identity-2026-07-12
+```
+
+All commands pass. The CLI library passes 183 tests, both real renderer visual
+smokes pass, and the native CLI recipe passes its additional selected rich-text
+capture case. The structural audit records 1,244 Rust files / 613,593 physical
+Rust LOC, 0 errors, and 128 warnings; no dependency edge changed.
+
 ## Non-goals
 
 There are no deferred items from the supplied implementation directive. Typst

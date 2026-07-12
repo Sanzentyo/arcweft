@@ -46,9 +46,14 @@ fn visual_smoke_viewport_layer_and_object_captures_expose_selected_metadata() {
     assert_eq!(layer_image["kind"], "color");
     assert_eq!(layer_image["scope"]["kind"], "layer");
     assert_eq!(layer_image["scope"]["id"], "dialogue");
-    assert_eq!(layer_image["composition"], "framebuffer_crop");
+    assert_eq!(layer_image["composition"], "masked_framebuffer_crop");
     assert!(layer_image["content_pixels"].as_u64().unwrap_or_default() > 0);
-    assert_visual_smoke_selected_capture(layer_image, "layer", "dialogue", &["framebuffer_crop"]);
+    assert_visual_smoke_selected_capture(
+        layer_image,
+        "layer",
+        "dialogue",
+        &["masked_framebuffer_crop"],
+    );
     let layer_selected = visual_smoke_selected_capture(layer_image);
     assert_eq!(layer_selected["source"]["kind"], "layer");
     assert_eq!(layer_selected["source"]["id"], "dialogue");

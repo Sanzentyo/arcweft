@@ -332,6 +332,7 @@ pub(super) struct AgentRasterCapture {
     pub(super) rgba: Vec<u8>,
     pub(super) content_bbox: Option<AgentImageContentBBox>,
     pub(super) content_pixels: u64,
+    pub(super) selected_object_ids: Vec<String>,
     pub(super) diagnostics: Vec<AgentDiagnostic>,
 }
 

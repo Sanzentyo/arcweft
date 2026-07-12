@@ -2983,6 +2983,50 @@ fn shared_capture_object_id_preserves_supplied_painter_order() {
 }
 
 #[test]
+fn shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage() {
+    let mut textbox = test_observed_object("object.dialogue.0.0", 1, 1, 4, 2);
+    textbox.layer = "dialogue".to_owned();
+    let mut cluster = test_observed_object("object.dialogue.0.0.cluster.0", 2, 1, 1, 2);
+    cluster.parent_id = Some(textbox.id.clone());
+    cluster.layer = "dialogue.rich_text".to_owned();
+    let mut report = test_agent_observation_report(None);
+    report.viewport = AgentViewport {
+        width: 6,
+        height: 4,
+        scale: 1.0,
+    };
+    report.objects = vec![textbox, cluster];
+    report.layers = agent_observed_layers("cli", 3, &report.objects);
+    let frames = test_shared_attachment_store(&report, [9, 8, 7, 255]);
+
+    let result = agent_capture_image(
+        &report,
+        &AgentCaptureReadRequest {
+            uri: "arcweft://session/cli/frame/3/layer.dialogue.object-id.rgba".to_owned(),
+            image_kind: AgentObserveImageKind::RawRgba,
+            capture_kind: AgentObserveCaptureKind::ObjectId,
+            scope: AgentCaptureScope::Layer("dialogue".to_owned()),
+            page: 0,
+            capture_step: 3,
+            capture_time_seconds: 0.0,
+        },
+        &frames,
+    )
+    .unwrap();
+
+    let textbox_color = agent_object_id_color("object.dialogue.0.0");
+    assert_eq!(rgba_pixel(&result.bytes, 4, 0, 0), textbox_color);
+    assert_eq!(rgba_pixel(&result.bytes, 4, 1, 0), textbox_color);
+    let mask = result
+        .image
+        .selected_capture
+        .as_ref()
+        .and_then(|selected| selected.mask.as_ref())
+        .expect("layer capture carries mask metadata");
+    assert_eq!(mask.object_ids, ["object.dialogue.0.0"]);
+}
+
+#[test]
 fn shared_capture_viewport_color_is_the_exact_retained_frame() {
     let object = test_observed_object("object.panel", 1, 1, 2, 2);
     let mut report = test_agent_observation_report(None);

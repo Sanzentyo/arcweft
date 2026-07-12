@@ -288,8 +288,8 @@ fn agent_raster_for_request(
     request: &AgentCaptureReadRequest,
     frame: &AgentStoredImageFrame,
 ) -> Result<AgentRasterCapture, ExitCode> {
-    let objects = agent_capture_objects(report, &request.scope)?;
-    let geometry_bbox = agent_capture_objects_bbox(&objects, frame.width, frame.height)
+    let selection = agent_capture_object_selection(report, &request.scope)?;
+    let geometry_bbox = agent_capture_objects_bbox(&selection.coverage, frame.width, frame.height)
         .or_else(|| agent_capture_scope_bbox(report, &request.scope));
     let composition = match request.capture_kind {
         AgentObserveCaptureKind::Color => match request.scope {
@@ -313,7 +313,7 @@ fn agent_raster_for_request(
         agent_report_missing_capture_scope(&request.scope);
         ExitCode::from(2)
     })?;
-    agent_scoped_raster(request, frame, &objects, &bbox, composition)
+    agent_scoped_raster(report, request, frame, &selection, &bbox, composition)
 }
 
 fn agent_viewport_raster(
@@ -337,14 +337,21 @@ fn agent_viewport_raster(
         rgba: frame.attachment(request.capture_kind).to_vec(),
         content_bbox: geometry_bbox.map(agent_content_bbox_from_agent_bbox),
         content_pixels,
+        selected_object_ids: Vec::new(),
         diagnostics: Vec::new(),
     }
 }
 
+struct AgentCaptureObjectSelection<'a> {
+    roots: Vec<&'a AgentObservedObject>,
+    coverage: Vec<&'a AgentObservedObject>,
+}
+
 fn agent_scoped_raster(
+    report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
     frame: &AgentStoredImageFrame,
-    objects: &[&AgentObservedObject],
+    selection: &AgentCaptureObjectSelection<'_>,
     bbox: &AgentBBox,
     composition: AgentImageComposition,
 ) -> Result<AgentRasterCapture, ExitCode> {
@@ -356,16 +363,7 @@ fn agent_scoped_raster(
         bbox.width,
         bbox.height,
     );
-    let selected_colors = objects
-        .iter()
-        .map(|object| agent_object_id_color(&object.id))
-        .collect::<BTreeSet<_>>();
-    let scoped_object_id = match (&request.scope, request.capture_kind) {
-        (AgentCaptureScope::Object(id), AgentObserveCaptureKind::ObjectId) => {
-            Some(agent_object_id_color(id))
-        }
-        _ => None,
-    };
+    let selected_colors = agent_capture_object_id_remap(report, &request.scope, selection);
     let mut rgba = vec![
         0;
         agent_capture_rgba_len(width, height).map_err(|error| {
@@ -396,9 +394,12 @@ fn agent_scoped_raster(
             else {
                 continue;
             };
-            if !selected_colors.iter().any(|color| object_id == color) {
+            let Ok(object_id) = <&[u8; 4]>::try_from(object_id) else {
                 continue;
-            }
+            };
+            let Some(selected_object_id) = selected_colors.get(object_id) else {
+                continue;
+            };
             let Some(output) = rgba.get_mut(output_index..output_index.saturating_add(4)) else {
                 continue;
             };
@@ -412,9 +413,7 @@ fn agent_scoped_raster(
                     }
                 }
                 AgentObserveCaptureKind::ObjectId => {
-                    output.copy_from_slice(scoped_object_id.as_ref().unwrap_or_else(|| {
-                        <&[u8; 4]>::try_from(object_id).expect("object-id pixel has four bytes")
-                    }));
+                    output.copy_from_slice(selected_object_id);
                 }
                 AgentObserveCaptureKind::Mask => output.copy_from_slice(&[255, 255, 255, 255]),
             }
@@ -438,15 +437,69 @@ fn agent_scoped_raster(
             height,
         }),
         content_pixels,
+        selected_object_ids: selection
+            .roots
+            .iter()
+            .map(|object| object.id.clone())
+            .collect(),
         diagnostics: Vec::new(),
     })
 }
 
-fn agent_capture_objects<'a>(
+fn agent_capture_object_id_remap(
+    report: &AgentObservationReport,
+    scope: &AgentCaptureScope,
+    selection: &AgentCaptureObjectSelection<'_>,
+) -> BTreeMap<[u8; 4], [u8; 4]> {
+    let root_ids = selection
+        .roots
+        .iter()
+        .map(|object| object.id.clone())
+        .collect::<BTreeSet<_>>();
+    selection
+        .coverage
+        .iter()
+        .map(|object| {
+            let selected_id = match scope {
+                AgentCaptureScope::Object(id) => id.as_str(),
+                AgentCaptureScope::Viewport
+                | AgentCaptureScope::View(_)
+                | AgentCaptureScope::Layer(_) => {
+                    agent_capture_root_id(report, &root_ids, object).unwrap_or(&object.id)
+                }
+            };
+            (
+                agent_object_id_color(&object.id),
+                agent_object_id_color(selected_id),
+            )
+        })
+        .collect()
+}
+
+fn agent_capture_root_id<'a>(
+    report: &'a AgentObservationReport,
+    root_ids: &'a BTreeSet<String>,
+    object: &'a AgentObservedObject,
+) -> Option<&'a str> {
+    let mut current = object;
+    for _ in 0..=report.objects.len() {
+        if let Some(root) = root_ids.get(&current.id) {
+            return Some(root.as_str());
+        }
+        let parent_id = current.parent_id.as_deref()?;
+        current = report
+            .objects
+            .iter()
+            .find(|candidate| candidate.id == parent_id)?;
+    }
+    None
+}
+
+fn agent_capture_object_selection<'a>(
     report: &'a AgentObservationReport,
     scope: &AgentCaptureScope,
-) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
-    let selected = match scope {
+) -> Result<AgentCaptureObjectSelection<'a>, ExitCode> {
+    let roots = match scope {
         AgentCaptureScope::Viewport => report
             .objects
             .iter()
@@ -472,32 +525,33 @@ fn agent_capture_objects<'a>(
                 })
                 .collect()
         }
-        AgentCaptureScope::Object(object_id) => {
-            let selected = report
-                .objects
-                .iter()
-                .find(|object| object.visible && object.id == *object_id)
-                .into_iter()
-                .collect::<Vec<_>>();
-            if let Some(root) = selected.first().copied()
-                && root.rich_text_ref.is_some()
-            {
-                selected
-                    .into_iter()
-                    .chain(report.objects.iter().filter(|candidate| {
-                        candidate.visible && agent_related_rich_capture_object(root, candidate)
-                    }))
-                    .collect()
-            } else {
-                selected
-            }
-        }
+        AgentCaptureScope::Object(object_id) => report
+            .objects
+            .iter()
+            .find(|object| object.visible && object.id == *object_id)
+            .into_iter()
+            .collect::<Vec<_>>(),
     };
-    if selected.is_empty() && !matches!(scope, AgentCaptureScope::Viewport) {
+    if roots.is_empty() && !matches!(scope, AgentCaptureScope::Viewport) {
         agent_report_missing_capture_scope(scope);
         return Err(ExitCode::from(2));
     }
-    Ok(agent_expand_capture_descendants(report, &selected))
+    let coverage_roots = if let AgentCaptureScope::Object(_) = scope
+        && let Some(root) = roots.first().copied()
+        && root.rich_text_ref.is_some()
+    {
+        roots
+            .iter()
+            .copied()
+            .chain(report.objects.iter().filter(|candidate| {
+                candidate.visible && agent_related_rich_capture_object(root, candidate)
+            }))
+            .collect()
+    } else {
+        roots.clone()
+    };
+    let coverage = agent_expand_capture_descendants(report, &coverage_roots);
+    Ok(AgentCaptureObjectSelection { roots, coverage })
 }
 
 fn agent_related_rich_capture_object(
@@ -900,42 +954,17 @@ pub(super) fn agent_capture_mask_for_scope(
         return None;
     }
     let bounds = agent_layout_rect_from_bbox(clipped);
-    let (object_ids, layer_ids) = match &request.scope {
-        AgentCaptureScope::Viewport => (Vec::new(), Vec::new()),
-        AgentCaptureScope::Layer(layer_id) => (
-            report
-                .objects
-                .iter()
-                .filter(|object| object.visible && agent_object_matches_layer(object, layer_id))
-                .map(|object| object.id.clone())
-                .collect(),
-            vec![layer_id.clone()],
-        ),
-        AgentCaptureScope::View(view_id) => {
-            let object_ids = report
-                .views
-                .iter()
-                .find(|view| view.id == *view_id)
-                .map(|view| view.object_refs.clone())
-                .unwrap_or_default();
-            let layer_ids = object_ids
-                .iter()
-                .filter_map(|id| report.objects.iter().find(|object| object.id == *id))
-                .flat_map(agent_object_layers)
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            (object_ids, layer_ids)
-        }
-        AgentCaptureScope::Object(object_id) => (
-            vec![object_id.clone()],
-            report
-                .objects
-                .iter()
-                .find(|object| object.id == *object_id)
-                .map(agent_object_layers)
-                .unwrap_or_default(),
-        ),
+    let object_ids = capture.selected_object_ids.clone();
+    let layer_ids = match &request.scope {
+        AgentCaptureScope::Viewport => Vec::new(),
+        AgentCaptureScope::Layer(layer_id) => vec![layer_id.clone()],
+        AgentCaptureScope::View(_) | AgentCaptureScope::Object(_) => object_ids
+            .iter()
+            .filter_map(|id| report.objects.iter().find(|object| object.id == *id))
+            .flat_map(agent_object_layers)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
     };
     Some(AgentSelectedCaptureMask {
         availability: AgentCaptureMaskAvailability::default(),
