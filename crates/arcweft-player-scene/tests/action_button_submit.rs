@@ -29,6 +29,7 @@ fn scene_with_text_input_and_action_button() -> RenderScene {
     let selection = TextRange::new(TextByteOffset(5), TextByteOffset(5));
     RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: vec![RenderTextInputControl::new(
             input_target.clone(),
@@ -73,6 +74,7 @@ fn scene_with_text_input_and_action_button() -> RenderScene {
 fn action_invoke_scene() -> RenderScene {
     RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: vec![RenderActionButton {

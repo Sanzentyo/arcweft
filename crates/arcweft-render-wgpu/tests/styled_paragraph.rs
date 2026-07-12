@@ -28,6 +28,7 @@ fn viewport() -> RenderViewport {
 fn scene(dialogue: RenderDialogue) -> RenderScene {
     RenderScene {
         dialogue: Some(dialogue),
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),

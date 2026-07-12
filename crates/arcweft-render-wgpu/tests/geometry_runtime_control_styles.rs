@@ -590,6 +590,7 @@ fn scene(
 ) -> RenderScene {
     RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs,
         action_buttons,

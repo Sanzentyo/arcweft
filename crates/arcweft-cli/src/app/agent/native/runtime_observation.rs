@@ -524,6 +524,7 @@ mod scroll_observation_tests {
     fn authored_scroll_is_one_action_target_with_internal_parts_metadata() {
         let frame = SharedFramePlanner::prepare(&RenderScene {
             dialogue: None,
+            content_avoidance_regions: Vec::new(),
             choices: Vec::new(),
             text_inputs: Vec::new(),
             action_buttons: Vec::new(),

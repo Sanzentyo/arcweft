@@ -1,8 +1,8 @@
 //! Retention and painter-ordered debug attachments for one prepared frame.
 
 use super::{
-    AGENT_ROLE_DIALOGUE_TEXTBOX, AgentImageFrameStore, AgentObservedObject, ExitCode, HitRect,
-    NativeAgentRuntimeState, PlayerPreparedFrame, PreparedFrame, agent_object_id_color,
+    AgentImageFrameStore, AgentObservedObject, ExitCode, HitRect, NativeAgentRuntimeState,
+    PlayerPreparedFrame, PreparedFrame, agent_object_id_color,
 };
 use arcweft_render_wgpu::offscreen::{
     CaptureAttachment, CaptureCropPolicy, CaptureRegion, CaptureRequest, CaptureScope,
@@ -117,9 +117,9 @@ fn player_capture_region_order(
         .find(|(_, owner)| player_object_belongs_to_text_owner(object, owner))
     {
         let phase = match owner.kind {
-            arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View => 1,
+            arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => 1,
             arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Control => 3,
-            arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Dialogue => 4,
+            arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox { .. } => 4,
         };
         let element_order = prepared.prepared_text.get(owner.text).map_or(0, |item| {
             player_text_element_paint_order(owner, item, object)
@@ -140,10 +140,20 @@ fn player_object_belongs_to_text_owner(
     owner: &arcweft_render_wgpu::geometry::PreparedTextOwner,
 ) -> bool {
     match owner.kind {
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Dialogue => {
-            object.role == AGENT_ROLE_DIALOGUE_TEXTBOX || object.id.starts_with("object.dialogue.")
+        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox {
+            textbox,
+            entry,
+            part: arcweft_render_wgpu::geometry::PreparedTextBoxPart::Body,
+            ..
+        } => {
+            let root = format!("object.dialogue.{textbox}.{entry}");
+            object.id == root || object.id.starts_with(&format!("{root}."))
         }
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View => object
+        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox {
+            part: arcweft_render_wgpu::geometry::PreparedTextBoxPart::Speaker,
+            ..
+        } => false,
+        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => object
             .entity
             .as_deref()
             .is_some_and(|entity| entity == owner.semantic_id.as_str()),

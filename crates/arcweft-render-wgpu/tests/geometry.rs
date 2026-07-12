@@ -32,6 +32,7 @@ fn scene() -> RenderScene {
     };
     RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {
                 id: "choice.one".to_owned(),

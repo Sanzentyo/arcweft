@@ -1,5 +1,8 @@
 use arcweft_bundle::ArcweftBundle;
-use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
+use arcweft_player_scene::{
+    frame::PlayerFramePlanner,
+    images::{BundleImageCatalog, BundleImageCatalogError},
+};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedFrame, RenderChoiceItem, RenderDialogue,
     RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
@@ -220,6 +223,14 @@ pub fn prepare_bundle_parity_frame(
             .latest_active()
             .and_then(|(_, entry)| entry.current_stage())
             .map(RenderDialogue::from_display_stage),
+        content_avoidance_regions: PlayerFramePlanner::standard_textbox_bounds(
+            options.viewport,
+            presentation
+                .textboxes
+                .iter()
+                .filter(|textbox| textbox.active_entry().is_some())
+                .count(),
+        ),
         choices: presentation
             .choices
             .iter()

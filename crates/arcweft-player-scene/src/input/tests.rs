@@ -21,6 +21,7 @@ fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
 fn scene(control: RenderTextInputControl) -> RenderScene {
     RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: vec![control],
         action_buttons: Vec::new(),
@@ -71,6 +72,7 @@ fn scene_with_dialogue_at(control: RenderTextInputControl, visual_time_millis: u
 fn scroll_frame() -> PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),
@@ -111,6 +113,7 @@ fn scroll_frame() -> PreparedFrame {
 fn horizontal_scroll_frame() -> PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),
@@ -155,6 +158,7 @@ fn nested_scroll_frame(
 ) -> PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),

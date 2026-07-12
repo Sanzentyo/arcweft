@@ -22,12 +22,12 @@ use arcweft_text_layout::{LayoutPoint, LayoutSize, TextLayoutRequest, layout_doc
 use num_traits::ToPrimitive;
 
 use super::{
-    FramePlanError, RenderStyledParagraph, RenderViewport,
+    FramePlanError, PreparedRichTextStageRequest, RenderViewport,
     dialogue_legacy_fx::{
         apply_glyph_paint as apply_legacy_glyph_paint, collect_frame_passes, presentation_transform,
     },
     dialogue_timeline::{DialogueRevealPolicy, evaluate_dialogue_reveal},
-    prepared_text::{hit_rect_to_layout_rect, resolved_style},
+    prepared_text::hit_rect_to_layout_rect,
 };
 
 struct DialogueFxEvaluator<'a> {
@@ -408,10 +408,9 @@ fn signed_milli(value: f32, label: &'static str) -> Result<i32, String> {
 pub(super) fn prepare_stage(
     engine: &mut GlyphonTextEngine,
     stage: LineDisplayStage<'_>,
-    paragraph: &RenderStyledParagraph,
+    request: &PreparedRichTextStageRequest,
     viewport: RenderViewport,
     reduce_motion: bool,
-    reveal_complete: bool,
     fx_resolver: &dyn FxApplicationResolver,
 ) -> Result<(PreparedTextItem, bool, Vec<FxDiagnostic>, usize), FramePlanError> {
     let runs = stage.text_runs();
@@ -422,12 +421,12 @@ pub(super) fn prepare_stage(
         &controls,
         stage.reveal_start(),
         DialogueRevealPolicy {
-            complete_stage: reveal_complete,
+            complete_stage: request.reveal_complete,
             instant_characters: reduce_motion,
         },
-        paragraph.visual_time_millis,
+        request.visual_time_millis,
     );
-    let cascade = TextStyleCascade::new(resolved_style(&paragraph.default_style)?);
+    let cascade = TextStyleCascade::new(request.default_style.clone());
     let document = stage.frame().resolve_stage_document(stage, &cascade)?;
     let document = document.project(RichTextRange::new(
         reveal.display_start,
@@ -436,7 +435,7 @@ pub(super) fn prepare_stage(
     let source_origin = document.source_origin();
     let mut fx = DialogueFxEvaluator::new(fx_resolver, reduce_motion);
     let document = apply_document_fx(&document, &mut fx)?;
-    let bounds = hit_rect_to_layout_rect(paragraph.bounds);
+    let bounds = hit_rect_to_layout_rect(request.bounds);
     let layout = layout_document(
         &document,
         TextLayoutRequest {
@@ -453,7 +452,7 @@ pub(super) fn prepare_stage(
     let effect_seconds = if reduce_motion {
         0.0
     } else {
-        paragraph.visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0
+        request.visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0
     };
     let mut paint = TextPaintPlan::from_layout(&layout);
     let (legacy_post_processes, legacy_diagnostics) = collect_frame_passes(

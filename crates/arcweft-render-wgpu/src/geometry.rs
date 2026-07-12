@@ -20,7 +20,9 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextCharacterBounds, TextGeometryTransform, TextInputClientSnapshot,
     TextInputGeometrySnapshot, TextRange,
 };
-use arcweft_render_text::{ResolvedTextDocument, RichTextRange, TextResolveError};
+use arcweft_render_text::{
+    ResolvedTextDocument, ResolvedTextStyle, RichTextRange, TextResolveError,
+};
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize, TextLayoutError};
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -125,6 +127,8 @@ pub enum FocusNavigationDirection {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderScene {
     pub dialogue: Option<RenderDialogue>,
+    /// Layout regions that auto-positioned content, such as choices, must not overlap.
+    pub content_avoidance_regions: Vec<HitRect>,
     pub choices: Vec<RenderChoiceItem>,
     pub text_inputs: Vec<RenderTextInputControl>,
     pub action_buttons: Vec<RenderActionButton>,
@@ -431,6 +435,23 @@ pub struct PreparedTextDocumentRequest {
     pub selection_rgba: [f32; 4],
 }
 
+/// Layout and reveal inputs for one resolved `RichText` display stage.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedRichTextStageRequest {
+    pub bounds: HitRect,
+    pub default_style: ResolvedTextStyle,
+    pub visual_time_millis: u64,
+    pub reveal_complete: bool,
+}
+
+/// Canonical prepared item and reveal result for one `RichText` display stage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedRichTextStageResult {
+    pub text: PreparedTextId,
+    pub reveal_complete: bool,
+    pub source_origin: usize,
+}
+
 impl PreparedTextDocumentRequest {
     #[must_use]
     pub const fn new(origin: LayoutPoint, size: LayoutSize) -> Self {
@@ -560,6 +581,7 @@ pub struct PreparedFrame {
     pub scroll_indicators: Vec<PreparedScrollIndicator>,
     pub focus_graph: PreparedFocusGraph,
     view_scenes: Vec<PreparedViewScene>,
+    textboxes: Vec<PreparedTextBoxState>,
     dialogue_present: bool,
     dialogue_reveal_complete: bool,
     dialogue_advance_available: bool,
@@ -567,15 +589,41 @@ pub struct PreparedFrame {
     focused_text_input: Option<PreparedTextInputTarget>,
 }
 
+/// Runtime identity, visual progress, and actionability for one prepared `TextBox` View.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedTextBoxState {
+    pub textbox: u64,
+    pub entry: u64,
+    pub mount: u64,
+    pub revision: u64,
+    pub instance: u64,
+    pub stage: u32,
+    pub bounds: HitRect,
+    pub reveal_complete: bool,
+    pub advance_available: bool,
+}
+
 /// Semantic ownership for one canonical prepared-text item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PreparedTextOwnerKind {
-    /// Dialogue content rendered inside the persistent `TextBox` surface.
-    Dialogue,
+    /// Dialogue content rendered inside one persistent `TextBox` View mount.
+    TextBox {
+        textbox: u64,
+        entry: u64,
+        mount: u64,
+        part: PreparedTextBoxPart,
+    },
     /// Authored or Rust-backed View text.
-    View,
+    View { mount: u64 },
     /// Shared player control text associated with an interaction target.
     Control,
+}
+
+/// Authored painter part within one standard `TextBox` View.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparedTextBoxPart {
+    Speaker,
+    Body,
 }
 
 /// Renderer-neutral identity and geometry associated with one prepared item.
@@ -837,6 +885,24 @@ impl PreparedFrame {
     #[must_use]
     pub fn prepared_text_owners(&self) -> &[PreparedTextOwner] {
         &self.text_owners
+    }
+
+    pub fn push_textbox(&mut self, textbox: PreparedTextBoxState) {
+        self.dialogue_present = true;
+        if self
+            .textboxes
+            .iter()
+            .all(|candidate| candidate.instance <= textbox.instance)
+        {
+            self.dialogue_reveal_complete = textbox.reveal_complete;
+        }
+        self.dialogue_advance_available |= textbox.advance_available;
+        self.textboxes.push(textbox);
+    }
+
+    #[must_use]
+    pub fn textboxes(&self) -> &[PreparedTextBoxState] {
+        &self.textboxes
     }
 
     /// Returns the renderer-backed focused text target for platform IME sync.
@@ -1318,6 +1384,7 @@ impl SharedFramePlanContext {
                 scene.focus_navigation.clone(),
             ),
             view_scenes: Vec::new(),
+            textboxes: Vec::new(),
             dialogue_present,
             dialogue_reveal_complete,
             dialogue_advance_available: dialogue_present,
@@ -1419,6 +1486,35 @@ impl SharedFramePlanContext {
         Ok(())
     }
 
+    /// Appends one `RichText` display stage to the canonical prepared batch.
+    pub fn push_prepared_rich_text_stage(
+        &mut self,
+        frame: &mut PreparedFrame,
+        stage: arcweft_render_text::LineDisplayStage<'_>,
+        request: &PreparedRichTextStageRequest,
+        fx_resolver: &dyn arcweft_presentation::fx::FxApplicationResolver,
+    ) -> Result<PreparedRichTextStageResult, FramePlanError> {
+        let engine = self
+            .prepared_text_engine
+            .as_mut()
+            .ok_or(FramePlanError::MissingProjectFonts)?;
+        let (item, reveal_complete, diagnostics, source_origin) = dialogue_prepared::prepare_stage(
+            engine,
+            stage,
+            request,
+            frame.viewport,
+            frame.preferences.reduce_motion,
+            fx_resolver,
+        )?;
+        let text = frame.prepared_text.push(item)?;
+        frame.fx_diagnostics.extend(diagnostics);
+        Ok(PreparedRichTextStageResult {
+            text,
+            reveal_complete,
+            source_origin,
+        })
+    }
+
     /// Replaces the mapped dialogue paragraph with one canonical prepared item.
     pub fn finalize_dialogue_stage(
         &mut self,
@@ -1427,32 +1523,34 @@ impl SharedFramePlanContext {
         reveal_complete: bool,
         fx_resolver: &dyn arcweft_presentation::fx::FxApplicationResolver,
     ) -> Result<(), FramePlanError> {
-        let Some(engine) = self.prepared_text_engine.as_mut() else {
-            return Ok(());
-        };
         let Some(paragraph) = frame.styled_paragraphs.first() else {
             return Ok(());
         };
-        let (item, complete, diagnostics, source_origin) = dialogue_prepared::prepare_stage(
-            engine,
+        let result = self.push_prepared_rich_text_stage(
+            frame,
             stage,
-            paragraph,
-            frame.viewport,
-            frame.preferences.reduce_motion,
-            reveal_complete,
+            &PreparedRichTextStageRequest {
+                bounds: paragraph.bounds,
+                default_style: prepared_text::resolved_style(&paragraph.default_style)?,
+                visual_time_millis: paragraph.visual_time_millis,
+                reveal_complete,
+            },
             fx_resolver,
         )?;
-        let text = frame.prepared_text.push(item)?;
         frame.push_prepared_text_owner(PreparedTextOwner::new(
-            text,
+            result.text,
             FrameStaticId::DialogueContent.public_id()?,
-            PreparedTextOwnerKind::Dialogue,
-            source_origin,
+            PreparedTextOwnerKind::TextBox {
+                textbox: 0,
+                entry: 0,
+                mount: 0,
+                part: PreparedTextBoxPart::Body,
+            },
+            result.source_origin,
             dialogue::panel_bounds(frame.viewport),
         ))?;
-        frame.fx_diagnostics.extend(diagnostics);
         frame.styled_paragraphs.clear();
-        frame.dialogue_reveal_complete = complete;
+        frame.dialogue_reveal_complete = result.reveal_complete;
         Ok(())
     }
 
@@ -1996,14 +2094,17 @@ fn build_choices(
     let item_height = 60.0;
     let gap = 12.0;
     let total = saturating_usize_as_f32(scene.choices.len()) * (item_height + gap) - gap;
-    let top = scene.dialogue.as_ref().map_or_else(
-        || ((scene.viewport.logical_height - total) * 0.42).max(36.0),
-        |_| {
-            let panel = dialogue::panel_bounds(scene.viewport);
-            (panel.y - total - 22.0).max(36.0)
-        },
-    );
     let left = (scene.viewport.logical_width - width) * 0.5;
+    let avoidance_top = scene
+        .content_avoidance_regions
+        .iter()
+        .filter(|region| region.x < left + width && region.x + region.width > left)
+        .map(|region| region.y)
+        .min_by(f32::total_cmp);
+    let top = avoidance_top.map_or_else(
+        || ((scene.viewport.logical_height - total) * 0.42).max(36.0),
+        |avoidance_top| (avoidance_top - total - 22.0).max(36.0),
+    );
     let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
     let font_size = 22.0 * scale;
     let line_height = 30.0 * scale;

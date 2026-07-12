@@ -10,7 +10,7 @@ pub(in super::super) fn agent_view_prepared_text_objects(
     prepared
         .prepared_text_owners()
         .iter()
-        .filter(|owner| owner.kind == PreparedTextOwnerKind::View)
+        .filter(|owner| matches!(owner.kind, PreparedTextOwnerKind::View { .. }))
         .filter_map(|owner| {
             prepared
                 .prepared_text

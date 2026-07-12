@@ -110,7 +110,9 @@ pub(super) fn prepare_runtime_view_text(
                     PreparedTextOwner::new(
                         prepared_id,
                         semantic_id,
-                        PreparedTextOwnerKind::View,
+                        PreparedTextOwnerKind::View {
+                            mount: mount.mount.get(),
+                        },
                         source_origin,
                         bounds,
                     )
@@ -238,7 +240,7 @@ fn visible_text(value: &BundleViewTextValue) -> Result<&str, FramePlanError> {
     }
 }
 
-fn plain_document(
+pub(super) fn plain_document(
     text: &str,
     style: ResolvedTextStyle,
 ) -> Result<ResolvedTextDocument<'_>, FramePlanError> {
@@ -339,7 +341,7 @@ fn scaled_milli(field: &'static str, value: u32, scale: f32) -> Result<u32, Fram
     Ok(value.round() as u32)
 }
 
-fn map_rect(rect: HitRect, content: Option<ContentRect>) -> HitRect {
+pub(super) fn map_rect(rect: HitRect, content: Option<ContentRect>) -> HitRect {
     let Some(content) = content else {
         return rect;
     };

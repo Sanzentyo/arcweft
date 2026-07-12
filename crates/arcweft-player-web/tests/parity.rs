@@ -338,6 +338,7 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
     image.containing_scroll_region = Some("scroll.gallery".to_owned());
     let scene = RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),
@@ -594,6 +595,7 @@ fn dialogue_text(report: &WebFrameObservationReport) -> String {
 fn image_frame_report(images: Vec<RenderImage>) -> WebFrameObservationReport {
     let prepared = SharedFramePlanner::prepare(&RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),
@@ -632,6 +634,7 @@ fn authored_image_flow_frame(
     let viewport = parity_test_viewport();
     let scene = RenderScene {
         dialogue: None,
+        content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),

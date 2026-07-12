@@ -17,9 +17,6 @@ use arcweft_render_text::{
 };
 
 use super::*;
-use crate::geometry::{
-    RenderFontFamily, RenderTextReveal, RenderTextSlant, RenderTextStyle, RenderTextWeight,
-};
 
 const TEST_FONT: &[u8] = include_bytes!("../../../../../web/assets/noto-sans-jp-vf.ttf");
 
@@ -435,13 +432,20 @@ fn prepare(
     let stage = frame.stage(0).expect("stage");
     let mut engine =
         GlyphonTextEngine::from_project_fonts("ja", vec![TEST_FONT.to_vec()]).expect("font engine");
+    let request = PreparedRichTextStageRequest {
+        bounds: HitRect::new(20.0, 30.0, 360.0, 180.0),
+        default_style: ResolvedTextStyle::new(vec![TextFontFamily::SansSerif], 24_000, 32_000)
+            .expect("paragraph style resolves")
+            .with_color(TextColor::rgba(245, 245, 245, 255)),
+        visual_time_millis,
+        reveal_complete,
+    };
     let (item, complete, diagnostics, _) = prepare_stage(
         &mut engine,
         stage,
-        &paragraph(visual_time_millis),
+        &request,
         viewport(),
         reduce_motion,
-        reveal_complete,
         resolver,
     )
     .expect("stage prepares");
@@ -466,28 +470,6 @@ fn frame(nodes: Vec<RichTextNode>) -> arcweft_render_text::LineDisplayFrame {
     }
     .resolve_frame(&RuntimeLineContext::default())
     .expect("frame resolves")
-}
-
-fn paragraph(visual_time_millis: u64) -> RenderStyledParagraph {
-    RenderStyledParagraph {
-        text: String::new(),
-        bounds: HitRect::new(20.0, 30.0, 360.0, 180.0),
-        default_style: RenderTextStyle {
-            font_size: 24.0,
-            line_height: 32.0,
-            color: [245, 245, 245, 255],
-            font_family: RenderFontFamily::SansSerif,
-            weight: RenderTextWeight::Regular,
-            slant: RenderTextSlant::Upright,
-        },
-        spans: Vec::new(),
-        reveal: RenderTextReveal {
-            visible_end: 0,
-            complete: false,
-        },
-        glyph_transforms: Vec::new(),
-        visual_time_millis,
-    }
 }
 
 const fn viewport() -> RenderViewport {

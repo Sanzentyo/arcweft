@@ -725,6 +725,59 @@ cluster while current shared layout exposes four digit clusters. Cut 9 must
 classify and resolve that layout difference with typed layout evidence and
 reviewed raster output before any golden is changed.
 
+### Standard TextBox View composition slice
+
+The renderer-facing half of Cut 8 is now connected at Jujutsu change
+`uormqyrm`; deletion of the legacy public dialogue/styled-paragraph vocabulary
+remains the next slice, so Cut 8 is not yet marked complete:
+
+- every active persistent target is prepared as a Rust-backed `ViewScene` using
+  its retained `TextBoxViewMountId`. The panel is a normal View surface and the
+  speaker/body are `ViewPrimitive::Text` references into the one canonical
+  `PreparedTextBatch`;
+- one target preserves the former 1280x720 panel geometry, insets, palette, and
+  speaker/body metrics. Multiple targets use stable runtime-ID order and a
+  bounded vertical tiling rule instead of overwriting each other;
+- the body resolves the exact active `LineDisplayStage` and retains vertical
+  flow, ruby, reveal paint, shared Fx evaluation, diagnostics, and logical
+  source origin. The speaker is a separate canonical prepared item and keeps
+  horizontal label flow, matching the former renderer behavior;
+- `PreparedTextOwnerKind` now carries exact TextBox/entry/mount/part identity.
+  Agent observation enumerates every active target and resolves its body owner
+  by typed identity rather than a latest-entry or frame-step convention;
+- auto-positioned choices no longer inspect `RenderScene.dialogue`. A generic
+  `content_avoidance_regions` contract receives the same standard TextBox
+  bounds, so choices retain their non-overlap behavior without making the
+  geometry planner aware of a dialogue renderer; and
+- a product-path integration test builds a persistent vertical-rl TextBox with
+  ruby, prepares the ordinary player frame, and proves that the frame contains
+  one panel plus speaker/body Text primitives, two typed owners, no legacy
+  dialogue block, and the canonical vertical/ruby layout.
+
+Validation for this slice includes:
+
+```bash
+cargo test -p arcweft-player-scene --all-features
+cargo test -p arcweft-player-scene --test textbox_view --all-features
+cargo check -p arcweft-render-wgpu --all-targets --all-features
+cargo check -p arcweft-player-web --all-targets --all-features
+cargo check -p arcweft-cli --all-targets --all-features
+cargo check --workspace --all-targets --all-features
+```
+
+All listed commands pass. The complete player-scene route passes 88 tests,
+including the new product TextBox View case. The next immediate cut removes
+`RenderScene.dialogue`, `RenderDialogue`, `RenderStyledParagraph`, their
+renderer/report staging, and the temporary dialogue boolean facade; this slice
+does not relabel those remaining public contracts as complete.
+
+The structural audit at
+`structure-audits/unified-text-textbox-view-composition-2026-07-12` scans 1,258
+Rust files / 623,665 physical Rust LOC with 0 errors and 133 warnings. The new
+TextBox owner is 531 LOC (499 production code LOC including a small embedded
+test module), while the frame orchestrator remains 496 LOC. No Cargo manifest
+or workspace dependency edge changed.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally

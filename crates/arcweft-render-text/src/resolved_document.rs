@@ -465,7 +465,13 @@ impl TextStyleCascade {
         &self.presentation
     }
 
-    fn resolve_style<'a>(
+    /// Resolves an authored style stack over this cascade's base style.
+    ///
+    /// Presentation adapters use this for sibling content, such as a
+    /// `TextBox` speaker label, that must inherit the same frame-level style
+    /// as the canonical rich-text document without reimplementing cascade
+    /// rules.
+    pub fn resolve_style<'a>(
         &self,
         styles: impl IntoIterator<Item = &'a RichTextStyle>,
     ) -> Result<ResolvedTextStyle, TextResolveError> {

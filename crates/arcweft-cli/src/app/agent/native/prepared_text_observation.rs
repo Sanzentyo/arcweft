@@ -27,11 +27,18 @@ pub(super) fn agent_dialogue_prepared_text_objects(
     prepared: &PreparedFrame,
     viewport: &AgentViewport,
 ) -> Result<Vec<AgentObservedObject>, ExitCode> {
-    let Some(owner) = prepared
-        .prepared_text_owners()
-        .iter()
-        .find(|owner| owner.kind == PreparedTextOwnerKind::Dialogue)
-    else {
+    let Some(owner) = prepared.prepared_text_owners().iter().find(|owner| {
+        matches!(
+            owner.kind,
+            PreparedTextOwnerKind::TextBox {
+                textbox: owner_textbox,
+                entry: owner_entry,
+                part: arcweft_render_wgpu::geometry::PreparedTextBoxPart::Body,
+                ..
+            } if owner_textbox == u64::try_from(textbox).unwrap_or(u64::MAX)
+                && owner_entry == u64::try_from(entry).unwrap_or(u64::MAX)
+        )
+    }) else {
         eprintln!("error: dialogue frame is missing its prepared-text owner");
         return Err(ExitCode::FAILURE);
     };

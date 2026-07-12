@@ -4,18 +4,18 @@ use super::image_mapping::{
     agent_image_geometry_from_render_quad, agent_object_capture_refs_with_source,
 };
 use super::{
-    AGENT_ROLE_DIALOGUE_TEXTBOX, AgentImageFrameStore, AgentObservationState, AgentObserveOptions,
-    ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge,
-    agent_action_targets, agent_action_targets_for_runtime_status,
-    agent_action_targets_for_scroll_regions, agent_action_targets_for_semantics,
-    agent_capture_time_millis, agent_dialogue_prepared_text_objects,
-    agent_mcp_project_context_from_hir, agent_object_capture_refs_for_page, agent_object_id_color,
-    agent_observe_capture_time_seconds, agent_observe_effective_steps,
-    agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
-    agent_observed_layers, agent_observed_scroll_regions, agent_observed_views,
-    agent_observed_virtual_lists, agent_overlay_svg, agent_view_prepared_text_objects,
-    dedupe_agent_action_targets, hash_hex, load_and_check_selection,
-    native_host_policy_for_selection, report_path, resolve_source_selection,
+    AgentImageFrameStore, AgentObservationState, AgentObserveOptions, ExitCode,
+    NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge, agent_action_targets,
+    agent_action_targets_for_runtime_status, agent_action_targets_for_scroll_regions,
+    agent_action_targets_for_semantics, agent_capture_time_millis,
+    agent_dialogue_prepared_text_objects, agent_mcp_project_context_from_hir,
+    agent_object_capture_refs_for_page, agent_object_id_color, agent_observe_capture_time_seconds,
+    agent_observe_effective_steps, agent_observe_layout_scene_graph,
+    agent_observe_report_capture_time_millis, agent_observed_layers, agent_observed_scroll_regions,
+    agent_observed_views, agent_observed_virtual_lists, agent_overlay_svg,
+    agent_view_prepared_text_objects, dedupe_agent_action_targets, hash_hex,
+    load_and_check_selection, native_host_policy_for_selection, report_path,
+    resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
@@ -678,9 +678,10 @@ fn player_observed_objects(
                 player_semantic_object(step, node, control, &view_by_target)
             }),
     );
-    if let Some((textbox, entry)) = presentation.textboxes.latest_active()
-        && let Some(stage) = entry.current_stage()
-    {
+    for (textbox, entry, stage) in presentation.textboxes.iter().filter_map(|textbox| {
+        let entry = textbox.active_entry()?;
+        Some((textbox, entry, entry.current_stage()?))
+    }) {
         let mut dialogue_objects = agent_dialogue_prepared_text_objects(
             step,
             usize::try_from(textbox.id().get()).unwrap_or(usize::MAX),

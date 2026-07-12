@@ -5,25 +5,21 @@ use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
-use arcweft_presentation::fx::{
-    FxApplication, FxApplicationResolver, FxDiagnostic, FxDiagnosticCode, FxDiagnosticContext,
-    FxEvaluationBinding,
-};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
-    FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderFocusAutoScrollPolicy,
+    FramePlanError, PreparedFrame, RenderChoiceItem, RenderFocusAutoScrollPolicy,
     RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy,
     RenderScrollOverflow, RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport,
     SharedFramePlanContext, SharedFramePlanStats,
 };
-use arcweft_runtime_driver::dialogue::{TextBoxEntryState, TextBoxRuntimeId};
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
 mod focus_navigation;
 mod surfaces;
+mod textboxes;
 mod view_text;
 
 /// Player-owned frame inputs shared by native, web, and Agent observation.
@@ -38,53 +34,6 @@ pub struct PlayerFrameRequest<'a> {
     pub visual_time_millis: u64,
     pub dialogue_reveal_complete: bool,
     pub preferences: RenderPreferences,
-}
-
-struct DialogueFxResolver<'a> {
-    textbox: TextBoxRuntimeId,
-    entry: &'a TextBoxEntryState,
-    definitions: &'a FxDefinitions,
-    runtime: &'a arcweft_runtime_driver::fx_runtime::BundleFxRuntimeSnapshot,
-}
-
-impl FxApplicationResolver for DialogueFxResolver<'_> {
-    fn resolve<'a>(
-        &'a self,
-        application: &FxApplication,
-    ) -> Result<FxEvaluationBinding<'a>, Box<FxDiagnostic>> {
-        let instance_id = self.entry.fx_instance_id(self.textbox, application);
-        let context = FxDiagnosticContext {
-            definition: Some(application.definition().clone()),
-            instance: Some(instance_id),
-            source_range: application.source_range(),
-            ..FxDiagnosticContext::default()
-        };
-        let definition = self
-            .definitions
-            .get(application.definition())
-            .ok_or_else(|| {
-                Box::new(FxDiagnostic::error(
-                    FxDiagnosticCode::MissingDefinition,
-                    context.clone(),
-                    format!(
-                        "bundle has no definition `{}` for RichText application",
-                        application.definition()
-                    ),
-                ))
-            })?;
-        let instance = self.runtime.instance(instance_id).ok_or_else(|| {
-            Box::new(FxDiagnostic::error(
-                FxDiagnosticCode::ProgramValidation,
-                context,
-                "runtime did not retain the RichText Fx application instance",
-            ))
-        })?;
-        Ok(FxEvaluationBinding {
-            definition,
-            instance,
-            runtime_time: self.runtime.logical_time,
-        })
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -202,6 +151,12 @@ impl From<BundleViewportFit> for PlayerFrameFit {
 }
 
 impl PlayerFramePlanner {
+    /// Returns standard Rust-backed `TextBox` View bounds in stable target order.
+    #[must_use]
+    pub fn standard_textbox_bounds(viewport: RenderViewport, count: usize) -> Vec<HitRect> {
+        textboxes::standard_textbox_bounds(viewport, count)
+    }
+
     pub fn render_scene(
         input: &mut InputController,
         request: PlayerFrameRequest<'_>,
@@ -213,15 +168,16 @@ impl PlayerFramePlanner {
             &text_inputs,
         )?;
         Ok(RenderScene {
-            dialogue: request
-                .presentation
-                .textboxes
-                .latest_active()
-                .and_then(|(_, entry)| entry.current_stage())
-                .map(|stage| {
-                    RenderDialogue::from_display_stage(stage)
-                        .with_reveal_complete(request.dialogue_reveal_complete)
-                }),
+            dialogue: None,
+            content_avoidance_regions: textboxes::standard_textbox_bounds(
+                request.viewport,
+                request
+                    .presentation
+                    .textboxes
+                    .iter()
+                    .filter(|textbox| textbox.active_entry().is_some())
+                    .count(),
+            ),
             choices: request
                 .presentation
                 .choices
@@ -485,7 +441,7 @@ impl PlayerFramePlannerState {
         request: PlayerFrameRequest<'_>,
         content_rect: Option<ContentRect>,
     ) -> Result<PreparedFrame, PlayerFrameError> {
-        let frame = self.prepare_base_frame(scene, presentation)?;
+        let frame = self.prepare_base_frame(scene)?;
         let mut frame = map_prepared_frame(frame, request, content_rect);
         let prepared_view_text = view_text::prepare_runtime_view_text(
             &mut self.shared,
@@ -504,35 +460,23 @@ impl PlayerFramePlannerState {
             content_rect,
         );
         self.shared.finalize_text(&mut frame)?;
-        if let Some((textbox, entry)) = presentation.textboxes.latest_active()
-            && let Some(stage) = entry.current_stage()
-        {
-            let fx_resolver = DialogueFxResolver {
-                textbox: textbox.id(),
-                entry,
-                definitions: request.fx_definitions,
-                runtime: &presentation.fx,
-            };
-            self.shared.finalize_dialogue_stage(
-                &mut frame,
-                stage,
-                request.dialogue_reveal_complete,
-                &fx_resolver,
-            )?;
-        }
+        let textbox_request = textboxes::TextBoxViewFrameRequest::new(
+            scene,
+            presentation,
+            request.fx_definitions,
+            request.visual_time_millis,
+            request.dialogue_reveal_complete,
+            content_rect,
+        );
+        textboxes::push_textbox_views(&mut self.shared, &mut frame, &textbox_request)?;
         Ok(frame)
     }
 
     fn prepare_base_frame(
         &mut self,
         scene: &RenderScene,
-        presentation: &BundlePresentationSnapshot,
     ) -> Result<PreparedFrame, PlayerFrameError> {
-        let mut frame = self.shared.prepare(scene)?;
-        frame.set_dialogue_advance_available(
-            presentation.textboxes.waiting_entries().next().is_some(),
-        );
-        Ok(frame)
+        Ok(self.shared.prepare(scene)?)
     }
 }
 
