@@ -106,6 +106,11 @@ fn merge_value_inventories(
     }
     for definition in &mut right.definitions {
         for parameter in &mut definition.parameters {
+            if let Some(value_slot) = &mut parameter.value_slot {
+                *value_slot = value_slot
+                    .checked_add(parameter_offset)
+                    .ok_or_else(|| "View definition parameter slot overflow".to_owned())?;
+            }
             if let Some(default_program) = &mut parameter.default_program {
                 remap(default_program, program_offset)?;
             }

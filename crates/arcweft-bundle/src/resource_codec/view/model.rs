@@ -159,6 +159,8 @@ pub struct ViewParameterResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_type: Option<FxRuntimeType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_slot: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_program: Option<ViewValueProgramId>,
 }
 
@@ -182,10 +184,11 @@ pub enum ViewValueInputNamespace {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ViewValueInputSource {
+    DefinitionParameter { view: String, name: String },
     Projection { path: Vec<String> },
     LifetimeProjection { scope: String, path: Vec<String> },
-    Local { name: String },
-    RepeatOrdinal { binding: String },
+    Local { view: String, name: String },
+    RepeatOrdinal { view: String, binding: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

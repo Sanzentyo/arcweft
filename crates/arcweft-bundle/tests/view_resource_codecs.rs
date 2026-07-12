@@ -16,7 +16,8 @@ use arcweft_bundle::resource_codec::view::{
     ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewTextBlockResource, ViewTextResource,
     ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
     ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
-    ViewThemeResource, migrated_view_section_compatibility,
+    ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
+    migrated_view_section_compatibility,
 };
 
 use arcweft_bundle::resource_codec::{
@@ -139,6 +140,21 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
         name: Some(name.to_owned()),
         value_program: ViewValueProgramId(value_program),
     };
+    let value_program = |id, value: FxRuntimeValue| {
+        ViewValueProgram::validate(
+            ViewValueProgramId(id),
+            ValueProgramSchema::new(
+                vec![FxRuntimeType::I32, FxRuntimeType::F32],
+                vec![],
+                value.value_type(),
+            ),
+            vec![
+                ValueInstruction::Constant { value },
+                ValueInstruction::Return,
+            ],
+        )
+        .unwrap()
+    };
     let program = |arguments| ViewProgramResource {
         program_id: "view.program.nested".to_owned(),
         definitions: vec![
@@ -156,12 +172,14 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                         ordinal: 0,
                         name: "count".to_owned(),
                         value_type: Some(FxRuntimeType::I32),
+                        value_slot: Some(0),
                         default_program: None,
                     },
                     ViewParameterResource {
                         ordinal: 1,
                         name: "opacity".to_owned(),
                         value_type: Some(FxRuntimeType::F32),
+                        value_slot: Some(1),
                         default_program: None,
                     },
                 ],
@@ -169,11 +187,28 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
             },
         ],
         value_programs: vec![
-            constant_value_program(ViewValueProgramId(0), FxRuntimeValue::I32(2)),
-            constant_value_program(
-                ViewValueProgramId(1),
-                FxRuntimeValue::F32(FiniteF32::try_new(0.5).unwrap()),
-            ),
+            value_program(0, FxRuntimeValue::I32(2)),
+            value_program(1, FxRuntimeValue::F32(FiniteF32::try_new(0.5).unwrap())),
+        ],
+        value_inputs: vec![
+            ViewValueInputResource {
+                namespace: ViewValueInputNamespace::Parameter,
+                slot: 0,
+                value_type: FxRuntimeType::I32,
+                source: ViewValueInputSource::DefinitionParameter {
+                    view: "view.Child".to_owned(),
+                    name: "count".to_owned(),
+                },
+            },
+            ViewValueInputResource {
+                namespace: ViewValueInputNamespace::Parameter,
+                slot: 1,
+                value_type: FxRuntimeType::F32,
+                source: ViewValueInputSource::DefinitionParameter {
+                    view: "view.Child".to_owned(),
+                    name: "opacity".to_owned(),
+                },
+            },
         ],
         instructions: vec![ViewProgramInstruction::CallView {
             view: "view.Child".to_owned(),

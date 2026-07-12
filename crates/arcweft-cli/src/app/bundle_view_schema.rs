@@ -25,6 +25,7 @@ use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 use thiserror::Error;
 
 const MAX_VIEW_STATE_PROJECTIONS: usize = 256;
+const MAX_VIEW_PARAMETER_PROJECTIONS: usize = 256;
 
 mod literal;
 
@@ -37,7 +38,7 @@ struct PendingProgram {
     instructions: Vec<ValueInstruction>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct InputSlot {
     slot: u16,
     value_type: FxRuntimeType,
@@ -55,8 +56,11 @@ pub(in crate::app) struct CompiledViewValues {
 pub(in crate::app) struct ViewValueProgramCompiler {
     pending: Vec<PendingProgram>,
     inputs: Vec<ViewValueInputResource>,
-    input_slots: BTreeMap<ViewValueInputSource, InputSlot>,
+    input_slots: BTreeMap<(ViewValueInputNamespace, ViewValueInputSource), InputSlot>,
+    parameter_types: Vec<FxRuntimeType>,
     state_types: Vec<FxRuntimeType>,
+    current_view: Option<String>,
+    current_parameters: BTreeMap<String, InputSlot>,
     local_types: BTreeMap<String, FxRuntimeType>,
 }
 
@@ -82,6 +86,10 @@ pub(in crate::app) enum ViewValueCompileError {
     },
     #[error("View value program inventory exceeds its {limit} state projections")]
     TooManyStateProjections { limit: usize },
+    #[error("View value program inventory exceeds its {limit} parameter projections")]
+    TooManyParameterProjections { limit: usize },
+    #[error("View value compilation requires an active View definition")]
+    MissingDefinitionContext,
     #[error("View value program inventory exceeds u32::MAX programs")]
     TooManyPrograms,
     #[error("View local binding requires a single typed identifier pattern")]
@@ -93,6 +101,29 @@ pub(in crate::app) enum ViewValueCompileError {
 }
 
 impl ViewValueProgramCompiler {
+    pub(in crate::app) fn begin_definition(
+        &mut self,
+        view: &str,
+        parameters: impl IntoIterator<Item = (String, FxRuntimeType)>,
+    ) -> Result<BTreeMap<String, u16>, ViewValueCompileError> {
+        self.current_view = Some(view.to_owned());
+        self.current_parameters.clear();
+        self.local_types.clear();
+        let mut slots = BTreeMap::new();
+        for (name, value_type) in parameters {
+            let source = ViewValueInputSource::DefinitionParameter {
+                view: view.to_owned(),
+                name: name.clone(),
+            };
+            let slot =
+                self.register_input(ViewValueInputNamespace::Parameter, source, value_type)?;
+            self.current_parameters
+                .insert(name.clone(), InputSlot { slot, value_type });
+            slots.insert(name, slot);
+        }
+        Ok(slots)
+    }
+
     pub(in crate::app) fn is_local(&self, name: &str) -> bool {
         self.local_types.contains_key(name)
     }
@@ -235,9 +266,14 @@ impl ViewValueProgramCompiler {
             .simple_binding_name()
             .unwrap_or("_item")
             .to_owned();
+        let view = self
+            .current_view
+            .clone()
+            .ok_or(ViewValueCompileError::MissingDefinitionContext)?;
         let mut instructions = Vec::new();
-        self.emit_projection(
-            ViewValueInputSource::RepeatOrdinal { binding },
+        self.emit_input(
+            ViewValueInputNamespace::State,
+            ViewValueInputSource::RepeatOrdinal { view, binding },
             FxRuntimeType::I32,
             &mut instructions,
         )?;
@@ -252,7 +288,8 @@ impl ViewValueProgramCompiler {
             let discriminant = symbol_discriminant(&format!("{source:?}"));
             let label = u32::from_le_bytes(discriminant.to_le_bytes());
             let mut instructions = Vec::new();
-            self.emit_projection(
+            self.emit_input(
+                ViewValueInputNamespace::State,
                 ViewValueInputSource::Projection {
                     path: vec!["await".to_owned(), format!("call_{label:08x}")],
                 },
@@ -266,7 +303,11 @@ impl ViewValueProgramCompiler {
 
     pub(in crate::app) fn finish(self) -> Result<CompiledViewValues, ViewValueCompileError> {
         let schema = |return_type| {
-            ValueProgramSchema::new(Vec::new(), self.state_types.clone(), return_type)
+            ValueProgramSchema::new(
+                self.parameter_types.clone(),
+                self.state_types.clone(),
+                return_type,
+            )
         };
         let programs = self
             .pending
@@ -345,7 +386,8 @@ impl ViewValueProgramCompiler {
             }
             Expr::LifetimePath { key, .. } => {
                 let value_type = expected.ok_or_else(|| missing_expected(expression))?;
-                self.emit_projection(
+                self.emit_input(
+                    ViewValueInputNamespace::State,
                     ViewValueInputSource::LifetimeProjection {
                         scope: key.scope().as_str().to_owned(),
                         path: key.path().to_vec(),
@@ -413,8 +455,34 @@ impl ViewValueProgramCompiler {
         let value_type = expected.ok_or_else(|| ViewValueCompileError::MissingExpectedType {
             expression: path.to_owned(),
         })?;
+        if let Some(parameter) = self.current_parameters.get(path).copied() {
+            if parameter.value_type != value_type {
+                let view = self
+                    .current_view
+                    .clone()
+                    .ok_or(ViewValueCompileError::MissingDefinitionContext)?;
+                return Err(ViewValueCompileError::ProjectionTypeConflict {
+                    projection: ViewValueInputSource::DefinitionParameter {
+                        view,
+                        name: path.to_owned(),
+                    },
+                    existing: parameter.value_type,
+                    requested: value_type,
+                });
+            }
+            instructions.push(ValueInstruction::LoadParameter {
+                slot: parameter.slot,
+                ty: value_type,
+            });
+            return Ok(value_type);
+        }
         let source = if self.local_types.contains_key(path) {
+            let view = self
+                .current_view
+                .clone()
+                .ok_or(ViewValueCompileError::MissingDefinitionContext)?;
             ViewValueInputSource::Local {
+                view,
                 name: path.to_owned(),
             }
         } else {
@@ -422,17 +490,44 @@ impl ViewValueProgramCompiler {
                 path: path.split('.').map(str::to_owned).collect(),
             }
         };
-        self.emit_projection(source, value_type, instructions)?;
+        self.emit_input(
+            ViewValueInputNamespace::State,
+            source,
+            value_type,
+            instructions,
+        )?;
         Ok(value_type)
     }
 
-    fn emit_projection(
+    fn emit_input(
         &mut self,
+        namespace: ViewValueInputNamespace,
         source: ViewValueInputSource,
         value_type: FxRuntimeType,
         instructions: &mut Vec<ValueInstruction>,
     ) -> Result<(), ViewValueCompileError> {
-        let slot = if let Some(existing) = self.input_slots.get(&source) {
+        let slot = self.register_input(namespace, source, value_type)?;
+        instructions.push(match namespace {
+            ViewValueInputNamespace::Parameter => ValueInstruction::LoadParameter {
+                slot,
+                ty: value_type,
+            },
+            ViewValueInputNamespace::State => ValueInstruction::LoadState {
+                slot,
+                ty: value_type,
+            },
+        });
+        Ok(())
+    }
+
+    fn register_input(
+        &mut self,
+        namespace: ViewValueInputNamespace,
+        source: ViewValueInputSource,
+        value_type: FxRuntimeType,
+    ) -> Result<u16, ViewValueCompileError> {
+        let key = (namespace, source.clone());
+        let slot = if let Some(existing) = self.input_slots.get(&key) {
             if existing.value_type != value_type {
                 return Err(ViewValueCompileError::ProjectionTypeConflict {
                     projection: source,
@@ -442,32 +537,45 @@ impl ViewValueProgramCompiler {
             }
             existing.slot
         } else {
-            if self.state_types.len() >= MAX_VIEW_STATE_PROJECTIONS {
-                return Err(ViewValueCompileError::TooManyStateProjections {
-                    limit: MAX_VIEW_STATE_PROJECTIONS,
-                });
-            }
-            let slot = u16::try_from(self.state_types.len()).map_err(|_| {
-                ViewValueCompileError::TooManyStateProjections {
-                    limit: MAX_VIEW_STATE_PROJECTIONS,
+            let types = match namespace {
+                ViewValueInputNamespace::Parameter => {
+                    if self.parameter_types.len() >= MAX_VIEW_PARAMETER_PROJECTIONS {
+                        return Err(ViewValueCompileError::TooManyParameterProjections {
+                            limit: MAX_VIEW_PARAMETER_PROJECTIONS,
+                        });
+                    }
+                    &mut self.parameter_types
                 }
+                ViewValueInputNamespace::State => {
+                    if self.state_types.len() >= MAX_VIEW_STATE_PROJECTIONS {
+                        return Err(ViewValueCompileError::TooManyStateProjections {
+                            limit: MAX_VIEW_STATE_PROJECTIONS,
+                        });
+                    }
+                    &mut self.state_types
+                }
+            };
+            let slot = u16::try_from(types.len()).map_err(|_| match namespace {
+                ViewValueInputNamespace::Parameter => {
+                    ViewValueCompileError::TooManyParameterProjections {
+                        limit: MAX_VIEW_PARAMETER_PROJECTIONS,
+                    }
+                }
+                ViewValueInputNamespace::State => ViewValueCompileError::TooManyStateProjections {
+                    limit: MAX_VIEW_STATE_PROJECTIONS,
+                },
             })?;
-            self.state_types.push(value_type);
+            types.push(value_type);
             self.inputs.push(ViewValueInputResource {
-                namespace: ViewValueInputNamespace::State,
+                namespace,
                 slot,
                 value_type,
                 source: source.clone(),
             });
-            self.input_slots
-                .insert(source, InputSlot { slot, value_type });
+            self.input_slots.insert(key, InputSlot { slot, value_type });
             slot
         };
-        instructions.push(ValueInstruction::LoadState {
-            slot,
-            ty: value_type,
-        });
-        Ok(())
+        Ok(slot)
     }
 
     fn emit_binary(

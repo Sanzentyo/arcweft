@@ -39,7 +39,7 @@ CompiledPureU64Inputs,struct,crates/arcweft-lang-jit-cranelift/src/lib.rs,351,2
 CompiledPureU64Inputs,struct,crates/arcweft-runtime-accelerator/src/lib.rs,91,2
 CompiledPureU8Inputs,struct,crates/arcweft-lang-jit-cranelift/src/lib.rs,329,2
 CompiledPureU8Inputs,struct,crates/arcweft-runtime-accelerator/src/lib.rs,89,2
-ContrastPreference,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,900,2
+ContrastPreference,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,903,2
 ContrastPreference,enum,crates/arcweft-presentation/src/appearance.rs,25,2
 CraneliftPureFunctionBackend,struct,crates/arcweft-lang-jit-cranelift/src/lib.rs,50,2
 CraneliftPureFunctionBackend,struct,crates/arcweft-runtime-accelerator/src/lib.rs,81,2
@@ -49,7 +49,7 @@ DialogueTag,enum,crates/arcweft-dialogue/src/lib.rs,61,2
 DialogueTag,struct,crates/arcweft-lang-syntax/src/ast/dialogue.rs,49,2
 EffectCapability,struct,crates/arcweft-agent-protocol/src/artifact.rs,15,2
 EffectCapability,struct,crates/arcweft-lang-sema/src/env.rs,100,2
-EnterKeyHint,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,1113,2
+EnterKeyHint,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,1116,2
 EnterKeyHint,enum,crates/arcweft-presentation/src/text_input.rs,347,2
 EntityStore,struct,crates/arcweft-adt/src/lib.rs,307,2
 EntityStore,struct,crates/arcweft-view/src/entity.rs,35,2
@@ -122,16 +122,16 @@ SourceSpan,struct,crates/arcweft-source/src/lib.rs,52,2
 SourceSpan,struct,crates/arcweft-verify/src/lib.rs,54,2
 StableHash,struct,crates/arcweft-adt/src/lib.rs,633,2
 StableHash,struct,crates/arcweft-agent-protocol/src/ids.rs,17,2
-StyleAssignOp,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,833,2
+StyleAssignOp,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,836,2
 StyleAssignOp,enum,crates/arcweft-view/src/style_authoring.rs,53,2
 StyleFileMode,enum,crates/arcweft-lang-syntax/src/ast/style.rs,56,2
 StyleFileMode,enum,crates/arcweft-view/src/style_authoring.rs,31,2
-StyleSyntax,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,753,3
+StyleSyntax,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,756,3
 StyleSyntax,enum,crates/arcweft-lang-syntax/src/ast/style.rs,10,3
 StyleSyntax,enum,crates/arcweft-view/src/style_authoring.rs,12,3
-SystemColor,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,854,2
+SystemColor,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,857,2
 SystemColor,enum,crates/arcweft-presentation/src/appearance.rs,48,2
-TextAssistPolicy,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,1062,2
+TextAssistPolicy,enum,crates/arcweft-bundle/src/resource_codec/view/model.rs,1065,2
 TextAssistPolicy,enum,crates/arcweft-presentation/src/text_input.rs,292,2
 TextCharacterBounds,struct,crates/arcweft-glyphon/src/prepared_text.rs,94,2
 TextCharacterBounds,struct,crates/arcweft-presentation/src/text_input.rs,205,2
@@ -143,7 +143,7 @@ TraitMethodCallOutcome,struct,crates/arcweft-core/src/engine/eval/calls.rs,17,2
 TraitMethodCallOutcome,enum,crates/arcweft-lang-sema/src/checker/expr/support.rs,66,2
 ViewCall,struct,crates/arcweft-lang-syntax/src/ast/view.rs,61,2
 ViewCall,struct,crates/arcweft-view/src/program.rs,243,2
-ViewStyleRule,struct,crates/arcweft-bundle/src/resource_codec/view/model.rs,775,2
+ViewStyleRule,struct,crates/arcweft-bundle/src/resource_codec/view/model.rs,778,2
 ViewStyleRule,struct,crates/arcweft-view/src/style.rs,119,2
 Visibility,enum,crates/arcweft-lang-sema/src/effect_model.rs,31,2
 Visibility,enum,crates/arcweft-lang-syntax/src/ast/common.rs,84,2

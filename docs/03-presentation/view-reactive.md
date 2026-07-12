@@ -50,13 +50,16 @@ View 宣言を、次の閉じた定義 record として保持する。
 
 - package/module scoped `public_id`
 - 共通 instruction inventory 内の半開区間 `body`
-- authored order の parameter schema（ordinal、name、scalar runtime type、typed default program）
+- authored order の parameter schema（ordinal、name、scalar runtime type、
+  definition-scoped value slot、typed default program）
 - mount-state schema hash
 
 `CallView` は対象 definition ID と、parameter ordinal/name に結び付いた
 `ViewValueProgramId` を保持する。必須引数の欠落、未知の引数、型不一致、重複
 binding、未知の View は bundle 作成または decode 時の structured failure であり、
 no-op へは落とさない。空の View body は長さ 0 の正規 span として有効である。
+同名 parameter でも View definition が異なれば別 slot であり、型を共有・推測
+しない。local と repeat ordinal の state slot も definition ID で scope される。
 
 flow から mount された View を root とし、View body 内の nested View call を
 再帰的にたどった到達可能な定義だけを bundle に含める。`mod game.opening` 内の

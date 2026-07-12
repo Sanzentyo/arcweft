@@ -107,8 +107,11 @@ flow test {
 
 #[test]
 fn nested_view_calls_retain_definition_spans_typed_parameters_and_reachability() {
-    use arcweft_bundle::resource_codec::view::{ViewProgramInstruction, ViewProgramResource};
+    use arcweft_bundle::resource_codec::view::{
+        ViewProgramResource, ViewValueInputNamespace, ViewValueInputSource,
+    };
     use arcweft_presentation::fx::FxRuntimeType;
+    use arcweft_view::ViewValueProgramInventory;
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
@@ -118,8 +121,17 @@ view Child(value: i32 = 2) {
   }
 }
 
+view Toggle(value: bool = false) {
+  if value {
+    Text("enabled")
+  }
+}
+
 view Parent() {
-  Child(value = 3)
+  Column {
+    Child(value = 3)
+    Toggle(value = true)
+  }
 }
 
 flow test {
@@ -132,7 +144,7 @@ flow test {
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
-    assert_eq!(program.definitions.len(), 2);
+    assert_eq!(program.definitions.len(), 3);
     let child = program
         .definitions
         .iter()
@@ -143,8 +155,14 @@ flow test {
         .iter()
         .find(|definition| definition.public_id == "view.Parent")
         .expect("mounted parent definition");
+    let toggle = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id == "view.Toggle")
+        .expect("second transitively reachable child definition");
     assert_eq!(child.body.start_instruction, 0);
-    assert_eq!(child.body.end_instruction, parent.body.start_instruction);
+    assert_eq!(child.body.end_instruction, toggle.body.start_instruction);
+    assert_eq!(toggle.body.end_instruction, parent.body.start_instruction);
     assert_eq!(
         parent.body.end_instruction as usize,
         program.instructions.len()
@@ -153,7 +171,46 @@ flow test {
     assert_eq!(child.parameters[0].ordinal, 0);
     assert_eq!(child.parameters[0].name, "value");
     assert_eq!(child.parameters[0].value_type, Some(FxRuntimeType::I32));
+    assert_eq!(child.parameters[0].value_slot, Some(0));
     assert!(child.parameters[0].default_program.is_some());
+    assert_eq!(toggle.parameters[0].name, "value");
+    assert_eq!(toggle.parameters[0].value_type, Some(FxRuntimeType::Bool));
+    assert_eq!(toggle.parameters[0].value_slot, Some(1));
+    assert!(matches!(
+        &program.value_inputs[0].source,
+        ViewValueInputSource::DefinitionParameter { view, name }
+            if view == "view.Child" && name == "value"
+    ));
+    assert_eq!(
+        program.value_inputs[0].namespace,
+        ViewValueInputNamespace::Parameter
+    );
+    assert!(matches!(
+        &program.value_inputs[1].source,
+        ViewValueInputSource::DefinitionParameter { view, name }
+            if view == "view.Toggle" && name == "value"
+    ));
+    let inventory = ViewValueProgramInventory::from_programs(program.value_programs.clone())
+        .expect("common typed View value inventory");
+    assert_eq!(
+        inventory.parameter_types(),
+        &[FxRuntimeType::I32, FxRuntimeType::Bool]
+    );
+    assert_nested_view_call_bindings(&program);
+
+    let bytes = program
+        .encode_canonical_section()
+        .expect("nested View program encodes");
+    let decoded =
+        ViewProgramResource::decode_canonical_section(&bytes).expect("nested View program decodes");
+    assert_eq!(decoded.encode_canonical_section().unwrap(), bytes);
+}
+
+fn assert_nested_view_call_bindings(
+    program: &arcweft_bundle::resource_codec::view::ViewProgramResource,
+) {
+    use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
+
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
         ViewProgramInstruction::CallView { view, arguments, .. }
@@ -162,13 +219,13 @@ flow test {
                 && arguments[0].ordinal == 0
                 && arguments[0].name.as_deref() == Some("value")
     )));
-
-    let bytes = program
-        .encode_canonical_section()
-        .expect("nested View program encodes");
-    let decoded =
-        ViewProgramResource::decode_canonical_section(&bytes).expect("nested View program decodes");
-    assert_eq!(decoded.encode_canonical_section().unwrap(), bytes);
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        ViewProgramInstruction::CallView { view, arguments, .. }
+            if view == "view.Toggle"
+                && arguments.len() == 1
+                && arguments[0].ordinal == 0
+    )));
 }
 
 #[test]

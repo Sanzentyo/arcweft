@@ -199,7 +199,16 @@ pub(in crate::app) fn view_sidecars(
                     view: public_id.clone(),
                 }
             })?;
-            let parameters = compile_view_parameters(&schema, &mut state.value_compiler)?;
+            let parameter_slots = state.value_compiler.begin_definition(
+                &public_id,
+                schema.parameters.iter().filter_map(|parameter| {
+                    parameter
+                        .value_type
+                        .map(|value_type| (parameter.name.clone(), value_type))
+                }),
+            )?;
+            let parameters =
+                compile_view_parameters(&schema, &parameter_slots, &mut state.value_compiler)?;
             let start_instruction = usize_to_u32_saturating(state.instructions.len());
             lower_view_body(view.id(), body, &mut state)?;
             let end_instruction = usize_to_u32_saturating(state.instructions.len());
@@ -344,6 +353,7 @@ fn view_definition_schemas(
 
 fn compile_view_parameters(
     schema: &ViewDefinitionSchema,
+    parameter_slots: &BTreeMap<String, u16>,
     compiler: &mut ViewValueProgramCompiler,
 ) -> Result<Vec<ViewParameterResource>, ViewSidecarError> {
     schema
@@ -375,6 +385,7 @@ fn compile_view_parameters(
                 ordinal,
                 name: parameter.name.clone(),
                 value_type: parameter.value_type,
+                value_slot: parameter_slots.get(&parameter.name).copied(),
                 default_program,
             })
         })

@@ -697,6 +697,12 @@ Executable View definition-contract closure at the succeeding working change:
   canonicalized by parameter ordinal and validated for target existence,
   duplicate/missing bindings, authored-name agreement, program existence, and
   scalar result type.
+- scalar View parameters now occupy the common value inventory's typed
+  `parameter` schema and retain their exact definition-scoped slot on the
+  parameter record. Local and repeat-ordinal state inputs also include the
+  owning definition ID. Two definitions may therefore use the same parameter
+  or local name with different types without aliasing; codec validation proves
+  the parameter record, input source, namespace, slot, and type agree.
 - the provisional single `root_view`, unowned `child_spans`, digest-only state
   schema list, and `CallView.child_span` were replaced directly; this is an
   unpublished internal format, so no alias, dual reader, migration shim, or
@@ -733,7 +739,7 @@ All commands pass. The syntax suite retains the explicit rejection of
 `mod game::opening` and exercises canonical `mod game.opening`; the bundle
 suite passes 80 unit tests and every integration suite, including 15 View codec
 tests; and the focused CLI bundle suite passes 41 tests. The structural audit
-records 1,250 Rust files / 627,340 physical Rust LOC, 0 errors, and 143 tracked
+records 1,250 Rust files / 627,602 physical Rust LOC, 0 errors, and 143 tracked
 warnings. The audit README records exact changed-file sizes, current largest
 workspace Rust files, their classifications/responsibilities, and the absence
 of dependency-edge changes.

@@ -86,13 +86,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-bundle/src/resource_codec/view/codec.rs`
 
-1751 physical LOC exceeds the 1200 LOC review threshold
+1794 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-bundle/src/resource_codec/view/model.rs`
 
-2331 physical LOC exceeds the 1200 LOC review threshold
+2334 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 

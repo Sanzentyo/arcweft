@@ -415,9 +415,23 @@ impl ViewProgramResource {
                 }
                 ViewValueInputNamespace::State => (inventory.state_types(), &mut state),
             };
+            let source_matches_namespace = matches!(
+                (input.namespace, &input.source),
+                (
+                    ViewValueInputNamespace::Parameter,
+                    ViewValueInputSource::DefinitionParameter { .. }
+                ) | (
+                    ViewValueInputNamespace::State,
+                    ViewValueInputSource::Projection { .. }
+                        | ViewValueInputSource::LifetimeProjection { .. }
+                        | ViewValueInputSource::Local { .. }
+                        | ViewValueInputSource::RepeatOrdinal { .. }
+                )
+            );
             if !slots.insert(input.slot)
                 || types.get(usize::from(input.slot)).copied() != Some(input.value_type)
                 || !valid_value_input_source(&input.source)
+                || !source_matches_namespace
             {
                 return Err(SectionCodecError::NonCanonicalTable("view_value_inputs"));
             }
@@ -480,6 +494,30 @@ impl ViewProgramResource {
                     parameter.default_program,
                     parameter.value_type,
                 )?;
+                match (parameter.value_type, parameter.value_slot) {
+                    (Some(value_type), Some(value_slot)) => {
+                        let expected_source = ViewValueInputSource::DefinitionParameter {
+                            view: definition.public_id.clone(),
+                            name: parameter.name.clone(),
+                        };
+                        if !self.value_inputs.iter().any(|input| {
+                            input.namespace == ViewValueInputNamespace::Parameter
+                                && input.slot == value_slot
+                                && input.value_type == value_type
+                                && input.source == expected_source
+                        }) {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_definition_parameter_slots",
+                            ));
+                        }
+                    }
+                    (None, None) => {}
+                    (Some(_), None) | (None, Some(_)) => {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_definition_parameter_slots",
+                        ));
+                    }
+                }
             }
         }
         Ok(())
@@ -1596,6 +1634,9 @@ fn valid_identifier(value: &str) -> bool {
 
 fn valid_value_input_source(source: &ViewValueInputSource) -> bool {
     match source {
+        ViewValueInputSource::DefinitionParameter { view, name } => {
+            !view.is_empty() && valid_identifier(name)
+        }
         ViewValueInputSource::Projection { path } => {
             !path.is_empty() && path.iter().all(|segment| valid_identifier(segment))
         }
@@ -1604,8 +1645,10 @@ fn valid_value_input_source(source: &ViewValueInputSource) -> bool {
                 && !path.is_empty()
                 && path.iter().all(|segment| valid_identifier(segment))
         }
-        ViewValueInputSource::Local { name } => valid_identifier(name),
-        ViewValueInputSource::RepeatOrdinal { binding } => valid_identifier(binding),
+        ViewValueInputSource::Local { view, name } => !view.is_empty() && valid_identifier(name),
+        ViewValueInputSource::RepeatOrdinal { view, binding } => {
+            !view.is_empty() && valid_identifier(binding)
+        }
     }
 }
 
