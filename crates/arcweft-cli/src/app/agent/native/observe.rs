@@ -190,7 +190,6 @@ impl<'a> NativeAgentScriptSession<'a> {
                 values: options.values.clone(),
                 viewport_width: options.viewport_width,
                 viewport_height: options.viewport_height,
-                textbox_height: options.textbox_height,
                 image: None,
                 capture: None,
                 layer: None,
@@ -714,7 +713,6 @@ pub(super) fn agent_hit_test_observe_options(options: &AgentHitTestOptions) -> A
         values: options.values.clone(),
         viewport_width: options.viewport_width,
         viewport_height: options.viewport_height,
-        textbox_height: options.textbox_height,
         image: None,
         capture: None,
         layer: None,
@@ -995,10 +993,6 @@ pub(super) fn validate_agent_observe_options(
     }
     if options.viewport_width == 0 || options.viewport_height == 0 {
         eprintln!("error: --viewport-width and --viewport-height must be greater than zero");
-        return Err(ExitCode::from(2));
-    }
-    if options.textbox_height == Some(0) {
-        eprintln!("error: --textbox-height must be greater than zero");
         return Err(ExitCode::from(2));
     }
     if options.layer.is_some() && options.object.is_some() {

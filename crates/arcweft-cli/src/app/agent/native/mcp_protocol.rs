@@ -1054,7 +1054,6 @@ pub(super) fn agent_mcp_script_run_options(
             "arcweft.script.run",
         )?
         .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT),
-        textbox_height: agent_mcp_u32_argument(arguments, "textbox_height", "arcweft.script.run")?,
         capture_time_seconds: agent_mcp_capture_time_argument(arguments, "arcweft.script.run")?,
         max_steps: agent_mcp_usize_argument(arguments, "max_steps").unwrap_or(256),
         max_ops: agent_mcp_usize_argument(arguments, "max_ops").unwrap_or(1024),

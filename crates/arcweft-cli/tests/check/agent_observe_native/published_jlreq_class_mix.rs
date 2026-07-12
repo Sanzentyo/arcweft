@@ -1010,8 +1010,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ plain Western word class-mix source");
@@ -1055,8 +1055,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.8.20.21")
         .arg("--out")
@@ -1197,8 +1195,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ Western word class-mix source");
     json
@@ -1241,8 +1239,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.9.21.22")
         .arg("--out")
@@ -1423,8 +1419,8 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ apostrophe Western word class-mix source");
@@ -1485,8 +1481,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg(case.object_id)
         .arg("--out")
@@ -1720,8 +1714,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ accented Latin word class-mix source");
@@ -1765,8 +1759,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.9.21.23")
         .arg("--out")
@@ -1939,8 +1931,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ decomposed accented Latin word class-mix source");
@@ -1985,8 +1977,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.9.21.24")
         .arg("--out")
@@ -2121,8 +2111,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp ZWJ grapheme strict class-mix source");
     json
@@ -2162,8 +2152,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.29")
         .arg("--out")
@@ -2292,8 +2280,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp decomposed kana strict class-mix source");
     json
@@ -2334,8 +2322,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.24")
         .arg("--out")
@@ -2464,8 +2450,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp variation selector strict class-mix source");
     json
@@ -2509,8 +2495,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.24")
         .arg("--out")
@@ -2638,8 +2622,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp emoji modifier strict class-mix source");
     json
@@ -2680,8 +2664,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.26")
         .arg("--out")
@@ -2810,8 +2792,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp regional indicator strict class-mix source");
     json
@@ -2855,8 +2837,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.26")
         .arg("--out")
@@ -2984,8 +2964,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp keycap strict class-mix source");
     json
@@ -3025,8 +3005,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.25")
         .arg("--out")
@@ -3161,8 +3139,8 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ unit symbol class-mix source");
     json
@@ -3222,8 +3200,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg(case.object_id)
         .arg("--out")
@@ -3439,8 +3415,8 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ numeric unit class-mix source");
     json
@@ -3500,8 +3476,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg(case.object_id)
         .arg("--out")
@@ -3716,8 +3690,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ numeric separator class-mix source");
     json
@@ -3760,8 +3734,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.9.23.24")
         .arg("--out")
@@ -3925,8 +3897,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ prefixed abbreviation class-mix source");
@@ -3970,8 +3942,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.19")
         .arg("--out")
@@ -4093,8 +4063,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ cent-prefixed abbreviation class-mix source");
@@ -4138,8 +4108,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.6.18.20")
         .arg("--out")
@@ -4273,8 +4241,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ yen-prefixed abbreviation class-mix source");
@@ -4321,8 +4289,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg(object_id)
         .arg("--out")
@@ -4471,8 +4437,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ postfixed abbreviation class-mix source");
@@ -4516,8 +4482,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.7.20.21")
         .arg("--out")
@@ -4649,8 +4613,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ ideographic abbreviation class-mix source");
@@ -4697,8 +4661,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg(object_id)
         .arg("--out")
@@ -4845,8 +4807,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ reference mark class-mix source");
     json
@@ -4889,8 +4851,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.9.25.28")
         .arg("--out")
@@ -5080,8 +5040,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ parenthesized reference mark class-mix source");
@@ -5125,8 +5085,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.10.29.32")
         .arg("--out")
@@ -5291,8 +5249,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ temperature suffix class-mix source");
@@ -5336,8 +5294,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.7.20.23")
         .arg("--out")
@@ -5457,8 +5413,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ decomposed temperature class-mix source");
@@ -5502,8 +5458,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.8.22.23")
         .arg("--out")
@@ -5631,8 +5585,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ subscript object class-mix source");
     json
@@ -5675,8 +5629,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.8.22.23")
         .arg("--out")
@@ -5843,8 +5795,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ Greek subscript object class-mix source");
@@ -5888,8 +5840,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.8.23.25")
         .arg("--out")
@@ -6015,8 +5965,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path)
         .expect("remove temp published JLREQ Greek superscript object class-mix source");
@@ -6060,8 +6010,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.8.22.24")
         .arg("--out")

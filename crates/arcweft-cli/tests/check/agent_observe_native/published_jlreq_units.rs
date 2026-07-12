@@ -2442,8 +2442,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 900, 320,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 900,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ hyphenated Western word source");
     json
@@ -2485,8 +2485,6 @@ flow @flow.main main {{
         .arg(capture_kind)
         .arg("--viewport-height")
         .arg("900")
-        .arg("--textbox-height")
-        .arg("320")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.4.6.7")
         .arg("--out")
@@ -2919,8 +2917,8 @@ flow @flow.main main {{
 "
         ),
     );
-    let json = observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        &path, 1280, 720, 170,
+    let json = observe_native_rich_text_layer_report_with_viewport(
+        &path, 1280, 720,
     );
     fs::remove_file(&path).expect("remove temp published JLREQ accented Latin word source");
     json
@@ -2959,8 +2957,6 @@ flow @flow.main main {{
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--textbox-height")
-        .arg("170")
         .arg("--object")
         .arg("object.dialogue.0.0.cluster.4.6.8")
         .arg("--out")

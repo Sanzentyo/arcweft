@@ -762,8 +762,6 @@ fn tool_schemas_expose_image_capture_scope_and_uri() {
     assert_eq!(properties["viewport_width"]["minimum"], 1);
     assert_eq!(properties["viewport_height"]["type"], "integer");
     assert_eq!(properties["viewport_height"]["minimum"], 1);
-    assert_eq!(properties["textbox_height"]["type"], "integer");
-    assert_eq!(properties["textbox_height"]["minimum"], 1);
 
     let capture = tools
         .iter()
@@ -793,8 +791,19 @@ fn tool_schemas_expose_image_capture_scope_and_uri() {
     assert_eq!(properties["viewport_width"]["minimum"], 1);
     assert_eq!(properties["viewport_height"]["type"], "integer");
     assert_eq!(properties["viewport_height"]["minimum"], 1);
-    assert_eq!(properties["textbox_height"]["type"], "integer");
-    assert_eq!(properties["textbox_height"]["minimum"], 1);
+}
+
+#[test]
+fn tool_schemas_do_not_advertise_unconsumed_textbox_height() {
+    for tool in agent_tool_descriptors() {
+        assert!(
+            tool.input_schema["properties"]
+                .as_object()
+                .is_none_or(|properties| !properties.contains_key("textbox_height")),
+            "{} must expose only layout inputs consumed by the player",
+            tool.name
+        );
+    }
 }
 
 #[test]

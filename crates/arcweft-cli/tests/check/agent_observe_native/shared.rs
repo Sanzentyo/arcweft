@@ -91,19 +91,13 @@ fn observe_native_textbox_object_raw_report(
 }
 
 fn observe_native_rich_text_layer_report(source_path: &Path) -> serde_json::Value {
-    observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
-        source_path,
-        1280,
-        720,
-        0,
-    )
+    observe_native_rich_text_layer_report_with_viewport(source_path, 1280, 720)
 }
 
-fn observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
+fn observe_native_rich_text_layer_report_with_viewport(
     source_path: &Path,
     viewport_width: u32,
     viewport_height: u32,
-    textbox_height: u32,
 ) -> serde_json::Value {
     let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
     command
@@ -119,11 +113,6 @@ fn observe_native_rich_text_layer_report_with_viewport_and_textbox_height(
         .arg(viewport_width.to_string())
         .arg("--viewport-height")
         .arg(viewport_height.to_string());
-    if textbox_height > 0 {
-        command
-            .arg("--textbox-height")
-            .arg(textbox_height.to_string());
-    }
     let output = command
         .arg("--page")
         .arg("0")

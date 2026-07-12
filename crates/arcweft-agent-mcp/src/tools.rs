@@ -105,7 +105,6 @@ fn agent_script_run_tool_descriptor() -> McpToolDescriptor {
                 "run_id": { "type": "string", "default": "run.cli" },
                 "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                 "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
-                "textbox_height": { "type": "integer", "minimum": 1 },
                 "capture_time": { "type": "number", "minimum": 0 }
             },
             "required": ["path"]
@@ -128,7 +127,6 @@ fn agent_wait_tool_descriptor() -> McpToolDescriptor {
                 "flow": { "type": "string" },
                 "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                 "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
-                "textbox_height": { "type": "integer", "minimum": 1 },
                 "predicate": { "type": "object", "description": "Agent protocol Predicate JSON, using kind/probe/op/value fields." },
                 "timeout_millis": { "type": "integer", "minimum": 1 },
                 "stable_frames": { "type": "integer", "minimum": 1, "default": 1 },
@@ -157,7 +155,6 @@ fn agent_action_tool_descriptor() -> McpToolDescriptor {
                 "max_ops": { "type": "integer", "minimum": 1 },
                 "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                 "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
-                "textbox_height": { "type": "integer", "minimum": 1 },
                 "action_id": { "type": "string", "description": "Observed Agent action target id, such as action.advance_text.object.dialogue.0.0 or action.inspect.pulse." },
                 "kind": { "type": "string", "enum": ["advance_text", "select_choice", "invoke", "scroll"], "description": "Semantic action kind when action_id is not supplied." },
                 "target": { "type": "string", "description": "Target public id/object id. Required for select_choice and invoke when action_id is not supplied." },
@@ -200,7 +197,6 @@ fn agent_session_step_frames_tool_descriptor() -> McpToolDescriptor {
                 "count": { "type": "integer", "minimum": 1, "default": 1 },
                 "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                 "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
-                "textbox_height": { "type": "integer", "minimum": 1 },
                 "max_ops": { "type": "integer", "minimum": 1 }
             }
         }),
@@ -226,7 +222,6 @@ fn agent_observe_tool_descriptor() -> McpToolDescriptor {
                     "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, animated image frame selection, hit-testing, and image capture." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels." },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels." },
-                    "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels for layout-sensitive rich-text debugging." },
                     "steps": { "type": "integer", "minimum": 1 },
                     "capture_step": { "type": "integer", "minimum": 1, "description": "Observe and capture the rendered frame after this many runtime steps. Overrides steps when supplied." },
                     "max_ops": { "type": "integer", "minimum": 1 }
@@ -290,7 +285,6 @@ fn agent_capture_tool_descriptor() -> McpToolDescriptor {
                     "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, animated image frame selection, hit-testing, and image capture." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280, "description": "Observation viewport width in pixels when source is supplied." },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720, "description": "Observation viewport height in pixels when source is supplied." },
-                    "textbox_height": { "type": "integer", "minimum": 1, "description": "Optional observed dialogue textbox height in pixels when source is supplied." }
                 }
             }),
         }
@@ -315,7 +309,6 @@ fn agent_hit_test_tool_descriptor() -> McpToolDescriptor {
                     "capture_time": { "type": "number", "minimum": 0, "description": "Native animation sample time in seconds for rich-text effects, shaders, motion functions, typewriter visibility, animated proxy bounds, and animated image frame selection before hit-testing." },
                     "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                     "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
-                    "textbox_height": { "type": "integer", "minimum": 1 },
                     "x": { "type": "integer", "minimum": 0 },
                     "y": { "type": "integer", "minimum": 0 }
                 },

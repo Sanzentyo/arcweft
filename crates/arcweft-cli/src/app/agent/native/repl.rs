@@ -1274,7 +1274,6 @@ pub(super) fn agent_repl_observe_options(
         values: options.values.clone(),
         viewport_width: options.viewport_width,
         viewport_height: options.viewport_height,
-        textbox_height: options.textbox_height,
         image: None,
         capture: None,
         layer: None,

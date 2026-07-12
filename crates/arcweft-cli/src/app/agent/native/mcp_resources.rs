@@ -954,7 +954,6 @@ pub(super) fn agent_mcp_observe_options(
             .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
         viewport_height: agent_mcp_u32_argument(arguments, "viewport_height", "arcweft.observe")?
             .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT),
-        textbox_height: agent_mcp_u32_argument(arguments, "textbox_height", "arcweft.observe")?,
         image: arguments
             .get("image")
             .and_then(serde_json::Value::as_str)

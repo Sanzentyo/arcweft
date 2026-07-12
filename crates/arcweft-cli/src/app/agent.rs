@@ -117,8 +117,6 @@ pub(super) struct AgentObserveOptions {
     viewport_width: u32,
     #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
     viewport_height: u32,
-    #[arg(long = "textbox-height")]
-    textbox_height: Option<u32>,
     #[arg(long, value_enum)]
     image: Option<AgentObserveImageKind>,
     #[arg(long, value_enum)]
@@ -186,8 +184,6 @@ pub(super) struct AgentHitTestOptions {
     viewport_width: u32,
     #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
     viewport_height: u32,
-    #[arg(long = "textbox-height")]
-    textbox_height: Option<u32>,
     #[arg(long = "capture-time")]
     capture_time_seconds: Option<f32>,
     #[arg(long)]
@@ -266,9 +262,6 @@ pub(super) struct AgentReplOptions {
     #[cfg(feature = "native-capture")]
     #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
     viewport_height: u32,
-    #[cfg(feature = "native-capture")]
-    #[arg(long = "textbox-height")]
-    textbox_height: Option<u32>,
     #[cfg(feature = "native-capture")]
     #[arg(long = "capture-time")]
     capture_time_seconds: Option<f32>,
@@ -433,9 +426,6 @@ pub(super) struct AgentScriptRunOptions {
     #[cfg(feature = "native-capture")]
     #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
     viewport_height: u32,
-    #[cfg(feature = "native-capture")]
-    #[arg(long = "textbox-height")]
-    textbox_height: Option<u32>,
     #[cfg(feature = "native-capture")]
     #[arg(long = "capture-time")]
     capture_time_seconds: Option<f32>,

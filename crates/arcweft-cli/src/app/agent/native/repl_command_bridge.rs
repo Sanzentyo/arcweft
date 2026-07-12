@@ -560,7 +560,6 @@ mod tests {
             values: Vec::new(),
             viewport_width: AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
             viewport_height: AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT,
-            textbox_height: None,
             capture_time_seconds: None,
             debug_db: None,
             trace: None,

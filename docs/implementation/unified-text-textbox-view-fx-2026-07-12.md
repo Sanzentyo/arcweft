@@ -1448,11 +1448,52 @@ All commands pass. The focused shaped/prepared suites pass 38 tests,
 `just test-fast` passes 308 tests, and all eight visual checkpoints retain
 pixel-exact Native/Web frames plus the same non-zero JLREQ, Fx, and reveal
 semantic differences. Cut 9 remains open for provisional legacy-Fx staging
-vocabulary and the unconsumed Agent `textbox_height` option, followed by final
-workspace validation, structural audit, and push. The structural audit records
+vocabulary, followed by final workspace validation, structural audit, and
+push. The structural audit records
 1,244 Rust files / 613,600 physical Rust LOC, 0 errors, and 128 warnings; this
 slice removes 12 Rust files, 8,683 physical Rust LOC, three warnings, and two
 test-only dependency edges.
+
+### Unconsumed Agent TextBox-height option removal slice
+
+The Agent-only `textbox_height` / `--textbox-height` input is removed directly.
+It was copied through four CLI commands and seven MCP schemas but never reached
+the canonical TextBox View mount, resolved style, layout constraints, or
+prepared batch. Keeping it would therefore advertise a silent no-op as a
+layout control. The real typed inputs remain the source/project TextBox/View
+configuration and the requested viewport; no alias, deprecated spelling, dual
+schema, or fallback value was added.
+
+The MCP schema behavior test now proves that no tool advertises the removed
+field. Native Agent JLREQ helpers no longer accept a dummy height argument,
+while their explicit viewport dimensions remain unchanged.
+
+Validation at Jujutsu working change `xxwwmruw`:
+
+```bash
+cargo check -p arcweft-cli -p arcweft-agent-mcp \
+  --all-targets --all-features
+cargo test -p arcweft-agent-mcp --all-targets
+cargo test -p arcweft-cli --lib --all-features
+cargo test -p arcweft-cli --test check --all-features --no-run
+cargo clippy -p arcweft-agent-mcp -p arcweft-cli \
+  --all-targets --all-features -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-textbox-height-removal-2026-07-12
+```
+
+All listed focused commands pass: the MCP suites pass 28 tests, the CLI library
+passes 182 tests, and the complete `check.rs` integration binary compiles. The
+structural audit records 1,244 Rust files / 613,514 physical Rust LOC, 0 errors,
+and 128 warnings; no dependency edge changed.
+
+`just test-cli-native` additionally exposed two visual-smoke assertions left
+behind by the prepared-text migration: selected color composition is now the
+documented `masked_framebuffer_crop`, and a layer object-ID crop currently
+retains descendant rich-text colors while its metadata names only the direct
+layer object. These failures are unrelated to the removed option, but the
+object-ID mismatch is a real capture-contract defect and is the immediately
+following Cut 9 repair rather than a waived failure.
 
 ## Non-goals
 
