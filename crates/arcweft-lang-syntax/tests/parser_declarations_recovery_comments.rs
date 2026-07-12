@@ -69,7 +69,7 @@ use game.prelude.*
 }
 
 #[test]
-fn removed_surface_declaration_prefix_is_a_structured_parse_diagnostic() {
+fn unknown_braced_top_level_item_uses_generic_recovery() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
 pub surface character alice {
@@ -82,21 +82,18 @@ pub character bob {}
 
     assert_eq!(parsed.errors().len(), 1);
     let error = &parsed.errors()[0];
-    assert!(
-        error
-            .message()
-            .contains("`surface` declaration prefix was removed")
-    );
+    assert_eq!(error.message(), "unexpected top-level item");
     assert_eq!(error.found(), Some("pub surface character alice {"));
     assert!(
         error
             .recovery()
             .iter()
-            .any(|suggestion| suggestion.message().contains("remove `surface`"))
+            .any(|suggestion| suggestion.message().contains("current Arcweft"))
     );
     assert!(matches!(
         parsed.typed_tree().items(),
-        [Item::EntityDecl(item)] if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
+        [Item::Raw(_), Item::EntityDecl(item)]
+            if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
             && item.id().body() == "character.bob"
     ));
 }
@@ -222,46 +219,6 @@ pub action feedback.submit_name(value: String)
     assert_eq!(action.signature_tail(), "(value: String)");
     assert!(action.body().is_none());
     assert!(action.structured_body().is_none());
-}
-
-#[test]
-fn asset_set_is_not_v1_source_syntax() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r"
-asset set @asset_set.route_portraits {
-    members = [
-        @asset:.portrait.alice,
-    ]
-}
-",
-    );
-
-    assert_eq!(parsed.errors().len(), 1);
-    assert!(
-        parsed.errors()[0]
-            .message()
-            .contains("`asset set` is not part of the v1 Arcweft source grammar")
-    );
-    assert!(parsed.typed_tree().items().is_empty());
-}
-
-#[test]
-fn hot_checkpoint_is_not_v1_source_syntax() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r"
-hot checkpoint before_boss {
-    roots = [@flow.chapter_two]
-}
-",
-    );
-
-    assert_eq!(parsed.errors().len(), 1);
-    assert!(
-        parsed.errors()[0]
-            .message()
-            .contains("`hot checkpoint` is not part of the v1 Arcweft source grammar")
-    );
-    assert!(parsed.typed_tree().items().is_empty());
 }
 
 #[test]

@@ -114,24 +114,6 @@ flow @flow:. shared {
 }
 
 #[test]
-fn rejects_removed_fragment_declarations() {
-    let errors = parse_errors(
-        r#"
-pub fragment intro: FlowFragment {
-    return "intro"
-}
-"#,
-    );
-
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("`fragment` was removed")),
-        "expected removed fragment diagnostic, got {errors:?}"
-    );
-}
-
-#[test]
 fn parses_staging_calls_as_expression_statements() {
     let tree = parse_ok(
         r"
