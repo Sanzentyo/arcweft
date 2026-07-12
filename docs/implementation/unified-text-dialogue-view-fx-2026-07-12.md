@@ -105,16 +105,15 @@ effective-zero glyphs are not reported as visible or included in visible
 ranges.
 
 This closes the final image-parity gate without overwriting a checked-in
-golden. Cut 9 remains open only until the final workspace-wide validation and
-current-checkout structural audit running at the integration cut point have
-passed and their exact results are appended here.
+golden. Cut 9 is complete together with the workspace validation and structural
+audit below.
 
-### Final integration validation — in progress
+### Final integration validation — complete
 
-The integration cut point must append the Jujutsu change/revision, exact test
-counts, audit file/LOC/warning totals, and any corrected failure before changing
-Cut 9 to complete. The final commands currently running or still to be recorded
-are:
+The implementation cut is Jujutsu change
+`oknwozsuyqqurprwpmuplplmmmxqprpt`, commit
+`29f0dded1039f0c7dc2fbbb041c449e400df2424` (`Finalize unified text and typed
+dialogue Views`). The final fixed checkout passed:
 
 ```bash
 cargo check --workspace --all-targets --all-features
@@ -124,9 +123,35 @@ cargo +nightly -Zscript tools/structure-audit.rs --root . \
   --write docs/implementation/structure-audits/unified-text-dialogue-view-final-2026-07-13
 ```
 
-Passing the visual packet does not waive a failure in this list. Conversely,
-these source/build gates do not replace the pixel, attachment, temporal, and
-semantic evidence recorded above.
+- `cargo fmt --all -- --check` and `git diff --check`;
+- workspace check and Clippy for all targets and all features, with Clippy
+  warnings denied;
+- `just test-fast`: 5 suites, 307 passed, 0 failed, 0 ignored;
+- `just test-workspace`: 234 suites, 3,259 passed, 0 failed, 16 intentionally
+  ignored by the normal non-Tier-2 route;
+- `just unified-text-visual-parity`: 8 Native/Web checkpoints, pixel-exact
+  backend pairs, and the non-zero JLREQ/Fx/reveal differences recorded above;
+- canonical structural audit: 2,651 scanned files, 1,255 Rust files, 616,763
+  physical Rust LOC, 91 manifests, 0 errors, and 128 pre-existing warnings.
+  The 170 changed Rust paths introduce no warning- or error-threshold crossing.
+
+Final validation exposed and closed three integration defects rather than
+waiving them: missing typed shader resources now retain the
+`missing_provider` diagnostic code; dialogue save restore rejects orphan or
+missing store/output/mount correspondences atomically; and the obsolete
+`face=` negative fixture was deleted after its name-specific parser branch was
+removed. The dialogue restore matrix was split into a 143-line responsibility
+module, leaving `tests/session.rs` at 2,442 LOC and avoiding a new structural
+warning.
+
+On Windows the test profile used `CARGO_PROFILE_TEST_DEBUG=0` and
+`CARGO_INCREMENTAL=0` after the default linker hit its PDB capacity and the
+incremental cache exhausted the workspace drive. This changes debug artifacts,
+not code, features, test selection, or runtime behavior.
+
+Passing the source/build gates does not replace the pixel, attachment,
+temporal, and semantic evidence recorded above; both sets passed on the same
+implementation tree.
 
 ## Acceptance boundary
 
@@ -220,7 +245,7 @@ final shared-path goldens have distinct roles as specified by the final design.
 - [x] Cut 6: direct View text painter order and executable per-mount View
 - [x] Cut 7: shared capture and prepared-layout Agent geometry
 - [x] Cut 8: persistent authored dialogue View and dedicated presentation-path removal
-- [ ] Cut 9: final workspace validation, structural audit, and integration-cut record
+- [x] Cut 9: final workspace validation, structural audit, and integration-cut record
 
 The per-slice status statements below are chronological records. Any sentence
 that says a now-completed earlier cut “remains open” describes that historical

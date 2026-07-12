@@ -1,10 +1,8 @@
 # Unified text DialogueView final structural audit — 2026-07-13
 
-Revision measured: Jujutsu working change
-`oknwozsuyqqurprwpmuplplmmmxqprpt`, based on commit
-`e0627ca4660915f6d9e25a111b637dca9ec0fdec` (`Remove the legacy rich-text
-effect interpreter`). The working-copy commit ID is intentionally not used as
-the durable identifier because it changes whenever an audit artifact is added.
+Revision measured: Jujutsu change `oknwozsuyqqurprwpmuplplmmmxqprpt`, committed
+as `29f0dded1039f0c7dc2fbbb041c449e400df2424` (`Finalize unified text and typed
+dialogue Views`).
 
 Canonical commands:
 
