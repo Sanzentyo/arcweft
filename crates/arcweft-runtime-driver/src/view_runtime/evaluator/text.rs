@@ -7,7 +7,9 @@ use crate::view_runtime::{
     MountedView,
 };
 use arcweft_bundle::resource_codec::ViewDefinitionResource;
-use arcweft_bundle::resource_codec::view::{DialogueTextProjection, ViewTextSourceKind};
+use arcweft_bundle::resource_codec::view::{
+    DialogueTextProjection, ViewParameterRole, ViewTextSourceKind,
+};
 
 impl ViewEvaluator<'_> {
     pub(super) fn resolve_text(
@@ -112,11 +114,9 @@ impl ViewEvaluator<'_> {
         projection: DialogueTextProjection,
         instruction: usize,
     ) -> Result<BundleViewTextValue, EvaluationFailure> {
-        if !definition
-            .parameters
-            .iter()
-            .any(|candidate| candidate.name == parameter)
-        {
+        if !definition.parameters.iter().any(|candidate| {
+            candidate.name == parameter && candidate.role == ViewParameterRole::Dialogue
+        }) {
             return Err(EvaluationFailure::new(
                 BundleViewDiagnosticCode::MissingInput,
                 Some(instruction),

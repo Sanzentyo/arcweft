@@ -7,12 +7,12 @@ use super::{
     ViewLayoutCursor, ViewLayoutFrame, ViewLoweringState, ViewModifier, ViewProgramInstruction,
     ViewRuntimeButtonBounds, ViewSemanticTarget, ViewSidecarError, ViewStyleModifier, ViewText,
     ViewTextBlockBounds, ViewTextBlockResource, ViewTextSelectionPolicy, ViewTextSourceKind,
-    ViewTextSourceRecord, button_bounds, expr_source, first_part, lower_button_modifiers,
-    lower_modifiers, lower_navigation_target, lower_text_control_payload_field,
-    lower_text_modifiers, modifier_label, modifier_layout_length_i32, modifier_layout_length_u32,
-    normalize_entity_ref, normalize_input_payload_ref, normalize_style_ref, symbol_expr_name,
-    text_block_frame, text_control_selection_policy, validate_interactive_overflow_modifiers,
-    view_resource_id,
+    ViewTextSourceRecord, ViewTextSurface, button_bounds, expr_source, first_part,
+    lower_button_modifiers, lower_modifiers, lower_navigation_target,
+    lower_text_control_payload_field, lower_text_modifiers, modifier_label,
+    modifier_layout_length_i32, modifier_layout_length_u32, normalize_entity_ref,
+    normalize_input_payload_ref, normalize_style_ref, symbol_expr_name, text_block_frame,
+    text_control_selection_policy, validate_interactive_overflow_modifiers, view_resource_id,
 };
 
 pub(super) fn lower_text(
@@ -53,7 +53,12 @@ pub(super) fn lower_text(
         scroll_region,
         id,
         ViewTextBlockBounds::new(origin_x, origin_y, frame.width_milli, frame.height_milli),
-    );
+    )
+    .with_surface(if text.rich_surface().is_some() {
+        ViewTextSurface::RichText
+    } else {
+        ViewTextSurface::Text
+    });
     text_block.selection_policy = text_block_selection_policy(text.modifiers());
     state.text_blocks.push(text_block);
     Ok(frame)

@@ -159,12 +159,25 @@ pub struct ViewDefinitionResource {
 pub struct ViewParameterResource {
     pub ordinal: u16,
     pub name: String,
+    pub role: ViewParameterRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_type: Option<FxRuntimeType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_slot: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_program: Option<ViewValueProgramId>,
+}
+
+/// Closed runtime role of one authored View parameter.
+///
+/// Nominal source-language types are resolved by semantic analysis before this
+/// boundary. Runtime consumers use the role instead of matching source type
+/// spellings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewParameterRole {
+    Value,
+    Dialogue,
 }
 
 /// One typed external value projected into the common View value-program schema.
@@ -310,6 +323,7 @@ pub struct ViewTextBlockResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub containing_scroll_region: Option<String>,
     pub text_source: String,
+    pub surface: ViewTextSurface,
     pub bounds: ViewTextBlockBounds,
     #[serde(
         default = "default_text_block_selection_policy",
@@ -320,6 +334,14 @@ pub struct ViewTextBlockResource {
     pub style: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
+}
+
+/// Authored rendering surface for a View text block.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewTextSurface {
+    Text,
+    RichText,
 }
 
 /// Product-authored player-rendered surface metadata.
@@ -1717,11 +1739,18 @@ impl ViewTextBlockResource {
             view,
             containing_scroll_region,
             text_source: text_source.into(),
+            surface: ViewTextSurface::Text,
             bounds,
             selection_policy: ViewTextSelectionPolicy::Disabled,
             style: None,
             source: None,
         }
+    }
+
+    #[must_use]
+    pub const fn with_surface(mut self, surface: ViewTextSurface) -> Self {
+        self.surface = surface;
+        self
     }
 
     pub const fn is_valid(&self) -> bool {

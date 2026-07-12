@@ -3,11 +3,11 @@
 use crate::resource_codec::view::{
     DialogueTextProjection, RgbaColor, StyleAssignOp, ViewActionButtonActionResource,
     ViewActionButtonResource, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
-    ViewParameterResource, ViewProgramInstruction, ViewProgramResource, ViewRuntimeButtonBounds,
-    ViewRuntimeSurfaceBounds, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule,
-    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue, ViewSurfaceResource,
+    ViewParameterResource, ViewParameterRole, ViewProgramInstruction, ViewProgramResource,
+    ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds, ViewStyleDeclaration, ViewStyleResource,
+    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue, ViewSurfaceResource,
     ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewTextSourceKind,
-    ViewTextSourceRecord,
+    ViewTextSourceRecord, ViewTextSurface,
 };
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
@@ -32,6 +32,7 @@ pub fn dialogue_program() -> ViewProgramResource {
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: DIALOGUE_PARAMETER.to_owned(),
+                role: ViewParameterRole::Dialogue,
                 value_type: None,
                 value_slot: None,
                 default_program: None,
@@ -78,6 +79,7 @@ pub fn dialogue_program() -> ViewProgramResource {
                 518_800,
                 1_108_800,
                 125_600,
+                ViewTextSurface::RichText,
             ),
             text_block_milli(
                 SPEAKER_PART,
@@ -86,6 +88,7 @@ pub fn dialogue_program() -> ViewProgramResource {
                 480_800,
                 1_108_800,
                 28_000,
+                ViewTextSurface::Text,
             ),
         ],
         surfaces: vec![ViewSurfaceResource {
@@ -268,6 +271,7 @@ fn text_block_milli(
     y_milli: i32,
     width_milli: u32,
     height_milli: u32,
+    surface: ViewTextSurface,
 ) -> ViewTextBlockResource {
     let mut block = ViewTextBlockResource::new(
         public_id,
@@ -275,7 +279,8 @@ fn text_block_milli(
         None,
         source,
         ViewTextBlockBounds::new(x_milli, y_milli, width_milli, height_milli),
-    );
+    )
+    .with_surface(surface);
     block.style = Some(public_id.to_owned());
     block
 }

@@ -1280,6 +1280,118 @@ pub dialogue defaults {
     assert_eq!(program.text_blocks[1].bounds.height_milli, 125_600);
 }
 
+const CUSTOM_DIALOGUE_VIEW_SOURCE: &str = r#"
+#[dialogue_view]
+pub struct StoryDialogue {
+  speaker: String
+  content: DialogueContent
+  occurrence: DialogueOccurrenceId
+  stage: DialogueStage
+  reveal: DialogueReveal
+  primary_action: DialogueAction
+}
+
+pub view StoryPanel(line: StoryDialogue) {
+  Panel(x = 32px, y = 400px, width = 900px, height = 240px) {
+    Text(line.speaker).x(48px).y(416px).width(860px).height(32px)
+    RichText(line.content).x(48px).y(456px).width(860px).height(140px)
+    Button("", x = 32px, y = 400px, width = 900px, height = 240px)
+      .on_click { line.primary_action }
+  }
+}
+
+pub dialogue defaults {
+  view = @view.StoryPanel
+}
+"#;
+
+#[test]
+fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
+    use arcweft_bundle::resource_codec::view::{ViewActionButtonActionResource, ViewParameterRole};
+    use arcweft_runtime_driver::dialogue::{
+        DialoguePresentationOperation, DialoguePresentationStore,
+    };
+    use arcweft_runtime_driver::view_runtime::{BundleViewRuntime, BundleViewTextValue};
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(CUSTOM_DIALOGUE_VIEW_SOURCE);
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("custom dialogue View program");
+    let text = sidecars.text.expect("custom dialogue text resource");
+    let definition = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id == "view.StoryPanel")
+        .expect("custom View definition");
+    assert!(definition.parameters.iter().any(|parameter| {
+        parameter.name == "line" && parameter.role == ViewParameterRole::Dialogue
+    }));
+    assert!(program.action_buttons.iter().any(|button| matches!(
+        &button.action,
+        ViewActionButtonActionResource::DialoguePrimaryAction { parameter }
+            if parameter == "line"
+    )));
+    program
+        .validate_dialogue_contract(Some(&text))
+        .expect("custom role produces a valid bundle contract");
+
+    let line_id =
+        RuntimeLineId::from_runtime_line_value("say.custom.dialogue").expect("runtime line id");
+    let display_frame = LineDisplaySpec {
+        line: line_id.clone(),
+        callee: "character.hero".to_owned(),
+        speaker_label: Some("Hero".to_owned()),
+        text_key: None,
+        view: Some("view.StoryPanel".to_owned()),
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![RichTextNode::Text {
+            text: "Custom runtime content".to_owned(),
+        }]),
+    }
+    .resolve_frame(&arcweft_render_text::RuntimeLineContext::default())
+    .expect("display frame resolves");
+    let mut dialogue = DialoguePresentationStore::default();
+    dialogue
+        .apply_operations(&[DialoguePresentationOperation::append(
+            "view.StoryPanel",
+            display_frame.clone(),
+        )])
+        .expect("dialogue appends");
+    dialogue
+        .synchronize_waiting_line(Some(&line_id))
+        .expect("primary action synchronizes");
+    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None)
+        .expect("custom dialogue View runtime builds");
+    let frame = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
+
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    assert_eq!(frame.mounts.len(), 1);
+    let mount = &frame.mounts[0];
+    assert_eq!(mount.view, "view.StoryPanel");
+    assert!(
+        mount
+            .dialogue
+            .is_some_and(|state| state.primary_action.target.is_some())
+    );
+    assert!(mount.text.iter().any(|output| matches!(
+        &output.value,
+        BundleViewTextValue::DialogueSpeaker { label, frame }
+            if label == "Hero" && frame.as_ref() == &display_frame
+    )));
+    assert!(mount.text.iter().any(|output| matches!(
+        &output.value,
+        BundleViewTextValue::DisplayFrame { frame, stage_index: 0 }
+            if frame.as_ref() == &display_frame
+    )));
+}
+
 #[test]
 fn view_declaration_is_not_mounted_implicitly() {
     let parsed = arcweft_lang_syntax::parser::parse_source(

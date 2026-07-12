@@ -39,10 +39,11 @@ use arcweft_bundle::{
             CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, StyleAssignOp,
             StyleSourceIdentity, StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization,
             ViewElementKind, ViewFocusAutoScrollPolicy, ViewInputKind, ViewInputOptions,
-            ViewInputPurpose, ViewProgramInstruction, ViewSecureInputPolicy, ViewSemanticTarget,
-            ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleSelector, ViewStyleSelectorPart,
-            ViewStyleValue, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
-            ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+            ViewInputPurpose, ViewParameterRole, ViewProgramInstruction, ViewSecureInputPolicy,
+            ViewSemanticTarget, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleSelector,
+            ViewStyleSelectorPart, ViewStyleValue, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+            ViewTextSourceKind, ViewTextSourceRecord, ViewTextSurface, ViewTextTabPolicy,
+            ViewTextVerticalNavigationPolicy,
         },
     },
 };
@@ -420,6 +421,11 @@ fn compile_view_parameters(
             Ok(ViewParameterResource {
                 ordinal,
                 name: parameter.name.clone(),
+                role: if parameter.dialogue_model.is_some() {
+                    ViewParameterRole::Dialogue
+                } else {
+                    ViewParameterRole::Value
+                },
                 value_type: parameter.value_type,
                 value_slot: parameter_slots.get(&parameter.name).copied(),
                 default_program,

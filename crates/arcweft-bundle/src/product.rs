@@ -179,7 +179,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     let view_theme = optional_view_theme(&view, external_sections)?;
     let fx_definitions = optional_fx_definitions(&view, external_sections)?.unwrap_or_default();
 
-    Ok(ArcweftBundle {
+    let bundle = ArcweftBundle {
         schema_version: product_manifest.schema_version,
         bundle_kind: product_manifest.bundle_kind,
         manifest: product_manifest.manifest,
@@ -206,7 +206,9 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         view_text,
         view_input,
         view_theme,
-    })
+    };
+    bundle.validate_schema_and_kind()?;
+    Ok(bundle)
 }
 
 fn required_runtime_types(

@@ -20,7 +20,7 @@ use crate::presentation_handles::{
     PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
     PresentationResourceState,
 };
-use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
+use arcweft_bundle::resource_codec::view::{ViewParameterRole, ViewProgramInstruction};
 use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlStyle, ViewTextResource,
     ViewValueInputNamespace, ViewValueInputSource,
@@ -564,11 +564,8 @@ impl ViewEvaluator<'_> {
                 .value_slot
                 .is_some_and(|slot| mounted.initialized_parameters.contains(&slot))
                 || mounted.runtime_parameters.contains_key(&parameter.name)
-                || (self.dialogue_inputs.contains_key(&key.handle)
-                    && self.definition_consumes_dialogue_parameter(
-                        &definition.public_id,
-                        &parameter.name,
-                    ));
+                || (parameter.role == ViewParameterRole::Dialogue
+                    && self.dialogue_inputs.contains_key(&key.handle));
             if !initialized && parameter.default_program.is_none() {
                 return Err(EvaluationFailure::new(
                     BundleViewDiagnosticCode::MissingInput,
@@ -581,30 +578,6 @@ impl ViewEvaluator<'_> {
             }
         }
         Ok(())
-    }
-
-    fn definition_consumes_dialogue_parameter(&self, definition: &str, parameter: &str) -> bool {
-        let Some(text) = self.text else {
-            return false;
-        };
-        self.program
-            .text_blocks
-            .iter()
-            .filter(|block| block.view.as_deref() == Some(definition))
-            .filter_map(|block| {
-                text.sources
-                    .iter()
-                    .find(|source| source.public_id == block.text_source)
-            })
-            .any(|source| {
-                matches!(
-                    &source.kind,
-                    arcweft_bundle::resource_codec::view::ViewTextSourceKind::Dialogue {
-                        parameter: source_parameter,
-                        ..
-                    } if source_parameter == parameter
-                )
-            })
     }
 
     fn evaluate_occurrence(

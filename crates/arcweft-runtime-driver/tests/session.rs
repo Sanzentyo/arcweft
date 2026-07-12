@@ -232,6 +232,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "active".to_owned(),
+                role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
                 value_type: Some(FxRuntimeType::Bool),
                 value_slot: Some(0),
                 default_program: None,

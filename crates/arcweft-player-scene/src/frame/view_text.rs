@@ -458,7 +458,10 @@ fn push_text_value(
         } => {
             let inherited =
                 TextStyleCascade::new(style).resolve_style(display.base_styles.iter())?;
-            let style = dialogue_speaker_style(inherited)?;
+            let style = inherited.with_flow(
+                RichTextWritingMode::HorizontalTb,
+                RichTextInlineDirection::Auto,
+            );
             let document = plain_document(label, style)?;
             let source_origin = document.source_origin();
             let text = shared.push_prepared_text_document(frame, &document, request)?;
@@ -652,20 +655,6 @@ fn visible_text(value: &BundleViewTextValue) -> Result<&str, FramePlanError> {
                 ))
         }
     }
-}
-
-fn dialogue_speaker_style(
-    inherited: ResolvedTextStyle,
-) -> Result<ResolvedTextStyle, FramePlanError> {
-    let font_size = inherited.font_size_milli().saturating_mul(4) / 5;
-    let line_height = inherited.line_height_milli().saturating_mul(39) / 50;
-    Ok(inherited
-        .with_font_metrics(font_size.max(16_000), line_height.max(24_000))?
-        .with_weight(TextWeight::Bold)
-        .with_flow(
-            RichTextWritingMode::HorizontalTb,
-            RichTextInlineDirection::Auto,
-        ))
 }
 
 pub(super) fn plain_document(

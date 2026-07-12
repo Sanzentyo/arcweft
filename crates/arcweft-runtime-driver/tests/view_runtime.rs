@@ -95,6 +95,7 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "active".to_owned(),
+                role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
                 value_type: Some(FxRuntimeType::Bool),
                 value_slot: Some(0),
                 default_program: None,
@@ -239,6 +240,7 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
                 parameters: vec![ViewParameterResource {
                     ordinal: 0,
                     name: "count".to_owned(),
+                    role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
                     value_type: Some(FxRuntimeType::I32),
                     value_slot: Some(0),
                     default_program: None,
@@ -541,6 +543,7 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "count".to_owned(),
+                role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
                 value_type: Some(FxRuntimeType::I32),
                 value_slot: Some(0),
                 default_program: None,
@@ -793,6 +796,23 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
     assert_ne!(after_restore.mounts[0].mount, after_restore.mounts[1].mount);
 }
 
+#[test]
+fn runtime_rejects_handcrafted_dialogue_projection_with_wrong_parameter_role() {
+    let (mut program, text) = typed_dialogue_view_resources();
+    program.definitions[0].parameters[0].role =
+        arcweft_bundle::resource_codec::view::ViewParameterRole::Value;
+
+    let error = BundleViewRuntime::try_new(Some(program), Some(text), None)
+        .expect_err("runtime must reject an untyped dialogue projection");
+
+    assert!(matches!(
+        error,
+        arcweft_runtime_driver::view_runtime::BundleViewRuntimeError::DialogueContract(
+            arcweft_bundle::resource_codec::view::DialogueViewContractError::InvalidTextParameterRole { .. }
+        )
+    ));
+}
+
 fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
     let program = ViewProgramResource {
         program_id: "view.program.dialogue".to_owned(),
@@ -802,6 +822,7 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "dialogue".to_owned(),
+                role: arcweft_bundle::resource_codec::view::ViewParameterRole::Dialogue,
                 value_type: None,
                 value_slot: None,
                 default_program: None,
@@ -827,6 +848,11 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
                     format!("text.dialogue.{suffix}"),
                     ViewTextBlockBounds::from_px(0, 0, 640, 96),
                 )
+                .with_surface(if suffix == "content" {
+                    arcweft_bundle::resource_codec::view::ViewTextSurface::RichText
+                } else {
+                    arcweft_bundle::resource_codec::view::ViewTextSurface::Text
+                })
             })
             .collect(),
         ..ViewProgramResource::default()

@@ -11,7 +11,10 @@ mod value;
 use crate::dialogue::{DialogueViewInput, DialogueViewState};
 use crate::presentation_handles::{PresentationHandleId, PresentationHandleRecord};
 use arcweft_bundle::container::BundleDigest;
-use arcweft_bundle::resource_codec::view::{ViewObserveClassification, ViewTextSelectionPolicy};
+use arcweft_bundle::resource_codec::view::{
+    DialogueViewContractError, ViewObserveClassification, ViewTextSelectionPolicy,
+    ViewTextSourceKind,
+};
 use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlStyle,
     ViewRuntimeControlStyleDiagnostics, ViewStyleResource, ViewTextBlockBounds, ViewTextResource,
@@ -290,6 +293,8 @@ pub struct BundleViewMountRuntimeSnapshot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewRuntimeError {
     #[error(transparent)]
+    DialogueContract(#[from] DialogueViewContractError),
+    #[error(transparent)]
     Inventory(#[from] ViewValueInventoryError),
     #[error(transparent)]
     MountAllocation(#[from] ViewMountAllocationError),
@@ -404,6 +409,21 @@ impl BundleViewRuntime {
         text: Option<ViewTextResource>,
         style: Option<&ViewStyleResource>,
     ) -> Result<Self, BundleViewRuntimeError> {
+        match &program {
+            Some(program) => program.validate_dialogue_contract(text.as_ref())?,
+            None => {
+                if let Some(source) = text.as_ref().and_then(|text| {
+                    text.sources
+                        .iter()
+                        .find(|source| matches!(source.kind, ViewTextSourceKind::Dialogue { .. }))
+                }) {
+                    return Err(DialogueViewContractError::MissingProgram {
+                        text_source: source.public_id.clone(),
+                    }
+                    .into());
+                }
+            }
+        }
         let inventory = ViewValueProgramInventory::from_programs(
             program
                 .as_ref()

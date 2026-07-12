@@ -88,6 +88,24 @@ fn view_resource_compact_sections_round_trip_with_deterministic_bytes() {
 }
 
 #[test]
+fn dialogue_primary_action_requires_a_dialogue_parameter_role() {
+    let mut program = arcweft_bundle::standard_view::dialogue_program();
+    program.definitions[0].parameters[0].role =
+        arcweft_bundle::resource_codec::view::ViewParameterRole::Value;
+
+    let error = program
+        .encode_canonical_section()
+        .expect_err("compact ViewProgram rejects an untyped dialogue action");
+
+    assert_eq!(
+        error,
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_dialogue_primary_action_parameter"
+        )
+    );
+}
+
+#[test]
 fn view_fx_bindings_are_canonical_bounded_and_unique() {
     let binding = |parameter: &str| ViewFxArgumentBindingRef {
         parameter: parameter.to_owned(),
@@ -172,6 +190,7 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                     ViewParameterResource {
                         ordinal: 0,
                         name: "count".to_owned(),
+                        role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
                         value_type: Some(FxRuntimeType::I32),
                         value_slot: Some(0),
                         default_program: None,
@@ -179,6 +198,7 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                     ViewParameterResource {
                         ordinal: 1,
                         name: "opacity".to_owned(),
+                        role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
                         value_type: Some(FxRuntimeType::F32),
                         value_slot: Some(1),
                         default_program: None,

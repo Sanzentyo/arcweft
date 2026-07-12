@@ -9,10 +9,12 @@
 
 mod codec;
 mod compat;
+mod dialogue_contract;
 mod model;
 mod runtime_control_style;
 
 pub use codec::{ViewResourceBudget, ViewResourceExport};
 pub use compat::{ViewResourceCompatibility, migrated_view_section_compatibility};
+pub use dialogue_contract::DialogueViewContractError;
 pub use model::*;
 pub use runtime_control_style::*;

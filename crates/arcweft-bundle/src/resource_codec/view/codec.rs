@@ -495,6 +495,15 @@ impl ViewProgramResource {
                     parameter.default_program,
                     parameter.value_type,
                 )?;
+                if parameter.role == super::model::ViewParameterRole::Dialogue
+                    && (parameter.value_type.is_some()
+                        || parameter.value_slot.is_some()
+                        || parameter.default_program.is_some())
+                {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_dialogue_parameter_schema",
+                    ));
+                }
                 match (parameter.value_type, parameter.value_slot) {
                     (Some(value_type), Some(value_slot)) => {
                         let expected_source = ViewValueInputSource::DefinitionParameter {
@@ -704,10 +713,10 @@ impl ViewProgramResource {
                 ));
             };
             if !valid_identifier(parameter)
-                || !definition
-                    .parameters
-                    .iter()
-                    .any(|candidate| candidate.name == *parameter)
+                || !definition.parameters.iter().any(|candidate| {
+                    candidate.name == *parameter
+                        && candidate.role == super::model::ViewParameterRole::Dialogue
+                })
             {
                 return Err(SectionCodecError::NonCanonicalTable(
                     "view_dialogue_primary_action_parameter",

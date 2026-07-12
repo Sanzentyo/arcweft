@@ -13,6 +13,7 @@ pub mod standard_view;
 
 use crate::character_package::BundleCharacterPackage;
 use crate::fx_definitions::FxDefinitions;
+use crate::resource_codec::view::{DialogueViewContractError, ViewTextSourceKind};
 use crate::resource_codec::{
     ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
 };
@@ -430,6 +431,8 @@ pub enum BundleCodecError {
         part: String,
         variant: String,
     },
+    #[error(transparent)]
+    InvalidDialogueViewContract(#[from] DialogueViewContractError),
 }
 
 #[cfg(feature = "format-yaml")]
@@ -1043,8 +1046,26 @@ impl ArcweftBundle {
                 });
             }
         }
-
-        Ok(())
+        match &self.view_program {
+            Some(program) => program
+                .validate_dialogue_contract(self.view_text.as_ref())
+                .map_err(BundleCodecError::from),
+            None => self
+                .view_text
+                .as_ref()
+                .and_then(|text| {
+                    text.sources
+                        .iter()
+                        .find(|source| matches!(source.kind, ViewTextSourceKind::Dialogue { .. }))
+                })
+                .map_or(Ok(()), |source| {
+                    Err(BundleCodecError::from(
+                        DialogueViewContractError::MissingProgram {
+                            text_source: source.public_id.clone(),
+                        },
+                    ))
+                }),
+        }
     }
 
     fn validate_schema_and_kind(&self) -> Result<(), BundleCodecError> {
@@ -1881,6 +1902,114 @@ mod tests {
                 .expect("explicit inspection JSON path decodes");
 
         assert_eq!(decoded, bundle);
+    }
+
+    #[test]
+    fn tampered_dialogue_text_parameter_role_is_rejected() {
+        let mut bundle = empty_test_bundle();
+        let program = bundle.view_program.as_mut().expect("standard View program");
+        program.action_buttons.clear();
+        program.definitions[0].parameters[0].role =
+            crate::resource_codec::view::ViewParameterRole::Value;
+
+        let error = ArcweftBundle::from_json_slice(
+            &serde_json::to_vec(&bundle).expect("tampered bundle serializes"),
+        )
+        .expect_err("incorrect dialogue parameter role must be rejected");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::InvalidDialogueViewContract(
+                DialogueViewContractError::InvalidTextParameterRole { .. }
+            )
+        ));
+    }
+
+    #[test]
+    fn serialized_dialogue_parameter_role_is_required() {
+        let bundle = empty_test_bundle();
+        let mut value = serde_json::to_value(bundle).expect("bundle serializes");
+        value["view_program"]["definitions"][0]["parameters"][0]
+            .as_object_mut()
+            .expect("parameter is an object")
+            .remove("role");
+
+        let error = ArcweftBundle::from_json_slice(
+            &serde_json::to_vec(&value).expect("tampered bundle serializes"),
+        )
+        .expect_err("missing dialogue parameter role must be rejected");
+
+        assert!(matches!(error, BundleCodecError::Decode(_)));
+    }
+
+    #[test]
+    fn tampered_dialogue_projection_surface_is_rejected() {
+        let mut bundle = empty_test_bundle();
+        let content_source = bundle
+            .view_text
+            .as_ref()
+            .expect("standard View text")
+            .sources
+            .iter()
+            .find_map(|source| {
+                matches!(
+                    source.kind,
+                    ViewTextSourceKind::Dialogue {
+                        projection: crate::resource_codec::view::DialogueTextProjection::Content,
+                        ..
+                    }
+                )
+                .then(|| source.public_id.clone())
+            })
+            .expect("content projection");
+        let block = bundle
+            .view_program
+            .as_mut()
+            .expect("standard View program")
+            .text_blocks
+            .iter_mut()
+            .find(|block| block.text_source == content_source)
+            .expect("content text block");
+        block.surface = crate::resource_codec::view::ViewTextSurface::Text;
+
+        let error = ArcweftBundle::from_json_slice(
+            &serde_json::to_vec(&bundle).expect("tampered bundle serializes"),
+        )
+        .expect_err("incorrect dialogue projection surface must be rejected");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::InvalidDialogueViewContract(
+                DialogueViewContractError::TextSurfaceMismatch { .. }
+            )
+        ));
+    }
+
+    #[test]
+    fn tampered_dialogue_primary_action_parameter_is_rejected() {
+        let mut bundle = empty_test_bundle();
+        let action = &mut bundle
+            .view_program
+            .as_mut()
+            .expect("standard View program")
+            .action_buttons[0]
+            .action;
+        *action =
+            crate::resource_codec::view::ViewActionButtonActionResource::DialoguePrimaryAction {
+                parameter: "not_dialogue".to_owned(),
+            };
+
+        let error = ArcweftBundle::from_json_slice(
+            &serde_json::to_vec(&bundle).expect("tampered bundle serializes"),
+        )
+        .expect_err("incorrect primary action parameter must be rejected");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::InvalidDialogueViewContract(
+                DialogueViewContractError::InvalidActionParameterRole { .. }
+            )
+        ));
     }
 
     fn empty_test_bundle() -> ArcweftBundle {

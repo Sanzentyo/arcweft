@@ -53,6 +53,20 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_authored_panel_geometry() 
             .any(|primitive| matches!(primitive, ViewPrimitive::SolidRect(_)))
     }));
 
+    let speaker = prepared
+        .frame
+        .prepared_text_owners()
+        .iter()
+        .find(|owner| matches!(owner.kind, PreparedTextOwnerKind::View { .. }))
+        .expect("dialogue speaker owner");
+    let speaker = prepared
+        .frame
+        .text
+        .get(speaker.text)
+        .expect("prepared speaker");
+    assert_eq!(speaker.layout.runs[0].style.font_size_milli(), 25_000);
+    assert_eq!(speaker.layout.runs[0].style.line_height_milli(), 34_000);
+
     let body = prepared
         .frame
         .prepared_text_owners()
