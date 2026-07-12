@@ -58,6 +58,8 @@ pub enum ViewProgramInstruction {
     },
     EmitImage {
         image: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
         style: Option<String>,
         part: Option<String>,
         source: Option<SourceRangeRef>,

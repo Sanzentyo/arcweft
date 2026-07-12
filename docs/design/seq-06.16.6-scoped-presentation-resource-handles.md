@@ -302,17 +302,22 @@ synthetic visual substitute.
 
 Diagnostics are stable and structured:
 
+The referenced resource is reusable definition/asset identity. Two distinct live
+handles may therefore mount the same View, image, menu, overlay, TextBox, or
+runtime-control resource at the same time. Ownership and lifecycle attach to the
+handle occurrence, not exclusively to the resource. Reusing a live handle id for
+a different occurrence remains invalid.
+
 | Code | Meaning |
 |---|---|
 | `PH001_INVALID_CALL` | malformed runtime lifecycle operation |
 | `PH002_DUPLICATE_HANDLE` | handle id reused within one save lineage |
-| `PH003_RESOURCE_ALREADY_OWNED` | live resource already has an owner handle |
-| `PH004_UNKNOWN_HANDLE` | lifecycle operation targets an unknown handle |
-| `PH005_DOUBLE_DISPOSE` | release/dispose/destroy repeated on a terminal handle |
-| `PH006_TERMINAL_HANDLE` | show/hide/unmount attempted after release/destroy |
-| `PH007_HIDDEN_BUT_FOCUSABLE` | hidden resource appeared in focus navigation before filtering |
-| `PH008_OWNER_ESCAPED` | handle would outlive its owner flow/scope |
-| `PH009_CAPTURE_HIDDEN_HANDLE` | capture requested for a hidden/unmounted/disposed handle |
+| `PH003_UNKNOWN_HANDLE` | lifecycle operation targets an unknown handle |
+| `PH004_DOUBLE_DISPOSE` | release/dispose/destroy repeated on a terminal handle |
+| `PH005_TERMINAL_HANDLE` | show/hide/unmount attempted after release/destroy |
+| `PH006_HIDDEN_BUT_FOCUSABLE` | hidden resource appeared in focus navigation before filtering |
+| `PH007_OWNER_ESCAPED` | handle would outlive its owner flow/scope |
+| `PH008_CAPTURE_HIDDEN_HANDLE` | capture requested for a hidden/unmounted/disposed handle |
 
 Lowering diagnostics include source ranges. Runtime diagnostics include handle id
 and operation. Agent observe repeats relevant diagnostics in frame/capture

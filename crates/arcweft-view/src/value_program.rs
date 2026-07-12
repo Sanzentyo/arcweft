@@ -30,6 +30,8 @@ pub struct ViewValueProgram {
     parameter_dependencies: Vec<u16>,
     #[serde(skip)]
     state_dependencies: Vec<u16>,
+    #[serde(skip)]
+    context_dependent: bool,
 }
 
 /// Deterministic inventory whose programs share one mount input schema.
@@ -86,6 +88,7 @@ pub struct ViewMountState {
 struct CachedViewValue {
     parameter_revisions: Vec<u64>,
     state_revisions: Vec<u64>,
+    context: Option<FxSampleContext>,
     value: FxRuntimeValue,
 }
 
@@ -155,7 +158,8 @@ impl ViewValueProgram {
         schema: ValueProgramSchema,
         instructions: Vec<ValueInstruction>,
     ) -> Result<Self, ValueProgramValidationError> {
-        let (parameter_dependencies, state_dependencies) = dependencies(&instructions);
+        let (parameter_dependencies, state_dependencies, context_dependent) =
+            dependencies(&instructions);
         let program =
             ValidatedValueProgram::validate(schema, instructions, ValueProgramLimits::VIEW)?;
         Ok(Self {
@@ -163,6 +167,7 @@ impl ViewValueProgram {
             program,
             parameter_dependencies,
             state_dependencies,
+            context_dependent,
         })
     }
 
@@ -184,6 +189,11 @@ impl ViewValueProgram {
 
     pub fn state_dependencies(&self) -> &[u16] {
         &self.state_dependencies
+    }
+
+    /// Whether evaluation consumes time, ordinal, phase, or motion preference.
+    pub const fn is_context_dependent(&self) -> bool {
+        self.context_dependent
     }
 }
 
@@ -361,9 +371,11 @@ impl ViewMountState {
         )?;
         let state_revisions =
             dependency_revisions("state", &self.state, program.state_dependencies())?;
+        let context_key = program.is_context_dependent().then_some(context);
         if let Some(cached) = self.cache.get(&program_id)
             && cached.parameter_revisions == parameter_revisions
             && cached.state_revisions == state_revisions
+            && cached.context == context_key
         {
             return Ok(ViewValueEvaluation {
                 value: cached.value,
@@ -386,6 +398,7 @@ impl ViewMountState {
             CachedViewValue {
                 parameter_revisions,
                 state_revisions,
+                context: context_key,
                 value,
             },
         );
@@ -447,9 +460,10 @@ impl ViewMountState {
     }
 }
 
-fn dependencies(instructions: &[ValueInstruction]) -> (Vec<u16>, Vec<u16>) {
+fn dependencies(instructions: &[ValueInstruction]) -> (Vec<u16>, Vec<u16>, bool) {
     let mut parameters = BTreeSet::new();
     let mut state = BTreeSet::new();
+    let mut context_dependent = false;
     for instruction in instructions {
         match instruction {
             ValueInstruction::LoadParameter { slot, .. } => {
@@ -458,12 +472,14 @@ fn dependencies(instructions: &[ValueInstruction]) -> (Vec<u16>, Vec<u16>) {
             ValueInstruction::LoadState { slot, .. } => {
                 state.insert(*slot);
             }
+            ValueInstruction::LoadContext { .. } => context_dependent = true,
             _ => {}
         }
     }
     (
         parameters.into_iter().collect(),
         state.into_iter().collect(),
+        context_dependent,
     )
 }
 
@@ -554,7 +570,7 @@ fn dependency_revisions(
 #[cfg(test)]
 mod tests {
     use arcweft_presentation::fx::{
-        FxEvaluationBudget, FxRuntimeType, FxRuntimeValue, FxSampleContext, Seconds,
+        FxContextSlot, FxEvaluationBudget, FxRuntimeType, FxRuntimeValue, FxSampleContext, Seconds,
         ValueInstruction, ValueProgramSchema,
     };
 
@@ -603,6 +619,10 @@ mod tests {
 
     fn context() -> FxSampleContext {
         FxSampleContext::from_elapsed(Seconds::ZERO, 0, 7, false)
+    }
+
+    fn context_at(seconds: f32, reduce_motion: bool) -> FxSampleContext {
+        FxSampleContext::from_elapsed(Seconds::try_seconds(seconds).unwrap(), 0, 7, reduce_motion)
     }
 
     fn mount(inventory: &ViewValueProgramInventory) -> ViewMountState {
@@ -697,6 +717,85 @@ mod tests {
                 .unwrap()
                 .value(),
             FxRuntimeValue::I32(8)
+        );
+    }
+
+    #[test]
+    fn context_dependent_programs_invalidate_on_time_and_motion_changes() {
+        let schema = ValueProgramSchema::new(Vec::new(), Vec::new(), FxRuntimeType::F32);
+        let program = ViewValueProgram::validate(
+            ViewValueProgramId(2),
+            schema,
+            vec![
+                ValueInstruction::LoadContext {
+                    slot: FxContextSlot::Time,
+                },
+                ValueInstruction::Return,
+            ],
+        )
+        .unwrap();
+        assert!(program.is_context_dependent());
+        let inventory = ViewValueProgramInventory::from_programs([program]).unwrap();
+        let mut mount = ViewMountState::new(
+            ViewMountAllocator::default().allocate().unwrap(),
+            ViewProgramId(1),
+            1,
+            Vec::new(),
+            Vec::new(),
+            &inventory,
+        )
+        .unwrap();
+        let mut budget = FxEvaluationBudget::default();
+
+        assert_eq!(
+            mount
+                .evaluate(
+                    ViewValueProgramId(2),
+                    &inventory,
+                    context_at(0.0, false),
+                    &mut budget,
+                )
+                .unwrap()
+                .status(),
+            ViewValueEvaluationStatus::Evaluated
+        );
+        assert_eq!(
+            mount
+                .evaluate(
+                    ViewValueProgramId(2),
+                    &inventory,
+                    context_at(0.0, false),
+                    &mut budget,
+                )
+                .unwrap()
+                .status(),
+            ViewValueEvaluationStatus::Reused
+        );
+        let advanced = mount
+            .evaluate(
+                ViewValueProgramId(2),
+                &inventory,
+                context_at(1.0, false),
+                &mut budget,
+            )
+            .unwrap();
+        assert_eq!(advanced.status(), ViewValueEvaluationStatus::Evaluated);
+        assert_eq!(
+            advanced.value(),
+            FxRuntimeValue::F32(arcweft_presentation::fx::FiniteF32::ONE)
+        );
+        let reduced = mount
+            .evaluate(
+                ViewValueProgramId(2),
+                &inventory,
+                context_at(1.0, true),
+                &mut budget,
+            )
+            .unwrap();
+        assert_eq!(reduced.status(), ViewValueEvaluationStatus::Evaluated);
+        assert_eq!(
+            reduced.value(),
+            FxRuntimeValue::F32(arcweft_presentation::fx::FiniteF32::ZERO)
         );
     }
 

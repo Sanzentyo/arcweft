@@ -426,6 +426,87 @@ Cut 6 remains open until the runtime driver owns these program/mount records,
 persists them in save state, resolves projected text, and emits prepared text
 IDs instead of `ViewRuntimeTextBlock` snapshots.
 
+### Executable per-mount View runtime and session projection slice
+
+The runtime-driver half of the retained evaluator is now implemented:
+
+- every live presentation handle gets an independent root occurrence; nested
+  calls and keyed repeats use a stable structural path, while one shared
+  monotonic allocator issues collision-free `ViewMountId` values across root
+  and child occurrences;
+- the evaluator executes branch, keyed repeat, await, nested call, local bind,
+  text/image emission, and typed View Fx application under bounded instruction
+  and value-program budgets. Missing slots, duplicate repeat keys, invalid await
+  discriminants, recursion, unsupported text values, and malformed spans produce
+  mount/handle/instruction diagnostics rather than placeholder execution;
+- value conversion accepts only exact finite typed values. In particular an
+  arbitrary-width runtime integer cannot silently enter an `I32` slot, and
+  Length/Angle/Seconds/Color/Vec2/Transform2D cross the boundary through their
+  closed record contracts;
+- logical time advances from the deterministic session clock, per-mount sample
+  time starts at activation, reduce-motion freezes sampler time, and context
+  cache keys include time/ordinal/seed only when a program actually consumes
+  context;
+- evaluated output is mount-scoped into existing image/control/button/scroll/
+  surface/text/focus resources. Image and scroll lowering now retain concrete
+  target IDs, and duplicate handles may legally instantiate the same reusable
+  View definition;
+- scoped TextInput write-back updates only its occurrence and survives the next
+  projection frame and save/load; public/masked/secret View text remains typed
+  through observation redaction;
+- View Fx applications reconcile into the same session-owned Fx runtime used by
+  RichText, retaining instance identity while reactive parameters change; and
+- session save/load atomically validates View program identity, allocator cursor,
+  occurrence/path/mount identity, activation time, seed, typed slots/revisions,
+  runtime parameters, and consistency between the saved presentation frame and
+  retained mount table. Content-only hot swap restores the same contract only
+  after existing virtualization compatibility checks pass.
+
+Focused tests cover missing input without placeholder fallback, two simultaneous
+mounts of one definition, reactive branch changes, independent scoped TextInput
+state, nested mount snapshot restore, fresh post-restore allocation, duplicate
+repeat keys, logical-time/reduced-motion behavior, exact `I32` width, observation
+redaction, and atomic rejection of a tampered presentation/mount identity.
+
+Cut 6 remains open only for the renderer-preparation half: localized,
+RichText-document, and display-frame View sources must be resolved directly into
+`PreparedTextBatch`, and the temporary `ViewRuntimeTextBlock` projection must be
+removed rather than retained as a plain-text adapter.
+
+Validation for this slice at Jujutsu working change `lsunwnmw`:
+
+```bash
+cargo test -p arcweft-runtime-driver --all-targets --no-fail-fast
+cargo test -p arcweft-bundle --all-targets --no-fail-fast
+cargo test -p arcweft-cli app::bundle::tests --lib -- --nocapture
+cargo clippy -p arcweft-view -p arcweft-bundle \
+  -p arcweft-runtime-driver -p arcweft-cli --all-targets -- -D warnings
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-view-runtime-session-2026-07-12
+```
+
+All commands pass. The runtime-driver suite passes 40 unit tests, 16 Product
+AWBC session tests, 37 session integration tests, and 5 direct View-runtime
+tests. The bundle suite passes 80 unit tests and all integration suites; the
+focused CLI bundle suite passes 41 tests; and `just test-fast` passes 422 tests.
+The first CLI invocation exhausted its 300-second process budget immediately
+after compiling and reporting all 41 tests passed; the warm rerun exited 0 in
+under two seconds.
+
+The structural audit records 1,257 Rust files / 631,790 physical Rust LOC, 0
+errors, and 141 warnings, with no workspace dependency-edge change. New
+production responsibilities are 692 LOC for the runtime/snapshot owner, 1,192
+LOC for control-flow evaluation, 442 LOC for exact runtime/Fx value conversion,
+360 LOC for mount-scoped resource projection, and 270 LOC combined for text and
+evaluation support modules. The existing session orchestrator is 2,404 LOC and
+remains a warning-level hotspot below the 2,500-LOC error threshold; its View
+algorithm is already isolated in the modules above, while the remaining file
+owns the pre-existing session lifecycle, hot swap, tasks, input, and save
+transaction orchestration.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally

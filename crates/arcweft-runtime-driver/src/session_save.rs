@@ -6,6 +6,7 @@
 
 use crate::display::BundlePresentationSnapshot;
 use crate::swap::GenerationId;
+use crate::view_runtime::BundleViewRuntimeSnapshot;
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::logical_identity::LogicalBundleIdentity;
@@ -31,6 +32,8 @@ pub struct BundleSessionSnapshot {
     pub presentation: BundlePresentationSnapshot,
     /// Exact per-mount range/scroll state, including off-window item descriptors.
     pub view_virtualization: ViewVirtualizationSnapshot,
+    /// Exact executable View mount graph, typed slots, clocks, and allocator cursor.
+    pub view_runtime: BundleViewRuntimeSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -117,6 +120,8 @@ pub enum BundleSessionSaveError {
     InvalidRuntimeValue { path: String, message: String },
     #[error("invalid retained View virtualization snapshot: {message}")]
     ViewVirtualization { message: String },
+    #[error("invalid executable View runtime snapshot: {message}")]
+    ViewRuntime { message: String },
     #[error("session save counter `{field}` value {value} does not fit this platform")]
     CounterOutOfRange { field: &'static str, value: u64 },
     #[error("failed to encode bundle session save: {message}")]

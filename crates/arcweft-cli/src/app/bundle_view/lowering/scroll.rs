@@ -17,6 +17,7 @@ pub(super) fn lower_scroll_region(
     element: &ViewElement,
     state: &mut ViewLoweringState,
     origin: ViewLayoutCursor,
+    open_instruction: usize,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     let options = scroll_region_options(
         view_id,
@@ -25,6 +26,11 @@ pub(super) fn lower_scroll_region(
         state.style_resource.as_ref(),
     )?;
     let scroll_id = options.public_id.clone();
+    if let Some(super::ViewProgramInstruction::OpenElement { target, .. }) =
+        state.instructions.get_mut(open_instruction)
+    {
+        *target = Some(scroll_id.clone());
+    }
     state.scroll_counter = state.scroll_counter.saturating_add(1);
     state.scroll_stack.push(scroll_id.clone());
     let content_frame = lower_layout_column(view_id, element.children(), state, origin)?;

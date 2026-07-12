@@ -311,7 +311,6 @@ impl PresentationHandleOperation {
 pub enum PresentationHandleDiagnosticCode {
     InvalidCall,
     DuplicateHandle,
-    ResourceAlreadyOwned,
     UnknownHandle,
     DoubleDispose,
     TerminalHandle,
@@ -324,11 +323,10 @@ impl PresentationHandleDiagnosticCode {
         match self {
             Self::InvalidCall => "PH001_INVALID_CALL",
             Self::DuplicateHandle => "PH002_DUPLICATE_HANDLE",
-            Self::ResourceAlreadyOwned => "PH003_RESOURCE_ALREADY_OWNED",
-            Self::UnknownHandle => "PH004_UNKNOWN_HANDLE",
-            Self::DoubleDispose => "PH005_DOUBLE_DISPOSE",
-            Self::TerminalHandle => "PH006_TERMINAL_HANDLE",
-            Self::HiddenButFocusable => "PH007_HIDDEN_BUT_FOCUSABLE",
+            Self::UnknownHandle => "PH003_UNKNOWN_HANDLE",
+            Self::DoubleDispose => "PH004_DOUBLE_DISPOSE",
+            Self::TerminalHandle => "PH005_TERMINAL_HANDLE",
+            Self::HiddenButFocusable => "PH006_HIDDEN_BUT_FOCUSABLE",
         }
     }
 }
@@ -442,18 +440,6 @@ fn apply_presentation_handle_operation(
                     PresentationHandleDiagnosticCode::DuplicateHandle,
                     Some(id.clone()),
                     "handle ids are stable within one save lineage and cannot be reused",
-                ));
-            }
-            if let Some(existing) = handles.iter().find(|handle| {
-                handle.kind == *kind && handle.resource_id == *resource_id && !handle.is_terminal()
-            }) {
-                return Some(PresentationHandleDiagnostic::new(
-                    PresentationHandleDiagnosticCode::ResourceAlreadyOwned,
-                    Some(id.clone()),
-                    format!(
-                        "resource `{}` is already owned by live handle `{}`",
-                        existing.resource_id, existing.id
-                    ),
                 ));
             }
             handles.push(
@@ -1018,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn live_resource_cannot_have_two_owners() {
+    fn reusable_resource_can_have_independent_live_handles() {
         let mut handles = Vec::new();
         let mut operation_epoch = 0;
         let operations = vec![
@@ -1046,11 +1032,10 @@ mod tests {
             apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
 
         assert_eq!(operation_epoch, 2);
-        assert_eq!(handles.len(), 1);
-        assert_eq!(
-            diagnostics[0].code,
-            PresentationHandleDiagnosticCode::ResourceAlreadyOwned
-        );
+        assert_eq!(handles.len(), 2);
+        assert!(diagnostics.is_empty());
+        assert_ne!(handles[0].id, handles[1].id);
+        assert_eq!(handles[0].resource_id, handles[1].resource_id);
     }
 
     #[test]

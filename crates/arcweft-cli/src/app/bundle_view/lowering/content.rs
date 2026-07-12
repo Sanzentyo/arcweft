@@ -185,44 +185,50 @@ pub(super) fn lower_image(
     layout: ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     validate_interactive_overflow_modifiers("Image", image.modifiers(), false)?;
+    let image_source = expr_source(image.source());
+    let materialized = image_source_object_id(image.source())
+        .and_then(|source_id| {
+            state
+                .source_image_objects
+                .iter()
+                .find(|object| object.id == source_id)
+                .cloned()
+        })
+        .and_then(|mut object| {
+            let width_milli = modifier_layout_length_u32(image.modifiers(), &["width", "w"])
+                .unwrap_or(object.bounds.width_milli);
+            let height_milli = modifier_layout_length_u32(image.modifiers(), &["height", "h"])
+                .unwrap_or(object.bounds.height_milli);
+            if width_milli == 0 || height_milli == 0 {
+                return None;
+            }
+            object.id = next_image_id(view_id, state);
+            object.bounds = BundleImageObjectBounds {
+                x_milli: layout.x_milli,
+                y_milli: layout.y_milli,
+                width_milli,
+                height_milli,
+            };
+            object.placement = None;
+            object.view = Some(view_resource_id(view_id));
+            object.containing_scroll_region = state.scroll_stack.last().cloned();
+            Some(object)
+        });
+    let target = materialized.as_ref().map(|object| object.id.clone());
     state.instructions.push(ViewProgramInstruction::EmitImage {
-        image: expr_source(image.source()),
+        image: image_source,
+        target,
         style: None,
         part: first_part(image.modifiers()),
         source: None,
     });
     lower_modifiers(view_id, image.modifiers(), state)?;
-    let Some(source_id) = image_source_object_id(image.source()) else {
+    let Some(object) = materialized else {
         return Ok(ViewLayoutFrame::zero());
     };
-    let Some(source) = state
-        .source_image_objects
-        .iter()
-        .find(|object| object.id == source_id)
-        .cloned()
-    else {
-        return Ok(ViewLayoutFrame::zero());
-    };
-    let width_milli = modifier_layout_length_u32(image.modifiers(), &["width", "w"])
-        .unwrap_or(source.bounds.width_milli);
-    let height_milli = modifier_layout_length_u32(image.modifiers(), &["height", "h"])
-        .unwrap_or(source.bounds.height_milli);
-    if width_milli == 0 || height_milli == 0 {
-        return Ok(ViewLayoutFrame::zero());
-    }
-    let mut object = source;
-    object.id = next_image_id(view_id, state);
-    object.bounds = BundleImageObjectBounds {
-        x_milli: layout.x_milli,
-        y_milli: layout.y_milli,
-        width_milli,
-        height_milli,
-    };
-    object.placement = None;
-    object.view = Some(view_resource_id(view_id));
-    object.containing_scroll_region = state.scroll_stack.last().cloned();
+    let frame = ViewLayoutFrame::new(object.bounds.width_milli, object.bounds.height_milli);
     state.image_objects.push(object);
-    Ok(ViewLayoutFrame::new(width_milli, height_milli))
+    Ok(frame)
 }
 
 fn next_text_source_id(view_id: &str, state: &mut ViewLoweringState) -> String {

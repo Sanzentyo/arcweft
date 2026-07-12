@@ -66,6 +66,39 @@ flow から mount された View を root とし、View body 内の nested View 
 `Child(...)` は `view.game.opening.Child` へ解決される。module path の区切りは
 `.` であり、`mod game::opening` は構文診断になる。
 
+## Retained execution and mount identity
+
+Runtime-driver は live presentation handle ごとに root View occurrence を一つ保持し、
+nested call と keyed repeat は structural path で子 occurrence を識別する。同じ
+View definition を main/side panel など複数の handle が同時に参照してよく、各
+occurrence は別の monotonic `ViewMountId`、activation logical time、deterministic
+seed、parameter/state revision、TextInput 値、Fx instance identity を持つ。resource
+ID は definition identity であり、単一 owner を表さない。
+
+View evaluator は bundle の `ViewValueProgram` を共通の typed value evaluator で
+実行する。parameter、state projection、local、repeat ordinal は明示 slot からのみ
+読み、未初期化 slot、型不一致、非有限値、budget 超過は structured diagnostic に
+なる。placeholder 値を実行値として使わない。context time は mount activation から
+の logical seconds、ordinal は対象内の logical instruction/item index である。
+reduce-motion 時は sampler time を 0 に固定する。
+
+`Await` の state discriminant は `pending = 0`、`ready = 1`、`error = 2`、
+`denied = 3` に固定する。未知の値や branch span 不整合は no-op ではなく診断に
+なる。`Branch`、keyed `Repeat`、nested `CallView`、`BindLocal`、`ApplyFx` は同じ
+frame operation/value budget の下で評価される。
+
+評価結果は mount-scoped target/image、typed text source、Fx application を保持
+する。plain text 以外の localized/RichText/display-frame source を文字列へ黙って
+潰さない。実際の scene resource ID は `view_mount_<id>.<authored-id>` に scope
+され、同じ authored control を二つの mount で独立に操作できる。画像と scroll
+element も lowering 時に concrete target ID を持つ。
+
+save/load は logical time、mount allocator cursor、root bindings、occurrence path、
+activation time、seed、typed parameter/state value と revision、初期化 slot、runtime
+parameter snapshot を保存する。restore は program/schema/type/allocator と、保存済み
+presentation frame が retained mount table の handle/path/View/mount identity に一致
+することを代入前に検証する。
+
 ```arcw
 Slider(value = bind state.config.master_volume, range = 0.0..1.0)
 ```

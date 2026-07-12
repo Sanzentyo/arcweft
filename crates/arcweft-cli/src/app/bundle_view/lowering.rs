@@ -799,6 +799,7 @@ fn lower_element(
             element.modifiers(),
             kind.layout_kind() == Some(ViewElementLayoutKind::Scroll),
         )?;
+        let open_instruction = state.instructions.len();
         state
             .instructions
             .push(ViewProgramInstruction::OpenElement {
@@ -819,7 +820,7 @@ fn lower_element(
                 lower_layout_column(view_id, element.children(), state, *layout)?
             }
             Some(ViewElementLayoutKind::Scroll) => {
-                lower_scroll_region(view_id, element, state, *layout)?
+                lower_scroll_region(view_id, element, state, *layout, open_instruction)?
             }
             Some(ViewElementLayoutKind::Stack) => {
                 lower_layout_stack(view_id, element.children(), state, *layout)?

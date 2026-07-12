@@ -11,6 +11,8 @@ use crate::presentation_handles::{
     filter_presentation_text_blocks, filter_presentation_text_inputs, hidden_focus_diagnostics,
     presentation_handle_operations_from_effects,
 };
+use crate::view_projection::ProjectedViewResources;
+use crate::view_runtime::BundleViewFrame;
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextBlock, ViewRuntimeTextControl,
@@ -80,6 +82,9 @@ pub struct BundlePresentationSnapshot {
     pub focus_groups: Vec<ViewRuntimeFocusGroup>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub focus_navigation: Vec<ViewRuntimeFocusNavigation>,
+    /// Mount-scoped executable View output for this presentation revision.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub view: BundleViewFrame,
     /// Activation-relative logical clock and complete live Fx save state.
     pub fx: BundleFxRuntimeSnapshot,
     /// Typed failures consumed unchanged by native, Web, headless, and Agent observers.
@@ -242,12 +247,32 @@ impl BundlePresentationSnapshot {
         handle_diagnostics
     }
 
-    pub(crate) fn replace_text_inputs(&mut self, text_inputs: &[ViewRuntimeTextControl]) {
-        let next_text_inputs =
-            filter_presentation_text_inputs(text_inputs.to_vec(), &self.presentation_handles);
-        if self.text_inputs != next_text_inputs {
+    pub(crate) fn replace_view_frame(&mut self, view: BundleViewFrame) {
+        if self.view != view {
             self.revision = self.revision.saturating_add(1);
-            self.text_inputs = next_text_inputs;
+            self.view = view;
+        }
+    }
+
+    pub(crate) fn replace_view_resources(&mut self, resources: ProjectedViewResources) {
+        if self.images != resources.images
+            || self.text_inputs != resources.text_inputs
+            || self.action_buttons != resources.action_buttons
+            || self.scroll_regions != resources.scroll_regions
+            || self.surfaces != resources.surfaces
+            || self.text_blocks != resources.text_blocks
+            || self.focus_groups != resources.focus_groups
+            || self.focus_navigation != resources.focus_navigation
+        {
+            self.revision = self.revision.saturating_add(1);
+            self.images = resources.images;
+            self.text_inputs = resources.text_inputs;
+            self.action_buttons = resources.action_buttons;
+            self.scroll_regions = resources.scroll_regions;
+            self.surfaces = resources.surfaces;
+            self.text_blocks = resources.text_blocks;
+            self.focus_groups = resources.focus_groups;
+            self.focus_navigation = resources.focus_navigation;
         }
     }
 
@@ -309,6 +334,7 @@ impl BundlePresentationSnapshot {
                 .iter()
                 .map(ViewRuntimeTextControl::redacted_for_observation)
                 .collect(),
+            view: self.view.redacted_for_observation(),
             ..self.clone()
         }
     }
@@ -339,6 +365,7 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("text_blocks", &self.text_blocks)
             .field("focus_groups", &self.focus_groups)
             .field("focus_navigation", &self.focus_navigation)
+            .field("view", &self.view.redacted_for_observation())
             .field("fx", &self.fx)
             .field("fx_diagnostics", &self.fx_diagnostics)
             .finish()

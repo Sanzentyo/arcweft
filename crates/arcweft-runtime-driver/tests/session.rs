@@ -9,10 +9,15 @@ use arcweft_bundle::patch::{
 };
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
-    ViewDefinitionResource, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
-    ViewInstructionSpan, ViewLogicalRect, ViewProgramResource, ViewScrollAxis,
-    ViewScrollRegionResource, ViewSecureInputPolicy, ViewTextSelectionPolicy,
-    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    ViewDefinitionResource, ViewElementKind, ViewInputKind, ViewInputOptions, ViewInputPurpose,
+    ViewInputResource, ViewInstructionSpan, ViewLogicalRect, ViewParameterResource,
+    ViewProgramInstruction, ViewProgramResource, ViewScrollAxis, ViewScrollRegionResource,
+    ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
+    ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+};
+use arcweft_bundle::resource_codec::{
+    ViewRuntimeTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewValueInputNamespace,
+    ViewValueInputResource, ViewValueInputSource,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -21,6 +26,7 @@ use arcweft_core::awbc::schema::{
     AwbcEntry, AwbcEntryId, AwbcEntryKind, AwbcEntryTarget, AwbcProgram, AwbcRoute, AwbcStringId,
 };
 use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
+use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::line_task::LineTaskGroup;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
@@ -31,13 +37,14 @@ use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
+use arcweft_core::value::{RuntimeBinding, RuntimeExpr, RuntimePayload, RuntimeValue};
 use arcweft_id::PublicId;
 use arcweft_interaction_model::{
     id::Identifier,
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
 };
+use arcweft_presentation::fx::{FxRuntimeType, ValueInstruction, ValueProgramSchema};
 use arcweft_presentation::input::{
     Action, ActionTarget, InteractionTarget as PresentationInteractionTarget,
 };
@@ -62,6 +69,7 @@ use arcweft_runtime_driver::swap::SwapCompatibility;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
+use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -135,6 +143,215 @@ fn paged_fixture_bundle() -> ArcweftBundle {
 
 fn structured_vm_fixture_bundle() -> ArcweftBundle {
     fixture_bundle_from_parts("WebGPU dialogue", false, false, false)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the executable View fixture keeps its typed program, text, input, and AWBC mount contract together"
+)]
+fn executable_view_fixture_bundle() -> ArcweftBundle {
+    let plan = RuntimePlan::new(
+        Some(flow_id("flow.main")),
+        vec![RuntimeFlow {
+            id: flow_id("flow.main"),
+            ops: vec![
+                FlowOp::If {
+                    condition: RuntimeExpr::Local("active".to_owned()),
+                    then_ops: Vec::new(),
+                    else_ops: Vec::new(),
+                },
+                FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
+                    callee: "presentation.handle.create".to_owned(),
+                    args: vec![
+                        "handle = @handle.main.root".to_owned(),
+                        "kind = \"view\"".to_owned(),
+                        "resource = @view.Root".to_owned(),
+                    ],
+                })),
+                FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
+                    callee: "presentation.handle.create".to_owned(),
+                    args: vec![
+                        "handle = @handle.side.root".to_owned(),
+                        "kind = \"view\"".to_owned(),
+                        "resource = @view.Root".to_owned(),
+                    ],
+                })),
+                FlowOp::Loop {
+                    body: vec![FlowOp::Noop],
+                },
+            ],
+        }],
+        vec![LineTaskGroup::default()],
+    )
+    .unwrap();
+    let display = LineDisplayCatalog::new(Vec::new());
+    let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
+    let product_awbc = AwbcLowerer::new(&plan, &display, "view-runtime.arcw")
+        .lower()
+        .unwrap()
+        .program;
+    let mut bundle = ArcweftBundle::new(
+        BundleManifest {
+            source_label: "view-runtime.arcw".to_owned(),
+            profile_id: None,
+            profile_kind: None,
+            entry: None,
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                entry_flow: Some("flow.main".to_owned()),
+                flows: stats.flows,
+                bytecode_instructions: stats.instructions,
+                line_task_groups: stats.line_task_groups,
+                stream_plans: 0,
+                source_plans: 0,
+            },
+        },
+        BundleSource {
+            label: "view-runtime.arcw".to_owned(),
+            text: String::new(),
+        },
+        BytecodeProgram::from_runtime_plan(plan),
+        display,
+    )
+    .with_product_awbc(product_awbc);
+    bundle.view_program = Some(ViewProgramResource {
+        program_id: "view.program.session".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.Root".to_owned(),
+            body: ViewInstructionSpan::new(0, 5),
+            parameters: vec![ViewParameterResource {
+                ordinal: 0,
+                name: "active".to_owned(),
+                value_type: Some(FxRuntimeType::Bool),
+                value_slot: Some(0),
+                default_program: None,
+            }],
+            state_schema_hash: 0xA11CE,
+        }],
+        value_programs: vec![
+            ViewValueProgram::validate(
+                ViewValueProgramId(0),
+                ValueProgramSchema::new(vec![FxRuntimeType::Bool], Vec::new(), FxRuntimeType::Bool),
+                vec![
+                    ValueInstruction::LoadParameter {
+                        slot: 0,
+                        ty: FxRuntimeType::Bool,
+                    },
+                    ValueInstruction::Return,
+                ],
+            )
+            .unwrap(),
+        ],
+        value_inputs: vec![ViewValueInputResource {
+            namespace: ViewValueInputNamespace::Parameter,
+            slot: 0,
+            value_type: FxRuntimeType::Bool,
+            source: ViewValueInputSource::DefinitionParameter {
+                view: "view.Root".to_owned(),
+                name: "active".to_owned(),
+            },
+        }],
+        instructions: vec![
+            ViewProgramInstruction::Branch {
+                condition_program: ViewValueProgramId(0),
+                then_span: 1,
+                else_span: Some(1),
+                source: None,
+            },
+            ViewProgramInstruction::EmitText {
+                text_source: "text.session.yes".to_owned(),
+                style: None,
+                part: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitText {
+                text_source: "text.session.no".to_owned(),
+                style: None,
+                part: None,
+                source: None,
+            },
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::TextField,
+                target: Some("input.session.name".to_owned()),
+                style: None,
+                part: None,
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+        ],
+        text_blocks: vec![
+            ViewTextBlockResource::new(
+                "text.block.yes",
+                Some("view.Root".to_owned()),
+                None,
+                "text.session.yes",
+                ViewRuntimeTextBlockBounds::new(0, 0, 100_000, 24_000),
+            ),
+            ViewTextBlockResource::new(
+                "text.block.no",
+                Some("view.Root".to_owned()),
+                None,
+                "text.session.no",
+                ViewRuntimeTextBlockBounds::new(0, 0, 100_000, 24_000),
+            ),
+        ],
+        ..ViewProgramResource::default()
+    });
+    bundle.view_text = Some(ViewTextResource {
+        sources: vec![
+            ViewTextSourceRecord {
+                public_id: "text.session.yes".to_owned(),
+                kind: ViewTextSourceKind::Literal {
+                    value: "yes".to_owned(),
+                },
+                source: None,
+            },
+            ViewTextSourceRecord {
+                public_id: "text.session.no".to_owned(),
+                kind: ViewTextSourceKind::Literal {
+                    value: "no".to_owned(),
+                },
+                source: None,
+            },
+            ViewTextSourceRecord {
+                public_id: "text.session.input.initial".to_owned(),
+                kind: ViewTextSourceKind::Literal {
+                    value: "initial".to_owned(),
+                },
+                source: None,
+            },
+        ],
+        ..ViewTextResource::default()
+    });
+    bundle.with_view_input(ViewInputResource {
+        options: vec![ViewInputOptions {
+            public_id: "input.session.name".to_owned(),
+            view: Some("view.Root".to_owned()),
+            containing_scroll_region: None,
+            kind: ViewInputKind::TextField,
+            value_text_source: "text.session.input.initial".to_owned(),
+            placeholder_text_source: None,
+            purpose: ViewInputPurpose::Name,
+            autocorrect: TextAssistPolicy::PlatformDefault,
+            spellcheck: TextAssistPolicy::PlatformDefault,
+            capitalization: TextCapitalization::Words,
+            enter_key: EnterKeyHint::Done,
+            multiline: false,
+            selection_policy: ViewTextSelectionPolicy::Enabled,
+            shortcut_policy: ViewTextShortcutPolicy::Enabled,
+            tab_policy: ViewTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+            secure_policy: ViewSecureInputPolicy::Plain,
+            composition_on_blur: CompositionOnBlurPolicy::Commit,
+            submit_handler: None,
+            change_handler: None,
+            adapter_requirements: Vec::new(),
+        }],
+        adapter_requirements: Vec::new(),
+    })
 }
 
 fn awfb_bytes(bundle: &ArcweftBundle) -> Vec<u8> {
@@ -930,6 +1147,161 @@ fn session_save_restores_complete_per_mount_virtual_range_state() {
             .snapshot_session()
             .expect("failed restore is atomic"),
         before
+    );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the end-to-end assertion covers two mounts, reactive output, scoped input, save/load, and atomic tamper rejection"
+)]
+fn session_executes_mount_scoped_view_branch_and_restores_it() {
+    let bundle = executable_view_fixture_bundle();
+    let options = BundleSessionOptions {
+        mode: arcweft_core::step::RuntimeStepMode::Drain,
+        ..BundleSessionOptions::default()
+    };
+    let mut session = BundleSession::new(&bundle, options.clone()).expect("session starts");
+    let active = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).unwrap(),
+        BundleStepInput {
+            bindings: vec![RuntimeBinding {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(true),
+            }],
+            ..BundleStepInput::default()
+        },
+    );
+    assert!(active.presentation.view.diagnostics.is_empty());
+    assert_eq!(active.presentation.view.mounts.len(), 2, "{active:#?}");
+    assert_eq!(
+        active.presentation.view.mounts[0].view,
+        active.presentation.view.mounts[1].view
+    );
+    assert_ne!(
+        active.presentation.view.mounts[0].mount,
+        active.presentation.view.mounts[1].mount
+    );
+    assert_eq!(active.presentation.text_blocks.len(), 2, "{active:#?}");
+    assert!(
+        active
+            .presentation
+            .text_blocks
+            .iter()
+            .all(|block| block.text == "yes")
+    );
+    assert_eq!(
+        active
+            .presentation
+            .text_blocks
+            .iter()
+            .map(|block| block.public_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["view_mount_0.text.block.yes", "view_mount_1.text.block.yes"]
+    );
+    assert_eq!(active.presentation.text_inputs.len(), 2);
+    assert!(
+        active
+            .presentation
+            .text_inputs
+            .iter()
+            .all(|control| control.value == "initial")
+    );
+
+    let side_control = active
+        .presentation
+        .text_inputs
+        .iter()
+        .find(|control| control.target == "view_mount_1.input.session.name")
+        .unwrap();
+    session
+        .queue_text_control_write_back(&TextControlWriteBack::change(
+            PresentationInteractionTarget::new(
+                PublicId::try_new(side_control.target.clone()).unwrap(),
+            ),
+            TextInputSessionId(side_control.session),
+            TextControlValue::plain("Alice"),
+            TextRange::new(TextByteOffset(5), TextByteOffset(5)),
+            TextRevision(1),
+        ))
+        .unwrap();
+    let edited = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).unwrap(),
+        BundleStepInput {
+            bindings: vec![RuntimeBinding {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(true),
+            }],
+            ..BundleStepInput::default()
+        },
+    );
+    assert_eq!(
+        edited
+            .presentation
+            .text_inputs
+            .iter()
+            .map(|control| control.value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["initial", "Alice"]
+    );
+
+    let save = session.export_session_save_bytes().unwrap();
+    let mut restored = BundleSession::new(&bundle, options).unwrap();
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .unwrap();
+    assert_eq!(restored.presentation().view, edited.presentation.view);
+    assert_eq!(
+        restored
+            .presentation()
+            .text_inputs
+            .iter()
+            .map(|control| control.value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["initial", "Alice"]
+    );
+
+    let inactive = restored.step_with_clock(
+        RuntimeClockStep::from_millis(3, 16).unwrap(),
+        BundleStepInput {
+            bindings: vec![RuntimeBinding {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(false),
+            }],
+            ..BundleStepInput::default()
+        },
+    );
+    assert!(inactive.presentation.view.diagnostics.is_empty());
+    assert_eq!(inactive.presentation.view.mounts[0].mount.get(), 0);
+    assert_eq!(inactive.presentation.view.mounts[1].mount.get(), 1);
+    assert_eq!(inactive.presentation.text_blocks.len(), 2);
+    assert!(
+        inactive
+            .presentation
+            .text_blocks
+            .iter()
+            .all(|block| block.text == "no")
+    );
+    assert_eq!(
+        inactive
+            .presentation
+            .text_blocks
+            .iter()
+            .map(|block| block.public_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["view_mount_0.text.block.no", "view_mount_1.text.block.no"]
+    );
+
+    let before_tampered_restore = restored.snapshot_session().unwrap();
+    let mut tampered = before_tampered_restore.clone();
+    tampered.presentation.view.mounts[0].view = "view.Other".to_owned();
+    assert!(matches!(
+        restored.restore_session_snapshot(tampered),
+        Err(BundleSessionSaveError::ViewRuntime { .. })
+    ));
+    assert_eq!(
+        restored.snapshot_session().unwrap(),
+        before_tampered_restore
     );
 }
 

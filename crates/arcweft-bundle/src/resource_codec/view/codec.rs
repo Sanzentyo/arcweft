@@ -1689,11 +1689,20 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
             .flatten()
             .collect(),
         ViewProgramInstruction::EmitImage {
-            image, style, part, ..
-        } => [Some(image.clone()), style.clone(), part.clone()]
-            .into_iter()
-            .flatten()
-            .collect(),
+            image,
+            target,
+            style,
+            part,
+            ..
+        } => [
+            Some(image.clone()),
+            target.clone(),
+            style.clone(),
+            part.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
         ViewProgramInstruction::EmitCustom {
             element,
             style,

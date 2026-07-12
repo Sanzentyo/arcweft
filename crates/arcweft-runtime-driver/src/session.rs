@@ -28,6 +28,10 @@ use crate::task::{
     RuntimeTaskOwner, RuntimeTaskRecord, RuntimeTaskRegistry,
 };
 use crate::text_control_writeback::RuntimeTextControlWriteBack;
+use crate::view_projection::{ViewProjectionInput, project_view_resources};
+use crate::view_runtime::{
+    BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewRuntime, BundleViewRuntimeError,
+};
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::patch::{
@@ -209,6 +213,8 @@ pub struct BundleSession {
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     fx_definitions: FxDefinitions,
+    view_runtime: BundleViewRuntime,
+    view_reduce_motion: bool,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     pending_presentation_inputs: Vec<BundlePresentationInput>,
@@ -270,6 +276,8 @@ pub enum BundleSessionError {
         "runtime text-control write-back target `{target}` with session {session} is not active"
     )]
     UnknownTextControlWriteBackTarget { target: String, session: u64 },
+    #[error(transparent)]
+    ViewRuntime(#[from] BundleViewRuntimeError),
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -342,6 +350,8 @@ pub enum BundleHotSwapError {
     GenerationRuntime(#[from] GenerationRuntimeError),
     #[error("hot-swap View virtualization contract changed: {message}")]
     ViewVirtualization { message: String },
+    #[error("hot-swap executable View state is incompatible: {message}")]
+    ViewRuntime { message: String },
     #[error(transparent)]
     FxRuntime(#[from] BundleFxRuntimeError),
 }
@@ -493,6 +503,8 @@ impl BundleSession {
         let focus_groups = runtime.focus_groups.clone();
         let focus_navigation = runtime.focus_navigation.clone();
         let fx_definitions = runtime.fx_definitions.clone();
+        let view_runtime = runtime.view_runtime.clone();
+        let view_reduce_motion = runtime.view_reduce_motion;
         let source_label = runtime.source_label.clone();
 
         Ok(Self {
@@ -513,6 +525,8 @@ impl BundleSession {
             focus_groups,
             focus_navigation,
             fx_definitions,
+            view_runtime,
+            view_reduce_motion,
             options,
             pending_input_events: Vec::new(),
             pending_presentation_inputs: Vec::new(),
@@ -675,12 +689,29 @@ impl BundleSession {
         &mut self,
         write_back: &TextControlWriteBack,
     ) -> Result<(), BundleSessionError> {
-        let runtime_write_back =
-            apply_text_control_write_back_to_controls(&mut self.text_inputs, write_back)?;
+        let runtime_write_back = match apply_text_control_write_back_to_controls(
+            &mut self.presentation.text_inputs,
+            write_back,
+        ) {
+            Ok(write_back) => write_back,
+            Err(BundleSessionError::UnknownTextControlWriteBackTarget { .. }) => {
+                apply_text_control_write_back_to_controls(&mut self.text_inputs, write_back)?
+            }
+            Err(error) => return Err(error),
+        };
+        if let Some(source_control) = self.text_inputs.iter_mut().find(|control| {
+            control.target == runtime_write_back.target()
+                && control.session == runtime_write_back.session()
+        }) {
+            runtime_write_back
+                .value()
+                .as_str()
+                .clone_into(&mut source_control.value);
+            source_control.selection = runtime_write_back.selection();
+        }
         self.resolve_text_control_submit_action(&runtime_write_back);
         self.pending_text_control_write_backs
             .push(runtime_write_back);
-        self.presentation.replace_text_inputs(&self.text_inputs);
         Ok(())
     }
 
@@ -746,6 +777,10 @@ impl BundleSession {
         )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "hot-swap validation and commit ordering form one atomic generation transaction"
+    )]
     fn hot_swap_bundle_with_compatibility_floor(
         &mut self,
         bundle: &ArcweftBundle,
@@ -785,6 +820,14 @@ impl BundleSession {
                 })?;
             }
         }
+        if compatibility == SwapCompatibility::ContentOnly {
+            next_runtime
+                .view_runtime
+                .restore(&self.view_runtime.snapshot())
+                .map_err(|error| BundleHotSwapError::ViewRuntime {
+                    message: error.to_string(),
+                })?;
+        }
         if compatibility == SwapCompatibility::ContentOnly
             && let Err(error) = self
                 .presentation
@@ -818,6 +861,8 @@ impl BundleSession {
                 self.focus_navigation
                     .clone_from(&next_runtime.focus_navigation);
                 self.fx_definitions.clone_from(&next_runtime.fx_definitions);
+                self.view_runtime = next_runtime.view_runtime.clone();
+                self.view_reduce_motion = next_runtime.view_reduce_motion;
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -968,12 +1013,19 @@ impl BundleSession {
     }
 
     /// Executes exactly one VM step using explicit, non-zero logical time.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one step atomically drains VM output, reconciles presentation state, and returns its complete boundary record"
+    )]
     pub fn step_with_clock(
         &mut self,
         clock: RuntimeClockStep,
         input: BundleStepInput,
     ) -> BundleSessionStep {
+        let mut view_bindings = self.options.root_bindings.clone();
+        view_bindings.extend(input.bindings.iter().cloned());
         self.presentation.advance_fx_clock(clock.dt_millis());
+        let view_clock_error = self.view_runtime.advance_millis(clock.dt_millis()).err();
         self.swap.enter_runtime_step();
         let PreparedBundleStepInput {
             runtime,
@@ -1016,10 +1068,17 @@ impl BundleSession {
                 .iter()
                 .map(ToString::to_string),
         );
+        let previous_text_inputs = self.presentation.text_inputs.clone();
         self.update_presentation_snapshot(
             &display,
             &result.fiber_status,
             &line_effects,
+            &mut diagnostics,
+        );
+        self.update_view_presentation(
+            &view_bindings,
+            &previous_text_inputs,
+            view_clock_error,
             &mut diagnostics,
         );
         self.append_fx_diagnostics(&mut diagnostics);
@@ -1232,6 +1291,121 @@ impl BundleSession {
         }
     }
 
+    fn update_view_presentation(
+        &mut self,
+        bindings: &[RuntimeBinding],
+        previous_text_inputs: &[ViewRuntimeTextControl],
+        clock_error: Option<BundleViewRuntimeError>,
+        diagnostics: &mut Vec<String>,
+    ) {
+        let previous_fx = self
+            .presentation
+            .view
+            .mounts
+            .iter()
+            .flat_map(|mount| mount.fx.iter().map(|application| application.instance))
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut frame = self.view_runtime.evaluate(
+            &self.presentation.presentation_handles,
+            bindings,
+            self.view_reduce_motion,
+        );
+        if let Some(error) = clock_error {
+            frame.diagnostics.push(BundleViewDiagnostic {
+                code: BundleViewDiagnosticCode::InvalidValueProgram,
+                handle: None,
+                mount: None,
+                view: None,
+                instruction: None,
+                message: error.to_string(),
+            });
+        }
+        diagnostics.extend(frame.diagnostics.iter().map(ToString::to_string));
+        if self.view_runtime.has_program() {
+            let projected = project_view_resources(
+                &frame,
+                &ViewProjectionInput {
+                    executable_definitions: &self.view_runtime.definition_ids(),
+                    current_images: &self.presentation.images,
+                    current_text_inputs: previous_text_inputs,
+                    images: &self.image_objects,
+                    text_inputs: &self.text_inputs,
+                    action_buttons: &self.action_buttons,
+                    scroll_regions: &self.scroll_regions,
+                    surfaces: &self.surfaces,
+                    text_blocks: &self.text_blocks,
+                    focus_groups: &self.focus_groups,
+                    focus_navigation: &self.focus_navigation,
+                },
+            );
+            self.presentation.replace_view_resources(projected);
+        }
+        self.presentation.replace_view_frame(frame);
+        self.reconcile_view_fx(&previous_fx);
+    }
+
+    fn reconcile_view_fx(
+        &mut self,
+        previous: &std::collections::BTreeSet<arcweft_presentation::fx::FxInstanceId>,
+    ) {
+        let applications = self
+            .presentation
+            .view
+            .mounts
+            .iter()
+            .flat_map(|mount| mount.fx.iter().cloned())
+            .collect::<Vec<_>>();
+        let current = applications
+            .iter()
+            .map(|application| application.instance)
+            .collect::<std::collections::BTreeSet<_>>();
+        let before = self.presentation.fx.clone();
+        for instance in previous.difference(&current) {
+            self.presentation.fx.remove_instance(*instance);
+        }
+        let mut failures = self.presentation.fx_diagnostics.clone();
+        for application in applications {
+            let parameters = self
+                .fx_definitions
+                .get(&application.definition)
+                .map(|definition| {
+                    definition
+                        .parameters()
+                        .iter()
+                        .filter_map(|parameter| {
+                            application
+                                .arguments
+                                .iter()
+                                .find(|argument| argument.parameter == parameter.name())
+                                .map(|argument| argument.value)
+                                .or_else(|| parameter.default().copied())
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if let Err(error) = self.presentation.fx.retain_instance(
+                &self.fx_definitions,
+                &application.definition,
+                application.instance,
+                parameters,
+                application.child_path,
+                None,
+            ) {
+                let diagnostic = error.diagnostic();
+                if !failures.contains(&diagnostic) {
+                    failures.push(diagnostic);
+                }
+            }
+        }
+        if self.presentation.fx != before {
+            self.presentation.revision = self.presentation.revision.saturating_add(1);
+        }
+        if self.presentation.fx_diagnostics != failures {
+            self.presentation.fx_diagnostics = failures;
+            self.presentation.revision = self.presentation.revision.saturating_add(1);
+        }
+    }
+
     fn dispatch_requested_tasks(
         &mut self,
         clock: RuntimeClockStep,
@@ -1387,6 +1561,7 @@ impl BundleSession {
             executor,
             presentation: self.presentation.clone(),
             view_virtualization: self.view_virtualization.snapshot(),
+            view_runtime: self.view_runtime.snapshot(),
         })
     }
 
@@ -1473,6 +1648,17 @@ impl BundleSession {
         .map_err(|error| BundleSessionSaveError::ViewVirtualization {
             message: error.to_string(),
         })?;
+        let mut restored_view_runtime = self.view_runtime.clone();
+        restored_view_runtime
+            .restore(&snapshot.view_runtime)
+            .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                message: error.to_string(),
+            })?;
+        restored_view_runtime
+            .validate_frame(&snapshot.presentation.view)
+            .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                message: error.to_string(),
+            })?;
         for list in restored_view_virtualization.mounts() {
             validate_virtual_list_scroll_owner(
                 &self.scroll_regions,
@@ -1503,6 +1689,7 @@ impl BundleSession {
         self.tasks = RuntimeTaskRegistry::default();
         self.presentation = snapshot.presentation;
         self.view_virtualization = restored_view_virtualization;
+        self.view_runtime = restored_view_runtime;
         self.retire_unused_generations();
         Ok(())
     }
@@ -1601,6 +1788,8 @@ impl BundleSession {
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;
         self.fx_definitions = runtime.fx_definitions;
+        self.view_runtime = runtime.view_runtime;
+        self.view_reduce_motion = runtime.view_reduce_motion;
     }
 
     fn prune_runtime_images(&mut self) {
@@ -1779,6 +1968,8 @@ struct SessionRuntime {
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     fx_definitions: FxDefinitions,
+    view_runtime: BundleViewRuntime,
+    view_reduce_motion: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1811,6 +2002,8 @@ struct SessionRuntimeResources {
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     fx_definitions: FxDefinitions,
+    view_runtime: BundleViewRuntime,
+    view_reduce_motion: bool,
 }
 
 fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
@@ -1870,6 +2063,8 @@ impl SessionRuntime {
             focus_groups: resources.focus_groups,
             focus_navigation: resources.focus_navigation,
             fx_definitions: resources.fx_definitions,
+            view_runtime: resources.view_runtime,
+            view_reduce_motion: resources.view_reduce_motion,
         })
     }
 
@@ -1897,6 +2092,8 @@ impl SessionRuntime {
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
                 fx_definitions: self.fx_definitions.clone(),
+                view_runtime: self.view_runtime.clone(),
+                view_reduce_motion: self.view_reduce_motion,
             },
         )
         .map_err(BundleEntryStartError::from)
@@ -1987,6 +2184,14 @@ fn build_session_runtime(
             focus_groups,
             focus_navigation,
             fx_definitions: bundle.fx_definitions.clone(),
+            view_runtime: BundleViewRuntime::try_new(
+                bundle.view_program.clone(),
+                bundle.view_text.clone(),
+            )?,
+            view_reduce_motion: bundle
+                .view_theme
+                .as_ref()
+                .is_some_and(|theme| theme.defaults.reduce_motion),
         },
     )
     .map_err(BundleSessionError::from)
