@@ -4,6 +4,8 @@
 edition = "2024"
 ---
 
+// Runs raster, full-frame, and imq evidence gates for named text checkpoints.
+
 use std::env;
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
@@ -14,26 +16,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse(env::args().skip(1).collect())?;
     let mut failures = Vec::new();
 
-    for checkpoint in Checkpoint::all() {
+    for checkpoint in &args.checkpoints {
         run_text_raster_gate(&args, checkpoint, &mut failures);
     }
-    for checkpoint in Checkpoint::all() {
+    for checkpoint in &args.checkpoints {
         run_full_image_gate(&args, checkpoint, &mut failures);
     }
     if args.run_imq {
-        for checkpoint in Checkpoint::all() {
+        for checkpoint in &args.checkpoints {
             run_imq_gate(&args, checkpoint, &mut failures);
         }
     }
 
     if failures.is_empty() {
-        println!("css-style parity gates passed after writing all evidence");
+        println!("text parity gates passed after writing all evidence");
         Ok(())
     } else {
         for failure in &failures {
-            eprintln!("css-style parity gate failed: {failure}");
+            eprintln!("text parity gate failed: {failure}");
         }
-        Err(format!("{} css-style parity gate(s) failed", failures.len()).into())
+        Err(format!("{} text parity gate(s) failed", failures.len()).into())
     }
 }
 
@@ -41,6 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 struct Args {
     dir: PathBuf,
     font: PathBuf,
+    checkpoints: Vec<String>,
     run_imq: bool,
 }
 
@@ -49,6 +52,11 @@ impl Args {
         let mut parsed = Self {
             dir: PathBuf::from("target/css-style-parity"),
             font: PathBuf::from("web/assets/arcweft-demo.ttf"),
+            checkpoints: vec![
+                "default".to_owned(),
+                "compact".to_owned(),
+                "hidpi".to_owned(),
+            ],
             run_imq: true,
         };
         let mut index = 0;
@@ -62,6 +70,27 @@ impl Args {
                     index += 1;
                     parsed.font = path_arg(&args, index, "--font")?;
                 }
+                "--checkpoints" => {
+                    index += 1;
+                    parsed.checkpoints = args
+                        .get(index)
+                        .ok_or_else(|| "--checkpoints requires a comma-separated list".to_owned())?
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|checkpoint| !checkpoint.is_empty())
+                        .map(str::to_owned)
+                        .collect();
+                    if parsed.checkpoints.is_empty() {
+                        return Err("--checkpoints must contain at least one name".to_owned());
+                    }
+                    let unique = parsed
+                        .checkpoints
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>();
+                    if unique.len() != parsed.checkpoints.len() {
+                        return Err("--checkpoints must not contain duplicate names".to_owned());
+                    }
+                }
                 "--no-imq" => parsed.run_imq = false,
                 "--help" | "-h" => return Err(Self::usage()),
                 unknown => return Err(format!("unknown argument `{unknown}`\n{}", Self::usage())),
@@ -72,8 +101,9 @@ impl Args {
     }
 
     fn usage() -> String {
-        "usage: cargo +nightly -Zscript tools/run-css-style-parity-gates.rs \
-         [--dir target/css-style-parity] [--font web/assets/arcweft-demo.ttf] [--no-imq]"
+        "usage: cargo +nightly -Zscript tools/run-text-parity-gates.rs \
+         [--dir target/css-style-parity] [--font web/assets/arcweft-demo.ttf] \
+         [--checkpoints default,compact,hidpi] [--no-imq]"
             .to_owned()
     }
 }
@@ -84,50 +114,29 @@ fn path_arg(args: &[String], index: usize, name: &str) -> Result<PathBuf, String
         .ok_or_else(|| format!("{name} requires a path"))
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Checkpoint {
-    Default,
-    Compact,
-    Hidpi,
-}
-
-impl Checkpoint {
-    const fn all() -> [Self; 3] {
-        [Self::Default, Self::Compact, Self::Hidpi]
-    }
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::Compact => "compact",
-            Self::Hidpi => "hidpi",
-        }
-    }
-
-    const fn full_image_thresholds(self) -> FullImageThresholds {
-        match self {
-            Self::Default => FullImageThresholds {
-                min_psnr: "25.0",
-                min_ssim: "0.60",
-                max_mse: "0.0030",
-                max_mae: "0.0048",
-                max_changed_pixel_ratio: "0.011",
-            },
-            Self::Compact => FullImageThresholds {
-                min_psnr: "24.0",
-                min_ssim: "0.55",
-                max_mse: "0.0039",
-                max_mae: "0.0063",
-                max_changed_pixel_ratio: "0.0145",
-            },
-            Self::Hidpi => FullImageThresholds {
-                min_psnr: "19.8",
-                min_ssim: "0.44",
-                max_mse: "0.0102",
-                max_mae: "0.0148",
-                max_changed_pixel_ratio: "0.028",
-            },
-        }
+fn full_image_thresholds(checkpoint: &str) -> FullImageThresholds {
+    match checkpoint {
+        "compact" => FullImageThresholds {
+            min_psnr: "24.0",
+            min_ssim: "0.55",
+            max_mse: "0.0039",
+            max_mae: "0.0063",
+            max_changed_pixel_ratio: "0.0145",
+        },
+        "hidpi" => FullImageThresholds {
+            min_psnr: "19.8",
+            min_ssim: "0.44",
+            max_mse: "0.0102",
+            max_mae: "0.0148",
+            max_changed_pixel_ratio: "0.028",
+        },
+        _ => FullImageThresholds {
+            min_psnr: "25.0",
+            min_ssim: "0.60",
+            max_mse: "0.0030",
+            max_mae: "0.0048",
+            max_changed_pixel_ratio: "0.011",
+        },
     }
 }
 
@@ -140,8 +149,8 @@ struct FullImageThresholds {
     max_changed_pixel_ratio: &'static str,
 }
 
-fn run_text_raster_gate(args: &Args, checkpoint: Checkpoint, failures: &mut Vec<String>) {
-    let name = checkpoint.name();
+fn run_text_raster_gate(args: &Args, checkpoint: &str, failures: &mut Vec<String>) {
+    let name = checkpoint;
     let command = CommandSpec::new("cargo")
         .args(["+nightly", "-Zscript", "tools/verify-text-raster-parity.rs"])
         .args(["--checkpoint", name])
@@ -160,9 +169,9 @@ fn run_text_raster_gate(args: &Args, checkpoint: Checkpoint, failures: &mut Vec<
     run_gate(format!("text-raster-{name}"), command, failures);
 }
 
-fn run_full_image_gate(args: &Args, checkpoint: Checkpoint, failures: &mut Vec<String>) {
-    let name = checkpoint.name();
-    let thresholds = checkpoint.full_image_thresholds();
+fn run_full_image_gate(args: &Args, checkpoint: &str, failures: &mut Vec<String>) {
+    let name = checkpoint;
+    let thresholds = full_image_thresholds(checkpoint);
     let command = CommandSpec::new("cargo")
         .args(["+nightly", "-Zscript", "tools/verify-webgpu-parity.rs"])
         .arg("--native")
@@ -182,8 +191,8 @@ fn run_full_image_gate(args: &Args, checkpoint: Checkpoint, failures: &mut Vec<S
     run_gate(format!("full-image-{name}"), command, failures);
 }
 
-fn run_imq_gate(args: &Args, checkpoint: Checkpoint, failures: &mut Vec<String>) {
-    let name = checkpoint.name();
+fn run_imq_gate(args: &Args, checkpoint: &str, failures: &mut Vec<String>) {
+    let name = checkpoint;
     let command = CommandSpec::new("imq")
         .arg("compare")
         .arg(args.dir.join(format!("native-{name}.png")))

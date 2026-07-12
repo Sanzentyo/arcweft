@@ -669,30 +669,19 @@ fn place_vertical_glyphs(
         .iter()
         .enumerate()
         .map(|(index, glyph)| {
-            let (origin, ink_bounds) = match context.orientation {
-                GlyphOrientation::SidewaysCw => (
-                    LayoutPoint::new(
-                        -glyph.origin.y + translation.x,
-                        glyph.origin.x + translation.y,
-                    ),
-                    translate_rect(
-                        rotate_rect_cw(glyph.ink_bounds),
-                        translation.x,
-                        translation.y,
-                    ),
+            let ink_bounds = match context.orientation {
+                GlyphOrientation::SidewaysCw => translate_rect(
+                    rotate_rect_cw(glyph.ink_bounds),
+                    translation.x,
+                    translation.y,
                 ),
-                GlyphOrientation::Upright | GlyphOrientation::TextCombineUpright => (
-                    LayoutPoint::new(
-                        glyph.origin.x * inline_scale + translation.x,
-                        glyph.origin.y + translation.y,
-                    ),
-                    translate_rect(
-                        scale_rect_x(glyph.ink_bounds, inline_scale),
-                        translation.x,
-                        translation.y,
-                    ),
+                GlyphOrientation::Upright | GlyphOrientation::TextCombineUpright => translate_rect(
+                    scale_rect_x(glyph.ink_bounds, inline_scale),
+                    translation.x,
+                    translation.y,
                 ),
             };
+            let origin = raster_origin_for_ink_bounds(glyph, ink_bounds);
             TextLayoutGlyph {
                 run_index: saturating_u32(context.run_index),
                 source_range: glyph.source_range,
@@ -714,6 +703,17 @@ fn place_vertical_glyphs(
             }
         })
         .collect()
+}
+
+/// Recovers the submitted raster origin from the final ink rectangle while
+/// retaining the shaped face's untransformed left/top bearings. Glyphon rotates
+/// and scales the Swash raster quad around that submitted origin, so rotating a
+/// baseline point directly would make the observed ink rectangle diverge from
+/// the pixels used by capture and hit geometry.
+fn raster_origin_for_ink_bounds(glyph: &LocalGlyph, ink_bounds: LayoutRect) -> LayoutPoint {
+    let left_bearing = glyph.ink_bounds.x - glyph.origin.x;
+    let top_bearing = glyph.origin.y - glyph.ink_bounds.y;
+    LayoutPoint::new(ink_bounds.x - left_bearing, ink_bounds.y + top_bearing)
 }
 
 fn local_glyphs(glyphs: &[&ShapedTextGlyph]) -> Vec<LocalGlyph> {

@@ -60,7 +60,7 @@ pub(in crate::app) fn script_test_selection(
     let checked = load_and_check_selection(selection, None)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let manifest = collect_script_tests(&checked.hir);
-    let runtime_options = runtime_plan_options_for_selection(selection);
+    let runtime_options = runtime_plan_options_for_selection(selection)?;
     let plan = lower_source_runtime_plan_with_typecheck_and_options(
         &checked.hir,
         &checked.typecheck_report,

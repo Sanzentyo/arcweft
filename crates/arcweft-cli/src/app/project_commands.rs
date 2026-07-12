@@ -2114,7 +2114,7 @@ where
     };
     let mut phases = Vec::new();
     let env = typecheck_env_for_selection(&selection, None, &mut phases)?;
-    let runtime_options = runtime_plan_options_for_selection(&selection);
+    let runtime_options = runtime_plan_options_for_selection(&selection)?;
     let compiled =
         compile_project_with_cache(loaded.sources(), &env, &runtime_options, compile_cache)
             .map_err(|error| {

@@ -148,7 +148,7 @@ fn runtime_run_headless_command(
     let checked = load_and_check_selection(selection, None)?;
     require_runtime_verification_safety(selection, &checked)?;
     let host_policy = native_host_policy_for_selection(selection)?;
-    let runtime_options = runtime_plan_options_for_selection(selection);
+    let runtime_options = runtime_plan_options_for_selection(selection)?;
     let mut plan = lower_source_runtime_plan_with_typecheck_and_options(
         &checked.hir,
         &checked.typecheck_report,

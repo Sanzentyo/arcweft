@@ -130,17 +130,38 @@ impl SourceSelection {
     pub(in crate::app) fn adapter(&self) -> Option<&str> {
         self.profile().and_then(ResolvedLaunchProfile::adapter)
     }
+
+    pub(in crate::app) fn package_identity(&self) -> Result<String, ExitCode> {
+        if let Some(manifest) = self.resource_manifest() {
+            return arcweft_project_loader::project::load_project_manifest(manifest)
+                .map(|project| project.package().name().as_str().to_owned())
+                .map_err(|error| {
+                    eprintln!("error: failed to resolve package identity: {error}");
+                    ExitCode::FAILURE
+                });
+        }
+        self.path()
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .filter(|stem| !stem.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                eprintln!("error: direct source has no package identity");
+                ExitCode::FAILURE
+            })
+    }
 }
 
 pub(in crate::app) fn runtime_plan_options_for_selection(
     selection: &SourceSelection,
-) -> RuntimePlanLowerOptions {
-    selection
+) -> Result<RuntimePlanLowerOptions, ExitCode> {
+    let options = selection
         .profile()
         .and_then(ResolvedLaunchProfile::dialogue_defaults)
         .map_or_else(RuntimePlanLowerOptions::default, |id| {
             RuntimePlanLowerOptions::default().with_dialogue_defaults(id)
-        })
+        });
+    Ok(options.with_package_identity(selection.package_identity()?))
 }
 
 pub(in crate::app) fn runtime_pure_config_for_selection(

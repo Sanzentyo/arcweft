@@ -416,10 +416,13 @@ where
             errors.into_iter().map(|error| error.diagnostic()),
         )
     })?;
+    let runtime_options = runtime_options
+        .clone()
+        .with_package_identity(project.manifest().package().name().as_str());
     let runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
         &linked_hir,
         &typecheck_report,
-        runtime_options,
+        &runtime_options,
     )
     .map_err(|errors| {
         linked_error(

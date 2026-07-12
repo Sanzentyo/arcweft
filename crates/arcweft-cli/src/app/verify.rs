@@ -168,7 +168,7 @@ fn verify_types_runtime_plan(
     options: &VerifyTypesOptions,
 ) -> Result<RuntimePlan, ExitCode> {
     let mut runtime_plan = run_profile_phase(&mut checked.phases, "runtime_plan_lower", || {
-        let runtime_options = runtime_plan_options_for_selection(selection);
+        let runtime_options = runtime_plan_options_for_selection(selection)?;
         lower_source_runtime_plan_with_typecheck_and_options(
             &checked.hir,
             &checked.typecheck_report,

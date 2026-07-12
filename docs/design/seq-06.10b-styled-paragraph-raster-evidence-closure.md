@@ -61,7 +61,7 @@ Paragraph span expansion to full bounds is removed from the styled paragraph ras
 
 ### 5. Full-image threshold interaction
 
-Full-image `verify-webgpu-parity` remains useful for gross framebuffer regressions, but it is no longer the first and only failing gate. The Justfile delegates all CSS-style parity gates to `tools/run-css-style-parity-gates.rs`, which runs text-raster verification for all checkpoints first, then full-image verification, then optional IMQ comparison, and only then exits with failure if any gate failed.
+Full-image `verify-webgpu-parity` remains useful for gross framebuffer regressions, but it is no longer the first and only failing gate. The Justfile delegates text parity gates to `tools/run-text-parity-gates.rs`, which runs text-raster verification for all checkpoints first, then full-image verification, then optional IMQ comparison, and only then exits with failure if any gate failed. CSS style parity is one caller of this shared harness.
 
 This means failed runs still leave:
 

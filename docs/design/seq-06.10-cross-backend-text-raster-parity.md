@@ -172,15 +172,15 @@ time.
 Native capture:
 
 ```bash
-cargo +nightly -Zscript tools/capture-css-style-parity-native-frame.rs \
+cargo +nightly -Zscript tools/capture-text-parity-frame.rs \
   --font web/assets/arcweft-demo.ttf
 ```
 
 Web capture:
 
 ```powershell
-$env:ARW_CSS_STYLE_PARITY_FONT_URL = "./assets/arcweft-demo.ttf"
-node web\tests\css-style-parity-smoke.mjs
+$env:ARW_TEXT_PARITY_FONT_URL = "./assets/arcweft-demo.ttf"
+node web\tests\text-parity-smoke.mjs
 ```
 
 Platform fallback is allowed only outside CSS-style parity or when explicitly

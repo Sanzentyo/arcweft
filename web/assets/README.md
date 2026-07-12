@@ -15,6 +15,19 @@ authoring inputs for `web/demo.arcw` live separately under `web/bundle-assets/`.
   startup cost of the 9 MiB product font. It is generated with FontTools using
   `--layout-features=* --name-IDs=* --name-legacy --name-languages=*`
   and `--no-recalc-timestamp`.
+- `noto-sans-jp-unified-text-parity.ttf`: deterministic SFNT subset for the
+  unified Text visual packet. It contains the Japanese base, ruby, and
+  punctuation glyphs used by the vertical-RL, vertical-LR, JLREQ, and Fx
+  pages while retaining all OpenType layout features and stable timestamps.
+  Regenerate it from the checked-in product font with:
+
+  ```bash
+  uvx --from fonttools pyftsubset web/assets/noto-sans-jp-vf.ttf \
+    --output-file=web/assets/noto-sans-jp-unified-text-parity.ttf \
+    --text="星影ほしかげ天地人縦夢ゆめへ山川海波動光開示。（「」）" \
+    --layout-features=* --name-IDs=* --name-legacy --name-languages=* \
+    --no-recalc-timestamp
+  ```
 - `noto-emoji-regular.ttf`: Noto Emoji regular font, licensed under the SIL
   Open Font License. The default Web player registers this SFNT font so emoji
   glyphs are available in browser canvas text without relying on platform font

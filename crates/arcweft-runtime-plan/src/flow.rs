@@ -96,6 +96,7 @@ pub struct RuntimePlanLowerReport {
 /// Options that select profile/build-context inputs for runtime-plan lowering.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimePlanLowerOptions {
+    package_identity: Option<String>,
     dialogue_defaults: Option<String>,
     for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
     trait_methods: Vec<RuntimeTraitMethod>,
@@ -109,6 +110,7 @@ impl RuntimePlanLowerOptions {
     #[must_use]
     pub const fn new() -> Self {
         Self {
+            package_identity: None,
             dialogue_defaults: None,
             for_iteration_evidence: Vec::new(),
             trait_methods: Vec::new(),
@@ -116,6 +118,14 @@ impl RuntimePlanLowerOptions {
             closure_captures: Vec::new(),
             required_typed_lowering_evidence_len: None,
         }
+    }
+
+    /// Selects the canonical package identity used by compiled cross-section
+    /// references such as source-defined Fx applications.
+    #[must_use]
+    pub fn with_package_identity(mut self, package: impl Into<String>) -> Self {
+        self.package_identity = Some(package.into());
+        self
     }
 
     /// Selects a dialogue defaults profile by entity ID, for example
@@ -165,6 +175,15 @@ impl RuntimePlanLowerOptions {
     #[must_use]
     pub fn dialogue_defaults(&self) -> Option<&str> {
         self.dialogue_defaults.as_deref()
+    }
+
+    /// Canonical package identity for source-defined cross-section references.
+    ///
+    /// Source-local lowering uses `crate`; project and bundle drivers should
+    /// supply the selected package identity explicitly.
+    #[must_use]
+    pub fn package_identity(&self) -> &str {
+        self.package_identity.as_deref().unwrap_or("crate")
     }
 
     pub fn for_iteration_evidence(&self) -> &[RuntimeIteratorEvidence] {
@@ -369,7 +388,7 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
                 options.typed_lowering_evidence(),
                 &typed_expression_cursor,
             );
-        lower_agent_controller_flow(module, agent, pure_lookup)?
+        lower_agent_controller_flow(module, agent, pure_lookup, options)?
     };
     let entry_flow = lowered.id.clone();
     let entry_id = EntryRuntimeId::canonical(&entry_flow.canonical_label())
@@ -488,7 +507,8 @@ pub(crate) fn lower_runtime_flows(
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
     options: &RuntimePlanLowerOptions,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
-    let fx = FxCatalog::try_from_module(module).map_err(|error| vec![error])?;
+    let fx = FxCatalog::try_from_module_for_package(module, options.package_identity())
+        .map_err(|error| vec![error])?;
     let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
         module,
         options.dialogue_defaults(),
@@ -535,10 +555,15 @@ fn lower_agent_controller_flow(
     module: &HirModule,
     agent: &HirAgent,
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
+    options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
-    let fx = FxCatalog::try_from_module(module).map_err(|error| vec![error])?;
-    let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(module, None)
-        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    let fx = FxCatalog::try_from_module_for_package(module, options.package_identity())
+        .map_err(|error| vec![error])?;
+    let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
+        module,
+        options.dialogue_defaults(),
+    )
+    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut lowerer = FlowRuntimeLowerer {
         agent_controller: true,
         line_task_groups: Vec::new(),

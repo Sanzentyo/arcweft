@@ -69,11 +69,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             CommandSpec::new("cargo").args([
                 "+nightly".to_owned(),
                 "-Zscript".to_owned(),
-                "tools/capture-css-style-parity-native-frame.rs".to_owned(),
+                "tools/capture-text-parity-frame.rs".to_owned(),
                 "--bundle".to_owned(),
                 "web/local/css-style-parity.awfb".to_owned(),
+                "--checkpoint".to_owned(),
+                viewport.to_owned(),
                 "--output".to_owned(),
                 format!("target/css-style-parity/native-{viewport}.png"),
+                "--no-frame-report".to_owned(),
                 "--viewport".to_owned(),
                 viewport.to_owned(),
                 "--visual-time-millis".to_owned(),
@@ -89,18 +92,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         "web capture default compact hidpi",
         CommandSpec::new("node")
             .env(
-                "ARW_CSS_STYLE_PARITY_DIR",
+                "ARW_TEXT_PARITY_DIR",
                 PathBuf::from("target/css-style-parity")
                     .canonicalize()?
                     .display()
                     .to_string(),
             )
+            .env("ARW_TEXT_PARITY_CHECKPOINTS", "default,compact,hidpi")
+            .env("ARW_TEXT_PARITY_VISUAL_TIME_MILLIS", "9000")
             .env(
-                "ARW_CSS_STYLE_PARITY_CHECKPOINTS",
-                "default,compact,hidpi",
+                "ARW_TEXT_PARITY_REQUIRED_TEXT",
+                "DSL-styled text|wave motion",
             )
-            .env("ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS", "9000")
-            .args(["web/tests/css-style-parity-smoke.mjs"]),
+            .args(["web/tests/text-parity-smoke.mjs"]),
     )?;
 
     let json = serde_json::to_vec_pretty(&samples)?;

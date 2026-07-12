@@ -211,6 +211,29 @@ fn logical_ordinal_is_independent_from_rtl_visual_order() {
 }
 
 #[test]
+fn sideways_vertical_raster_origins_retain_shaped_bearings_inside_reported_ink() {
+    let vertical = style().with_flow(
+        RichTextWritingMode::VerticalRl,
+        RichTextInlineDirection::Auto,
+    );
+    let document = document("ABC", vertical, 11);
+    let layout = layout_document(&document, request(), &mut MockShaper::new(b"font"))
+        .expect("sideways vertical layout succeeds");
+
+    assert_eq!(layout.glyphs.len(), 3);
+    assert!(
+        layout
+            .glyphs
+            .iter()
+            .all(|glyph| glyph.orientation == arcweft_text_layout::GlyphOrientation::SidewaysCw)
+    );
+    for glyph in &layout.glyphs {
+        assert!((glyph.origin.x - glyph.ink_bounds.x).abs() < f32::EPSILON);
+        assert!((glyph.origin.y - glyph.ink_bounds.y).abs() < f32::EPSILON);
+    }
+}
+
+#[test]
 fn shaped_ranges_outside_the_requested_run_are_rejected() {
     let document = document("a", style(), 3);
     let error = layout_document(

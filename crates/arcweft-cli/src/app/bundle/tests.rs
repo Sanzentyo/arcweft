@@ -327,7 +327,9 @@ source = "demo.arcw"
     )
     .expect("profile resolves");
     assert_eq!(
-        selection_package_identity(&selection).expect("package identity resolves"),
+        selection
+            .package_identity()
+            .expect("package identity resolves"),
         "launch-only"
     );
 
@@ -1672,6 +1674,66 @@ fn compile_bundle_for_selection_attaches_product_awbc_before_awfb_encoding() {
         .expect("ordinary product AWFB decodes");
     assert!(decoded.product_awbc().is_some());
     assert!(decoded.bytecode.program.flows.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn direct_bundle_source_defined_fx_application_resolves_its_definition() {
+    let root =
+        std::env::temp_dir().join(format!("arcweft-source-fx-bundle-{}", std::process::id()));
+    fs::create_dir_all(&root).expect("temporary source directory");
+    let source_path = root.join("opening.arcw");
+    fs::write(
+        &source_path,
+        r#"
+pub surface character narrator {
+    display = "Narrator"
+}
+
+#[fx]
+fn wave(amplitude: Length = 2px) -> Fx {
+    Fx.transform(
+        target = .glyph,
+        sample = |ctx| Transform2D { translate_y: amplitude },
+    )
+}
+
+entry game @entry.main {
+    goto @flow.main
+}
+
+flow main {
+    narrator: [fx wave()]A[/fx][p]
+    return "done"
+}
+"#,
+    )
+    .expect("temporary source writes");
+    let selection = SourceSelection::Direct {
+        path: source_path.clone(),
+    };
+    let mut phases = Vec::new();
+
+    let artifact = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
+        .expect("source-defined Fx bundle compiles");
+    let frame = artifact.bundle.display.lines()[0]
+        .resolve_frame(&arcweft_render_text::RuntimeLineContext::default())
+        .expect("line display resolves");
+    let application = frame
+        .fx_applications()
+        .next()
+        .expect("typed Fx application remains in RichText");
+
+    assert_eq!(application.definition().to_string(), "opening::wave");
+    assert!(
+        artifact
+            .bundle
+            .fx_definitions
+            .get(application.definition())
+            .is_some(),
+        "the application ID must resolve in the bundle FxDefinitions inventory"
+    );
 
     let _ = fs::remove_dir_all(root);
 }

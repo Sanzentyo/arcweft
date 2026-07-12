@@ -43,6 +43,45 @@ fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
 }
 
 #[test]
+fn rich_text_fx_uses_the_selected_package_identity() {
+    let source = r##"
+#[fx]
+fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
+    Fx.text(weight = .strong, color = accent)
+}
+"##;
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("Fx fixture lowers");
+    let catalog = FxCatalog::try_from_module_for_package(&hir, "opening-game")
+        .expect("package-scoped Fx catalog compiles");
+    let content = parse_dialogue_text("[fx emphasis()]warning[/fx]");
+    let tag = content
+        .tokens()
+        .iter()
+        .find_map(|token| match token {
+            DialogueToken::Tag(tag) if tag.kind() == DialogueTagKind::Fx => Some(tag),
+            _ => None,
+        })
+        .expect("Fx tag");
+
+    let (_, application) = catalog.bind_tag(tag, 0).expect("Fx tag binds");
+
+    assert_eq!(
+        application.definition().to_string(),
+        "opening-game::emphasis"
+    );
+    assert_eq!(
+        catalog
+            .definitions
+            .get("emphasis")
+            .expect("compiled definition")
+            .id(),
+        application.definition()
+    );
+}
+
+#[test]
 fn rich_text_fx_rejects_open_runtime_binding() {
     let catalog = catalog(
         r"

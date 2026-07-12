@@ -14,7 +14,7 @@ use arcweft_presentation::fx::{FxApplication, FxDefinition, FxRuntimeValue, FxSo
 
 use crate::{
     errors::RuntimePlanLowerError,
-    fx::{closed_expr_to_fx_value, lower_fx_definitions},
+    fx::{closed_expr_to_fx_value, lower_fx_definitions_for_package},
 };
 
 mod contributions;
@@ -33,9 +33,17 @@ pub(crate) struct FxCatalog {
 }
 
 impl FxCatalog {
+    #[cfg(test)]
     pub(crate) fn try_from_module(module: &HirModule) -> Result<Self, RuntimePlanLowerError> {
+        Self::try_from_module_for_package(module, "crate")
+    }
+
+    pub(crate) fn try_from_module_for_package(
+        module: &HirModule,
+        package: &str,
+    ) -> Result<Self, RuntimePlanLowerError> {
         let mut definitions = BTreeMap::new();
-        for definition in lower_fx_definitions(module)? {
+        for definition in lower_fx_definitions_for_package(module, package)? {
             let name = definition
                 .id()
                 .function()

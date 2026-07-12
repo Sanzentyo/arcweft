@@ -232,7 +232,7 @@ fn compile_project_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
-    let runtime_options = runtime_plan_options_for_selection(selection);
+    let runtime_options = runtime_plan_options_for_selection(selection)?;
     let compiled = run_profile_phase(phases, "project_compile", || {
         compile_project_with_env(loaded.sources(), env, &runtime_options).map_err(|error| {
             print_project_compile_error(&error);
@@ -312,7 +312,7 @@ fn profile_lower_runtime_plan(
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<RuntimePlanLowerReport, ExitCode> {
     run_profile_phase(phases, "runtime_plan_lower", || {
-        let runtime_options = runtime_plan_options_for_selection(selection);
+        let runtime_options = runtime_plan_options_for_selection(selection)?;
         lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
             hir,
             typecheck,

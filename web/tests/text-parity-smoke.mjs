@@ -6,28 +6,85 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
+// Drives deterministic prepared-text checkpoints through the browser player.
+
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
-const outputDir = process.env.ARW_CSS_STYLE_PARITY_DIR ??
+const sample = process.env.ARW_TEXT_PARITY_SAMPLE ?? "css-style-parity";
+const outputDir = process.env.ARW_TEXT_PARITY_DIR ??
   normalize(join(root, "..", "target", "css-style-parity"));
-const checkpoints = (process.env.ARW_CSS_STYLE_PARITY_CHECKPOINTS ?? "default,compact")
+const checkpoints = (process.env.ARW_TEXT_PARITY_CHECKPOINTS ?? "default,compact")
   .split(",")
   .map((name) => name.trim())
   .filter(Boolean);
-const bundleUrl = process.env.ARW_CSS_STYLE_PARITY_BUNDLE_URL ??
+const bundleUrl = process.env.ARW_TEXT_PARITY_BUNDLE_URL ??
   "./local/css-style-parity.awfb";
-const fontUrl = process.env.ARW_CSS_STYLE_PARITY_FONT_URL ??
+const fontUrl = process.env.ARW_TEXT_PARITY_FONT_URL ??
   "./assets/arcweft-demo.ttf";
 const additionalFontUrls = (
-  process.env.ARW_CSS_STYLE_PARITY_ADDITIONAL_FONT_URLS ??
+  process.env.ARW_TEXT_PARITY_ADDITIONAL_FONT_URLS ??
     "./assets/noto-sans-jp-css-style-parity.ttf"
 )
   .split(",")
   .map((url) => url.trim())
   .filter(Boolean);
-const visualTimeMillis = Number.parseInt(
-  process.env.ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS ?? "9000",
+const defaultVisualTimeMillis = Number.parseInt(
+  process.env.ARW_TEXT_PARITY_VISUAL_TIME_MILLIS ?? "9000",
   10,
 );
+const visualTimes = assignmentMap(
+  process.env.ARW_TEXT_PARITY_VISUAL_TIMES,
+  (value) => Number.parseInt(value, 10),
+);
+const advanceCounts = assignmentMap(
+  process.env.ARW_TEXT_PARITY_ADVANCE_COUNTS,
+  (value) => Number.parseInt(value, 10),
+);
+const globalRequiredText = splitValues(
+  process.env.ARW_TEXT_PARITY_REQUIRED_TEXT ?? "DSL-styled text|wave motion",
+  "|",
+);
+const requiredTextByCheckpoint = assignmentMap(
+  process.env.ARW_TEXT_PARITY_REQUIRED_TEXT_BY_CHECKPOINT,
+  (value) => splitValues(value, "|"),
+  ";",
+);
+const minimumTextCount = Number.parseInt(
+  process.env.ARW_TEXT_PARITY_MIN_TEXT_COUNT ?? "2",
+  10,
+);
+const expectedImageCount = Number.parseInt(
+  process.env.ARW_TEXT_PARITY_IMAGE_COUNT ?? "0",
+  10,
+);
+
+function splitValues(value, separator) {
+  return value.split(separator).map((item) => item.trim()).filter(Boolean);
+}
+
+function assignmentMap(raw, parseValue, separator = ",") {
+  const values = new Map();
+  for (const assignment of splitValues(raw ?? "", separator)) {
+    const equals = assignment.indexOf("=");
+    expect(equals > 0, `bad checkpoint assignment: ${assignment}`);
+    const key = assignment.slice(0, equals).trim();
+    const value = parseValue(assignment.slice(equals + 1).trim());
+    expect(key.length > 0, `empty checkpoint assignment key: ${assignment}`);
+    values.set(key, value);
+  }
+  return values;
+}
+
+function checkpointVisualTime(checkpoint) {
+  return visualTimes.get(checkpoint) ?? defaultVisualTimeMillis;
+}
+
+function checkpointAdvanceCount(checkpoint) {
+  return advanceCounts.get(checkpoint) ?? 0;
+}
+
+function checkpointRequiredText(checkpoint) {
+  return requiredTextByCheckpoint.get(checkpoint) ?? globalRequiredText;
+}
 
 const contentTypes = new Map([
   [".awfb", "application/octet-stream"],
@@ -124,18 +181,65 @@ function collectConsoleErrors(page) {
   return errors;
 }
 
-async function installDeterministicClock(page, maxMillis) {
+async function installDeterministicClock(page, visualTimeMillis) {
   await page.addInitScript(() => {
     let now = 0;
+    let remainingSteps = 1;
     globalThis.__arcweftNowMillis = () => {
-      now = Math.min(now + 16, globalThis.__arcweftCssStyleParityMaxMillis ?? 9000);
+      const consumed = Math.min(remainingSteps, 4);
+      remainingSteps -= consumed;
+      now += consumed * 16;
       return now;
     };
+    globalThis.__arcweftGrantLogicalClockSteps = (count) => {
+      if (!Number.isSafeInteger(count) || count < 0) {
+        throw new Error(`invalid logical clock step count: ${count}`);
+      }
+      remainingSteps += count;
+    };
+    globalThis.__arcweftRemainingLogicalClockSteps = () => remainingSteps;
   });
   await page.addInitScript((value) => {
-    globalThis.__arcweftCssStyleParityMaxMillis = value;
     globalThis.__arcweftDialogueVisualTimeMillis = value;
-  }, maxMillis);
+  }, visualTimeMillis);
+}
+
+async function advanceLogicalClockSteps(page, steps) {
+  const startTick = await page.evaluate(() =>
+    window.__arcweftLastObservation?.logical_tick ?? null
+  );
+  expect(Number.isSafeInteger(startTick), "runtime observation has no logical tick");
+  const targetTick = startTick + steps;
+  await page.evaluate((count) => {
+    globalThis.__arcweftGrantLogicalClockSteps(count);
+  }, steps);
+  await page.waitForFunction(
+    (target) =>
+      window.__arcweftLastObservation?.logical_tick >= target &&
+      globalThis.__arcweftRemainingLogicalClockSteps() === 0,
+    targetTick,
+    { timeout: 10_000 },
+  );
+  const captureTick = await page.evaluate(() =>
+    window.__arcweftLastObservation?.logical_tick ?? null
+  );
+  expect(
+    captureTick === targetTick,
+    `logical clock overshot target ${targetTick}: ${captureTick}`,
+  );
+  return { startTick, captureTick };
+}
+
+async function advanceLogicalClockDuration(page, elapsedMillis) {
+  const elapsedSteps = Math.ceil(elapsedMillis / 16);
+  const { startTick, captureTick } = await advanceLogicalClockSteps(page, elapsedSteps);
+  return {
+    quantum_millis: 16,
+    activation_tick: startTick,
+    capture_tick: captureTick,
+    elapsed_steps: elapsedSteps,
+    elapsed_millis: elapsedSteps * 16,
+  };
 }
 
 function checkpointOptions(name) {
@@ -147,20 +251,19 @@ function checkpointOptions(name) {
     case "hidpi":
       return { viewport: { width: 640, height: 360 }, deviceScaleFactor: 2 };
     default:
-      throw new Error(`unknown CSS style parity checkpoint: ${name}`);
+      return { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 };
   }
 }
 
 function frameText(frame) {
-  const textBlocks = frame?.text?.map((item) => item.text) ?? [];
-  const preparedText =
-    frame?.text?.map((item) => item.visible_text ?? item.text) ?? [];
-  return [...textBlocks, ...preparedText].join("");
+  return frame?.text?.map((item) => item.visible_text ?? item.text).join("") ?? "";
 }
 
 async function openReady(browser, baseUrl, checkpoint) {
   const options = checkpointOptions(checkpoint);
   const page = await browser.newPage(options);
+  const visualTimeMillis = checkpointVisualTime(checkpoint);
+  const requiredText = checkpointRequiredText(checkpoint);
   await installDeterministicClock(page, visualTimeMillis);
   const errors = collectConsoleErrors(page);
   const search = new URLSearchParams({
@@ -174,21 +277,30 @@ async function openReady(browser, baseUrl, checkpoint) {
     null,
     { timeout: 10_000 },
   );
+  await page.waitForFunction(
+    () => Boolean(window.__arcweftFatal) ||
+      Boolean(window.__arcweftLastFrameObservation?.text?.some((item) =>
+        item.owner?.kind?.endsWith(":body")
+      )),
+    null,
+    { timeout: 10_000 },
+  );
+  await advanceDialoguePages(page, checkpointAdvanceCount(checkpoint));
+  const logicalClock = await advanceLogicalClockDuration(page, visualTimeMillis);
   try {
     await page.waitForFunction(
-      () =>
+      ({ requiredText, expectedImageCount }) =>
         Boolean(window.__arcweftFatal) ||
         (Boolean(window.__arcweftLastObservation?.dialogue) &&
-        window.__arcweftLastFrameObservation?.image_count === 0 &&
+        window.__arcweftLastFrameObservation?.image_count === expectedImageCount &&
         (() => {
           const frame = window.__arcweftLastFrameObservation;
-          const textBlocks = frame?.text?.map((item) => item.text) ?? [];
-          const preparedText =
-            frame?.text?.map((item) => item.visible_text ?? item.text) ?? [];
-          const text = [...textBlocks, ...preparedText].join("");
-          return text.includes("DSL-styled text") && text.includes("wave motion");
+          const text = frame?.text
+            ?.map((item) => item.visible_text ?? item.text)
+            .join("") ?? "";
+          return requiredText.every((token) => text.includes(token));
         })()),
-      null,
+      { requiredText, expectedImageCount },
       { timeout: 10_000 },
     );
     const fatal = await page.evaluate(() => window.__arcweftFatal ?? null);
@@ -205,7 +317,44 @@ async function openReady(browser, baseUrl, checkpoint) {
       `${error.message}\nconsoleErrors=${JSON.stringify(errors, null, 2)}\nstate=${JSON.stringify(state, null, 2)}`,
     );
   }
-  return { page, errors };
+  return { page, errors, logicalClock };
+}
+
+async function advanceDialoguePages(page, count) {
+  for (let index = 0; index < count; index += 1) {
+    const before = await page.evaluate(() => {
+      const item = window.__arcweftLastFrameObservation?.text?.find((candidate) =>
+        candidate.owner?.kind?.endsWith(":body")
+      );
+      return item
+        ? { identity: item.owner.kind, text: item.text, visibleText: item.visible_text }
+        : null;
+    });
+    expect(before, `missing dialogue body before advance ${index + 1}`);
+    if (before.visibleText !== before.text) {
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(
+        (text) => Boolean(window.__arcweftFatal) ||
+          window.__arcweftLastFrameObservation?.text?.some((item) =>
+            item.owner?.kind?.endsWith(":body") &&
+            item.text === text &&
+            item.visible_text === item.text
+          ),
+        before.text,
+        { timeout: 2_000 },
+      );
+    }
+    await page.keyboard.press("Enter");
+    await advanceLogicalClockSteps(page, 1);
+    await page.waitForFunction(
+      (identity) => Boolean(window.__arcweftFatal) ||
+        window.__arcweftLastFrameObservation?.text?.some((item) =>
+          item.owner?.kind?.endsWith(":body") && item.owner.kind !== identity
+        ),
+      before.identity,
+      { timeout: 2_000 },
+    );
+  }
 }
 
 async function assertCanvasOnlySample(page, checkpoint) {
@@ -217,17 +366,17 @@ async function assertCanvasOnlySample(page, checkpoint) {
   expect(domGameText === 0, "DOM game text renderer is present");
   const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
   expect(frame?.schema_version === "arcweft.web_frame_observation.v3", "bad frame schema");
-  expect(frame.image_count === 0, "CSS style parity sample should have no image assets");
-  expect(frame.text_count >= 2, `expected styled text evidence, got ${frame.text_count}`);
   expect(
-    frame.text_count >= 2,
+    frame.image_count === expectedImageCount,
+    `expected ${expectedImageCount} image assets, got ${frame.image_count}`,
+  );
+  expect(
+    frame.text_count >= minimumTextCount,
     `expected canonical prepared text evidence, got ${frame.text_count}`,
   );
   const text = frameText(frame);
-  expect(text.includes("DSL-styled text"), `missing styled sample text for ${checkpoint}`);
-  if (checkpoint === "default") {
-    expect(text.includes("color"), `missing color sample text for ${checkpoint}`);
-    expect(text.includes("wave motion"), `missing wave sample text for ${checkpoint}`);
+  for (const token of checkpointRequiredText(checkpoint)) {
+    expect(text.includes(token), `missing ${JSON.stringify(token)} for ${checkpoint}`);
   }
   const paragraph = frame.text?.find((item) => item.owner?.kind?.endsWith(":body"));
   expect(paragraph?.lines?.length > 0, `missing prepared text lines for ${checkpoint}`);
@@ -295,7 +444,7 @@ async function main() {
 
   try {
     for (const checkpoint of checkpoints) {
-      const { page, errors } = await openReady(browser, baseUrl, checkpoint);
+      const { page, errors, logicalClock } = await openReady(browser, baseUrl, checkpoint);
       try {
         await assertCanvasOnlySample(page, checkpoint);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
@@ -303,7 +452,12 @@ async function main() {
         const frameEvidence = {
           ...frame,
           checkpoint,
-          visual_time_millis: visualTimeMillis,
+          visual_time_millis: checkpointVisualTime(checkpoint),
+          logical_clock: logicalClock,
+          execution_path: {
+            layout: "web-player-scene",
+            raster: "web-shared-wgpu-canvas",
+          },
           fonts,
         };
         await writeFile(
@@ -315,12 +469,13 @@ async function main() {
           scale: "device",
         });
         console.log(JSON.stringify({
-          sample: "css-style-parity",
+          sample,
           checkpoint,
+          advanceCount: checkpointAdvanceCount(checkpoint),
           textCount: frame.text_count,
           choiceCount: frame.choice_count,
           imageCount: frame.image_count,
-          visualTimeMillis,
+          visualTimeMillis: checkpointVisualTime(checkpoint),
           fontHashes: fonts.map((font) => font.fnv1a64),
         }));
       } finally {

@@ -1336,6 +1336,79 @@ warnings. The audit README records exact changed-file sizes, current largest
 workspace Rust files, their classifications/responsibilities, and the absence
 of dependency-edge changes.
 
+### Project-font unified visual-parity slice
+
+The final-path visual witness is now independent of the historical native
+system-font goldens:
+
+- `samples/unified-text-visual-parity/main.arcw` contains five sequential
+  pages covering vertical-RL UAX punctuation, vertical-LR ruby-under and
+  inter-character ruby, four-digit text-combine-upright, sideways Latin,
+  loose/strict JLREQ composition of identical source text, a source-defined
+  glyph sampler, and delayed typewriter reveal;
+- the fixture registers the deterministic checked-in
+  `noto-sans-jp-unified-text-parity.ttf` project-font subset on both backends;
+- the generalized native/headless and browser harnesses use
+  `capture-text-parity-frame.rs` and `text-parity-smoke.mjs`. They stop at the
+  target page activation tick, then advance the same 16 ms runtime clock
+  quanta. The frame report records activation tick, capture tick, elapsed
+  steps, and quantized elapsed milliseconds;
+- source-defined RichText Fx applications and the bundle `FxDefinitions`
+  inventory now receive one selected package identity during lowering. Direct
+  sources use their file stem, projects use the manifest package, and project
+  compilation enforces its manifest identity. The unpublished contract was
+  corrected directly without runtime rebasing, an alias, or a dual reader;
+- sideways vertical raster origins are recovered from the final ink rectangle
+  while retaining the shaped face's left/top bearings. This aligns reported
+  ink, capture pixels, and hit geometry after quarter-turn placement;
+- `verify-unified-text-visual-parity.rs` checks semantic geometry and generated
+  attachments in addition to the generic text-raster, full-frame, and IMQ
+  gates. Representative TextBox-body scopes retain color, mask, object-ID,
+  semantic owner, crop, and layout-hash evidence.
+
+`just unified-text-visual-parity` passes all eight checkpoints:
+
+| Evidence | Native/Web result | Native semantic/temporal MSE | Web semantic/temporal MSE |
+| --- | --- | ---: | ---: |
+| vertical-RL | pixel exact; 28 raster runs | — | — |
+| vertical-LR | pixel exact; 27 raster runs | — | — |
+| JLREQ loose vs strict | each checkpoint pixel exact | 0.0012708181 | 0.0012708181 |
+| Fx 4000 ms vs 4500 ms request | each checkpoint pixel exact | 0.0003545461 | 0.0003545461 |
+| reveal 20000 ms vs 20500 ms | each checkpoint pixel exact | 0.0005311874 | 0.0005311874 |
+
+The 4500 ms Fx request is deterministically rounded up to 4512 ms by the
+16 ms runtime quantum on both backends. The Fx layout hash remains stable while
+the three `波動光` glyph transforms change; the reveal layout hash remains
+stable while exactly one additional logical glyph becomes visible. Loose JLREQ
+places `。` and `「` on different columns, while strict JLREQ keeps them on the
+same column. Native and Web prepared glyph/ruby/run geometry, font
+fingerprints, logical-clock records, and final pixels are identical at every
+checkpoint.
+
+Validation at Jujutsu working change `wyslyrwo`:
+
+```bash
+cargo test -p arcweft-text-layout --test document_layout --all-features
+cargo test -p arcweft-runtime-plan \
+  rich_text_fx_uses_the_selected_package_identity --lib
+cargo test -p arcweft-cli \
+  direct_bundle_source_defined_fx_application_resolves_its_definition \
+  --all-features
+cargo check -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-cli \
+  --all-features
+just unified-text-visual-parity
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-visual-parity-2026-07-12
+```
+
+All commands pass. The structural audit records 1,256 Rust files / 622,283
+physical Rust LOC, 0 errors, and 131 tracked warnings; no Cargo dependency edge
+changed. Cut 9 remains open for the final public
+`LaidOutText`/`layout_frame` and provisional legacy-Fx vocabulary deletion,
+workspace-wide validation, the final structural audit, and its concluding
+push. The visual packet itself is closed and reproducible without overwriting
+any checked-in system-font golden.
+
 ## Non-goals
 
 There are no deferred items from the supplied implementation directive. Typst

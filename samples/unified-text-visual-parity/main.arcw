@@ -1,0 +1,71 @@
+pub surface character parity {
+    display = "Unified Text"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Noto Sans JP"
+                color = rgb("#eef7ff")
+                size = 30px
+            }
+        }
+    }
+}
+
+pub textbox unified_text_panel {
+    rich_text {
+        text {
+            font = "Noto Sans JP"
+            color = rgb("#eef7ff")
+            size = 30px
+        }
+        ruby {
+            size = 14px
+            gap = 1px
+            overhang = 3px
+            collision_gap = 2px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.unified_text_panel
+}
+
+#[fx]
+fn parity_orbit(
+    amplitude: Length = 5px,
+    speed: f32 = 0.8,
+) -> Fx {
+    Fx.transform(
+        target = .glyph,
+        sample = |ctx| Transform2D {
+            translate_y:
+                sin(ctx.time * speed + ctx.ordinal_phase()) * amplitude,
+        },
+    )
+}
+
+entry game @entry.unified_text_visual_parity {
+    goto @flow.unified_text_visual_parity
+}
+
+flow unified_text_visual_parity {
+    parity(id=@say.unified_text_visual_parity.vertical_rl, voice=auto):
+        [size 42][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人」2026ARC。山川海[/font][/][/size][p]
+
+    parity(id=@say.unified_text_visual_parity.vertical_lr, voice=auto):
+        [size 42][.vertical_lr jlreq=strict][font "Noto Sans JP"]縦[.ruby_under]|[夢](ゆめ)[/]へ[.ruby_inter_character]|[夢星](ゆめ)[/]人2026XYZ。山川[/font][/][/size][p]
+
+    parity(id=@say.unified_text_visual_parity.jlreq_loose, voice=auto):
+        [size 36][.vertical_rl jlreq=loose][font "Noto Sans JP"]天地。「人山川海[/font][/][/size][p]
+
+    parity(id=@say.unified_text_visual_parity.jlreq_strict, voice=auto):
+        [size 36][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人山川海[/font][/][/size][p]
+
+    parity(id=@say.unified_text_visual_parity.fx_reveal, voice=auto):
+        [color #b9dcff]FX[/color] [fx parity_orbit(amplitude=5px, speed=0.8)][size 42][color #9be7ff]波動光[/color][/size][/fx][br]
+        [color #ffd8b0]REVEAL[/color] [.typewriter cps=2 delay=18s phase=glyph_mask][size 36]開示2026[/size][/][p]
+
+    return "unified_text_visual_parity_done"
+}

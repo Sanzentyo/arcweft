@@ -11,8 +11,10 @@ state rather than DOM game View or image assets.
 
 - `samples/css-style-parity/main.arcw`
 - `samples/css-style-parity/README.md`
-- `tools/capture-css-style-parity-native-frame.rs`
-- `web/tests/css-style-parity-smoke.mjs`
+- `tools/capture-text-parity-frame.rs` (generalized from the original
+  CSS-specific capture tool on 2026-07-12)
+- `web/tests/text-parity-smoke.mjs` (generalized from the original
+  CSS-specific browser harness on 2026-07-12)
 
 `just css-style-parity` builds the sample bundle into ignored
 `web/local/css-style-parity.awfb`, captures native offscreen PNGs, captures Web

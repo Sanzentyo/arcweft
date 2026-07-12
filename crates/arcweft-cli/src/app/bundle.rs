@@ -330,7 +330,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
     let mut image_objects = bundle_image_objects(&image_declarations)?;
-    let package = selection_package_identity(selection)?;
+    let package = selection.package_identity()?;
     let fx_definitions = lower_fx_definitions_for_package(&compiled.hir, &package)
         .map_err(|error| {
             eprintln!("error: failed to compile Fx definitions: {error}");
@@ -375,27 +375,6 @@ pub(in crate::app) fn compile_bundle_for_selection(
         bundle,
         entry_kinds,
     })
-}
-
-fn selection_package_identity(selection: &SourceSelection) -> Result<String, ExitCode> {
-    if let Some(manifest) = selection.resource_manifest() {
-        return arcweft_project_loader::project::load_project_manifest(manifest)
-            .map(|project| project.package().name().as_str().to_owned())
-            .map_err(|error| {
-                eprintln!("error: failed to resolve bundle package identity: {error}");
-                ExitCode::FAILURE
-            });
-    }
-    selection
-        .path()
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .filter(|stem| !stem.is_empty())
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            eprintln!("error: direct bundle source has no package identity");
-            ExitCode::FAILURE
-        })
 }
 
 fn emit_bundle_verification_diagnostics(selection: &SourceSelection, report: &VerificationReport) {

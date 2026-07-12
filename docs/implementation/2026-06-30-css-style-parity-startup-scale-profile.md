@@ -70,7 +70,7 @@ inside the CLI progress output.
 
 - `arcweft-render-wgpu` now scales glyphon `TextArea` origin, scale, and bounds
   by `RenderViewport::scale_factor`.
-- `web/tests/css-style-parity-smoke.mjs` captures web screenshots in device
+- `web/tests/text-parity-smoke.mjs` captures web screenshots in device
   pixels and validates default, compact, and HiDPI checkpoints.
 - `arcweft-player-web` exposes a deterministic visual-time override for the
   parity harness, matching the native capture's explicit visual time.

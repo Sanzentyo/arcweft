@@ -87,7 +87,7 @@ pub(in crate::app) fn runtime_serve_selection(
         .unwrap_or(standard::SANS_IO_ADAPTER_ID);
     let checked = load_and_check_selection(selection, adapter_override)?;
     let host_policy = native_host_policy_for_selection_with_adapter(selection, adapter_override)?;
-    let runtime_options = runtime_plan_options_for_selection(selection);
+    let runtime_options = runtime_plan_options_for_selection(selection)?;
     let plan = lower_source_runtime_plan_with_typecheck_and_options(
         &checked.hir,
         &checked.typecheck_report,
