@@ -1,4 +1,4 @@
-pub surface character designer {
+pub character designer {
     display = "Reactive View"
     default_voice = auto
     dialogue_style {

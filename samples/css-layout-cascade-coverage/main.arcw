@@ -1,4 +1,4 @@
-pub surface character layout_agent {
+pub character layout_agent {
     display = "Layout Coverage"
     default_voice = auto
     dialogue_style {

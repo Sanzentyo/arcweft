@@ -1,9 +1,9 @@
-pub surface character alice {
+pub character alice {
     display = "Alice"
     default_voice = auto
 }
 
-pub surface character narrator {
+pub character narrator {
     display = "Narrator"
     default_voice = auto
 }

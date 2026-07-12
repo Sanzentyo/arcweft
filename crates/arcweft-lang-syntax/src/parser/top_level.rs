@@ -158,7 +158,6 @@ impl Parser<'_> {
     fn use_line_has_removed_execution_mode(trimmed: &str) -> bool {
         let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
         let rest = rest.trim_start();
-        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
         rest.starts_with("lazy use ") || rest.starts_with("eager use ")
     }
 
@@ -170,17 +169,22 @@ impl Parser<'_> {
     fn top_level_item_has_removed_asset_set(trimmed: &str) -> bool {
         let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
         let rest = rest.trim_start();
-        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
         rest.starts_with("asset set ")
     }
 
     fn top_level_item_has_removed_hot_checkpoint(trimmed: &str) -> bool {
         let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
         let rest = rest.trim_start();
-        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
         rest == "hot checkpoint"
             || rest.starts_with("hot checkpoint ")
             || rest.starts_with("hot checkpoint{")
+    }
+
+    fn top_level_item_has_removed_surface_prefix(trimmed: &str) -> bool {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        rest.trim_start()
+            .strip_prefix("surface")
+            .is_some_and(|rest| rest.starts_with(char::is_whitespace))
     }
 
     fn top_level_item_has_removed_fragment_decl(trimmed: &str) -> bool {
@@ -197,6 +201,10 @@ impl Parser<'_> {
         sinks: &mut TopLevelSinks<'_>,
     ) {
         *sinks.source_attrs_open = false;
+        if Self::top_level_item_has_removed_surface_prefix(trimmed) {
+            self.reject_removed_surface_prefix(range);
+            return;
+        }
         if Self::top_level_item_has_removed_asset_set(trimmed) {
             self.reject_removed_asset_set_decl(range);
             return;
@@ -224,6 +232,27 @@ impl Parser<'_> {
             );
         }
         self.parse_top_level_item(kind, trimmed, range, sinks.items);
+    }
+
+    fn reject_removed_surface_prefix(&mut self, range: TextRange) {
+        let line = self.current().clone();
+        self.push_error(
+            range,
+            "the `surface` declaration prefix was removed from Arcweft source grammar",
+            [
+                "pub character alice { ... }",
+                "pub view DialoguePanel() { ... }",
+            ],
+            Some(line.text.trim()),
+            ["remove `surface` and use the declaration family directly"],
+        );
+        self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
+        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
+        } else {
+            self.index += 1;
+        }
     }
 
     fn reject_removed_fragment_decl(&mut self, range: TextRange) {

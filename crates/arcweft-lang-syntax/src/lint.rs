@@ -652,7 +652,7 @@ source @source.http_requests local_requests: Source<HttpRequest, HttpError> {
     fn surface_alias_is_decl_identity_name() {
         let codes = lint_codes(
             r"
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 ",
         );

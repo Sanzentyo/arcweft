@@ -69,6 +69,39 @@ use game.prelude.*
 }
 
 #[test]
+fn removed_surface_declaration_prefix_is_a_structured_parse_diagnostic() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+pub surface character alice {
+    display = "Alice"
+}
+
+pub character bob {}
+"#,
+    );
+
+    assert_eq!(parsed.errors().len(), 1);
+    let error = &parsed.errors()[0];
+    assert!(
+        error
+            .message()
+            .contains("`surface` declaration prefix was removed")
+    );
+    assert_eq!(error.found(), Some("pub surface character alice {"));
+    assert!(
+        error
+            .recovery()
+            .iter()
+            .any(|suggestion| suggestion.message().contains("remove `surface`"))
+    );
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::EntityDecl(item)] if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
+            && item.id().body() == "character.bob"
+    ));
+}
+
+#[test]
 fn namespace_separator_is_rejected_in_module_paths() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         "mod game::opening\nflow @flow.opening opening { return }\n",

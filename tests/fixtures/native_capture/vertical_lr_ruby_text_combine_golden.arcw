@@ -1,4 +1,4 @@
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
     default_voice = auto
     dialogue_style {
         font = "MS Mincho"

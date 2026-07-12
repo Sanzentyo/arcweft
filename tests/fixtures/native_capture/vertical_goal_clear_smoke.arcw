@@ -1,4 +1,4 @@
-pub surface character @character.audit Audit as audit {
+pub character @character.audit Audit as audit {
     default_voice = auto
     dialogue_style {
         font = "MS Mincho"

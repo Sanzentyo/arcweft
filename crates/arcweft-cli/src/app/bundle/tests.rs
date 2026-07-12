@@ -1687,7 +1687,7 @@ fn direct_bundle_source_defined_fx_application_resolves_its_definition() {
     fs::write(
         &source_path,
         r#"
-pub surface character narrator {
+pub character narrator {
     display = "Narrator"
 }
 

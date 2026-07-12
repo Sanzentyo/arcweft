@@ -1,4 +1,4 @@
-pub surface character narrator {
+pub character narrator {
     display = "Narrator"
     default_voice = auto
 }

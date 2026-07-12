@@ -44,7 +44,7 @@ pub textbox mobile {
     }
 }
 
-pub surface character alice {
+pub character alice {
     display = "Alice"
     default_voice = auto
     dialogue_style {

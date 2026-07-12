@@ -5,7 +5,7 @@ Arcweft treats character presentation as a typed stage graph, not as ad-hoc imag
 ## Character definition
 
 ```arcw
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
 

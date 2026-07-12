@@ -271,7 +271,7 @@ pub image @image.sample.pulse {
     height = 78px
 }
 
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 
 pub voice profile @voice.alice.tts {

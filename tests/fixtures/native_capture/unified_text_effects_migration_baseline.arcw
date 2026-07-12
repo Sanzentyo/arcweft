@@ -1,4 +1,4 @@
-pub surface character lumi {
+pub character lumi {
     display = "Lumi"
     default_voice = auto
     dialogue_style {

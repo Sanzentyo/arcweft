@@ -1,4 +1,4 @@
-pub surface character parity {
+pub character parity {
     display = "Unified Text"
     default_voice = auto
     dialogue_style {

@@ -1,5 +1,5 @@
-pub surface character @character.alice Alice as alice {}
-pub surface character @character.bob Bob as bob {}
+pub character @character.alice Alice as alice {}
+pub character @character.bob Bob as bob {}
 
 bench @bench.dense_textual_scalar_len {
     measure iterations = 4 { goto @flow.dense_textual_scalar_len }

@@ -1,4 +1,4 @@
-pub surface character lumi {
+pub character lumi {
     display = "Lumi"
     default_voice = auto
     dialogue_style {
@@ -12,7 +12,7 @@ pub surface character lumi {
     }
 }
 
-pub surface character iris {
+pub character iris {
     display = "Iris"
     default_voice = auto
     dialogue_style {

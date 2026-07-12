@@ -1,4 +1,4 @@
-pub surface character stylist {
+pub character stylist {
     display = "Style Guide"
     default_voice = auto
     dialogue_style {

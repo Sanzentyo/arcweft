@@ -1,4 +1,4 @@
-pub surface character narrator {
+pub character narrator {
     display = "Arcweft Window Demo"
     default_voice = auto
 }

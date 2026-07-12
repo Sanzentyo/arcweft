@@ -11,6 +11,14 @@ TextBox, View, Fx, and capture path. Five sequential dialogue pages cover:
 - a source-defined glyph transform plus a delayed typewriter reveal at fixed
   logical times.
 
+`pub textbox unified_text_panel` declares the dialogue target and its text-style
+contribution; `TextBox` remains a domain/lifecycle object in the final model.
+The target is displayed by the standard persistent Rust-backed View using the
+same `ViewPrimitive::Text` path as authored Views. It is therefore intentionally
+not duplicated as an unrelated authored `pub view` fixture. Top-level `style`
+declarations remain retained-View style resources rather than aliases for the
+dialogue RichText cascade.
+
 Run `just unified-text-visual-parity` to build the bundle and collect the
 Native/headless offscreen and WebGPU parity packet under
 `target/unified-text-visual-parity/`. The command never overwrites a checked-in

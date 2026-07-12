@@ -111,7 +111,7 @@ fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",
         r"
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 
 flow @flow.opening opening {
@@ -270,7 +270,7 @@ fn check_rejects_unlowered_line_plan_item() {
     let path = temp_arcw(
         "unsupported-line-plan",
         r"
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 
 flow @flow.unsupported unsupported {
@@ -393,7 +393,7 @@ fn verify_json_reports_semantic_thread_join_conflict() {
     let path = temp_arcw(
         "verify-thread-join",
         r#"
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 
 flow @flow.thread_join thread_join {
@@ -559,7 +559,7 @@ fn verify_json_respects_semantic_defer_cancel_discharge() {
     let path = temp_arcw(
         "verify-cancel-defer",
         r"
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 
 flow @flow.cancel_cleanup cancel_cleanup {
@@ -685,7 +685,7 @@ pub dialogue defaults @dialogue.defaults.mobile {
     }
 }
 
-pub surface character alice {
+pub character alice {
 }
 
 flow opening {
@@ -871,7 +871,7 @@ pub textbox plan {
     }
 }
 
-pub surface character alice {
+pub character alice {
     dialogue_style {
         rich_text {
             text {
@@ -995,7 +995,7 @@ fn run_json_steps_runtime_plan() {
     let path = temp_arcw(
         "runtime-run",
         r"
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 
 flow @flow.run run {
@@ -2382,7 +2382,7 @@ fn run_json_observes_line_child_tasks_through_scheduler() {
     let path = temp_arcw(
         "line-child-scheduler",
         r#"
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
 }
 
 flow @flow.main main {
@@ -2731,7 +2731,7 @@ fn fmt_rejects_game_sugar_rewrites_for_awfagent_path() {
 fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
     let path = temp_arcw(
         "fmt-expand",
-        "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
+        "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))

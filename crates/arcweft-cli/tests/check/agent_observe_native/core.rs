@@ -1523,7 +1523,7 @@ pub dialogue defaults @dialogue.defaults.mobile {
 pub textbox desktop {}
 pub textbox mobile {}
 
-pub surface character alice {
+pub character alice {
     display = "Alice"
 }
 

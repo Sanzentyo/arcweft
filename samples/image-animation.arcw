@@ -53,7 +53,7 @@ pub image sample.pulse_sprite {
     proxy.param.channel = preview
 }
 
-pub surface character narrator {
+pub character narrator {
     display = "Narrator"
     default_voice = auto
     dialogue_style {

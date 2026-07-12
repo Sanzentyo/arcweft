@@ -1,4 +1,4 @@
-pub surface character akira {
+pub character akira {
     display = "Akira"
     default_voice = auto
     dialogue_style {
@@ -12,7 +12,7 @@ pub surface character akira {
     }
 }
 
-pub surface character mio {
+pub character mio {
     display = "Mio"
     default_voice = auto
     dialogue_style {
@@ -26,7 +26,7 @@ pub surface character mio {
     }
 }
 
-pub surface character sen {
+pub character sen {
     display = "Sen"
     default_voice = auto
     dialogue_style {
@@ -40,7 +40,7 @@ pub surface character sen {
     }
 }
 
-pub surface character terminal {
+pub character terminal {
     display = "Terminal"
     default_voice = auto
     dialogue_style {
@@ -54,7 +54,7 @@ pub surface character terminal {
     }
 }
 
-pub surface character narrator {
+pub character narrator {
     display = "Narrator"
     default_voice = auto
     dialogue_style {

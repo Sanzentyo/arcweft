@@ -148,7 +148,7 @@ fn assert_agent_format_golden(source: &str) {
 
 #[test]
 fn expands_speaker_with_and_parent_sugar() {
-    let source = "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n";
+    let source = "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n";
     let report = format_source(
         source,
         FormatOptions {
@@ -262,7 +262,7 @@ fn expand_sugar_nests_dotted_dialogue_defaults_assignments() {
 
 #[test]
 fn expands_speaker_presets_from_typed_tree_without_helper_false_positive() {
-    let source = "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let helper = compute()\n    alice2: preset[p]\n    helper: helper[p]\n}\n";
+    let source = "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let helper = compute()\n    alice2: preset[p]\n    helper: helper[p]\n}\n";
     let report = format_source(
         source,
         FormatOptions {
@@ -279,7 +279,7 @@ fn expands_speaker_presets_from_typed_tree_without_helper_false_positive() {
 
 #[test]
 fn expands_chained_speaker_presets_from_typed_tree() {
-    let source = "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let alice3 = alice2(face=smile)\n    alice3: chained[p]\n}\n";
+    let source = "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let alice3 = alice2(face=smile)\n    alice3: chained[p]\n}\n";
     let report = format_source(
         source,
         FormatOptions {

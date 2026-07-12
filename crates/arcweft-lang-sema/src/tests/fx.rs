@@ -190,7 +190,7 @@ fn invalid() -> Fx {
 fn point_controls_do_not_open_spans_inside_fx() {
     typecheck(
         r#"
-surface character narrator {
+character narrator {
     display = "Narrator"
     default_voice = auto
 }
@@ -212,7 +212,7 @@ flow main {
 fn explicit_rich_text_tags_are_not_reclassified_as_inferred_marks() {
     typecheck(
         r#"
-surface character narrator {
+character narrator {
     display = "Narrator"
     default_voice = auto
 }

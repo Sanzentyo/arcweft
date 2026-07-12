@@ -138,10 +138,6 @@ pub(super) fn parse_entity_decl_head(
     errors: &mut Vec<ParseError>,
 ) -> Option<EntityDeclHead> {
     let (visibility, rest) = parse_visibility_prefix(head);
-    let rest = rest
-        .trim_start()
-        .strip_prefix("surface ")
-        .unwrap_or(rest.trim_start());
     let (kind, rest) = entity_decl_kind(rest.trim_start())?;
     let family = entity_decl_family(kind);
     let rest = rest.trim_start();

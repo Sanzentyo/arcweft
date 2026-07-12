@@ -44,7 +44,7 @@ pub fn warning(
     ])
 }
 
-pub surface character @character.alice Alice as alice {
+pub character @character.alice Alice as alice {
     default_voice = auto
     dialogue_style {
         rich_text {
@@ -61,7 +61,7 @@ pub surface character @character.alice Alice as alice {
     }
 }
 
-pub surface character @character.bob Bob as bob {
+pub character @character.bob Bob as bob {
     default_voice = auto
     dialogue_style {
         rich_text {
@@ -78,7 +78,7 @@ pub surface character @character.bob Bob as bob {
     }
 }
 
-pub surface character @character.narrator Narrator as narrator {
+pub character @character.narrator Narrator as narrator {
     default_voice = auto
     dialogue_style {
         rich_text {

@@ -166,7 +166,6 @@ fn looks_like_style_item(trimmed: &str) -> bool {
 
 fn looks_like_use_line(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
-    let rest = rest.strip_prefix("surface ").unwrap_or(rest);
     rest.starts_with("use ") || rest.starts_with("lazy use ") || rest.starts_with("eager use ")
 }
 
@@ -224,7 +223,6 @@ fn looks_like_type_alias(trimmed: &str) -> bool {
 
 fn looks_like_entity_decl_item(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
-    let rest = rest.strip_prefix("surface ").unwrap_or(rest);
     [
         "audio bus",
         "mixer snapshot",

@@ -260,6 +260,10 @@ Fully qualified forms such as `pub character @character.alice { ... }`,
 fully elaborated surfaces rather than the recommended authoring form. Avoid
 putting display names or aliases in declaration headers.
 
+The former `surface` declaration prefix is not grammar. For example,
+`pub surface character alice { ... }` is a parse error; write
+`pub character alice { ... }` directly.
+
 ## Dialogue and line plans
 
 ```text
