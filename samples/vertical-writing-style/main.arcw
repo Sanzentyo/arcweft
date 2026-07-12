@@ -1,0 +1,81 @@
+pub character vertical_guide {
+    display = "Vertical Writing"
+    default_voice = auto
+}
+
+pub style vertical_writing_showcase {
+    .vertical_writing_panel {
+        background = rgba(16, 22, 35, 246)
+    }
+    .vertical_writing_speaker {
+        font-family = text("Noto Sans JP")
+        color = rgba(139, 211, 255, 255)
+        font-size = 18000milli
+        line-height = 26000milli
+        font-weight = text("700")
+    }
+    .vertical_writing_content {
+        font-family = text("Noto Sans JP")
+        color = rgba(244, 248, 255, 255)
+    }
+    .vertical_writing_action {
+        background = rgba(0, 0, 0, 0)
+    }
+}
+
+pub view VerticalWritingShowcase(dialogue: DialogueView) {
+    Panel(x = 140px, y = 168px, width = 1000px, height = 384px, part = vertical_writing_panel) {
+        Text(dialogue.speaker)
+            .x(176px)
+            .y(192px)
+            .width(928px)
+            .height(28px)
+            .part(vertical_writing_speaker)
+            .style(@style.vertical_writing_showcase)
+        RichText(dialogue.content)
+            .x(176px)
+            .y(244px)
+            .width(928px)
+            .height(164px)
+            .part(vertical_writing_content)
+            .style(@style.vertical_writing_showcase)
+        Button("", x = 140px, y = 168px, width = 1000px, height = 384px)
+            .part(vertical_writing_action)
+            .style(@style.vertical_writing_showcase)
+            .on_click { dialogue.primary_action }
+    }
+        .part(vertical_writing_panel)
+        .style(@style.vertical_writing_showcase)
+}
+
+pub dialogue defaults {
+    view = @view.VerticalWritingShowcase
+    rich_text {
+        ruby {
+            size = 14px
+            gap = 1px
+            overhang = 3px
+            collision_gap = 2px
+        }
+    }
+}
+
+entry game @entry.vertical_writing_style {
+    goto @flow.vertical_writing_style
+}
+
+flow vertical_writing_style {
+    vertical_guide(id=@say.vertical_writing_style.vertical_rl, voice=auto):
+        [size 42][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人」2026ARC。|[夢](ゆめ)山川海[/font][/][/size][p]
+
+    vertical_guide(id=@say.vertical_writing_style.vertical_lr, voice=auto):
+        [size 42][.vertical_lr jlreq=strict][font "Noto Sans JP"]縦[.ruby_under]|[夢](ゆめ)[/]へ[.ruby_inter_character]|[夢星](ゆめ)[/]人2026XYZ。山川[/font][/][/size][p]
+
+    vertical_guide(id=@say.vertical_writing_style.jlreq_loose, voice=auto):
+        [size 42][.vertical_rl jlreq=loose][font "Noto Sans JP"]天地。「人山川海[/font][/][/size][p]
+
+    vertical_guide(id=@say.vertical_writing_style.jlreq_strict, voice=auto):
+        [size 42][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人山川海[/font][/][/size][p]
+
+    return "vertical_writing_style_done"
+}

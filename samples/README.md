@@ -27,6 +27,9 @@ run with `arcw`.
   renderer parity sample for CSS-like text and choice styling.
 - [css-layout-cascade-coverage](css-layout-cascade-coverage/README.md) -
   retained View CSS layout/cascade coverage sample and fixture entry for seq06.12.
+- [vertical-writing-style](vertical-writing-style/README.md) - an authored
+  dialogue View and `pub style` sample with visible vertical-rl/vertical-lr,
+  ruby, text-combine-upright, and loose/strict JLREQ output.
 - [native-text-input](native-text-input/README.md) - native player IME sample
   with text controls declared in Arcweft DSL and styled by retained View style
   resources.
