@@ -1,12 +1,11 @@
 use arcweft_bundle::ArcweftBundle;
 use arcweft_player_scene::{
-    frame::PlayerFramePlanner,
+    frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest},
     images::{BundleImageCatalog, BundleImageCatalogError},
+    input::{InputController, InputPointerModifiers},
 };
-use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, PreparedFrame, RenderChoiceItem, RenderDialogue,
-    RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
-};
+use arcweft_presentation::input::{PointerId, ViewportPoint};
+use arcweft_render_wgpu::geometry::{PreparedFrame, RenderPreferences, RenderViewport};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
@@ -217,82 +216,76 @@ pub fn prepare_bundle_parity_frame(
         });
     }
 
-    let scene = RenderScene {
-        dialogue: presentation
-            .textboxes
-            .latest_active()
-            .and_then(|(_, entry)| entry.current_stage())
-            .map(RenderDialogue::from_display_stage),
-        content_avoidance_regions: PlayerFramePlanner::standard_textbox_bounds(
-            options.viewport,
-            presentation
-                .textboxes
-                .iter()
-                .filter(|textbox| textbox.active_entry().is_some())
-                .count(),
-        ),
-        choices: presentation
-            .choices
-            .iter()
-            .map(|choice| RenderChoiceItem {
-                id: choice.id.clone(),
-                label: choice.label.clone(),
-            })
-            .collect(),
-        text_inputs: Vec::new(),
-        action_buttons: Vec::new(),
-        focus_groups: Vec::new(),
-        focus_navigation: Vec::new(),
-        images: images.render_images(
-            &presentation.images,
-            options.visual_time_millis,
-            options.viewport,
-        )?,
+    let request = PlayerFrameRequest {
+        presentation: &presentation,
+        fx_definitions: &bundle.fx_definitions,
+        images: &images,
         viewport: options.viewport,
+        fit: PlayerFrameFit::raw(),
+        image_time_millis: options.visual_time_millis,
         visual_time_millis: options.visual_time_millis,
+        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
-        interaction: InteractionVisualState::default(),
-        choice_scroll: ChoiceScroll::default(),
-        scroll_regions: Vec::new(),
     };
-    let prepared = SharedFramePlanner::prepare(&scene)
+    let mut input = InputController::default();
+    let prepared = PlayerFramePlanner::prepare(&mut input, request)
         .map_err(|error| WebGpuParityFrameError::FramePlan(error.to_string()))?;
-    let interaction = options.interaction.visual_state(&prepared);
-    SharedFramePlanner::prepare(&RenderScene {
-        interaction,
-        ..scene
-    })
-    .map_err(|error| WebGpuParityFrameError::FramePlan(error.to_string()))
+    options.interaction.apply(&mut input, &prepared.frame);
+    if options.interaction == WebGpuParityInteraction::Neutral {
+        return Ok(prepared.frame);
+    }
+    PlayerFramePlanner::prepare(&mut input, request)
+        .map(|prepared| prepared.frame)
+        .map_err(|error| WebGpuParityFrameError::FramePlan(error.to_string()))
 }
 
 impl WebGpuParityInteraction {
-    fn visual_state(self, prepared: &PreparedFrame) -> InteractionVisualState {
-        let first = prepared.first_choice_target();
-        let second = prepared.last_choice_target();
+    fn apply(self, input: &mut InputController, prepared: &PreparedFrame) {
+        let first = prepared.choices.first().map(|choice| &choice.target);
+        let second = prepared.choices.get(1).map(|choice| &choice.target);
+        let first_position = first.and_then(|target| choice_center(prepared, target));
+        let second_position = second.and_then(|target| choice_center(prepared, target));
         match self {
-            Self::Neutral => InteractionVisualState::default(),
-            Self::FocusFirstChoice => InteractionVisualState {
-                focused: first,
-                hovered: None,
-                pressed: None,
-            },
-            Self::HoverFirstChoice => InteractionVisualState {
-                focused: first.clone(),
-                hovered: first,
-                pressed: None,
-            },
-            Self::HoverSecondChoice => InteractionVisualState {
-                focused: first,
-                hovered: second,
-                pressed: None,
-            },
-            Self::PressFirstChoice => InteractionVisualState {
-                focused: first.clone(),
-                hovered: first.clone(),
-                pressed: first,
-            },
+            Self::Neutral => {}
+            Self::FocusFirstChoice => {
+                let _ = input.ensure_choice_focus(prepared);
+            }
+            Self::HoverFirstChoice | Self::HoverSecondChoice => {
+                let _ = input.ensure_choice_focus(prepared);
+                let position = if self == Self::HoverFirstChoice {
+                    first_position
+                } else {
+                    second_position
+                };
+                if let Some(position) = position {
+                    let _ = input.pointer_move(prepared, PointerId(0), position);
+                }
+            }
+            Self::PressFirstChoice => {
+                let _ = input.ensure_choice_focus(prepared);
+                if let Some(position) = first_position {
+                    let _ = input.pointer_move(prepared, PointerId(0), position);
+                    let _ = input.pointer_down(
+                        prepared,
+                        PointerId(0),
+                        position,
+                        InputPointerModifiers::NONE,
+                    );
+                }
+            }
         }
     }
+}
+
+fn choice_center(
+    frame: &PreparedFrame,
+    target: &arcweft_presentation::input::InteractionTarget,
+) -> Option<ViewportPoint> {
+    let bounds = frame.hits.find_target(target)?.bounds();
+    Some(ViewportPoint::new(
+        bounds.x + bounds.width * 0.5,
+        bounds.y + bounds.height * 0.5,
+    ))
 }
 
 const fn default_parity_viewport() -> RenderViewport {

@@ -12,7 +12,7 @@ use arcweft_text_layout::{
 
 use super::{
     FramePlanError, PreparedTextDocumentRequest, RenderFontFamily, RenderTextBlock,
-    RenderTextSlant, RenderTextStyle, RenderTextWeight, RenderViewport,
+    RenderTextSlant, RenderTextWeight, RenderViewport,
 };
 
 pub(super) fn prepare_text_block(
@@ -20,14 +20,7 @@ pub(super) fn prepare_text_block(
     block: &RenderTextBlock,
     viewport: RenderViewport,
 ) -> Result<PreparedTextItem, FramePlanError> {
-    let style = resolved_style(&RenderTextStyle {
-        font_size: block.font_size,
-        line_height: block.line_height,
-        color: block.rgba,
-        font_family: block.font_family.clone(),
-        weight: block.weight,
-        slant: block.slant,
-    })?;
+    let style = resolved_style(block)?;
     let runs = if block.text.is_empty() {
         Vec::new()
     } else {
@@ -104,25 +97,25 @@ pub(super) fn prepare_text_document(
         .map_err(FramePlanError::from)
 }
 
-pub(super) fn resolved_style(style: &RenderTextStyle) -> Result<ResolvedTextStyle, FramePlanError> {
+fn resolved_style(block: &RenderTextBlock) -> Result<ResolvedTextStyle, FramePlanError> {
     Ok(ResolvedTextStyle::new(
-        resolved_families(&style.font_family),
-        pixels_to_milli("font_size", style.font_size)?,
-        pixels_to_milli("line_height", style.line_height)?,
+        resolved_families(&block.font_family),
+        pixels_to_milli("font_size", block.font_size)?,
+        pixels_to_milli("line_height", block.line_height)?,
     )?
-    .with_weight(match style.weight {
+    .with_weight(match block.weight {
         RenderTextWeight::Regular => TextWeight::Normal,
         RenderTextWeight::Bold => TextWeight::Bold,
     })
-    .with_slant(match style.slant {
+    .with_slant(match block.slant {
         RenderTextSlant::Upright => TextSlant::Upright,
         RenderTextSlant::Italic => TextSlant::Italic,
     })
     .with_color(TextColor::rgba(
-        style.color[0],
-        style.color[1],
-        style.color[2],
-        style.color[3],
+        block.rgba[0],
+        block.rgba[1],
+        block.rgba[2],
+        block.rgba[3],
     )))
 }
 

@@ -155,12 +155,6 @@ mod tests {
         PlayerFontRegistrationError, PlayerFontSet,
     };
     use crate::frame::PlayerFramePlannerState;
-    use arcweft_presentation::hit::HitRect;
-    use arcweft_render_wgpu::geometry::{
-        RenderFontFamily, RenderStyledParagraph, RenderTextReveal, RenderTextSlant,
-        RenderTextStyle, RenderTextWeight,
-    };
-    use arcweft_render_wgpu::renderer::StyledParagraphEvidenceFontContext;
 
     #[test]
     fn bundled_default_registers_with_frame_planner() {
@@ -193,58 +187,6 @@ mod tests {
         assert_eq!(
             DEFAULT_PLAYER_FONT_RESOURCE_BYTES[2],
             DEFAULT_PLAYER_FONT_BYTES
-        );
-    }
-
-    #[test]
-    fn bundled_default_keeps_generic_sans_serif_spacing_compact() {
-        let fonts = PlayerFontSet::bundled_default();
-        let mut context = StyledParagraphEvidenceFontContext::new();
-        for font in fonts.fonts() {
-            context
-                .register_font_bytes(font.clone())
-                .expect("bundled font registers with paragraph evidence context");
-        }
-        let text = "Welcome to the Modern Feedback View sample.".to_owned();
-        let paragraph = RenderStyledParagraph {
-            text: text.clone(),
-            bounds: HitRect::new(0.0, 0.0, 800.0, 80.0),
-            default_style: RenderTextStyle {
-                font_size: 20.0,
-                line_height: 26.0,
-                color: [255, 255, 255, 255],
-                font_family: RenderFontFamily::SansSerif,
-                weight: RenderTextWeight::Regular,
-                slant: RenderTextSlant::Upright,
-            },
-            spans: Vec::new(),
-            reveal: RenderTextReveal {
-                visible_end: text.len(),
-                complete: true,
-            },
-            glyph_transforms: Vec::new(),
-            visual_time_millis: 0,
-        };
-
-        let evidence = context.styled_paragraph_layout_evidence(&paragraph);
-        let welcome_right = evidence
-            .glyph_bounds
-            .iter()
-            .filter(|glyph| glyph.source_range.end <= "Welcome".len())
-            .map(|glyph| glyph.bounds.x + glyph.bounds.width)
-            .fold(0.0_f32, f32::max);
-        let to_left = evidence
-            .glyph_bounds
-            .iter()
-            .filter(|glyph| glyph.source_range.start >= "Welcome ".len())
-            .map(|glyph| glyph.bounds.x)
-            .fold(f32::INFINITY, f32::min);
-        let gap = to_left - welcome_right;
-
-        assert!(gap > 0.0, "expected a visible gap between words");
-        assert!(
-            gap < 12.0,
-            "generic sans-serif should use the bundled text font, not a display font with wide spaces: {gap}"
         );
     }
 

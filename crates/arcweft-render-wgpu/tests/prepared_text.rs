@@ -173,6 +173,61 @@ fn prepared_batch_renders_without_renderer_side_shaping() {
 
 #[test]
 #[ignore = "requires a local wgpu adapter; exercised by the prepared-text Tier 2 gate"]
+fn multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit() {
+    let mut planner = SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("project font registers");
+    let baseline = planner
+        .prepare(&empty_scene())
+        .expect("empty frame prepares");
+    let mut frame = baseline.clone();
+    let mut short = block();
+    short.text = "A".to_owned();
+    frame
+        .prepared_text
+        .push(
+            planner
+                .prepare_text_block(&short, viewport())
+                .expect("short text prepares"),
+        )
+        .expect("short prepared item index fits");
+    let mut long = block();
+    long.text = "prepared glyph buffer growth ".repeat(24);
+    long.bounds = HitRect::new(20.0, 70.0, 600.0, 260.0);
+    long.clip_bounds = Some(long.bounds);
+    long.buffer_width = Some(long.bounds.width);
+    long.buffer_height = Some(long.bounds.height);
+    frame
+        .prepared_text
+        .push(
+            planner
+                .prepare_text_block(&long, viewport())
+                .expect("long text prepares"),
+        )
+        .expect("long prepared item index fits");
+
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for prepared vertex lifetime smoke");
+        return;
+    };
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture registers identical project font bytes");
+    let baseline = capture
+        .capture(&baseline, &CaptureRequest::whole_frame_color())
+        .expect("baseline captures");
+    let rendered = capture
+        .capture(&frame, &CaptureRequest::whole_frame_color())
+        .expect("multiple prepared submissions capture without invalidating earlier buffers");
+
+    assert_ne!(color_rgba(&baseline), color_rgba(&rendered));
+}
+
+#[test]
+#[ignore = "requires a local wgpu adapter; exercised by the prepared-text Tier 2 gate"]
 fn view_text_renders_at_primitive_position_without_late_duplicate_submission() {
     let mut planner = SharedFramePlanContext::new();
     planner
@@ -502,7 +557,6 @@ fn capture_region(
 
 fn empty_scene() -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),

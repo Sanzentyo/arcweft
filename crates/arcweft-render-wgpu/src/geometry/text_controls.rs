@@ -1444,7 +1444,6 @@ mod tests {
 
     fn scene_with_control(control: RenderTextInputControl) -> RenderScene {
         RenderScene {
-            dialogue: None,
             content_avoidance_regions: Vec::new(),
             choices: Vec::new(),
             text_inputs: vec![control],

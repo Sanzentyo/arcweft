@@ -2,6 +2,7 @@
   "schema_version": "arcweft.web_frame_observation.v3",
   "checkpoint": "default",
   "visual_time_millis": 9000,
+  "fx_diagnostics": [],
   "viewport": {
     "logical_width_milli": 1280000,
     "logical_height_milli": 720000,
@@ -9,101 +10,194 @@
     "physical_height": 720,
     "scale_factor_milli": 1000
   },
-  "rectangle_count": 2,
+  "rectangle_count": 1,
   "image_count": 0,
-  "text_count": 2,
-  "styled_paragraph_count": 1,
+  "text_count": 1,
+  "prepared_text_count": 1,
   "choice_count": 0,
-  "text": [
+  "images": [],
+  "text": [],
+  "prepared_text": [
     {
-      "text": "Guide",
-      "bounds": { "x_milli": 92000, "y_milli": 482000, "width_milli": 1096000, "height_milli": 28000 },
-      "font_size_milli": 20000,
-      "line_height_milli": 26000,
-      "rgba": [245, 245, 245, 255]
-    }
-  ],
-  "styled_paragraphs": [
-    {
-      "text": "CSS-like style parity evidence",
-      "bounds": { "x_milli": 92000, "y_milli": 520000, "width_milli": 1096000, "height_milli": 124000 },
-      "text_len": 30,
-      "visible_end": 30,
-      "default_style": {
-        "font_size_milli": 25000,
-        "line_height_milli": 34000,
-        "rgba": [245, 245, 245, 255],
-        "font_family": "sans_serif",
-        "weight": "regular",
-        "slant": "upright"
+      "id": 0,
+      "text": "星影",
+      "visible_text": "星影",
+      "bounds": {
+        "x_milli": 92000,
+        "y_milli": 520000,
+        "width_milli": 50000,
+        "height_milli": 34000
       },
-      "span_count": 1,
-      "line_box_count": 1,
+      "layout_hash": "335d5aa6c01dab44c45576a8fccdf7df62cca1ffaa64ea3d8bfeb32b6ac10bed",
+      "source_origin": 0,
+      "owner": {
+        "semantic_id": "textbox.runtime.0.entry.0.body",
+        "parent_id": "view.textbox.0",
+        "kind": "textbox:0:0:0:body",
+        "object_bounds": {
+          "x_milli": 57600,
+          "y_milli": 460800,
+          "width_milli": 1164800,
+          "height_milli": 201600
+        }
+      },
+      "line_count": 1,
+      "run_count": 1,
       "glyph_count": 2,
-      "glyph_transform_count": 0,
-      "transform_support": "no_transforms",
-      "spans": [
+      "visible_glyph_count": 2,
+      "ruby_count": 1,
+      "runs": [
         {
-          "start": 0,
-          "end": 30,
-          "node_index": 0,
-          "font_size_milli": 25000,
-          "line_height_milli": 34000,
-          "rgba": [245, 245, 245, 255],
+          "run_index": 0,
+          "source_start": 0,
+          "source_end": 6,
+          "glyph_start": 0,
+          "glyph_end": 2,
+          "bounds": {
+            "x_milli": 92000,
+            "y_milli": 520000,
+            "width_milli": 50000,
+            "height_milli": 34000
+          },
           "style": {
             "font_size_milli": 25000,
             "line_height_milli": 34000,
             "rgba": [245, 245, 245, 255],
-            "font_family": "sans_serif",
-            "weight": "regular",
-            "slant": "upright"
+            "font_families": ["Noto Sans JP"],
+            "weight": "normal",
+            "slant": "upright",
+            "writing_mode": "horizontal_tb",
+            "direction": "auto"
           }
         }
       ],
-      "line_boxes": [
+      "lines": [
         {
-          "line_index": 0,
-          "bounds": { "x_milli": 92000, "y_milli": 520000, "width_milli": 310000, "height_milli": 34000 }
+          "source_start": 0,
+          "source_end": 6,
+          "glyph_start": 0,
+          "glyph_end": 2,
+          "bounds": {
+            "x_milli": 92000,
+            "y_milli": 520000,
+            "width_milli": 50000,
+            "height_milli": 34000
+          },
+          "writing_mode": "horizontal_tb"
         }
       ],
-      "glyph_bounds": [
+      "glyphs": [
         {
           "source_start": 0,
           "source_end": 3,
           "line_index": 0,
-          "bounds": { "x_milli": 92000, "y_milli": 520000, "width_milli": 39000, "height_milli": 34000 },
-          "visible": true,
-          "reveal_state": "visible",
-          "style": {
-            "font_size_milli": 25000,
-            "line_height_milli": 34000,
-            "rgba": [245, 245, 245, 255],
-            "font_family": "sans_serif",
-            "weight": "regular",
-            "slant": "upright"
+          "cluster_index": 0,
+          "logical_ordinal": 0,
+          "bounds": {
+            "x_milli": 92000,
+            "y_milli": 520000,
+            "width_milli": 25000,
+            "height_milli": 34000
           },
-          "glyph_transform": null
+          "ink_bounds": {
+            "x_milli": 93000,
+            "y_milli": 525000,
+            "width_milli": 23000,
+            "height_milli": 24000
+          },
+          "visible": true,
+          "opacity_milli": 1000,
+          "rgba": [245, 245, 245, 255],
+          "orientation": "upright",
+          "vertical_form": "none",
+          "inline_scale_milli": 1000,
+          "transform": {
+            "matrix_milli": [1000, 0, 0, 1000],
+            "translate_milli": [0, 0],
+            "opacity_milli": 1000
+          }
         },
         {
           "source_start": 3,
-          "source_end": 4,
+          "source_end": 6,
           "line_index": 0,
-          "bounds": { "x_milli": 131000, "y_milli": 520000, "width_milli": 9000, "height_milli": 34000 },
-          "visible": true,
-          "reveal_state": "visible",
-          "style": {
-            "font_size_milli": 25000,
-            "line_height_milli": 34000,
-            "rgba": [245, 245, 245, 255],
-            "font_family": "sans_serif",
-            "weight": "regular",
-            "slant": "upright"
+          "cluster_index": 1,
+          "logical_ordinal": 1,
+          "bounds": {
+            "x_milli": 117000,
+            "y_milli": 520000,
+            "width_milli": 25000,
+            "height_milli": 34000
           },
-          "glyph_transform": null
+          "ink_bounds": {
+            "x_milli": 118000,
+            "y_milli": 525000,
+            "width_milli": 23000,
+            "height_milli": 24000
+          },
+          "visible": true,
+          "opacity_milli": 860,
+          "rgba": [155, 231, 255, 255],
+          "orientation": "upright",
+          "vertical_form": "none",
+          "inline_scale_milli": 1000,
+          "transform": {
+            "matrix_milli": [1000, 0, 0, 1000],
+            "translate_milli": [6000, -1500],
+            "opacity_milli": 860
+          }
         }
       ],
-      "glyph_transforms": []
+      "ruby": [
+        {
+          "base_start": 0,
+          "base_end": 6,
+          "text": "ほしかげ",
+          "base_bounds": {
+            "x_milli": 92000,
+            "y_milli": 520000,
+            "width_milli": 50000,
+            "height_milli": 34000
+          },
+          "ruby_bounds": {
+            "x_milli": 97000,
+            "y_milli": 510000,
+            "width_milli": 40000,
+            "height_milli": 10000
+          },
+          "glyph_count": 4,
+          "writing_mode": "horizontal_tb",
+          "style": {
+            "font_size_milli": 10000,
+            "line_height_milli": 10000,
+            "rgba": [245, 245, 245, 255],
+            "font_families": ["Noto Sans JP"],
+            "weight": "normal",
+            "slant": "upright",
+            "writing_mode": "horizontal_tb",
+            "direction": "auto"
+          }
+        }
+      ]
     }
   ],
-  "choices": []
+  "choices": [],
+  "focus": {
+    "focused_target": null,
+    "group_count": 0,
+    "target_count": 0,
+    "candidates": []
+  },
+  "fonts": [
+    {
+      "path": "web/assets/noto-sans-jp-css-style-parity.ttf",
+      "byte_len": 13704,
+      "fnv1a64": "526a7c3870b0f702"
+    },
+    {
+      "path": "web/assets/arcweft-demo.ttf",
+      "byte_len": 569208,
+      "fnv1a64": "ae99b7ce843cff8d"
+    }
+  ]
 }

@@ -14,9 +14,9 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
-    RenderControlStyle, RenderDialogue, RenderPreferences, RenderScene, RenderTextInputControl,
-    RenderViewport, SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, PreparedFrame, PreparedTextBoxState, RenderActionButton,
+    RenderActionButtonAction, RenderControlStyle, RenderPreferences, RenderScene,
+    RenderTextInputControl, RenderViewport, SharedFramePlanner,
 };
 
 fn target(value: &str) -> InteractionTarget {
@@ -28,7 +28,6 @@ fn scene_with_text_input_and_action_button() -> RenderScene {
     let button_target = target("button.submit_feedback");
     let selection = TextRange::new(TextByteOffset(5), TextByteOffset(5));
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: vec![RenderTextInputControl::new(
@@ -73,7 +72,6 @@ fn scene_with_text_input_and_action_button() -> RenderScene {
 
 fn action_invoke_scene() -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -108,17 +106,20 @@ fn action_invoke_scene() -> RenderScene {
     }
 }
 
-fn with_dialogue(mut scene: RenderScene) -> RenderScene {
-    scene.dialogue = Some(RenderDialogue {
-        speaker: "concierge".to_owned(),
-        text: "Submit the form.".to_owned(),
-        base_styles: Vec::new(),
-        text_runs: Vec::new(),
-        controls: Vec::new(),
-        reveal_start: 0,
-        reveal_complete: false,
+fn prepare_with_textbox(scene: &RenderScene) -> PreparedFrame {
+    let mut frame = SharedFramePlanner::prepare(scene).expect("frame prepares");
+    frame.push_textbox(PreparedTextBoxState {
+        textbox: 0,
+        entry: 0,
+        mount: 0,
+        revision: 0,
+        instance: 0,
+        stage: 0,
+        bounds: HitRect::new(32.0, 300.0, 736.0, 148.0),
+        reveal_complete: true,
+        advance_available: true,
     });
-    scene
+    frame
 }
 
 #[test]
@@ -146,8 +147,8 @@ fn pointer_activation_on_action_button_emits_semantic_action() {
 
 #[test]
 fn pointer_activation_on_action_button_does_not_implicitly_advance_dialogue() {
-    let scene = with_dialogue(action_invoke_scene());
-    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let scene = action_invoke_scene();
+    let frame = prepare_with_textbox(&scene);
     let mut input = InputController::default();
     let position = ViewportPoint::new(80.0, 72.0);
 

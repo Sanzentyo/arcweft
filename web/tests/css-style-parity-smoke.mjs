@@ -17,6 +17,13 @@ const bundleUrl = process.env.ARW_CSS_STYLE_PARITY_BUNDLE_URL ??
   "./local/css-style-parity.awfb";
 const fontUrl = process.env.ARW_CSS_STYLE_PARITY_FONT_URL ??
   "./assets/arcweft-demo.ttf";
+const additionalFontUrls = (
+  process.env.ARW_CSS_STYLE_PARITY_ADDITIONAL_FONT_URLS ??
+    "./assets/noto-sans-jp-css-style-parity.ttf"
+)
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
 const visualTimeMillis = Number.parseInt(
   process.env.ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS ?? "9000",
   10,
@@ -146,8 +153,9 @@ function checkpointOptions(name) {
 
 function frameText(frame) {
   const textBlocks = frame?.text?.map((item) => item.text) ?? [];
-  const paragraphs = frame?.styled_paragraphs?.map((item) => item.text) ?? [];
-  return [...textBlocks, ...paragraphs].join("");
+  const preparedText =
+    frame?.prepared_text?.map((item) => item.visible_text ?? item.text) ?? [];
+  return [...textBlocks, ...preparedText].join("");
 }
 
 async function openReady(browser, baseUrl, checkpoint) {
@@ -155,7 +163,10 @@ async function openReady(browser, baseUrl, checkpoint) {
   const page = await browser.newPage(options);
   await installDeterministicClock(page, visualTimeMillis);
   const errors = collectConsoleErrors(page);
-  const search = new URLSearchParams({ bundle: bundleUrl, font: fontUrl });
+  const search = new URLSearchParams({
+    bundle: bundleUrl,
+    fonts: [...additionalFontUrls, fontUrl].join(","),
+  });
   await page.goto(`${baseUrl}/index.html?${search}`);
   expect(await page.evaluate(() => Boolean(navigator.gpu)), "navigator.gpu is unavailable");
   await page.waitForFunction(
@@ -165,28 +176,34 @@ async function openReady(browser, baseUrl, checkpoint) {
   );
   try {
     await page.waitForFunction(
-      (needsDetailedStyle) =>
-        Boolean(window.__arcweftLastObservation?.dialogue) &&
+      () =>
+        Boolean(window.__arcweftFatal) ||
+        (Boolean(window.__arcweftLastObservation?.dialogue) &&
         window.__arcweftLastFrameObservation?.image_count === 0 &&
         (() => {
           const frame = window.__arcweftLastFrameObservation;
           const textBlocks = frame?.text?.map((item) => item.text) ?? [];
-          const paragraphs = frame?.styled_paragraphs?.map((item) => item.text) ?? [];
-          const text = [...textBlocks, ...paragraphs].join("");
-          return needsDetailedStyle
-            ? text.includes("Bold") && text.includes("color")
-            : text.includes("checks renderer-owned");
-        })(),
-      checkpoint === "default",
+          const preparedText =
+            frame?.prepared_text?.map((item) => item.visible_text ?? item.text) ?? [];
+          const text = [...textBlocks, ...preparedText].join("");
+          return text.includes("DSL-styled text") && text.includes("wave motion");
+        })()),
+      null,
       { timeout: 10_000 },
     );
+    const fatal = await page.evaluate(() => window.__arcweftFatal ?? null);
+    if (fatal) {
+      throw new Error(`Arcweft player fatal: ${fatal.message}`);
+    }
   } catch (error) {
     const state = await page.evaluate(() => ({
       fatal: document.querySelector("#arcweft-fatal")?.textContent ?? null,
       observation: window.__arcweftLastObservation ?? null,
       frameObservation: window.__arcweftLastFrameObservation ?? null,
     }));
-    throw new Error(`${error.message}\nstate=${JSON.stringify(state, null, 2)}`);
+    throw new Error(
+      `${error.message}\nconsoleErrors=${JSON.stringify(errors, null, 2)}\nstate=${JSON.stringify(state, null, 2)}`,
+    );
   }
   return { page, errors };
 }
@@ -203,36 +220,48 @@ async function assertCanvasOnlySample(page, checkpoint) {
   expect(frame.image_count === 0, "CSS style parity sample should have no image assets");
   expect(frame.text_count >= 2, `expected styled text evidence, got ${frame.text_count}`);
   expect(
-    frame.styled_paragraph_count >= 1,
-    `expected styled paragraph evidence, got ${frame.styled_paragraph_count}`,
+    frame.prepared_text_count >= 2,
+    `expected canonical prepared text evidence, got ${frame.prepared_text_count}`,
   );
   const text = frameText(frame);
-  expect(text.includes("CSS-like style parity"), `missing styled sample text for ${checkpoint}`);
+  expect(text.includes("DSL-styled text"), `missing styled sample text for ${checkpoint}`);
   if (checkpoint === "default") {
-    expect(text.includes("Bold"), `missing bold sample text for ${checkpoint}`);
     expect(text.includes("color"), `missing color sample text for ${checkpoint}`);
+    expect(text.includes("wave motion"), `missing wave sample text for ${checkpoint}`);
   }
-  const paragraph = frame.styled_paragraphs?.[0];
-  expect(paragraph?.line_boxes?.length > 0, `missing styled paragraph line boxes for ${checkpoint}`);
-  expect(paragraph?.glyph_bounds?.length > 0, `missing styled paragraph glyph bounds for ${checkpoint}`);
+  const paragraph = frame.prepared_text?.find((item) => item.owner?.kind?.endsWith(":body"));
+  expect(paragraph?.lines?.length > 0, `missing prepared text lines for ${checkpoint}`);
+  expect(paragraph?.runs?.length > 0, `missing prepared text runs for ${checkpoint}`);
+  expect(paragraph?.glyphs?.length > 0, `missing prepared text glyphs for ${checkpoint}`);
   expect(
-    paragraph.glyph_bounds.every((glyph) =>
+    paragraph.glyphs.every((glyph) =>
       Number.isInteger(glyph.source_start) &&
       Number.isInteger(glyph.source_end) &&
       glyph.bounds &&
-      typeof glyph.reveal_state === "string" &&
-      glyph.style?.rgba?.length === 4
+      glyph.ink_bounds &&
+      typeof glyph.visible === "boolean" &&
+      glyph.rgba?.length === 4 &&
+      glyph.transform?.matrix_milli?.length === 4 &&
+      glyph.transform?.translate_milli?.length === 2
     ),
-    `bad styled paragraph glyph evidence for ${checkpoint}`,
+    `bad canonical prepared glyph evidence for ${checkpoint}`,
+  );
+  expect(
+    paragraph.runs.every((run) =>
+      run.style?.rgba?.length === 4 &&
+      run.style?.font_families?.length > 0 &&
+      typeof run.style?.writing_mode === "string"
+    ),
+    `bad canonical prepared run evidence for ${checkpoint}`,
   );
 }
 
-async function fontFingerprint() {
-  const fullPath = staticPath(fontUrl);
-  expect(fullPath && fullPath !== "", `font path is outside served fixture root: ${fontUrl}`);
+async function fontFingerprint(url) {
+  const fullPath = staticPath(url);
+  expect(fullPath && fullPath !== "", `font path is outside served fixture root: ${url}`);
   const bytes = await readFile(fullPath);
   return {
-    url: fontUrl,
+    url,
     path: fullPath,
     byte_len: bytes.byteLength,
     fnv1a64: fnv1a64(bytes),
@@ -252,7 +281,7 @@ function fnv1a64(bytes) {
 
 async function main() {
   await mkdir(outputDir, { recursive: true });
-  const font = await fontFingerprint();
+  const fonts = await Promise.all([...additionalFontUrls, fontUrl].map(fontFingerprint));
   const { server, baseUrl } = await startServer();
   const webGpuArgs = ["--enable-unsafe-webgpu"];
   if (process.platform === "win32") {
@@ -275,7 +304,7 @@ async function main() {
           ...frame,
           checkpoint,
           visual_time_millis: visualTimeMillis,
-          font,
+          fonts,
         };
         await writeFile(
           join(outputDir, `web-${checkpoint}.frame.json`),
@@ -292,7 +321,7 @@ async function main() {
           choiceCount: frame.choice_count,
           imageCount: frame.image_count,
           visualTimeMillis,
-          fontHash: font.fnv1a64,
+          fontHashes: fonts.map((font) => font.fnv1a64),
         }));
       } finally {
         await page.close();

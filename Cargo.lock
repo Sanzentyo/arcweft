@@ -1041,6 +1041,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-bundle",
  "arcweft-core",
+ "arcweft-glyphon",
  "arcweft-id",
  "arcweft-image",
  "arcweft-lang-hir",
@@ -1054,6 +1055,7 @@ dependencies = [
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
  "arcweft-runtime-plan",
+ "arcweft-text-layout",
  "futures-channel",
  "js-sys",
  "num-traits",

@@ -25,7 +25,6 @@ use arcweft_render_wgpu::geometry::{
 
 fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {
@@ -60,7 +59,6 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
 
 fn frame_with_containing_scroll_region() -> arcweft_render_wgpu::geometry::PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -101,7 +99,6 @@ fn frame_with_containing_scroll_region() -> arcweft_render_wgpu::geometry::Prepa
 
 fn frame_with_horizontal_scroll_region() -> arcweft_render_wgpu::geometry::PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -145,7 +142,6 @@ fn frame_with_action_button(
     focused: Option<InteractionTarget>,
 ) -> arcweft_render_wgpu::geometry::PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -427,7 +423,6 @@ fn scene_with_text_inputs(
     focused: Option<InteractionTarget>,
 ) -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs,

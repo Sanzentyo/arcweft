@@ -168,7 +168,6 @@ impl PlayerFramePlanner {
             &text_inputs,
         )?;
         Ok(RenderScene {
-            dialogue: None,
             content_avoidance_regions: textboxes::standard_textbox_bounds(
                 request.viewport,
                 request

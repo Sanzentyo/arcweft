@@ -497,7 +497,6 @@ fn scene_with_text_inputs(
     focused: Option<InteractionTarget>,
 ) -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs,

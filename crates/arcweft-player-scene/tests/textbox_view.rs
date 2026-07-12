@@ -23,9 +23,8 @@ fn standard_textbox_is_a_view_scene_with_canonical_vertical_ruby_text() {
     let presentation = vertical_ruby_textbox();
     let prepared = prepare(&presentation);
 
-    assert!(prepared.scene.dialogue.is_none());
+    assert_eq!(prepared.scene.content_avoidance_regions.len(), 1);
     assert!(prepared.frame.text.is_empty());
-    assert!(prepared.frame.styled_paragraphs.is_empty());
     assert_eq!(prepared.frame.textboxes().len(), 1);
     assert_eq!(prepared.frame.prepared_text.len(), 2);
     assert_eq!(prepared.frame.prepared_text_owners().len(), 2);

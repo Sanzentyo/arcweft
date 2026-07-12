@@ -1,3 +1,4 @@
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
     RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax,
     ViewDefinitionResource, ViewElementKind, ViewInstructionSpan, ViewProgramInstruction,
@@ -183,11 +184,13 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
         ..BundlePresentationSnapshot::default()
     };
     let images = BundleImageCatalog::empty();
+    let fx_definitions = FxDefinitions::default();
     let mut input = InputController::default();
     let prepared = PlayerFramePlanner::prepare(
         &mut input,
         PlayerFrameRequest {
             presentation: &presentation,
+            fx_definitions: &fx_definitions,
             images: &images,
             viewport,
             fit: PlayerFrameFit::raw(),

@@ -7,18 +7,17 @@ use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputPurpose, TextInputSessionId, TextRange,
 };
-use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, InteractionVisualState, RenderActionButton,
     RenderActionButtonAction, RenderChoiceItem, RenderControlFilter, RenderControlFilterList,
     RenderControlShadow, RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
-    RenderDialogue, RenderFocusAutoScrollPolicy, RenderFocusGroup, RenderFocusGroupPolicy,
+    RenderFocusAutoScrollPolicy, RenderFocusGroup, RenderFocusGroupPolicy,
     RenderFocusInitialPolicy, RenderFocusNavigation, RenderFocusNavigationEdge,
-    RenderFocusSkipPolicy, RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily,
-    RenderImage, RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
+    RenderFocusSkipPolicy, RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderImage,
+    RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
     RenderScrollIndicatorsPolicy, RenderScrollOverflow, RenderScrollOverscrollPolicy,
-    RenderScrollRegion, RenderTextInputControl, RenderTextSlant, RenderTextWeight, RenderViewport,
-    SharedFramePlanContext, SharedFramePlanner,
+    RenderScrollRegion, RenderTextInputControl, RenderViewport, SharedFramePlanContext,
+    SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -31,7 +30,6 @@ fn scene() -> RenderScene {
         scale_factor: 1.0,
     };
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {
@@ -383,10 +381,7 @@ fn interaction_visual_state_changes_the_prepared_choice_rectangles() {
 #[test]
 fn choice_geometry_ignores_scroll_offset() {
     let base_scene = RenderScene {
-        dialogue: Some(RenderDialogue::plain(
-            "Guide",
-            "Choice geometry stays fixed.",
-        )),
+        content_avoidance_regions: vec![HitRect::new(57.6, 460.8, 1_164.8, 201.6)],
         visual_time_millis: 5_000,
         ..scene()
     };
@@ -868,68 +863,6 @@ fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
     assert_eq!(frame.control_filters[0].bounds, visible);
     assert_eq!(frame.control_paints[0].bounds, visible);
     assert_eq!(frame.control_shadows[0].plan.passes()[0].body_rect, visible);
-}
-
-#[test]
-fn dialogue_surface_styles_are_preserved_for_styled_paragraph() {
-    let frame = SharedFramePlanner::prepare(&RenderScene {
-        dialogue: Some(RenderDialogue {
-            speaker: "Narrator".to_owned(),
-            text: "Surface style reaches the canvas renderer.".to_owned(),
-            base_styles: vec![
-                RichTextStyle::Color {
-                    value: RichTextColor::Rgb {
-                        red: 220,
-                        green: 180,
-                        blue: 140,
-                    },
-                },
-                RichTextStyle::Font {
-                    family: RichTextFontFamily::Named {
-                        name: "Yu Mincho".to_owned(),
-                    },
-                },
-                RichTextStyle::Size {
-                    points: Some(31),
-                    raw: "31px".to_owned(),
-                },
-                RichTextStyle::Strong {
-                    attrs: String::new(),
-                },
-                RichTextStyle::Italic {
-                    attrs: String::new(),
-                },
-            ],
-            text_runs: Vec::new(),
-            controls: Vec::new(),
-            reveal_start: 0,
-            reveal_complete: false,
-        }),
-        visual_time_millis: 5_000,
-        ..scene()
-    })
-    .expect("frame plans");
-
-    assert!(
-        frame
-            .text
-            .iter()
-            .all(|block| !block.text.contains("Surface style"))
-    );
-    let body = frame
-        .styled_paragraphs
-        .iter()
-        .find(|paragraph| paragraph.text.contains("Surface style"))
-        .expect("styled paragraph");
-    let span = body.spans.first().expect("styled span");
-    assert_eq!(span.style.color, [220, 180, 140, 255]);
-    assert_eq!(
-        span.style.font_family,
-        RenderFontFamily::Named("Yu Mincho".to_owned())
-    );
-    assert_eq!(span.style.weight, RenderTextWeight::Bold);
-    assert_eq!(span.style.slant, RenderTextSlant::Italic);
-    assert!((span.style.font_size - 31.0).abs() < f32::EPSILON);
 }
 
 fn text_target(name: &str) -> InteractionTarget {

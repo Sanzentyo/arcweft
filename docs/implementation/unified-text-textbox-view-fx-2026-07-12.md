@@ -94,7 +94,7 @@ final shared-path goldens have distinct roles as specified by the final design.
 - [ ] Cut 5: RichText/reveal/shared Fx and native registry removal
 - [x] Cut 6: direct View text painter order and executable per-mount View
 - [x] Cut 7: shared capture and prepared-layout Agent geometry
-- [ ] Cut 8: persistent TextBox View and hardcoded dialogue removal
+- [x] Cut 8: persistent TextBox View and hardcoded dialogue removal
 - [ ] Cut 9: final cleanup, parity, docs, and structural audit
 
 ### Implemented substrate after the design cut
@@ -727,9 +727,9 @@ reviewed raster output before any golden is changed.
 
 ### Standard TextBox View composition slice
 
-The renderer-facing half of Cut 8 is now connected at Jujutsu change
-`uormqyrm`; deletion of the legacy public dialogue/styled-paragraph vocabulary
-remains the next slice, so Cut 8 is not yet marked complete:
+The renderer-facing half of Cut 8 was connected at Jujutsu change
+`uormqyrm`; the immediately following slice below deletes the legacy public
+dialogue/styled-paragraph vocabulary and closes Cut 8:
 
 - every active persistent target is prepared as a Rust-backed `ViewScene` using
   its retained `TextBoxViewMountId`. The panel is a normal View surface and the
@@ -766,10 +766,10 @@ cargo check --workspace --all-targets --all-features
 ```
 
 All listed commands pass. The complete player-scene route passes 88 tests,
-including the new product TextBox View case. The next immediate cut removes
+including the new product TextBox View case. At that cut point,
 `RenderScene.dialogue`, `RenderDialogue`, `RenderStyledParagraph`, their
-renderer/report staging, and the temporary dialogue boolean facade; this slice
-does not relabel those remaining public contracts as complete.
+renderer/report staging, and the temporary dialogue boolean facade remained;
+the next slice removed them directly.
 
 The structural audit at
 `structure-audits/unified-text-textbox-view-composition-2026-07-12` scans 1,258
@@ -777,6 +777,83 @@ Rust files / 623,665 physical Rust LOC with 0 errors and 133 warnings. The new
 TextBox owner is 531 LOC (499 production code LOC including a small embedded
 test module), while the frame orchestrator remains 496 LOC. No Cargo manifest
 or workspace dependency edge changed.
+
+### Legacy dialogue staging removal and canonical Web evidence slice
+
+Cut 8 is complete at Jujutsu change `xnrroynx` over revision `c3cbba0a`:
+
+- `RenderScene.dialogue`, `RenderDialogue`, `RenderStyledParagraph`, styled
+  spans/glyph transforms, `PreparedFrame::styled_paragraphs`, and the entire
+  styled renderer/test path are deleted. There is no alias, dual reader, or
+  no-op compatibility branch;
+- `PreparedFrame` exposes direct persistent TextBox state queries for reveal
+  and advance behavior. Input, keyboard, native capture, Web, and Agent use
+  those typed entries rather than cached dialogue booleans;
+- hardcoded dialogue panel/layer IDs, palette fields, geometry finalization,
+  and choice inspection are gone. TextBox panels and speaker/body content are
+  painted only by their normal View scenes, while generic content-avoidance
+  regions retain choice placement behavior;
+- Web parity checkpoints now drive the normal stateful `PlayerFramePlanner`
+  and real `InputController`. Web frame observations project the completed
+  `PreparedTextItem` layout and paint directly, including typed ownership,
+  source ranges, lines, runs, glyph/ruby geometry, font inventory, visibility,
+  orientation, vertical form, and the applied affine/opacity values;
+- the standalone raster verifier consumes that canonical evidence and rejects
+  count/range/style/font inconsistencies. It no longer recreates a styled
+  paragraph or describes transforms as metadata-only;
+- each prepared glyph submission retains a distinct glyphon renderer/vertex
+  buffer until the shared command buffer is submitted. A local-adapter
+  regression grows the second submission beyond the initial buffer and proves
+  that earlier passes remain valid;
+- Web redraws now wait for async GPU/font registration. Runtime redraw failures
+  reach the shell's fatal DOM/diagnostic state, and the compositor WGSL uses
+  browser-portable explicit precedence for multiply/XOR expressions; and
+- the CSS parity capture registers the same ordered font set and uses the same
+  1280x720 `Contain` frame fit on native and Web. Its 13 KiB deterministic Noto
+  subset carries the fixture's `星影ほしかげ` coverage without replacing the
+  full product font.
+
+Validation for this slice includes:
+
+```bash
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test -p arcweft-player-scene --all-features
+cargo test -p arcweft-render-wgpu --all-features
+cargo test -p arcweft-player-web --all-features
+cargo test -p arcweft-player-native --all-features
+cargo test -p arcweft-render-wgpu --test prepared_text \
+  multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit \
+  --all-features -- --ignored --exact --nocapture
+cargo +nightly -Zscript tools/verify-text-raster-parity.rs --self-test
+just css-style-parity
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-dialogue-staging-removal-2026-07-12
+```
+
+All commands pass. The CSS gate captures native and browser WebGPU at default,
+compact, and HiDPI checkpoints. Every checkpoint reports 137 canonical glyph
+runs with zero layout/raster delta; full-frame comparison reports PSNR
+infinity, SSIM 1.0, MSE/MAE/maxAE 0, and zero changed pixels. `imq` JSON reports
+are written for all three comparisons. The checked example evidence now uses
+`prepared_text_glyph` sources and includes ruby plus an applied glyph
+transform.
+
+The first `just test-workspace` wrapper attempt exceeded its 600-second shell
+limit during a cold all-test build; the child Cargo process completed after the
+wrapper was terminated, so that wrapper invocation has no usable result. The
+exact recipe components were then run separately: the non-CLI workspace
+lib/integration command passed, followed by CLI lib/bin and all eight focused
+CLI integration commands. This is recorded as a recovered timeout, not as a
+passing wrapper invocation.
+
+The linked structural audit scans 1,256 Rust files / 621,678 physical Rust LOC
+with 0 errors and 133 warnings. Deleting the duplicated contracts reduces
+`geometry.rs` to 2,196 LOC and the renderer to 1,742 LOC. The Web adapter adds
+only downward dependency edges to `arcweft-glyphon` and
+`arcweft-text-layout`; its exact fan-out is 28 and fan-in is 0. Cut 9 still
+must remove the ordinary `RenderTextBlock` staging path and resolve/promote the
+vertical-LR ruby/text-combine visual goldens before the overall goal can close.
 
 ## Required validation
 

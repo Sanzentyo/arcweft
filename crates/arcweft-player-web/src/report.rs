@@ -1,18 +1,17 @@
+use arcweft_glyphon::{PreparedTextItem, TextGlyphPaint};
 use arcweft_presentation::fx::FxDiagnostic;
-use arcweft_render_wgpu::geometry::{
-    PreparedFrame, RenderFontFamily, RenderGlyphTransformKind, RenderImage, RenderStyledParagraph,
-    RenderTextBlock, RenderTextSlant, RenderTextWeight,
+use arcweft_render_text::{
+    ResolvedTextStyle, RichTextInlineDirection, RichTextRange, RichTextWritingMode, TextFontFamily,
+    TextSlant, TextWeight,
 };
-use arcweft_render_wgpu::renderer::{
-    StyledParagraphGlyphBounds, StyledParagraphGlyphTransformEvidence,
-    StyledParagraphGlyphTransformRenderSupport, StyledParagraphLayoutEvidence,
-    StyledParagraphLineBox, StyledParagraphRevealState, StyledParagraphSpanEvidence,
-    StyledParagraphStyleEvidence, StyledParagraphTransformSupport,
+use arcweft_render_wgpu::geometry::{
+    PreparedFrame, PreparedTextBoxPart, PreparedTextOwner, PreparedTextOwnerKind, RenderImage,
+    RenderTextBlock,
 };
 use arcweft_runtime_driver::{dialogue::BundlePresentationTransition, session::BundleSessionStep};
+use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 /// Path-free diagnostic/observation envelope emitted to JavaScript.
 ///
@@ -94,35 +93,22 @@ impl WebObservationReport {
     }
 }
 
-/// Host-neutral summary of the canvas frame produced by the shared planner.
-///
-/// This is diagnostic evidence for native/Web parity. It is not a renderer
-/// command stream and intentionally carries normalized scalar values instead of
-/// platform resources.
+/// Host-neutral summary of the exact frame consumed by the shared renderer.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebFrameObservationReport {
     pub schema_version: String,
-    /// Diagnostics produced while evaluating the exact prepared frame.
     pub fx_diagnostics: Vec<FxDiagnostic>,
     pub viewport: WebFrameViewport,
     pub rectangle_count: usize,
     pub image_count: usize,
     pub text_count: usize,
-    pub styled_paragraph_count: usize,
+    pub prepared_text_count: usize,
     pub choice_count: usize,
     pub images: Vec<WebFrameImage>,
     pub text: Vec<WebFrameText>,
-    pub styled_paragraphs: Vec<WebFrameStyledParagraph>,
+    pub prepared_text: Vec<WebFramePreparedText>,
     pub choices: Vec<WebFrameChoice>,
     pub focus: arcweft_render_wgpu::geometry::FocusNavigationDebug,
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum WebFrameReportError {
-    #[error(
-        "styled paragraph evidence count mismatch: expected {expected} entries, found {actual}"
-    )]
-    StyledParagraphEvidenceCountMismatch { expected: usize, actual: usize },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -161,74 +147,103 @@ pub struct WebFrameText {
     pub rgba: [u8; 4],
 }
 
+/// Canonical layout and paint evidence for one frame-local prepared item.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WebFrameStyledParagraph {
+pub struct WebFramePreparedText {
+    pub id: u32,
     pub text: String,
-    pub bounds: WebFrameBounds,
-    pub text_len: usize,
-    pub visible_end: usize,
-    pub default_style: WebFrameTextStyle,
-    pub span_count: usize,
-    pub line_box_count: usize,
+    pub visible_text: String,
+    pub bounds: Option<WebFrameBounds>,
+    pub layout_hash: String,
+    pub source_origin: usize,
+    pub owner: Option<WebFramePreparedTextOwner>,
+    pub line_count: usize,
+    pub run_count: usize,
     pub glyph_count: usize,
-    pub glyph_transform_count: usize,
-    pub transform_support: String,
-    pub spans: Vec<WebFrameStyledSpan>,
-    pub line_boxes: Vec<WebFrameStyledLineBox>,
-    pub glyph_bounds: Vec<WebFrameStyledGlyph>,
-    pub glyph_transforms: Vec<WebFrameGlyphTransform>,
+    pub visible_glyph_count: usize,
+    pub ruby_count: usize,
+    pub runs: Vec<WebFramePreparedRun>,
+    pub lines: Vec<WebFramePreparedLine>,
+    pub glyphs: Vec<WebFramePreparedGlyph>,
+    pub ruby: Vec<WebFramePreparedRuby>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WebFrameStyledSpan {
-    pub start: usize,
-    pub end: usize,
-    pub node_index: usize,
-    pub font_size_milli: i64,
-    pub line_height_milli: i64,
+pub struct WebFramePreparedTextOwner {
+    pub semantic_id: String,
+    pub parent_id: Option<String>,
+    pub kind: String,
+    pub object_bounds: WebFrameBounds,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebFramePreparedRun {
+    pub run_index: u32,
+    pub source_start: usize,
+    pub source_end: usize,
+    pub glyph_start: u32,
+    pub glyph_end: u32,
+    pub bounds: WebFrameBounds,
+    pub style: WebFrameTextStyle,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebFramePreparedLine {
+    pub source_start: usize,
+    pub source_end: usize,
+    pub glyph_start: u32,
+    pub glyph_end: u32,
+    pub bounds: WebFrameBounds,
+    pub writing_mode: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebFramePreparedGlyph {
+    pub source_start: usize,
+    pub source_end: usize,
+    pub line_index: u32,
+    pub cluster_index: u32,
+    pub logical_ordinal: u32,
+    pub bounds: WebFrameBounds,
+    pub ink_bounds: WebFrameBounds,
+    pub visible: bool,
+    pub opacity_milli: u16,
     pub rgba: [u8; 4],
+    pub orientation: String,
+    pub vertical_form: String,
+    pub inline_scale_milli: i64,
+    pub transform: WebFrameGlyphTransform,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebFrameGlyphTransform {
+    pub matrix_milli: [i64; 4],
+    pub translate_milli: [i64; 2],
+    pub opacity_milli: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebFramePreparedRuby {
+    pub base_start: usize,
+    pub base_end: usize,
+    pub text: String,
+    pub base_bounds: WebFrameBounds,
+    pub ruby_bounds: WebFrameBounds,
+    pub glyph_count: usize,
+    pub writing_mode: String,
     pub style: WebFrameTextStyle,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebFrameTextStyle {
-    pub font_size_milli: i64,
-    pub line_height_milli: i64,
+    pub font_size_milli: u32,
+    pub line_height_milli: u32,
     pub rgba: [u8; 4],
-    pub font_family: String,
+    pub font_families: Vec<String>,
     pub weight: String,
     pub slant: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WebFrameStyledLineBox {
-    pub line_index: usize,
-    pub bounds: WebFrameBounds,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WebFrameStyledGlyph {
-    pub source_start: usize,
-    pub source_end: usize,
-    pub line_index: usize,
-    pub bounds: WebFrameBounds,
-    pub visible: bool,
-    pub reveal_state: String,
-    pub style: WebFrameTextStyle,
-    pub glyph_transform: Option<WebFrameGlyphTransform>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WebFrameGlyphTransform {
-    pub source_start: usize,
-    pub source_end: usize,
-    pub node_index: usize,
-    pub kind: String,
-    pub amplitude_milli: i64,
-    pub frequency_milli: i64,
-    pub sampled_offset_y_milli: i64,
-    pub rendered: bool,
-    pub support: String,
+    pub writing_mode: String,
+    pub direction: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -240,20 +255,9 @@ pub struct WebFrameChoice {
 }
 
 impl WebFrameObservationReport {
-    pub fn from_prepared_frame(
-        frame: &PreparedFrame,
-        paragraph_evidence: &[StyledParagraphLayoutEvidence],
-    ) -> Result<Self, WebFrameReportError> {
-        let expected = frame.styled_paragraphs.len();
-        let actual = paragraph_evidence.len();
-        if expected != actual {
-            return Err(WebFrameReportError::StyledParagraphEvidenceCountMismatch {
-                expected,
-                actual,
-            });
-        }
-
-        Ok(Self {
+    #[must_use]
+    pub fn from_prepared_frame(frame: &PreparedFrame) -> Self {
+        Self {
             schema_version: "arcweft.web_frame_observation.v3".to_owned(),
             fx_diagnostics: frame.fx_diagnostics.clone(),
             viewport: WebFrameViewport {
@@ -265,10 +269,8 @@ impl WebFrameObservationReport {
             },
             rectangle_count: frame.rectangles.len(),
             image_count: frame.images.len(),
-            text_count: frame.prepared_text.len()
-                + frame.text.len()
-                + frame.styled_paragraphs.len(),
-            styled_paragraph_count: frame.styled_paragraphs.len(),
+            text_count: frame.prepared_text.len() + frame.text.len(),
+            prepared_text_count: frame.prepared_text.len(),
             choice_count: frame.choices.len(),
             images: frame
                 .images
@@ -280,12 +282,15 @@ impl WebFrameObservationReport {
                 .iter()
                 .map(WebFrameText::from_text_block)
                 .collect(),
-            styled_paragraphs: frame
-                .styled_paragraphs
+            prepared_text: frame
+                .prepared_text
                 .iter()
-                .zip(paragraph_evidence)
-                .map(|(paragraph, evidence)| {
-                    WebFrameStyledParagraph::from_styled_paragraph(paragraph, evidence)
+                .map(|(id, item)| {
+                    let owner = frame
+                        .prepared_text_owners()
+                        .iter()
+                        .find(|owner| owner.text == id);
+                    WebFramePreparedText::new(id.index(), item, owner)
                 })
                 .collect(),
             choices: frame
@@ -304,12 +309,156 @@ impl WebFrameObservationReport {
                 })
                 .collect(),
             focus: frame.focus_debug(),
-        })
+        }
+    }
+}
+
+impl WebFramePreparedText {
+    fn new(id: u32, item: &PreparedTextItem, owner: Option<&PreparedTextOwner>) -> Self {
+        let visible_ranges = visible_body_ranges(item);
+        let glyphs = item
+            .layout
+            .glyphs
+            .iter()
+            .zip(&item.paint.glyphs)
+            .map(|(glyph, paint)| WebFramePreparedGlyph {
+                source_start: glyph.source_range.start,
+                source_end: glyph.source_range.end,
+                line_index: glyph.line_index,
+                cluster_index: glyph.cluster_index,
+                logical_ordinal: glyph.logical_ordinal,
+                bounds: WebFrameBounds::from_layout_rect(glyph.layout_bounds),
+                ink_bounds: WebFrameBounds::from_layout_rect(glyph.ink_bounds),
+                visible: paint.visible,
+                opacity_milli: paint.opacity_milli,
+                rgba: paint.color.channels(),
+                orientation: orientation_label(glyph.orientation).to_owned(),
+                vertical_form: vertical_form_label(glyph.vertical_form).to_owned(),
+                inline_scale_milli: f32_milli(glyph.inline_scale),
+                transform: WebFrameGlyphTransform::from_paint(paint),
+            })
+            .collect::<Vec<_>>();
+        Self {
+            id,
+            text: item.interaction.text.clone(),
+            visible_text: text_for_ranges(&item.interaction.text, &visible_ranges),
+            bounds: item
+                .interaction
+                .container_bounds
+                .or(item.layout.bounds)
+                .map(WebFrameBounds::from_layout_rect),
+            layout_hash: hex_bytes(&item.layout.hash.as_bytes()),
+            source_origin: owner.map_or(0, |owner| owner.source_origin),
+            owner: owner.map(WebFramePreparedTextOwner::from_owner),
+            line_count: item.layout.lines.len(),
+            run_count: item.layout.runs.len(),
+            glyph_count: item.layout.glyphs.len(),
+            visible_glyph_count: glyphs.iter().filter(|glyph| glyph.visible).count(),
+            ruby_count: item.layout.ruby.len(),
+            runs: item
+                .layout
+                .runs
+                .iter()
+                .map(|run| WebFramePreparedRun {
+                    run_index: run.run_index,
+                    source_start: run.source_range.start,
+                    source_end: run.source_range.end,
+                    glyph_start: run.glyph_range.start,
+                    glyph_end: run.glyph_range.end,
+                    bounds: WebFrameBounds::from_layout_rect(run.bounds),
+                    style: WebFrameTextStyle::from_resolved(&run.style),
+                })
+                .collect(),
+            lines: item
+                .layout
+                .lines
+                .iter()
+                .map(|line| WebFramePreparedLine {
+                    source_start: line.source_range.start,
+                    source_end: line.source_range.end,
+                    glyph_start: line.glyph_range.start,
+                    glyph_end: line.glyph_range.end,
+                    bounds: WebFrameBounds::from_layout_rect(line.bounds),
+                    writing_mode: writing_mode_label(line.writing_mode).to_owned(),
+                })
+                .collect(),
+            glyphs,
+            ruby: item
+                .layout
+                .ruby
+                .iter()
+                .map(|ruby| WebFramePreparedRuby {
+                    base_start: ruby.base_range.start,
+                    base_end: ruby.base_range.end,
+                    text: ruby.text.clone(),
+                    base_bounds: WebFrameBounds::from_layout_rect(ruby.base_bounds),
+                    ruby_bounds: WebFrameBounds::from_layout_rect(ruby.ruby_bounds),
+                    glyph_count: ruby.glyphs.len(),
+                    writing_mode: writing_mode_label(ruby.writing_mode).to_owned(),
+                    style: WebFrameTextStyle::from_resolved(&ruby.style),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl WebFramePreparedTextOwner {
+    fn from_owner(owner: &PreparedTextOwner) -> Self {
+        Self {
+            semantic_id: owner.semantic_id.as_str().to_owned(),
+            parent_id: owner
+                .parent_id
+                .as_ref()
+                .map(|parent| parent.as_str().to_owned()),
+            kind: owner_kind_label(owner.kind),
+            object_bounds: WebFrameBounds::from_hit_rect(owner.object_bounds),
+        }
+    }
+}
+
+impl WebFrameGlyphTransform {
+    fn from_paint(paint: &TextGlyphPaint) -> Self {
+        let resolved = paint.transform.resolved();
+        let matrix = resolved.matrix();
+        let translation = resolved.translation();
+        Self {
+            matrix_milli: matrix.map(|value| f32_milli(value.get())),
+            translate_milli: translation.map(|value| f32_milli(value.pixels())),
+            opacity_milli: f32_milli(resolved.opacity().value().get()),
+        }
+    }
+}
+
+impl WebFrameTextStyle {
+    fn from_resolved(style: &ResolvedTextStyle) -> Self {
+        Self {
+            font_size_milli: style.font_size_milli(),
+            line_height_milli: style.line_height_milli(),
+            rgba: style.color().channels(),
+            font_families: style
+                .font_families()
+                .iter()
+                .map(font_family_label)
+                .collect(),
+            weight: weight_label(style.weight()).to_owned(),
+            slant: slant_label(style.slant()).to_owned(),
+            writing_mode: writing_mode_label(style.writing_mode()).to_owned(),
+            direction: direction_label(style.direction()).to_owned(),
+        }
     }
 }
 
 impl WebFrameBounds {
     fn from_hit_rect(bounds: arcweft_presentation::hit::HitRect) -> Self {
+        Self {
+            x_milli: f32_milli(bounds.x),
+            y_milli: f32_milli(bounds.y),
+            width_milli: f32_milli(bounds.width),
+            height_milli: f32_milli(bounds.height),
+        }
+    }
+
+    fn from_layout_rect(bounds: LayoutRect) -> Self {
         Self {
             x_milli: f32_milli(bounds.x),
             y_milli: f32_milli(bounds.y),
@@ -344,117 +493,116 @@ impl WebFrameText {
     }
 }
 
-impl WebFrameStyledParagraph {
-    fn from_styled_paragraph(
-        paragraph: &RenderStyledParagraph,
-        evidence: &StyledParagraphLayoutEvidence,
-    ) -> Self {
-        let line_boxes = evidence
-            .line_boxes
-            .iter()
-            .map(WebFrameStyledLineBox::from_line_box)
-            .collect::<Vec<_>>();
-        let glyph_bounds = evidence
-            .glyph_bounds
-            .iter()
-            .map(WebFrameStyledGlyph::from_glyph_bounds)
-            .collect::<Vec<_>>();
-        let glyph_transforms = evidence
-            .glyph_transforms
-            .iter()
-            .map(WebFrameGlyphTransform::from_transform)
-            .collect::<Vec<_>>();
-        Self {
-            text: paragraph.text.clone(),
-            bounds: WebFrameBounds::from_hit_rect(evidence.bounds),
-            text_len: evidence.text_len,
-            visible_end: evidence.visible_end,
-            default_style: WebFrameTextStyle::from_style_evidence(&evidence.default_style),
-            span_count: evidence.spans.len(),
-            line_box_count: line_boxes.len(),
-            glyph_count: glyph_bounds.len(),
-            glyph_transform_count: glyph_transforms.len(),
-            transform_support: transform_support_label(evidence.transform_support).to_owned(),
-            spans: evidence
-                .spans
-                .iter()
-                .map(WebFrameStyledSpan::from_span_evidence)
-                .collect(),
-            line_boxes,
-            glyph_bounds,
-            glyph_transforms,
+fn visible_body_ranges(item: &PreparedTextItem) -> Vec<RichTextRange> {
+    let mut ranges = item
+        .layout
+        .glyphs
+        .iter()
+        .zip(&item.paint.glyphs)
+        .filter(|(_, paint)| paint.visible && paint.opacity_milli > 0)
+        .map(|(glyph, _)| glyph.source_range)
+        .collect::<Vec<_>>();
+    ranges.sort_by_key(|range| (range.start, range.end));
+    ranges.into_iter().fold(Vec::new(), |mut merged, range| {
+        if let Some(last) = merged.last_mut()
+            && range.start <= last.end
+        {
+            last.end = last.end.max(range.end);
+        } else {
+            merged.push(range);
         }
+        merged
+    })
+}
+
+fn text_for_ranges(text: &str, ranges: &[RichTextRange]) -> String {
+    ranges
+        .iter()
+        .filter_map(|range| text.get(range.start..range.end))
+        .collect()
+}
+
+fn owner_kind_label(kind: PreparedTextOwnerKind) -> String {
+    match kind {
+        PreparedTextOwnerKind::TextBox {
+            textbox,
+            entry,
+            mount,
+            part,
+        } => format!(
+            "textbox:{textbox}:{entry}:{mount}:{}",
+            match part {
+                PreparedTextBoxPart::Speaker => "speaker",
+                PreparedTextBoxPart::Body => "body",
+            }
+        ),
+        PreparedTextOwnerKind::View { mount } => format!("view:{mount}"),
+        PreparedTextOwnerKind::Control => "control".to_owned(),
     }
 }
 
-impl WebFrameTextStyle {
-    fn from_style_evidence(style: &StyledParagraphStyleEvidence) -> Self {
-        Self {
-            font_size_milli: f32_milli(style.font_size),
-            line_height_milli: f32_milli(style.line_height),
-            rgba: style.rgba,
-            font_family: font_family_label(&style.font_family),
-            weight: text_weight_label(style.weight).to_owned(),
-            slant: text_slant_label(style.slant).to_owned(),
-        }
+fn font_family_label(family: &TextFontFamily) -> String {
+    match family {
+        TextFontFamily::Serif => "serif".to_owned(),
+        TextFontFamily::SansSerif => "sans_serif".to_owned(),
+        TextFontFamily::Monospace => "monospace".to_owned(),
+        TextFontFamily::Cursive => "cursive".to_owned(),
+        TextFontFamily::Fantasy => "fantasy".to_owned(),
+        TextFontFamily::Named(name) => name.clone(),
     }
 }
 
-impl WebFrameStyledSpan {
-    fn from_span_evidence(span: &StyledParagraphSpanEvidence) -> Self {
-        let style = WebFrameTextStyle::from_style_evidence(&span.style);
-        Self {
-            start: span.range.start,
-            end: span.range.end,
-            node_index: span.node_index,
-            font_size_milli: style.font_size_milli,
-            line_height_milli: style.line_height_milli,
-            rgba: style.rgba,
-            style,
-        }
+const fn weight_label(weight: TextWeight) -> &'static str {
+    match weight {
+        TextWeight::Thin => "thin",
+        TextWeight::ExtraLight => "extra_light",
+        TextWeight::Light => "light",
+        TextWeight::Normal => "normal",
+        TextWeight::Medium => "medium",
+        TextWeight::SemiBold => "semi_bold",
+        TextWeight::Bold => "bold",
+        TextWeight::ExtraBold => "extra_bold",
+        TextWeight::Black => "black",
     }
 }
 
-impl WebFrameStyledLineBox {
-    fn from_line_box(line: &StyledParagraphLineBox) -> Self {
-        Self {
-            line_index: line.line_index,
-            bounds: WebFrameBounds::from_hit_rect(line.bounds),
-        }
+const fn slant_label(slant: TextSlant) -> &'static str {
+    match slant {
+        TextSlant::Upright => "upright",
+        TextSlant::Italic => "italic",
+        TextSlant::Oblique { .. } => "oblique",
     }
 }
 
-impl WebFrameStyledGlyph {
-    fn from_glyph_bounds(glyph: &StyledParagraphGlyphBounds) -> Self {
-        Self {
-            source_start: glyph.source_range.start,
-            source_end: glyph.source_range.end,
-            line_index: glyph.line_index,
-            bounds: WebFrameBounds::from_hit_rect(glyph.bounds),
-            visible: glyph.visible,
-            reveal_state: reveal_state_label(glyph.reveal_state).to_owned(),
-            style: WebFrameTextStyle::from_style_evidence(&glyph.style),
-            glyph_transform: glyph
-                .glyph_transform
-                .as_ref()
-                .map(WebFrameGlyphTransform::from_transform),
-        }
+const fn writing_mode_label(mode: RichTextWritingMode) -> &'static str {
+    match mode {
+        RichTextWritingMode::HorizontalTb => "horizontal_tb",
+        RichTextWritingMode::VerticalRl => "vertical_rl",
+        RichTextWritingMode::VerticalLr => "vertical_lr",
     }
 }
 
-impl WebFrameGlyphTransform {
-    fn from_transform(transform: &StyledParagraphGlyphTransformEvidence) -> Self {
-        Self {
-            source_start: transform.range.start,
-            source_end: transform.range.end,
-            node_index: transform.node_index,
-            kind: glyph_transform_kind_label(transform.motion.kind).to_owned(),
-            amplitude_milli: f32_milli(transform.motion.amplitude),
-            frequency_milli: f32_milli(transform.motion.frequency),
-            sampled_offset_y_milli: f32_milli(transform.sampled_offset_y),
-            rendered: transform.rendered,
-            support: glyph_transform_render_support_label(transform.render_support).to_owned(),
-        }
+const fn direction_label(direction: RichTextInlineDirection) -> &'static str {
+    match direction {
+        RichTextInlineDirection::Auto => "auto",
+        RichTextInlineDirection::Ltr => "ltr",
+        RichTextInlineDirection::Rtl => "rtl",
+    }
+}
+
+const fn orientation_label(orientation: GlyphOrientation) -> &'static str {
+    match orientation {
+        GlyphOrientation::Upright => "upright",
+        GlyphOrientation::SidewaysCw => "sideways_cw",
+        GlyphOrientation::TextCombineUpright => "text_combine_upright",
+    }
+}
+
+const fn vertical_form_label(form: GlyphVerticalForm) -> &'static str {
+    match form {
+        GlyphVerticalForm::None => "none",
+        GlyphVerticalForm::UprightAlternate => "upright_alternate",
+        GlyphVerticalForm::RotatedAlternate => "rotated_alternate",
     }
 }
 
@@ -476,65 +624,16 @@ fn f64_milli(value: f64) -> i64 {
     })
 }
 
-fn font_family_label(family: &RenderFontFamily) -> String {
-    match family {
-        RenderFontFamily::Serif => "serif".to_owned(),
-        RenderFontFamily::SansSerif => "sans_serif".to_owned(),
-        RenderFontFamily::Monospace => "monospace".to_owned(),
-        RenderFontFamily::Cursive => "cursive".to_owned(),
-        RenderFontFamily::Fantasy => "fantasy".to_owned(),
-        RenderFontFamily::Named(name) => name.clone(),
-        RenderFontFamily::Stack(stack) => stack.join(", "),
-    }
-}
+fn hex_bytes(bytes: &[u8]) -> String {
+    use core::fmt::Write;
 
-fn text_weight_label(weight: RenderTextWeight) -> &'static str {
-    match weight {
-        RenderTextWeight::Regular => "regular",
-        RenderTextWeight::Bold => "bold",
-    }
-}
-
-fn text_slant_label(slant: RenderTextSlant) -> &'static str {
-    match slant {
-        RenderTextSlant::Upright => "upright",
-        RenderTextSlant::Italic => "italic",
-    }
-}
-
-fn reveal_state_label(state: StyledParagraphRevealState) -> &'static str {
-    match state {
-        StyledParagraphRevealState::Visible => "visible",
-        StyledParagraphRevealState::PartiallyVisible => "partially_visible",
-        StyledParagraphRevealState::Hidden => "hidden",
-    }
-}
-
-fn transform_support_label(support: StyledParagraphTransformSupport) -> &'static str {
-    match support {
-        StyledParagraphTransformSupport::NoTransforms => "no_transforms",
-        StyledParagraphTransformSupport::MetadataOnlyUnsupported => "metadata_only_unsupported",
-        StyledParagraphTransformSupport::Rendered => "rendered",
-    }
-}
-
-fn glyph_transform_kind_label(kind: RenderGlyphTransformKind) -> &'static str {
-    match kind {
-        RenderGlyphTransformKind::Wave => "wave",
-        RenderGlyphTransformKind::Shake => "shake",
-        RenderGlyphTransformKind::Jitter => "jitter",
-    }
-}
-
-fn glyph_transform_render_support_label(
-    support: StyledParagraphGlyphTransformRenderSupport,
-) -> &'static str {
-    match support {
-        StyledParagraphGlyphTransformRenderSupport::MetadataOnlyUnsupported => {
-            "metadata_only_unsupported"
-        }
-        StyledParagraphGlyphTransformRenderSupport::Rendered => "rendered",
-    }
+    bytes.iter().fold(
+        String::with_capacity(bytes.len().saturating_mul(2)),
+        |mut output, byte| {
+            write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+            output
+        },
+    )
 }
 
 fn stable_hash(bytes: &[u8]) -> String {

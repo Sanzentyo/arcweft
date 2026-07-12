@@ -9,15 +9,17 @@ repository.workspace = true
 [dependencies]
 arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
 arcweft-core = { path = "../arcweft-core" }
+arcweft-glyphon = { path = "../arcweft-glyphon" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
 arcweft-layout.workspace = true
 arcweft-player-scene = { path = "../arcweft-player-scene" }
 arcweft-player-text-input = { path = "../arcweft-player-text-input" }
-arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-presentation = { path = "../arcweft-presentation" }
+arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
+arcweft-text-layout = { path = "../arcweft-text-layout" }
 num-traits = "0.2.19"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

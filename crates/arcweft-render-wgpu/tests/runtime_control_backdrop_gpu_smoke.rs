@@ -109,7 +109,6 @@ fn rounded_runtime_control_stroke_draws_straight_edges() {
 
 fn scene(backdrop: bool) -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: vec![control(backdrop)],
@@ -134,7 +133,6 @@ fn scene(backdrop: bool) -> RenderScene {
 
 fn stroke_scene(stroke: bool) -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: vec![stroke_control(stroke)],
@@ -159,7 +157,6 @@ fn stroke_scene(stroke: bool) -> RenderScene {
 
 fn foreground_scene(filter: bool) -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: vec![foreground_control(filter)],

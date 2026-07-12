@@ -351,6 +351,20 @@ document.addEventListener("arcweft-frame-observation", (event) => {
   }
 });
 
+document.addEventListener("arcweft-player-fatal", (event) => {
+  const message = String(event.detail ?? "Arcweft player failed");
+  window.__arcweftFatal = { kind: "runtime_fatal", message };
+  const loading = document.getElementById("arcweft-loading");
+  const fatal = document.getElementById("arcweft-fatal");
+  if (loading) {
+    loading.hidden = true;
+  }
+  if (fatal) {
+    fatal.hidden = false;
+    fatal.textContent = `Arcweft player could not continue.\n${message}`;
+  }
+});
+
 function autostartOptionsFromCanvas(canvas) {
   return {
     canvasId: canvas.id || "arcweft-canvas",

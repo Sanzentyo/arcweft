@@ -854,8 +854,8 @@ fn activation_outcome(
     let dialogue_progress = dialogue_progress_for_frame(
         frame,
         advances_dialogue
-            && frame.has_dialogue()
-            && frame.dialogue_advance_available()
+            && frame.has_textboxes()
+            && frame.textbox_advance_available()
             && frame.choices.is_empty(),
     );
     InputOutcome {
@@ -873,7 +873,7 @@ fn dialogue_progress_for_frame(frame: &PreparedFrame, requested: bool) -> Dialog
     if !requested {
         return DialogueProgress::None;
     }
-    if frame.has_revealing_dialogue() {
+    if frame.has_revealing_textbox() {
         DialogueProgress::Reveal
     } else {
         DialogueProgress::Advance

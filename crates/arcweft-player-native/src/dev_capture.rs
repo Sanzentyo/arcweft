@@ -186,7 +186,6 @@ fn frame_has_visual_content(frame: &PreparedFrame) -> bool {
         || !frame.images.is_empty()
         || !frame.prepared_text.is_empty()
         || !frame.text.is_empty()
-        || !frame.styled_paragraphs.is_empty()
         || !frame.choices.is_empty()
         || !frame.action_buttons.is_empty()
         || !frame.control_paints.is_empty()
@@ -291,7 +290,7 @@ mod tests {
             prepare_bundle_frame(&bundle, NativePlayerCaptureRequest::new(640, 360, 8))
                 .expect("dialogue frame prepares");
 
-        assert!(prepared.scene.dialogue.is_some());
+        assert_eq!(prepared.frame.textboxes().len(), 1);
         assert!(!prepared.frame.prepared_text.is_empty());
         assert!(prepared.frame.text.is_empty());
     }

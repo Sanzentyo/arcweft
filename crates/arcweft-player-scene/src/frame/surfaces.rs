@@ -706,7 +706,6 @@ mod tests {
 
     fn empty_render_scene() -> RenderScene {
         RenderScene {
-            dialogue: None,
             content_avoidance_regions: Vec::new(),
             choices: Vec::new(),
             text_inputs: Vec::new(),

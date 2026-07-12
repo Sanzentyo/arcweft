@@ -10,11 +10,14 @@ arcweft-render-wgpu = { path = "../crates/arcweft-render-wgpu" }
 png = "0.18.1"
 pollster = "0.4.0"
 wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl", "dx12", "metal", "vulkan"] }
+
+[patch.crates-io]
+glyphon = { path = "../vendor/glyphon" }
 ---
 
 use arcweft_bundle::ArcweftBundle;
 use arcweft_player_web::parity::{WebGpuParityCheckpoint, prepare_bundle_parity_frame};
-use arcweft_render_wgpu::offscreen::SharedOffscreenCapture;
+use arcweft_render_wgpu::offscreen::{CaptureAttachment, CaptureRequest, SharedOffscreenCapture};
 use png::{BitDepth, ColorType, Encoder};
 use std::env;
 use std::error::Error;
@@ -28,8 +31,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         prepare_bundle_parity_frame(&bundle, args.checkpoint.options(args.visual_time_millis))?;
     let mut capture = pollster::block_on(SharedOffscreenCapture::new(args.target_format.wgpu()))?;
     capture.register_font_bytes(fs::read(&args.font)?)?;
-    let image = capture.capture_frame(&frame)?;
-    write_png(&args.output, image.width, image.height, &image.rgba)?;
+    let image = capture.capture(&frame, &CaptureRequest::whole_frame_color())?;
+    let rgba = image
+        .attachment_rgba(CaptureAttachment::Color)
+        .ok_or("offscreen capture omitted the requested color attachment")?;
+    write_png(&args.output, image.width, image.height, rgba)?;
     println!(
         "wrote native shared-renderer capture {} ({}x{}, checkpoint={}, visual_time_millis={}, target_format={})",
         args.output.display(),

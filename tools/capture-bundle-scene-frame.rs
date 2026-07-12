@@ -15,15 +15,19 @@ arcweft-runtime-driver = { path = "../crates/arcweft-runtime-driver" }
 png = "0.18.1"
 pollster = "0.4.0"
 wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl", "dx12", "metal", "vulkan"] }
+
+[patch.crates-io]
+glyphon = { path = "../vendor/glyphon" }
 ---
 
 use arcweft_bundle::ArcweftBundle;
-use arcweft_player_scene::images::BundleImageCatalog;
-use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderPreferences,
-    RenderScene, RenderViewport, SharedFramePlanner,
+use arcweft_player_scene::{
+    frame::{PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest},
+    images::BundleImageCatalog,
+    input::InputController,
 };
-use arcweft_render_wgpu::offscreen::SharedOffscreenCapture;
+use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
+use arcweft_render_wgpu::offscreen::{CaptureAttachment, CaptureRequest, SharedOffscreenCapture};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use png::{BitDepth, ColorType, Encoder};
@@ -35,13 +39,17 @@ use std::path::{Path, PathBuf};
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse(env::args().skip(1).collect())?;
     let bundle = ArcweftBundle::from_json_slice(&fs::read(&args.bundle)?)?;
-    let frame = prepare_frame(&bundle, &args)?;
+    let font_bytes = args.font.as_ref().map(fs::read).transpose()?;
+    let frame = prepare_frame(&bundle, &args, font_bytes.as_deref())?;
     let mut capture = pollster::block_on(SharedOffscreenCapture::new(args.target_format.wgpu()))?;
-    if let Some(font) = &args.font {
-        capture.register_font_bytes(fs::read(font)?)?;
+    if let Some(font_bytes) = font_bytes {
+        capture.register_font_bytes(font_bytes)?;
     }
-    let image = capture.capture_frame(&frame)?;
-    write_png(&args.output, image.width, image.height, &image.rgba)?;
+    let image = capture.capture(&frame, &CaptureRequest::whole_frame_color())?;
+    let rgba = image
+        .attachment_rgba(CaptureAttachment::Color)
+        .ok_or("offscreen capture omitted the requested color attachment")?;
+    write_png(&args.output, image.width, image.height, rgba)?;
     println!(
         "wrote {} ({}x{}, images={}, choices={}, visual_time_millis={})",
         args.output.display(),
@@ -146,6 +154,7 @@ impl CaptureTargetFormat {
 fn prepare_frame(
     bundle: &ArcweftBundle,
     args: &Args,
+    font_bytes: Option<&[u8]>,
 ) -> Result<arcweft_render_wgpu::geometry::PreparedFrame, Box<dyn Error>> {
     let mut session = BundleSession::new(bundle, BundleSessionOptions::default())?;
     let images = BundleImageCatalog::from_bundle(bundle)?;
@@ -173,11 +182,10 @@ fn prepare_frame(
         }
         presentation = Some(step.presentation);
         if selected
-            && presentation
-            .as_ref()
-            .is_some_and(|presentation| {
+            && presentation.as_ref().is_some_and(|presentation| {
                 !presentation.images.is_empty()
-                    && (presentation.dialogue.is_some() || !presentation.choices.is_empty())
+                    && (presentation.textboxes.latest_active().is_some()
+                        || !presentation.choices.is_empty())
             })
         {
             break;
@@ -191,28 +199,28 @@ fn prepare_frame(
         physical_height: args.height,
         scale_factor: 1.0,
     };
-    let scene = RenderScene {
-        dialogue: presentation
-            .dialogue
-            .as_ref()
-            .map(RenderDialogue::from_display_frame),
-        choices: presentation
-            .choices
-            .iter()
-            .map(|choice| RenderChoiceItem {
-                id: choice.id.clone(),
-                label: choice.label.clone(),
-            })
-            .collect(),
-        text_inputs: Vec::new(),
-        images: images.render_images(&presentation.images, args.visual_time_millis)?,
-        viewport,
-        visual_time_millis: args.visual_time_millis,
-        preferences: RenderPreferences::default(),
-        interaction: InteractionVisualState::default(),
-        choice_scroll: ChoiceScroll::default(),
-    };
-    SharedFramePlanner::prepare(&scene).map_err(|error| error.to_string().into())
+    let mut planner = PlayerFramePlannerState::new();
+    if let Some(font_bytes) = font_bytes {
+        planner.register_font_bytes(font_bytes.to_vec())?;
+    }
+    let mut input = InputController::default();
+    planner
+        .prepare(
+            &mut input,
+            PlayerFrameRequest {
+                presentation: &presentation,
+                fx_definitions: &bundle.fx_definitions,
+                images: &images,
+                viewport,
+                fit: PlayerFrameFit::raw(),
+                image_time_millis: args.visual_time_millis,
+                visual_time_millis: args.visual_time_millis,
+                dialogue_reveal_complete: true,
+                preferences: RenderPreferences::default(),
+            },
+        )
+        .map(|prepared| prepared.frame)
+        .map_err(|error| error.to_string().into())
 }
 
 fn required_value(iter: &mut impl Iterator<Item = String>, option: &str) -> Result<String, String> {

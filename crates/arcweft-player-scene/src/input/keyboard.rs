@@ -188,7 +188,7 @@ impl InputController {
     }
 
     pub(super) fn dialogue_can_advance_from_unfocused_input(&self, frame: &PreparedFrame) -> bool {
-        frame.has_dialogue()
+        frame.has_textboxes()
             && frame.choices.is_empty()
             && !self.focused_target_is_view_control(frame)
     }

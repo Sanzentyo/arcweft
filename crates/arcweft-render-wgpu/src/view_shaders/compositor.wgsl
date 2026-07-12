@@ -132,7 +132,7 @@ fn text_sparkle_color(uv: vec2<f32>, source: vec4<f32>) -> vec4<f32> {
     let phase = uniform_data.params0.y;
     let phase_key = u32(abs(phase) * 1000.0);
     let noise = hash_u32(
-        pixel.x * 0x9e3779b9u ^ pixel.y * 0x85ebca6bu ^ uniform_data.seed_low
+        (pixel.x * 0x9e3779b9u) ^ (pixel.y * 0x85ebca6bu) ^ uniform_data.seed_low
             ^ uniform_data.seed_high ^ phase_key,
     );
     let seed_phase = f32(uniform_data.seed_low & 0xffu) * 0.001;

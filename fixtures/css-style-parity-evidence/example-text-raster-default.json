@@ -1,7 +1,7 @@
 {
   "schema_version": "arcweft.text_raster_parity.v2",
   "checkpoint": "default",
-  "contract": "typed paragraph glyph evidence plus text-mask/layout identity with backend-specific antialias allowance",
+  "contract": "canonical prepared glyph paint evidence plus text-mask/layout identity with backend-specific antialias allowance",
   "passed": true,
   "failure_reasons": [],
   "aggregate": {
@@ -15,10 +15,10 @@
   "runs": [
     {
       "index": 0,
-      "text": "CSS",
+      "text": "星",
       "source": {
-        "kind": "styled_paragraph_glyph",
-        "paragraph_index": 0,
+        "kind": "prepared_text_glyph",
+        "prepared_text_index": 0,
         "line_index": 0,
         "source_start": 0,
         "source_end": 3,

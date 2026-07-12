@@ -29,7 +29,6 @@ use thiserror::Error;
 
 mod action_buttons;
 mod control_style;
-pub mod dialogue;
 mod dialogue_legacy_fx;
 mod dialogue_prepared;
 mod dialogue_timeline;
@@ -45,10 +44,6 @@ pub use control_style::{
     RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
     RenderControlShadowKind, RenderControlStyle, RenderControlVisualState,
     RenderControlVisualStyle, RuntimeControlBackdropSamplePolicy,
-};
-pub use dialogue::{
-    RenderDialogue, RenderGlyphMotion, RenderGlyphTransformKind, RenderGlyphTransformSpan,
-    RenderStyledParagraph, RenderStyledTextSpan, RenderTextReveal,
 };
 pub use focus_navigation::{
     FocusNavigationDebug, FocusNavigationDebugCandidate, PreparedFocusGraph, PreparedFocusGroup,
@@ -126,7 +121,6 @@ pub enum FocusNavigationDirection {
 /// Renderer input assembled by the player from portable runtime state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderScene {
-    pub dialogue: Option<RenderDialogue>,
     /// Layout regions that auto-positioned content, such as choices, must not overlap.
     pub content_avoidance_regions: Vec<HitRect>,
     pub choices: Vec<RenderChoiceItem>,
@@ -570,7 +564,6 @@ pub struct PreparedFrame {
     /// Legacy pending text blocks removed as producers migrate to `prepared_text`.
     pub text: Vec<RenderTextBlock>,
     pub selectable_text_blocks: Vec<PreparedSelectableTextBlock>,
-    pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
     pub action_buttons: Vec<PreparedActionButton>,
     pub control_backdrops: Vec<PreparedControlBackdrop>,
@@ -582,9 +575,6 @@ pub struct PreparedFrame {
     pub focus_graph: PreparedFocusGraph,
     view_scenes: Vec<PreparedViewScene>,
     textboxes: Vec<PreparedTextBoxState>,
-    dialogue_present: bool,
-    dialogue_reveal_complete: bool,
-    dialogue_advance_available: bool,
     interaction: InteractionVisualState,
     focused_text_input: Option<PreparedTextInputTarget>,
 }
@@ -888,15 +878,6 @@ impl PreparedFrame {
     }
 
     pub fn push_textbox(&mut self, textbox: PreparedTextBoxState) {
-        self.dialogue_present = true;
-        if self
-            .textboxes
-            .iter()
-            .all(|candidate| candidate.instance <= textbox.instance)
-        {
-            self.dialogue_reveal_complete = textbox.reveal_complete;
-        }
-        self.dialogue_advance_available |= textbox.advance_available;
         self.textboxes.push(textbox);
     }
 
@@ -937,27 +918,26 @@ impl PreparedFrame {
     }
 
     #[must_use]
-    pub const fn has_dialogue(&self) -> bool {
-        self.dialogue_present
+    pub fn has_textboxes(&self) -> bool {
+        !self.textboxes.is_empty()
     }
 
     #[must_use]
-    pub const fn dialogue_reveal_complete(&self) -> bool {
-        self.dialogue_reveal_complete
+    pub fn latest_textbox(&self) -> Option<&PreparedTextBoxState> {
+        self.textboxes.iter().max_by_key(|textbox| textbox.instance)
     }
 
     #[must_use]
-    pub const fn has_revealing_dialogue(&self) -> bool {
-        self.dialogue_present && !self.dialogue_reveal_complete
+    pub fn has_revealing_textbox(&self) -> bool {
+        self.latest_textbox()
+            .is_some_and(|textbox| !textbox.reveal_complete)
     }
 
     #[must_use]
-    pub const fn dialogue_advance_available(&self) -> bool {
-        self.dialogue_advance_available
-    }
-
-    pub fn set_dialogue_advance_available(&mut self, available: bool) {
-        self.dialogue_advance_available = available;
+    pub fn textbox_advance_available(&self) -> bool {
+        self.textboxes
+            .iter()
+            .any(|textbox| textbox.advance_available)
     }
 
     #[must_use]
@@ -1007,11 +987,6 @@ impl PreparedFrame {
             .selectable_text_blocks
             .drain(..)
             .map(|block| map_selectable_text_block(block, mapping))
-            .collect();
-        self.styled_paragraphs = self
-            .styled_paragraphs
-            .drain(..)
-            .map(|paragraph| map_styled_paragraph(paragraph, mapping))
             .collect();
     }
 
@@ -1168,31 +1143,6 @@ fn map_selectable_text_block(
     block
 }
 
-fn map_styled_paragraph(
-    mut paragraph: RenderStyledParagraph,
-    mapping: PreparedFrameViewportMapping,
-) -> RenderStyledParagraph {
-    paragraph.bounds = mapping.rect(paragraph.bounds);
-    paragraph.default_style = map_text_style(paragraph.default_style, mapping.text_scale);
-    paragraph.spans = paragraph
-        .spans
-        .into_iter()
-        .map(|mut span| {
-            span.style = map_text_style(span.style, mapping.text_scale);
-            span
-        })
-        .collect();
-    paragraph.glyph_transforms = paragraph
-        .glyph_transforms
-        .into_iter()
-        .map(|mut transform| {
-            transform.motion.amplitude *= mapping.text_scale;
-            transform
-        })
-        .collect();
-    paragraph
-}
-
 pub(super) fn intersect_hit_rect(left: HitRect, right: HitRect) -> Option<HitRect> {
     let x = left.x.max(right.x);
     let y = left.y.max(right.y);
@@ -1201,12 +1151,6 @@ pub(super) fn intersect_hit_rect(left: HitRect, right: HitRect) -> Option<HitRec
     let width = right_edge - x;
     let height = bottom_edge - y;
     (width > 0.0 && height > 0.0).then(|| HitRect::new(x, y, width, height))
-}
-
-fn map_text_style(mut style: RenderTextStyle, text_scale: f32) -> RenderTextStyle {
-    style.font_size *= text_scale;
-    style.line_height *= text_scale;
-    style
 }
 
 impl PreparedViewScene {
@@ -1312,21 +1256,6 @@ impl SharedFramePlanContext {
             palette.background,
         )];
         let mut text = Vec::new();
-        let mut styled_paragraphs = Vec::new();
-        let dialogue_paragraph_start = styled_paragraphs.len();
-        dialogue::push_panel(
-            scene,
-            &mut rectangles,
-            &mut text,
-            &mut styled_paragraphs,
-            &palette,
-        );
-        let dialogue_present = scene.dialogue.is_some();
-        let dialogue_reveal_complete = !dialogue_present
-            || styled_paragraphs[dialogue_paragraph_start..]
-                .iter()
-                .all(RenderStyledParagraph::reveal_complete);
-
         let mut semantics = SemanticTree::default();
         let action = RenderActionKind::ChoiceSelect.public_id()?;
         let choices = build_choices(
@@ -1370,7 +1299,6 @@ impl SharedFramePlanContext {
             fx_diagnostics: Vec::new(),
             text,
             selectable_text_blocks: Vec::new(),
-            styled_paragraphs,
             choices,
             action_buttons: runtime_controls.action_buttons,
             control_backdrops,
@@ -1385,9 +1313,6 @@ impl SharedFramePlanContext {
             ),
             view_scenes: Vec::new(),
             textboxes: Vec::new(),
-            dialogue_present,
-            dialogue_reveal_complete,
-            dialogue_advance_available: dialogue_present,
             interaction: scene.interaction.clone(),
             focused_text_input: runtime_controls.focused_text_input,
         })
@@ -1513,45 +1438,6 @@ impl SharedFramePlanContext {
             reveal_complete,
             source_origin,
         })
-    }
-
-    /// Replaces the mapped dialogue paragraph with one canonical prepared item.
-    pub fn finalize_dialogue_stage(
-        &mut self,
-        frame: &mut PreparedFrame,
-        stage: arcweft_render_text::LineDisplayStage<'_>,
-        reveal_complete: bool,
-        fx_resolver: &dyn arcweft_presentation::fx::FxApplicationResolver,
-    ) -> Result<(), FramePlanError> {
-        let Some(paragraph) = frame.styled_paragraphs.first() else {
-            return Ok(());
-        };
-        let result = self.push_prepared_rich_text_stage(
-            frame,
-            stage,
-            &PreparedRichTextStageRequest {
-                bounds: paragraph.bounds,
-                default_style: prepared_text::resolved_style(&paragraph.default_style)?,
-                visual_time_millis: paragraph.visual_time_millis,
-                reveal_complete,
-            },
-            fx_resolver,
-        )?;
-        frame.push_prepared_text_owner(PreparedTextOwner::new(
-            result.text,
-            FrameStaticId::DialogueContent.public_id()?,
-            PreparedTextOwnerKind::TextBox {
-                textbox: 0,
-                entry: 0,
-                mount: 0,
-                part: PreparedTextBoxPart::Body,
-            },
-            result.source_origin,
-            dialogue::panel_bounds(frame.viewport),
-        ))?;
-        frame.styled_paragraphs.clear();
-        frame.dialogue_reveal_complete = result.reveal_complete;
-        Ok(())
     }
 
     /// Prepares one ordinary text block without renderer-side reshaping.
@@ -1805,18 +1691,6 @@ fn build_frame_layers(ids: &FrameIds) -> LayerTree {
     layers
         .insert(
             LayerNode::new(
-                ids.dialogue.clone(),
-                LayerKind::TextBox,
-                order(RenderPhase::Dialogue, 0),
-            )
-            .with_parent(ids.root.clone())
-            .with_content(LayerContent::TextBox(ids.dialogue_content.clone()))
-            .with_input_policy(LayerInputPolicy::Ignore),
-        )
-        .expect("dialogue layer parent is present");
-    layers
-        .insert(
-            LayerNode::new(
                 ids.choice.clone(),
                 LayerKind::GameView,
                 order(RenderPhase::GameView, 0),
@@ -1851,34 +1725,6 @@ fn build_frame_layers(ids: &FrameIds) -> LayerTree {
         )
         .expect("action-button layer parent is present");
     layers
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct RenderTextStyle {
-    pub font_size: f32,
-    pub line_height: f32,
-    pub color: [u8; 4],
-    pub font_family: RenderFontFamily,
-    pub weight: RenderTextWeight,
-    pub slant: RenderTextSlant,
-}
-
-impl RenderTextStyle {
-    const fn new(
-        font_size: f32,
-        line_height: f32,
-        color: [u8; 4],
-        font_family: RenderFontFamily,
-    ) -> Self {
-        Self {
-            font_size,
-            line_height,
-            color,
-            font_family,
-            weight: RenderTextWeight::Regular,
-            slant: RenderTextSlant::Upright,
-        }
-    }
 }
 
 impl PreparedFrame {
@@ -2244,11 +2090,9 @@ impl RenderActionKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FrameStaticId {
     RootLayer,
-    DialogueLayer,
     ChoiceLayer,
     TextInputLayer,
     ActionButtonLayer,
-    DialogueContent,
     ChoiceContent,
     TextInputContent,
     ActionButtonContent,
@@ -2258,11 +2102,9 @@ impl FrameStaticId {
     const fn as_str(self) -> &'static str {
         match self {
             Self::RootLayer => "layer.player.root",
-            Self::DialogueLayer => "layer.player.dialogue",
             Self::ChoiceLayer => "layer.player.choice",
             Self::TextInputLayer => "layer.player.text_input",
             Self::ActionButtonLayer => "layer.player.action_button",
-            Self::DialogueContent => "textbox.player.dialogue",
             Self::ChoiceContent => "view.player.choice",
             Self::TextInputContent => "view.player.text_input",
             Self::ActionButtonContent => "view.player.action_button",
@@ -2292,11 +2134,9 @@ impl ChoiceTargetId {
 
 struct FrameIds {
     root: LayerId,
-    dialogue: LayerId,
     choice: LayerId,
     text_input: LayerId,
     action_button: LayerId,
-    dialogue_content: PublicId,
     choice_content: PublicId,
     text_input_content: PublicId,
     action_button_content: PublicId,
@@ -2306,11 +2146,9 @@ impl FrameIds {
     fn new() -> Result<Self, FramePlanError> {
         Ok(Self {
             root: FrameStaticId::RootLayer.layer_id()?,
-            dialogue: FrameStaticId::DialogueLayer.layer_id()?,
             choice: FrameStaticId::ChoiceLayer.layer_id()?,
             text_input: FrameStaticId::TextInputLayer.layer_id()?,
             action_button: FrameStaticId::ActionButtonLayer.layer_id()?,
-            dialogue_content: FrameStaticId::DialogueContent.public_id()?,
             choice_content: FrameStaticId::ChoiceContent.public_id()?,
             text_input_content: FrameStaticId::TextInputContent.public_id()?,
             action_button_content: FrameStaticId::ActionButtonContent.public_id()?,
@@ -2320,15 +2158,12 @@ impl FrameIds {
 
 struct Palette {
     background: [f32; 4],
-    dialogue_panel: [f32; 4],
     choice_idle: [f32; 4],
     choice_active: [f32; 4],
     choice_pressed: [f32; 4],
     focus_ring: [f32; 4],
     scroll_track: [f32; 4],
     scroll_thumb: [f32; 4],
-    speaker_text: [u8; 4],
-    dialogue_text: [u8; 4],
     choice_text: [u8; 4],
 }
 
@@ -2337,29 +2172,23 @@ impl Palette {
         if preferences.high_contrast {
             Self {
                 background: [0.0, 0.0, 0.0, 1.0],
-                dialogue_panel: [0.02, 0.02, 0.02, 0.98],
                 choice_idle: [0.08, 0.08, 0.08, 1.0],
                 choice_active: [0.2, 0.2, 0.2, 1.0],
                 choice_pressed: [0.32, 0.32, 0.32, 1.0],
                 focus_ring: [1.0, 1.0, 0.0, 1.0],
                 scroll_track: [0.35, 0.35, 0.35, 0.72],
                 scroll_thumb: [1.0, 1.0, 0.0, 1.0],
-                speaker_text: [255, 255, 0, 255],
-                dialogue_text: [255, 255, 255, 255],
                 choice_text: [255, 255, 255, 255],
             }
         } else {
             Self {
                 background: [0.019, 0.027, 0.024, 1.0],
-                dialogue_panel: [0.066, 0.071, 0.064, 0.95],
                 choice_idle: [0.125, 0.124, 0.099, 0.98],
                 choice_active: [0.119, 0.235, 0.153, 1.0],
                 choice_pressed: [0.207, 0.3, 0.164, 1.0],
                 focus_ring: [0.886, 0.914, 0.384, 1.0],
                 scroll_track: [0.04, 0.05, 0.045, 0.55],
                 scroll_thumb: [0.72, 0.78, 0.55, 0.92],
-                speaker_text: [174, 226, 142, 255],
-                dialogue_text: [248, 246, 234, 255],
                 choice_text: [255, 252, 238, 255],
             }
         }

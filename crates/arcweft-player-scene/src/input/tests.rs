@@ -7,7 +7,7 @@ use arcweft_presentation::text_input::{
     TextRange,
 };
 use arcweft_render_wgpu::geometry::{
-    RenderActionButton, RenderControlStyle, RenderDialogue, RenderPreferences, RenderScene,
+    PreparedTextBoxState, RenderActionButton, RenderControlStyle, RenderPreferences, RenderScene,
     RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
     RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanner,
 };
@@ -20,7 +20,6 @@ fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
 
 fn scene(control: RenderTextInputControl) -> RenderScene {
     RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: vec![control],
@@ -43,35 +42,24 @@ fn scene(control: RenderTextInputControl) -> RenderScene {
     }
 }
 
-const REVEALED_DIALOGUE_MILLIS: u64 = 60_000;
-
-fn scene_with_dialogue(control: RenderTextInputControl) -> RenderScene {
-    scene_with_dialogue_at(control, 0)
-}
-
-fn scene_with_revealed_dialogue(control: RenderTextInputControl) -> RenderScene {
-    scene_with_dialogue_at(control, REVEALED_DIALOGUE_MILLIS)
-}
-
-fn scene_with_dialogue_at(control: RenderTextInputControl, visual_time_millis: u64) -> RenderScene {
-    RenderScene {
-        dialogue: Some(RenderDialogue {
-            speaker: "narrator".to_owned(),
-            text: "click dialogue to advance".to_owned(),
-            base_styles: Vec::new(),
-            text_runs: Vec::new(),
-            controls: Vec::new(),
-            reveal_start: 0,
-            reveal_complete: false,
-        }),
-        visual_time_millis,
-        ..scene(control)
-    }
+fn prepare_with_textbox(scene: &RenderScene, reveal_complete: bool) -> PreparedFrame {
+    let mut frame = SharedFramePlanner::prepare(scene).expect("frame prepares");
+    frame.push_textbox(PreparedTextBoxState {
+        textbox: 0,
+        entry: 0,
+        mount: 0,
+        revision: 0,
+        instance: 0,
+        stage: 0,
+        bounds: HitRect::new(32.0, 180.0, 576.0, 148.0),
+        reveal_complete,
+        advance_available: true,
+    });
+    frame
 }
 
 fn scroll_frame() -> PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -112,7 +100,6 @@ fn scroll_frame() -> PreparedFrame {
 
 fn horizontal_scroll_frame() -> PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -157,7 +144,6 @@ fn nested_scroll_frame(
     visual_time_millis: u64,
 ) -> PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -489,7 +475,7 @@ fn pointer_activation_on_text_input_does_not_advance_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
+    let frame = prepare_with_textbox(&scene(control.clone()), false);
     let mut input = InputController::default();
     input.activate_text_control(&control).unwrap();
     let position = ViewportPoint::new(30.0, 40.0);
@@ -525,9 +511,9 @@ fn pointer_activation_on_action_button_clears_text_editor_focus() {
             style: RenderControlStyle::default(),
             action: RenderActionButtonAction::Noop,
         }],
-        ..scene_with_dialogue(control.clone())
+        ..scene(control.clone())
     };
-    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let frame = prepare_with_textbox(&scene, false);
     let mut input = InputController::default();
     input.activate_text_control(&control).unwrap();
     assert!(input.focused_text_editor().is_some());
@@ -554,7 +540,7 @@ fn pointer_activation_on_blank_area_advances_dialogue_without_view_control_focus
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control)).unwrap();
+    let frame = prepare_with_textbox(&scene(control), true);
     let mut input = InputController::default();
     let position = ViewportPoint::new(500.0, 80.0);
 
@@ -577,7 +563,7 @@ fn pointer_activation_on_revealing_dialogue_completes_reveal_before_advance() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control)).unwrap();
+    let frame = prepare_with_textbox(&scene(control), false);
     let mut input = InputController::default();
     let position = ViewportPoint::new(500.0, 80.0);
 
@@ -602,8 +588,7 @@ fn enter_without_view_control_focus_advances_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame =
-        SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control.clone())).unwrap();
+    let frame = prepare_with_textbox(&scene(control.clone()), true);
     let mut input = InputController::default();
 
     let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
@@ -623,7 +608,7 @@ fn enter_without_view_control_focus_completes_dialogue_reveal_before_advance() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
+    let frame = prepare_with_textbox(&scene(control.clone()), false);
     let mut input = InputController::default();
 
     let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
@@ -644,7 +629,7 @@ fn enter_with_text_input_focus_does_not_advance_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control.clone())).unwrap();
+    let frame = prepare_with_textbox(&scene(control.clone()), false);
     let mut input = InputController::default();
     let position = ViewportPoint::new(30.0, 40.0);
     input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
@@ -667,7 +652,7 @@ fn backspace_advances_dialogue_only_without_view_control_focus() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control)).unwrap();
+    let frame = prepare_with_textbox(&scene(control), true);
     let mut input = InputController::default();
 
     let unfocused = input.keyboard(&frame, "Backspace", KeyPhase::Down);
@@ -693,8 +678,7 @@ fn pointer_down_outside_view_control_clears_text_focus_without_advancing() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame =
-        SharedFramePlanner::prepare(&scene_with_revealed_dialogue(control.clone())).unwrap();
+    let frame = prepare_with_textbox(&scene(control.clone()), true);
     let mut input = InputController::default();
 
     let text_position = ViewportPoint::new(30.0, 40.0);
@@ -849,15 +833,17 @@ fn submit_command_with_text_focus_does_not_advance_active_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
-        interaction: InteractionVisualState {
-            focused: Some(target),
-            hovered: None,
-            pressed: None,
+    let frame = prepare_with_textbox(
+        &RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
         },
-        ..scene_with_dialogue(control.clone())
-    })
-    .unwrap();
+        false,
+    );
     let mut input = InputController::default();
     input.activate_text_control(&control).unwrap();
 

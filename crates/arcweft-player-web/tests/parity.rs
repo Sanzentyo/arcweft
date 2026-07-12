@@ -37,7 +37,6 @@ use arcweft_render_wgpu::geometry::{
     RenderScrollIndicatorsPolicy, RenderScrollOverflow, RenderScrollOverscrollPolicy,
     RenderScrollRegion, RenderViewport, SharedFramePlanner,
 };
-use arcweft_render_wgpu::renderer::StyledParagraphEvidenceFontContext;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -72,7 +71,7 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
         "こちらはキャラクターsurfaceの色とフォントを使う行なのだ。波打つ文字と、右上のアニメーション画像も同じフレーム計画で動いているのだ。"
     );
     assert_eq!(complete_report.text_count, 4);
-    assert_eq!(complete_report.styled_paragraph_count, 1);
+    assert_eq!(complete_report.prepared_text_count, 4);
     assert_eq!(
         report
             .images
@@ -140,7 +139,13 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
             ),
         ]
     );
-    assert!(report.text.iter().any(|text| text.text == "ずんだガイド"));
+    assert!(report.prepared_text.iter().any(|item| {
+        item.text == "ずんだガイド"
+            && item
+                .owner
+                .as_ref()
+                .is_some_and(|owner| owner.kind.ends_with(":speaker"))
+    }));
 }
 
 #[test]
@@ -285,21 +290,25 @@ flow opening {
 }
 
 #[test]
-fn web_frame_report_serializes_styled_paragraph_evidence() {
+fn web_frame_report_serializes_canonical_prepared_text_evidence() {
     let report = demo_frame_report_at(2_500);
-    let paragraph = report
-        .styled_paragraphs
+    let body = report
+        .prepared_text
         .iter()
-        .find(|paragraph| paragraph.text.contains("波打つ文字"))
-        .expect("styled paragraph");
+        .find(|item| {
+            item.owner
+                .as_ref()
+                .is_some_and(|owner| owner.kind.ends_with(":body"))
+        })
+        .expect("prepared TextBox body");
 
-    assert!(!paragraph.line_boxes.is_empty());
-    assert!(!paragraph.glyph_bounds.is_empty());
+    assert!(!body.lines.is_empty());
+    assert!(!body.runs.is_empty());
+    assert!(!body.glyphs.is_empty());
     assert!(
-        paragraph
-            .glyph_bounds
+        body.glyphs
             .iter()
-            .all(|glyph| glyph.style.rgba.len() == 4 && glyph.source_start < glyph.source_end)
+            .all(|glyph| glyph.rgba.len() == 4 && glyph.source_start < glyph.source_end)
     );
     serde_json::to_string(&report).expect("serialize v3 report");
 }
@@ -337,7 +346,6 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
     image.bounds = HitRect::new(100.0, 170.0, 200.0, 80.0);
     image.containing_scroll_region = Some("scroll.gallery".to_owned());
     let scene = RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -374,8 +382,7 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
         }],
     };
     let prepared = SharedFramePlanner::prepare(&scene).expect("frame prepares");
-    let report = WebFrameObservationReport::from_prepared_frame(&prepared, &[])
-        .expect("image frame reports");
+    let report = WebFrameObservationReport::from_prepared_frame(&prepared);
 
     assert_eq!(report.image_count, 1);
     assert_eq!(
@@ -563,38 +570,24 @@ fn demo_frame_report_at(visual_time_millis: u64) -> WebFrameObservationReport {
         },
     )
     .expect("parity frame");
-    let mut evidence = StyledParagraphEvidenceFontContext::new();
-    evidence
-        .register_font_bytes(include_bytes!("../../../web/assets/arcweft-demo.ttf").to_vec())
-        .expect("font");
-    let paragraph_evidence = evidence.frame_styled_paragraph_layout_evidence(&prepared);
-    WebFrameObservationReport::from_prepared_frame(&prepared, &paragraph_evidence)
-        .expect("frame report")
+    WebFrameObservationReport::from_prepared_frame(&prepared)
 }
 
 fn dialogue_text(report: &WebFrameObservationReport) -> String {
     report
-        .text
+        .prepared_text
         .iter()
-        .filter(|text| {
-            !matches!(
-                text.text.as_str(),
-                "ずんだガイド" | "このまま進む" | "別ルートを見る"
-            )
+        .filter(|item| {
+            item.owner
+                .as_ref()
+                .is_some_and(|owner| owner.kind.ends_with(":body"))
         })
-        .map(|text| text.text.as_str())
-        .chain(report.styled_paragraphs.iter().map(|paragraph| {
-            paragraph
-                .text
-                .get(..paragraph.visible_end.min(paragraph.text.len()))
-                .unwrap_or("")
-        }))
+        .map(|item| item.visible_text.as_str())
         .collect()
 }
 
 fn image_frame_report(images: Vec<RenderImage>) -> WebFrameObservationReport {
     let prepared = SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -616,13 +609,12 @@ fn image_frame_report(images: Vec<RenderImage>) -> WebFrameObservationReport {
         scroll_regions: Vec::new(),
     })
     .expect("image frame prepares");
-    WebFrameObservationReport::from_prepared_frame(&prepared, &[]).expect("image frame reports")
+    WebFrameObservationReport::from_prepared_frame(&prepared)
 }
 
 fn authored_image_flow_report(bundle: &ArcweftBundle, flow: &str) -> WebFrameObservationReport {
     let prepared = authored_image_flow_frame(bundle, flow);
-    WebFrameObservationReport::from_prepared_frame(&prepared, &[])
-        .expect("authored image flow reports")
+    WebFrameObservationReport::from_prepared_frame(&prepared)
 }
 
 fn authored_image_flow_frame(
@@ -633,7 +625,6 @@ fn authored_image_flow_frame(
     let images = BundleImageCatalog::from_bundle(bundle).expect("image catalog decodes");
     let viewport = parity_test_viewport();
     let scene = RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),

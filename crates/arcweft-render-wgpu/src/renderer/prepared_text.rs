@@ -23,7 +23,7 @@ pub(super) fn render_prepared_text_range_with_renderer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
-    text_renderer: &mut TextRenderer,
+    text_renderers: &mut Vec<TextRenderer>,
     engine: Option<&mut GlyphonTextEngine>,
     atlas: &mut TextAtlas,
     viewport: &Viewport,
@@ -50,6 +50,15 @@ pub(super) fn render_prepared_text_range_with_renderer(
     );
     let logical_extent = frame_logical_extent(request.frame);
     for item in items {
+        text_renderers.push(TextRenderer::new(
+            atlas,
+            device,
+            wgpu::MultisampleState::default(),
+            None,
+        ));
+        let text_renderer = text_renderers
+            .last_mut()
+            .expect("prepared text renderer was just pushed");
         let submission = item.submission();
         if item.paint.offscreen_passes.is_empty() && item.paint.post_processes.is_empty() {
             render_prepared_submission_with_renderer(
@@ -121,7 +130,7 @@ pub(super) fn render_prepared_text_item_with_affine(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
-    text_renderer: &mut TextRenderer,
+    text_renderers: &mut Vec<TextRenderer>,
     engine: Option<&mut GlyphonTextEngine>,
     cache: &Cache,
     atlas: &mut TextAtlas,
@@ -143,6 +152,15 @@ pub(super) fn render_prepared_text_item_with_affine(
         },
     );
     let submission = item.submission_with_affine(affine);
+    text_renderers.push(TextRenderer::new(
+        atlas,
+        device,
+        wgpu::MultisampleState::default(),
+        None,
+    ));
+    let text_renderer = text_renderers
+        .last_mut()
+        .expect("prepared text renderer was just pushed");
     if item.paint.offscreen_passes.is_empty() && item.paint.post_processes.is_empty() {
         return render_prepared_submission_with_renderer(
             device,

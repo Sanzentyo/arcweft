@@ -7,7 +7,6 @@ use arcweft_render_wgpu::geometry::{
 
 fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
     SharedFramePlanner::prepare(&RenderScene {
-        dialogue: None,
         content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {

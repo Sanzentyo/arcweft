@@ -64,8 +64,12 @@ enum WebPlayerError {
     Font(String),
     #[error("image catalog failed: {0}")]
     Image(String),
-    #[error("player frame failed: {0}")]
-    PlayerFrame(#[from] PlayerFrameError),
+    #[error("player frame failed after registering {registered_font_bytes} font bytes: {source}")]
+    PlayerFrame {
+        registered_font_bytes: usize,
+        #[source]
+        source: PlayerFrameError,
+    },
     #[error("diagnostic serialization failed: {0}")]
     Report(String),
     #[error("Web runtime text-input bridge failed: {0}")]
@@ -534,6 +538,9 @@ fn redraw(
     window: &Arc<dyn Window>,
 ) -> Result<Vec<TextClipboardRequest>, WebPlayerError> {
     let mut clipboard_requests = Vec::new();
+    if !matches!(state.gpu, GpuState::Ready(_)) {
+        return Ok(clipboard_requests);
+    }
     let host_millis = now_millis();
     for clock in state
         .clock
@@ -579,12 +586,7 @@ fn redraw(
     let GpuState::Ready(gpu) = &mut state.gpu else {
         return Ok(clipboard_requests);
     };
-    let paragraph_evidence = gpu
-        .renderer
-        .frame_styled_paragraph_layout_evidence(&prepared);
-    let frame_report =
-        WebFrameObservationReport::from_prepared_frame(&prepared, &paragraph_evidence)
-            .map_err(|error| WebPlayerError::Report(error.to_string()))?;
+    let frame_report = WebFrameObservationReport::from_prepared_frame(&prepared);
     let frame_json = serde_json::to_string(&frame_report)
         .map_err(|error| WebPlayerError::Report(error.to_string()))?;
     emit_event("arcweft-frame-observation", frame_json);
@@ -618,7 +620,8 @@ fn prepare_web_player_frame(
         host_millis,
         dialogue_visual_time_override_millis(),
     );
-    Ok(state
+    let registered_font_bytes = state.frame_planner.stats().registered_font_bytes;
+    state
         .frame_planner
         .prepare(
             &mut state.input,
@@ -633,8 +636,12 @@ fn prepare_web_player_frame(
                 dialogue_reveal_complete: dialogue_visual.is_complete(),
                 preferences: RenderPreferences::default(),
             },
-        )?
-        .frame)
+        )
+        .map(|prepared| prepared.frame)
+        .map_err(|source| WebPlayerError::PlayerFrame {
+            registered_font_bytes,
+            source,
+        })
 }
 
 fn dialogue_visual_time_override_millis() -> Option<u64> {
