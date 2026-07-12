@@ -57,7 +57,7 @@ pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serd
     );
     serde_json::json!({
         "kind": "layout.viewport_scale",
-        "renderer_kind": "native_rich_text_observer",
+        "renderer_kind": "shared_wgpu_prepared_frame",
         "output_viewport": {
             "width": viewport.width,
             "height": viewport.height,
@@ -329,88 +329,15 @@ pub(super) struct AgentRasterCapture {
     pub(super) height: u32,
     pub(super) crop_origin: Option<AgentImageCropOrigin>,
     pub(super) composition: AgentImageComposition,
-    pub(super) background: [u8; 4],
     pub(super) rgba: Vec<u8>,
-    pub(super) diagnostics: Vec<arcweft_render_native::NativeVisualDiagnostic>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct AgentRasterContentStats {
-    pub(super) bbox: Option<AgentImageContentBBox>,
+    pub(super) content_bbox: Option<AgentImageContentBBox>,
     pub(super) content_pixels: u64,
-}
-
-impl AgentRasterCapture {
-    pub(super) fn new(
-        width: u32,
-        height: u32,
-        color: [u8; 4],
-        composition: AgentImageComposition,
-    ) -> Self {
-        let pixel_count = usize::try_from(width)
-            .unwrap_or(0)
-            .saturating_mul(usize::try_from(height).unwrap_or(0));
-        let mut rgba = Vec::with_capacity(pixel_count.saturating_mul(4));
-        for _ in 0..pixel_count {
-            rgba.extend_from_slice(&color);
-        }
-        Self {
-            width,
-            height,
-            crop_origin: None,
-            composition,
-            background: color,
-            rgba,
-            diagnostics: Vec::new(),
-        }
-    }
-
-    pub(super) fn content_stats(&self) -> AgentRasterContentStats {
-        let mut min_x = self.width;
-        let mut min_y = self.height;
-        let mut max_x = 0;
-        let mut max_y = 0;
-        let mut count = 0_u64;
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let index = usize::try_from(y)
-                    .unwrap_or(0)
-                    .saturating_mul(usize::try_from(self.width).unwrap_or(0))
-                    .saturating_add(usize::try_from(x).unwrap_or(0))
-                    .saturating_mul(4)
-                    .saturating_add(3);
-                let Some(pixel) = self
-                    .rgba
-                    .get(index.saturating_sub(3)..index.saturating_add(1))
-                else {
-                    continue;
-                };
-                if pixel == self.background {
-                    continue;
-                }
-                min_x = min_x.min(x);
-                min_y = min_y.min(y);
-                max_x = max_x.max(x);
-                max_y = max_y.max(y);
-                count = count.saturating_add(1);
-            }
-        }
-        AgentRasterContentStats {
-            bbox: (count > 0).then_some(AgentImageContentBBox {
-                x: min_x,
-                y: min_y,
-                width: max_x.saturating_sub(min_x).saturating_add(1),
-                height: max_y.saturating_sub(min_y).saturating_add(1),
-            }),
-            content_pixels: count,
-        }
-    }
+    pub(super) diagnostics: Vec<AgentDiagnostic>,
 }
 
 pub(super) fn agent_observe_image_output(
     report: &mut AgentObservationReport,
     options: &AgentObserveOptions,
-    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
     image_frames: &AgentImageFrameStore,
 ) -> Result<Option<AgentImageOutput>, ExitCode> {
     let Some(image) = options.image else {
@@ -459,15 +386,7 @@ pub(super) fn agent_observe_image_output(
         }
         AgentObserveImageKind::RawRgba | AgentObserveImageKind::Png => {
             let request = agent_capture_request_for_options(report, image, options);
-            let capture_result = match native_session {
-                Some(native_session) => agent_native_capture_image_with_frame_store(
-                    report,
-                    &request,
-                    native_session,
-                    image_frames,
-                )?,
-                None => agent_native_capture_image(report, &request)?,
-            };
+            let capture_result = agent_capture_image(report, &request, image_frames)?;
             report
                 .diagnostics
                 .extend(capture_result.image.diagnostics.clone());
@@ -479,36 +398,6 @@ pub(super) fn agent_observe_image_output(
             Ok(Some(AgentImageOutput { uri, bytes }))
         }
     }
-}
-
-pub(super) fn agent_native_visual_diagnostics(
-    step: usize,
-    diagnostics: &[arcweft_render_native::NativeVisualDiagnostic],
-) -> Vec<AgentDiagnostic> {
-    diagnostics
-        .iter()
-        .map(|diagnostic| AgentDiagnostic {
-            step,
-            severity: match diagnostic.severity {
-                arcweft_render_native::NativeVisualDiagnosticSeverity::Error => {
-                    AgentDiagnosticSeverity::Error
-                }
-                arcweft_render_native::NativeVisualDiagnosticSeverity::Warning => {
-                    AgentDiagnosticSeverity::Warning
-                }
-                arcweft_render_native::NativeVisualDiagnosticSeverity::Info => {
-                    AgentDiagnosticSeverity::Info
-                }
-            },
-            source: Some("native_rich_text".to_owned()),
-            code: Some(diagnostic.code.clone()),
-            effect_id: diagnostic.effect_id.clone(),
-            message: format!(
-                "native rich-text {}: {}",
-                diagnostic.code, diagnostic.message
-            ),
-        })
-        .collect()
 }
 
 pub(super) fn agent_capture_request_for_options(

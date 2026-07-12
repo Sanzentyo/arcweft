@@ -543,6 +543,7 @@ pub struct PreparedFrame {
     pub images: Vec<RenderImage>,
     /// Canonical pre-shaped text renderer input.
     pub prepared_text: PreparedTextBatch,
+    text_owners: Vec<PreparedTextOwner>,
     /// Typed shared-Fx evaluation/capability diagnostics for this exact frame.
     pub fx_diagnostics: Vec<arcweft_presentation::fx::FxDiagnostic>,
     /// Legacy pending text blocks removed as producers migrate to `prepared_text`.
@@ -564,6 +565,54 @@ pub struct PreparedFrame {
     dialogue_advance_available: bool,
     interaction: InteractionVisualState,
     focused_text_input: Option<PreparedTextInputTarget>,
+}
+
+/// Semantic ownership for one canonical prepared-text item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparedTextOwnerKind {
+    /// Dialogue content rendered inside the persistent `TextBox` surface.
+    Dialogue,
+    /// Authored or Rust-backed View text.
+    View,
+    /// Shared player control text associated with an interaction target.
+    Control,
+}
+
+/// Renderer-neutral identity and geometry associated with one prepared item.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedTextOwner {
+    pub text: PreparedTextId,
+    pub semantic_id: PublicId,
+    pub parent_id: Option<PublicId>,
+    pub kind: PreparedTextOwnerKind,
+    pub source_origin: usize,
+    pub object_bounds: HitRect,
+}
+
+impl PreparedTextOwner {
+    #[must_use]
+    pub const fn new(
+        text: PreparedTextId,
+        semantic_id: PublicId,
+        kind: PreparedTextOwnerKind,
+        source_origin: usize,
+        object_bounds: HitRect,
+    ) -> Self {
+        Self {
+            text,
+            semantic_id,
+            parent_id: None,
+            kind,
+            source_origin,
+            object_bounds,
+        }
+    }
+
+    #[must_use]
+    pub fn with_parent(mut self, parent_id: PublicId) -> Self {
+        self.parent_id = Some(parent_id);
+        self
+    }
 }
 
 /// Renderer-backed text input target prepared for platform IME adapters.
@@ -735,6 +784,10 @@ pub enum FramePlanError {
     FxOrdinalOverflow { actual: usize },
     #[error("failed to construct stable presentation id `{value}`")]
     InvalidId { value: String },
+    #[error("prepared-text owner references missing batch item {index}")]
+    MissingPreparedTextOwnerItem { index: u32 },
+    #[error("prepared-text item {index} already has a semantic owner")]
+    DuplicatePreparedTextOwner { index: u32 },
     #[error("semantic role {role:?} is not a text-input control")]
     InvalidTextInputRole { role: SemanticRole },
     #[error(transparent)]
@@ -755,6 +808,35 @@ impl PreparedFrame {
     #[must_use]
     pub fn view_scenes(&self) -> &[PreparedViewScene] {
         &self.view_scenes
+    }
+
+    /// Registers one semantic owner after its prepared item is in the batch.
+    pub fn push_prepared_text_owner(
+        &mut self,
+        owner: PreparedTextOwner,
+    ) -> Result<(), FramePlanError> {
+        if self.prepared_text.get(owner.text).is_none() {
+            return Err(FramePlanError::MissingPreparedTextOwnerItem {
+                index: owner.text.index(),
+            });
+        }
+        if self
+            .text_owners
+            .iter()
+            .any(|candidate| candidate.text == owner.text)
+        {
+            return Err(FramePlanError::DuplicatePreparedTextOwner {
+                index: owner.text.index(),
+            });
+        }
+        self.text_owners.push(owner);
+        Ok(())
+    }
+
+    /// Returns semantic owners in prepared painter order.
+    #[must_use]
+    pub fn prepared_text_owners(&self) -> &[PreparedTextOwner] {
+        &self.text_owners
     }
 
     /// Returns the renderer-backed focused text target for platform IME sync.
@@ -1218,6 +1300,7 @@ impl SharedFramePlanContext {
             rectangles,
             images: build_retained_images(scene),
             prepared_text: PreparedTextBatch::default(),
+            text_owners: Vec::new(),
             fx_diagnostics: Vec::new(),
             text,
             selectable_text_blocks: Vec::new(),
@@ -1315,8 +1398,21 @@ impl SharedFramePlanContext {
         if self.prepared_text_engine.is_some() {
             let blocks = std::mem::take(&mut frame.text);
             for block in blocks {
+                let owner = block
+                    .target
+                    .clone()
+                    .map(|target| (target.id().clone(), block.bounds));
                 let item = self.prepare_text_block(&block, frame.viewport)?;
-                frame.prepared_text.push(item)?;
+                let text = frame.prepared_text.push(item)?;
+                if let Some((semantic_id, object_bounds)) = owner {
+                    frame.push_prepared_text_owner(PreparedTextOwner::new(
+                        text,
+                        semantic_id,
+                        PreparedTextOwnerKind::Control,
+                        0,
+                        object_bounds,
+                    ))?;
+                }
             }
         }
         self.prepare_selectable_text_blocks(frame);
@@ -1337,7 +1433,7 @@ impl SharedFramePlanContext {
         let Some(paragraph) = frame.styled_paragraphs.first() else {
             return Ok(());
         };
-        let (item, complete, diagnostics) = dialogue_prepared::prepare_stage(
+        let (item, complete, diagnostics, source_origin) = dialogue_prepared::prepare_stage(
             engine,
             stage,
             paragraph,
@@ -1346,7 +1442,14 @@ impl SharedFramePlanContext {
             reveal_complete,
             fx_resolver,
         )?;
-        frame.prepared_text.push(item)?;
+        let text = frame.prepared_text.push(item)?;
+        frame.push_prepared_text_owner(PreparedTextOwner::new(
+            text,
+            FrameStaticId::DialogueContent.public_id()?,
+            PreparedTextOwnerKind::Dialogue,
+            source_origin,
+            dialogue::panel_bounds(frame.viewport),
+        ))?;
         frame.fx_diagnostics.extend(diagnostics);
         frame.styled_paragraphs.clear();
         frame.dialogue_reveal_complete = complete;

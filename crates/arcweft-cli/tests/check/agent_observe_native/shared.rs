@@ -733,7 +733,7 @@ fn assert_native_rich_text_layer_image_has_content(report: &serde_json::Value) {
     assert_eq!(image["renderer"], "native");
     assert_eq!(image["scope"]["kind"], "layer");
     assert_eq!(image["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(image["composition"], "isolated_regions");
+    assert_eq!(image["composition"], "masked_framebuffer_crop");
     assert_eq!(image["mime_type"], "image/png");
     assert!(image["content_pixels"].as_u64().unwrap() > 0);
 }
@@ -1240,4 +1240,3 @@ fn assert_metric_close(actual: f64, expected: f64, epsilon: f64, label: &str) {
         "{label} should be {expected}, got {actual}"
     );
 }
-

@@ -93,7 +93,7 @@ final shared-path goldens have distinct roles as specified by the final design.
 - [ ] Cut 4: prepared text batch and all ordinary producers
 - [ ] Cut 5: RichText/reveal/shared Fx and native registry removal
 - [x] Cut 6: direct View text painter order and executable per-mount View
-- [ ] Cut 7: shared capture and prepared-layout Agent geometry
+- [x] Cut 7: shared capture and prepared-layout Agent geometry
 - [ ] Cut 8: persistent TextBox View and hardcoded dialogue removal
 - [ ] Cut 9: final cleanup, parity, docs, and structural audit
 
@@ -307,12 +307,13 @@ Prepared paint is now executable rather than metadata-only:
   the main renderer crossed the 2,500-LOC structural error threshold. The
   renderer returned to 2,370 LOC and the audit reports no error-level files.
 
-Cut 5 remains open because `arcweft-render-native` still contains the old
-effect/shader/motion registries and its legacy capture renderer still consumes
-`LineDisplayFrame`. Those APIs will be deleted with shared prepared-frame
-capture rather than retained as a fallback. Runtime-host injection of
-additional typed render-resource programs also remains to be connected to the
-shared table before native provider loading can replace the old callback API.
+The renderer-local registry and native relayout half of Cut 5 is now closed by
+Cut 7: `arcweft-render-native` and its effect/shader/motion/capture stores were
+deleted directly. Cut 5 remains open only for removing the still-public
+`RenderStyledParagraph`/legacy descriptor staging vocabulary from the shared
+planner and renderer after all producer migrations are complete. Runtime-host
+injection of additional typed render-resource programs also remains to be
+connected to the shared table before external provider loading is complete.
 
 ### Direct View prepared-text slice
 
@@ -589,6 +590,79 @@ LOC, 0 errors, and 142 warnings. `frame/view_text.rs` is a 344-LOC
 responsibility module and `frame/surfaces.rs` is 730 LOC including 202 embedded
 test LOC. The full changed-file, largest-file, embedded-test, responsibility,
 fan-in, and fan-out review is recorded in the linked audit directory.
+
+### Shared prepared-frame capture and Agent geometry
+
+Cut 7 is complete at Jujutsu change `xvloqypt` (parent revision `f35ccc09`):
+
+- `arcweft-render-wgpu::SharedOffscreenCapture` accepts only a
+  `PreparedFrame` plus a typed `CaptureRequest`. One shared-renderer submission
+  produces exact Color pixels, and ordered prepared geometry derives ObjectId
+  and Mask attachments with validated IDs, finite bounds, crop policy, and
+  unambiguous RGBA identities;
+- `arcweft-player-native` and the CLI no longer depend on
+  `arcweft-render-native`. The entire unpublished crate and its independent
+  `LineDisplayFrame` relayout, visual state, Fx registries, and raster path were
+  deleted rather than retained behind a compatibility feature;
+- native developer capture, CLI observe, MCP capture, and resource reads all
+  plan the ordinary player frame, render it with `SharedRenderer`, and retain
+  the same Color/ObjectId/Mask bytes. A later read never starts a different
+  text renderer and a non-current historical page request is rejected;
+- `PreparedTextOwner` records the frame-local text ID, stable semantic owner,
+  parent, source origin, owner kind, and object bounds. Dialogue, View, and
+  control producers register this evidence when they append the canonical
+  prepared item;
+- Agent TextBox/page/line/run/ruby/glyph/logical-cluster geometry now comes
+  from `TextLayout` and its source map. View text exposes the same line/run/
+  ruby/glyph/cluster families, including vertical orientation and vertical
+  form. No line-count estimate, screenshot scan, or native-only layout API is
+  used;
+- capture-region order is derived from the actual prepared owner inventory:
+  image, View painter order, semantic control, then dialogue, with shaped glyph
+  order before ruby annotation order. Hidden reveal paint is excluded from the
+  attachment rather than represented as visible geometry;
+- the provisional selected-capture identities (`native_rich_text_observer`,
+  `shared_web_gpu_scene`, and `native_wgpu_adapter`) were replaced directly by
+  the one `shared_wgpu_prepared_frame` contract; and
+- the Agent implementation was decomposed into retained-attachment,
+  player-capture, dialogue-geometry, View-geometry, and external unit-test
+  modules. The main changed production modules are below the 1,200-LOC warning
+  threshold. The existing `arcweft-render-wgpu/src/geometry.rs` remains a
+  reviewed 2,266-LOC warning-level owner below the 2,500-LOC error threshold;
+  it already delegates dialogue, prepared text, controls, and action buttons
+  to responsibility modules.
+
+Validation for this cut:
+
+```bash
+cargo test -p arcweft-layout -p arcweft-agent-protocol \
+  -p arcweft-render-wgpu -p arcweft-player-native \
+  --all-features --lib --tests
+cargo test -p arcweft-cli --all-features --lib
+cargo test -p arcweft-cli --features native-capture --test check \
+  agent_observe_native::agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop \
+  -- --exact --nocapture
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-shared-capture-2026-07-12
+git diff --check
+```
+
+All listed gates pass. The focused crate matrix passes 259 normal tests with 14
+adapter-pinned tests ignored by policy, CLI passes 181 unit tests, the real-GPU
+shared TextBox-layer smoke passes, and `just test-fast` passes 446 tests. The
+structural audit scans 1,255 Rust files / 621,851 physical Rust LOC with 0
+errors and 133 pre-existing warning-level findings. Exact changed-file metrics
+and dependency edges are recorded in the linked audit directory.
+
+Two older broad integration assertions remain intentionally red until Cut 8:
+the full-grammar history assertion expects every previously emitted TextBox
+entry in one observation, and ruby child capture addresses an observation-step
+derived object ID. The final design forbids recreating those results through a
+hidden renderer. Cut 8 must satisfy them through the persistent per-target
+TextBox presentation store and stable entry identity. No renderer fallback or
+compatibility alias was introduced for this intermediate cut.
 
 ## Required validation
 

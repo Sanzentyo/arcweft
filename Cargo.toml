@@ -41,7 +41,6 @@ members = [
     "crates/arcweft-presentation",
     "crates/arcweft-view",
     "crates/arcweft-takumi-adapter",
-    "crates/arcweft-render-native",
     "crates/arcweft-render-text",
     "crates/arcweft-text-layout",
     "crates/arcweft-rust-abi",

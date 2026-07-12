@@ -63,7 +63,6 @@ pub(super) struct AgentMcpState {
     pub(super) trace_resources: Vec<AgentResource>,
     pub(super) rag_context_packs: Vec<RagContextPack>,
     pub(super) project_context: Option<AgentMcpProjectContext>,
-    pub(super) native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
     pub(super) runtime: Option<NativeAgentRuntimeState>,
     pub(super) observe_options: Option<AgentObserveOptions>,
     pub(super) repl_session: Option<arcweft_agent_repl::ReplSession>,
@@ -155,7 +154,6 @@ fn agent_published_resource_source_keys(source_uri: &str) -> Vec<String> {
 pub(super) struct AgentObservationState {
     pub(super) report: AgentObservationReport,
     pub(super) image_frames: AgentImageFrameStore,
-    pub(super) native_session: arcweft_render_native::NativeOffscreenCaptureSession,
 }
 
 pub(super) struct NativeAgentObservedSnapshot {
@@ -170,7 +168,7 @@ pub(super) struct NativeAgentRuntimeState {
     pub(super) prepared_frame: Option<arcweft_player_scene::frame::PlayerPreparedFrame>,
     pub(super) source_path: PathBuf,
     pub(super) project_context: AgentMcpProjectContext,
-    pub(super) native_session: arcweft_render_native::NativeOffscreenCaptureSession,
+    pub(super) shared_capture: arcweft_render_wgpu::offscreen::SharedOffscreenCapture,
     pub(super) host: Option<NativeTaskBridge>,
     pub(super) task_events: Vec<arcweft_core::task::TaskEvent>,
     pub(super) next_clock_millis: u64,
@@ -518,7 +516,6 @@ pub(super) fn agent_mcp_store_observation(
     state.project_context = Some(observed.runtime.project_context.clone());
     state.runtime = Some(observed.runtime);
     state.observe_options = Some(observed.options);
-    state.native_capture_session = None;
     state.capture_resources.clear();
     state.published_resources.clear();
 }
@@ -557,7 +554,7 @@ pub(super) fn agent_mcp_call_session_info(
             "layers": report.layers,
             "objects": report.objects,
             "capture_resource_count": state.capture_resources.len(),
-            "native_capture_session_active": state.runtime.is_some() || state.native_capture_session.is_some(),
+            "shared_capture_session_active": state.runtime.is_some(),
             "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
             "latest_capture": latest_capture.as_ref().and_then(|resource| resource.image.as_ref()),
             "latest_capture_uri": latest_capture.as_ref().map(|resource| resource.uri.as_str()),
@@ -583,7 +580,7 @@ pub(super) fn agent_mcp_call_session_info(
             "objects": [],
             "capture_resource_count": 0,
             "trace_resource_count": state.trace_resources.len(),
-            "native_capture_session_active": false,
+            "shared_capture_session_active": false,
             "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
             "latest_capture": null,
             "latest_capture_uri": null,

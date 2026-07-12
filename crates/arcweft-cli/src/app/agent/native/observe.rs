@@ -9,31 +9,23 @@ pub(super) fn agent_observe_command(
 ) -> Result<(), ExitCode> {
     validate_agent_observe_options(options)?;
     let mut observed = agent_observation_for_options(options, adapter_registrars)?;
-    let image_output = agent_observe_image_output(
-        &mut observed.report,
-        options,
-        Some(&mut observed.native_session),
-        &observed.image_frames,
-    )?;
+    let image_output =
+        agent_observe_image_output(&mut observed.report, options, &observed.image_frames)?;
     if let Some(uri) = &options.read_uri {
-        let resource = agent_observe_cached_image_resource(
-            &observed.report,
-            image_output.as_ref(),
-            uri,
-        )
-        .map_or_else(
-            || {
-                agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
-                    &observed.report,
-                    uri,
-                    options.page,
-                    agent_observe_capture_time_seconds(options),
-                    Some(&mut observed.native_session),
-                    &observed.image_frames,
-                )
-            },
-            Ok,
-        )?;
+        let resource =
+            agent_observe_cached_image_resource(&observed.report, image_output.as_ref(), uri)
+                .map_or_else(
+                    || {
+                        agent_observe_resource_by_uri_with_page_and_time_and_frame_store(
+                            &observed.report,
+                            uri,
+                            options.page,
+                            agent_observe_capture_time_seconds(options),
+                            &observed.image_frames,
+                        )
+                    },
+                    Ok,
+                )?;
         if options.mcp {
             let resource = agent_observe_mcp_resource_output(
                 AgentObserveResourceOutput::One(Box::new(resource)),
@@ -274,26 +266,17 @@ impl<'a> NativeAgentScriptSession<'a> {
         if self.observed.is_none() {
             self.refresh_observation(BundleStepInput::default())?;
         }
-        let Some(mut runtime) = self.runtime.take() else {
+        let Some(observed) = self.observed.as_ref() else {
             return Err(NativeAgentScriptSessionError::ResourceRead);
         };
-        let result = {
-            let Some(observed) = self.observed.as_ref() else {
-                self.runtime = Some(runtime);
-                return Err(NativeAgentScriptSessionError::ResourceRead);
-            };
-            agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
-                &observed.report,
-                uri,
-                None,
-                agent_report_capture_time_seconds(&observed.report),
-                Some(&mut runtime.native_session),
-                &observed.image_frames,
-            )
-            .map_err(|_| NativeAgentScriptSessionError::ResourceRead)
-        };
-        self.runtime = Some(runtime);
-        result
+        agent_observe_resource_by_uri_with_page_and_time_and_frame_store(
+            &observed.report,
+            uri,
+            None,
+            agent_report_capture_time_seconds(&observed.report),
+            &observed.image_frames,
+        )
+        .map_err(|_| NativeAgentScriptSessionError::ResourceRead)
     }
 
     fn action_step_input(
@@ -1162,38 +1145,20 @@ pub(super) fn agent_observe_resource_by_uri_with_page_and_time(
     page_override: Option<usize>,
     capture_time_seconds: f32,
 ) -> Result<AgentResource, ExitCode> {
-    agent_observe_resource_by_uri_with_page_and_time_and_session(
+    agent_observe_resource_by_uri_with_page_and_time_and_frame_store(
         report,
         uri,
         page_override,
         capture_time_seconds,
-        None,
-    )
-}
-
-pub(super) fn agent_observe_resource_by_uri_with_page_and_time_and_session(
-    report: &AgentObservationReport,
-    uri: &str,
-    page_override: Option<usize>,
-    capture_time_seconds: f32,
-    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
-) -> Result<AgentResource, ExitCode> {
-    agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
-        report,
-        uri,
-        page_override,
-        capture_time_seconds,
-        native_session,
         &AgentImageFrameStore::default(),
     )
 }
 
-pub(super) fn agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+pub(super) fn agent_observe_resource_by_uri_with_page_and_time_and_frame_store(
     report: &AgentObservationReport,
     uri: &str,
     page_override: Option<usize>,
     capture_time_seconds: f32,
-    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
     image_frames: &AgentImageFrameStore,
 ) -> Result<AgentResource, ExitCode> {
     if uri
@@ -1260,15 +1225,7 @@ pub(super) fn agent_observe_resource_by_uri_with_page_and_time_and_session_and_f
         capture_time_seconds,
         ..request
     };
-    match native_session {
-        Some(native_session) => agent_native_capture_resource_with_session_and_frame_store(
-            report,
-            &request,
-            native_session,
-            image_frames,
-        ),
-        None => agent_observe_capture_resource(report, &request),
-    }
+    agent_capture_resource(report, &request, image_frames)
 }
 
 pub(super) fn agent_presentation_tree_resource_from_uri(

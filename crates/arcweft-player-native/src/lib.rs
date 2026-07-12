@@ -1,6 +1,8 @@
 //! Native/headless rich-text player host for Arcweft.
 
 mod clipboard;
+#[cfg(feature = "dev-capture")]
+mod dev_capture;
 mod native_audio;
 mod patch_endpoint;
 mod scene_windowed;
@@ -10,6 +12,11 @@ mod windowed_ingress;
 pub mod windowed_patch;
 mod windowed_runtime;
 
+#[cfg(feature = "dev-capture")]
+pub use dev_capture::{
+    NativePlayerCaptureContentBBox, NativePlayerCaptureError, NativePlayerCaptureRequest,
+    NativePlayerFrameCapture, capture_bundle_frame,
+};
 pub use patch_endpoint::{
     NativePatchEndpoint, NativePatchEndpointError, NativePatchOutcome, NativePatchTransportAction,
     NativePatchTransportEnvelope, NativePreparedPatch,
@@ -32,8 +39,6 @@ pub use windowed_runtime::{
 
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::plan::FlowEvent;
-#[cfg(feature = "dev-capture")]
-use arcweft_render_native::NativeFrameContentBBox;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
 use arcweft_runtime_host::{
     BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode, NativeTaskStats,
@@ -78,7 +83,7 @@ pub struct NativePlayerCaptureMetadata {
     pub height: u32,
     pub pixel_format: String,
     pub row_stride_bytes: u32,
-    pub content_bbox: Option<NativeFrameContentBBox>,
+    pub content_bbox: Option<NativePlayerCaptureContentBBox>,
     pub content_pixels: u64,
     pub written: String,
 }
@@ -88,8 +93,6 @@ pub struct NativePlayerCaptureMetadata {
 pub enum NativePlayerError {
     #[error(transparent)]
     BundleRunner(#[from] arcweft_runtime_host::BundleRunnerError),
-    #[error(transparent)]
-    NativeWindow(#[from] arcweft_render_native::NativeWindowError),
     #[error("native shared scene window failed: {0}")]
     SceneWindow(String),
     #[error(transparent)]
@@ -344,13 +347,13 @@ mod tests {
             status: "done".to_owned(),
             runtime: None,
             native_capture: Some(NativePlayerCaptureMetadata {
-                renderer: "native_offscreen_wgpu_glyphon".to_owned(),
+                renderer: "shared_offscreen_wgpu".to_owned(),
                 format: "png".to_owned(),
                 width: 1,
                 height: 1,
-                pixel_format: "rgba8_unorm".to_owned(),
+                pixel_format: "rgba8_unorm_srgb".to_owned(),
                 row_stride_bytes: 4,
-                content_bbox: Some(NativeFrameContentBBox {
+                content_bbox: Some(NativePlayerCaptureContentBBox {
                     x: 0,
                     y: 0,
                     width: 1,

@@ -265,13 +265,9 @@ pub(super) fn agent_mcp_run_observation(
     let mut observed =
         observe_native_player_runtime(&mut runtime, &options, BundleStepInput::default())
             .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
-    let image_output = agent_observe_image_output(
-        &mut observed.report,
-        &options,
-        Some(&mut runtime.native_session),
-        &observed.image_frames,
-    )
-    .map_err(|_| "failed to build MCP observe image output".to_owned())?;
+    let image_output =
+        agent_observe_image_output(&mut observed.report, &options, &observed.image_frames)
+            .map_err(|_| "failed to build MCP observe image output".to_owned())?;
     Ok(AgentMcpObservation {
         report: observed.report,
         image_output,
@@ -289,13 +285,9 @@ pub(super) fn agent_mcp_observe_runtime(
 ) -> Result<AgentMcpFrame, String> {
     let mut observed = observe_native_player_runtime(runtime, options, step_input)
         .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
-    let image_output = agent_observe_image_output(
-        &mut observed.report,
-        options,
-        Some(&mut runtime.native_session),
-        &observed.image_frames,
-    )
-    .map_err(|_| "failed to build MCP action image output".to_owned())?;
+    let image_output =
+        agent_observe_image_output(&mut observed.report, options, &observed.image_frames)
+            .map_err(|_| "failed to build MCP action image output".to_owned())?;
     let resources = agent_observe_list_resources(&observed.report, image_output.as_ref())
         .map_err(|_| "failed to build MCP action resources".to_owned())?;
     Ok(AgentMcpFrame {
@@ -557,7 +549,6 @@ pub(super) fn agent_mcp_session_context_resource(
         && state.trace_resources.is_empty()
         && state.rag_context_packs.is_empty()
         && state.runtime.is_none()
-        && state.native_capture_session.is_none()
     {
         return Ok(None);
     }
@@ -629,7 +620,7 @@ pub(super) fn agent_mcp_session_context_resource(
         },
         "runtime": {
             "native_runtime_active": state.runtime.is_some(),
-            "native_capture_session_active": state.runtime.is_some() || state.native_capture_session.is_some(),
+            "shared_capture_session_active": state.runtime.is_some(),
         },
         "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
     });
@@ -686,15 +677,12 @@ pub(super) fn agent_mcp_uncached_resource_by_uri(
     uri: &str,
     state: &mut AgentMcpState,
 ) -> Result<AgentResource, ExitCode> {
-    let image_frames = state.image_frames.clone();
-    let native_session = agent_mcp_native_capture_session_mut(state)?;
-    agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store(
+    agent_observe_resource_by_uri_with_page_and_time_and_frame_store(
         report,
         uri,
         None,
         agent_report_capture_time_seconds(report),
-        Some(native_session),
-        &image_frames,
+        &state.image_frames,
     )
 }
 
@@ -736,54 +724,7 @@ pub(super) fn agent_mcp_capture_resource(
     request: &AgentCaptureReadRequest,
     state: &mut AgentMcpState,
 ) -> Result<AgentResource, ExitCode> {
-    let image_frames = state.image_frames.clone();
-    let native_session = agent_mcp_native_capture_session_mut(state)?;
-    agent_native_capture_resource_with_session_and_frame_store(
-        report,
-        request,
-        native_session,
-        &image_frames,
-    )
-}
-
-pub(super) fn agent_mcp_native_capture_session_mut(
-    state: &mut AgentMcpState,
-) -> Result<&mut arcweft_render_native::NativeOffscreenCaptureSession, ExitCode> {
-    if state.runtime.is_none() {
-        agent_mcp_ensure_native_capture_session(state)?;
-        return state
-            .native_capture_session
-            .as_mut()
-            .ok_or(ExitCode::FAILURE);
-    }
-    state
-        .runtime
-        .as_mut()
-        .map(|runtime| &mut runtime.native_session)
-        .ok_or(ExitCode::FAILURE)
-}
-
-pub(super) fn agent_mcp_ensure_native_capture_session(
-    state: &mut AgentMcpState,
-) -> Result<(), ExitCode> {
-    if state.native_capture_session.is_none() {
-        state.native_capture_session = Some(
-            arcweft_render_native::NativeOffscreenCaptureSession::new().map_err(|error| {
-                eprintln!("error: native capture failed: {error}");
-                ExitCode::FAILURE
-            })?,
-        );
-    }
-    Ok(())
-}
-
-pub(super) fn agent_native_capture_session_for_hir(
-    _hir: &arcweft_lang_hir::model::HirModule,
-) -> Result<arcweft_render_native::NativeOffscreenCaptureSession, ExitCode> {
-    arcweft_render_native::NativeOffscreenCaptureSession::new().map_err(|error| {
-        eprintln!("error: native capture failed: {error}");
-        ExitCode::FAILURE
-    })
+    agent_capture_resource(report, request, &state.image_frames)
 }
 
 pub(super) fn agent_mcp_capture_observe_arguments(

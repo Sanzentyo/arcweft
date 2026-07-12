@@ -25,6 +25,7 @@ arcweft-debug-sqlite = { path = "../arcweft-debug-sqlite" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }
 arcweft-desktop-native = { path = "../arcweft-desktop-native" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
+arcweft-glyphon = { path = "../arcweft-glyphon" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
 arcweft-interaction-model.workspace = true
@@ -39,7 +40,6 @@ arcweft-project = { path = "../arcweft-project" }
 arcweft-project-loader = { path = "../arcweft-project-loader" }
 arcweft-player-native = { path = "../arcweft-player-native", optional = true }
 arcweft-player-scene = { path = "../arcweft-player-scene", optional = true }
-arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu", optional = true }
 arcweft-rag = { path = "../arcweft-rag" }
@@ -51,6 +51,7 @@ arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-source = { path = "../arcweft-source" }
 arcweft-test = { path = "../arcweft-test" }
+arcweft-text-layout = { path = "../arcweft-text-layout" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-view = { path = "../arcweft-view" }
 arcweft-verify = { path = "../arcweft-verify" }
@@ -82,7 +83,6 @@ agent-repl = ["dep:reedline"]
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
 native-capture = [
     "dep:arcweft-player-scene",
-    "dep:arcweft-render-native",
     "dep:arcweft-render-wgpu",
     "dep:arcweft-runtime-driver",
     "dep:pollster",

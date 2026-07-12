@@ -27,7 +27,6 @@ arcweft-layout.workspace = true
 arcweft-player-scene = { path = "../arcweft-player-scene" }
 arcweft-player-text-input = { path = "../arcweft-player-text-input" }
 arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }

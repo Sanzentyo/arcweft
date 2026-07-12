@@ -46,8 +46,8 @@ hosting, provider loading, command submission, and readback.
 | `arcweft-bundle` | Deterministic `FxDefinitions` and executable View program sections/codecs |
 | `arcweft-runtime-driver` | Logical clock, live Fx/TextBox/View instance stores, atomic save/restore |
 | `arcweft-player-scene` | Source-store joins and frame preparation orchestration |
-| `arcweft-render-wgpu` | View composition and resolved-plan GPU submission |
-| `arcweft-render-native` | Native WGPU host and readback adapter only |
+| `arcweft-render-wgpu` | View composition, resolved-plan GPU submission, and shared prepared-frame Color/ObjectId/Mask capture |
+| `arcweft-player-native` | Native window/surface host and developer capture adapter |
 
 `arcweft-presentation` remains Sans I/O. The shared Fx evaluator stays there
 rather than creating a second evaluator crate. `arcweft-save` remains a generic
@@ -545,11 +545,13 @@ not move into layout or renderer code.
 
 ## 16. Shared capture and Agent geometry
 
-`NativeOffscreenCaptureSession` may retain native device/queue/readback
-ownership, but its only frame input is `PreparedFrame`. Shared capture supports
-Color, ObjectId, and Mask attachments plus frame/layer/View/TextBox/run/ruby/
-glyph scopes. Alternate attachments are generated from the same prepared
-geometry and painter order.
+`arcweft-render-wgpu::SharedOffscreenCapture` owns the reusable device, queue,
+shared renderer, and readback resources. Its only scene input is
+`PreparedFrame`. Shared capture supports Color, ObjectId, and Mask attachments
+plus frame/layer/View/TextBox/run/ruby/glyph scopes. Alternate attachments are
+generated from the same prepared geometry and caller-supplied painter order.
+Native and CLI hosts retain those attachments; they do not own a second text
+renderer or a second layout/effect state store.
 
 Agent observation derives text objects and bounds from `TextLayout` and its
 source map. It never estimates height from line count, scans screenshot pixels

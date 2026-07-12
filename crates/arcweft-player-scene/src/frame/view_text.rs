@@ -15,7 +15,8 @@ use arcweft_render_text::{
     TextSlant, TextStyleCascade, TextWeight,
 };
 use arcweft_render_wgpu::geometry::{
-    FramePlanError, PreparedFrame, PreparedTextDocumentRequest, RenderScene, SharedFramePlanContext,
+    FramePlanError, PreparedFrame, PreparedTextDocumentRequest, PreparedTextOwner,
+    PreparedTextOwnerKind, RenderScene, SharedFramePlanContext,
 };
 use arcweft_render_wgpu::view_scene::PreparedTextId;
 use arcweft_runtime_driver::view_runtime::{
@@ -56,9 +57,12 @@ pub(super) fn prepare_runtime_view_text(
                 let Some((bounds, clip)) = target_geometry(scene, mount, target, content) else {
                     continue;
                 };
-                let interaction_target = PublicId::try_new(mount.scoped_id(&target.public_id))
-                    .ok()
-                    .map(InteractionTarget::new);
+                let scoped_id = mount.scoped_id(&target.public_id);
+                let semantic_id =
+                    PublicId::try_new(&scoped_id).map_err(|_| FramePlanError::InvalidId {
+                        value: scoped_id.clone(),
+                    })?;
+                let interaction_target = Some(InteractionTarget::new(semantic_id.clone()));
                 let visible_text = visible_text(&output.value)?;
                 let selection = interaction_target
                     .as_ref()
@@ -96,7 +100,22 @@ pub(super) fn prepare_runtime_view_text(
                             .unwrap_or(RgbaColor::rgba(64, 128, 255, 90)),
                     ),
                 };
-                let prepared_id = push_text_value(shared, frame, &output.value, style, &request)?;
+                let (prepared_id, source_origin) =
+                    push_text_value(shared, frame, &output.value, style, &request)?;
+                let parent_id =
+                    PublicId::try_new(&mount.view).map_err(|_| FramePlanError::InvalidId {
+                        value: mount.view.clone(),
+                    })?;
+                frame.push_prepared_text_owner(
+                    PreparedTextOwner::new(
+                        prepared_id,
+                        semantic_id,
+                        PreparedTextOwnerKind::View,
+                        source_origin,
+                        bounds,
+                    )
+                    .with_parent(parent_id),
+                )?;
                 prepared.push(PreparedMountedViewText {
                     mount: mount.mount.get(),
                     source_id: output.source_id.clone(),
@@ -117,21 +136,27 @@ fn push_text_value(
     value: &BundleViewTextValue,
     style: ResolvedTextStyle,
     request: &PreparedTextDocumentRequest,
-) -> Result<PreparedTextId, FramePlanError> {
+) -> Result<(PreparedTextId, usize), FramePlanError> {
     let cascade = TextStyleCascade::new(style.clone());
     match value {
         BundleViewTextValue::Plain { value } => {
             let document = plain_document(value, style)?;
-            shared.push_prepared_text_document(frame, &document, request)
+            let source_origin = document.source_origin();
+            let text = shared.push_prepared_text_document(frame, &document, request)?;
+            Ok((text, source_origin))
         }
         BundleViewTextValue::Localized { document, .. } => {
             let document = document
                 .resolve_document_with_source(&cascade, ResolvedTextRunSource::Localized)?;
-            shared.push_prepared_text_document(frame, &document, request)
+            let source_origin = document.source_origin();
+            let text = shared.push_prepared_text_document(frame, &document, request)?;
+            Ok((text, source_origin))
         }
         BundleViewTextValue::RichTextDocument { document } => {
             let document = document.resolve_document(&cascade)?;
-            shared.push_prepared_text_document(frame, &document, request)
+            let source_origin = document.source_origin();
+            let text = shared.push_prepared_text_document(frame, &document, request)?;
+            Ok((text, source_origin))
         }
         BundleViewTextValue::DisplayFrame {
             frame: display,
@@ -152,7 +177,9 @@ fn push_text_value(
                     },
                 ))?;
             let document = display.resolve_stage_document(stage, &cascade)?;
-            shared.push_prepared_text_document(frame, &document, request)
+            let source_origin = document.source_origin();
+            let text = shared.push_prepared_text_document(frame, &document, request)?;
+            Ok((text, source_origin))
         }
     }
 }

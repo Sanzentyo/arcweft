@@ -1182,7 +1182,7 @@ fn observe_full_grammar_run_color_at(
     assert_eq!(image["renderer"], "native");
     assert_eq!(image["scope"]["kind"], "object");
     assert_eq!(image["scope"]["id"], object_id);
-    assert_eq!(image["composition"], "isolated_regions");
+    assert_eq!(image["composition"], "masked_framebuffer_crop");
     assert_eq!(image["mime_type"], "application/octet-stream");
     assert!(image["content_pixels"].as_u64().unwrap() > 0);
 
@@ -1336,7 +1336,7 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
 }
 
 #[test]
-fn agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop() {
+fn agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop() {
     let path = temp_arcw(
         "agent-observe-native-dialogue-layer",
         r"
@@ -1383,12 +1383,15 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["renderer"], "native");
     assert_eq!(json["images"][0]["scope"]["kind"], "layer");
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue");
-    assert_eq!(json["images"][0]["composition"], "framebuffer_crop");
-    assert_eq!(json["images"][0]["width"], 1088);
-    assert_eq!(json["images"][0]["height"], 124);
+    assert_eq!(
+        json["images"][0]["composition"],
+        "masked_framebuffer_crop"
+    );
+    assert_eq!(json["images"][0]["width"], 1166);
+    assert_eq!(json["images"][0]["height"], 203);
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
-    assert_eq!(json["images"][0]["crop_origin"]["x"], 96);
-    assert_eq!(json["images"][0]["crop_origin"]["y"], 548);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], 57);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], 460);
     assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(json["images"][0]["written"], "native-dialogue-layer.png");
 
@@ -2011,7 +2014,7 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["renderer"], "native");
     assert_eq!(json["images"][0]["scope"]["kind"], "layer");
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(json["images"][0]["composition"], "isolated_regions");
+    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
     assert_eq!(json["images"][0]["mime_type"], "image/png");
     assert!(
         json["images"][0]["width"].as_u64().unwrap() < 1088,
@@ -2081,7 +2084,7 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["renderer"], "native");
     assert_eq!(json["images"][0]["scope"]["kind"], "layer");
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(json["images"][0]["composition"], "isolated_regions");
+    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
     assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(
         json["images"][0]["content_viewport_bbox"]["x"]
@@ -2167,7 +2170,7 @@ fn assert_page_selected_native_rich_text_layer_report(json: &serde_json::Value) 
     assert_eq!(json["images"][0]["page"], 1);
     assert_eq!(json["images"][0]["scope"]["kind"], "layer");
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(json["images"][0]["composition"], "isolated_regions");
+    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
     assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     let run_object = json["objects"]
         .as_array()
@@ -2261,7 +2264,7 @@ fn assert_page_selected_native_rich_text_object_report(
         json["images"][0]["scope"]["id"],
         "object.dialogue.0.0.run.1"
     );
-    assert_eq!(json["images"][0]["composition"], "isolated_regions");
+    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
     assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
         json["images"][0]["width"].as_u64().unwrap() < 1088,
@@ -3509,7 +3512,7 @@ flow @flow.main main {
     assert_eq!(json["image"]["renderer"], "native");
     assert_eq!(json["image"]["scope"]["kind"], "layer");
     assert_eq!(json["image"]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(json["image"]["composition"], "isolated_regions");
+    assert_eq!(json["image"]["composition"], "masked_framebuffer_crop");
     assert!(json["image"]["width"].as_u64().unwrap() < 1088);
     assert!(json["image"]["height"].as_u64().unwrap() < 124);
     assert_eq!(json["image"]["crop_origin"]["space"], "viewport");
@@ -3566,7 +3569,7 @@ flow @flow.main main {
     assert_eq!(json["image"]["renderer"], "native");
     assert_eq!(json["image"]["scope"]["kind"], "layer");
     assert_eq!(json["image"]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(json["image"]["composition"], "isolated_regions");
+    assert_eq!(json["image"]["composition"], "masked_framebuffer_crop");
     assert!(json["image"]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
         json["body"]["body"]["data"]
@@ -5205,7 +5208,10 @@ fn observe_native_goal_clear_object_raw_at(
         serde_json::from_slice(&output.stdout).expect("vertical goal-clear raw report is JSON");
     assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
     match capture_kind {
-        "color" => assert_eq!(json["images"][0]["composition"], "isolated_regions"),
+        "color" => assert_eq!(
+            json["images"][0]["composition"],
+            "masked_framebuffer_crop"
+        ),
         "mask" => assert_eq!(json["images"][0]["composition"], "mask_attachment"),
         "object-id" => assert_eq!(json["images"][0]["composition"], "object_id_attachment"),
         other => panic!("unsupported vertical goal-clear capture kind: {other}"),

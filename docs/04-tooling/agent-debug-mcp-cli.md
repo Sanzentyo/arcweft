@@ -271,43 +271,39 @@ descriptor description. `--mcp-format tool-result` returns MCP content blocks;
 single image resources become a compact JSON metadata text block followed by an
 image content block for multimodal clients, and multi-resource observations
 become resource links. Image metadata includes the producing `renderer`
-(`native`), structured `scope` (`viewport`, `layer`, or `object`), and
-`composition` (`overlay_vector`, `framebuffer`, `framebuffer_crop`,
-`object_id_attachment`, `mask_attachment`, `masked_framebuffer_crop`,
-`isolated_regions`, or `debug_geometry`), so clients do not need to parse the
-URI to know what was captured, which rendering path produced it, or whether the
-image is a crop, isolated selected-region render, object-id/mask attachment,
-masked framebuffer crop, debug-geometry pass, or diagnostic attachment. Raw
+(`native`, meaning the host/readback adapter), while
+`selected_capture.renderer = "shared_wgpu_prepared_frame"` identifies the
+shared renderer input contract. It also includes structured `scope`
+(`viewport`, `layer`, or `object`) and `composition` (`overlay_vector`,
+`framebuffer`, `framebuffer_crop`, `object_id_attachment`, `mask_attachment`,
+`masked_framebuffer_crop`, or `debug_geometry`), so clients do not need to
+parse the URI to know what was captured or which shared path produced it. Raw
 RGBA metadata includes `pixel_format = "rgba8_unorm"` and `row_stride_bytes =
 width * 4` so tools can decode the blob without guessing. Raster metadata also
 includes image-local `content_bbox`, viewport-space `content_viewport_bbox`,
-and `content_pixels`, measured against the capture background, to expose empty
-crops and bbox drift without requiring an image decoder. Cropped layer/object
+and `content_pixels`, derived from the retained ObjectId/Mask attachment, to
+expose empty crops and bbox drift without background-color guessing. Cropped layer/object
 images include `crop_origin` in viewport coordinates, so an Agent can map
 image-local pixels back to observed object bboxes and rich-text display ranges
 or read the already-translated `content_viewport_bbox` directly.
-For MCP sessions, repeated `arcweft.capture` calls reuse a native capture
-session after the first native capture; `arcweft.session.info` reports this via
-`native_capture_session_active`. If the same command also generated an image
+For MCP sessions, repeated `arcweft.capture` calls reuse one shared prepared-
+frame capture session; `arcweft.session.info` reports this via
+`shared_capture_session_active`. If the same command also generated an image
 with `--image`, `--read-uri` returns the cached selected image when the URI
-matches `images[0].uri`, so native framebuffer, layer/object crop,
-isolated-rich-text, and object-id/mask attachment captures keep their original
-bytes and metadata on readback. If `--read-uri` targets a capture URI and no
-cached image matches it, the resource is reconstructed through the native
-capture path.
-Rich-text child capture refs for non-zero rendered pages append `?page=N`; URI
-readback parses that query and uses the native renderer automatically. The refs
-also include `page = N` metadata for non-zero pages, which lets MCP/CLI clients
-follow an observed capture ref for text after `[p]`, line-wait, or `[clear]`
-without separately tracking page state. Native page-selected rich-text layer
-captures filter out rich-text child objects that are not visible on the
-requested rendered page before computing the crop, so layer crops after
-`[clear]` do not include stale child bboxes from earlier pages.
+matches `images[0].uri`, so framebuffer, masked layer/object crop, and
+object-id/mask attachment captures keep their original bytes and metadata on
+readback. Other reads are derived only from the retained Color/ObjectId/Mask
+attachments for that exact `PreparedFrame`; no alternate renderer is started.
+Capture exposes the current runtime page/stage only. A non-zero historical
+`?page=N` request is rejected; clients advance the runtime to the desired stage
+and use the capture refs from that observation. This prevents stale page
+geometry from being re-laid out against a different frame.
 `--layer` crops to the selected layer's object bounds; `--object` crops to one
-observed object's bbox. PNG/raw output is produced by the native
-`wgpu`/`glyphon` offscreen framebuffer readback. Full viewport, layer bbox
+observed object's bbox. PNG/raw output is produced by `SharedOffscreenCapture`
+from the normal `SharedRenderer` framebuffer. Full viewport, layer bbox
 crops, and object bbox crops are supported. Rich-text child object crops use
-native text layout bounds for text runs, ruby annotations, and glyph clusters.
+the retained `TextLayout` bounds for text runs, ruby annotations, glyphs, and
+logical clusters.
 The implemented object slice is focused on rich-text/textbox debugging: each
 observed layer includes a viewport bbox, object count, and stable
 `capture_refs` for color/object-id/mask PNG and raw RGBA images. Each

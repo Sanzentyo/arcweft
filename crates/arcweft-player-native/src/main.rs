@@ -1,9 +1,10 @@
 use arcweft_bundle::ArcweftBundle;
-#[cfg(feature = "dev-capture")]
-use arcweft_player_native::NativePlayerCaptureMetadata;
 use arcweft_player_native::{NativePatchEndpoint, run_bundle_headless, run_bundle_windowed};
 #[cfg(feature = "dev-capture")]
-use arcweft_render_native as native;
+use arcweft_player_native::{
+    NativePlayerCaptureMetadata, NativePlayerCaptureRequest, NativePlayerFrameCapture,
+    capture_bundle_frame,
+};
 use arcweft_runtime_driver::session::BundleSessionOptions;
 use clap::Parser;
 #[cfg(feature = "dev-capture")]
@@ -95,7 +96,7 @@ fn run_bundle_program(args: &Args, bundle: ArcweftBundle) -> Result<(), String> 
     if args.headless {
         let report = run_bundle_headless(&bundle, args.steps).map_err(|error| error.to_string())?;
         #[cfg(feature = "dev-capture")]
-        let report = attach_native_capture(args, report)?;
+        let report = attach_native_capture(args, &bundle, report)?;
         write_headless_report(args, &report)?;
         return Ok(());
     }
@@ -105,6 +106,7 @@ fn run_bundle_program(args: &Args, bundle: ArcweftBundle) -> Result<(), String> 
 #[cfg(feature = "dev-capture")]
 fn attach_native_capture(
     args: &Args,
+    bundle: &ArcweftBundle,
     mut report: arcweft_player_native::HeadlessPlayerReport,
 ) -> Result<arcweft_player_native::HeadlessPlayerReport, String> {
     if let Some(format) = args.capture {
@@ -112,21 +114,20 @@ fn attach_native_capture(
             .capture_out
             .as_ref()
             .ok_or_else(|| "--capture requires --capture-out".to_owned())?;
-        let frame = report
-            .frames
-            .first()
-            .ok_or_else(|| "no display frame was produced for native capture".to_owned())?;
-        let capture = native::capture_frame_rgba(frame, args.capture_width, args.capture_height)
-            .map_err(|error| error.to_string())?;
+        let capture = capture_bundle_frame(
+            bundle,
+            NativePlayerCaptureRequest::new(args.capture_width, args.capture_height, args.steps),
+        )
+        .map_err(|error| error.to_string())?;
         let bytes = native_capture_bytes(format, &capture)?;
         fs::write(capture_out, bytes)
             .map_err(|error| format!("failed to write capture: {error}"))?;
         report.native_capture = Some(NativePlayerCaptureMetadata {
-            renderer: "native_offscreen_wgpu_glyphon".to_owned(),
+            renderer: "shared_offscreen_wgpu".to_owned(),
             format: format.resource_name().to_owned(),
             width: capture.width,
             height: capture.height,
-            pixel_format: "rgba8_unorm".to_owned(),
+            pixel_format: "rgba8_unorm_srgb".to_owned(),
             row_stride_bytes: capture.width.saturating_mul(4),
             content_bbox: capture.content_bbox,
             content_pixels: capture.content_pixels,
@@ -162,7 +163,7 @@ fn ensure_extension(path: &Path, expected: &str, message: &str) -> Result<(), St
 #[cfg(feature = "dev-capture")]
 fn native_capture_bytes(
     format: NativeCaptureFormat,
-    capture: &native::NativeFrameCapture,
+    capture: &NativePlayerFrameCapture,
 ) -> Result<Vec<u8>, String> {
     match format {
         NativeCaptureFormat::RawRgba => Ok(capture.rgba.clone()),
@@ -171,7 +172,7 @@ fn native_capture_bytes(
 }
 
 #[cfg(feature = "dev-capture")]
-fn encode_png(capture: &native::NativeFrameCapture) -> Result<Vec<u8>, String> {
+fn encode_png(capture: &NativePlayerFrameCapture) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut bytes, capture.width, capture.height);

@@ -27,7 +27,7 @@ test-doc:
     @cargo test --workspace --doc --quiet
 
 test-fast:
-    @cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet
+    @cargo test -p arcweft-core -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-wgpu -p arcweft-player-native --lib --quiet
 
 check-crate crate:
     @cargo check -p {{ crate }}
@@ -37,17 +37,16 @@ test-crate crate:
 
 test-rich-text:
     @cargo test -p arcweft-lang-syntax -p arcweft-lang-hir -p arcweft-lang-sema -p arcweft-runtime-plan --lib --tests --quiet
-    @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-native -p arcweft-player-native --lib --quiet
+    @cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-render-wgpu -p arcweft-player-native --lib --quiet
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-fx.arcw
     @just test-cli-native
 
 test-rich-text-object-goal:
     @cargo test -p arcweft-agent-protocol -- --nocapture
     @cargo test -p arcweft-agent-mcp -- --nocapture
-    @cargo test -p arcweft-render-native motion -- --nocapture
-    @cargo test -p arcweft-render-native shader -- --nocapture
-    @cargo test -p arcweft-render-native post_process -- --nocapture
-    @cargo test -p arcweft-render-native typewriter -- --nocapture
+    @cargo test -p arcweft-render-wgpu fx -- --nocapture
+    @cargo test -p arcweft-render-wgpu prepared -- --nocapture
+    @cargo test -p arcweft-render-wgpu offscreen -- --nocapture
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_reports_text_presentation_z_index_depth -- --exact --nocapture
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_hit_test_capture_time_follows_animated_text_proxy_bounds -- --exact --nocapture
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
@@ -59,7 +58,7 @@ test-image-animation-goal:
     @cargo test -p arcweft-image -- --nocapture
     @cargo test -p arcweft-presentation image -- --nocapture
     @cargo test -p arcweft-view image -- --nocapture
-    @cargo test -p arcweft-render-native image -- --nocapture
+    @cargo test -p arcweft-render-wgpu image -- --nocapture
     @cargo test -p arcweft-lang-sema tests::declarations::parses_surface_alias_and_resource_entity_families -- --exact --nocapture
     @cargo test -p arcweft-lang-sema tests::typecheck::typechecks_presentation_image_object_call_with_named_asset_and_bounds -- --exact --nocapture
     @cargo test -p arcweft-cli app::image_declarations -- --nocapture
@@ -85,7 +84,7 @@ test-cli-check-full:
     @cargo test -p arcweft-cli --features native-capture --test check --quiet
 
 test-cli-native: test-visual-smoke
-    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_renderer_writes_dialogue_layer_framebuffer_crop --quiet -- --exact
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop --quiet -- --exact
 
 test-visual-smoke:
     @cargo test -p arcweft-cli --features native-capture --test check visual_smoke -- --nocapture

@@ -672,7 +672,7 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
     assert!(info["resource_count"].as_u64().unwrap() > 0);
     assert!(info["latest_capture"]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(info["capture_resource_count"], 2);
-    assert_eq!(info["native_capture_session_active"], true);
+    assert_eq!(info["shared_capture_session_active"], true);
     assert_eq!(
         info["project"]["project_graph"]["has_project_summary"],
         true
@@ -1103,7 +1103,7 @@ fn assert_agent_mcp_direct_capture_responses(responses: &[serde_json::Value]) {
     assert!(
         matches!(
             direct_capture_metadata["image"]["composition"].as_str(),
-            Some("isolated_regions" | "masked_framebuffer_crop" | "framebuffer_crop")
+            Some("masked_framebuffer_crop" | "framebuffer_crop")
         ),
         "direct rich-text layer capture should use a native composition"
     );
@@ -1317,7 +1317,7 @@ flow @flow.main main {
         metadata["image"]["scope"]["id"],
         "object.dialogue.0.0.run.1"
     );
-    assert_eq!(metadata["image"]["composition"], "isolated_regions");
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
     assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
 }
 
@@ -1385,7 +1385,7 @@ flow @flow.main main {
         metadata["image"]["scope"]["id"],
         "object.dialogue.0.0.run.1"
     );
-    assert_eq!(metadata["image"]["composition"], "isolated_regions");
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
     assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
 }
 
@@ -1440,7 +1440,7 @@ flow @flow.main main {
     let capture_height = metadata["image"]["height"].as_u64().unwrap();
     assert_eq!(capture_width, 1088);
     assert_eq!(capture_height, 124);
-    assert_eq!(metadata["image"]["composition"], "isolated_regions");
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
     assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
         metadata["image"]["content_pixels"].as_u64().unwrap() < capture_width * capture_height,
@@ -1511,7 +1511,7 @@ flow @flow.main main {
     assert_eq!(metadata["image"]["renderer"], "native");
     assert_eq!(metadata["image"]["scope"]["kind"], "layer");
     assert_eq!(metadata["image"]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(metadata["image"]["composition"], "isolated_regions");
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
     assert!(metadata["image"]["width"].as_u64().unwrap() < 1088);
     assert!(metadata["image"]["height"].as_u64().unwrap() < 124);
     assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
@@ -1524,7 +1524,10 @@ flow @flow.main main {
     assert_eq!(read_metadata["image"]["renderer"], "native");
     assert_eq!(read_metadata["image"]["scope"]["kind"], "layer");
     assert_eq!(read_metadata["image"]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(read_metadata["image"]["composition"], "isolated_regions");
+    assert_eq!(
+        read_metadata["image"]["composition"],
+        "masked_framebuffer_crop"
+    );
     assert_native_layer_resource_descriptor(&responses[3]);
 }
 
@@ -1550,7 +1553,7 @@ fn assert_native_layer_resource_descriptor(response: &serde_json::Value) {
             .is_some_and(|description| description.contains("kind=color")
                 && description.contains("renderer=native")
                 && description.contains("scope=layer:dialogue.rich_text")
-                && description.contains("composition=isolated_regions")
+                && description.contains("composition=masked_framebuffer_crop")
                 && description.contains("width=")
                 && description.contains("height=")),
         "native layer descriptor should expose latest capture metadata"
@@ -1618,7 +1621,7 @@ flow @flow.main main {
     assert_eq!(metadata["image"]["renderer"], "native");
     assert_eq!(metadata["image"]["scope"]["kind"], "layer");
     assert_eq!(metadata["image"]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(metadata["image"]["composition"], "isolated_regions");
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
     assert!(metadata["image"]["width"].as_u64().unwrap() < 1088);
     assert!(metadata["image"]["height"].as_u64().unwrap() < 124);
     assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
@@ -2173,4 +2176,3 @@ fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
         }),
     ]
 }
-

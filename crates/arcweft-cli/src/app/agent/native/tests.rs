@@ -1,12 +1,4 @@
-use super::capture::{
-    AgentNativeCaptureContext, AgentNativeCaptureTarget, agent_native_capture_targets_for_scope,
-    agent_native_debug_capture, agent_native_image_object_geometry_capture,
-    agent_native_masked_framebuffer_capture,
-};
-use super::image_mapping::{
-    agent_image_objects_from_view_frame, agent_image_observation_from_view_frame,
-    agent_observed_views,
-};
+use super::image_mapping::agent_observed_views;
 use super::mcp_protocol::{
     agent_mcp_action_argument, agent_mcp_call_get_state, agent_mcp_call_log_query,
     agent_mcp_call_session_info, agent_mcp_call_signal_get, agent_mcp_resource_list,
@@ -39,7 +31,6 @@ use arcweft_debug_model::{
     script::DebugScriptRunOutcome,
     test_result::DebugTestResult,
 };
-use arcweft_render_text::{RichTextNode, RuntimeLineContext};
 use serde::Serialize;
 
 #[test]
@@ -182,7 +173,7 @@ fn agent_observe_layout_scene_graph_records_raw_content_rect() {
     assert_eq!(metadata["kind"], serde_json::json!("layout.viewport_scale"));
     assert_eq!(
         metadata["renderer_kind"],
-        serde_json::json!("native_rich_text_observer")
+        serde_json::json!("shared_wgpu_prepared_frame")
     );
     assert_eq!(metadata["scale_policy"], serde_json::json!("raw"));
     assert_eq!(metadata["raw_pixel_mode"], serde_json::json!(true));
@@ -224,29 +215,6 @@ fn test_line_display_frame() -> LineDisplayFrame {
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
     }
-}
-
-fn test_resolved_line_display_frame() -> LineDisplayFrame {
-    let spec = arcweft_render_text::LineDisplaySpec {
-        line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.test")
-            .expect("runtime line id"),
-        callee: "test".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        window: None,
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: arcweft_render_text::RichTextDocument::new(vec![RichTextNode::Text {
-            text: "native attachment seed".to_owned(),
-        }]),
-    };
-    spec.resolve_frame(&RuntimeLineContext::default())
-        .expect("test frame resolves")
 }
 
 fn assert_seconds_close(actual: f32, expected: f32) {
@@ -2841,59 +2809,6 @@ fn observed_views_drop_hidden_only_parent_scope() {
     assert!(views.is_empty());
 }
 
-#[test]
-fn native_view_capture_targets_select_member_objects() {
-    let mut first = test_observed_object("object.input.label", 10, 20, 40, 12);
-    first.parent_id = Some("view.login_form".to_owned());
-    let mut second = test_observed_object("object.input.field", 20, 40, 80, 20);
-    second.parent_id = Some("view.login_form".to_owned());
-    let outside = test_observed_object("object.other", 200, 200, 10, 10);
-    let objects = vec![first, second, outside];
-    let frame = test_line_display_frame();
-
-    let selected = agent_native_capture_targets_for_scope(
-        AgentNativeCaptureContext {
-            frame: &frame,
-            left: 0.0,
-            top: 0.0,
-            objects: &objects,
-            page_index: 0,
-            capture_time_seconds: 0.0,
-        },
-        &AgentCaptureScope::View("view.login_form".to_owned()),
-    )
-    .expect("view scope selects its member objects");
-
-    let ids = selected
-        .iter()
-        .map(AgentNativeCaptureTarget::id)
-        .collect::<Vec<_>>();
-    assert_eq!(ids, vec!["object.input.label", "object.input.field"]);
-}
-
-#[test]
-fn native_view_capture_targets_reject_hidden_member_objects() {
-    let mut hidden = test_observed_object("object.hidden", 10, 20, 40, 12);
-    hidden.parent_id = Some("view.hidden_panel".to_owned());
-    hidden.visible = false;
-    let objects = vec![hidden];
-    let frame = test_line_display_frame();
-
-    let selected = agent_native_capture_targets_for_scope(
-        AgentNativeCaptureContext {
-            frame: &frame,
-            left: 0.0,
-            top: 0.0,
-            objects: &objects,
-            page_index: 0,
-            capture_time_seconds: 0.0,
-        },
-        &AgentCaptureScope::View("view.hidden_panel".to_owned()),
-    );
-
-    assert!(selected.is_err());
-}
-
 fn test_observed_object(id: &str, x: u32, y: u32, width: u32, height: u32) -> AgentObservedObject {
     let bbox = AgentBBox {
         space: AgentCoordinateSpace::Viewport,
@@ -2929,15 +2844,6 @@ fn test_observed_object(id: &str, x: u32, y: u32, width: u32, height: u32) -> Ag
             frame: Box::new(test_line_display_frame()),
         },
     }
-}
-
-fn pixel_at(capture: &AgentRasterCapture, x: u32, y: u32) -> &[u8] {
-    let index = usize::try_from(y)
-        .unwrap()
-        .saturating_mul(usize::try_from(capture.width).unwrap())
-        .saturating_add(usize::try_from(x).unwrap())
-        .saturating_mul(4);
-    &capture.rgba[index..index + 4]
 }
 
 #[test]
@@ -2989,226 +2895,114 @@ fn agent_hit_test_uses_image_object_polygon_inside_bbox() {
 }
 
 #[test]
-fn agent_image_object_mask_capture_uses_observed_geometry_without_textbox() {
-    let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
-    object.entity = Some("view.image.7".to_owned());
-    object.layer = "hud".to_owned();
-    object.role = "image".to_owned();
-    object.object_layer = Some("hud".to_owned());
-    object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "view.image.7".to_owned(),
-        object: None,
-        target: None,
-        asset: Some("asset.view.logo".to_owned()),
-        frame_index: Some(0),
-        local_time_millis: Some(0),
-        opacity_milli: None,
-        fit: None,
-        alignment: None,
-        transform: None,
-        authored_placement: None,
-        resolved_placement: None,
-        intrinsic_width: Some(30),
-        intrinsic_height: Some(40),
-        actions: Vec::new(),
-        params: BTreeMap::new(),
-        proxies: Vec::new(),
-    }));
+fn shared_capture_mask_filters_a_view_to_its_member_objects() {
+    let mut left = test_observed_object("object.view.left", 1, 1, 2, 2);
+    left.parent_id = Some("view.panel".to_owned());
+    let mut right = test_observed_object("object.view.right", 5, 1, 2, 2);
+    right.parent_id = Some("view.panel".to_owned());
+    let outside = test_observed_object("object.outside", 3, 1, 1, 2);
     let mut report = test_agent_observation_report(None);
-    report.objects = vec![object];
+    report.viewport = AgentViewport {
+        width: 8,
+        height: 4,
+        scale: 1.0,
+    };
+    report.objects = vec![left, outside, right];
+    report.views = agent_observed_views("cli", 3, &report.objects);
+    let frames = test_shared_attachment_store(&report, [9, 8, 7, 255]);
 
-    let result = agent_native_image_object_geometry_capture(
+    let result = agent_capture_image(
         &report,
         &AgentCaptureReadRequest {
-            uri: "arcweft://session/cli/frame/3/object.object.image.logo.mask.rgba".to_owned(),
+            uri: "arcweft://session/cli/frame/3/view.view.panel.mask.rgba".to_owned(),
             image_kind: AgentObserveImageKind::RawRgba,
             capture_kind: AgentObserveCaptureKind::Mask,
-            scope: AgentCaptureScope::Object("object.image.logo".to_owned()),
+            scope: AgentCaptureScope::View("view.panel".to_owned()),
             page: 0,
             capture_step: 3,
             capture_time_seconds: 0.0,
         },
-    )
-    .unwrap()
-    .expect("image object mask capture is produced from observed geometry");
-
-    assert_eq!(
-        result.image.composition,
-        AgentImageComposition::MaskAttachment
-    );
-    assert_eq!(result.image.width, 30);
-    assert_eq!(result.image.height, 40);
-    assert_eq!(
-        result.image.crop_origin,
-        Some(AgentImageCropOrigin {
-            space: AgentCoordinateSpace::Viewport,
-            x: 10,
-            y: 20,
-        })
-    );
-    assert_eq!(
-        result.image.content_bbox,
-        Some(AgentImageContentBBox {
-            x: 0,
-            y: 0,
-            width: 30,
-            height: 40,
-        })
-    );
-    assert_eq!(result.image.content_pixels, Some(1200));
-    assert!(
-        result
-            .bytes
-            .chunks_exact(4)
-            .all(|pixel| pixel == [255, 255, 255, 255])
-    );
-}
-
-#[test]
-fn agent_image_object_color_capture_requires_image_pixels() {
-    let mut object = test_observed_object("object.image.logo", 10, 20, 30, 40);
-    object.role = "image".to_owned();
-    object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "view.image.7".to_owned(),
-        object: None,
-        target: None,
-        asset: None,
-        frame_index: Some(0),
-        local_time_millis: Some(0),
-        opacity_milli: None,
-        fit: None,
-        alignment: None,
-        transform: None,
-        authored_placement: None,
-        resolved_placement: None,
-        intrinsic_width: Some(30),
-        intrinsic_height: Some(40),
-        actions: Vec::new(),
-        params: BTreeMap::new(),
-        proxies: Vec::new(),
-    }));
-    let mut report = test_agent_observation_report(None);
-    report.objects = vec![object];
-
-    let result = agent_native_image_object_geometry_capture(
-        &report,
-        &AgentCaptureReadRequest {
-            uri: "arcweft://session/cli/frame/3/object.object.image.logo.rgba".to_owned(),
-            image_kind: AgentObserveImageKind::RawRgba,
-            capture_kind: AgentObserveCaptureKind::Color,
-            scope: AgentCaptureScope::Object("object.image.logo".to_owned()),
-            page: 0,
-            capture_step: 3,
-            capture_time_seconds: 0.0,
-        },
-    );
-
-    assert!(result.is_err());
-}
-
-#[test]
-fn agent_image_object_color_capture_uses_stored_native_image_frame() {
-    let mut object = test_observed_object("object.image.logo", 10, 20, 2, 2);
-    object.role = "image".to_owned();
-    object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "view.image.7".to_owned(),
-        object: None,
-        target: None,
-        asset: None,
-        frame_index: Some(0),
-        local_time_millis: Some(0),
-        opacity_milli: None,
-        fit: None,
-        alignment: None,
-        transform: None,
-        authored_placement: None,
-        resolved_placement: None,
-        intrinsic_width: Some(2),
-        intrinsic_height: Some(2),
-        actions: Vec::new(),
-        params: BTreeMap::new(),
-        proxies: Vec::new(),
-    }));
-    let mut report = test_agent_observation_report(None);
-    report.objects = vec![object];
-    let mut frames = AgentImageFrameStore::default();
-    frames.insert(
-        "object.image.logo",
-        2,
-        2,
-        vec![255, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 0, 255, 255],
-    );
-    let mut native_session = arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
-
-    let result = agent_native_capture_image_with_frame_store(
-        &report,
-        &AgentCaptureReadRequest {
-            uri: "arcweft://session/cli/frame/3/object.object.image.logo.rgba".to_owned(),
-            image_kind: AgentObserveImageKind::RawRgba,
-            capture_kind: AgentObserveCaptureKind::Color,
-            scope: AgentCaptureScope::Object("object.image.logo".to_owned()),
-            page: 0,
-            capture_step: 3,
-            capture_time_seconds: 0.0,
-        },
-        &mut native_session,
         &frames,
     )
     .unwrap();
 
     assert_eq!(
         result.image.composition,
-        AgentImageComposition::FramebufferCrop
+        AgentImageComposition::MaskAttachment
     );
-    assert_eq!(result.image.width, 2);
+    assert_eq!(result.image.width, 6);
     assert_eq!(result.image.height, 2);
-    assert_eq!(result.bytes.len(), 16);
-    assert_eq!(&result.bytes[0..4], &[255, 0, 0, 255]);
-    assert_eq!(&result.bytes[4..8], &[0, 0, 0, 0]);
-    assert_eq!(&result.bytes[8..12], &[0, 255, 0, 255]);
-    assert_eq!(&result.bytes[12..16], &[0, 0, 255, 255]);
+    assert_eq!(
+        result.image.crop_origin,
+        Some(AgentImageCropOrigin {
+            space: AgentCoordinateSpace::Viewport,
+            x: 1,
+            y: 1,
+        })
+    );
+    assert_eq!(rgba_pixel(&result.bytes, 6, 0, 0), &[255, 255, 255, 255]);
+    assert_eq!(rgba_pixel(&result.bytes, 6, 2, 0), &[0, 0, 0, 0]);
+    assert_eq!(rgba_pixel(&result.bytes, 6, 4, 1), &[255, 255, 255, 255]);
 }
 
 #[test]
-fn agent_viewport_color_capture_uses_image_frames_without_textbox() {
-    let mut object = test_observed_object("object.image.logo", 1, 1, 2, 2);
-    object.role = "image".to_owned();
-    object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-        source: "view.image.7".to_owned(),
-        object: None,
-        target: None,
-        asset: None,
-        frame_index: Some(0),
-        local_time_millis: Some(0),
-        opacity_milli: None,
-        fit: None,
-        alignment: None,
-        transform: None,
-        authored_placement: None,
-        resolved_placement: None,
-        intrinsic_width: Some(2),
-        intrinsic_height: Some(2),
-        actions: Vec::new(),
-        params: BTreeMap::new(),
-        proxies: Vec::new(),
-    }));
+fn shared_capture_object_id_preserves_supplied_painter_order() {
+    let lower = test_observed_object("object.lower", 1, 1, 3, 2);
+    let upper = test_observed_object("object.upper", 2, 1, 3, 2);
     let mut report = test_agent_observation_report(None);
     report.viewport = AgentViewport {
-        width: 4,
+        width: 6,
         height: 4,
         scale: 1.0,
     };
-    report.objects = vec![object];
-    let mut frames = AgentImageFrameStore::default();
-    frames.insert(
-        "object.image.logo",
-        2,
-        2,
-        vec![255, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 0, 255, 255],
-    );
-    let mut native_session = arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
+    report.objects = vec![lower, upper];
+    let frames = test_shared_attachment_store(&report, [0, 0, 0, 255]);
 
-    let result = agent_native_capture_image_with_frame_store(
+    let result = agent_capture_image(
+        &report,
+        &AgentCaptureReadRequest {
+            uri: "arcweft://session/cli/frame/3/object-id.rgba".to_owned(),
+            image_kind: AgentObserveImageKind::RawRgba,
+            capture_kind: AgentObserveCaptureKind::ObjectId,
+            scope: AgentCaptureScope::Viewport,
+            page: 0,
+            capture_step: 3,
+            capture_time_seconds: 0.0,
+        },
+        &frames,
+    )
+    .unwrap();
+
+    assert_eq!(
+        rgba_pixel(&result.bytes, 6, 1, 1),
+        agent_object_id_color("object.lower").as_slice()
+    );
+    assert_eq!(
+        rgba_pixel(&result.bytes, 6, 2, 1),
+        agent_object_id_color("object.upper").as_slice()
+    );
+}
+
+#[test]
+fn shared_capture_viewport_color_is_the_exact_retained_frame() {
+    let object = test_observed_object("object.panel", 1, 1, 2, 2);
+    let mut report = test_agent_observation_report(None);
+    report.viewport = AgentViewport {
+        width: 4,
+        height: 3,
+        scale: 1.0,
+    };
+    report.objects = vec![object];
+    let mut expected = Vec::new();
+    for index in 0..12_u8 {
+        expected.extend_from_slice(&[index, index.wrapping_add(1), 31, 255]);
+    }
+    let (_, object_id, mask) = test_attachment_bytes(&report);
+    let frames =
+        AgentImageFrameStore::from_full_attachments(4, 3, expected.clone(), object_id, mask)
+            .unwrap();
+
+    let result = agent_capture_image(
         &report,
         &AgentCaptureReadRequest {
             uri: "arcweft://session/cli/frame/3/color.rgba".to_owned(),
@@ -3219,487 +3013,126 @@ fn agent_viewport_color_capture_uses_image_frames_without_textbox() {
             capture_step: 3,
             capture_time_seconds: 0.0,
         },
-        &mut native_session,
         &frames,
     )
     .unwrap();
 
     assert_eq!(result.image.composition, AgentImageComposition::Framebuffer);
-    assert_eq!(result.image.width, 4);
-    assert_eq!(result.image.height, 4);
-    assert_eq!(
-        &result.bytes[((4 + 1) * 4)..((4 + 2) * 4)],
-        &[255, 0, 0, 255]
-    );
+    assert_eq!(result.bytes, expected);
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
-fn agent_view_image_items_become_typed_image_objects_with_active_frame() {
-    use arcweft_id::PublicId;
-    use arcweft_image::{
-        DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
-    };
-    use arcweft_presentation::layer::{
-        LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
-    };
-    use arcweft_runtime_host::ViewFrameCommitBuilder;
-    use arcweft_view::{
-        DisplayList, FragmentKind, ImageId, ImagePlayback, LayoutBox, LayoutLength, LayoutPoint,
-        LayoutResults, LayoutSize, LayoutTree, NodeKey, StyleId, ViewFragmentBuilder,
-        ViewImageSource, ViewImageSourceTable, ViewLayerOutput, ViewSemanticFragment,
-    };
-
-    fn public_id(value: &str) -> PublicId {
-        PublicId::try_new(value).unwrap()
-    }
-
-    fn layer_id(value: &str) -> LayerId {
-        LayerId::new(public_id(value))
-    }
-
-    let dimensions = ImageDimensions::new(2, 1).unwrap();
-    let image = DecodedImage::new(
-        ImageFormat::Gif,
-        dimensions,
-        ImageRepetition::Infinite,
-        vec![
-            DecodedImageFrame::new(0, dimensions, 100, vec![0, 0, 0, 255, 1, 1, 1, 255]).unwrap(),
-            DecodedImageFrame::new(1, dimensions, 100, vec![2, 2, 2, 255, 3, 3, 3, 255]).unwrap(),
-        ],
-    )
-    .unwrap();
-    let mut image_sources = ViewImageSourceTable::default();
-    image_sources
-        .insert_with_id(
-            ImageId(7),
-            ViewImageSource::new(image).with_playback(ImagePlayback::new(0)),
-        )
-        .unwrap();
-
-    let root = layer_id("layer.root");
-    let hud = layer_id("layer.hud");
-    let mut layers = LayerTree::new(LayerNode::new(
-        root.clone(),
-        LayerKind::Root,
-        LayerOrder {
-            phase: RenderPhase::Background,
-            z: 0,
-            stable_index: 0,
-        },
-    ));
-    layers
-        .insert(
-            LayerNode::new(
-                hud.clone(),
-                LayerKind::GameView,
-                LayerOrder {
-                    phase: RenderPhase::GameView,
-                    z: 0,
-                    stable_index: 0,
-                },
-            )
-            .with_parent(root),
-        )
-        .unwrap();
-
-    let mut fragment = ViewFragmentBuilder::default();
-    let node = fragment
-        .push_node(
-            NodeKey(1),
-            FragmentKind::Image(ImageId(7)),
-            StyleId(0),
-            &[],
-            &[],
-            None,
-        )
-        .unwrap();
-    let fragment = fragment.finish();
-    let layout_tree = LayoutTree::from_fragment(&fragment).unwrap();
-    let mut layouts = LayoutResults::new(&layout_tree);
-    layouts
-        .set(
-            node,
-            LayoutBox::new(
-                LayoutPoint::new(LayoutLength(10_500), LayoutLength::px(20)),
-                LayoutSize::new(LayoutLength(20_100), LayoutLength::px(10)),
-            ),
-        )
-        .unwrap();
-    let output = ViewLayerOutput::new(
-        DisplayList::from_fragment(&fragment, &layouts).unwrap(),
-        ViewSemanticFragment::default(),
-    );
-    let mut builder = ViewFrameCommitBuilder::new(&layers);
-    builder.push_layer(hud, output).unwrap();
-    let commit = builder.finish();
-
-    let observation = agent_image_observation_from_view_frame(
-        "cli",
-        4,
-        &AgentViewport {
-            width: 320,
-            height: 180,
-            scale: 1.0,
-        },
-        &commit,
-        &image_sources,
-        150,
-    );
-
-    let objects = &observation.objects;
-    assert_eq!(objects.len(), 1);
-    let object = &objects[0];
-    assert_eq!(object.role, "image");
-    assert_eq!(object.layer, "layer.hud");
-    assert_eq!(object.bbox.x, 10);
-    assert_eq!(object.bbox.y, 20);
-    assert_eq!(object.bbox.width, 21);
-    assert_eq!(object.bbox.height, 10);
-    assert!(object.rich_text_ref.is_none());
-    let AgentObservedObjectContent::Image(content) = &object.content else {
-        panic!("View image item should become image object content");
-    };
-    assert_eq!(content.source, "view.image.7");
-    assert_eq!(content.frame_index, Some(1));
-    assert_eq!(content.local_time_millis, Some(150));
-    assert_eq!(content.intrinsic_width, Some(2));
-    assert_eq!(content.intrinsic_height, Some(1));
-
-    let object_only_bridge = agent_image_objects_from_view_frame(
-        "cli",
-        4,
-        &AgentViewport {
-            width: 320,
-            height: 180,
-            scale: 1.0,
-        },
-        &commit,
-        &image_sources,
-        150,
-    );
-    assert_eq!(object_only_bridge, *objects);
-
-    let stored_frame = observation.image_frames.get(&object.id).unwrap();
-    assert_eq!(stored_frame.width, 2);
-    assert_eq!(stored_frame.height, 1);
-    assert_eq!(stored_frame.rgba, vec![2, 2, 2, 255, 3, 3, 3, 255]);
-
+fn shared_capture_scoped_color_uses_the_object_id_attachment_as_its_mask() {
+    let selected = test_observed_object("object.selected", 1, 1, 3, 2);
+    let covering = test_observed_object("object.covering", 2, 1, 1, 2);
     let mut report = test_agent_observation_report(None);
     report.viewport = AgentViewport {
-        width: 320,
-        height: 180,
+        width: 5,
+        height: 4,
         scale: 1.0,
     };
-    let mut capture_object = object.clone();
-    capture_object.bbox.width = 2;
-    capture_object.bbox.height = 1;
-    capture_object.polygon = capture_object.bbox.polygon();
-    report.objects = vec![capture_object];
-    let mut native_session = arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
-    let result = agent_native_capture_image_with_frame_store(
+    report.objects = vec![selected, covering];
+    let frames = test_shared_attachment_store(&report, [12, 34, 56, 255]);
+
+    let result = agent_capture_image(
         &report,
         &AgentCaptureReadRequest {
-            uri: format!("arcweft://session/cli/frame/4/object.{}.rgba", object.id),
+            uri: "arcweft://session/cli/frame/3/object.object.selected.rgba".to_owned(),
             image_kind: AgentObserveImageKind::RawRgba,
             capture_kind: AgentObserveCaptureKind::Color,
-            scope: AgentCaptureScope::Object(object.id.clone()),
+            scope: AgentCaptureScope::Object("object.selected".to_owned()),
             page: 0,
-            capture_step: 4,
-            capture_time_seconds: 0.15,
-        },
-        &mut native_session,
-        &observation.image_frames,
-    )
-    .unwrap();
-    assert_eq!(result.image.width, 2);
-    assert_eq!(result.image.height, 1);
-    assert_eq!(result.bytes, vec![0, 0, 0, 0, 2, 2, 2, 255]);
-}
-
-#[test]
-#[allow(clippy::too_many_lines)]
-fn agent_captures_presentation_image_objects_lowered_through_view_frame() {
-    use arcweft_id::PublicId;
-    use arcweft_image::{
-        DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
-    };
-    use arcweft_presentation::hit::HitRect;
-    use arcweft_presentation::image::{
-        ImageAssetRef, ImageObjectId, ImageObjectPlayback, ImageObjectTransform,
-        ImagePresentationObject,
-    };
-    use arcweft_presentation::input::InteractionTarget;
-    use arcweft_presentation::layer::{
-        LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
-    };
-    use arcweft_runtime_host::ViewFrameCommitBuilder;
-    use arcweft_view::{ViewImagePresentationFrame, ViewImagePresentationInput};
-
-    fn public_id(value: &str) -> PublicId {
-        PublicId::try_new(value).unwrap()
-    }
-
-    let dimensions = ImageDimensions::new(2, 1).unwrap();
-    let image = DecodedImage::new(
-        ImageFormat::Gif,
-        dimensions,
-        ImageRepetition::Infinite,
-        vec![
-            DecodedImageFrame::new(0, dimensions, 100, vec![8, 8, 8, 255, 9, 9, 9, 255]).unwrap(),
-            DecodedImageFrame::new(1, dimensions, 100, vec![30, 40, 50, 255, 60, 70, 80, 255])
-                .unwrap(),
-        ],
-    )
-    .unwrap();
-    let root = LayerId::new(public_id("layer.root"));
-    let hud = LayerId::new(public_id("layer.hud"));
-    let mut layers = LayerTree::new(LayerNode::new(
-        root.clone(),
-        LayerKind::Root,
-        LayerOrder {
-            phase: RenderPhase::Background,
-            z: 0,
-            stable_index: 0,
-        },
-    ));
-    layers
-        .insert(
-            LayerNode::new(
-                hud.clone(),
-                LayerKind::GameView,
-                LayerOrder {
-                    phase: RenderPhase::GameView,
-                    z: 0,
-                    stable_index: 0,
-                },
-            )
-            .with_parent(root),
-        )
-        .unwrap();
-    let object = ImagePresentationObject::new(
-        ImageObjectId::new(public_id("image.logo")),
-        ImageAssetRef::new(public_id("asset.logo")),
-        hud,
-        InteractionTarget::new(public_id("target.logo")),
-        HitRect::new(10.0, 20.0, 2.0, 1.0),
-    )
-    .with_opacity_milli(750)
-    .with_transform(ImageObjectTransform::translation_milli(5_000, 6_000))
-    .with_playback(ImageObjectPlayback::new(0).pinned_local_time(150));
-    let frame =
-        ViewImagePresentationFrame::from_inputs([ViewImagePresentationInput::new(object, image)])
-            .unwrap();
-    let (outputs, image_sources) = frame.into_parts();
-    let mut builder = ViewFrameCommitBuilder::new(&layers);
-    for (layer, output) in outputs {
-        builder.push_layer(layer, output).unwrap();
-    }
-    let commit = builder.finish();
-
-    let observation = agent_image_observation_from_view_frame(
-        "cli",
-        5,
-        &AgentViewport {
-            width: 64,
-            height: 64,
-            scale: 1.0,
-        },
-        &commit,
-        &image_sources,
-        0,
-    );
-
-    assert_eq!(observation.objects.len(), 1);
-    let object = &observation.objects[0];
-    assert_eq!(object.bbox.x, 15);
-    assert_eq!(object.bbox.y, 26);
-    assert_eq!(object.bbox.width, 2);
-    assert_eq!(object.bbox.height, 1);
-    let AgentObservedObjectContent::Image(content) = &object.content else {
-        panic!("presentation image should become Agent image content");
-    };
-    assert_eq!(content.frame_index, Some(1));
-    assert_eq!(content.local_time_millis, Some(150));
-    assert_eq!(content.opacity_milli, Some(750));
-    assert_eq!(
-        content.transform,
-        Some(AgentImageTransform {
-            m11_milli: 1_000,
-            m12_milli: 0,
-            m21_milli: 0,
-            m22_milli: 1_000,
-            tx_milli: 5_000,
-            ty_milli: 6_000,
-        })
-    );
-    let mut report = test_agent_observation_report(None);
-    report.viewport = AgentViewport {
-        width: 64,
-        height: 64,
-        scale: 1.0,
-    };
-    report.objects = observation.objects.clone();
-    let mut native_session = arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
-    let result = agent_native_capture_image_with_frame_store(
-        &report,
-        &AgentCaptureReadRequest {
-            uri: format!("arcweft://session/cli/frame/5/object.{}.rgba", object.id),
-            image_kind: AgentObserveImageKind::RawRgba,
-            capture_kind: AgentObserveCaptureKind::Color,
-            scope: AgentCaptureScope::Object(object.id.clone()),
-            page: 0,
-            capture_step: 5,
+            capture_step: 3,
             capture_time_seconds: 0.0,
         },
-        &mut native_session,
-        &observation.image_frames,
+        &frames,
     )
     .unwrap();
-    assert_eq!(result.bytes, vec![25, 34, 43, 191, 52, 60, 69, 191]);
-}
 
-#[test]
-fn native_masked_framebuffer_crop_keeps_selected_rects_and_transparent_gap() {
-    let source = arcweft_render_native::NativeFrameCapture {
-        width: 8,
-        height: 4,
-        rgba: [9, 8, 7, 255].repeat(32),
-        content_bbox: None,
-        content_pixels: 0,
-        diagnostics: Vec::new(),
-    };
-    let objects = vec![
-        test_observed_object("object.view.left", 1, 1, 2, 2),
-        test_observed_object("object.view.right", 5, 1, 2, 2),
-    ];
-    let selected = objects
-        .iter()
-        .map(AgentNativeCaptureTarget::Observed)
-        .collect::<Vec<_>>();
-    let frame = test_line_display_frame();
-    let context = AgentNativeCaptureContext {
-        frame: &frame,
-        left: 0.0,
-        top: 0.0,
-        objects: &objects,
-        page_index: 0,
-        capture_time_seconds: 60.0,
-    };
-
-    let capture =
-        agent_native_masked_framebuffer_capture(&source, context, &selected, None).unwrap();
-
-    assert_eq!(capture.width, 6);
-    assert_eq!(capture.height, 2);
     assert_eq!(
-        capture.composition,
+        result.image.composition,
         AgentImageComposition::MaskedFramebufferCrop
     );
-    assert_eq!(
-        capture.crop_origin,
-        Some(AgentImageCropOrigin {
-            space: AgentCoordinateSpace::Viewport,
-            x: 1,
-            y: 1,
-        })
-    );
-    assert_eq!(pixel_at(&capture, 0, 0), &[9, 8, 7, 255]);
-    assert_eq!(pixel_at(&capture, 1, 1), &[9, 8, 7, 255]);
-    assert_eq!(pixel_at(&capture, 2, 0), &[0, 0, 0, 0]);
-    assert_eq!(pixel_at(&capture, 3, 1), &[0, 0, 0, 0]);
-    assert_eq!(pixel_at(&capture, 4, 0), &[9, 8, 7, 255]);
-    assert_eq!(pixel_at(&capture, 5, 1), &[9, 8, 7, 255]);
+    assert_eq!(result.image.width, 3);
+    assert_eq!(result.image.height, 2);
+    assert_eq!(rgba_pixel(&result.bytes, 3, 0, 0), &[12, 34, 56, 255]);
+    assert_eq!(rgba_pixel(&result.bytes, 3, 1, 0), &[0, 0, 0, 0]);
+    assert_eq!(rgba_pixel(&result.bytes, 3, 2, 1), &[12, 34, 56, 255]);
 }
 
 #[test]
-fn native_non_text_debug_capture_reports_dedicated_attachments() {
-    let source = arcweft_render_native::NativeFrameCapture {
-        width: 32,
-        height: 24,
-        rgba: [0, 0, 0, 255].repeat(32 * 24),
-        content_bbox: None,
-        content_pixels: 0,
-        diagnostics: Vec::new(),
-    };
-    let objects = vec![test_observed_object("object.view.panel", 4, 5, 7, 6)];
-    let selected = objects
-        .iter()
-        .map(AgentNativeCaptureTarget::Observed)
-        .collect::<Vec<_>>();
-    let frame = test_resolved_line_display_frame();
-    let context = AgentNativeCaptureContext {
-        frame: &frame,
-        left: 0.0,
-        top: 0.0,
-        objects: &objects,
-        page_index: 0,
-        capture_time_seconds: 60.0,
-    };
-
-    let object_id = agent_native_debug_capture(
-        &source,
-        context,
-        &selected,
-        AgentObserveCaptureKind::ObjectId,
-        None,
-    )
-    .unwrap();
-    assert_eq!(
-        object_id.composition,
-        AgentImageComposition::ObjectIdAttachment
-    );
-    assert_eq!(
-        object_id.capture.content_bbox,
-        Some(arcweft_render_native::NativeFrameContentBBox {
-            x: 4,
-            y: 5,
-            width: 7,
-            height: 6,
-        })
-    );
-    let object_id_color = agent_object_id_color("object.view.panel");
-    assert_eq!(
-        pixel_at(
-            &AgentRasterCapture {
-                width: object_id.capture.width,
-                height: object_id.capture.height,
-                crop_origin: None,
-                composition: object_id.composition,
-                background: [0, 0, 0, 0],
-                rgba: object_id.capture.rgba.clone(),
-                diagnostics: Vec::new(),
-            },
-            4,
-            5,
-        ),
-        object_id_color.as_slice()
+fn raster_capture_requires_retained_prepared_frame_attachments() {
+    let report = test_agent_observation_report(None);
+    let result = agent_capture_image(
+        &report,
+        &AgentCaptureReadRequest {
+            uri: "arcweft://session/cli/frame/3/color.rgba".to_owned(),
+            image_kind: AgentObserveImageKind::RawRgba,
+            capture_kind: AgentObserveCaptureKind::Color,
+            scope: AgentCaptureScope::Viewport,
+            page: 0,
+            capture_step: 3,
+            capture_time_seconds: 0.0,
+        },
+        &AgentImageFrameStore::default(),
     );
 
-    let mask = agent_native_debug_capture(
-        &source,
-        context,
-        &selected,
-        AgentObserveCaptureKind::Mask,
-        None,
+    assert!(result.is_err());
+}
+
+fn test_shared_attachment_store(
+    report: &AgentObservationReport,
+    color: [u8; 4],
+) -> AgentImageFrameStore {
+    let (pixel_count, object_id, mask) = test_attachment_bytes(report);
+    AgentImageFrameStore::from_full_attachments(
+        report.viewport.width,
+        report.viewport.height,
+        color.repeat(pixel_count),
+        object_id,
+        mask,
     )
-    .unwrap();
-    assert_eq!(mask.composition, AgentImageComposition::MaskAttachment);
-    assert_eq!(mask.capture.content_pixels, 42);
-    assert_eq!(
-        pixel_at(
-            &AgentRasterCapture {
-                width: mask.capture.width,
-                height: mask.capture.height,
-                crop_origin: None,
-                composition: mask.composition,
-                background: [0, 0, 0, 0],
-                rgba: mask.capture.rgba,
-                diagnostics: Vec::new(),
-            },
-            10,
-            10,
-        ),
-        &[255, 255, 255, 255]
-    );
+    .unwrap()
+}
+
+fn test_attachment_bytes(report: &AgentObservationReport) -> (usize, Vec<u8>, Vec<u8>) {
+    let width = usize::try_from(report.viewport.width).unwrap();
+    let height = usize::try_from(report.viewport.height).unwrap();
+    let pixel_count = width.saturating_mul(height);
+    let mut object_id = vec![0; pixel_count.saturating_mul(4)];
+    let mut mask = vec![0; pixel_count.saturating_mul(4)];
+    for object in report.objects.iter().filter(|object| object.visible) {
+        let color = agent_object_id_color(&object.id);
+        let right = object
+            .bbox
+            .x
+            .saturating_add(object.bbox.width)
+            .min(report.viewport.width);
+        let bottom = object
+            .bbox
+            .y
+            .saturating_add(object.bbox.height)
+            .min(report.viewport.height);
+        for y in object.bbox.y.min(report.viewport.height)..bottom {
+            for x in object.bbox.x.min(report.viewport.width)..right {
+                let index = usize::try_from(y)
+                    .unwrap()
+                    .saturating_mul(width)
+                    .saturating_add(usize::try_from(x).unwrap())
+                    .saturating_mul(4);
+                object_id[index..index + 4].copy_from_slice(&color);
+                mask[index..index + 4].copy_from_slice(&[255, 255, 255, 255]);
+            }
+        }
+    }
+    (pixel_count, object_id, mask)
+}
+
+fn rgba_pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> &[u8] {
+    let index = usize::try_from(y)
+        .unwrap()
+        .saturating_mul(usize::try_from(width).unwrap())
+        .saturating_add(usize::try_from(x).unwrap())
+        .saturating_mul(4);
+    &rgba[index..index + 4]
 }

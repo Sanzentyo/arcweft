@@ -217,7 +217,7 @@ fn selected_capture_metadata_carries_scope_crop_mask_and_fit() {
     .expect("content rect")
     .fit_transform_metadata(LayoutCoordinateSpace::Output, LayoutCoordinateSpace::Output);
     let metadata = CaptureMetadata::selected_object(
-        CaptureRendererKind::NativeRichTextObserver,
+        CaptureRendererKind::SharedWgpuPreparedFrame,
         "object.dialogue.0.0",
         LayoutRect::from_xywh(96.0, 600.0, 808.0, 120.0),
         LayoutRect::from_xywh(96.0, 600.0, 808.0, 100.0),

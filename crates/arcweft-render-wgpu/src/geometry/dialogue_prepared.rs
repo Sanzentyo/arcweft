@@ -413,7 +413,7 @@ pub(super) fn prepare_stage(
     reduce_motion: bool,
     reveal_complete: bool,
     fx_resolver: &dyn FxApplicationResolver,
-) -> Result<(PreparedTextItem, bool, Vec<FxDiagnostic>), FramePlanError> {
+) -> Result<(PreparedTextItem, bool, Vec<FxDiagnostic>, usize), FramePlanError> {
     let runs = stage.text_runs();
     let controls = stage.controls();
     let reveal = evaluate_dialogue_reveal(
@@ -433,6 +433,7 @@ pub(super) fn prepare_stage(
         reveal.display_start,
         document.text().len(),
     ))?;
+    let source_origin = document.source_origin();
     let mut fx = DialogueFxEvaluator::new(fx_resolver, reduce_motion);
     let document = apply_document_fx(&document, &mut fx)?;
     let bounds = hit_rect_to_layout_rect(paragraph.bounds);
@@ -498,7 +499,7 @@ pub(super) fn prepare_stage(
         Some(bounds),
         viewport.physical_scale_factor_f32(),
     )?;
-    Ok((item, reveal.complete, fx.diagnostics))
+    Ok((item, reveal.complete, fx.diagnostics, source_origin))
 }
 
 fn apply_body_paint(

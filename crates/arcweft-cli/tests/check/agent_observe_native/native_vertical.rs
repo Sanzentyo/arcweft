@@ -1632,7 +1632,7 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
     assert_eq!(image["renderer"], "native");
     assert_eq!(image["scope"]["kind"], "layer");
     assert_eq!(image["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(image["composition"], "isolated_regions");
+    assert_eq!(image["composition"], "masked_framebuffer_crop");
     assert!(image["content_pixels"].as_u64().unwrap() > 0);
 
     let textbox = json["objects"]

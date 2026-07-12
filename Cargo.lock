@@ -533,6 +533,7 @@ dependencies = [
  "arcweft-debug-model",
  "arcweft-debug-sqlite",
  "arcweft-desktop-native",
+ "arcweft-glyphon",
  "arcweft-host-adapter",
  "arcweft-id",
  "arcweft-image",
@@ -549,7 +550,6 @@ dependencies = [
  "arcweft-project",
  "arcweft-project-loader",
  "arcweft-rag",
- "arcweft-render-native",
  "arcweft-render-text",
  "arcweft-render-wgpu",
  "arcweft-runtime-accelerator",
@@ -560,6 +560,7 @@ dependencies = [
  "arcweft-rust-abi",
  "arcweft-source",
  "arcweft-test",
+ "arcweft-text-layout",
  "arcweft-tooling",
  "arcweft-verify",
  "arcweft-verify-oxiz",
@@ -981,7 +982,6 @@ dependencies = [
  "arcweft-player-scene",
  "arcweft-player-text-input",
  "arcweft-presentation",
- "arcweft-render-native",
  "arcweft-render-text",
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
@@ -1123,25 +1123,6 @@ name = "arcweft-ref"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
-]
-
-[[package]]
-name = "arcweft-render-native"
-version = "0.1.0"
-dependencies = [
- "arcweft-core",
- "arcweft-glyphon",
- "arcweft-image",
- "arcweft-render-text",
- "arcweft-text-layout",
- "arcweft-view",
- "bytemuck",
- "glyphon",
- "pollster",
- "serde",
- "thiserror 2.0.18",
- "wgpu",
- "winit",
 ]
 
 [[package]]

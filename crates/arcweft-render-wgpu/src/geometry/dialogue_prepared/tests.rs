@@ -435,7 +435,7 @@ fn prepare(
     let stage = frame.stage(0).expect("stage");
     let mut engine =
         GlyphonTextEngine::from_project_fonts("ja", vec![TEST_FONT.to_vec()]).expect("font engine");
-    prepare_stage(
+    let (item, complete, diagnostics, _) = prepare_stage(
         &mut engine,
         stage,
         &paragraph(visual_time_millis),
@@ -444,7 +444,8 @@ fn prepare(
         reveal_complete,
         resolver,
     )
-    .expect("stage prepares")
+    .expect("stage prepares");
+    (item, complete, diagnostics)
 }
 
 fn frame(nodes: Vec<RichTextNode>) -> arcweft_render_text::LineDisplayFrame {

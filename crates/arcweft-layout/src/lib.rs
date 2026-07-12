@@ -303,9 +303,7 @@ pub enum CaptureComposition {
 #[serde(rename_all = "snake_case")]
 pub enum CaptureRendererKind {
     #[default]
-    NativeRichTextObserver,
-    SharedWebGpuScene,
-    NativeWgpuAdapter,
+    SharedWgpuPreparedFrame,
 }
 
 /// Bounds carried by selected object/layer captures.

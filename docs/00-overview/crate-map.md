@@ -79,7 +79,7 @@ arcweft-memo-runtime
 arcweft-render
 arcweft-presentation
 arcweft-layout
-arcweft-render-native
+arcweft-render-wgpu
 arcweft-layer-core
 arcweft-layer-input
 arcweft-layer-hooks
@@ -222,19 +222,19 @@ arcweft-launch
   build/CLI/adapter responsibilities and are read as resolved metadata by the
   transport.
 - `arcweft-test` は `test` / `bench` 宣言を HIR から Sans I/O manifest に変換する。ファイルI/O、clock、renderer/audio driving、benchmark timers、headless player 実行は CLI / player / adapter crate に置く。
-- `arcweft-render-native` は `wgpu` / `winit` / `glyphon`、native
-  offscreen readback、object-id / mask / color capture、native visual
-  geometry、renderer effect / shader / motion registry を所有する adapter
-  crate とする。`arcweft-cli` の Agent observe は product player 全体では
-  なくこの renderer crate へ依存する。
+- `arcweft-render-wgpu` は native/Web が共有する `SharedRenderer`、View
+  compositor、prepared text submission、Color/ObjectId/Mask attachment と
+  offscreen readback を所有する。Text layout、Fx semantics、Agent object
+  identity は所有しない。`arcweft-cli` の Agent observe も通常 player と
+  同じ `PreparedFrame` をこの shared capture API へ渡す。
 - `arcweft-layout` は Sans I/O の presentation-layer crate とし、design
   viewport、output viewport、raw/contain/cover/stretch fit transform、inverse
   mapping、layout unit expression、safe-area evaluation context、text overflow
   policy、text fitting result/diagnostic data contractsを所有する。WGPU、
   glyphon、filesystem、player/CLI adapterには依存しない。
 - `arcweft-player-native` は native product/player host であり、bundle /
-  bytecode execution、scheduler/input/audio/window lifecycle、render-native
-  orchestration を所有する。source direct execution は developer mode であり、
+  bytecode execution、scheduler/input/audio/window lifecycle、shared WGPU
+  surface/capture orchestration を所有する。source direct execution は developer mode であり、
   `dev-source` feature 配下に閉じ込める。product player の正本は `.awfb` /
   bytecode bundle input とする。
 - View は最初から細かい public crate family に分割せず、当面は

@@ -1,17 +1,19 @@
+mod capture;
+
 use super::image_mapping::{
-    agent_image_geometry_from_native_quad, agent_object_capture_refs_with_source,
+    agent_image_geometry_from_render_quad, agent_object_capture_refs_with_source,
 };
 use super::{
-    AgentImageFrameStore, AgentObservationState, AgentObserveImageKind, AgentObserveOptions,
-    AgentStoredImagePlacement, ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState,
-    NativeTaskBridge, agent_action_targets, agent_action_targets_for_runtime_status,
+    AGENT_ROLE_DIALOGUE_TEXTBOX, AgentImageFrameStore, AgentObservationState, AgentObserveOptions,
+    ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge,
+    agent_action_targets, agent_action_targets_for_runtime_status,
     agent_action_targets_for_scroll_regions, agent_action_targets_for_semantics,
-    agent_capture_time_millis, agent_mcp_project_context_from_hir,
-    agent_native_capture_session_for_hir, agent_object_capture_refs_for_page,
+    agent_capture_time_millis, agent_dialogue_prepared_text_objects,
+    agent_mcp_project_context_from_hir, agent_object_capture_refs_for_page, agent_object_id_color,
     agent_observe_capture_time_seconds, agent_observe_effective_steps,
     agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
     agent_observed_layers, agent_observed_scroll_regions, agent_observed_views,
-    agent_observed_virtual_lists, agent_overlay_svg, agent_textbox_object,
+    agent_observed_virtual_lists, agent_overlay_svg, agent_view_prepared_text_objects,
     dedupe_agent_action_targets, hash_hex, load_and_check_selection,
     native_host_policy_for_selection, report_path, resolve_source_selection,
 };
@@ -61,6 +63,7 @@ use arcweft_runtime_driver::{
     session::{BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput},
     task::HostTaskDispatch,
 };
+use capture::capture_player_observation_frame;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -74,7 +77,6 @@ pub(super) fn agent_player_observation_for_options(
     Ok(AgentObservationState {
         report: observed.report,
         image_frames: observed.image_frames,
-        native_session: runtime.native_session,
     })
 }
 
@@ -85,7 +87,12 @@ pub(super) struct NativePlayerObservedFrame {
 
 struct PreparedPlayerRuntimeFrame {
     prepared: PlayerPreparedFrame,
-    fonts: PlayerFontSet,
+}
+
+struct PlayerRuntimeAdvance {
+    step: BundleSessionStep,
+    diagnostics: Vec<AgentDiagnostic>,
+    task_request_count: usize,
 }
 
 pub(super) fn native_player_runtime_state_for_options(
@@ -99,7 +106,20 @@ pub(super) fn native_player_runtime_state_for_options(
             eprintln!("error: failed to build native project context: {error}");
             ExitCode::FAILURE
         })?;
-    let native_session = agent_native_capture_session_for_hir(&checked.hir)?;
+    let fonts = PlayerFontSet::bundled_default();
+    let mut shared_capture = pollster::block_on(SharedOffscreenCapture::new(
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ))
+    .map_err(|error| {
+        eprintln!("error: shared capture setup failed: {error}");
+        ExitCode::FAILURE
+    })?;
+    fonts
+        .register_with_offscreen_capture(&mut shared_capture)
+        .map_err(|error| {
+            eprintln!("error: shared capture font registration failed: {error}");
+            ExitCode::FAILURE
+        })?;
     let mut phases = Vec::new();
     let compiled =
         compile_bundle_for_selection(&selection, vec![BundleVirtualFileSpace::Asset], &mut phases)?;
@@ -141,7 +161,7 @@ pub(super) fn native_player_runtime_state_for_options(
         prepared_frame: None,
         source_path: selection.path().to_owned(),
         project_context,
-        native_session,
+        shared_capture,
         host,
         task_events: Vec::new(),
         next_clock_millis: 1,
@@ -153,6 +173,50 @@ pub(super) fn observe_native_player_runtime(
     options: &AgentObserveOptions,
     step_input: BundleStepInput,
 ) -> Result<NativePlayerObservedFrame, ExitCode> {
+    let PlayerRuntimeAdvance {
+        step,
+        mut diagnostics,
+        task_request_count,
+    } = advance_player_runtime(runtime, options, step_input)?;
+    let prepared_runtime = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
+    let prepared = &prepared_runtime.prepared;
+    append_frame_fx_diagnostics(&mut diagnostics, &prepared.frame, step.index);
+    let viewport = player_observed_viewport(prepared);
+    let mut objects = player_observed_objects(prepared, &step.presentation, step.index, &viewport)?;
+    objects.extend(player_observed_image_objects(
+        prepared,
+        &step.presentation,
+        step.index,
+        &viewport,
+        u64::from(agent_capture_time_millis(
+            agent_observe_capture_time_seconds(options),
+        )),
+    ));
+    let image_frames = capture_player_observation_frame(runtime, prepared, &objects)?;
+    let report = player_observation_report(
+        &runtime.source_path,
+        prepared,
+        objects,
+        options,
+        PlayerObservationEvidence {
+            step: &step,
+            diagnostics,
+            task_request_count,
+            virtual_ranges: runtime.session.view_virtualization().range_tables(),
+        },
+    );
+    runtime.prepared_frame = Some(prepared_runtime.prepared);
+    Ok(NativePlayerObservedFrame {
+        report,
+        image_frames,
+    })
+}
+
+fn advance_player_runtime(
+    runtime: &mut NativeAgentRuntimeState,
+    options: &AgentObserveOptions,
+    step_input: BundleStepInput,
+) -> Result<PlayerRuntimeAdvance, ExitCode> {
     let effective_steps = agent_observe_effective_steps(options);
     let force_capture_step = options.capture_step.is_some();
     let mut pending_step_input = step_input;
@@ -209,43 +273,10 @@ pub(super) fn observe_native_player_runtime(
         eprintln!("error: player-backed observe requires at least one runtime step");
         ExitCode::from(2)
     })?;
-    let prepared_runtime = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
-    let prepared = &prepared_runtime.prepared;
-    append_frame_fx_diagnostics(&mut diagnostics, &prepared.frame, step.index);
-    let viewport = player_observed_viewport(prepared);
-    let mut objects =
-        player_observed_objects(prepared, &step.presentation, step.index, &viewport, options);
-    let mut image_frames = AgentImageFrameStore::default();
-    objects.extend(player_observed_image_objects(
-        prepared,
-        &step.presentation,
-        step.index,
-        &viewport,
-        &mut image_frames,
-        u64::from(agent_capture_time_millis(
-            agent_observe_capture_time_seconds(options),
-        )),
-    ));
-    if player_observe_requires_shared_capture(options) {
-        let capture = player_observe_capture_frame(&prepared.frame, &prepared_runtime.fonts)?;
-        image_frames.set_full_frame(capture.width, capture.height, capture.rgba);
-    }
-    let report = player_observation_report(
-        &runtime.source_path,
-        prepared,
-        objects,
-        options,
-        PlayerObservationEvidence {
-            step: &step,
-            diagnostics,
-            task_request_count,
-            virtual_ranges: runtime.session.view_virtualization().range_tables(),
-        },
-    );
-    runtime.prepared_frame = Some(prepared_runtime.prepared);
-    Ok(NativePlayerObservedFrame {
-        report,
-        image_frames,
+    Ok(PlayerRuntimeAdvance {
+        step,
+        diagnostics,
+        task_request_count,
     })
 }
 
@@ -355,50 +386,7 @@ fn prepare_player_runtime_frame(
             eprintln!("error: player-backed observe frame planning failed: {error}");
             ExitCode::FAILURE
         })?;
-    Ok(PreparedPlayerRuntimeFrame { prepared, fonts })
-}
-
-fn player_observe_capture_frame(
-    prepared: &PreparedFrame,
-    fonts: &PlayerFontSet,
-) -> Result<arcweft_render_wgpu::offscreen::SharedFrameCapture, ExitCode> {
-    let mut capture = pollster::block_on(SharedOffscreenCapture::new(
-        wgpu::TextureFormat::Rgba8UnormSrgb,
-    ))
-    .map_err(|error| {
-        eprintln!("error: player-backed observe shared renderer setup failed: {error}");
-        ExitCode::FAILURE
-    })?;
-    fonts
-        .register_with_offscreen_capture(&mut capture)
-        .map_err(|error| {
-            eprintln!("error: player-backed observe font registration failed: {error}");
-            ExitCode::FAILURE
-        })?;
-    capture.capture_frame(prepared).map_err(|error| {
-        eprintln!("error: player-backed observe shared renderer capture failed: {error}");
-        ExitCode::FAILURE
-    })
-}
-
-fn player_observe_requires_shared_capture(options: &AgentObserveOptions) -> bool {
-    matches!(
-        options.image,
-        Some(AgentObserveImageKind::Png | AgentObserveImageKind::RawRgba)
-    ) || options
-        .read_uri
-        .as_deref()
-        .is_some_and(player_observe_uri_requests_raster)
-}
-
-fn player_observe_uri_requests_raster(uri: &str) -> bool {
-    let base = uri.split_once('?').map_or(uri, |(base, _)| base);
-    Path::new(base)
-        .extension()
-        .and_then(std::ffi::OsStr::to_str)
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("png") || extension.eq_ignore_ascii_case("rgba")
-        })
+    Ok(PreparedPlayerRuntimeFrame { prepared })
 }
 
 fn player_observe_viewport(options: &AgentObserveOptions) -> RenderViewport {
@@ -672,17 +660,9 @@ fn player_observed_objects(
     presentation: &BundlePresentationSnapshot,
     step: usize,
     viewport: &AgentViewport,
-    options: &AgentObserveOptions,
-) -> Vec<AgentObservedObject> {
-    let mut objects = Vec::new();
+) -> Result<Vec<AgentObservedObject>, ExitCode> {
+    let mut objects = agent_view_prepared_text_objects(step, &prepared.frame, viewport);
     let view_by_target = player_runtime_view_by_target(presentation);
-    if let Some(dialogue) = &presentation.dialogue
-        && let Some(stage) = dialogue.current_stage()
-    {
-        let mut textbox = agent_textbox_object(step, 0, stage.to_frame(), viewport, options);
-        textbox.enabled = dialogue.is_waiting_for_advance();
-        objects.push(textbox);
-    }
     objects.extend(
         prepared
             .frame
@@ -698,7 +678,22 @@ fn player_observed_objects(
                 player_semantic_object(step, node, control, &view_by_target)
             }),
     );
-    objects
+    if let Some(dialogue) = &presentation.dialogue
+        && let Some(stage) = dialogue.current_stage()
+    {
+        let mut dialogue_objects = agent_dialogue_prepared_text_objects(
+            step,
+            0,
+            stage.to_frame(),
+            &prepared.frame,
+            viewport,
+        )?;
+        for object in &mut dialogue_objects {
+            object.enabled = dialogue.is_waiting_for_advance();
+        }
+        objects.extend(dialogue_objects);
+    }
+    Ok(objects)
 }
 
 fn player_runtime_view_by_target(
@@ -734,7 +729,6 @@ fn player_observed_image_objects(
     presentation: &BundlePresentationSnapshot,
     step: usize,
     viewport: &AgentViewport,
-    image_frames: &mut AgentImageFrameStore,
     visual_time_millis: u64,
 ) -> Vec<AgentObservedObject> {
     prepared
@@ -746,14 +740,7 @@ fn player_observed_image_objects(
                 .images
                 .iter()
                 .find(|object| object.id == image.id);
-            player_observed_image_object(
-                step,
-                viewport,
-                image,
-                source,
-                image_frames,
-                visual_time_millis,
-            )
+            player_observed_image_object(step, viewport, image, source, visual_time_millis)
         })
         .collect()
 }
@@ -763,7 +750,6 @@ fn player_observed_image_object(
     viewport: &AgentViewport,
     image: &RenderImage,
     source: Option<&BundleImageObject>,
-    image_frames: &mut AgentImageFrameStore,
     visual_time_millis: u64,
 ) -> Option<AgentObservedObject> {
     if !source.is_none_or(|source| source.visible) {
@@ -775,21 +761,10 @@ fn player_observed_image_object(
         .unwrap_or_else(|| "image".to_owned());
     let target = source.and_then(|source| source.target.clone());
     let object_depth = source.map(|source| source.depth_milli);
-    let native_quad = player_render_image_native_quad(image)?;
-    let geometry = agent_image_geometry_from_native_quad(native_quad, viewport);
+    let quad = image.visible_quad()?;
+    let geometry = agent_image_geometry_from_render_quad(quad, image.transform_matrix(), viewport);
     let bbox = geometry.bbox;
     let polygon = geometry.polygon;
-    image_frames.insert_with_placement(
-        object_id.clone(),
-        image.frame.width,
-        image.frame.height,
-        image.frame.rgba.clone(),
-        Some(AgentStoredImagePlacement {
-            dst: native_quad.dst,
-            transform: native_quad.transform,
-            opacity_milli: native_quad.opacity_milli,
-        }),
-    );
     Some(AgentObservedObject {
         id: object_id.clone(),
         parent_id: None,
@@ -923,33 +898,6 @@ fn bundle_image_proxy_param(value: &BundleImageObjectParam) -> RichTextParam {
     }
 }
 
-fn player_render_image_native_quad(
-    image: &RenderImage,
-) -> Option<arcweft_render_native::NativeImageQuad<'_>> {
-    let quad = image.visible_quad()?;
-    let transform = image.transform_matrix();
-    Some(arcweft_render_native::NativeImageQuad {
-        width: image.frame.width,
-        height: image.frame.height,
-        rgba: &image.frame.rgba,
-        opacity_milli: image.opacity_milli,
-        dst: arcweft_render_native::NativeImageRect {
-            x: quad.rect.x,
-            y: quad.rect.y,
-            width: quad.rect.width,
-            height: quad.rect.height,
-        },
-        transform: arcweft_render_native::NativeImageTransform {
-            m11: transform.m11,
-            m12: transform.m12,
-            m21: transform.m21,
-            m22: transform.m22,
-            tx: transform.tx,
-            ty: transform.ty,
-        },
-    })
-}
-
 fn player_agent_image_fit(fit: ImageObjectFit) -> AgentImageFit {
     match fit {
         ImageObjectFit::Contain => AgentImageFit::Contain,
@@ -1077,387 +1025,4 @@ fn u32_to_f32(value: u32) -> f32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use arcweft_agent_protocol::action::{AgentActionDispatch, AgentActionKind};
-    use arcweft_bundle::resource_codec::view::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-        ViewInputPurpose, ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-        ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
-    };
-    use arcweft_bundle::resource_codec::{
-        ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
-        ViewRuntimeControlStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
-        ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
-    };
-    use arcweft_bundle::{
-        BundleImageObjectBounds, BundleImageObjectFit, BundleImageObjectPlayback,
-        BundleImageObjectTransform,
-    };
-    use arcweft_id::PublicId;
-    use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectTransform};
-    use arcweft_presentation::input::InteractionTarget;
-    use arcweft_presentation::layer::LayerId;
-    use arcweft_presentation::semantic::{SemanticNode, SemanticTree};
-    use arcweft_render_wgpu::geometry::RenderImageFrame;
-
-    #[test]
-    fn player_semantic_objects_preserve_runtime_view_parent() {
-        let presentation = BundlePresentationSnapshot {
-            text_inputs: vec![runtime_text_control("input.visitor_name")],
-            action_buttons: vec![runtime_action_button("button.continue")],
-            ..BundlePresentationSnapshot::default()
-        };
-        let view_by_target = player_runtime_view_by_target(&presentation);
-        let input_target = interaction_target("input.visitor_name");
-        let input_node = SemanticNode::new(
-            layer_id("view.text_input"),
-            input_target.clone(),
-            SemanticRole::TextField,
-            HitRect::new(48.0, 48.0, 420.0, 48.0),
-        );
-        let render_control = RenderTextInputControl::new(
-            input_target,
-            arcweft_presentation::text_input::TextInputSessionId(41),
-            "Ada",
-            arcweft_presentation::text_input::TextRange::new(
-                arcweft_presentation::text_input::TextByteOffset(3),
-                arcweft_presentation::text_input::TextByteOffset(3),
-            ),
-            arcweft_presentation::text_input::TextInputOptions::default(),
-            SemanticRole::TextField,
-            HitRect::new(48.0, 48.0, 420.0, 48.0),
-        );
-        let button_node = SemanticNode::new(
-            layer_id("view.button"),
-            interaction_target("button.continue"),
-            SemanticRole::Button,
-            HitRect::new(484.0, 48.0, 180.0, 48.0),
-        );
-
-        let input = player_semantic_object(7, &input_node, Some(&render_control), &view_by_target)
-            .expect("input object");
-        let button =
-            player_semantic_object(7, &button_node, None, &view_by_target).expect("button object");
-
-        assert_eq!(input.parent_id.as_deref(), Some("view.ModernFeedbackPanel"));
-        assert_eq!(
-            button.parent_id.as_deref(),
-            Some("view.ModernFeedbackPanel")
-        );
-    }
-
-    #[test]
-    fn player_semantic_actions_become_agent_action_targets() {
-        let mut semantics = SemanticTree::default();
-        semantics.push(
-            SemanticNode::new(
-                layer_id("view.button"),
-                interaction_target("button.continue"),
-                SemanticRole::Button,
-                HitRect::new(484.0, 48.0, 180.0, 48.0),
-            )
-            .with_action(PublicId::try_new("action.feedback.submit_name").unwrap()),
-        );
-
-        let actions = agent_action_targets_for_semantics(&semantics);
-
-        assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0].id, "action.feedback.submit_name");
-        assert_eq!(actions[0].target, "button.continue");
-        assert_eq!(actions[0].action, AgentActionKind::Invoke);
-        assert_eq!(actions[0].kind, AgentActionDispatch::Semantic);
-        assert!(actions[0].enabled);
-    }
-
-    #[test]
-    fn missing_requested_capture_scopes_report_structured_diagnostics() {
-        let mut diagnostics = Vec::new();
-
-        push_missing_capture_scope_diagnostics(
-            &mut diagnostics,
-            9,
-            [
-                Some(RequestedCaptureScope {
-                    kind: RequestedCaptureScopeKind::View,
-                    id: "view.HiddenPanel",
-                }),
-                Some(RequestedCaptureScope {
-                    kind: RequestedCaptureScopeKind::Object,
-                    id: "button.hidden",
-                }),
-                None,
-            ],
-            &[],
-            &[],
-            &[],
-        );
-
-        assert_eq!(diagnostics.len(), 2);
-        assert!(diagnostics.iter().all(|diagnostic| {
-            diagnostic.step == 9
-                && diagnostic.severity == AgentDiagnosticSeverity::Error
-                && diagnostic.source.as_deref() == Some("agent.observe")
-                && diagnostic.code.as_deref() == Some("AGENT_CAPTURE_MISSING_SCOPE")
-        }));
-        assert!(diagnostics[0].message.contains("view.HiddenPanel"));
-        assert!(diagnostics[1].message.contains("button.hidden"));
-    }
-
-    #[test]
-    fn player_image_object_observation_skips_hidden_source_and_frame() {
-        let viewport = AgentViewport {
-            width: 1280,
-            height: 720,
-            scale: 1.0,
-        };
-        let render_image = render_image("image.glass_bg");
-        let visible_source = bundle_image_object("image.glass_bg", true);
-        let hidden_source = bundle_image_object("image.glass_bg", false);
-        let mut visible_frames = AgentImageFrameStore::default();
-        let mut hidden_frames = AgentImageFrameStore::default();
-
-        let visible = player_observed_image_object(
-            3,
-            &viewport,
-            &render_image,
-            Some(&visible_source),
-            &mut visible_frames,
-            125,
-        )
-        .expect("visible image object");
-        let hidden = player_observed_image_object(
-            3,
-            &viewport,
-            &render_image,
-            Some(&hidden_source),
-            &mut hidden_frames,
-            125,
-        );
-
-        assert_eq!(visible.id, "object.image.image.glass_bg");
-        assert!(visible_frames.get(&visible.id).is_some());
-        assert!(hidden.is_none());
-        assert!(hidden_frames.get("object.image.image.glass_bg").is_none());
-    }
-
-    #[test]
-    fn player_image_object_observation_uses_scroll_clipped_visible_quad() {
-        let viewport = AgentViewport {
-            width: 1280,
-            height: 720,
-            scale: 1.0,
-        };
-        let mut render_image = render_image("image.glass_bg");
-        render_image.fit = ImageObjectFit::Stretch;
-        render_image.bounds = HitRect::new(100.0, 170.0, 200.0, 80.0);
-        render_image.viewport_clip = Some(HitRect::new(100.0, 100.0, 160.0, 80.0));
-        let source = bundle_image_object("image.glass_bg", true);
-        let mut frames = AgentImageFrameStore::default();
-
-        let object = player_observed_image_object(
-            3,
-            &viewport,
-            &render_image,
-            Some(&source),
-            &mut frames,
-            125,
-        )
-        .expect("visible image object");
-
-        assert_eq!(object.bbox.x, 100);
-        assert_eq!(object.bbox.y, 170);
-        assert_eq!(object.bbox.width, 160);
-        assert_eq!(object.bbox.height, 10);
-        let frame = frames.get(&object.id).expect("image frame stored");
-        let placement = frame.placement.as_ref().expect("placement stored");
-        assert!((placement.dst.x - 100.0).abs() < f32::EPSILON);
-        assert!((placement.dst.y - 170.0).abs() < f32::EPSILON);
-        assert!((placement.dst.width - 160.0).abs() < f32::EPSILON);
-        assert!((placement.dst.height - 10.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn hidden_image_object_capture_scope_reports_missing_scope_diagnostic() {
-        let viewport = AgentViewport {
-            width: 1280,
-            height: 720,
-            scale: 1.0,
-        };
-        let render_image = render_image("image.glass_bg");
-        let hidden_source = bundle_image_object("image.glass_bg", false);
-        let mut hidden_frames = AgentImageFrameStore::default();
-
-        let objects = player_observed_image_object(
-            4,
-            &viewport,
-            &render_image,
-            Some(&hidden_source),
-            &mut hidden_frames,
-            125,
-        )
-        .into_iter()
-        .collect::<Vec<_>>();
-        let mut diagnostics = Vec::new();
-        push_missing_capture_scope_diagnostics(
-            &mut diagnostics,
-            4,
-            [
-                None,
-                Some(RequestedCaptureScope {
-                    kind: RequestedCaptureScopeKind::Object,
-                    id: "object.image.image.glass_bg",
-                }),
-                None,
-            ],
-            &[],
-            &[],
-            &objects,
-        );
-
-        assert!(objects.is_empty());
-        assert!(hidden_frames.get("object.image.image.glass_bg").is_none());
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(
-            diagnostics[0].code.as_deref(),
-            Some("AGENT_CAPTURE_MISSING_SCOPE")
-        );
-        assert!(
-            diagnostics[0]
-                .message
-                .contains("object.image.image.glass_bg")
-        );
-    }
-
-    #[test]
-    fn released_image_object_capture_scope_reports_missing_scope_diagnostic() {
-        let objects = Vec::new();
-        let frames = AgentImageFrameStore::default();
-        let mut diagnostics = Vec::new();
-
-        push_missing_capture_scope_diagnostics(
-            &mut diagnostics,
-            5,
-            [
-                None,
-                Some(RequestedCaptureScope {
-                    kind: RequestedCaptureScopeKind::Object,
-                    id: "object.image.image.glass_bg",
-                }),
-                None,
-            ],
-            &[],
-            &[],
-            &objects,
-        );
-
-        assert!(frames.get("object.image.image.glass_bg").is_none());
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].step, 5);
-        assert_eq!(
-            diagnostics[0].code.as_deref(),
-            Some("AGENT_CAPTURE_MISSING_SCOPE")
-        );
-        assert!(
-            diagnostics[0]
-                .message
-                .contains("object.image.image.glass_bg")
-        );
-    }
-
-    fn runtime_text_control(public_id: &str) -> ViewRuntimeTextControl {
-        ViewRuntimeTextControl {
-            public_id: public_id.to_owned(),
-            target: public_id.to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            containing_scroll_region: None,
-            session: 41,
-            value: String::new(),
-            selection: ViewRuntimeTextSelection::new(0, 0),
-            options: ViewRuntimeTextControlOptions {
-                purpose: ViewInputPurpose::Text,
-                autocorrect: TextAssistPolicy::PlatformDefault,
-                spellcheck: TextAssistPolicy::PlatformDefault,
-                capitalization: TextCapitalization::None,
-                enter_key: EnterKeyHint::Default,
-                multiline: false,
-                selection_policy: ViewTextSelectionPolicy::Enabled,
-                shortcut_policy: ViewTextShortcutPolicy::Enabled,
-                tab_policy: ViewTextTabPolicy::FocusNavigation,
-                vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
-                secure_policy: ViewSecureInputPolicy::Plain,
-                composition_on_blur: CompositionOnBlurPolicy::Commit,
-            },
-            kind: ViewInputKind::TextField,
-            bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
-            label: None,
-            handlers: ViewRuntimeTextControlHandlers::default(),
-            style: ViewRuntimeControlStyle::default(),
-        }
-    }
-
-    fn runtime_action_button(public_id: &str) -> ViewRuntimeActionButton {
-        ViewRuntimeActionButton {
-            public_id: public_id.to_owned(),
-            target: public_id.to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            containing_scroll_region: None,
-            label: "Continue".to_owned(),
-            enabled: true,
-            bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
-            action: ViewRuntimeActionButtonAction::Noop,
-            style: ViewRuntimeControlStyle::default(),
-        }
-    }
-
-    fn interaction_target(public_id: &str) -> InteractionTarget {
-        InteractionTarget::new(PublicId::try_new(public_id).expect("valid test target id"))
-    }
-
-    fn layer_id(public_id: &str) -> LayerId {
-        LayerId::new(PublicId::try_new(public_id).expect("valid test layer id"))
-    }
-
-    fn render_image(id: &str) -> RenderImage {
-        RenderImage {
-            id: id.to_owned(),
-            frame: RenderImageFrame {
-                index: None,
-                width: 2,
-                height: 1,
-                rgba: vec![10, 20, 30, 255, 40, 50, 60, 255],
-            },
-            bounds: HitRect::new(0.0, 0.0, 1280.0, 720.0),
-            containing_scroll_region: None,
-            viewport_clip: None,
-            placement: None,
-            fit: ImageObjectFit::Cover,
-            alignment: ImageObjectAlignment::top_left(),
-            transform: ImageObjectTransform::identity(),
-            opacity_milli: 1_000,
-        }
-    }
-
-    fn bundle_image_object(id: &str, visible: bool) -> BundleImageObject {
-        BundleImageObject {
-            id: id.to_owned(),
-            asset: "asset.glass_bg".to_owned(),
-            target: Some("target.glass_bg".to_owned()),
-            layer: Some("layer.background".to_owned()),
-            view: None,
-            containing_scroll_region: None,
-            bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
-            placement: None,
-            fit: BundleImageObjectFit::Cover,
-            alignment: arcweft_bundle::BundleImageObjectAlignment::default(),
-            playback: BundleImageObjectPlayback::default(),
-            transform: BundleImageObjectTransform::default(),
-            depth_milli: -10_000,
-            opacity_milli: 1_000,
-            actions: Vec::new(),
-            params: BTreeMap::default(),
-            proxies: Vec::new(),
-            visible,
-        }
-    }
-}
+mod tests;

@@ -12,7 +12,9 @@ use arcweft_render_wgpu::geometry::{
     RenderFontFamily, RenderPreferences, RenderScene, RenderTextBlock, RenderTextSelectionPolicy,
     RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanContext,
 };
-use arcweft_render_wgpu::offscreen::{SharedOffscreenCapture, SharedOffscreenCaptureError};
+use arcweft_render_wgpu::offscreen::{
+    CaptureAttachment, CaptureRequest, SharedOffscreenCapture, SharedOffscreenCaptureError,
+};
 use arcweft_render_wgpu::renderer::SharedRendererError;
 use arcweft_render_wgpu::view_compositor::ViewCompositorError;
 use arcweft_render_wgpu::view_scene::{
@@ -159,12 +161,14 @@ fn prepared_batch_renders_without_renderer_side_shaping() {
     capture
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("capture registers identical project font bytes");
-    let baseline = capture.capture_frame(&baseline).expect("baseline captures");
+    let baseline = capture
+        .capture(&baseline, &CaptureRequest::whole_frame_color())
+        .expect("baseline captures");
     let rendered = capture
-        .capture_frame(&frame)
+        .capture(&frame, &CaptureRequest::whole_frame_color())
         .expect("prepared text captures");
 
-    assert_ne!(baseline.rgba, rendered.rgba);
+    assert_ne!(color_rgba(&baseline), color_rgba(&rendered));
 }
 
 #[test]
@@ -193,24 +197,26 @@ fn view_text_renders_at_primitive_position_without_late_duplicate_submission() {
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("capture registers identical project font bytes");
     let red_only = capture
-        .capture_frame(&red_only)
+        .capture(&red_only, &CaptureRequest::whole_frame_color())
         .expect("red frame captures");
     let text_over_red = capture
-        .capture_frame(&text_over_red)
+        .capture(&text_over_red, &CaptureRequest::whole_frame_color())
         .expect("View text frame captures");
     let red_then_blue = capture
-        .capture_frame(&red_then_blue)
+        .capture(&red_then_blue, &CaptureRequest::whole_frame_color())
         .expect("blue control frame captures");
     let text_then_blue = capture
-        .capture_frame(&text_then_blue)
+        .capture(&text_then_blue, &CaptureRequest::whole_frame_color())
         .expect("covered View text frame captures");
 
     assert_ne!(
-        red_only.rgba, text_over_red.rgba,
+        color_rgba(&red_only),
+        color_rgba(&text_over_red),
         "Text primitive must invoke the shared glyph renderer"
     );
     assert_eq!(
-        red_then_blue.rgba, text_then_blue.rgba,
+        color_rgba(&red_then_blue),
+        color_rgba(&text_then_blue),
         "a later opaque primitive must cover Text, and the prepared item must not be submitted again"
     );
 }
@@ -238,22 +244,24 @@ fn view_text_obeys_transform_clip_opacity_inside_offscreen_group() {
     capture
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("capture registers identical project font bytes");
-    let baseline = capture.capture_frame(&baseline).expect("baseline captures");
+    let baseline = capture
+        .capture(&baseline, &CaptureRequest::whole_frame_color())
+        .expect("baseline captures");
     let opaque = capture
-        .capture_frame(&opaque)
+        .capture(&opaque, &CaptureRequest::whole_frame_color())
         .expect("opaque group captures");
     let translucent = capture
-        .capture_frame(&translucent)
+        .capture(&translucent, &CaptureRequest::whole_frame_color())
         .expect("translucent group captures");
 
     assert_ne!(
-        opaque.rgba, translucent.rgba,
+        color_rgba(&opaque),
+        color_rgba(&translucent),
         "both opacity scopes must apply"
     );
-    let changed = baseline
-        .rgba
+    let changed = color_rgba(&baseline)
         .chunks_exact(4)
-        .zip(translucent.rgba.chunks_exact(4))
+        .zip(color_rgba(&translucent).chunks_exact(4))
         .enumerate()
         .filter_map(|(index, (before, after))| (before != after).then_some(index))
         .collect::<Vec<_>>();
@@ -298,7 +306,7 @@ fn missing_view_text_id_is_a_typed_compositor_failure() {
         return;
     };
     let error = capture
-        .capture_frame(&frame)
+        .capture(&frame, &CaptureRequest::whole_frame_color())
         .expect_err("missing prepared text must not become a no-op");
 
     assert!(matches!(
@@ -344,7 +352,7 @@ fn view_text_interaction_paints_selection_before_glyphs_and_ime_after() {
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("capture registers identical project font bytes");
     let capture = capture
-        .capture_frame(&frame)
+        .capture(&frame, &CaptureRequest::whole_frame_color())
         .expect("interaction frame captures");
 
     let outside_item_clip = capture_pixel(&capture, 30, 50);
@@ -470,9 +478,15 @@ fn capture_pixel(
 ) -> [u8; 4] {
     let width = usize::try_from(capture.width).expect("capture width fits");
     let offset = y.saturating_mul(width).saturating_add(x).saturating_mul(4);
-    capture.rgba[offset..offset + 4]
+    color_rgba(capture)[offset..offset + 4]
         .try_into()
         .expect("pixel is present")
+}
+
+fn color_rgba(capture: &arcweft_render_wgpu::offscreen::SharedFrameCapture) -> &[u8] {
+    capture
+        .attachment_rgba(CaptureAttachment::Color)
+        .expect("whole-frame color attachment exists")
 }
 
 fn capture_region(

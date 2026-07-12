@@ -126,388 +126,26 @@ pub(super) fn agent_uri_component(value: &str) -> String {
         .collect()
 }
 
-pub(super) fn agent_textbox_object(
-    step: usize,
-    index: usize,
-    frame: LineDisplayFrame,
-    viewport: &AgentViewport,
-    options: &AgentObserveOptions,
-) -> AgentObservedObject {
-    let width = viewport.width.saturating_sub(192);
-    let lines = u32::try_from(frame.text.lines().count().max(1)).unwrap_or(u32::MAX);
-    let object_slot = u32::try_from(index % 4).unwrap_or(0);
-    let bottom_margin = 48 + object_slot * 10;
-    let default_height = (96 + lines * 28).min(220);
-    let height = options
-        .textbox_height
-        .unwrap_or(default_height)
-        .min(viewport.height.saturating_sub(bottom_margin))
-        .max(1);
-    let y = viewport
-        .height
-        .saturating_sub(height)
-        .saturating_sub(bottom_margin);
-    let bbox = AgentBBox {
-        space: AgentCoordinateSpace::Viewport,
-        x: 96,
-        y,
-        width,
-        height,
-    };
-    let object_id = format!("object.dialogue.{step}.{index}");
-    let capture_refs = agent_object_capture_refs_with_source(
-        "cli",
-        step,
-        &object_id,
-        &bbox,
-        0,
-        AgentCaptureSourceIdentity::Object {
-            id: object_id.clone(),
-            parent_id: None,
-            entity: Some(frame.callee.clone()),
-            layer: "dialogue".to_owned(),
-            role: AGENT_ROLE_DIALOGUE_TEXTBOX.to_owned(),
-            object_layer: None,
-            object_depth: None,
-            rich_text: None,
-        },
-    );
-    AgentObservedObject {
-        id: object_id,
-        parent_id: None,
-        entity: Some(frame.callee.clone()),
-        layer: "dialogue".to_owned(),
-        role: AGENT_ROLE_DIALOGUE_TEXTBOX.to_owned(),
-        visible: true,
-        enabled: true,
-        bbox: bbox.clone(),
-        polygon: bbox.polygon(),
-        capture_refs,
-        object_layer: None,
-        object_depth: None,
-        text: Some(frame.text.clone()),
-        rich_text_ref: None,
-        content: AgentObservedObjectContent::RichText {
-            frame: Box::new(frame),
-        },
-    }
-}
-
-pub(super) fn agent_observed_rich_text(object: &AgentObservedObject) -> &LineDisplayFrame {
-    object
-        .rich_text_frame()
-        .expect("observed rich-text object carries rich-text content")
-}
-
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "wired into live Agent observe once runtime View commits are exposed to the CLI adapter"
-    )
-)]
-pub(crate) fn agent_image_objects_from_view_frame(
-    session_id: &str,
-    step: usize,
-    viewport: &AgentViewport,
-    frame: &ViewFrameCommit,
-    images: &ViewImageSourceTable,
-    visual_time_millis: u64,
-) -> Vec<AgentObservedObject> {
-    agent_image_observation_from_view_frame(
-        session_id,
-        step,
-        viewport,
-        frame,
-        images,
-        visual_time_millis,
-    )
-    .objects
-}
-
-pub(super) fn agent_image_observation_from_view_frame(
-    session_id: &str,
-    step: usize,
-    viewport: &AgentViewport,
-    frame: &ViewFrameCommit,
-    images: &ViewImageSourceTable,
-    visual_time_millis: u64,
-) -> AgentViewImageObservation {
-    let mut observation = AgentViewImageObservation::default();
-    frame
-        .image_items()
-        .into_iter()
-        .filter_map(|item| {
-            agent_image_observation_from_view_item(
-                session_id,
-                step,
-                viewport,
-                &item,
-                images,
-                visual_time_millis,
-            )
-        })
-        .for_each(|(object, frame)| {
-            observation
-                .image_frames
-                .frames_by_object
-                .insert(object.id.clone(), frame);
-            observation.objects.push(object);
-        });
-    observation
-}
-
-pub(super) fn agent_image_observation_from_view_item(
-    session_id: &str,
-    step: usize,
-    viewport: &AgentViewport,
-    item: &ViewFrameImageItem,
-    images: &ViewImageSourceTable,
-    visual_time_millis: u64,
-) -> Option<(AgentObservedObject, AgentStoredImageFrame)> {
-    let source = images.get(item.image())?;
-    let local_time_millis = source.playback().local_time_millis(visual_time_millis);
-    let resolved = images
-        .resolve_frame(item.image(), item.layout(), visual_time_millis)
-        .ok()?;
-    let frame = resolved.frame();
-    let native_quad =
-        arcweft_render_native::native_image_quad_from_resolved_frame(resolved).ok()?;
-    let geometry = agent_image_geometry_from_native_quad(native_quad, viewport);
-    let bbox = geometry.bbox;
-    let polygon = geometry.polygon;
-    let presentation = source.presentation();
-    let semantic = item.semantic();
-    let object_id = format!(
-        "object.image.{}.{}.{}",
-        agent_uri_component(item.layer().public_id().as_str()),
-        item.node().0,
-        item.image().0
-    );
-    let source_id = format!("view.image.{}", item.image().0);
-    let metadata = agent_image_observation_metadata(item, &source_id, presentation, semantic);
-    let opacity_milli = source.opacity_milli();
-    let fit = source.fit();
-    let alignment = source.alignment();
-    let transform = source.transform();
-    let dimensions = source.image().dimensions();
-    let frame_dimensions = frame.dimensions();
-    Some((
-        AgentObservedObject {
-            id: object_id.clone(),
-            parent_id: None,
-            entity: Some(metadata.entity.clone()),
-            layer: item.layer().public_id().as_str().to_owned(),
-            role: "image".to_owned(),
-            visible: semantic.is_none_or(arcweft_view::ViewSemanticNode::visible),
-            enabled: semantic.is_none_or(arcweft_view::ViewSemanticNode::enabled),
-            bbox: bbox.clone(),
-            polygon,
-            capture_refs: agent_object_capture_refs_with_source(
-                session_id,
-                step,
-                &object_id,
-                &bbox,
-                0,
-                AgentCaptureSourceIdentity::Object {
-                    id: object_id.clone(),
-                    parent_id: None,
-                    entity: Some(metadata.entity.clone()),
-                    layer: item.layer().public_id().as_str().to_owned(),
-                    role: "image".to_owned(),
-                    object_layer: Some(metadata.object_layer.clone()),
-                    object_depth: metadata.object_depth,
-                    rich_text: None,
-                },
-            ),
-            object_layer: Some(metadata.object_layer),
-            object_depth: metadata.object_depth,
-            text: None,
-            rich_text_ref: None,
-            content: AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-                source: source_id,
-                object: presentation.map(|presentation| presentation.object().as_str().to_owned()),
-                target: metadata.target,
-                asset: presentation.map(|presentation| presentation.asset().as_str().to_owned()),
-                frame_index: usize::try_from(frame.index()).ok(),
-                local_time_millis: Some(local_time_millis),
-                opacity_milli: Some(opacity_milli),
-                fit: Some(agent_image_fit(fit)),
-                alignment: Some(agent_image_alignment(alignment)),
-                transform: Some(agent_image_transform(transform)),
-                intrinsic_width: Some(dimensions.width()),
-                intrinsic_height: Some(dimensions.height()),
-                authored_placement: None,
-                resolved_placement: None,
-                actions: metadata.actions,
-                params: metadata.params,
-                proxies: metadata.proxies,
-            })),
-        },
-        AgentStoredImageFrame {
-            width: frame_dimensions.width(),
-            height: frame_dimensions.height(),
-            rgba: frame.rgba().to_vec(),
-            placement: Some(AgentStoredImagePlacement {
-                dst: native_quad.dst,
-                transform: native_quad.transform,
-                opacity_milli: native_quad.opacity_milli,
-            }),
-        },
-    ))
-}
-
-pub(super) struct AgentImageObservationMetadata {
-    pub(super) entity: String,
-    pub(super) object_layer: String,
-    pub(super) object_depth: Option<i32>,
-    pub(super) target: Option<String>,
-    pub(super) actions: Vec<String>,
-    pub(super) params: BTreeMap<String, AgentImageObjectParam>,
-    pub(super) proxies: Vec<AgentPresentationObjectProxyRef>,
-}
-
-pub(super) fn agent_image_observation_metadata(
-    item: &ViewFrameImageItem,
-    source_id: &str,
-    presentation: Option<&arcweft_view::ViewImagePresentationMetadata>,
-    semantic: Option<&arcweft_view::ViewSemanticNode>,
-) -> AgentImageObservationMetadata {
-    AgentImageObservationMetadata {
-        entity: presentation.map_or_else(
-            || source_id.to_owned(),
-            |presentation| presentation.object().as_str().to_owned(),
-        ),
-        object_layer: presentation.map_or_else(
-            || item.layer().public_id().as_str().to_owned(),
-            |presentation| presentation.layer().as_str().to_owned(),
-        ),
-        object_depth: presentation.map(arcweft_view::ViewImagePresentationMetadata::depth_milli),
-        target: presentation
-            .map(|presentation| presentation.target().as_str().to_owned())
-            .or_else(|| semantic.map(|semantic| semantic.target().id().as_str().to_owned())),
-        actions: agent_image_observation_actions(presentation, semantic),
-        params: presentation
-            .map(|presentation| {
-                presentation
-                    .params()
-                    .iter()
-                    .map(|(key, value)| {
-                        (
-                            key.as_str().to_owned(),
-                            agent_image_object_param(value.clone()),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
-        proxies: presentation
-            .map(|presentation| {
-                presentation
-                    .proxies()
-                    .iter()
-                    .map(agent_image_object_proxy_ref)
-                    .collect()
-            })
-            .unwrap_or_default(),
-    }
-}
-
-pub(super) fn agent_image_observation_actions(
-    presentation: Option<&arcweft_view::ViewImagePresentationMetadata>,
-    semantic: Option<&arcweft_view::ViewSemanticNode>,
-) -> Vec<String> {
-    presentation.map_or_else(
-        || {
-            semantic
-                .map(|semantic| {
-                    semantic
-                        .actions()
-                        .iter()
-                        .map(|action| action.as_str().to_owned())
-                        .collect()
-                })
-                .unwrap_or_default()
-        },
-        |presentation| {
-            presentation
-                .actions()
-                .iter()
-                .map(|action| action.as_str().to_owned())
-                .collect()
-        },
-    )
-}
-
-pub(super) fn agent_image_object_param(value: ImageObjectParam) -> AgentImageObjectParam {
-    match value {
-        ImageObjectParam::Bool(value) => AgentImageObjectParam::Bool { value },
-        ImageObjectParam::Integer(value) => AgentImageObjectParam::Integer { value },
-        ImageObjectParam::Milli(value) => AgentImageObjectParam::Milli { value },
-        ImageObjectParam::Text(value) => AgentImageObjectParam::Text { value },
-        ImageObjectParam::Id(value) => AgentImageObjectParam::Id {
-            value: value.as_str().to_owned(),
-        },
-    }
-}
-
-pub(super) fn agent_image_object_proxy_ref(
-    proxy: &ImageObjectProxy,
-) -> AgentPresentationObjectProxyRef {
-    AgentPresentationObjectProxyRef {
-        id: proxy.id().as_str().to_owned(),
-        type_name: proxy.type_name().map(str::to_owned),
-        role: proxy.role().map(str::to_owned),
-        layer: proxy.layer().map(|layer| layer.as_str().to_owned()),
-        depth: proxy.depth_milli(),
-        declaration: None,
-        hit_test: proxy.hit_test(),
-        params: proxy
-            .params()
-            .iter()
-            .map(|(key, value)| {
-                (
-                    key.as_str().to_owned(),
-                    agent_image_object_proxy_param(value.clone()),
-                )
-            })
-            .collect(),
-    }
-}
-
-pub(super) fn agent_image_object_proxy_param(value: ImageObjectParam) -> RichTextParam {
-    match value {
-        ImageObjectParam::Bool(value) => RichTextParam::Bool { value },
-        ImageObjectParam::Integer(value) => RichTextParam::Int { value },
-        ImageObjectParam::Milli(value) => RichTextParam::Milli {
-            value: Milli(value),
-        },
-        ImageObjectParam::Text(value) => RichTextParam::Text { value },
-        ImageObjectParam::Id(value) => RichTextParam::Selector {
-            value: value.as_str().to_owned(),
-        },
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AgentImageGeometry {
     pub(super) bbox: AgentBBox,
     pub(super) polygon: Vec<AgentPoint>,
 }
 
-pub(super) fn agent_image_geometry_from_native_quad(
-    quad: arcweft_render_native::NativeImageQuad<'_>,
+pub(super) fn agent_image_geometry_from_render_quad(
+    quad: arcweft_render_wgpu::geometry::RenderImageQuad,
+    transform: arcweft_render_wgpu::geometry::RenderImageTransformMatrix,
     viewport: &AgentViewport,
 ) -> AgentImageGeometry {
     let corners = [
-        agent_transform_image_point(quad.transform, quad.dst.x, quad.dst.y),
-        agent_transform_image_point(quad.transform, quad.dst.x + quad.dst.width, quad.dst.y),
+        agent_transform_image_point(transform, quad.rect.x, quad.rect.y),
+        agent_transform_image_point(transform, quad.rect.x + quad.rect.width, quad.rect.y),
         agent_transform_image_point(
-            quad.transform,
-            quad.dst.x + quad.dst.width,
-            quad.dst.y + quad.dst.height,
+            transform,
+            quad.rect.x + quad.rect.width,
+            quad.rect.y + quad.rect.height,
         ),
-        agent_transform_image_point(quad.transform, quad.dst.x, quad.dst.y + quad.dst.height),
+        agent_transform_image_point(transform, quad.rect.x, quad.rect.y + quad.rect.height),
     ];
     let polygon = corners
         .into_iter()
@@ -546,7 +184,7 @@ pub(super) fn agent_image_geometry_from_native_quad(
 }
 
 pub(super) fn agent_transform_image_point(
-    transform: arcweft_render_native::NativeImageTransform,
+    transform: arcweft_render_wgpu::geometry::RenderImageTransformMatrix,
     x: f32,
     y: f32,
 ) -> (f32, f32) {
@@ -593,63 +231,6 @@ pub(super) fn agent_clamp_viewport_f32(value: f32, viewport_extent: u32) -> u32 
         .parse::<f32>()
         .unwrap_or(f32::MAX);
     value.clamp(0.0, max).to_string().parse().unwrap_or(0)
-}
-
-pub(super) fn agent_image_fit(fit: arcweft_view::ImageFit) -> AgentImageFit {
-    match fit {
-        arcweft_view::ImageFit::Contain => AgentImageFit::Contain,
-        arcweft_view::ImageFit::Cover => AgentImageFit::Cover,
-        arcweft_view::ImageFit::Stretch => AgentImageFit::Stretch,
-        arcweft_view::ImageFit::Intrinsic => AgentImageFit::Intrinsic,
-    }
-}
-
-pub(super) fn agent_image_alignment(
-    alignment: arcweft_view::ImageAlignment,
-) -> AgentImageAlignment {
-    AgentImageAlignment {
-        x_milli: alignment.x_milli(),
-        y_milli: alignment.y_milli(),
-    }
-}
-
-pub(super) fn agent_image_transform(
-    transform: arcweft_presentation::image::ImageObjectTransform,
-) -> AgentImageTransform {
-    AgentImageTransform {
-        m11_milli: transform.m11_milli,
-        m12_milli: transform.m12_milli,
-        m21_milli: transform.m21_milli,
-        m22_milli: transform.m22_milli,
-        tx_milli: transform.tx_milli,
-        ty_milli: transform.ty_milli,
-    }
-}
-
-pub(super) fn agent_measure_frame_elements_with_session(
-    frame: &LineDisplayFrame,
-    viewport: arcweft_render_native::NativeCaptureViewport,
-    native_session: Option<&mut arcweft_render_native::NativeOffscreenCaptureSession>,
-) -> Result<
-    Vec<arcweft_render_native::NativeFrameElementBounds>,
-    arcweft_render_native::NativeWindowError,
-> {
-    if let Some(native_session) = native_session {
-        return native_session.measure_frame_elements_in(frame, viewport);
-    }
-    arcweft_render_native::measure_frame_elements_at_page_with_time(
-        frame,
-        viewport.width,
-        viewport.height,
-        viewport.left,
-        viewport.top,
-        viewport.page_index,
-        viewport.time_seconds,
-    )
-}
-
-pub(super) fn agent_rich_text_ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
-    left.start < right.end && right.start < left.end
 }
 
 pub(super) fn agent_object_layers(object: &AgentObservedObject) -> Vec<String> {
@@ -1217,7 +798,7 @@ pub(super) fn agent_selected_capture_metadata_for_ref(
         })
     });
     let metadata = LayoutCaptureMetadata {
-        renderer: CaptureRendererKind::NativeRichTextObserver,
+        renderer: CaptureRendererKind::SharedWgpuPreparedFrame,
         scope: agent_layout_capture_scope(spec.scope),
         composition: agent_layout_capture_composition(spec.composition),
         coordinate_basis: LayoutCoordinateSpace::Output,

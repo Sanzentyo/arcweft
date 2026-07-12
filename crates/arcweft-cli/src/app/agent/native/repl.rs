@@ -1003,7 +1003,6 @@ pub(super) fn agent_repl_capture(
             let image_output = agent_observe_image_output(
                 &mut observed.report,
                 &observe_options,
-                Some(&mut observed.native_session),
                 &observed.image_frames,
             )?;
             let resource = agent_observe_image_resource(&observed.report, image_output.as_ref());
@@ -1139,7 +1138,6 @@ pub(super) fn agent_repl_query(
         trace_resources: state.trace_resources.clone(),
         rag_context_packs: Vec::new(),
         project_context: None,
-        native_capture_session: None,
         runtime: None,
         observe_options: None,
         repl_session: None,

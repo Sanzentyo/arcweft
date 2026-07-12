@@ -12,7 +12,9 @@ use arcweft_render_wgpu::geometry::{
     RenderImageFrame, RenderPreferences, RenderScene, RenderTextInputControl, RenderViewport,
     SharedFramePlanner,
 };
-use arcweft_render_wgpu::offscreen::SharedOffscreenCapture;
+use arcweft_render_wgpu::offscreen::{
+    CaptureAttachment, CaptureRequest, SharedFrameCapture, SharedOffscreenCapture,
+};
 
 #[test]
 #[ignore = "requires a local wgpu adapter; exact PNG promotion remains pinned-only"]
@@ -27,17 +29,17 @@ fn prepared_control_backdrop_blur_executes_shared_renderer_path() {
     let blurred = SharedFramePlanner::prepare(&scene(true)).expect("blurred frame prepares");
 
     let baseline = capture
-        .capture_frame(&baseline)
+        .capture(&baseline, &CaptureRequest::whole_frame_color())
         .expect("baseline frame captures");
     let blurred = capture
-        .capture_frame(&blurred)
+        .capture(&blurred, &CaptureRequest::whole_frame_color())
         .expect("blurred frame captures");
 
     assert_eq!(baseline.width, blurred.width);
     assert_eq!(baseline.height, blurred.height);
     assert_ne!(
-        pixel(&baseline.rgba, baseline.width, 45, 45),
-        pixel(&blurred.rgba, blurred.width, 45, 45),
+        capture_pixel(&baseline, 45, 45),
+        capture_pixel(&blurred, 45, 45),
         "transparent control backdrop blur should change pixels inside the control bounds"
     );
 }
@@ -57,17 +59,17 @@ fn prepared_control_foreground_filter_blur_executes_shared_renderer_path() {
         .expect("blurred foreground frame prepares");
 
     let baseline = capture
-        .capture_frame(&baseline)
+        .capture(&baseline, &CaptureRequest::whole_frame_color())
         .expect("baseline foreground frame captures");
     let blurred = capture
-        .capture_frame(&blurred)
+        .capture(&blurred, &CaptureRequest::whole_frame_color())
         .expect("blurred foreground frame captures");
 
     assert_eq!(baseline.width, blurred.width);
     assert_eq!(baseline.height, blurred.height);
     assert_ne!(
-        pixel(&baseline.rgba, baseline.width, 33, 33),
-        pixel(&blurred.rgba, blurred.width, 33, 33),
+        capture_pixel(&baseline, 33, 33),
+        capture_pixel(&blurred, 33, 33),
         "foreground blur should affect control-content edge pixels without blurring the backdrop"
     );
 }
@@ -85,22 +87,22 @@ fn rounded_runtime_control_stroke_draws_straight_edges() {
     let stroked = SharedFramePlanner::prepare(&stroke_scene(true)).expect("stroked prepares");
 
     let baseline = capture
-        .capture_frame(&baseline)
+        .capture(&baseline, &CaptureRequest::whole_frame_color())
         .expect("baseline frame captures");
     let stroked = capture
-        .capture_frame(&stroked)
+        .capture(&stroked, &CaptureRequest::whole_frame_color())
         .expect("stroked frame captures");
 
     assert_eq!(baseline.width, stroked.width);
     assert_eq!(baseline.height, stroked.height);
     assert_ne!(
-        pixel(&baseline.rgba, baseline.width, 80, 33),
-        pixel(&stroked.rgba, stroked.width, 80, 33),
+        capture_pixel(&baseline, 80, 33),
+        capture_pixel(&stroked, 80, 33),
         "rounded stroke should paint the top straight edge, not only the corners"
     );
     assert_ne!(
-        pixel(&baseline.rgba, baseline.width, 33, 72),
-        pixel(&stroked.rgba, stroked.width, 33, 72),
+        capture_pixel(&baseline, 33, 72),
+        capture_pixel(&stroked, 33, 72),
         "rounded stroke should paint the left straight edge, not only the corners"
     );
 }
@@ -295,4 +297,15 @@ fn pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
         rgba[offset + 2],
         rgba[offset + 3],
     ]
+}
+
+fn capture_pixel(capture: &SharedFrameCapture, x: u32, y: u32) -> [u8; 4] {
+    pixel(
+        capture
+            .attachment_rgba(CaptureAttachment::Color)
+            .expect("whole-frame color attachment exists"),
+        capture.width,
+        x,
+        y,
+    )
 }

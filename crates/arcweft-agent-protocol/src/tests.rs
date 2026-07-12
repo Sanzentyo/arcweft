@@ -996,7 +996,7 @@ fn test_layout_capture_metadata(
 ) -> CaptureMetadata {
     let rect = LayoutRect::new(LayoutPoint::new(96.0, 548.0), LayoutSize::new(3.0, 4.0));
     CaptureMetadata {
-        renderer: CaptureRendererKind::NativeRichTextObserver,
+        renderer: CaptureRendererKind::SharedWgpuPreparedFrame,
         scope,
         composition,
         coordinate_basis: LayoutCoordinateSpace::Output,
@@ -1051,7 +1051,7 @@ fn capture_metadata_serializes_selected_object_image_resource() {
 
     assert_eq!(
         json["image"]["selected_capture"]["renderer"],
-        "native_rich_text_observer"
+        "shared_wgpu_prepared_frame"
     );
     assert_eq!(json["image"]["selected_capture"]["scope"]["kind"], "object");
     assert_eq!(

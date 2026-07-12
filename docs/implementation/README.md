@@ -75,12 +75,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `docs/implementation/structure-refactor-2026-06-21.md`.
 - `arcweft-core` no longer depends on dialogue or presentation; the facade
   crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
-- `arcweft-render-text` owns the Sans I/O rich text display sidecar model.
-  `arcweft-render-native` owns the `wgpu`/`glyphon` native renderer, offscreen
-  capture, native text geometry, object-id/mask/color readback, and window
-  presentation adapter. `arcweft-player-native` is now the headless/native
+- `arcweft-render-text` owns the Sans I/O resolved rich-text source model.
+  `arcweft-render-wgpu` owns the one `wgpu`/glyphon shared renderer, View
+  compositor, prepared-text submission, and prepared-frame Color/ObjectId/Mask
+  offscreen capture/readback. `arcweft-player-native` is the headless/native
   player host that runs `.awfb` bundles through `arcweft-runtime-host` and
-  delegates rendering to `arcweft-render-native`. Shared source-to-runtime-plan
+  hosts that shared renderer; there is no independent native text renderer.
+  Agent text geometry comes from the retained `PreparedTextItem.layout`, not
+  image scans or a native relayout. Shared source-to-runtime-plan
   compilation lives in `arcweft-compiler`, so the player no longer owns
   parser/HIR/sema/runtime-plan lowering directly. `.awfb` bundles carry the line
   display catalog, so the native player can execute bytecode bundles without

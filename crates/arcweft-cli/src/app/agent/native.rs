@@ -55,17 +55,15 @@ use arcweft_agent_protocol::hit_test::{AgentHitTestHit, AgentHitTestReport};
 use arcweft_agent_protocol::ids::PublicId as AgentPublicId;
 use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_agent_protocol::image::{
-    AgentCaptureMaskAvailability, AgentCaptureSourceIdentity, AgentImageAlignment,
-    AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageFit,
-    AgentImageKind, AgentImageMetadata, AgentImageObjectParam, AgentImageObjectRef,
-    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentImageTransform,
+    AgentCaptureMaskAvailability, AgentCaptureSourceIdentity, AgentImageComposition,
+    AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind, AgentImageMetadata,
+    AgentImageObjectRef, AgentImageRenderer, AgentImageResource, AgentImageScope,
     AgentImageViewRef, AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef,
     AgentObjectCaptureRefs, AgentSelectedCaptureMask, AgentSelectedCaptureMetadata,
     AgentViewCaptureRef, AgentViewCaptureRefs,
 };
 use arcweft_agent_protocol::object::{
-    AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
-    AgentObservedView,
+    AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent, AgentObservedView,
 };
 use arcweft_agent_protocol::observation::AgentObservationReport;
 use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
@@ -117,9 +115,8 @@ use arcweft_layout::{
     CaptureRendererKind, CaptureScope as LayoutCaptureScope, LayoutCoordinateSpace, LayoutPoint,
     LayoutRect, LayoutSize, ScalePolicy,
 };
-use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy};
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
-use arcweft_render_text::{LineDisplayFrame, Milli, RichTextParam, RichTextRange};
+use arcweft_render_text::{LineDisplayFrame, RichTextRange};
 use arcweft_runtime_driver::session::BundleStepInput;
 use arcweft_source::SourceName;
 #[cfg(feature = "agent-repl")]
@@ -135,8 +132,6 @@ const AGENT_ROLE_DIALOGUE_TEXTBOX: &str = "dialogue_textbox";
 fn agent_is_dialogue_textbox(object: &AgentObservedObject) -> bool {
     object.role == AGENT_ROLE_DIALOGUE_TEXTBOX
 }
-use arcweft_runtime_host::{ViewFrameCommit, ViewFrameImageItem};
-use arcweft_view::ViewImageSourceTable;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clap::ValueEnum;
 use std::collections::{BTreeMap, BTreeSet};
@@ -232,6 +227,7 @@ mod mcp_resources;
 pub(in crate::app::agent) mod observe;
 mod observe_resources;
 mod player_observation;
+mod prepared_text_observation;
 mod repl;
 mod repl_cli_command;
 mod repl_command_bridge;
@@ -244,20 +240,16 @@ mod runtime_observation;
 mod tests;
 
 use capture::{
-    AgentCaptureReadRequest, AgentCaptureScope, AgentImageFrameStore, AgentStoredImageFrame,
-    AgentStoredImagePlacement, AgentViewImageObservation, agent_capture_request_from_uri,
-    agent_image_object_for_capture_scope, agent_image_view_for_capture_scope,
-    agent_native_capture_image, agent_native_capture_image_with_frame_store,
-    agent_native_capture_resource_with_session_and_frame_store, agent_observe_capture_resource,
+    AgentCaptureReadRequest, AgentCaptureScope, AgentImageFrameStore, agent_capture_image,
+    agent_capture_request_from_uri, agent_capture_resource, agent_image_object_for_capture_scope,
+    agent_image_view_for_capture_scope,
 };
 use image_mapping::{
     AgentSelectedCaptureMetadataSpec, agent_capture_uri, agent_encode_png,
     agent_frame_capture_uri_for_page, agent_layout_rect_from_bbox,
-    agent_measure_frame_elements_with_session, agent_object_capture_refs_for_page,
-    agent_object_id_color, agent_object_layers, agent_object_matches_layer, agent_observed_layers,
-    agent_observed_rich_text, agent_observed_views, agent_overlay_svg,
-    agent_rich_text_ranges_overlap, agent_scoped_capture_name,
-    agent_selected_capture_metadata_for_ref, agent_textbox_object, agent_view_id_for_object,
+    agent_object_capture_refs_for_page, agent_object_id_color, agent_object_layers,
+    agent_object_matches_layer, agent_observed_layers, agent_observed_views, agent_overlay_svg,
+    agent_scoped_capture_name, agent_selected_capture_metadata_for_ref, agent_view_id_for_object,
     agent_view_scope_for_id, hash_hex,
 };
 use mcp_debug::{
@@ -291,7 +283,6 @@ use mcp_resources::{
     agent_mcp_run_observation, agent_mcp_session_context_resource_for_uri,
     agent_mcp_success_response, agent_mcp_u32_argument, agent_mcp_u64_argument,
     agent_mcp_uncached_resource_by_uri, agent_mcp_usize_argument, agent_mcp_wait_report_value,
-    agent_native_capture_session_for_hir,
 };
 use observe::{
     NativeAgentScriptSession, agent_assignment_value, agent_capture_time_millis,
@@ -299,7 +290,7 @@ use observe::{
     agent_observation_for_options, agent_observe_capture_time_seconds, agent_observe_command,
     agent_observe_effective_steps, agent_observe_report_capture_time_millis,
     agent_observe_resource_by_uri,
-    agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store,
+    agent_observe_resource_by_uri_with_page_and_time_and_frame_store,
     agent_report_capture_time_seconds, native_agent_action_step_input, native_agent_scroll_region,
     validate_agent_observe_options,
 };
@@ -312,13 +303,16 @@ use player_observation::{
     agent_player_observation_for_options, native_player_runtime_state_for_options,
     observe_native_player_runtime,
 };
+use prepared_text_observation::{
+    agent_dialogue_prepared_text_objects, agent_view_prepared_text_objects,
+};
 use repl::agent_repl_command;
 use runtime_observation::{
     AgentImageOutput, AgentRasterCapture, agent_action_targets,
     agent_action_targets_for_runtime_status, agent_action_targets_for_scroll_regions,
     agent_action_targets_for_semantics, agent_image_kind, agent_image_scope_for_capture_scope,
-    agent_native_visual_diagnostics, agent_observe_image_output, agent_observe_layout_scene_graph,
-    agent_observed_scroll_regions, agent_observed_virtual_lists, dedupe_agent_action_targets,
+    agent_observe_image_output, agent_observe_layout_scene_graph, agent_observed_scroll_regions,
+    agent_observed_virtual_lists, dedupe_agent_action_targets,
 };
 
 pub(super) fn agent_command(

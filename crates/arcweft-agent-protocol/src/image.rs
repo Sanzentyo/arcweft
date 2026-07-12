@@ -198,17 +198,13 @@ impl AgentImageScope {
 #[serde(rename_all = "snake_case")]
 pub enum AgentSelectedCaptureRenderer {
     #[default]
-    NativeRichTextObserver,
-    SharedWebGpuScene,
-    NativeWgpuAdapter,
+    SharedWgpuPreparedFrame,
 }
 
 impl From<CaptureRendererKind> for AgentSelectedCaptureRenderer {
     fn from(value: CaptureRendererKind) -> Self {
         match value {
-            CaptureRendererKind::NativeRichTextObserver => Self::NativeRichTextObserver,
-            CaptureRendererKind::SharedWebGpuScene => Self::SharedWebGpuScene,
-            CaptureRendererKind::NativeWgpuAdapter => Self::NativeWgpuAdapter,
+            CaptureRendererKind::SharedWgpuPreparedFrame => Self::SharedWgpuPreparedFrame,
         }
     }
 }

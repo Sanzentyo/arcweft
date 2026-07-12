@@ -286,7 +286,7 @@ fn assert_visual_smoke_selected_capture(
     expected_compositions: &[&str],
 ) {
     let selected = visual_smoke_selected_capture(image);
-    assert_eq!(selected["renderer"], "native_rich_text_observer");
+    assert_eq!(selected["renderer"], "shared_wgpu_prepared_frame");
     assert_eq!(selected["scope"]["kind"], expected_scope_kind);
     assert_eq!(selected["scope"]["id"], expected_scope_id);
     let composition = selected["composition"]
