@@ -38,7 +38,6 @@ use arcweft_render_wgpu::geometry::{
 };
 use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
-use arcweft_runtime_driver::dialogue::BundleDialoguePresentation;
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use arcweft_runtime_host::clipboard_host::SyncTextClipboardHostAdapter;
@@ -708,9 +707,11 @@ impl NativeSceneState {
         let session = self.runtime.session();
         let presentation = session.presentation();
         let fx_definitions = session.fx_definitions();
-        let dialogue_visual =
-            self.dialogue_visual_clock
-                .progress(presentation.dialogue.as_ref(), elapsed, None);
+        let dialogue_visual = self.dialogue_visual_clock.progress(
+            presentation.textboxes.latest_active(),
+            elapsed,
+            None,
+        );
         Ok(self.frame_planner.prepare(
             &mut self.input,
             PlayerFrameRequest {
@@ -1219,9 +1220,9 @@ impl NativeSceneState {
                     .runtime
                     .session()
                     .presentation()
-                    .dialogue
-                    .as_ref()
-                    .and_then(BundleDialoguePresentation::advance_target);
+                    .textboxes
+                    .latest_active()
+                    .and_then(|(textbox, _)| textbox.advance_target());
                 if let Some(target) = target {
                     self.runtime.session_mut().queue_dialogue_advance(target);
                 }

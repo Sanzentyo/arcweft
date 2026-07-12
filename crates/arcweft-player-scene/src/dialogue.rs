@@ -1,21 +1,23 @@
 //! Shared dialogue reveal clock for interactive player hosts.
 
 use arcweft_runtime_driver::dialogue::{
-    BundleDialoguePresentation, DialogueInstanceId, DialogueStageIndex,
+    DialogueStageIndex, TextBoxEntryId, TextBoxEntryState, TextBoxPresentation, TextBoxRuntimeId,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct DialogueVisualStage {
-    instance: DialogueInstanceId,
+    textbox: TextBoxRuntimeId,
+    entry: TextBoxEntryId,
     stage: DialogueStageIndex,
 }
 
-impl From<&BundleDialoguePresentation> for DialogueVisualStage {
-    fn from(dialogue: &BundleDialoguePresentation) -> Self {
+impl From<(&TextBoxPresentation, &TextBoxEntryState)> for DialogueVisualStage {
+    fn from((textbox, entry): (&TextBoxPresentation, &TextBoxEntryState)) -> Self {
         Self {
-            instance: dialogue.instance(),
-            stage: dialogue.stage_index(),
+            textbox: textbox.id(),
+            entry: entry.id(),
+            stage: entry.stage_index(),
         }
     }
 }
@@ -60,7 +62,7 @@ impl DialogueVisualClock {
     /// Returns stage-local progress, resetting on every occurrence/stage change.
     pub fn progress(
         &mut self,
-        dialogue: Option<&BundleDialoguePresentation>,
+        dialogue: Option<(&TextBoxPresentation, &TextBoxEntryState)>,
         now_millis: u64,
         override_millis: Option<u64>,
     ) -> DialogueVisualProgress {
@@ -131,7 +133,8 @@ mod tests {
 
     const fn stage(index: u32) -> DialogueVisualStage {
         DialogueVisualStage {
-            instance: DialogueInstanceId::new(7),
+            textbox: TextBoxRuntimeId::new(7),
+            entry: TextBoxEntryId::new(11),
             stage: DialogueStageIndex::new(index),
         }
     }

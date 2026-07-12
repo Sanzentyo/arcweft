@@ -303,6 +303,8 @@ pub enum BundleViewRuntimeError {
     },
     #[error("View snapshot repeats mount id {mount:?}")]
     DuplicateMount { mount: ViewMountId },
+    #[error("View mount {mount:?} was not issued below shared allocator cursor {next}")]
+    UnallocatedMount { mount: ViewMountId, next: u64 },
     #[error("View snapshot references unknown definition `{definition}`")]
     UnknownDefinition { definition: String },
     #[error("View snapshot path exceeds the maximum depth of {limit}")]
@@ -437,6 +439,37 @@ impl BundleViewRuntime {
     #[must_use]
     pub const fn logical_time(&self) -> FxLogicalTime {
         self.logical_time
+    }
+
+    /// Shared allocator for authored and Rust-backed retained View mounts.
+    pub(crate) const fn mount_allocator_mut(&mut self) -> &mut ViewMountAllocator {
+        &mut self.allocator
+    }
+
+    /// Validates externally retained Rust-backed mounts against authored mounts
+    /// and the same persisted allocator cursor.
+    pub(crate) fn validate_reserved_mounts(
+        &self,
+        reserved: impl IntoIterator<Item = ViewMountId>,
+    ) -> Result<(), BundleViewRuntimeError> {
+        let authored = self
+            .mounts
+            .values()
+            .map(|mount| mount.state.mount())
+            .collect::<BTreeSet<_>>();
+        let mut seen = BTreeSet::new();
+        for mount in reserved {
+            if authored.contains(&mount) || !seen.insert(mount) {
+                return Err(BundleViewRuntimeError::DuplicateMount { mount });
+            }
+            if mount.get() >= self.allocator.next() {
+                return Err(BundleViewRuntimeError::UnallocatedMount {
+                    mount,
+                    next: self.allocator.next(),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Style-cascade diagnostics produced for typed text targets at construction.

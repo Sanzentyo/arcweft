@@ -42,6 +42,10 @@ pub struct WebObservationReport {
 /// Input-gated dialogue state exposed for browser integration tests and hosts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebDialogueObservation {
+    pub textbox: u64,
+    pub entry: u64,
+    pub revision: u64,
+    pub view_mount: u64,
     pub instance: u64,
     pub stage_index: u32,
     pub page_index: Option<u32>,
@@ -64,16 +68,20 @@ impl WebObservationReport {
             presentation_revision: step.presentation.revision,
             dialogue: step
                 .presentation
-                .dialogue
-                .as_ref()
-                .map(|dialogue| WebDialogueObservation {
-                    instance: dialogue.instance().get(),
-                    stage_index: dialogue.stage_index().get(),
-                    page_index: dialogue
+                .textboxes
+                .latest_active()
+                .map(|(textbox, entry)| WebDialogueObservation {
+                    textbox: textbox.id().get(),
+                    entry: entry.id().get(),
+                    revision: textbox.revision().get(),
+                    view_mount: textbox.mount().get(),
+                    instance: entry.instance().get(),
+                    stage_index: entry.stage_index().get(),
+                    page_index: entry
                         .page_index()
                         .map(arcweft_runtime_driver::dialogue::DialoguePageIndex::get),
-                    page_count: dialogue.page_count(),
-                    waiting_for_advance: dialogue.is_waiting_for_advance(),
+                    page_count: entry.page_count(),
+                    waiting_for_advance: entry.is_waiting_for_advance(),
                 }),
             presentation_transitions: step.presentation_transitions.clone(),
             choice_count: step.presentation.choices.len(),

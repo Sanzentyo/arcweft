@@ -17,7 +17,7 @@ use arcweft_render_wgpu::geometry::{
     RenderScrollOverflow, RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport,
     SharedFramePlanContext, SharedFramePlanStats,
 };
-use arcweft_runtime_driver::dialogue::BundleDialoguePresentation;
+use arcweft_runtime_driver::dialogue::{TextBoxEntryState, TextBoxRuntimeId};
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -41,7 +41,8 @@ pub struct PlayerFrameRequest<'a> {
 }
 
 struct DialogueFxResolver<'a> {
-    dialogue: &'a BundleDialoguePresentation,
+    textbox: TextBoxRuntimeId,
+    entry: &'a TextBoxEntryState,
     definitions: &'a FxDefinitions,
     runtime: &'a arcweft_runtime_driver::fx_runtime::BundleFxRuntimeSnapshot,
 }
@@ -51,7 +52,7 @@ impl FxApplicationResolver for DialogueFxResolver<'_> {
         &'a self,
         application: &FxApplication,
     ) -> Result<FxEvaluationBinding<'a>, Box<FxDiagnostic>> {
-        let instance_id = self.dialogue.fx_instance_id(application);
+        let instance_id = self.entry.fx_instance_id(self.textbox, application);
         let context = FxDiagnosticContext {
             definition: Some(application.definition().clone()),
             instance: Some(instance_id),
@@ -214,9 +215,9 @@ impl PlayerFramePlanner {
         Ok(RenderScene {
             dialogue: request
                 .presentation
-                .dialogue
-                .as_ref()
-                .and_then(BundleDialoguePresentation::current_stage)
+                .textboxes
+                .latest_active()
+                .and_then(|(_, entry)| entry.current_stage())
                 .map(|stage| {
                     RenderDialogue::from_display_stage(stage)
                         .with_reveal_complete(request.dialogue_reveal_complete)
@@ -503,11 +504,12 @@ impl PlayerFramePlannerState {
             content_rect,
         );
         self.shared.finalize_text(&mut frame)?;
-        if let Some(dialogue) = presentation.dialogue.as_ref()
-            && let Some(stage) = dialogue.current_stage()
+        if let Some((textbox, entry)) = presentation.textboxes.latest_active()
+            && let Some(stage) = entry.current_stage()
         {
             let fx_resolver = DialogueFxResolver {
-                dialogue,
+                textbox: textbox.id(),
+                entry,
                 definitions: request.fx_definitions,
                 runtime: &presentation.fx,
             };
@@ -528,10 +530,7 @@ impl PlayerFramePlannerState {
     ) -> Result<PreparedFrame, PlayerFrameError> {
         let mut frame = self.shared.prepare(scene)?;
         frame.set_dialogue_advance_available(
-            presentation
-                .dialogue
-                .as_ref()
-                .is_some_and(BundleDialoguePresentation::is_waiting_for_advance),
+            presentation.textboxes.waiting_entries().next().is_some(),
         );
         Ok(frame)
     }

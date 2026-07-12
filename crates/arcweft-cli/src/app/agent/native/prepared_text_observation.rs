@@ -20,8 +20,9 @@ use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, PreparedTe
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
 
 pub(super) fn agent_dialogue_prepared_text_objects(
-    step: usize,
-    index: usize,
+    capture_step: usize,
+    textbox: usize,
+    entry: usize,
     frame: LineDisplayFrame,
     prepared: &PreparedFrame,
     viewport: &AgentViewport,
@@ -41,18 +42,26 @@ pub(super) fn agent_dialogue_prepared_text_objects(
         );
         return Err(ExitCode::FAILURE);
     };
-    let textbox = dialogue_textbox_object(step, index, frame, owner, viewport)?;
-    let mut objects = vec![textbox.clone()];
+    let textbox_object =
+        dialogue_textbox_object(capture_step, textbox, entry, frame, owner, viewport)?;
+    let mut objects = vec![textbox_object.clone()];
     objects.extend(dialogue_children(
-        step, index, &textbox, owner, item, viewport,
+        capture_step,
+        textbox,
+        entry,
+        &textbox_object,
+        owner,
+        item,
+        viewport,
     ));
-    repair_child_parents(&textbox, &mut objects[1..]);
+    repair_child_parents(&textbox_object, &mut objects[1..]);
     Ok(objects)
 }
 
 fn dialogue_textbox_object(
-    step: usize,
-    index: usize,
+    capture_step: usize,
+    textbox: usize,
+    entry: usize,
     frame: LineDisplayFrame,
     owner: &PreparedTextOwner,
     viewport: &AgentViewport,
@@ -61,7 +70,7 @@ fn dialogue_textbox_object(
         eprintln!("error: dialogue prepared-text owner has empty viewport geometry");
         ExitCode::FAILURE
     })?;
-    let object_id = format!("object.dialogue.{step}.{index}");
+    let object_id = format!("object.dialogue.{textbox}.{entry}");
     let source = AgentCaptureSourceIdentity::Object {
         id: object_id.clone(),
         parent_id: None,
@@ -83,7 +92,12 @@ fn dialogue_textbox_object(
         bbox: bbox.clone(),
         polygon: bbox.polygon(),
         capture_refs: agent_object_capture_refs_with_source(
-            "cli", step, &object_id, &bbox, 0, source,
+            "cli",
+            capture_step,
+            &object_id,
+            &bbox,
+            0,
+            source,
         ),
         object_layer: None,
         object_depth: None,
@@ -96,20 +110,22 @@ fn dialogue_textbox_object(
 }
 
 fn dialogue_children(
-    step: usize,
-    index: usize,
-    textbox: &AgentObservedObject,
+    capture_step: usize,
+    textbox_id: usize,
+    entry: usize,
+    textbox_object: &AgentObservedObject,
     owner: &PreparedTextOwner,
     item: &PreparedTextItem,
     viewport: &AgentViewport,
 ) -> Vec<AgentObservedObject> {
-    let Some(frame) = textbox.rich_text_frame() else {
+    let Some(frame) = textbox_object.rich_text_frame() else {
         return Vec::new();
     };
     let context = DialogueProjection {
-        step,
-        index,
-        textbox,
+        capture_step,
+        textbox_id,
+        entry,
+        textbox_object,
         frame,
         owner,
         item,
@@ -125,9 +141,10 @@ fn dialogue_children(
 }
 
 struct DialogueProjection<'a> {
-    step: usize,
-    index: usize,
-    textbox: &'a AgentObservedObject,
+    capture_step: usize,
+    textbox_id: usize,
+    entry: usize,
+    textbox_object: &'a AgentObservedObject,
     frame: &'a LineDisplayFrame,
     owner: &'a PreparedTextOwner,
     item: &'a PreparedTextItem,
@@ -153,23 +170,23 @@ fn dialogue_page_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
     }
     let mut hit_regions = vec![agent_hit_region(
         AgentHitRegionKind::TextPage,
-        &context.textbox.bbox,
+        &context.textbox_object.bbox,
         visible_range,
     )];
     hit_regions.extend(proxy_hit_regions_for_range(
         visible_range,
         &context.run_geometry,
     ));
-    let id = page_object_id(context.step, context.index, page);
+    let id = page_object_id(context.textbox_id, context.entry, page);
     vec![dialogue_child_object(
-        context.step,
-        context.textbox,
+        context.capture_step,
+        context.textbox_object,
         DialogueChildSpec {
             id: &id,
-            parent_id: Some(context.textbox.id.clone()),
+            parent_id: Some(context.textbox_object.id.clone()),
             role: "rich_text_page",
             text: text.to_owned(),
-            bbox: &context.textbox.bbox,
+            bbox: &context.textbox_object.bbox,
             reference: AgentRichTextElementRef {
                 kind: AgentRichTextElementKind::TextPage,
                 index: page,
@@ -209,13 +226,13 @@ fn dialogue_line_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
             continue;
         };
         let page = rich_text_page_for_range(context.frame, range);
-        let id = line_object_id(context.step, context.index, line_index);
+        let id = line_object_id(context.textbox_id, context.entry, line_index);
         children.push(dialogue_child_object(
-            context.step,
-            context.textbox,
+            context.capture_step,
+            context.textbox_object,
             DialogueChildSpec {
                 id: &id,
-                parent_id: Some(page_object_id(context.step, context.index, page)),
+                parent_id: Some(page_object_id(context.textbox_id, context.entry, page)),
                 role: "rich_text_line",
                 text: text.to_owned(),
                 bbox: &bbox,
@@ -259,14 +276,14 @@ fn dialogue_run_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedOb
             continue;
         }
         let page = rich_text_page_for_range(context.frame, *range);
-        let id = run_object_id(context.step, context.index, *original_index);
+        let id = run_object_id(context.textbox_id, context.entry, *original_index);
         let parent_id = layout_line_for_range(context.owner, context.item, *range).map_or_else(
-            || page_object_id(context.step, context.index, page),
-            |line| line_object_id(context.step, context.index, line),
+            || page_object_id(context.textbox_id, context.entry, page),
+            |line| line_object_id(context.textbox_id, context.entry, line),
         );
         children.push(dialogue_child_object(
-            context.step,
-            context.textbox,
+            context.capture_step,
+            context.textbox_object,
             DialogueChildSpec {
                 id: &id,
                 parent_id: Some(parent_id),
@@ -324,12 +341,12 @@ fn dialogue_proxy_objects(
         .map(|(proxy_index, proxy)| {
             let proxy_id = format!(
                 "object.dialogue.{}.{}.proxy.{}.{}",
-                context.step, context.index, projection.original_index, proxy_index
+                context.textbox_id, context.entry, projection.original_index, proxy_index
             );
             let presentation = proxy_presentation(&projection.run.presentation, proxy);
             dialogue_child_object(
-                context.step,
-                context.textbox,
+                context.capture_step,
+                context.textbox_object,
                 DialogueChildSpec {
                     id: &proxy_id,
                     parent_id: Some(projection.id.to_owned()),
@@ -398,16 +415,16 @@ fn dialogue_ruby_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
         let page = rich_text_page_for_range(context.frame, range);
         let id = format!(
             "object.dialogue.{}.{}.ruby.{ruby_index}",
-            context.step, context.index
+            context.textbox_id, context.entry
         );
         let parent_id = layout_line_for_range(context.owner, context.item, range).map_or_else(
-            || page_object_id(context.step, context.index, page),
-            |line| line_object_id(context.step, context.index, line),
+            || page_object_id(context.textbox_id, context.entry, page),
+            |line| line_object_id(context.textbox_id, context.entry, line),
         );
         let base_text = text_for_range(context.frame, range).unwrap_or_default();
         children.push(dialogue_child_object(
-            context.step,
-            context.textbox,
+            context.capture_step,
+            context.textbox_object,
             DialogueChildSpec {
                 id: &id,
                 parent_id: Some(parent_id),
@@ -466,14 +483,14 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
             continue;
         };
         let page = rich_text_page_for_range(context.frame, range);
-        let parent_id = run_object_id(context.step, context.index, run_index);
+        let parent_id = run_object_id(context.textbox_id, context.entry, run_index);
         let glyph_id = format!(
             "object.dialogue.{}.{}.glyph.{glyph_index}.{}.{}",
-            context.step, context.index, range.start, range.end
+            context.textbox_id, context.entry, range.start, range.end
         );
         children.push(dialogue_child_object(
-            context.step,
-            context.textbox,
+            context.capture_step,
+            context.textbox_object,
             DialogueChildSpec {
                 id: &glyph_id,
                 parent_id: Some(parent_id.clone()),
@@ -496,11 +513,11 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
         let cluster_index = usize::try_from(glyph.cluster_index).unwrap_or(usize::MAX);
         let cluster_id = format!(
             "object.dialogue.{}.{}.cluster.{cluster_index}.{}.{}",
-            context.step, context.index, range.start, range.end
+            context.textbox_id, context.entry, range.start, range.end
         );
         children.push(dialogue_child_object(
-            context.step,
-            context.textbox,
+            context.capture_step,
+            context.textbox_object,
             DialogueChildSpec {
                 id: &cluster_id,
                 parent_id: Some(parent_id),
@@ -867,16 +884,16 @@ fn offset_before_node(frame: &LineDisplayFrame, node_index: usize) -> usize {
         .unwrap_or(0)
 }
 
-fn page_object_id(step: usize, index: usize, page: usize) -> String {
-    format!("object.dialogue.{step}.{index}.page.{page}")
+fn page_object_id(textbox: usize, entry: usize, page: usize) -> String {
+    format!("object.dialogue.{textbox}.{entry}.page.{page}")
 }
 
-fn line_object_id(step: usize, index: usize, line: usize) -> String {
-    format!("object.dialogue.{step}.{index}.line.{line}")
+fn line_object_id(textbox: usize, entry: usize, line: usize) -> String {
+    format!("object.dialogue.{textbox}.{entry}.line.{line}")
 }
 
-fn run_object_id(step: usize, index: usize, run: usize) -> String {
-    format!("object.dialogue.{step}.{index}.run.{run}")
+fn run_object_id(textbox: usize, entry: usize, run: usize) -> String {
+    format!("object.dialogue.{textbox}.{entry}.run.{run}")
 }
 
 fn range_node_index(frame: &LineDisplayFrame, range: RichTextRange) -> usize {

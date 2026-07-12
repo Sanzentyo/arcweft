@@ -1,6 +1,6 @@
 use crate::dialogue::{
-    BundleDialoguePresentation, BundlePresentationTransition, DialogueAdvanceRejection,
-    DialogueAdvanceTarget, DialogueInstanceId,
+    BundlePresentationTransition, DialogueAdvanceTarget, TextBoxPresentationOperation,
+    TextBoxPresentationStore, TextBoxStoreError, TextBoxTargetId,
 };
 use crate::fx_runtime::{BundleFxRuntimeError, BundleFxRuntimeSnapshot};
 use crate::presentation_handles::{
@@ -27,7 +27,8 @@ use arcweft_core::plan::FlowEvent;
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StagePlacement, StageRect};
 use arcweft_presentation::fx::FxDiagnostic;
-use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
+use arcweft_render_text::{LineDisplayCatalog, RuntimeLineContext};
+use arcweft_view::ViewMountAllocator;
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +50,7 @@ pub struct BundleViewportFit {
 /// Display frames and non-fatal display diagnostics resolved from one VM step.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayResolution {
-    pub frames: Vec<LineDisplayFrame>,
+    pub textbox_operations: Vec<TextBoxPresentationOperation>,
     pub diagnostics: Vec<String>,
 }
 
@@ -59,7 +60,7 @@ pub struct DisplayResolution {
 #[derive(Clone, Default, Deserialize, PartialEq, Serialize)]
 pub struct BundlePresentationSnapshot {
     pub revision: u64,
-    pub dialogue: Option<BundleDialoguePresentation>,
+    pub textboxes: TextBoxPresentationStore,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -114,7 +115,16 @@ pub fn resolve_display_frames(
                 && let Some(spec) = catalog.find(line)
             {
                 match spec.resolve_frame(&RuntimeLineContext::new(bindings.clone())) {
-                    Ok(frame) => resolution.frames.push(frame),
+                    Ok(frame) => {
+                        resolution
+                            .textbox_operations
+                            .push(TextBoxPresentationOperation::append(
+                                spec.window
+                                    .as_deref()
+                                    .map_or_else(TextBoxTargetId::default, TextBoxTargetId::from),
+                                frame,
+                            ));
+                    }
                     Err(error) => resolution.diagnostics.push(error.to_string()),
                 }
             }
@@ -147,25 +157,13 @@ impl BundlePresentationSnapshot {
         status: &FlowFiberStatus,
         effects: &[LineEffectRequest],
         resources: BundlePresentationResources<'_>,
-    ) -> Vec<PresentationHandleDiagnostic> {
-        let next_dialogue = if let Some(frame) = resolution.frames.last().cloned() {
-            let instance = self.dialogue.as_ref().map_or_else(
-                DialogueInstanceId::default,
-                BundleDialoguePresentation::next_instance,
-            );
-            let waiting_for_advance = status_waits_for_line(status, &frame.line);
-            Some(BundleDialoguePresentation::first(
-                frame,
-                instance,
-                waiting_for_advance,
-            ))
-        } else {
-            self.dialogue.clone().map(|mut dialogue| {
-                let waiting_for_advance = status_waits_for_line(status, &dialogue.frame().line);
-                dialogue.set_waiting_for_advance(waiting_for_advance);
-                dialogue
-            })
-        };
+        mount_allocator: &mut ViewMountAllocator,
+    ) -> Result<Vec<PresentationHandleDiagnostic>, TextBoxStoreError> {
+        let mut next_textboxes = self.textboxes.clone();
+        let mut next_mount_allocator = *mount_allocator;
+        next_textboxes
+            .apply_operations(&resolution.textbox_operations, &mut next_mount_allocator)?;
+        next_textboxes.synchronize_waiting_line(waiting_dialogue_line(status))?;
         let next_choices = choices_from_status(status);
         let (handle_operations, mut handle_diagnostics) =
             presentation_handle_operations_from_effects(effects);
@@ -208,7 +206,7 @@ impl BundlePresentationSnapshot {
         ));
         let next_focus_navigation =
             filter_presentation_focus_navigation(raw_focus_navigation, &next_presentation_handles);
-        if self.dialogue != next_dialogue
+        if self.textboxes != next_textboxes
             || self.choices != next_choices
             || self.images != next_images
             || self.presentation_handle_epoch != next_presentation_handle_epoch
@@ -222,7 +220,7 @@ impl BundlePresentationSnapshot {
             || self.focus_navigation != next_focus_navigation
         {
             self.revision = self.revision.saturating_add(1);
-            self.dialogue = next_dialogue;
+            self.textboxes = next_textboxes;
             self.choices = next_choices;
             self.images = next_images;
             self.presentation_handle_epoch = next_presentation_handle_epoch;
@@ -235,7 +233,8 @@ impl BundlePresentationSnapshot {
             self.focus_groups = next_focus_groups;
             self.focus_navigation = next_focus_navigation;
         }
-        handle_diagnostics
+        *mount_allocator = next_mount_allocator;
+        Ok(handle_diagnostics)
     }
 
     pub(crate) fn replace_view_frame(&mut self, view: BundleViewFrame) {
@@ -272,47 +271,12 @@ impl BundlePresentationSnapshot {
         BundlePresentationTransition,
         Option<arcweft_core::plan::RuntimeLineId>,
     ) {
-        let Some(dialogue) = self.dialogue.as_mut() else {
-            return (
-                BundlePresentationTransition::DialogueAdvanceRejected {
-                    target: Some(target),
-                    reason: DialogueAdvanceRejection::NoDialogue,
-                },
-                None,
-            );
-        };
-        if let Err(reason) = dialogue.validate_target(target) {
-            return (
-                BundlePresentationTransition::DialogueAdvanceRejected {
-                    target: Some(target),
-                    reason,
-                },
-                None,
-            );
-        }
-        if let Some((from, to, page, advance)) = dialogue.advance_stage() {
+        let before = self.textboxes.clone();
+        let result = self.textboxes.advance_dialogue(target);
+        if self.textboxes != before {
             self.revision = self.revision.saturating_add(1);
-            return (
-                BundlePresentationTransition::StageAdvanced {
-                    instance: target.instance,
-                    from,
-                    to,
-                    page,
-                    advance,
-                },
-                None,
-            );
         }
-        let line = dialogue.frame().line.clone();
-        dialogue.set_waiting_for_advance(false);
-        self.revision = self.revision.saturating_add(1);
-        (
-            BundlePresentationTransition::RuntimeLineAdvanceQueued {
-                target,
-                line: line.clone(),
-            },
-            Some(line),
-        )
+        result
     }
 
     #[must_use]
@@ -329,11 +293,11 @@ impl BundlePresentationSnapshot {
     }
 }
 
-fn status_waits_for_line(
-    status: &FlowFiberStatus,
-    line: &arcweft_core::plan::RuntimeLineId,
-) -> bool {
-    matches!(status, FlowFiberStatus::Dialogue(state) if &state.line == line)
+fn waiting_dialogue_line(status: &FlowFiberStatus) -> Option<&arcweft_core::plan::RuntimeLineId> {
+    match status {
+        FlowFiberStatus::Dialogue(state) => Some(&state.line),
+        _ => None,
+    }
 }
 
 impl fmt::Debug for BundlePresentationSnapshot {
@@ -341,7 +305,7 @@ impl fmt::Debug for BundlePresentationSnapshot {
         formatter
             .debug_struct("BundlePresentationSnapshot")
             .field("revision", &self.revision)
-            .field("dialogue", &self.dialogue)
+            .field("textboxes", &self.textboxes)
             .field("choices", &self.choices)
             .field("images", &self.images)
             .field("presentation_handle_epoch", &self.presentation_handle_epoch)
@@ -905,13 +869,17 @@ mod tests {
             callee: "presentation.handle.dispose".to_owned(),
             args: vec!["handle = @handle.flow.save.panel".to_owned()],
         });
+        let mut mount_allocator = ViewMountAllocator::default();
 
-        let diagnostics = snapshot.update(
-            &DisplayResolution::default(),
-            &FlowFiberStatus::Running,
-            &[create, dispose],
-            resources,
-        );
+        let diagnostics = snapshot
+            .update(
+                &DisplayResolution::default(),
+                &FlowFiberStatus::Running,
+                &[create, dispose],
+                resources,
+                &mut mount_allocator,
+            )
+            .expect("TextBox store updates");
 
         assert!(diagnostics.is_empty());
         assert_eq!(snapshot.presentation_handle_epoch, 2);
@@ -932,12 +900,15 @@ mod tests {
             callee: "presentation.handle.show".to_owned(),
             args: vec!["handle = @handle.flow.save.panel".to_owned()],
         });
-        let diagnostics = restored.update(
-            &DisplayResolution::default(),
-            &FlowFiberStatus::Running,
-            &[stale_show],
-            resources,
-        );
+        let diagnostics = restored
+            .update(
+                &DisplayResolution::default(),
+                &FlowFiberStatus::Running,
+                &[stale_show],
+                resources,
+                &mut mount_allocator,
+            )
+            .expect("TextBox store updates");
 
         assert_eq!(
             diagnostics[0].code,
@@ -1466,12 +1437,16 @@ mod tests {
         effects: &[LineEffectRequest],
         resources: BundlePresentationResources<'_>,
     ) -> Vec<PresentationHandleDiagnostic> {
-        snapshot.update(
-            &DisplayResolution::default(),
-            &FlowFiberStatus::Running,
-            effects,
-            resources,
-        )
+        let mut mount_allocator = ViewMountAllocator::default();
+        snapshot
+            .update(
+                &DisplayResolution::default(),
+                &FlowFiberStatus::Running,
+                effects,
+                resources,
+                &mut mount_allocator,
+            )
+            .expect("TextBox store updates")
     }
 
     fn assert_view_controls_visible(

@@ -555,11 +555,9 @@ mod tests {
         );
         assert_eq!(
             step.presentation
-                .dialogue
-                .as_ref()
-                .and_then(
-                    arcweft_runtime_driver::dialogue::BundleDialoguePresentation::current_stage,
-                )
+                .textboxes
+                .latest_active()
+                .and_then(|(_, entry)| entry.current_stage())
                 .map(arcweft_render_text::LineDisplayStage::text),
             Some("New text")
         );

@@ -678,18 +678,19 @@ fn player_observed_objects(
                 player_semantic_object(step, node, control, &view_by_target)
             }),
     );
-    if let Some(dialogue) = &presentation.dialogue
-        && let Some(stage) = dialogue.current_stage()
+    if let Some((textbox, entry)) = presentation.textboxes.latest_active()
+        && let Some(stage) = entry.current_stage()
     {
         let mut dialogue_objects = agent_dialogue_prepared_text_objects(
             step,
-            0,
+            usize::try_from(textbox.id().get()).unwrap_or(usize::MAX),
+            usize::try_from(entry.id().get()).unwrap_or(usize::MAX),
             stage.to_frame(),
             &prepared.frame,
             viewport,
         )?;
         for object in &mut dialogue_objects {
-            object.enabled = dialogue.is_waiting_for_advance();
+            object.enabled = entry.is_waiting_for_advance();
         }
         objects.extend(dialogue_objects);
     }

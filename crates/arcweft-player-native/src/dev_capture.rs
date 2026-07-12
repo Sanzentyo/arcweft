@@ -151,7 +151,7 @@ fn prepare_bundle_frame(
                 preferences: RenderPreferences::default(),
             },
         )?;
-        if prepared.scene.dialogue.is_some() {
+        if step.presentation.textboxes.latest_active().is_some() {
             return Ok((prepared, fonts));
         }
         if first_visual_frame.is_none() && frame_has_visual_content(&prepared.frame) {

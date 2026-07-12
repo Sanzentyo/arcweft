@@ -763,11 +763,9 @@ impl WindowedSmokeHarness {
                 queued_patch_count: self.runtime.queued_patch_count(),
                 is_finished: self.runtime.session().is_finished(),
                 presentation_text: presentation
-                    .dialogue
-                    .as_ref()
-                    .and_then(
-                        arcweft_runtime_driver::dialogue::BundleDialoguePresentation::current_stage,
-                    )
+                    .textboxes
+                    .latest_active()
+                    .and_then(|(_, entry)| entry.current_stage())
                     .map(|stage| stage.text().to_owned()),
                 choice_count: presentation.choices.len(),
                 presentation_image_count: presentation.images.len(),
@@ -875,15 +873,15 @@ impl SmokeVisualClock {
 
     fn advance_from_runtime(&mut self, runtime: &WindowedRuntimeOwner, presented_frames: u64) {
         let elapsed_millis = presented_frames.saturating_mul(16);
-        let dialogue = runtime.session().presentation().dialogue.as_ref();
-        let Some(dialogue) = dialogue else {
+        let dialogue = runtime.session().presentation().textboxes.latest_active();
+        let Some((_, entry)) = dialogue else {
             self.line = None;
             self.started_at_millis = elapsed_millis;
             self.visual_time_millis = 0;
             return;
         };
-        if self.line.as_ref() != Some(&dialogue.frame().line) {
-            self.line = Some(dialogue.frame().line.clone());
+        if self.line.as_ref() != Some(&entry.frame().line) {
+            self.line = Some(entry.frame().line.clone());
             self.started_at_millis = elapsed_millis;
         }
         self.visual_time_millis = elapsed_millis.saturating_sub(self.started_at_millis);

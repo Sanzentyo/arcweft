@@ -118,11 +118,11 @@ fn step_dialogue_text(owner: &mut WindowedRuntimeOwner) -> Option<String> {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    step.presentation.dialogue.and_then(|dialogue| {
-        dialogue
-            .current_stage()
-            .map(|stage| stage.text().to_owned())
-    })
+    step.presentation
+        .textboxes
+        .latest_active()
+        .and_then(|(_, entry)| entry.current_stage())
+        .map(|stage| stage.text().to_owned())
 }
 
 fn awfb_bytes(bundle: &ArcweftBundle) -> Vec<u8> {

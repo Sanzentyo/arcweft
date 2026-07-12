@@ -55,8 +55,8 @@ use arcweft_presentation::text_input::{
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::dialogue::{
-    BundleDialoguePresentation, BundlePresentationTransition, DialogueAdvanceRejection,
-    DialogueStageAdvanceKind,
+    BundlePresentationTransition, DialogueAdvanceRejection, DialogueStageAdvanceKind,
+    TextBoxEntryState,
 };
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::session::{
@@ -81,19 +81,24 @@ fn line_id(value: &str) -> RuntimeLineId {
 }
 
 fn dialogue_text(presentation: &BundlePresentationSnapshot) -> Option<&str> {
-    presentation
-        .dialogue
-        .as_ref()
-        .and_then(BundleDialoguePresentation::current_stage)
+    latest_dialogue(presentation)
+        .and_then(TextBoxEntryState::current_stage)
         .map(arcweft_render_text::LineDisplayStage::text)
+}
+
+fn latest_dialogue(presentation: &BundlePresentationSnapshot) -> Option<&TextBoxEntryState> {
+    presentation
+        .textboxes
+        .latest_active()
+        .map(|(_, entry)| entry)
 }
 
 fn queue_current_dialogue_advance(session: &mut BundleSession) {
     let target = session
         .presentation()
-        .dialogue
-        .as_ref()
-        .and_then(BundleDialoguePresentation::advance_target)
+        .textboxes
+        .latest_active()
+        .and_then(|(textbox, _)| textbox.advance_target())
         .expect("dialogue is waiting for advance");
     session.queue_dialogue_advance(target);
 }
@@ -952,8 +957,12 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    let first_dialogue = first.presentation.dialogue.as_ref().expect("dialogue");
-    let first_target = first_dialogue.advance_target().expect("advance target");
+    let first_target = first
+        .presentation
+        .textboxes
+        .latest_active()
+        .and_then(|(textbox, _)| textbox.advance_target())
+        .expect("advance target");
     assert_eq!(dialogue_text(&first.presentation), Some("A"));
 
     session.queue_dialogue_advance(first_target);
@@ -991,7 +1000,7 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
     assert!(matches!(
         stale.presentation_transitions.as_slice(),
         [BundlePresentationTransition::DialogueAdvanceRejected {
-            reason: DialogueAdvanceRejection::StaleStage,
+            reason: DialogueAdvanceRejection::StaleRevision,
             ..
         }]
     ));
@@ -1013,9 +1022,9 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
 
     let final_target = session
         .presentation()
-        .dialogue
-        .as_ref()
-        .and_then(BundleDialoguePresentation::advance_target)
+        .textboxes
+        .latest_active()
+        .and_then(|(textbox, _)| textbox.advance_target())
         .expect("final stage is actionable");
     session.queue_dialogue_advance(final_target);
     session.queue_dialogue_advance(final_target);
@@ -1027,8 +1036,9 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
     assert!(
         !choice
             .presentation
-            .dialogue
-            .as_ref()
+            .textboxes
+            .latest_active()
+            .map(|(_, entry)| entry)
             .expect("retained dialogue")
             .is_waiting_for_advance()
     );
@@ -1038,7 +1048,7 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
         [
             BundlePresentationTransition::RuntimeLineAdvanceQueued { .. },
             BundlePresentationTransition::DialogueAdvanceRejected {
-                reason: DialogueAdvanceRejection::NotWaiting,
+                reason: DialogueAdvanceRejection::StaleRevision,
                 ..
             }
         ]
@@ -1358,8 +1368,9 @@ fn raw_dialogue_events_cannot_bypass_the_presentation_stage_target() {
     );
     let line = first
         .presentation
-        .dialogue
-        .as_ref()
+        .textboxes
+        .latest_active()
+        .map(|(_, entry)| entry)
         .expect("dialogue")
         .frame()
         .line
@@ -1393,8 +1404,9 @@ fn raw_dialogue_events_cannot_bypass_the_presentation_stage_target() {
     assert!(
         rejected
             .presentation
-            .dialogue
-            .as_ref()
+            .textboxes
+            .latest_active()
+            .map(|(_, entry)| entry)
             .expect("dialogue remains active")
             .is_waiting_for_advance()
     );
@@ -1422,7 +1434,7 @@ fn malformed_dialogue_frame_restore_is_rejected_without_mutating_the_session() {
     let before = session.snapshot_session().expect("live snapshot exports");
     let mut value = serde_json::to_value(&before).expect("snapshot encodes as JSON value");
     let controls = value
-        .pointer_mut("/presentation/dialogue/frame/display_map/controls")
+        .pointer_mut("/presentation/textboxes/textboxes/0/entries/0/frame/display_map/controls")
         .and_then(serde_json::Value::as_array_mut)
         .expect("dialogue controls are present");
     controls[1]["text_offset"] = serde_json::json!(0);

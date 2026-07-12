@@ -2,7 +2,7 @@ use self::virtualization::validate_virtual_list_scroll_owner;
 use crate::clock::RuntimeClockStep;
 use crate::dialogue::{
     BundlePresentationInput, BundlePresentationTransition, DialogueAdvanceRejection,
-    DialogueAdvanceTarget,
+    DialogueAdvanceTarget, TextBoxPresentationStore,
 };
 use crate::display::{
     BundlePresentationResources, BundlePresentationSnapshot, DisplayResolution,
@@ -180,12 +180,18 @@ impl From<AwbcEntryId> for BundleEntryStart {
 }
 
 fn dialogue_fx_instances(
-    dialogue: &crate::dialogue::BundleDialoguePresentation,
+    textboxes: &TextBoxPresentationStore,
 ) -> std::collections::BTreeSet<arcweft_presentation::fx::FxInstanceId> {
-    dialogue
-        .frame()
-        .fx_applications()
-        .map(|application| dialogue.fx_instance_id(application))
+    textboxes
+        .iter()
+        .flat_map(|textbox| {
+            textbox.entries().iter().flat_map(move |entry| {
+                entry
+                    .frame()
+                    .fx_applications()
+                    .map(move |application| entry.fx_instance_id(textbox.id(), application))
+            })
+        })
         .collect()
 }
 
@@ -1208,13 +1214,8 @@ impl BundleSession {
         line_effects: &[LineEffectRequest],
         diagnostics: &mut Vec<String>,
     ) {
-        let previous_dialogue_fx = self
-            .presentation
-            .dialogue
-            .as_ref()
-            .map(dialogue_fx_instances)
-            .unwrap_or_default();
-        let presentation_handle_diagnostics = self.presentation.update(
+        let previous_dialogue_fx = self.presentation.textboxes.clone();
+        let presentation_handle_diagnostics = match self.presentation.update(
             display,
             status,
             line_effects,
@@ -1227,13 +1228,20 @@ impl BundleSession {
                 focus_groups: &self.focus_groups,
                 focus_navigation: &self.focus_navigation,
             },
-        );
+            self.view_runtime.mount_allocator_mut(),
+        ) {
+            Ok(diagnostics) => diagnostics,
+            Err(error) => {
+                diagnostics.push(error.to_string());
+                Vec::new()
+            }
+        };
         diagnostics.extend(
             presentation_handle_diagnostics
                 .iter()
                 .map(ToString::to_string),
         );
-        self.reconcile_dialogue_fx(&previous_dialogue_fx);
+        self.reconcile_dialogue_fx(&dialogue_fx_instances(&previous_dialogue_fx));
     }
 
     fn reconcile_dialogue_fx(
@@ -1242,17 +1250,23 @@ impl BundleSession {
     ) {
         let applications = self
             .presentation
-            .dialogue
-            .as_ref()
-            .map(|dialogue| {
-                dialogue
-                    .frame()
-                    .fx_applications()
-                    .cloned()
-                    .map(|application| (dialogue.fx_instance_id(&application), application))
-                    .collect::<Vec<_>>()
+            .textboxes
+            .iter()
+            .flat_map(|textbox| {
+                textbox.entries().iter().flat_map(move |entry| {
+                    entry
+                        .frame()
+                        .fx_applications()
+                        .cloned()
+                        .map(move |application| {
+                            (
+                                entry.fx_instance_id(textbox.id(), &application),
+                                application,
+                            )
+                        })
+                })
             })
-            .unwrap_or_default();
+            .collect::<Vec<_>>();
         let current = applications
             .iter()
             .map(|(instance, _)| *instance)
@@ -1522,6 +1536,11 @@ impl BundleSession {
             return Err(BundleSessionSaveError::NonQuiescent { blockers });
         }
         validate_presentation_snapshot(&self.presentation, &self.fx_definitions)?;
+        self.view_runtime
+            .validate_reserved_mounts(self.presentation.textboxes.view_mount_ids())
+            .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                message: error.to_string(),
+            })?;
         validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
         let active = self.active_generation();
         let product_program = self.executor.product_awbc_program().ok_or_else(|| {
@@ -1645,6 +1664,11 @@ impl BundleSession {
         let mut restored_view_runtime = self.view_runtime.clone();
         restored_view_runtime
             .restore(&snapshot.view_runtime)
+            .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                message: error.to_string(),
+            })?;
+        restored_view_runtime
+            .validate_reserved_mounts(snapshot.presentation.textboxes.view_mount_ids())
             .map_err(|error| BundleSessionSaveError::ViewRuntime {
                 message: error.to_string(),
             })?;

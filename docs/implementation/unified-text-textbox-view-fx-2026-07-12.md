@@ -664,6 +664,67 @@ hidden renderer. Cut 8 must satisfy them through the persistent per-target
 TextBox presentation store and stable entry identity. No renderer fallback or
 compatibility alias was introduced for this intermediate cut.
 
+### Persistent TextBox store and stable identity slice
+
+The state-owning half of Cut 8 is complete at the working change after
+`xvloqypt`; Rust-backed View composition and hardcoded dialogue-renderer removal
+remain open:
+
+- `BundlePresentationSnapshot.dialogue` was replaced directly by the
+  runtime-driver-owned `TextBoxPresentationStore`. Each typed target retains an
+  ordered entry list, active entry, monotonic revision, stable
+  `TextBoxRuntimeId` / `TextBoxEntryId`, and persistent Rust-backed View mount;
+- ordinary `DialogueLine` output applies ordered `Append` operations. Typed
+  `Replace` and `Clear` operations are transactional and covered independently;
+  no `frames.last()` projection remains;
+- TextBox mounts are issued by the exact same allocator as authored View
+  mounts. Save/restore validates the combined mount namespace, entry and
+  occurrence cursors, active entries, display stages, Fx state, and allocator
+  cursor before mutating the live session;
+- advance targets capture textbox, entry, occurrence, stage, and TextBox
+  revision. A repeated target after a stage or line mutation is rejected as
+  `StaleRevision`, while unknown target/entry and non-waiting cases retain
+  distinct typed rejection reasons;
+- native, Web, player-scene, and CLI consumers now select typed active entries
+  from the store. Reveal-first input remains player-owned: reveal completion
+  changes the shared `DialogueVisualClock`; only a subsequent primary action
+  queues the captured runtime target; and
+- Agent object identity is now
+  `object.dialogue.<TextBoxRuntimeId>.<TextBoxEntryId>` and is independent of
+  the observation frame index. Capture URIs still use the real frame index, so
+  an object observed at frame 3 remains `object.dialogue.0.0` while its retained
+  resource URI remains under `frame/3`.
+
+Validation for this slice:
+
+```bash
+cargo test -p arcweft-runtime-driver --all-features
+cargo test -p arcweft-player-scene --all-targets --all-features --no-fail-fast
+cargo test -p arcweft-player-web --all-targets --all-features --no-fail-fast
+cargo test -p arcweft-player-native --all-targets --all-features --no-fail-fast
+cargo test -p arcweft-cli --all-features --lib
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-persistent-textbox-store-2026-07-12
+```
+
+The runtime-driver passes 102 tests across its unit and integration targets,
+including the focused store/View allocator coverage; player-scene passes 85
+tests, Web 36, native 54, and CLI 181 unit tests. Workspace check and clippy
+pass. The audit records 1,256 Rust files / 622,900 physical Rust LOC, 0 errors,
+and 133 warning-level findings.
+
+The first combined multi-package test command exceeded its 120-second command
+limit while compiling and produced no test result; every package was then run
+separately to completion as listed above. Two visual-suite facts remain open
+and are not reclassified as success: the old ignored resource-matrix fixture
+still expects the pre-convergence `framebuffer_crop`/legacy bounds contract,
+and the active vertical-LR ruby/text-combine assertion expects one `2026`
+cluster while current shared layout exposes four digit clusters. Cut 9 must
+classify and resolve that layout difference with typed layout evidence and
+reviewed raster output before any golden is changed.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally

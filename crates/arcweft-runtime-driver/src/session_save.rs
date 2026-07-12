@@ -154,27 +154,12 @@ pub(crate) fn validate_presentation_snapshot(
         .map_err(|error| BundleSessionSaveError::Fx {
             diagnostic: Box::new(error.diagnostic()),
         })?;
-    if let Some(dialogue) = &snapshot.dialogue {
-        dialogue
-            .frame()
-            .validate()
-            .map_err(|error| BundleSessionSaveError::Presentation {
-                message: format!(
-                    "dialogue occurrence {} has an invalid display frame: {error}",
-                    dialogue.instance().get(),
-                ),
-            })?;
-        if dialogue.current_stage().is_none() {
-            return Err(BundleSessionSaveError::Presentation {
-                message: format!(
-                    "dialogue occurrence {} has out-of-range stage {} for {} stage(s)",
-                    dialogue.instance().get(),
-                    dialogue.stage_index().get(),
-                    dialogue.frame().stage_count(),
-                ),
-            });
-        }
-    }
+    snapshot
+        .textboxes
+        .validate()
+        .map_err(|error| BundleSessionSaveError::Presentation {
+            message: error.to_string(),
+        })?;
     let mut ids = BTreeSet::new();
     for handle in &snapshot.presentation_handles {
         if !ids.insert(handle.id.as_str().to_owned()) {
@@ -208,7 +193,8 @@ pub(crate) fn validate_presentation_runtime_status(
 ) -> Result<(), BundleSessionSaveError> {
     match status {
         FlowFiberStatus::Dialogue(state) => {
-            let Some(dialogue) = &snapshot.dialogue else {
+            let mut waiting = snapshot.textboxes.waiting_entries();
+            let Some((textbox, dialogue)) = waiting.next() else {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
                         "runtime waits for dialogue `{}` but the presentation has no dialogue",
@@ -216,25 +202,29 @@ pub(crate) fn validate_presentation_runtime_status(
                     ),
                 });
             };
-            if dialogue.frame().line != state.line || !dialogue.is_waiting_for_advance() {
+            if waiting.next().is_some() {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: "runtime has more than one actionable TextBox entry".to_owned(),
+                });
+            }
+            if dialogue.frame().line != state.line {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
-                        "runtime waits for dialogue `{}` but presentation occurrence {} retains `{}` with waiting={}",
+                        "runtime waits for dialogue `{}` but TextBox {} occurrence {} retains `{}`",
                         state.line,
+                        textbox.id().get(),
                         dialogue.instance().get(),
                         dialogue.frame().line,
-                        dialogue.is_waiting_for_advance(),
                     ),
                 });
             }
         }
         _ => {
-            if let Some(dialogue) = &snapshot.dialogue
-                && dialogue.is_waiting_for_advance()
-            {
+            if let Some((textbox, dialogue)) = snapshot.textboxes.waiting_entries().next() {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
-                        "presentation occurrence {} is actionable while runtime status is {status:?}",
+                        "TextBox {} presentation occurrence {} is actionable while runtime status is {status:?}",
+                        textbox.id().get(),
                         dialogue.instance().get(),
                     ),
                 });

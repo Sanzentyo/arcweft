@@ -1,5 +1,5 @@
 use super::*;
-use arcweft_runtime_driver::dialogue::{BundleDialoguePresentation, BundlePresentationInput};
+use arcweft_runtime_driver::dialogue::BundlePresentationInput;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::session::BundleStepInput;
 
@@ -416,19 +416,23 @@ pub(super) fn native_agent_advance_text_presentation_input(
     report: &AgentObservationReport,
     presentation: &BundlePresentationSnapshot,
 ) -> Result<BundlePresentationInput, NativeAgentScriptSessionError> {
-    let available = report.actions.iter().any(|candidate| {
+    let action = report.actions.iter().find(|candidate| {
         candidate.enabled
             && candidate.kind == AgentActionDispatch::Semantic
             && candidate.action == AgentActionKind::AdvanceText
     });
-    let target = available
-        .then(|| {
-            presentation
-                .dialogue
-                .as_ref()
-                .and_then(BundleDialoguePresentation::advance_target)
+    let target = action
+        .and_then(|action| {
+            presentation.textboxes.iter().find_map(|textbox| {
+                let target = textbox.advance_target()?;
+                let object = format!(
+                    "object.dialogue.{}.{}",
+                    target.textbox.get(),
+                    target.entry.get()
+                );
+                (action.target == object).then_some(target)
+            })
         })
-        .flatten()
         .ok_or(NativeAgentScriptSessionError::ActionUnavailable)?;
     Ok(BundlePresentationInput::advance_dialogue(target))
 }
