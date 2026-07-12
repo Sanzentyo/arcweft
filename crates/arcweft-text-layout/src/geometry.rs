@@ -1,6 +1,5 @@
 //! Renderer-independent points, sizes, and rectangles.
 
-use arcweft_render_text::RichTextRange;
 use serde::{Deserialize, Serialize};
 
 /// Two-dimensional point in textbox-local pixels.
@@ -86,17 +85,4 @@ impl LayoutRect {
             && self.y < other.bottom()
             && other.y < self.bottom()
     }
-}
-
-pub(crate) fn union_bounds(rects: impl IntoIterator<Item = LayoutRect>) -> Option<LayoutRect> {
-    rects.into_iter().reduce(LayoutRect::union)
-}
-
-pub(crate) fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
-    left.start < right.end && right.start < left.end
-}
-
-pub(crate) fn usize_to_f32(value: usize) -> f32 {
-    let value = u16::try_from(value).unwrap_or(u16::MAX);
-    f32::from(value)
 }

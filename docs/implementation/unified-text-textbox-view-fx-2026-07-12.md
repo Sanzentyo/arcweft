@@ -89,7 +89,7 @@ final shared-path goldens have distinct roles as specified by the final design.
 
 - [x] Cut 1: migration witnesses and canonical resolved text document
 - [x] Cut 2: typed Fx IR/evaluator/bundle/symbol/save contracts
-- [ ] Cut 3: shaped shared text layout and glyphon engine
+- [x] Cut 3: shaped shared text layout and glyphon engine
 - [x] Cut 4: prepared text batch and all ordinary producers
 - [ ] Cut 5: RichText/reveal/shared Fx and native registry removal
 - [x] Cut 6: direct View text painter order and executable per-mount View
@@ -186,10 +186,10 @@ fallback:
   hash parity, fallback, ligatures, combining marks, explicit RTL, hard breaks,
   CJK, vertical text-combine, sideways Latin, and shaped ruby.
 
-Cut 3 remains open because `LaidOutText`, `layout_frame`, and the old
-`LaidOutText -> GlyphArea` adapter still have live renderer/native call sites.
-They will be removed directly when those call sites move to
-`PreparedTextBatch`; this slice does not add a compatibility wrapper.
+At that slice, Cut 3 remained open because `LaidOutText`, `layout_frame`, and
+the old `LaidOutText -> GlyphArea` adapter still existed. Their direct removal
+is recorded in the canonical-layout cleanup slice below; no compatibility
+wrapper was added.
 
 ### Prepared-batch ordinary-text slice
 
@@ -1403,11 +1403,56 @@ cargo +nightly -Zscript tools/structure-audit.rs --root . \
 
 All commands pass. The structural audit records 1,256 Rust files / 622,283
 physical Rust LOC, 0 errors, and 131 tracked warnings; no Cargo dependency edge
-changed. Cut 9 remains open for the final public
-`LaidOutText`/`layout_frame` and provisional legacy-Fx vocabulary deletion,
-workspace-wide validation, the final structural audit, and its concluding
-push. The visual packet itself is closed and reproducible without overwriting
-any checked-in system-font golden.
+changed. The visual packet itself is closed and reproducible without
+overwriting any checked-in system-font golden.
+
+### Canonical shaped-layout-only cleanup slice
+
+Cut 3 is now complete. The repository no longer exposes or compiles the
+font-independent estimated-layout route:
+
+- `layout_frame`, `LaidOutText`, `LaidOutGlyph`, `LaidOutRun`, `LaidOutRuby`,
+  and `TextLayoutConfig` are removed from `arcweft-text-layout` rather than
+  retained as aliases;
+- the old horizontal/vertical/ruby/effect-reserve planners and their dedicated
+  test modules are deleted. Shared Unicode vertical orientation, grapheme
+  clustering, generated JLREQ punctuation data, and the shaped
+  `layout_document` planner remain the canonical implementation;
+- `arcweft-glyphon` no longer exposes the unused `LaidOutText -> GlyphArea`,
+  shaped-buffer, horizontal-buffer, or vertical-buffer adapters. Its 1,300-line
+  root is now a 15-line facade over `prepared_text` and `text_engine`;
+- the two crates no longer retain `arcweft-core` as a dev dependency used only
+  by the deleted compatibility tests;
+- the canonical test surface consists of shaped layout, real project-font
+  cache/raster behavior, prepared text validation, vertical/JLREQ planning,
+  ruby geometry, and the project-font visual packet. The fast route retires
+  114 tests that exercised only the removed estimated algorithm.
+
+Validation at Jujutsu working change `lwzommlm`:
+
+```bash
+cargo test -p arcweft-text-layout -p arcweft-glyphon \
+  --all-targets --all-features
+cargo check --workspace --all-targets --all-features
+cargo clippy -p arcweft-text-layout -p arcweft-glyphon \
+  -p arcweft-render-wgpu -p arcweft-player-scene \
+  --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+just unified-text-visual-parity
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-legacy-layout-removal-2026-07-12
+```
+
+All commands pass. The focused shaped/prepared suites pass 38 tests,
+`just test-fast` passes 308 tests, and all eight visual checkpoints retain
+pixel-exact Native/Web frames plus the same non-zero JLREQ, Fx, and reveal
+semantic differences. Cut 9 remains open for provisional legacy-Fx staging
+vocabulary and the unconsumed Agent `textbox_height` option, followed by final
+workspace validation, structural audit, and push. The structural audit records
+1,244 Rust files / 613,600 physical Rust LOC, 0 errors, and 128 warnings; this
+slice removes 12 Rust files, 8,683 physical Rust LOC, three warnings, and two
+test-only dependency edges.
 
 ## Non-goals
 

@@ -16,8 +16,5 @@ glyphon.workspace = true
 thiserror.workspace = true
 unicode-script.workspace = true
 
-[dev-dependencies]
-arcweft-core = { path = "../arcweft-core" }
-
 [lints]
 workspace = true

@@ -104,42 +104,6 @@ pub enum HorizontalWrap {
     NoWrap,
 }
 
-/// Static layout configuration supplied by the host textbox.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-pub struct TextLayoutConfig {
-    /// Textbox-local origin.
-    pub origin: LayoutPoint,
-    /// Available layout size.
-    pub size: LayoutSize,
-    /// Base body font size.
-    pub font_size: f32,
-    /// Inline advance for body text.
-    pub line_advance: f32,
-    /// Ruby annotation font size.
-    pub ruby_font_size: f32,
-    /// Default writing mode when a run has no layout presentation.
-    pub writing_mode: RichTextWritingMode,
-    /// JLREQ punctuation pair strictness used by vertical column planning.
-    pub jlreq_strictness: JlreqStrictness,
-    /// Effect time used by layout-phase rich-text effects.
-    pub effect_time_seconds: f32,
-}
-
-impl Default for TextLayoutConfig {
-    fn default() -> Self {
-        Self {
-            origin: LayoutPoint::new(24.0, 24.0),
-            size: LayoutSize::new(720.0, 360.0),
-            font_size: 30.0,
-            line_advance: 42.0,
-            ruby_font_size: 14.0,
-            writing_mode: RichTextWritingMode::HorizontalTb,
-            jlreq_strictness: JlreqStrictness::Normal,
-            effect_time_seconds: 0.0,
-        }
-    }
-}
-
 /// Strictness preset for JLREQ punctuation pair planning.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

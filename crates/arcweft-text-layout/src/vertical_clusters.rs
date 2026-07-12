@@ -110,15 +110,6 @@ fn is_sideways_latin_run_grapheme(
         )
 }
 
-pub(crate) fn cluster_is_sideways_latin_run(cluster: &VerticalCluster) -> bool {
-    cluster.orientation == GlyphOrientation::SidewaysCw
-        && cluster.text.graphemes(true).count() > 1
-        && cluster
-            .text
-            .graphemes(true)
-            .all(is_latin_or_greek_alphabetic_cluster_text)
-}
-
 pub(crate) fn is_latin_or_greek_alphabetic_cluster_text(text: &str) -> bool {
     let mut has_script_letter = false;
     for ch in text.chars() {
@@ -160,10 +151,6 @@ pub(crate) fn line_break_offsets(text: &str) -> HashSet<usize> {
 
 fn is_ascii_digit_grapheme(grapheme: &str) -> bool {
     matches!(grapheme.as_bytes(), [b'0'..=b'9'])
-}
-
-pub(crate) fn is_vertical_line_break_cluster(grapheme: &str) -> bool {
-    matches!(grapheme, "\n" | "\r\n")
 }
 
 fn vertical_orientation(

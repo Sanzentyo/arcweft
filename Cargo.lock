@@ -805,7 +805,6 @@ dependencies = [
 name = "arcweft-glyphon"
 version = "0.1.0"
 dependencies = [
- "arcweft-core",
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-text-layout",
@@ -1361,7 +1360,6 @@ dependencies = [
 name = "arcweft-text-layout"
 version = "0.1.0"
 dependencies = [
- "arcweft-core",
  "arcweft-render-text",
  "blake3",
  "serde",

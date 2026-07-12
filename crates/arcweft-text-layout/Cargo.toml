@@ -15,8 +15,5 @@ thiserror.workspace = true
 unicode-linebreak.workspace = true
 unicode-segmentation.workspace = true
 
-[dev-dependencies]
-arcweft-core = { path = "../arcweft-core" }
-
 [lints]
 workspace = true
