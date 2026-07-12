@@ -92,7 +92,7 @@ final shared-path goldens have distinct roles as specified by the final design.
 - [ ] Cut 3: shaped shared text layout and glyphon engine
 - [ ] Cut 4: prepared text batch and all ordinary producers
 - [ ] Cut 5: RichText/reveal/shared Fx and native registry removal
-- [ ] Cut 6: direct View text painter order and executable per-mount View
+- [x] Cut 6: direct View text painter order and executable per-mount View
 - [ ] Cut 7: shared capture and prepared-layout Agent geometry
 - [ ] Cut 8: persistent TextBox View and hardcoded dialogue removal
 - [ ] Cut 9: final cleanup, parity, docs, and structural audit
@@ -506,6 +506,89 @@ remains a warning-level hotspot below the 2,500-LOC error threshold; its View
 algorithm is already isolated in the modules above, while the remaining file
 owns the pre-existing session lifecycle, hot swap, tasks, input, and save
 transaction orchestration.
+
+### Typed View text preparation and exact mounted painter closure
+
+Cut 6 is now complete. This slice supersedes the earlier interim notes that
+still named `ViewRuntimeTextBlock` as the remaining adapter:
+
+- `ViewTextResource` now owns exact typed localized, rich-document, and
+  display-frame stores. Source records address stable IDs, localized lookup is
+  exact on key/locale, and display stage selection is validated. Missing
+  localized text, document, frame, or stage produces `VIEW014` through
+  `VIEW017`; no empty/debug/plain fallback is emitted;
+- bundle compilation may hydrate only a locale-unspecified source from the
+  canonical `LineDisplayCatalog` entry with the same text key. Explicit locale
+  records remain exact authored data and never fall through to another locale;
+- `BundleViewTextValue` carries the actual typed `RichTextDocument` or
+  `LineDisplayFrame` to the player boundary. The shared resolver constructs one
+  `ResolvedTextDocument`, then `SharedFramePlanContext` appends it directly to
+  the frame's canonical `PreparedTextBatch`;
+- vertical-rl, ruby, text-combine, run-source provenance, selection geometry,
+  scroll clipping, and resolved runtime style survive the same preparation
+  path. Focused player tests assert vertical body/ruby layout and exact
+  localized/display-stage visible text rather than a placeholder;
+- `ViewRuntimeTextBlock` and its bundle, runtime snapshot, session projection,
+  presentation-handle filtering, and player adapter fields were deleted
+  directly. The stateless player registers the bundle default fonts before
+  one-shot preparation instead of leaving a legacy pending text block;
+- mount paint output now includes nested-mount insertion points. The player
+  expands a child at that exact parent slot, so parent-before, child, and
+  parent-after primitives keep evaluator order even though mount state records
+  remain canonically sorted for save/observation;
+- View-owned images move out of the renderer's ordinary background image pass
+  into the same prepared View scene. Their decoded frame is transferred to the
+  scene resource table and their crop UV, affine transform, and opacity are
+  retained. This prevents duplicate painting and makes Element/Text/Image/
+  nested-View order one renderer contract; and
+- the player-scene crate now depends directly on the low-level render-text and
+  text-layout contracts it consumes. No higher-level or platform dependency
+  was introduced.
+
+Focused tests cover all typed stores and diagnostics, codec canonicalization,
+CLI default-localization hydration, runtime redaction, exact nested mount paint
+IR, recursive parent/child painter expansion, View image resource transfer and
+crop/transform preservation, prepared-only plain text, selectable scroll
+geometry, and vertical ruby preparation.
+
+Validation at Jujutsu change `xuxwrolx`:
+
+```bash
+cargo test -p arcweft-bundle --all-targets --no-fail-fast
+cargo test -p arcweft-runtime-driver --all-targets --no-fail-fast
+cargo test -p arcweft-player-scene --all-targets --no-fail-fast
+cargo test -p arcweft-render-text --all-targets --no-fail-fast
+cargo test -p arcweft-render-wgpu --all-targets --no-fail-fast
+cargo test -p arcweft-cli app::bundle::tests --lib -- --nocapture
+cargo test -p arcweft-player-web --test parity --no-fail-fast
+cargo test -p arcweft-view --all-targets --no-fail-fast
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-fast
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-view-prepared-sources-2026-07-12
+git diff --check
+```
+
+All final commands pass. The runtime-driver all-target route passes 98 tests,
+the player-scene route passes 85, the CLI bundle module passes 42, Web parity
+passes 7, and `just test-fast` passes 422. Render-text and render-wgpu pass all
+normal tests; the adapter-pinned Tier 2 WGPU/exact-PNG tests remain ignored by
+the normal gate as required by repository policy.
+
+The first cold aggregate invocation of the five largest changed crates reached
+its 244-second command limit while compiling, with no test result available;
+each crate was then run separately to completion. Web parity initially exposed
+that its hand-built View-control fixture mounted `view.WebPanel` without an
+executable definition. The fixture now carries the typed definition and exact
+target emissions, and asserts the resulting mount-scoped IDs; the focused and
+complete parity reruns pass.
+
+The final structural audit records 1,258 Rust files / 633,404 physical Rust
+LOC, 0 errors, and 142 warnings. `frame/view_text.rs` is a 344-LOC
+responsibility module and `frame/surfaces.rs` is 730 LOC including 202 embedded
+test LOC. The full changed-file, largest-file, embedded-test, responsibility,
+fan-in, and fan-out review is recorded in the linked audit directory.
 
 ## Required validation
 

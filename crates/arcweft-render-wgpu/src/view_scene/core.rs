@@ -158,7 +158,25 @@ pub struct ViewGradientStop {
 pub struct ViewImagePrimitive {
     pub resource_index: u32,
     pub bounds: HitRect,
+    pub uv: ViewImageUvRect,
     pub opacity: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewImageUvRect {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+}
+
+impl ViewImageUvRect {
+    pub const FULL: Self = Self {
+        left: 0.0,
+        top: 0.0,
+        right: 1.0,
+        bottom: 1.0,
+    };
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -396,6 +414,7 @@ impl ViewSurfaceBackground {
             } => ViewPrimitive::Image(ViewImagePrimitive {
                 resource_index: *resource_index,
                 bounds,
+                uv: ViewImageUvRect::FULL,
                 opacity: *opacity,
             }),
         }

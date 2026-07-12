@@ -16,7 +16,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewValueInputNamespace,
+    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewValueInputNamespace,
     ViewValueInputResource, ViewValueInputSource,
 };
 use arcweft_bundle::{
@@ -66,6 +66,7 @@ use arcweft_runtime_driver::session::{
 };
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use arcweft_runtime_driver::swap::SwapCompatibility;
+use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
@@ -288,14 +289,14 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
                 Some("view.Root".to_owned()),
                 None,
                 "text.session.yes",
-                ViewRuntimeTextBlockBounds::new(0, 0, 100_000, 24_000),
+                ViewTextBlockBounds::new(0, 0, 100_000, 24_000),
             ),
             ViewTextBlockResource::new(
                 "text.block.no",
                 Some("view.Root".to_owned()),
                 None,
                 "text.session.no",
-                ViewRuntimeTextBlockBounds::new(0, 0, 100_000, 24_000),
+                ViewTextBlockBounds::new(0, 0, 100_000, 24_000),
             ),
         ],
         ..ViewProgramResource::default()
@@ -1182,20 +1183,41 @@ fn session_executes_mount_scoped_view_branch_and_restores_it() {
         active.presentation.view.mounts[0].mount,
         active.presentation.view.mounts[1].mount
     );
-    assert_eq!(active.presentation.text_blocks.len(), 2, "{active:#?}");
+    assert_eq!(
+        active
+            .presentation
+            .view
+            .mounts
+            .iter()
+            .map(|mount| mount.text.len())
+            .sum::<usize>(),
+        2,
+        "{active:#?}"
+    );
     assert!(
         active
             .presentation
-            .text_blocks
+            .view
+            .mounts
             .iter()
-            .all(|block| block.text == "yes")
+            .flat_map(|mount| &mount.text)
+            .all(
+                |text| matches!(&text.value, BundleViewTextValue::Plain { value } if value == "yes")
+            )
     );
     assert_eq!(
         active
             .presentation
-            .text_blocks
+            .view
+            .mounts
             .iter()
-            .map(|block| block.public_id.as_str())
+            .flat_map(|mount| {
+                mount.text.iter().flat_map(|text| {
+                    text.targets
+                        .iter()
+                        .map(|target| mount.scoped_id(&target.public_id))
+                })
+            })
             .collect::<Vec<_>>(),
         vec!["view_mount_0.text.block.yes", "view_mount_1.text.block.yes"]
     );
@@ -1274,20 +1296,40 @@ fn session_executes_mount_scoped_view_branch_and_restores_it() {
     assert!(inactive.presentation.view.diagnostics.is_empty());
     assert_eq!(inactive.presentation.view.mounts[0].mount.get(), 0);
     assert_eq!(inactive.presentation.view.mounts[1].mount.get(), 1);
-    assert_eq!(inactive.presentation.text_blocks.len(), 2);
+    assert_eq!(
+        inactive
+            .presentation
+            .view
+            .mounts
+            .iter()
+            .map(|mount| mount.text.len())
+            .sum::<usize>(),
+        2
+    );
     assert!(
         inactive
             .presentation
-            .text_blocks
+            .view
+            .mounts
             .iter()
-            .all(|block| block.text == "no")
+            .flat_map(|mount| &mount.text)
+            .all(
+                |text| matches!(&text.value, BundleViewTextValue::Plain { value } if value == "no")
+            )
     );
     assert_eq!(
         inactive
             .presentation
-            .text_blocks
+            .view
+            .mounts
             .iter()
-            .map(|block| block.public_id.as_str())
+            .flat_map(|mount| {
+                mount.text.iter().flat_map(|text| {
+                    text.targets
+                        .iter()
+                        .map(|target| mount.scoped_id(&target.public_id))
+                })
+            })
             .collect::<Vec<_>>(),
         vec!["view_mount_0.text.block.no", "view_mount_1.text.block.no"]
     );

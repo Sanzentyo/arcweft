@@ -11,8 +11,8 @@ use arcweft_text_layout::{
 };
 
 use super::{
-    FramePlanError, RenderFontFamily, RenderTextBlock, RenderTextSlant, RenderTextStyle,
-    RenderTextWeight, RenderViewport,
+    FramePlanError, PreparedTextDocumentRequest, RenderFontFamily, RenderTextBlock,
+    RenderTextSlant, RenderTextStyle, RenderTextWeight, RenderViewport,
 };
 
 pub(super) fn prepare_text_block(
@@ -47,35 +47,58 @@ pub(super) fn prepare_text_block(
         Vec::new(),
         TextDocumentRevision::new(0),
     )?;
-    let request = TextLayoutRequest {
+    let request = PreparedTextDocumentRequest {
         origin: LayoutPoint::new(block.bounds.x, block.bounds.y),
         size: LayoutSize::new(
             block.buffer_width.unwrap_or(block.bounds.width),
             block.buffer_height.unwrap_or(block.bounds.height),
         ),
-        ..TextLayoutRequest::default()
+        container_bounds: hit_rect_to_layout_rect(block.bounds),
+        clip: block.clip_bounds.map(hit_rect_to_layout_rect),
+        target: block.target.clone(),
+        selection_enabled: block.selection_policy.enabled(),
+        selection: block.selection.map(|selection| {
+            RichTextRange::new(
+                usize::try_from(selection.start().get()).unwrap_or(usize::MAX),
+                usize::try_from(selection.end().get()).unwrap_or(usize::MAX),
+            )
+        }),
+        selection_rgba: block.selection_rgba,
     };
-    let layout = layout_document(&document, request, engine)?;
+    prepare_text_document(engine, &document, &request, viewport)
+}
+
+pub(super) fn prepare_text_document(
+    engine: &mut GlyphonTextEngine,
+    document: &ResolvedTextDocument<'_>,
+    request: &PreparedTextDocumentRequest,
+    viewport: RenderViewport,
+) -> Result<PreparedTextItem, FramePlanError> {
+    let layout = layout_document(
+        document,
+        TextLayoutRequest {
+            origin: request.origin,
+            size: request.size,
+            ..TextLayoutRequest::default()
+        },
+        engine,
+    )?;
     let paint = TextPaintPlan::from_layout(&layout);
-    let mut interaction = TextInteractionPlan::from_layout(&layout, block.target.clone())
-        .with_text_and_selection_color(block.text.clone(), block.selection_rgba)
-        .with_container_bounds(hit_rect_to_layout_rect(block.bounds))
-        .with_selection_enabled(block.selection_policy.enabled());
-    if block.selection_policy.enabled()
-        && let Some(selection) = block.selection
+    let mut interaction = TextInteractionPlan::from_layout(&layout, request.target.clone())
+        .with_text_and_selection_color(document.text().to_owned(), request.selection_rgba)
+        .with_container_bounds(request.container_bounds)
+        .with_selection_enabled(request.selection_enabled);
+    if request.selection_enabled
+        && let Some(selection) = request.selection
     {
-        interaction = interaction.with_selection(RichTextRange::new(
-            usize::try_from(selection.start().get()).unwrap_or(usize::MAX),
-            usize::try_from(selection.end().get()).unwrap_or(usize::MAX),
-        ));
+        interaction = interaction.with_selection(selection);
     }
-    let clip = block.clip_bounds.map(hit_rect_to_layout_rect);
     engine
         .prepare_text_item(
             layout,
             paint,
             interaction,
-            clip,
+            request.clip,
             viewport.physical_scale_factor_f32(),
         )
         .map_err(FramePlanError::from)

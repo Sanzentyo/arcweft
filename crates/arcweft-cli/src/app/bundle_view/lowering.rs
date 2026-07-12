@@ -30,9 +30,9 @@ use arcweft_bundle::{
         ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
         ViewFxArgumentBindingRef, ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource,
         ViewLogicalRect, ViewParameterResource, ViewPartStyleRule, ViewProgramResource,
-        ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
-        ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
-        ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
+        ViewRuntimeButtonBounds, ViewScrollAxis, ViewScrollIndicatorsPolicy,
+        ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
+        ViewStyleResource, ViewSurfaceResource, ViewTextBlockBounds, ViewTextBlockResource,
         ViewTextResource,
         view::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleAssignOp, StyleSourceIdentity,

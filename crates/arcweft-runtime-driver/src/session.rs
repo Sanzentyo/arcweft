@@ -41,7 +41,7 @@ use arcweft_bundle::patch::{
 use arcweft_bundle::resource_codec::{
     ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeControlStyleDiagnostics,
     ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
-    ViewRuntimeTextBlock, ViewRuntimeTextControl, ViewRuntimeTextSelection,
+    ViewRuntimeTextControl, ViewRuntimeTextSelection,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
@@ -208,7 +208,6 @@ pub struct BundleSession {
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
-    text_blocks: Vec<ViewRuntimeTextBlock>,
     runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
@@ -498,7 +497,6 @@ impl BundleSession {
         let action_buttons = runtime.action_buttons.clone();
         let scroll_regions = runtime.scroll_regions.clone();
         let surfaces = runtime.surfaces.clone();
-        let text_blocks = runtime.text_blocks.clone();
         let runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics.clone();
         let focus_groups = runtime.focus_groups.clone();
         let focus_navigation = runtime.focus_navigation.clone();
@@ -520,7 +518,6 @@ impl BundleSession {
             action_buttons,
             scroll_regions,
             surfaces,
-            text_blocks,
             runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
@@ -854,7 +851,6 @@ impl BundleSession {
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
                 self.scroll_regions.clone_from(&next_runtime.scroll_regions);
                 self.surfaces.clone_from(&next_runtime.surfaces);
-                self.text_blocks.clone_from(&next_runtime.text_blocks);
                 self.runtime_control_style_diagnostics
                     .clone_from(&next_runtime.runtime_control_style_diagnostics);
                 self.focus_groups.clone_from(&next_runtime.focus_groups);
@@ -1228,7 +1224,6 @@ impl BundleSession {
                 action_buttons: &self.action_buttons,
                 scroll_regions: &self.scroll_regions,
                 surfaces: &self.surfaces,
-                text_blocks: &self.text_blocks,
                 focus_groups: &self.focus_groups,
                 focus_navigation: &self.focus_navigation,
             },
@@ -1333,7 +1328,6 @@ impl BundleSession {
                     action_buttons: &self.action_buttons,
                     scroll_regions: &self.scroll_regions,
                     surfaces: &self.surfaces,
-                    text_blocks: &self.text_blocks,
                     focus_groups: &self.focus_groups,
                     focus_navigation: &self.focus_navigation,
                 },
@@ -1783,7 +1777,6 @@ impl BundleSession {
         self.action_buttons = runtime.action_buttons;
         self.scroll_regions = runtime.scroll_regions;
         self.surfaces = runtime.surfaces;
-        self.text_blocks = runtime.text_blocks;
         self.runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics;
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;
@@ -1963,7 +1956,6 @@ struct SessionRuntime {
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
-    text_blocks: Vec<ViewRuntimeTextBlock>,
     runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
@@ -1997,7 +1989,6 @@ struct SessionRuntimeResources {
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
-    text_blocks: Vec<ViewRuntimeTextBlock>,
     runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
@@ -2058,7 +2049,6 @@ impl SessionRuntime {
             action_buttons: resources.action_buttons,
             scroll_regions: resources.scroll_regions,
             surfaces: resources.surfaces,
-            text_blocks: resources.text_blocks,
             runtime_control_style_diagnostics: resources.runtime_control_style_diagnostics,
             focus_groups: resources.focus_groups,
             focus_navigation: resources.focus_navigation,
@@ -2087,7 +2077,6 @@ impl SessionRuntime {
                 action_buttons: self.action_buttons.clone(),
                 scroll_regions: self.scroll_regions.clone(),
                 surfaces: self.surfaces.clone(),
-                text_blocks: self.text_blocks.clone(),
                 runtime_control_style_diagnostics: self.runtime_control_style_diagnostics.clone(),
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
@@ -2138,12 +2127,6 @@ fn build_session_runtime(
             program.runtime_surfaces_with_style(bundle.view_style.as_ref())
         });
     let surfaces = styled_surfaces.controls;
-    let mut text_blocks = bundle
-        .view_program
-        .as_ref()
-        .map_or_else(Vec::new, |program| {
-            program.runtime_text_blocks(bundle.view_text.as_ref())
-        });
     let mut runtime_control_style_diagnostics = styled_surfaces.diagnostics;
     runtime_control_style_diagnostics.extend(
         bundle
@@ -2151,12 +2134,7 @@ fn build_session_runtime(
             .as_ref()
             .zip(bundle.view_style.as_ref())
             .map_or_else(Default::default, |(program, style)| {
-                program.apply_runtime_styles(
-                    style,
-                    &mut text_inputs,
-                    &mut action_buttons,
-                    &mut text_blocks,
-                )
+                program.apply_runtime_styles(style, &mut text_inputs, &mut action_buttons, &mut [])
             }),
     );
     let focus_groups = bundle
@@ -2167,6 +2145,12 @@ fn build_session_runtime(
         .view_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_focus_navigation);
+    let view_runtime = BundleViewRuntime::try_new(
+        bundle.view_program.clone(),
+        bundle.view_text.clone(),
+        bundle.view_style.as_ref(),
+    )?;
+    runtime_control_style_diagnostics.extend(view_runtime.text_style_diagnostics().clone());
 
     SessionRuntime::new(
         bundle.manifest.source_label.clone(),
@@ -2179,15 +2163,11 @@ fn build_session_runtime(
             action_buttons,
             scroll_regions,
             surfaces,
-            text_blocks,
             runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
             fx_definitions: bundle.fx_definitions.clone(),
-            view_runtime: BundleViewRuntime::try_new(
-                bundle.view_program.clone(),
-                bundle.view_text.clone(),
-            )?,
+            view_runtime,
             view_reduce_motion: bundle
                 .view_theme
                 .as_ref()

@@ -759,6 +759,8 @@ pub enum TextResolveError {
     InvalidDisplayFrame(#[from] LineDisplayFrameValidationError),
     #[error("display stage belongs to a different line display frame")]
     StageOwnerMismatch,
+    #[error("display frame has no stage {index}")]
+    InvalidDisplayStage { index: usize },
     #[error("{kind} {index} has an empty range")]
     EmptyRange { kind: &'static str, index: usize },
     #[error("{kind} {index} has descending range {start}..{end}")]
@@ -894,37 +896,28 @@ impl RichTextDocument {
         &'a self,
         cascade: &TextStyleCascade,
     ) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
-        let mut offset = 0;
+        self.resolve_document_with_source(cascade, ResolvedTextRunSource::Generated)
+    }
+
+    /// Resolves a static document while retaining its shared source category.
+    pub fn resolve_document_with_source<'a>(
+        &'a self,
+        cascade: &TextStyleCascade,
+        source: ResolvedTextRunSource,
+    ) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
         let mut active_styles = Vec::new();
-        let mut runs = Vec::new();
         let mut ruby = Vec::new();
-        let document_text = self.resolved_text();
+        let mut resolver = StaticDocumentResolver::new(self.resolved_text(), cascade, source);
         for (node_index, node) in self.nodes.iter().enumerate() {
             match node {
                 RichTextNode::Text { text }
                 | RichTextNode::Control {
                     control: RichTextControl::Raw { text },
                 } => {
-                    push_node_text(
-                        text,
-                        node_index,
-                        document_text,
-                        &active_styles,
-                        cascade,
-                        &mut offset,
-                        &mut runs,
-                    )?;
+                    resolver.push_text(text, node_index, &active_styles)?;
                 }
                 RichTextNode::Ruby { base, ruby: text } => {
-                    let range = push_node_text(
-                        base,
-                        node_index,
-                        document_text,
-                        &active_styles,
-                        cascade,
-                        &mut offset,
-                        &mut runs,
-                    )?;
+                    let range = resolver.push_text(base, node_index, &active_styles)?;
                     if !base.is_empty() {
                         let presentation = presentation_from_styles(active_styles.iter());
                         let style = cascade.resolve_style(active_styles.iter())?;
@@ -942,15 +935,7 @@ impl RichTextDocument {
                 RichTextNode::Control {
                     control: RichTextControl::HardBreak,
                 } => {
-                    push_node_text(
-                        "\n",
-                        node_index,
-                        document_text,
-                        &active_styles,
-                        cascade,
-                        &mut offset,
-                        &mut runs,
-                    )?;
+                    resolver.push_text("\n", node_index, &active_styles)?;
                 }
                 RichTextNode::Interpolation { .. }
                 | RichTextNode::HostEvent {
@@ -962,43 +947,64 @@ impl RichTextDocument {
         ResolvedTextDocument::new(
             self.resolved_text(),
             0,
-            runs,
+            resolver.runs,
             ruby,
             TextDocumentRevision::for_source(self),
         )
     }
 }
 
-fn push_node_text(
-    text: &str,
-    node_index: usize,
-    document_text: &str,
-    styles: &[RichTextStyle],
-    cascade: &TextStyleCascade,
-    offset: &mut usize,
-    runs: &mut Vec<ResolvedTextRun>,
-) -> Result<RichTextRange, TextResolveError> {
-    let range = RichTextRange::new(*offset, *offset + text.len());
-    if document_text.get(range.start..range.end) != Some(text) {
-        return Err(TextResolveError::SourceTextMismatch {
-            node_index,
-            start: range.start,
-            end: range.end,
-        });
+struct StaticDocumentResolver<'a> {
+    document_text: &'a str,
+    cascade: &'a TextStyleCascade,
+    source: ResolvedTextRunSource,
+    offset: usize,
+    runs: Vec<ResolvedTextRun>,
+}
+
+impl<'a> StaticDocumentResolver<'a> {
+    fn new(
+        document_text: &'a str,
+        cascade: &'a TextStyleCascade,
+        source: ResolvedTextRunSource,
+    ) -> Self {
+        Self {
+            document_text,
+            cascade,
+            source,
+            offset: 0,
+            runs: Vec::new(),
+        }
     }
-    *offset = range.end;
-    if !text.is_empty() {
-        let presentation = presentation_from_styles(styles.iter());
-        let style = cascade.resolve_style(styles.iter())?;
-        runs.push(ResolvedTextRun::new(
-            range,
-            range,
-            style,
-            cascade.resolve_presentation(&presentation),
-            ResolvedTextRunSource::Generated,
-        )?);
+
+    fn push_text(
+        &mut self,
+        text: &str,
+        node_index: usize,
+        styles: &[RichTextStyle],
+    ) -> Result<RichTextRange, TextResolveError> {
+        let range = RichTextRange::new(self.offset, self.offset + text.len());
+        if self.document_text.get(range.start..range.end) != Some(text) {
+            return Err(TextResolveError::SourceTextMismatch {
+                node_index,
+                start: range.start,
+                end: range.end,
+            });
+        }
+        self.offset = range.end;
+        if !text.is_empty() {
+            let presentation = presentation_from_styles(styles.iter());
+            let style = self.cascade.resolve_style(styles.iter())?;
+            self.runs.push(ResolvedTextRun::new(
+                range,
+                range,
+                style,
+                self.cascade.resolve_presentation(&presentation),
+                self.source,
+            )?);
+        }
+        Ok(range)
     }
-    Ok(range)
 }
 
 fn remove_style(active_styles: &mut Vec<RichTextStyle>, name: &str) {

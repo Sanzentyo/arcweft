@@ -7,18 +7,19 @@ use arcweft_bundle::resource_codec::view::{
     TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef, ViewDefinitionResource,
     ViewElementKind, ViewElementState, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef,
     ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
-    ViewInstructionSpan, ViewLayoutBoundsResource, ViewLogicalRect, ViewObserveClassification,
-    ViewParameterResource, ViewProgramInstruction, ViewProgramResource, ViewResourceBudget,
-    ViewResourceCompatibility, ViewRuntimeTextBlockBounds, ViewScrollAxis,
-    ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
-    ViewScrollRegionResource, ViewSecureInputPolicy, ViewSecureRedactionMetadata,
-    ViewSemanticTarget, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewTextBlockResource, ViewTextResource,
+    ViewInstructionSpan, ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
+    ViewObserveClassification, ViewParameterResource, ViewProgramInstruction, ViewProgramResource,
+    ViewResourceBudget, ViewResourceCompatibility, ViewScrollAxis, ViewScrollIndicatorsPolicy,
+    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
+    ViewSecureInputPolicy, ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStyleDeclaration,
+    ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken,
+    ViewStyleValue, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
     ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
     ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
     ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
     migrated_view_section_compatibility,
 };
+use arcweft_render_text::{RichTextDocument, RichTextNode};
 
 use arcweft_bundle::resource_codec::{
     FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
@@ -517,7 +518,7 @@ fn assert_round_trip<T>(
     decode: fn(&[u8]) -> Result<T, arcweft_bundle::resource_codec::SectionCodecError>,
     expected: &T,
 ) where
-    T: EncodeAgain + Eq + std::fmt::Debug + PartialEq,
+    T: EncodeAgain + std::fmt::Debug + PartialEq,
 {
     assert_ne!(bytes.first(), Some(&b'{'), "{codec:?} must not be JSON");
     assert_eq!(bytes[..8], codec.magic(), "{codec:?} compact magic");
@@ -728,7 +729,7 @@ fn fixture_program() -> ViewProgramResource {
             Some("view.dialogue".to_owned()),
             Some("scroll.dialogue.body".to_owned()),
             "text.dialogue.title",
-            ViewRuntimeTextBlockBounds::from_px(48, 112, 420, 24),
+            ViewTextBlockBounds::from_px(48, 112, 420, 24),
         )],
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
@@ -831,7 +832,15 @@ fn fixture_text() -> ViewTextResource {
                 source: None,
             },
         ],
-        display_frame_refs: vec![],
+        localized: vec![ViewLocalizedTextResource {
+            key: "view.dialogue.name".to_owned(),
+            locale: Some("en-US".to_owned()),
+            document: RichTextDocument::new(vec![RichTextNode::Text {
+                text: "Guest".to_owned(),
+            }]),
+        }],
+        rich_text_documents: vec![],
+        display_frames: vec![],
         source_ranges: vec![],
         reveal_policies: vec![],
         cursor_policies: vec![],

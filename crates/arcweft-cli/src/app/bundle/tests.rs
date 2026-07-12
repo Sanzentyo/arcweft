@@ -6,12 +6,12 @@ use arcweft_bundle::{
 };
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::RuntimeEffectExpr;
-use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow};
+use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow, RuntimeLineId};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_layout::stage_placement::{StagePlacement, StageRect};
-use arcweft_render_text::LineDisplayCatalog;
+use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use std::path::Path;
 
@@ -1520,6 +1520,47 @@ flow test {
                 if event == "focus" && handler.contains(".handler.focus.")
         )
     }));
+}
+
+#[test]
+fn bundle_hydrates_default_view_localization_from_matching_display_text_key() {
+    let document = RichTextDocument::new(vec![RichTextNode::Ruby {
+        base: "夢".to_owned(),
+        ruby: "ゆめ".to_owned(),
+    }]);
+    let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
+        line: RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
+        callee: "narrator".to_owned(),
+        speaker_label: None,
+        text_key: Some("text.opening.dream".to_owned()),
+        window: None,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: document.clone(),
+    }]);
+    let mut text = ViewTextResource {
+        sources: vec![arcweft_bundle::resource_codec::view::ViewTextSourceRecord {
+            public_id: "text.view.dream".to_owned(),
+            kind: arcweft_bundle::resource_codec::view::ViewTextSourceKind::Localized {
+                key: "text.opening.dream".to_owned(),
+                locale: None,
+            },
+            source: None,
+        }],
+        ..ViewTextResource::default()
+    };
+
+    hydrate_default_view_localization(&mut text, &display);
+
+    assert_eq!(
+        text.localized_document("text.opening.dream", None),
+        Some(&document)
+    );
 }
 
 fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {

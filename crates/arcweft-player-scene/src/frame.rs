@@ -1,27 +1,21 @@
 use crate::action_buttons::{RuntimeActionButtonLowerer, RuntimeActionButtonLoweringError};
-use crate::control_style::lower_control_style;
 use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigation};
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_bundle::resource_codec::view::ViewTextSelectionPolicy;
-use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
 use arcweft_presentation::fx::{
     FxApplication, FxApplicationResolver, FxDiagnostic, FxDiagnosticCode, FxDiagnosticContext,
     FxEvaluationBinding,
 };
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
-    FramePlanError, PreparedFrame, RenderChoiceItem, RenderControlVisualState, RenderDialogue,
-    RenderFocusAutoScrollPolicy, RenderFontFamily, RenderPreferences, RenderScene,
-    RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
-    RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextBlock, RenderTextSelectionPolicy,
-    RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanContext,
-    SharedFramePlanStats,
+    FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderFocusAutoScrollPolicy,
+    RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy,
+    RenderScrollOverflow, RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport,
+    SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::dialogue::BundleDialoguePresentation;
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
@@ -30,6 +24,7 @@ use thiserror::Error;
 
 mod focus_navigation;
 mod surfaces;
+mod view_text;
 
 /// Player-owned frame inputs shared by native, web, and Agent observation.
 #[derive(Clone, Copy, Debug)]
@@ -269,7 +264,11 @@ impl PlayerFramePlanner {
         input: &mut InputController,
         request: PlayerFrameRequest<'_>,
     ) -> Result<PlayerPreparedFrame, PlayerFrameError> {
-        PlayerFramePlannerState::new().prepare(input, request)
+        let mut planner = PlayerFramePlannerState::new();
+        for bytes in crate::fonts::DEFAULT_PLAYER_FONT_RESOURCE_BYTES {
+            planner.register_font_bytes(bytes.to_vec())?;
+        }
+        planner.prepare(input, request)
     }
 }
 
@@ -388,83 +387,6 @@ fn milli_u32_to_f32(value: u32) -> f32 {
     value.to_f32().unwrap_or(f32::MAX) / 1_000.0
 }
 
-fn render_text_blocks(
-    input: &InputController,
-    scene: &RenderScene,
-    blocks: &[arcweft_bundle::resource_codec::ViewRuntimeTextBlock],
-) -> Vec<RenderTextBlock> {
-    let text_scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
-    blocks
-        .iter()
-        .filter_map(|block| render_text_block(input, scene, block, text_scale))
-        .collect()
-}
-
-fn render_text_block(
-    input: &InputController,
-    scene: &RenderScene,
-    block: &arcweft_bundle::resource_codec::ViewRuntimeTextBlock,
-    text_scale: f32,
-) -> Option<RenderTextBlock> {
-    let bounds = HitRect::new(
-        milli_i32_to_f32(block.bounds.x_milli),
-        milli_i32_to_f32(block.bounds.y_milli),
-        milli_u32_to_f32(block.bounds.width_milli),
-        milli_u32_to_f32(block.bounds.height_milli),
-    );
-    let (bounds, clip_bounds) =
-        scroll_adjusted_bounds(scene, block.containing_scroll_region.as_deref(), bounds)?;
-    let visual =
-        lower_control_style(&block.style).visual_for_state(RenderControlVisualState::Normal);
-    let font_size = visual.font_size_px.unwrap_or(20.0) * text_scale;
-    let line_height = visual
-        .line_height_px
-        .map_or(font_size * 1.2, |line_height| line_height * text_scale);
-    let target = PublicId::try_new(&block.target)
-        .ok()
-        .map(InteractionTarget::new);
-    let selection_policy = render_text_selection_policy(block.selection_policy);
-    let selection = target
-        .as_ref()
-        .and_then(|target| input.text_block_selection_for(target, &block.text));
-    Some(RenderTextBlock {
-        target,
-        text: block.text.clone(),
-        bounds,
-        clip_bounds,
-        buffer_width: Some(bounds.width),
-        buffer_height: Some(bounds.height),
-        font_size,
-        line_height,
-        font_family: visual
-            .font_family
-            .map_or(RenderFontFamily::SansSerif, |family| {
-                RenderFontFamily::from_css_stack(&family)
-            }),
-        weight: render_text_weight(visual.font_weight),
-        slant: RenderTextSlant::Upright,
-        rgba: visual.text.unwrap_or([245, 245, 240, 255]),
-        selection_policy,
-        selection,
-        selection_rgba: visual.selection.unwrap_or([0.48, 0.92, 0.86, 0.34]),
-    })
-}
-
-fn render_text_selection_policy(policy: ViewTextSelectionPolicy) -> RenderTextSelectionPolicy {
-    match policy {
-        ViewTextSelectionPolicy::Enabled => RenderTextSelectionPolicy::Enabled,
-        ViewTextSelectionPolicy::Disabled => RenderTextSelectionPolicy::Disabled,
-    }
-}
-
-fn render_text_weight(weight: Option<u16>) -> RenderTextWeight {
-    if weight.unwrap_or(400) >= 600 {
-        RenderTextWeight::Bold
-    } else {
-        RenderTextWeight::Regular
-    }
-}
-
 fn scroll_adjusted_bounds(
     scene: &RenderScene,
     containing_scroll_region: Option<&str>,
@@ -562,8 +484,24 @@ impl PlayerFramePlannerState {
         request: PlayerFrameRequest<'_>,
         content_rect: Option<ContentRect>,
     ) -> Result<PreparedFrame, PlayerFrameError> {
-        let frame = self.prepare_frame_with_runtime_text(scene, presentation, input)?;
+        let frame = self.prepare_base_frame(scene, presentation)?;
         let mut frame = map_prepared_frame(frame, request, content_rect);
+        let prepared_view_text = view_text::prepare_runtime_view_text(
+            &mut self.shared,
+            &mut frame,
+            input,
+            scene,
+            &presentation.view,
+            content_rect,
+        )?;
+        surfaces::push_runtime_view_scene(
+            &mut frame,
+            scene,
+            &presentation.surfaces,
+            &presentation.view,
+            &prepared_view_text,
+            content_rect,
+        );
         self.shared.finalize_text(&mut frame)?;
         if let Some(dialogue) = presentation.dialogue.as_ref()
             && let Some(stage) = dialogue.current_stage()
@@ -583,11 +521,10 @@ impl PlayerFramePlannerState {
         Ok(frame)
     }
 
-    fn prepare_frame_with_runtime_text(
+    fn prepare_base_frame(
         &mut self,
         scene: &RenderScene,
         presentation: &BundlePresentationSnapshot,
-        input: &InputController,
     ) -> Result<PreparedFrame, PlayerFrameError> {
         let mut frame = self.shared.prepare(scene)?;
         frame.set_dialogue_advance_available(
@@ -596,10 +533,6 @@ impl PlayerFramePlannerState {
                 .as_ref()
                 .is_some_and(BundleDialoguePresentation::is_waiting_for_advance),
         );
-        frame
-            .text
-            .extend(render_text_blocks(input, scene, &presentation.text_blocks));
-        surfaces::push_runtime_surfaces(&mut frame, scene, &presentation.surfaces);
         Ok(frame)
     }
 }

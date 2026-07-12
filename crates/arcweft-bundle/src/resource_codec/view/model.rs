@@ -3,6 +3,7 @@ use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
 use arcweft_presentation::fx::{FxId, FxRuntimeType};
+use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
@@ -309,7 +310,7 @@ pub struct ViewTextBlockResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub containing_scroll_region: Option<String>,
     pub text_source: String,
-    pub bounds: ViewRuntimeTextBlockBounds,
+    pub bounds: ViewTextBlockBounds,
     #[serde(
         default = "default_text_block_selection_policy",
         skip_serializing_if = "is_text_selection_disabled"
@@ -338,25 +339,16 @@ pub struct ViewSurfaceResource {
     pub source: Option<SourceRangeRef>,
 }
 
-/// Runtime-facing text block emitted in display snapshots.
+/// Resolved style binding for one authored View text target.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewRuntimeTextBlock {
+pub struct ViewTextStyleBinding {
     pub public_id: String,
-    pub target: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub view: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub containing_scroll_region: Option<String>,
-    pub text: String,
-    pub bounds: ViewRuntimeTextBlockBounds,
-    #[serde(default, skip_serializing_if = "is_text_selection_disabled")]
-    pub selection_policy: ViewTextSelectionPolicy,
     #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
     pub style: ViewRuntimeControlStyle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewRuntimeTextBlockBounds {
+pub struct ViewTextBlockBounds {
     pub x_milli: i32,
     pub y_milli: i32,
     pub width_milli: u32,
@@ -924,10 +916,15 @@ pub enum ExternalCssIdentity {
 }
 
 /// Product View text-source section decoded from `ViewText`.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ViewTextResource {
     pub sources: Vec<ViewTextSourceRecord>,
-    pub display_frame_refs: Vec<CrossSectionRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub localized: Vec<ViewLocalizedTextResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rich_text_documents: Vec<ViewRichTextDocumentResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub display_frames: Vec<ViewDisplayFrameResource>,
     pub source_ranges: Vec<SourceRangeRef>,
     pub reveal_policies: Vec<ViewTextRevealPolicyBinding>,
     pub cursor_policies: Vec<ViewTextCursorPolicyBinding>,
@@ -948,8 +945,32 @@ pub enum ViewTextSourceKind {
     Projection { path: Vec<String> },
     Local { name: String },
     Localized { key: String, locale: Option<String> },
-    RichTextDocument { document: CrossSectionRef },
-    DisplayFrame { frame: CrossSectionRef },
+    RichTextDocument { document: String },
+    DisplayFrame { frame: String },
+}
+
+/// One locale-exact `RichText` document available to View text resolution.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ViewLocalizedTextResource {
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+    pub document: RichTextDocument,
+}
+
+/// One reusable static `RichText` document available to View text resolution.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ViewRichTextDocumentResource {
+    pub public_id: String,
+    pub document: RichTextDocument,
+}
+
+/// One reusable resolved display frame and selected input-gated stage.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ViewDisplayFrameResource {
+    pub public_id: String,
+    pub frame: LineDisplayFrame,
+    pub stage_index: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1299,6 +1320,29 @@ impl ViewTextResource {
                 | ViewTextSourceKind::DisplayFrame { .. } => None,
             })
     }
+
+    /// Resolves an exact localization key/locale pair without implicit locale fallback.
+    pub fn localized_document(&self, key: &str, locale: Option<&str>) -> Option<&RichTextDocument> {
+        self.localized
+            .iter()
+            .find(|entry| entry.key == key && entry.locale.as_deref() == locale)
+            .map(|entry| &entry.document)
+    }
+
+    /// Resolves one reusable `RichText` document by stable public identity.
+    pub fn rich_text_document(&self, public_id: &str) -> Option<&RichTextDocument> {
+        self.rich_text_documents
+            .iter()
+            .find(|entry| entry.public_id == public_id)
+            .map(|entry| &entry.document)
+    }
+
+    /// Resolves one reusable display frame and its selected stage.
+    pub fn display_frame(&self, public_id: &str) -> Option<&ViewDisplayFrameResource> {
+        self.display_frames
+            .iter()
+            .find(|entry| entry.public_id == public_id)
+    }
 }
 
 impl ViewInputResource {
@@ -1475,28 +1519,6 @@ impl ViewProgramResource {
             .collect()
     }
 
-    pub fn runtime_text_blocks(
-        &self,
-        text: Option<&ViewTextResource>,
-    ) -> Vec<ViewRuntimeTextBlock> {
-        self.text_blocks
-            .iter()
-            .map(|block| ViewRuntimeTextBlock {
-                public_id: block.public_id.clone(),
-                target: block.public_id.clone(),
-                view: block.view.clone(),
-                containing_scroll_region: block.containing_scroll_region.clone(),
-                text: text
-                    .and_then(|resource| resource.literal_text(&block.text_source))
-                    .unwrap_or_default()
-                    .to_owned(),
-                bounds: block.bounds,
-                selection_policy: block.selection_policy,
-                style: ViewRuntimeControlStyle::default(),
-            })
-            .collect()
-    }
-
     pub fn runtime_surfaces(&self) -> Vec<ViewRuntimeSurface> {
         self.surfaces
             .iter()
@@ -1626,7 +1648,7 @@ impl ViewTextBlockResource {
         view: Option<String>,
         containing_scroll_region: Option<String>,
         text_source: impl Into<String>,
-        bounds: ViewRuntimeTextBlockBounds,
+        bounds: ViewTextBlockBounds,
     ) -> Self {
         Self {
             public_id: public_id.into(),
@@ -2162,7 +2184,7 @@ impl ViewRuntimeButtonBounds {
     }
 }
 
-impl ViewRuntimeTextBlockBounds {
+impl ViewTextBlockBounds {
     pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
         Self {
             x_milli,

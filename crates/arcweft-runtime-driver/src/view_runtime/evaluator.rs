@@ -12,16 +12,16 @@ use super::value::{fx_placeholder, fx_to_runtime, runtime_to_fx};
 use super::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewFrame, BundleViewFxApplication,
     BundleViewFxArgument, BundleViewInstancePath, BundleViewInstancePathSegment,
-    BundleViewMountOutput, BundleViewRuntime, BundleViewTextOutput, MountedView, ViewOccurrenceKey,
-    definition_program_id, deterministic_mount_seed,
+    BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime, BundleViewTextOutput,
+    MountedView, ViewOccurrenceKey, definition_program_id, deterministic_mount_seed,
 };
 use crate::presentation_handles::{
     PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
 };
 use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
 use arcweft_bundle::resource_codec::{
-    ViewDefinitionResource, ViewProgramResource, ViewTextResource, ViewValueInputNamespace,
-    ViewValueInputSource,
+    ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlStyle, ViewTextResource,
+    ViewValueInputNamespace, ViewValueInputSource,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_presentation::fx::{
@@ -79,6 +79,7 @@ struct MountRenderBuilder {
     targets: BTreeSet<String>,
     images: BTreeSet<String>,
     text: Vec<BundleViewTextOutput>,
+    paint: Vec<BundleViewPaintItem>,
     fx: Vec<BundleViewFxApplication>,
     element_targets: Vec<Option<String>>,
     last_target: Option<String>,
@@ -90,6 +91,7 @@ impl MountRenderBuilder {
             targets: BTreeSet::new(),
             images: BTreeSet::new(),
             text: Vec::new(),
+            paint: Vec::new(),
             fx: Vec::new(),
             element_targets: Vec::new(),
             last_target: None,
@@ -116,6 +118,7 @@ impl MountRenderBuilder {
 struct ViewEvaluator<'a> {
     program: &'a ViewProgramResource,
     text: Option<&'a ViewTextResource>,
+    text_styles: &'a BTreeMap<String, ViewRuntimeControlStyle>,
     definitions: &'a BTreeMap<String, usize>,
     inventory: &'a ViewValueProgramInventory,
     logical_time: arcweft_presentation::fx::FxLogicalTime,
@@ -162,6 +165,7 @@ impl BundleViewRuntime {
         let mut evaluator = ViewEvaluator {
             program,
             text: self.text.as_ref(),
+            text_styles: &self.text_styles,
             definitions: &self.definitions,
             inventory: &self.inventory,
             logical_time: self.logical_time,
@@ -539,6 +543,7 @@ impl ViewEvaluator<'_> {
                     path: key.path,
                     active_targets: builder.targets.into_iter().collect(),
                     active_images: builder.images.into_iter().collect(),
+                    paint: builder.paint,
                     text: builder.text,
                     fx: builder.fx,
                 }];
@@ -861,11 +866,14 @@ impl ViewEvaluator<'_> {
                     ) {
                         Ok(()) => {
                             self.visited.insert(child_key.clone());
-                            descendants.extend(self.evaluate_occurrence(
-                                child_key,
-                                child_index,
-                                depth + 1,
-                            ));
+                            let child_output =
+                                self.evaluate_occurrence(child_key, child_index, depth + 1);
+                            if let Some(child) = child_output.first() {
+                                builder
+                                    .paint
+                                    .push(BundleViewPaintItem::Mount { mount: child.mount });
+                            }
+                            descendants.extend(child_output);
                         }
                         Err(error) => {
                             self.record_failure(&child_key, view, None, error);
@@ -980,6 +988,9 @@ impl ViewEvaluator<'_> {
                 ViewProgramInstruction::OpenElement { target, .. } => {
                     if let Some(target) = target {
                         builder.retain_target(target);
+                        builder.paint.push(BundleViewPaintItem::Element {
+                            target: target.clone(),
+                        });
                     }
                     builder.element_targets.push(target.clone());
                     cursor += 1;
@@ -997,7 +1008,11 @@ impl ViewEvaluator<'_> {
                 ViewProgramInstruction::EmitText { text_source, .. } => {
                     let text = self.resolve_text(definition, mounted, text_source, cursor)?;
                     for target in &text.targets {
-                        builder.retain_target(target);
+                        builder.retain_target(&target.public_id);
+                        builder.paint.push(BundleViewPaintItem::Text {
+                            source_id: text.source_id.clone(),
+                            target: target.public_id.clone(),
+                        });
                     }
                     builder.text.push(text);
                     builder.last_target = Some(text_source.clone());
@@ -1007,6 +1022,9 @@ impl ViewEvaluator<'_> {
                     if let Some(target) = target {
                         builder.images.insert(target.clone());
                         builder.retain_target(target);
+                        builder.paint.push(BundleViewPaintItem::Image {
+                            target: target.clone(),
+                        });
                     }
                     cursor += 1;
                 }
@@ -1021,7 +1039,7 @@ impl ViewEvaluator<'_> {
                     {
                         let text = self.resolve_text(definition, mounted, source, cursor)?;
                         for target in &text.targets {
-                            builder.retain_target(target);
+                            builder.retain_target(&target.public_id);
                         }
                         builder.text.push(text);
                     }

@@ -3,20 +3,23 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceKind, ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
-    ViewCallArgumentBindingRef, ViewDefinitionResource, ViewInstructionSpan, ViewParameterResource,
-    ViewProgramResource, ViewTextResource, ViewValueInputNamespace, ViewValueInputResource,
-    ViewValueInputSource,
+    ViewCallArgumentBindingRef, ViewDefinitionResource, ViewDisplayFrameResource,
+    ViewInstructionSpan, ViewLocalizedTextResource, ViewParameterResource, ViewProgramResource,
+    ViewRichTextDocumentResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
+    ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
 };
+use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
 use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
+use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RichTextNode, RuntimeLineContext};
 use arcweft_runtime_driver::presentation_handles::{
     PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
     PresentationResourceState,
 };
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewDiagnosticCode, BundleViewRuntime, BundleViewTextValue,
+    BundleViewDiagnosticCode, BundleViewPaintItem, BundleViewRuntime, BundleViewTextValue,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
@@ -156,7 +159,7 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     let mounted = handle("handle.root", "view.Root");
 
     let mut missing =
-        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone())).unwrap();
+        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None).unwrap();
     let frame = missing.evaluate(std::slice::from_ref(&mounted), &[], false);
     assert!(frame.mounts.is_empty());
     assert_eq!(
@@ -164,7 +167,7 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
         BundleViewDiagnosticCode::MissingInput
     );
 
-    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text)).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
     let active = runtime.evaluate(
         std::slice::from_ref(&mounted),
         &[RuntimeBinding {
@@ -218,13 +221,13 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
         definitions: vec![
             ViewDefinitionResource {
                 public_id: "view.Parent".to_owned(),
-                body: ViewInstructionSpan::new(0, 1),
+                body: ViewInstructionSpan::new(0, 3),
                 parameters: Vec::new(),
                 state_schema_hash: 21,
             },
             ViewDefinitionResource {
                 public_id: "view.Child".to_owned(),
-                body: ViewInstructionSpan::new(1, 2),
+                body: ViewInstructionSpan::new(3, 4),
                 parameters: vec![ViewParameterResource {
                     ordinal: 0,
                     name: "count".to_owned(),
@@ -246,6 +249,12 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
             },
         }],
         instructions: vec![
+            ViewProgramInstruction::EmitText {
+                text_source: "text.parent.before".to_owned(),
+                style: None,
+                part: None,
+                source: None,
+            },
             ViewProgramInstruction::CallView {
                 view: "view.Child".to_owned(),
                 arguments: vec![ViewCallArgumentBindingRef {
@@ -259,28 +268,87 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
                 source: None,
             },
             ViewProgramInstruction::EmitText {
+                text_source: "text.parent.after".to_owned(),
+                style: None,
+                part: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitText {
                 text_source: "text.child.count".to_owned(),
                 style: None,
                 part: None,
                 source: None,
             },
         ],
+        text_blocks: vec![
+            ViewTextBlockResource::new(
+                "text.parent.before.target",
+                Some("view.Parent".to_owned()),
+                None,
+                "text.parent.before",
+                ViewTextBlockBounds::from_px(0, 0, 100, 20),
+            ),
+            ViewTextBlockResource::new(
+                "text.parent.after.target",
+                Some("view.Parent".to_owned()),
+                None,
+                "text.parent.after",
+                ViewTextBlockBounds::from_px(0, 40, 100, 20),
+            ),
+            ViewTextBlockResource::new(
+                "text.child.count.target",
+                Some("view.Child".to_owned()),
+                None,
+                "text.child.count",
+                ViewTextBlockBounds::from_px(0, 20, 100, 20),
+            ),
+        ],
         ..ViewProgramResource::default()
     };
-    let text = text_resource([(
-        "text.child.count",
-        ViewTextSourceKind::Projection {
-            path: vec!["count".to_owned()],
-        },
-    )]);
+    let text = text_resource([
+        (
+            "text.parent.before",
+            ViewTextSourceKind::Literal {
+                value: "before".to_owned(),
+            },
+        ),
+        (
+            "text.parent.after",
+            ViewTextSourceKind::Literal {
+                value: "after".to_owned(),
+            },
+        ),
+        (
+            "text.child.count",
+            ViewTextSourceKind::Projection {
+                path: vec!["count".to_owned()],
+            },
+        ),
+    ]);
     let first_handle = handle("handle.first", "view.Parent");
     let mut runtime =
-        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone())).unwrap();
+        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None).unwrap();
     runtime.advance_millis(1_250).unwrap();
     let first = runtime.evaluate(std::slice::from_ref(&first_handle), &[], false);
     assert!(first.diagnostics.is_empty());
     assert_eq!(first.mounts.len(), 2);
     assert_eq!(first.mounts[1].view, "view.Child");
+    assert_eq!(
+        first.mounts[0].paint,
+        [
+            BundleViewPaintItem::Text {
+                source_id: "text.parent.before".to_owned(),
+                target: "text.parent.before.target".to_owned(),
+            },
+            BundleViewPaintItem::Mount {
+                mount: first.mounts[1].mount,
+            },
+            BundleViewPaintItem::Text {
+                source_id: "text.parent.after".to_owned(),
+                target: "text.parent.after.target".to_owned(),
+            },
+        ]
+    );
     assert_eq!(
         first.mounts[1].text[0].value,
         BundleViewTextValue::Plain {
@@ -289,7 +357,7 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
     );
 
     let snapshot = runtime.snapshot();
-    let mut restored = BundleViewRuntime::try_new(Some(program), Some(text)).unwrap();
+    let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
     restored.restore(&snapshot).unwrap();
     assert_eq!(restored.snapshot(), snapshot);
     let after_restore = restored.evaluate(std::slice::from_ref(&first_handle), &[], false);
@@ -383,7 +451,7 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
             value: "item".to_owned(),
         },
     )]);
-    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text)).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
     let frame = runtime.evaluate(&[handle("handle.repeat", "view.Repeat")], &[], false);
     assert!(frame.mounts.is_empty());
     assert_eq!(
@@ -445,7 +513,7 @@ fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
         },
     )]);
     let mounted = handle("handle.time", "view.Time");
-    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text)).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
     let initial = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
     assert_eq!(plain_text(&initial), "0");
     runtime.advance_millis(1_000).unwrap();
@@ -495,7 +563,7 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
         )],
         ..ViewProgramResource::default()
     };
-    let mut runtime = BundleViewRuntime::try_new(Some(program), None).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
     let frame = runtime.evaluate(
         &[handle("handle.exact", "view.Exact")],
         &[RuntimeBinding {
@@ -508,5 +576,148 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
     assert_eq!(
         frame.diagnostics[0].code,
         BundleViewDiagnosticCode::InputType
+    );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the end-to-end typed-store fixture keeps all three source families and their missing-store diagnostic together"
+)]
+fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_fallback() {
+    let program = ViewProgramResource {
+        program_id: "view.program.typed_text".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.TypedText".to_owned(),
+            body: ViewInstructionSpan::new(0, 3),
+            parameters: Vec::new(),
+            state_schema_hash: 61,
+        }],
+        instructions: ["localized", "rich", "display"]
+            .into_iter()
+            .map(|suffix| ViewProgramInstruction::EmitText {
+                text_source: format!("text.{suffix}"),
+                style: None,
+                part: None,
+                source: None,
+            })
+            .collect(),
+        text_blocks: ["localized", "rich", "display"]
+            .into_iter()
+            .map(|suffix| {
+                ViewTextBlockResource::new(
+                    format!("text.block.{suffix}"),
+                    Some("view.TypedText".to_owned()),
+                    None,
+                    format!("text.{suffix}"),
+                    ViewTextBlockBounds::from_px(0, 0, 240, 48),
+                )
+            })
+            .collect(),
+        ..ViewProgramResource::default()
+    };
+    let localized_document = RichTextDocument::new(vec![RichTextNode::Text {
+        text: "こんにちは".to_owned(),
+    }]);
+    let rich_document = RichTextDocument::new(vec![RichTextNode::Ruby {
+        base: "夢".to_owned(),
+        ruby: "ゆめ".to_owned(),
+    }]);
+    let display_document = RichTextDocument::new(vec![RichTextNode::Text {
+        text: "Display stage".to_owned(),
+    }]);
+    let display_frame = LineDisplaySpec {
+        line: RuntimeLineId::from_runtime_line_value("say.typed_text.display").unwrap(),
+        callee: "narrator".to_owned(),
+        speaker_label: None,
+        text_key: None,
+        window: None,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: display_document,
+    }
+    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+    .unwrap();
+    let text = ViewTextResource {
+        sources: vec![
+            ViewTextSourceRecord {
+                public_id: "text.localized".to_owned(),
+                kind: ViewTextSourceKind::Localized {
+                    key: "text.greeting".to_owned(),
+                    locale: Some("ja-JP".to_owned()),
+                },
+                source: None,
+            },
+            ViewTextSourceRecord {
+                public_id: "text.rich".to_owned(),
+                kind: ViewTextSourceKind::RichTextDocument {
+                    document: "document.dream".to_owned(),
+                },
+                source: None,
+            },
+            ViewTextSourceRecord {
+                public_id: "text.display".to_owned(),
+                kind: ViewTextSourceKind::DisplayFrame {
+                    frame: "display.opening".to_owned(),
+                },
+                source: None,
+            },
+        ],
+        localized: vec![ViewLocalizedTextResource {
+            key: "text.greeting".to_owned(),
+            locale: Some("ja-JP".to_owned()),
+            document: localized_document.clone(),
+        }],
+        rich_text_documents: vec![ViewRichTextDocumentResource {
+            public_id: "document.dream".to_owned(),
+            document: rich_document.clone(),
+        }],
+        display_frames: vec![ViewDisplayFrameResource {
+            public_id: "display.opening".to_owned(),
+            frame: display_frame.clone(),
+            stage_index: 0,
+        }],
+        ..ViewTextResource::default()
+    };
+
+    let mut runtime =
+        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None).unwrap();
+    let frame = runtime.evaluate(&[handle("handle.typed", "view.TypedText")], &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    assert_eq!(frame.mounts[0].paint.len(), 3);
+    assert_eq!(frame.mounts[0].text.len(), 3);
+    assert!(matches!(
+        &frame.mounts[0].text[0].value,
+        BundleViewTextValue::Localized { document, .. }
+            if document.as_ref() == &localized_document
+    ));
+    assert!(matches!(
+        &frame.mounts[0].text[1].value,
+        BundleViewTextValue::RichTextDocument { document }
+            if document.as_ref() == &rich_document
+    ));
+    assert!(matches!(
+        &frame.mounts[0].text[2].value,
+        BundleViewTextValue::DisplayFrame { frame, stage_index: 0 }
+            if frame.as_ref() == &display_frame
+    ));
+    assert_eq!(
+        frame.mounts[0].text[0].targets[0].public_id,
+        "text.block.localized"
+    );
+
+    let mut missing_text = text;
+    missing_text.localized.clear();
+    let mut missing = BundleViewRuntime::try_new(Some(program), Some(missing_text), None).unwrap();
+    let failure = missing.evaluate(&[handle("handle.typed", "view.TypedText")], &[], false);
+    assert!(failure.mounts.is_empty());
+    assert_eq!(
+        failure.diagnostics[0].code,
+        BundleViewDiagnosticCode::MissingLocalizedText
     );
 }

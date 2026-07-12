@@ -1,4 +1,3 @@
-use arcweft_bundle::resource_codec::ViewTextResource;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, StyleAssignOp, TextAssistPolicy,
     TextCapitalization, ViewElementKind, ViewElementState, ViewInputKind, ViewInputPurpose,
@@ -7,13 +6,12 @@ use arcweft_bundle::resource_codec::view::{
     ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter,
     ViewRuntimeControlRadii, ViewRuntimeControlState, ViewRuntimeControlStyle,
     ViewRuntimeControlStyleDiagnosticReason, ViewRuntimeControlStyleResolution,
-    ViewRuntimeSurfaceBounds, ViewRuntimeTextBlockBounds, ViewRuntimeTextControl,
-    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
-    ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewStyleApplyRef, ViewStyleDeclaration,
-    ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken,
-    ViewStyleValue, ViewSurfaceResource, ViewTextBlockResource, ViewTextSelectionPolicy,
-    ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
-    ViewTextVerticalNavigationPolicy,
+    ViewRuntimeSurfaceBounds, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
+    ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+    ViewSecureInputPolicy, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleResource,
+    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
+    ViewSurfaceResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextSelectionPolicy,
+    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 
 #[test]
@@ -263,16 +261,6 @@ fn text_control_styles_bind_by_program_target_not_resource_order() {
 
 #[test]
 fn view_program_cascade_styles_text_blocks_with_child_and_inline_rules() {
-    let text = ViewTextResource {
-        sources: vec![ViewTextSourceRecord {
-            public_id: "text.title".to_owned(),
-            kind: ViewTextSourceKind::Literal {
-                value: "Control deck".to_owned(),
-            },
-            source: None,
-        }],
-        ..ViewTextResource::default()
-    };
     let program = ViewProgramResource {
         instructions: vec![
             ViewProgramInstruction::OpenElement {
@@ -300,7 +288,7 @@ fn view_program_cascade_styles_text_blocks_with_child_and_inline_rules() {
             None,
             None,
             "text.title",
-            ViewRuntimeTextBlockBounds::from_px(0, 0, 320, 48),
+            ViewTextBlockBounds::from_px(0, 0, 320, 48),
         )],
         ..ViewProgramResource::default()
     };
@@ -337,12 +325,12 @@ fn view_program_cascade_styles_text_blocks_with_child_and_inline_rules() {
         ..ViewStyleResource::default()
     };
 
-    let blocks = program.runtime_text_blocks_with_style(Some(&text), Some(&style));
+    let blocks = program.runtime_text_styles_with_style(Some(&style));
     let normal = blocks.controls[0]
         .style
         .visual_for_state(ViewRuntimeControlState::Normal);
 
-    assert_eq!(blocks.controls[0].text, "Control deck");
+    assert_eq!(blocks.controls[0].public_id, "text.block.title");
     assert_eq!(normal.font_family.as_deref(), Some("Yu Gothic View"));
     assert_eq!(normal.text, Some(RgbaColor::rgb(244, 247, 251)));
     assert_eq!(normal.font_size_milli, Some(36_000));

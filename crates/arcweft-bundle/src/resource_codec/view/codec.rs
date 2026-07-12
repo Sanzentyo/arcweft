@@ -1181,6 +1181,12 @@ impl ViewTextResource {
     fn canonicalize(&mut self) {
         self.sources
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.localized
+            .sort_by(|left, right| (&left.key, &left.locale).cmp(&(&right.key, &right.locale)));
+        self.rich_text_documents
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.display_frames
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.reveal_policies
             .sort_by(|left, right| left.text_source.cmp(&right.text_source));
         self.cursor_policies
@@ -1190,7 +1196,13 @@ impl ViewTextResource {
     }
 
     fn validate(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
-        check_budget(self.sources.len(), budget.text_sources, "view_text_sources")?;
+        let text_record_count = self
+            .sources
+            .len()
+            .saturating_add(self.localized.len())
+            .saturating_add(self.rich_text_documents.len())
+            .saturating_add(self.display_frames.len());
+        check_budget(text_record_count, budget.text_sources, "view_text_sources")?;
         check_budget(
             self.source_ranges.len(),
             budget.source_map_refs,
@@ -1201,21 +1213,56 @@ impl ViewTextResource {
             "view_text_sources",
         )?;
         reject_duplicates(
+            self.localized.iter().map(|entry| {
+                format!(
+                    "{}\u{0}{}",
+                    entry.key,
+                    entry.locale.as_deref().unwrap_or_default()
+                )
+            }),
+            "view_localized_text",
+        )?;
+        reject_duplicates(
+            self.rich_text_documents
+                .iter()
+                .map(|document| document.public_id.clone()),
+            "view_rich_text_documents",
+        )?;
+        reject_duplicates(
+            self.display_frames
+                .iter()
+                .map(|frame| frame.public_id.clone()),
+            "view_display_frames",
+        )?;
+        reject_duplicates(
             self.redactions
                 .iter()
                 .map(|redaction| redaction.text_source.clone()),
             "view_text_redactions",
         )?;
-        if self.sources.iter().all(|source| match &source.kind {
+        let valid_sources = self.sources.iter().all(|source| match &source.kind {
             ViewTextSourceKind::Projection { path } => {
                 !path.is_empty() && path.iter().all(|segment| valid_identifier(segment))
             }
             ViewTextSourceKind::Local { name } => valid_identifier(name),
-            ViewTextSourceKind::Literal { .. }
-            | ViewTextSourceKind::Localized { .. }
-            | ViewTextSourceKind::RichTextDocument { .. }
-            | ViewTextSourceKind::DisplayFrame { .. } => true,
-        }) {
+            ViewTextSourceKind::RichTextDocument { document } => self
+                .rich_text_documents
+                .iter()
+                .any(|entry| entry.public_id == *document),
+            ViewTextSourceKind::DisplayFrame { frame } => self
+                .display_frames
+                .iter()
+                .any(|entry| entry.public_id == *frame),
+            ViewTextSourceKind::Literal { .. } | ViewTextSourceKind::Localized { .. } => true,
+        });
+        let valid_display_frames = self.display_frames.iter().all(|entry| {
+            usize::try_from(entry.stage_index)
+                .ok()
+                .and_then(|index| entry.frame.stage(index))
+                .is_some()
+                && entry.frame.validate().is_ok()
+        });
+        if valid_sources && valid_display_frames {
             Ok(())
         } else {
             Err(SectionCodecError::NonCanonicalTable("view_text_projection"))
@@ -1232,6 +1279,21 @@ impl ViewTextResource {
                         .chain(text_source_kind_public_ids(&source.kind).map(Some))
                         .flatten()
                 })
+                .chain(self.localized.iter().flat_map(|entry| {
+                    [Some(entry.key.clone()), entry.locale.clone()]
+                        .into_iter()
+                        .flatten()
+                }))
+                .chain(
+                    self.rich_text_documents
+                        .iter()
+                        .map(|document| document.public_id.clone()),
+                )
+                .chain(
+                    self.display_frames
+                        .iter()
+                        .map(|frame| frame.public_id.clone()),
+                )
                 .chain(
                     self.reveal_policies
                         .iter()
@@ -1251,7 +1313,13 @@ impl ViewTextResource {
     }
 
     fn record_count(&self) -> u32 {
-        saturating_u32(self.sources.len())
+        saturating_u32(
+            self.sources
+                .len()
+                .saturating_add(self.localized.len())
+                .saturating_add(self.rich_text_documents.len())
+                .saturating_add(self.display_frames.len()),
+        )
     }
 }
 
@@ -1791,9 +1859,9 @@ fn text_source_kind_public_ids(kind: &ViewTextSourceKind) -> impl Iterator<Item 
     match kind {
         ViewTextSourceKind::Literal { .. }
         | ViewTextSourceKind::Projection { .. }
-        | ViewTextSourceKind::Local { .. }
-        | ViewTextSourceKind::RichTextDocument { .. }
-        | ViewTextSourceKind::DisplayFrame { .. } => Vec::new(),
+        | ViewTextSourceKind::Local { .. } => Vec::new(),
+        ViewTextSourceKind::RichTextDocument { document } => vec![document.clone()],
+        ViewTextSourceKind::DisplayFrame { frame } => vec![frame.clone()],
         ViewTextSourceKind::Localized { key, locale } => [Some(key.clone()), locale.clone()]
             .into_iter()
             .flatten()

@@ -47,8 +47,8 @@ use arcweft_bundle::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
     resource_codec::{
-        ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource,
-        ViewThemeResource,
+        ViewInputResource, ViewLocalizedTextResource, ViewProgramResource, ViewStyleResource,
+        ViewTextResource, ViewThemeResource,
         view::{
             RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax as ProductStyleSyntax, SystemColor, ViewElementKind, ViewElementState,
@@ -450,7 +450,9 @@ fn merge_optional<T>(
 
 fn merge_view_text(mut left: ViewTextResource, right: ViewTextResource) -> ViewTextResource {
     left.sources.extend(right.sources);
-    left.display_frame_refs.extend(right.display_frame_refs);
+    left.localized.extend(right.localized);
+    left.rich_text_documents.extend(right.rich_text_documents);
+    left.display_frames.extend(right.display_frames);
     left.source_ranges.extend(right.source_ranges);
     left.reveal_policies.extend(right.reveal_policies);
     left.cursor_policies.extend(right.cursor_policies);
@@ -932,7 +934,8 @@ fn attach_bundle_view_sidecars(
     if let Some(resource) = sidecars.style {
         bundle = bundle.with_view_style(resource);
     }
-    if let Some(resource) = sidecars.text {
+    if let Some(mut resource) = sidecars.text {
+        hydrate_default_view_localization(&mut resource, &bundle.display);
         bundle = bundle.with_view_text(resource);
     }
     if let Some(resource) = sidecars.input {
@@ -942,6 +945,39 @@ fn attach_bundle_view_sidecars(
         bundle = bundle.with_view_theme(resource);
     }
     bundle
+}
+
+fn hydrate_default_view_localization(
+    resource: &mut ViewTextResource,
+    display: &arcweft_render_text::LineDisplayCatalog,
+) {
+    let keys = resource
+        .sources
+        .iter()
+        .filter_map(|source| match &source.kind {
+            arcweft_bundle::resource_codec::view::ViewTextSourceKind::Localized {
+                key,
+                locale: None,
+            } => Some(key.clone()),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    for key in keys {
+        if resource.localized_document(&key, None).is_some() {
+            continue;
+        }
+        if let Some(spec) = display
+            .lines()
+            .iter()
+            .find(|spec| spec.text_key.as_deref() == Some(key.as_str()))
+        {
+            resource.localized.push(ViewLocalizedTextResource {
+                key,
+                locale: None,
+                document: spec.content.clone(),
+            });
+        }
+    }
 }
 
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {

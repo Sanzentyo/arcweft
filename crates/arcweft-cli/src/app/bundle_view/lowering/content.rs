@@ -5,13 +5,12 @@ use super::{
     ViewActionButtonResource, ViewActionPayload, ViewActionPayloadResource, ViewButton,
     ViewButtonLabel, ViewElementKind, ViewImage, ViewLayoutCursor, ViewLayoutFrame,
     ViewLoweringState, ViewModifier, ViewProgramInstruction, ViewRuntimeButtonBounds,
-    ViewRuntimeTextBlockBounds, ViewSemanticTarget, ViewSidecarError, ViewText,
-    ViewTextBlockResource, ViewTextSelectionPolicy, ViewTextSourceKind, ViewTextSourceRecord,
-    button_bounds, expr_source, first_part, lower_button_modifiers, lower_modifiers,
-    lower_navigation_target, lower_text_control_payload_field, modifier_label,
-    modifier_layout_length_u32, normalize_entity_ref, normalize_input_payload_ref,
-    symbol_expr_name, text_block_frame, text_control_selection_policy,
-    validate_interactive_overflow_modifiers, view_resource_id,
+    ViewSemanticTarget, ViewSidecarError, ViewText, ViewTextBlockBounds, ViewTextBlockResource,
+    ViewTextSelectionPolicy, ViewTextSourceKind, ViewTextSourceRecord, button_bounds, expr_source,
+    first_part, lower_button_modifiers, lower_modifiers, lower_navigation_target,
+    lower_text_control_payload_field, modifier_label, modifier_layout_length_u32,
+    normalize_entity_ref, normalize_input_payload_ref, symbol_expr_name, text_block_frame,
+    text_control_selection_policy, validate_interactive_overflow_modifiers, view_resource_id,
 };
 
 pub(super) fn lower_text(
@@ -44,7 +43,7 @@ pub(super) fn lower_text(
         view,
         scroll_region,
         id,
-        ViewRuntimeTextBlockBounds::new(
+        ViewTextBlockBounds::new(
             layout.x_milli,
             layout.y_milli,
             frame.width_milli,

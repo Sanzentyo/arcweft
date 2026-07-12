@@ -1,6 +1,6 @@
 //! Projects mount-scoped executable View output into existing scene resources.
 
-use crate::view_runtime::{BundleViewFrame, BundleViewMountOutput, BundleViewTextValue};
+use crate::view_runtime::{BundleViewFrame, BundleViewMountOutput};
 use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewFocusInitialPolicy, ViewFocusTargetResolution,
@@ -8,7 +8,7 @@ use arcweft_bundle::resource_codec::view::{
 };
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextBlock, ViewRuntimeTextControl,
+    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
 use std::collections::BTreeSet;
 
@@ -19,7 +19,6 @@ pub(crate) struct ProjectedViewResources {
     pub(crate) action_buttons: Vec<ViewRuntimeActionButton>,
     pub(crate) scroll_regions: Vec<ViewRuntimeScrollRegion>,
     pub(crate) surfaces: Vec<ViewRuntimeSurface>,
-    pub(crate) text_blocks: Vec<ViewRuntimeTextBlock>,
     pub(crate) focus_groups: Vec<ViewRuntimeFocusGroup>,
     pub(crate) focus_navigation: Vec<ViewRuntimeFocusNavigation>,
 }
@@ -33,7 +32,6 @@ pub(crate) struct ViewProjectionInput<'a> {
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
     pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
     pub(crate) surfaces: &'a [ViewRuntimeSurface],
-    pub(crate) text_blocks: &'a [ViewRuntimeTextBlock],
     pub(crate) focus_groups: &'a [ViewRuntimeFocusGroup],
     pub(crate) focus_navigation: &'a [ViewRuntimeFocusNavigation],
 }
@@ -48,7 +46,6 @@ pub(crate) fn project_view_resources(
         action_buttons: retain_non_executable(input.action_buttons, input.executable_definitions),
         scroll_regions: retain_non_executable(input.scroll_regions, input.executable_definitions),
         surfaces: retain_non_executable(input.surfaces, input.executable_definitions),
-        text_blocks: retain_non_executable(input.text_blocks, input.executable_definitions),
         focus_groups: retain_non_executable(input.focus_groups, input.executable_definitions),
         focus_navigation: retain_non_executable(
             input.focus_navigation,
@@ -75,12 +72,6 @@ fn project_mount(
     project_text_inputs(mount, input, &active, projected);
     project_action_buttons(mount, input, &active, projected);
     project_layout_resources(mount, input, &active, projected);
-    projected.text_blocks.extend(
-        input
-            .text_blocks
-            .iter()
-            .filter_map(|block| project_text_block(block, mount, &active)),
-    );
     project_focus(mount, input, &active, projected);
 }
 
@@ -221,31 +212,6 @@ fn project_layout_resources(
     );
 }
 
-fn project_text_block(
-    block: &ViewRuntimeTextBlock,
-    mount: &BundleViewMountOutput,
-    active: &BTreeSet<&str>,
-) -> Option<ViewRuntimeTextBlock> {
-    if !owned_and_active(block.view.as_deref(), &block.target, mount, active) {
-        return None;
-    }
-    let value = mount.text.iter().find_map(|text| {
-        text.targets
-            .iter()
-            .any(|target| target == &block.public_id)
-            .then_some(&text.value)
-    })?;
-    let BundleViewTextValue::Plain { value } = value else {
-        return None;
-    };
-    let mut block = block.clone();
-    block.public_id = scoped_id(mount, &block.public_id);
-    block.target = scoped_id(mount, &block.target);
-    block.text.clone_from(value);
-    scope_owner(mount, &mut block.view, &mut block.containing_scroll_region);
-    Some(block)
-}
-
 fn project_focus(
     mount: &BundleViewMountOutput,
     input: &ViewProjectionInput<'_>,
@@ -314,7 +280,7 @@ fn scope_owner(
 }
 
 fn scoped_id(mount: &BundleViewMountOutput, authored: &str) -> String {
-    format!("view_mount_{}.{}", mount.mount.get(), authored)
+    mount.scoped_id(authored)
 }
 
 trait ViewOwnedResource {
@@ -354,7 +320,6 @@ impl_view_owned!(
     ViewRuntimeActionButton,
     ViewRuntimeScrollRegion,
     ViewRuntimeSurface,
-    ViewRuntimeTextBlock,
     ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation,
 );

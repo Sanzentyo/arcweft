@@ -93,6 +93,27 @@ frame operation/value budget の下で評価される。
 され、同じ authored control を二つの mount で独立に操作できる。画像と scroll
 element も lowering 時に concrete target ID を持つ。
 
+View text bundle は source record と実体 store を分離する。localized store は
+`(TextKey, locale)` に対する `RichTextDocument`、rich-text store は document ID に
+対する `RichTextDocument`、display-frame store は frame ID に対する
+`LineDisplayFrame` と stage index を保持する。参照先や stage が存在しない場合は
+`VIEW014` から `VIEW017` の typed diagnostic で mount 評価を失敗させる。空文字、
+debug 表現、既定 locale、plain text への暗黙 fallback は使わない。locale 未指定の
+source だけは、bundle compile 時に同じ `TextKey` の canonical display catalog が
+存在すれば、その document を初期 store として materialize してよい。
+
+Player は評価済みの typed value を `ResolvedTextDocument` に解決し、通常の
+`TextLayout` と frame-local `PreparedTextBatch` へ直接追加する。vertical writing、
+ruby、text-combine、locale、run source、selection/scroll clip はこの境界まで型付きで
+保持し、View 専用の string block や二度目の layout は作らない。
+
+paint IR は `Element`、`Text`、`Image` と nested `Mount` の authored order を保持
+する。nested mount は親の `Mount` slot で再帰展開するため、親の前後へ後置されない。
+View 所有 image は通常 image pass から View scene resource table へ移し、crop UV、
+affine transform、opacity を保持した `Image` primitive として同じ painter sequence に
+置く。したがって Text/Image/element/child View の相対順序は native、Web、headless
+で一つの scene contract になる。
+
 save/load は logical time、mount allocator cursor、root bindings、occurrence path、
 activation time、seed、typed parameter/state value と revision、初期化 slot、runtime
 parameter snapshot を保存する。restore は program/schema/type/allocator と、保存済み

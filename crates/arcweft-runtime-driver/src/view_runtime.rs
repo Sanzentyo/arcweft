@@ -10,15 +10,17 @@ mod value;
 
 use crate::presentation_handles::PresentationHandleId;
 use arcweft_bundle::container::BundleDigest;
-use arcweft_bundle::resource_codec::view::ViewObserveClassification;
+use arcweft_bundle::resource_codec::view::{ViewObserveClassification, ViewTextSelectionPolicy};
 use arcweft_bundle::resource_codec::{
-    CrossSectionRef, ViewDefinitionResource, ViewProgramResource, ViewTextResource,
+    ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlStyle,
+    ViewRuntimeControlStyleDiagnostics, ViewStyleResource, ViewTextBlockBounds, ViewTextResource,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_presentation::fx::{
     FiniteF32Error, FxGraphChildPath, FxId, FxInstanceId, FxLogicalTime, FxRuntimeType,
     FxRuntimeValue,
 };
+use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
     ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState,
     ViewProgramId, ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
@@ -69,6 +71,10 @@ pub enum BundleViewDiagnosticCode {
     UnsupportedTextValue,
     InvalidAwaitState,
     InvalidFxApplication,
+    MissingLocalizedText,
+    MissingRichTextDocument,
+    MissingDisplayFrame,
+    InvalidDisplayStage,
 }
 
 impl BundleViewDiagnosticCode {
@@ -88,6 +94,10 @@ impl BundleViewDiagnosticCode {
             Self::UnsupportedTextValue => "VIEW011_UNSUPPORTED_TEXT_VALUE",
             Self::InvalidAwaitState => "VIEW012_INVALID_AWAIT_STATE",
             Self::InvalidFxApplication => "VIEW013_INVALID_FX_APPLICATION",
+            Self::MissingLocalizedText => "VIEW014_MISSING_LOCALIZED_TEXT",
+            Self::MissingRichTextDocument => "VIEW015_MISSING_RICH_TEXT_DOCUMENT",
+            Self::MissingDisplayFrame => "VIEW016_MISSING_DISPLAY_FRAME",
+            Self::InvalidDisplayStage => "VIEW017_INVALID_DISPLAY_STAGE",
         }
     }
 }
@@ -114,7 +124,7 @@ impl fmt::Display for BundleViewDiagnostic {
 }
 
 /// Typed text payload retained until the shared text-preparation boundary.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BundleViewTextValue {
     Plain {
@@ -124,20 +134,35 @@ pub enum BundleViewTextValue {
         key: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         locale: Option<String>,
+        document: Box<RichTextDocument>,
     },
     RichTextDocument {
-        document: CrossSectionRef,
+        document: Box<RichTextDocument>,
     },
     DisplayFrame {
-        frame: CrossSectionRef,
+        frame: Box<LineDisplayFrame>,
+        stage_index: u32,
     },
 }
 
-/// One active text source in a concrete mounted occurrence.
+/// One authored text target retained with its typed layout and style contract.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BundleViewTextTarget {
+    pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
+    pub bounds: ViewTextBlockBounds,
+    #[serde(default)]
+    pub selection_policy: ViewTextSelectionPolicy,
+    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
+    pub style: ViewRuntimeControlStyle,
+}
+
+/// One active text source in a concrete mounted occurrence.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleViewTextOutput {
     pub source_id: String,
-    pub targets: Vec<String>,
+    pub targets: Vec<BundleViewTextTarget>,
     pub value: BundleViewTextValue,
     #[serde(default)]
     pub classification: ViewObserveClassification,
@@ -163,8 +188,18 @@ pub struct BundleViewFxApplication {
     pub child_path: FxGraphChildPath,
 }
 
-/// Renderer-neutral output of one concrete View definition occurrence.
+/// One per-mount View paint operation in exact evaluator order.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BundleViewPaintItem {
+    Element { target: String },
+    Text { source_id: String, target: String },
+    Image { target: String },
+    Mount { mount: ViewMountId },
+}
+
+/// Renderer-neutral output of one concrete View definition occurrence.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleViewMountOutput {
     pub handle: PresentationHandleId,
     pub mount: ViewMountId,
@@ -172,12 +207,21 @@ pub struct BundleViewMountOutput {
     pub path: BundleViewInstancePath,
     pub active_targets: Vec<String>,
     pub active_images: Vec<String>,
+    pub paint: Vec<BundleViewPaintItem>,
     pub text: Vec<BundleViewTextOutput>,
     pub fx: Vec<BundleViewFxApplication>,
 }
 
+impl BundleViewMountOutput {
+    /// Qualifies one authored resource identity for this concrete mount occurrence.
+    #[must_use]
+    pub fn scoped_id(&self, authored: &str) -> String {
+        format!("view_mount_{}.{}", self.mount.get(), authored)
+    }
+}
+
 /// Complete result of one deterministic View evaluation frame.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct BundleViewFrame {
     pub mounts: Vec<BundleViewMountOutput>,
     pub diagnostics: Vec<BundleViewDiagnostic>,
@@ -297,6 +341,8 @@ struct MountedView {
 pub struct BundleViewRuntime {
     program: Option<ViewProgramResource>,
     text: Option<ViewTextResource>,
+    text_styles: BTreeMap<String, ViewRuntimeControlStyle>,
+    text_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     definitions: BTreeMap<String, usize>,
     inventory: ViewValueProgramInventory,
     logical_time: FxLogicalTime,
@@ -307,7 +353,7 @@ pub struct BundleViewRuntime {
 
 impl Default for BundleViewRuntime {
     fn default() -> Self {
-        Self::try_new(None, None).expect("an empty View runtime is valid")
+        Self::try_new(None, None, None).expect("an empty View runtime is valid")
     }
 }
 
@@ -344,6 +390,7 @@ impl BundleViewRuntime {
     pub fn try_new(
         program: Option<ViewProgramResource>,
         text: Option<ViewTextResource>,
+        style: Option<&ViewStyleResource>,
     ) -> Result<Self, BundleViewRuntimeError> {
         let inventory = ViewValueProgramInventory::from_programs(
             program
@@ -365,9 +412,19 @@ impl BundleViewRuntime {
                 let _ = definition_program_id(index)?;
             }
         }
+        let styled_text = program.as_ref().map_or_else(Default::default, |program| {
+            program.runtime_text_styles_with_style(style)
+        });
+        let text_styles = styled_text
+            .controls
+            .into_iter()
+            .map(|binding| (binding.public_id, binding.style))
+            .collect();
         Ok(Self {
             program,
             text,
+            text_styles,
+            text_style_diagnostics: styled_text.diagnostics,
             definitions,
             inventory,
             logical_time: FxLogicalTime::zero(),
@@ -380,6 +437,12 @@ impl BundleViewRuntime {
     #[must_use]
     pub const fn logical_time(&self) -> FxLogicalTime {
         self.logical_time
+    }
+
+    /// Style-cascade diagnostics produced for typed text targets at construction.
+    #[must_use]
+    pub const fn text_style_diagnostics(&self) -> &ViewRuntimeControlStyleDiagnostics {
+        &self.text_style_diagnostics
     }
 
     pub fn advance_millis(&mut self, milliseconds: u64) -> Result<(), BundleViewRuntimeError> {

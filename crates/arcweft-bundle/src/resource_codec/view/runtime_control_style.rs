@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use super::model::{
     RgbaColor, StyleAssignOp, SystemColor, ViewElementKind, ViewElementState, ViewInputKind,
     ViewInputResource, ViewInteractionState, ViewProgramInstruction, ViewProgramResource,
-    ViewRuntimeActionButton, ViewRuntimeSurface, ViewRuntimeTextBlock, ViewRuntimeTextControl,
-    ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleResource, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleValue, ViewTextResource,
+    ViewRuntimeActionButton, ViewRuntimeSurface, ViewRuntimeTextControl, ViewStyleApplyRef,
+    ViewStyleDeclaration, ViewStyleResource, ViewStyleSelector, ViewStyleSelectorPart,
+    ViewStyleValue, ViewTextResource, ViewTextStyleBinding,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -490,7 +490,7 @@ impl ViewProgramResource {
         style_resource: &ViewStyleResource,
         text_controls: &mut [ViewRuntimeTextControl],
         action_buttons: &mut [ViewRuntimeActionButton],
-        text_blocks: &mut [ViewRuntimeTextBlock],
+        text_blocks: &mut [ViewTextStyleBinding],
     ) -> ViewRuntimeControlStyleDiagnostics {
         self.apply_runtime_styles_collecting_elements(
             style_resource,
@@ -530,7 +530,7 @@ impl ViewProgramResource {
         style_resource: &ViewStyleResource,
         text_controls: &mut [ViewRuntimeTextControl],
         action_buttons: &mut [ViewRuntimeActionButton],
-        text_blocks: &mut [ViewRuntimeTextBlock],
+        text_blocks: &mut [ViewTextStyleBinding],
         mut element_styles: Option<&mut Vec<ViewRuntimeElementStyle>>,
     ) -> ViewRuntimeControlStyleDiagnostics {
         let mut diagnostics = ViewRuntimeControlStyleDiagnostics::default();
@@ -700,13 +700,19 @@ impl ViewProgramResource {
         }
     }
 
-    pub fn runtime_text_blocks_with_style(
+    pub fn runtime_text_styles_with_style(
         &self,
-        text: Option<&ViewTextResource>,
         style: Option<&ViewStyleResource>,
-    ) -> ViewRuntimeStyledControls<ViewRuntimeTextBlock> {
+    ) -> ViewRuntimeStyledControls<ViewTextStyleBinding> {
         let mut diagnostics = ViewRuntimeControlStyleDiagnostics::default();
-        let mut controls = self.runtime_text_blocks(text);
+        let mut controls = self
+            .text_blocks
+            .iter()
+            .map(|block| ViewTextStyleBinding {
+                public_id: block.public_id.clone(),
+                style: ViewRuntimeControlStyle::default(),
+            })
+            .collect::<Vec<_>>();
         if let Some(style) = style {
             let mut text_controls = Vec::new();
             let mut action_buttons = Vec::new();
@@ -751,7 +757,7 @@ impl ViewProgramResource {
 
 fn finalize_text_leaf(
     leaf: &mut Option<RuntimeTextLeafStyle>,
-    text_blocks: &mut [ViewRuntimeTextBlock],
+    text_blocks: &mut [ViewTextStyleBinding],
 ) {
     if let Some(leaf) = leaf.take()
         && let Some(block) = text_blocks.get_mut(leaf.index)

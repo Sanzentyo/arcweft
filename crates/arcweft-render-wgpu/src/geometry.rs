@@ -20,8 +20,8 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextCharacterBounds, TextGeometryTransform, TextInputClientSnapshot,
     TextInputGeometrySnapshot, TextRange,
 };
-use arcweft_render_text::TextResolveError;
-use arcweft_text_layout::TextLayoutError;
+use arcweft_render_text::{ResolvedTextDocument, RichTextRange, TextResolveError};
+use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize, TextLayoutError};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -416,6 +416,35 @@ pub struct RenderTextBlock {
     pub selection_policy: RenderTextSelectionPolicy,
     pub selection: Option<TextRange<TextByteOffset>>,
     pub selection_rgba: [f32; 4],
+}
+
+/// Layout, interaction, and clipping contract for one canonical resolved document.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedTextDocumentRequest {
+    pub origin: LayoutPoint,
+    pub size: LayoutSize,
+    pub container_bounds: LayoutRect,
+    pub clip: Option<LayoutRect>,
+    pub target: Option<InteractionTarget>,
+    pub selection_enabled: bool,
+    pub selection: Option<RichTextRange>,
+    pub selection_rgba: [f32; 4],
+}
+
+impl PreparedTextDocumentRequest {
+    #[must_use]
+    pub const fn new(origin: LayoutPoint, size: LayoutSize) -> Self {
+        Self {
+            origin,
+            size,
+            container_bounds: LayoutRect::new(origin.x, origin.y, size.width, size.height),
+            clip: None,
+            target: None,
+            selection_enabled: false,
+            selection: None,
+            selection_rgba: [0.25, 0.5, 1.0, 0.35],
+        }
+    }
 }
 
 /// Static text selection policy for player-rendered text blocks.
@@ -1335,6 +1364,31 @@ impl SharedFramePlanContext {
             .as_mut()
             .ok_or(FramePlanError::MissingProjectFonts)?;
         prepared_text::prepare_text_block(engine, block, viewport)
+    }
+
+    /// Prepares one already-resolved document without a source-specific adapter type.
+    pub fn prepare_text_document(
+        &mut self,
+        document: &ResolvedTextDocument<'_>,
+        request: &PreparedTextDocumentRequest,
+        viewport: RenderViewport,
+    ) -> Result<PreparedTextItem, FramePlanError> {
+        let engine = self
+            .prepared_text_engine
+            .as_mut()
+            .ok_or(FramePlanError::MissingProjectFonts)?;
+        prepared_text::prepare_text_document(engine, document, request, viewport)
+    }
+
+    /// Appends one canonical resolved document in exact frame painter order.
+    pub fn push_prepared_text_document(
+        &mut self,
+        frame: &mut PreparedFrame,
+        document: &ResolvedTextDocument<'_>,
+        request: &PreparedTextDocumentRequest,
+    ) -> Result<PreparedTextId, FramePlanError> {
+        let item = self.prepare_text_document(document, request, frame.viewport)?;
+        frame.prepared_text.push(item).map_err(FramePlanError::from)
     }
 
     /// Appends one ordinary prepared item to the frame batch.

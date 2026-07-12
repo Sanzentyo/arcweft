@@ -563,32 +563,32 @@ fn image_vertices(
     [
         ViewImageVertex {
             position: positions[0],
-            uv: [0.0, 0.0],
+            uv: [image.uv.left, image.uv.top],
             opacity,
         },
         ViewImageVertex {
             position: positions[1],
-            uv: [0.0, 1.0],
+            uv: [image.uv.left, image.uv.bottom],
             opacity,
         },
         ViewImageVertex {
             position: positions[2],
-            uv: [1.0, 1.0],
+            uv: [image.uv.right, image.uv.bottom],
             opacity,
         },
         ViewImageVertex {
             position: positions[0],
-            uv: [0.0, 0.0],
+            uv: [image.uv.left, image.uv.top],
             opacity,
         },
         ViewImageVertex {
             position: positions[2],
-            uv: [1.0, 1.0],
+            uv: [image.uv.right, image.uv.bottom],
             opacity,
         },
         ViewImageVertex {
             position: positions[3],
-            uv: [1.0, 0.0],
+            uv: [image.uv.right, image.uv.top],
             opacity,
         },
     ]

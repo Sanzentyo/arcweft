@@ -1,7 +1,7 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
-    RgbaColor, ViewElementKind, ViewRuntimeControlCornerRadius, ViewRuntimeControlRadii,
-    ViewTextSelectionPolicy,
+    RgbaColor, ViewElementKind, ViewObserveClassification, ViewRuntimeControlCornerRadius,
+    ViewRuntimeControlRadii, ViewTextSelectionPolicy,
 };
 use arcweft_bundle::resource_codec::{
     ViewFocusAutoScrollPolicy, ViewScrollAxis, ViewScrollIndicatorsPolicy,
@@ -10,8 +10,9 @@ use arcweft_bundle::resource_codec::{
 use arcweft_bundle::resource_codec::{
     ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion,
     ViewRuntimeScrollRegionBounds, ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
-    ViewRuntimeSurfaceBounds, ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds,
+    ViewRuntimeSurfaceBounds, ViewTextBlockBounds,
 };
+use arcweft_core::plan::RuntimeLineId;
 use arcweft_player_scene::{
     fonts::{DEFAULT_PLAYER_FONT_BYTES, PlayerFontSet},
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
@@ -22,11 +23,21 @@ use arcweft_player_scene::{
     },
 };
 use arcweft_presentation::input::{PointerId, ViewportPoint};
+use arcweft_render_text::{
+    LineDisplaySpec, RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayout,
+    RichTextNode, RichTextStyle, RichTextWritingMode, RuntimeLineContext,
+};
 use arcweft_render_wgpu::geometry::{
     RenderPreferences, RenderScrollIndicatorsPolicy, RenderScrollOverscrollPolicy, RenderViewport,
 };
 use arcweft_render_wgpu::view_scene::{ViewPaintNode, ViewPrimitive};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
+use arcweft_runtime_driver::view_runtime::{
+    BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewTextOutput,
+    BundleViewTextTarget, BundleViewTextValue,
+};
+use arcweft_view::ViewMountId;
 
 fn assert_px(actual: f32, expected: f32) {
     assert!(
@@ -38,6 +49,51 @@ fn assert_px(actual: f32, expected: f32) {
 fn empty_fx_definitions() -> &'static FxDefinitions {
     static DEFINITIONS: std::sync::OnceLock<FxDefinitions> = std::sync::OnceLock::new();
     DEFINITIONS.get_or_init(FxDefinitions::default)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the test fixture mirrors the complete typed mounted-text target contract"
+)]
+fn push_view_text(
+    presentation: &mut BundlePresentationSnapshot,
+    view: &str,
+    target: &str,
+    containing_scroll_region: Option<&str>,
+    text: &str,
+    bounds: ViewTextBlockBounds,
+    selection_policy: ViewTextSelectionPolicy,
+    style: ViewRuntimeControlStyle,
+) {
+    let source_id = format!("source.{target}");
+    presentation.view.mounts.push(BundleViewMountOutput {
+        handle: PresentationHandleId::try_new(format!("handle.{target}")).expect("handle id"),
+        mount: ViewMountId::from_raw(0),
+        view: view.to_owned(),
+        path: BundleViewInstancePath::default(),
+        active_targets: vec![target.to_owned()],
+        active_images: Vec::new(),
+        paint: vec![BundleViewPaintItem::Text {
+            source_id: source_id.clone(),
+            target: target.to_owned(),
+        }],
+        text: vec![BundleViewTextOutput {
+            source_id,
+            targets: vec![BundleViewTextTarget {
+                public_id: target.to_owned(),
+                containing_scroll_region: containing_scroll_region.map(str::to_owned),
+                bounds,
+                selection_policy,
+                style,
+            }],
+            value: BundleViewTextValue::Plain {
+                value: text.to_owned(),
+            },
+            classification: ViewObserveClassification::default(),
+            replacement: None,
+        }],
+        fx: Vec::new(),
+    });
 }
 
 #[test]
@@ -231,16 +287,16 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
 #[test]
 fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
     let mut presentation = BundlePresentationSnapshot::default();
-    presentation.text_blocks.push(ViewRuntimeTextBlock {
-        public_id: "text.block.copyable".to_owned(),
-        target: "text.block.copyable".to_owned(),
-        view: Some("view.CopyPanel".to_owned()),
-        containing_scroll_region: None,
-        text: "Alpha Beta".to_owned(),
-        bounds: ViewRuntimeTextBlockBounds::from_px(40, 48, 260, 40),
-        selection_policy: ViewTextSelectionPolicy::Enabled,
-        style: ViewRuntimeControlStyle::default(),
-    });
+    push_view_text(
+        &mut presentation,
+        "view.CopyPanel",
+        "text.block.copyable",
+        None,
+        "Alpha Beta",
+        ViewTextBlockBounds::from_px(40, 48, 260, 40),
+        ViewTextSelectionPolicy::Enabled,
+        ViewRuntimeControlStyle::default(),
+    );
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
     let request = PlayerFrameRequest {
@@ -298,7 +354,10 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
 
     let selected = PlayerFramePlanner::prepare(&mut input, request).expect("selected frame");
     assert!(
-        selected.frame.rectangles.len() > prepared.frame.rectangles.len(),
+        !selected.frame.prepared_text.items()[0]
+            .interaction
+            .selection_rects
+            .is_empty(),
         "selection should add highlight rectangles"
     );
 }
@@ -438,16 +497,16 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         overscroll: ViewScrollOverscrollPolicy::Clamp,
         auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
     });
-    presentation.text_blocks.push(ViewRuntimeTextBlock {
-        public_id: "text.block.NotesPanel.0".to_owned(),
-        target: "text.block.NotesPanel.0".to_owned(),
-        view: Some("view.NotesPanel".to_owned()),
-        containing_scroll_region: Some("scroll.notes".to_owned()),
-        text: "Arcweft Concierge".to_owned(),
-        bounds: ViewRuntimeTextBlockBounds::from_px(56, 112, 220, 24),
-        selection_policy: ViewTextSelectionPolicy::Disabled,
-        style: ViewRuntimeControlStyle::default(),
-    });
+    push_view_text(
+        &mut presentation,
+        "view.NotesPanel",
+        "text.block.NotesPanel.0",
+        Some("scroll.notes"),
+        "Arcweft Concierge",
+        ViewTextBlockBounds::from_px(56, 112, 220, 24),
+        ViewTextSelectionPolicy::Disabled,
+        ViewRuntimeControlStyle::default(),
+    );
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
     let request = PlayerFrameRequest {
@@ -477,28 +536,34 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
     input.wheel(&prepared.frame, -32.0);
 
     let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame re-prepares");
-    let text = prepared.frame.text.first().expect("text block");
-    assert_eq!(text.text, "Arcweft Concierge");
-    assert!((text.bounds.y - 80.0).abs() < f32::EPSILON);
-    assert_eq!(
-        text.clip_bounds,
-        Some(prepared.frame.scroll_regions[0].bounds)
-    );
+    let text = prepared
+        .frame
+        .prepared_text
+        .items()
+        .first()
+        .expect("prepared text");
+    assert_eq!(text.interaction.text, "Arcweft Concierge");
+    assert!((text.interaction.container_bounds.unwrap().y - 80.0).abs() < f32::EPSILON);
+    let clip = text.clip.expect("scroll clip");
+    assert_px(clip.x, prepared.frame.scroll_regions[0].bounds.x);
+    assert_px(clip.y, prepared.frame.scroll_regions[0].bounds.y);
+    assert_px(clip.width, prepared.frame.scroll_regions[0].bounds.width);
+    assert_px(clip.height, prepared.frame.scroll_regions[0].bounds.height);
 }
 
 #[test]
 fn registered_player_planner_finalizes_runtime_text_into_prepared_batch() {
     let mut presentation = BundlePresentationSnapshot::default();
-    presentation.text_blocks.push(ViewRuntimeTextBlock {
-        public_id: "text.block.prepared".to_owned(),
-        target: "text.block.prepared".to_owned(),
-        view: Some("view.PreparedText".to_owned()),
-        containing_scroll_region: None,
-        text: "Prepared text".to_owned(),
-        bounds: ViewRuntimeTextBlockBounds::from_px(24, 32, 240, 48),
-        selection_policy: ViewTextSelectionPolicy::Enabled,
-        style: ViewRuntimeControlStyle::default(),
-    });
+    push_view_text(
+        &mut presentation,
+        "view.PreparedText",
+        "text.block.prepared",
+        None,
+        "Prepared text",
+        ViewTextBlockBounds::from_px(24, 32, 240, 48),
+        ViewTextSelectionPolicy::Enabled,
+        ViewRuntimeControlStyle::default(),
+    );
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
     let mut planner = PlayerFramePlannerState::new();
@@ -536,6 +601,170 @@ fn registered_player_planner_finalizes_runtime_text_into_prepared_batch() {
     assert!(item.interaction.selection_enabled);
     assert_px(item.interaction.container_bounds.unwrap().x, 24.0);
     assert!((item.submission().raster_scale() - 2.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
+    let mut presentation = BundlePresentationSnapshot::default();
+    push_view_text(
+        &mut presentation,
+        "view.VerticalRuby",
+        "text.block.vertical_ruby",
+        None,
+        "漢字",
+        ViewTextBlockBounds::from_px(24, 20, 180, 220),
+        ViewTextSelectionPolicy::Disabled,
+        ViewRuntimeControlStyle::default(),
+    );
+    presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
+        document: Box::new(RichTextDocument::new(vec![
+            RichTextNode::StyleStart {
+                style: RichTextStyle::Layout {
+                    layout: RichTextLayout {
+                        writing_mode: RichTextWritingMode::VerticalRl,
+                        direction: RichTextInlineDirection::Rtl,
+                        ..RichTextLayout::default()
+                    },
+                },
+            },
+            RichTextNode::Ruby {
+                base: "漢字".to_owned(),
+                ruby: "かんじ".to_owned(),
+            },
+        ])),
+    };
+    let images = BundleImageCatalog::empty();
+    let mut input = InputController::default();
+    let prepared = PlayerFramePlanner::prepare(
+        &mut input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            fx_definitions: empty_fx_definitions(),
+            images: &images,
+            viewport: RenderViewport {
+                logical_width: 320.0,
+                logical_height: 260.0,
+                physical_width: 320,
+                physical_height: 260,
+                scale_factor: 1.0,
+            },
+            fit: PlayerFrameFit::raw(),
+            image_time_millis: 0,
+            visual_time_millis: 0,
+            dialogue_reveal_complete: false,
+            preferences: RenderPreferences::default(),
+        },
+    )
+    .expect("vertical RichText prepares");
+
+    assert_eq!(prepared.frame.prepared_text.len(), 1);
+    let item = &prepared.frame.prepared_text.items()[0];
+    assert_eq!(item.layout.ruby.len(), 1);
+    assert_eq!(
+        item.layout.runs[0].writing_mode,
+        RichTextWritingMode::VerticalRl
+    );
+    let view_scene = prepared.frame.view_scenes().first().expect("View scene");
+    assert!(matches!(
+        view_scene.scene.primitives(),
+        [ViewPrimitive::Text(_)]
+    ));
+}
+
+#[test]
+fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallback() {
+    let mut presentation = BundlePresentationSnapshot::default();
+    push_view_text(
+        &mut presentation,
+        "view.TypedSources",
+        "text.block.localized",
+        None,
+        "placeholder",
+        ViewTextBlockBounds::from_px(20, 20, 260, 48),
+        ViewTextSelectionPolicy::Disabled,
+        ViewRuntimeControlStyle::default(),
+    );
+    presentation.view.mounts[0].text[0].value = BundleViewTextValue::Localized {
+        key: "text.greeting".to_owned(),
+        locale: Some("ja-JP".to_owned()),
+        document: Box::new(RichTextDocument::new(vec![RichTextNode::Text {
+            text: "こんにちは".to_owned(),
+        }])),
+    };
+    push_view_text(
+        &mut presentation,
+        "view.TypedSources",
+        "text.block.display",
+        None,
+        "placeholder",
+        ViewTextBlockBounds::from_px(20, 80, 260, 48),
+        ViewTextSelectionPolicy::Disabled,
+        ViewRuntimeControlStyle::default(),
+    );
+    let display = LineDisplaySpec {
+        line: RuntimeLineId::from_runtime_line_value("say.typed_sources.display").unwrap(),
+        callee: "narrator".to_owned(),
+        speaker_label: None,
+        text_key: None,
+        window: None,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![
+            RichTextNode::Text {
+                text: "Stage one".to_owned(),
+            },
+            RichTextNode::Control {
+                control: RichTextControl::Page,
+            },
+            RichTextNode::Text {
+                text: "Stage two".to_owned(),
+            },
+        ]),
+    }
+    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+    .unwrap();
+    presentation.view.mounts[1].text[0].value = BundleViewTextValue::DisplayFrame {
+        frame: Box::new(display),
+        stage_index: 0,
+    };
+    let images = BundleImageCatalog::empty();
+    let mut input = InputController::default();
+    let prepared = PlayerFramePlanner::prepare(
+        &mut input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            fx_definitions: empty_fx_definitions(),
+            images: &images,
+            viewport: RenderViewport {
+                logical_width: 320.0,
+                logical_height: 180.0,
+                physical_width: 320,
+                physical_height: 180,
+                scale_factor: 1.0,
+            },
+            fit: PlayerFrameFit::raw(),
+            image_time_millis: 0,
+            visual_time_millis: 0,
+            dialogue_reveal_complete: false,
+            preferences: RenderPreferences::default(),
+        },
+    )
+    .expect("typed View sources prepare");
+
+    assert_eq!(prepared.frame.prepared_text.len(), 2);
+    assert_eq!(
+        prepared.frame.prepared_text.items()[0].interaction.text,
+        "こんにちは"
+    );
+    assert_eq!(
+        prepared.frame.prepared_text.items()[1].interaction.text,
+        "Stage one"
+    );
 }
 
 #[test]

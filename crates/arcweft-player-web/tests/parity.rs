@@ -2,8 +2,9 @@ use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
     ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
-    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
-    ViewLogicalRect, ViewProgramResource, ViewScrollAxis, ViewScrollRegionResource,
+    ViewDefinitionResource, ViewElementKind, ViewInputKind, ViewInputOptions, ViewInputPurpose,
+    ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource, ViewLogicalRect,
+    ViewProgramInstruction, ViewProgramResource, ViewScrollAxis, ViewScrollRegionResource,
     ViewSecureInputPolicy, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
     ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
@@ -432,10 +433,22 @@ fn web_runner_filters_authored_view_owned_controls_and_scroll_regions() {
     assert_eq!(live.scene.text_inputs.len(), 1);
     assert_eq!(live.scene.action_buttons.len(), 1);
     assert_eq!(live.frame.scroll_regions.len(), 1);
-    assert_eq!(live.frame.scroll_regions[0].id, "scroll.panel");
 
     let text_target = live.scene.text_inputs[0].target.clone();
     let button_target = live.scene.action_buttons[0].target.clone();
+    let mount_scope = live.frame.scroll_regions[0]
+        .id
+        .strip_suffix("scroll.panel")
+        .expect("mounted scroll target keeps its authored suffix");
+    assert!(mount_scope.starts_with("view_mount_"));
+    assert_eq!(
+        text_target.id().as_str(),
+        format!("{mount_scope}input.name")
+    );
+    assert_eq!(
+        button_target.id().as_str(),
+        format!("{mount_scope}button.send")
+    );
     assert!(live.frame.hits.find_target(&text_target).is_some());
     assert!(live.frame.hits.find_target(&button_target).is_some());
     assert!(live.frame.keyboard_focus_targets().contains(&text_target));
@@ -841,7 +854,9 @@ fn authored_view_text_resource() -> ViewTextResource {
             literal_text_source("text.input.name.label", "Name"),
             literal_text_source("text.button.send", "Send"),
         ],
-        display_frame_refs: Vec::new(),
+        localized: Vec::new(),
+        rich_text_documents: Vec::new(),
+        display_frames: Vec::new(),
         source_ranges: Vec::new(),
         reveal_policies: Vec::new(),
         cursor_policies: Vec::new(),
@@ -862,10 +877,34 @@ fn literal_text_source(public_id: &str, value: &str) -> ViewTextSourceRecord {
 fn authored_view_program_resource() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.web_panel".to_owned(),
-        definitions: Vec::new(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.WebPanel".to_owned(),
+            body: ViewInstructionSpan::new(0, 6),
+            parameters: Vec::new(),
+            state_schema_hash: 0,
+        }],
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
-        instructions: Vec::new(),
+        instructions: [
+            (ViewElementKind::TextField, "input.name"),
+            (ViewElementKind::Button, "button.send"),
+            (ViewElementKind::Scroll, "scroll.panel"),
+        ]
+        .into_iter()
+        .flat_map(|(element, target)| {
+            [
+                ViewProgramInstruction::OpenElement {
+                    element,
+                    target: Some(target.to_owned()),
+                    style: None,
+                    part: None,
+                    key: None,
+                    source: None,
+                },
+                ViewProgramInstruction::CloseElement,
+            ]
+        })
+        .collect(),
         handlers: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),

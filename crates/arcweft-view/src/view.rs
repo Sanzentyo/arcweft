@@ -104,12 +104,20 @@ impl ViewDescriptor {
 }
 
 impl ViewMountId {
+    /// Reconstructs a persisted mount identity at a typed boundary.
+    ///
+    /// Live issuance still belongs to [`ViewMountAllocator`]; callers that
+    /// restore several IDs must validate the allocator cursor separately.
+    pub const fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
+
     pub const fn get(self) -> u64 {
         self.0
     }
 
     pub(crate) const fn from_allocated(value: u64) -> Self {
-        Self(value)
+        Self::from_raw(value)
     }
 }
 
