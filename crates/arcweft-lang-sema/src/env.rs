@@ -1,3 +1,8 @@
+use crate::dialogue_view::{
+    DIALOGUE_ACTION_TYPE, DIALOGUE_CONTENT_TYPE, DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE,
+    DIALOGUE_STAGE_TYPE, DialogueViewModelRegistry, DialogueViewProjection,
+    STANDARD_DIALOGUE_VIEW_TYPE,
+};
 use crate::effect_row::EffectRow;
 use crate::types::{EntityKind, EntityType, TypeKind};
 use arcweft_character::manifest::CharacterManifest;
@@ -125,6 +130,8 @@ pub struct TypeCheckEnv {
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
     pub(crate) rust_packages: HashMap<String, RustPackageExports>,
+    pub(crate) nominal_records: HashMap<String, HashMap<String, TypeKind>>,
+    pub(crate) dialogue_view_models: DialogueViewModelRegistry,
 }
 
 impl FunctionSignature {
@@ -553,7 +560,8 @@ impl TypeCheckEnv {
     /// Registers builtins that are available to ordinary Arcweft source files.
     #[must_use]
     pub fn with_standard_builtins(self) -> Self {
-        self.with_function("fmt", TypeKind::DisplayText)
+        self.with_standard_dialogue_view_types()
+            .with_function("fmt", TypeKind::DisplayText)
             .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
             .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_builtins()
@@ -605,6 +613,94 @@ impl TypeCheckEnv {
                     )],
                 ),
             )
+    }
+
+    #[must_use]
+    fn with_standard_dialogue_view_types(self) -> Self {
+        self.with_nominal_record(
+            DIALOGUE_CONTENT_TYPE,
+            std::iter::empty::<(String, TypeKind)>(),
+        )
+        .with_nominal_record(
+            DIALOGUE_OCCURRENCE_ID_TYPE,
+            std::iter::empty::<(String, TypeKind)>(),
+        )
+        .with_nominal_record(
+            DIALOGUE_STAGE_TYPE,
+            std::iter::empty::<(String, TypeKind)>(),
+        )
+        .with_nominal_record(
+            DIALOGUE_REVEAL_TYPE,
+            std::iter::empty::<(String, TypeKind)>(),
+        )
+        .with_nominal_record(
+            DIALOGUE_ACTION_TYPE,
+            std::iter::empty::<(String, TypeKind)>(),
+        )
+        .with_nominal_record(
+            STANDARD_DIALOGUE_VIEW_TYPE,
+            [
+                (
+                    DialogueViewProjection::Speaker.field().to_owned(),
+                    TypeKind::String,
+                ),
+                (
+                    DialogueViewProjection::Content.field().to_owned(),
+                    TypeKind::Named(DIALOGUE_CONTENT_TYPE.to_owned()),
+                ),
+                (
+                    DialogueViewProjection::Occurrence.field().to_owned(),
+                    TypeKind::Named(DIALOGUE_OCCURRENCE_ID_TYPE.to_owned()),
+                ),
+                (
+                    DialogueViewProjection::Stage.field().to_owned(),
+                    TypeKind::Named(DIALOGUE_STAGE_TYPE.to_owned()),
+                ),
+                (
+                    DialogueViewProjection::Reveal.field().to_owned(),
+                    TypeKind::Named(DIALOGUE_REVEAL_TYPE.to_owned()),
+                ),
+                (
+                    DialogueViewProjection::PrimaryAction.field().to_owned(),
+                    TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned()),
+                ),
+            ],
+        )
+        .with_dialogue_view_models(DialogueViewModelRegistry::standard())
+    }
+
+    /// Registers one nominal record and its typed fields.
+    #[must_use]
+    pub fn with_nominal_record(
+        mut self,
+        name: impl Into<String>,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+    ) -> Self {
+        self.nominal_records.insert(
+            name.into(),
+            fields
+                .into_iter()
+                .map(|(name, ty)| (name, normalize_type_kind(ty)))
+                .collect(),
+        );
+        self
+    }
+
+    /// Standard and adapter-provided nominal records visible to source files.
+    pub fn nominal_records(&self) -> &HashMap<String, HashMap<String, TypeKind>> {
+        &self.nominal_records
+    }
+
+    /// Registers the semantic-role inventory used by dialogue View parameters.
+    #[must_use]
+    pub fn with_dialogue_view_models(mut self, models: DialogueViewModelRegistry) -> Self {
+        self.dialogue_view_models = models;
+        self
+    }
+
+    /// Dialogue View role-bearing nominal records visible to source files.
+    pub const fn dialogue_view_models(&self) -> &DialogueViewModelRegistry {
+        &self.dialogue_view_models
     }
 
     #[must_use]

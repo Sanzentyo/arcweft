@@ -346,7 +346,7 @@ fn code_actions_expand_sugar_respects_source_allow_decl_identity_attribute() {
 fn code_actions_expand_sugar_nests_dotted_dialogue_defaults() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
-    let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text.ruby.size = 14px\n}\n";
+    let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n}\n";
     open_text(&mut session, uri.clone(), source);
 
     let actions = session
@@ -386,7 +386,7 @@ fn code_actions_extract_active_style_contributor_to_line_options() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -450,7 +450,7 @@ fn code_actions_extract_active_style_contributor_to_character_dialogue_style() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -506,62 +506,11 @@ flow opening {
 }
 
 #[test]
-fn code_actions_extract_active_style_contributor_to_textbox_theme() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    let source = r"
-pub textbox @textbox.phone PhoneBox {}
-
-flow opening {
-    alice(window=@textbox.phone, rich_text=rich_text_style(ruby=ruby_style(size=14px))): |[夢](ゆめ)[p]
-}
-";
-    open_text(&mut session, uri.clone(), source);
-    let document = session.documents.get(&uri).expect("open document");
-    let offset = source.find("夢").expect("dialogue content");
-    let position = document.line_index().position_from_byte_offset(offset);
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(position, position),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title == "Extract `rich_text.ruby.size` override to textbox theme" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("textbox theme extraction action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    assert_eq!(
-        edits[0].new_text,
-        "\n    rich_text {\n        ruby {\n            size = 14px\n        }\n    }"
-    );
-}
-
-#[test]
 fn code_actions_extract_active_style_contributor_to_speaker_preset() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -616,7 +565,7 @@ fn code_actions_extract_active_style_contributor_to_dialogue_defaults() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
 }
 
 pub character alice {
@@ -678,10 +627,10 @@ flow opening {
 fn code_actions_extract_to_profile_selected_dialogue_defaults() {
     let project = TestProject::new("lsp-session-dialogue-defaults-extract-profile");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
 }
 
 pub character alice {
@@ -705,7 +654,7 @@ flow opening {
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 "#,
     );
     project.write("src/main.arcw", source);
@@ -759,7 +708,7 @@ fn code_actions_extract_rich_text_contributor_to_nested_dialogue_defaults() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
 }
 
 pub character alice {
@@ -991,10 +940,74 @@ fn completions_include_standard_enum_variant_shorthands() {
 }
 
 #[test]
+fn completions_and_hover_expose_standard_dialogue_view_nominal_contract() {
+    let uri = "file:///dialogue-view.arcw".parse::<Uri>().expect("uri");
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    let source = r"
+pub view DialoguePanel(dialogue: DialogueView) {
+    Column {
+        Text(dialogue.speaker)
+        RichText(dialogue.content)
+    }
+}
+";
+    open_text(&mut session, uri.clone(), source);
+
+    let completions = completion_labels(&mut session, uri.clone());
+    for expected in [
+        "DialogueView",
+        "speaker",
+        "content",
+        "occurrence",
+        "stage",
+        "reveal",
+        "primary_action",
+    ] {
+        assert!(
+            completions.iter().any(|item| item.label == expected),
+            "missing `{expected}` completion: {completions:?}"
+        );
+    }
+
+    let hover = hover_text(&mut session, uri, source, "DialogueView");
+    assert!(hover.contains("#[dialogue_view]"));
+    assert!(hover.contains("primary_action: DialogueAction"));
+}
+
+#[test]
+fn completion_and_hover_use_custom_dialogue_view_role_inventory() {
+    let uri = "file:///custom-dialogue-view.arcw"
+        .parse::<Uri>()
+        .expect("uri");
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    let source = r"
+#[dialogue_view]
+pub struct StoryDialogue {
+    speaker: String
+    content: DialogueContent
+    occurrence: DialogueOccurrenceId
+    stage: DialogueStage
+    reveal: DialogueReveal
+    primary_action: DialogueAction
+}
+";
+    open_text(&mut session, uri.clone(), source);
+
+    let completions = completion_labels(&mut session, uri.clone());
+    assert!(
+        completions.iter().any(|item| item.label == "StoryDialogue"),
+        "custom role model is absent: {completions:?}"
+    );
+    let hover = hover_text(&mut session, uri, source, "StoryDialogue");
+    assert!(hover.contains("pub struct StoryDialogue"));
+    assert!(hover.contains("occurrence: DialogueOccurrenceId"));
+}
+
+#[test]
 fn hover_uses_profile_selected_dialogue_defaults() {
     let project = TestProject::new("lsp-session-dialogue-defaults-profile");
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -1002,7 +1015,7 @@ pub dialogue defaults @dialogue.defaults {
     }
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         ruby {
             size = 10px
@@ -1021,7 +1034,7 @@ flow opening {
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 "#,
     );
     project.write("src/main.arcw", source);
@@ -1039,7 +1052,7 @@ dialogue_defaults = "dialogue.defaults.mobile"
 fn definition_includes_profile_selected_dialogue_defaults_manifest_location() {
     let project = TestProject::new("lsp-session-dialogue-defaults-definition");
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -1047,7 +1060,7 @@ pub dialogue defaults @dialogue.defaults {
     }
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         ruby {
             size = 10px
@@ -1064,7 +1077,7 @@ flow opening {
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 "#;
     project.write("arcw.toml", manifest);
     project.write("src/main.arcw", source);
@@ -1102,8 +1115,8 @@ dialogue_defaults = "dialogue.defaults.mobile"
     }));
     assert!(locations.iter().any(|location| {
         location.uri == manifest_uri
-            && location.range.start == position_of(manifest, "dialogue.defaults.mobile")
-            && location.range.end == position_after(manifest, "dialogue.defaults.mobile")
+            && location.range.start == position_of(manifest, "dialogue.mobile")
+            && location.range.end == position_after(manifest, "dialogue.mobile")
     }));
 }
 
@@ -1111,7 +1124,7 @@ dialogue_defaults = "dialogue.defaults.mobile"
 fn references_include_profile_selected_dialogue_defaults_manifest_location() {
     let project = TestProject::new("lsp-session-dialogue-defaults-references");
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -1119,7 +1132,7 @@ pub dialogue defaults @dialogue.defaults {
     }
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         ruby {
             size = 10px
@@ -1136,7 +1149,7 @@ flow opening {
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 "#;
     project.write("arcw.toml", manifest);
     project.write("src/main.arcw", source);
@@ -1174,8 +1187,8 @@ dialogue_defaults = "dialogue.defaults.mobile"
     }));
     assert!(locations.iter().any(|location| {
         location.uri == manifest_uri
-            && location.range.start == position_of(manifest, "dialogue.defaults.mobile")
-            && location.range.end == position_after(manifest, "dialogue.defaults.mobile")
+            && location.range.start == position_of(manifest, "dialogue.mobile")
+            && location.range.end == position_after(manifest, "dialogue.mobile")
     }));
 }
 
@@ -1590,7 +1603,7 @@ flow @flow.expression_inlays expression_inlays {
 fn definition_request_returns_effective_style_contributor_ranges() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -1656,7 +1669,7 @@ flow opening {
 fn references_request_returns_all_effective_style_contributors() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")
@@ -1717,7 +1730,7 @@ flow opening {
 fn definition_request_on_line_option_returns_matching_style_path() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")
@@ -1770,7 +1783,7 @@ flow opening {
 fn references_request_on_line_option_filters_to_matching_style_path() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")
@@ -1827,7 +1840,7 @@ flow opening {
 fn hover_on_line_option_filters_effective_style_path() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")
@@ -1856,7 +1869,7 @@ flow opening {
 fn hover_on_nested_rich_text_line_option_filters_to_leaf_path() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")
@@ -1885,7 +1898,7 @@ flow opening {
 fn hover_on_inline_rich_text_span_filters_to_leaf_path() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")
@@ -1914,7 +1927,7 @@ flow opening {
 fn definition_on_nested_rich_text_line_option_returns_leaf_path_winner() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")

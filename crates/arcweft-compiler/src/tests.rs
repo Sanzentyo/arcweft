@@ -4508,16 +4508,16 @@ agent @agent.visual_dialogue visual_dialogue()
 effects { agent.observe, agent.capture }
 {
 let frame = try observe()
-let textbox = try frame.objects.require_role("dialogue_textbox")
+let dialogue_view = try frame.objects.require_role("dialogue_view")
 let color = try capture(
-    object(textbox.id),
+    object(dialogue_view.id),
     format = .png,
     kind = .color,
-    name = "dialogue-textbox-color",
+    name = "dialogue-dialogue_view-color",
 )
-expect(textbox.role == "dialogue_textbox")
-expect(textbox.bbox.width > 0u32)
-expect(textbox.bbox.height > 0u32)
+expect(dialogue_view.role == "dialogue_view")
+expect(dialogue_view.bbox.width > 0u32)
+expect(dialogue_view.bbox.height > 0u32)
 return color.uri
 }
 "#,
@@ -5308,11 +5308,11 @@ observe()
 fn lower_source_runtime_plan_with_options_applies_dialogue_defaults_profile() {
     let parsed = parse_source_text(
         r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
 text_color = rgb("#101112")
 }
 
-pub dialogue defaults @dialogue:.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
 text_color = rgb("#202122")
 }
 
@@ -5328,7 +5328,7 @@ alice: Hello[p]
 
     let report = lower_source_runtime_plan_with_stats_and_options(
         &hir,
-        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.mobile"),
     )
     .expect("runtime plan lowers with selected dialogue defaults");
     let spec = report

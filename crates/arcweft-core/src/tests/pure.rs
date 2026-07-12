@@ -656,12 +656,12 @@ fn vm_pure_backend_checks_sequence_contains_and_record_get() {
 #[test]
 fn vm_pure_backend_requires_observed_object_by_role() {
     let request = PureFunctionRequest::new(
-        "dialogue_textbox",
+        "dialogue_view",
         RuntimeExpr::MethodCall {
             receiver: Box::new(RuntimeExpr::Local("objects".to_owned())),
             method: "require_role".to_owned(),
             args: vec![RuntimeExpr::Value(RuntimeValue::String(
-                "dialogue_textbox".to_owned(),
+                "dialogue_view".to_owned(),
             ))],
         },
         [RuntimeBinding {
@@ -684,7 +684,7 @@ fn vm_pure_backend_requires_observed_object_by_role() {
                     },
                     RuntimeFieldValue {
                         name: "role".to_owned(),
-                        value: RuntimeValue::String("dialogue_textbox".to_owned()),
+                        value: RuntimeValue::String("dialogue_view".to_owned()),
                     },
                 ]),
             ])),

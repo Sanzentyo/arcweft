@@ -513,34 +513,19 @@ flow bad_content_ref {
 }
 
 #[test]
-fn rejects_removed_asset_set_ref_surface() {
+fn unregistered_generic_type_names_remain_open_nominal_types() {
     let tree = parse_ok(
         r"
-fn preload_route(route: AssetSetRef<Asset>) {
+fn inspect_collection(route: ProjectCollection<Asset>) {
     let _ = route
-}
-
-flow bad_asset_set_ref {
-    let _ = @asset_set.route_portraits
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("removed asset set fixture lowers");
-    validate_typecheck_ready(&hir).expect("removed asset set fixture is typecheck-ready");
+    let hir = lower_to_hir(&tree).expect("open nominal fixture lowers");
+    validate_typecheck_ready(&hir).expect("open nominal fixture is typecheck-ready");
 
-    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
-        .expect_err("asset set refs are not v1 source syntax");
-
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("`AssetSetRef<Asset>` is not part of the v1 Arcweft source grammar")
-    }));
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("unknown entity reference kind: asset_set.route_portraits")
-    }));
+    typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect("unregistered generic names have no special source-level meaning");
 }
 
 #[test]

@@ -635,7 +635,7 @@ fn strict_runtime_rejects_try_and_await_without_control_boundaries() {
         Expr::select(Expr::Path("frame".into()), "objects"),
         "require_role",
         vec![CallArg::Positional(Expr::Literal(Literal::String(
-            "dialogue_textbox".to_owned(),
+            "dialogue_view".to_owned(),
         )))],
     );
     let try_expr = Expr::Try {
@@ -662,7 +662,7 @@ fn lossy_runtime_label_lowering_remains_non_executable() {
             Expr::select(Expr::Path("frame".into()), "objects"),
             "require_role",
             vec![CallArg::Positional(Expr::Literal(Literal::String(
-                "dialogue_textbox".to_owned(),
+                "dialogue_view".to_owned(),
             )))],
         )),
     };

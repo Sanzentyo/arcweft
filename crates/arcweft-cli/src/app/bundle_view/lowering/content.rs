@@ -1,16 +1,18 @@
 //! Lowers materialized text, button, and image content into bundle records.
 
 use super::{
-    BundleImageObjectBounds, Expr, Literal, ViewAction, ViewActionButtonActionResource,
-    ViewActionButtonResource, ViewActionPayload, ViewActionPayloadResource, ViewButton,
-    ViewButtonLabel, ViewElementKind, ViewImage, ViewLayoutCursor, ViewLayoutFrame,
-    ViewLoweringState, ViewModifier, ViewProgramInstruction, ViewRuntimeButtonBounds,
-    ViewSemanticTarget, ViewSidecarError, ViewText, ViewTextBlockBounds, ViewTextBlockResource,
-    ViewTextSelectionPolicy, ViewTextSourceKind, ViewTextSourceRecord, button_bounds, expr_source,
-    first_part, lower_button_modifiers, lower_modifiers, lower_navigation_target,
-    lower_text_control_payload_field, modifier_label, modifier_layout_length_u32,
-    normalize_entity_ref, normalize_input_payload_ref, symbol_expr_name, text_block_frame,
-    text_control_selection_policy, validate_interactive_overflow_modifiers, view_resource_id,
+    BundleImageObjectBounds, DialogueTextProjection, Expr, Literal, SemanticDialogueViewProjection,
+    ViewAction, ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayload,
+    ViewActionPayloadResource, ViewButton, ViewButtonLabel, ViewElementKind, ViewImage,
+    ViewLayoutCursor, ViewLayoutFrame, ViewLoweringState, ViewModifier, ViewProgramInstruction,
+    ViewRuntimeButtonBounds, ViewSemanticTarget, ViewSidecarError, ViewStyleModifier, ViewText,
+    ViewTextBlockBounds, ViewTextBlockResource, ViewTextSelectionPolicy, ViewTextSourceKind,
+    ViewTextSourceRecord, button_bounds, expr_source, first_part, lower_button_modifiers,
+    lower_modifiers, lower_navigation_target, lower_text_control_payload_field,
+    lower_text_modifiers, modifier_label, modifier_layout_length_i32, modifier_layout_length_u32,
+    normalize_entity_ref, normalize_input_payload_ref, normalize_style_ref, symbol_expr_name,
+    text_block_frame, text_control_selection_policy, validate_interactive_overflow_modifiers,
+    view_resource_id,
 };
 
 pub(super) fn lower_text(
@@ -21,7 +23,7 @@ pub(super) fn lower_text(
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     validate_interactive_overflow_modifiers("Text", text.modifiers(), false)?;
     let id = next_text_source_id(view_id, state);
-    let (kind, text_value) = lower_text_source(text.source(), state)?;
+    let (kind, text_value) = lower_text_source(text, state)?;
     state.text_sources.push(ViewTextSourceRecord {
         public_id: id.clone(),
         kind,
@@ -29,26 +31,28 @@ pub(super) fn lower_text(
     });
     state.instructions.push(ViewProgramInstruction::EmitText {
         text_source: id.clone(),
-        style: None,
+        style: text.modifiers().iter().find_map(|modifier| match modifier {
+            ViewModifier::Style(ViewStyleModifier::Named(reference)) => {
+                Some(normalize_style_ref(reference))
+            }
+            _ => None,
+        }),
         part: first_part(text.modifiers()),
         source: None,
     });
-    lower_modifiers(view_id, text.modifiers(), state)?;
+    lower_text_modifiers(view_id, text.modifiers(), state)?;
     let frame = text_block_frame(&text_value, text.modifiers());
     let text_block_id = next_text_block_id(view_id, state);
     let view = Some(view_resource_id(view_id));
     let scroll_region = state.scroll_stack.last().cloned();
+    let origin_x = modifier_layout_length_i32(text.modifiers(), &["x"]).unwrap_or(layout.x_milli);
+    let origin_y = modifier_layout_length_i32(text.modifiers(), &["y"]).unwrap_or(layout.y_milli);
     let mut text_block = ViewTextBlockResource::new(
         text_block_id,
         view,
         scroll_region,
         id,
-        ViewTextBlockBounds::new(
-            layout.x_milli,
-            layout.y_milli,
-            frame.width_milli,
-            frame.height_milli,
-        ),
+        ViewTextBlockBounds::new(origin_x, origin_y, frame.width_milli, frame.height_milli),
     );
     text_block.selection_policy = text_block_selection_policy(text.modifiers());
     state.text_blocks.push(text_block);
@@ -56,9 +60,46 @@ pub(super) fn lower_text(
 }
 
 fn lower_text_source(
-    source: &Expr,
+    text: &ViewText,
     state: &ViewLoweringState,
 ) -> Result<(ViewTextSourceKind, String), ViewSidecarError> {
+    let source = text.source();
+    if let Some(label) = source.dotted_selector_label()
+        && let Some((parameter, field)) = label.split_once('.')
+        && let Some(model) = state.dialogue_parameters.get(parameter)
+        && let Some(projection) = model.projection(field)
+    {
+        let surface_matches = match projection {
+            SemanticDialogueViewProjection::Speaker => text.rich_surface().is_none(),
+            SemanticDialogueViewProjection::Content => text.rich_surface().is_some(),
+            SemanticDialogueViewProjection::Occurrence
+            | SemanticDialogueViewProjection::Stage
+            | SemanticDialogueViewProjection::Reveal
+            | SemanticDialogueViewProjection::PrimaryAction => false,
+        };
+        if !surface_matches {
+            return Err(ViewSidecarError::UnsupportedTextSource {
+                expression: format!("{source:?}"),
+            });
+        }
+        let projection = match projection {
+            SemanticDialogueViewProjection::Speaker => DialogueTextProjection::Speaker,
+            SemanticDialogueViewProjection::Content => DialogueTextProjection::Content,
+            SemanticDialogueViewProjection::Occurrence
+            | SemanticDialogueViewProjection::Stage
+            | SemanticDialogueViewProjection::Reveal
+            | SemanticDialogueViewProjection::PrimaryAction => {
+                unreachable!("non-text dialogue projections are rejected before bundle lowering")
+            }
+        };
+        return Ok((
+            ViewTextSourceKind::Dialogue {
+                parameter: parameter.to_owned(),
+                projection,
+            },
+            String::new(),
+        ));
+    }
     match source {
         Expr::Literal(Literal::String(value)) | Expr::Raw(value) => Ok((
             ViewTextSourceKind::Literal {
@@ -154,6 +195,31 @@ pub(super) fn lower_button(
             action: normalize_entity_ref(action.action()),
             payload: action.payload().map(lower_action_payload),
         },
+        Some(ViewAction::Projection(projection)) => {
+            let label = projection.dotted_selector_label().ok_or_else(|| {
+                ViewSidecarError::InvalidDialogueActionProjection {
+                    expression: format!("{projection:?}"),
+                }
+            })?;
+            let (parameter, field) = label.split_once('.').ok_or_else(|| {
+                ViewSidecarError::InvalidDialogueActionProjection {
+                    expression: label.clone(),
+                }
+            })?;
+            let valid = state
+                .dialogue_parameters
+                .get(parameter)
+                .and_then(|model| model.projection(field))
+                == Some(SemanticDialogueViewProjection::PrimaryAction);
+            if !valid {
+                return Err(ViewSidecarError::InvalidDialogueActionProjection {
+                    expression: label,
+                });
+            }
+            ViewActionButtonActionResource::DialoguePrimaryAction {
+                parameter: parameter.to_owned(),
+            }
+        }
         Some(ViewAction::Noop) | None => ViewActionButtonActionResource::Noop,
     };
     state.action_buttons.push(ViewActionButtonResource {
@@ -296,9 +362,9 @@ fn button_label_text(label: &ViewButtonLabel) -> String {
 
 fn button_display_label(button: &ViewButton, button_id: &str) -> String {
     modifier_label(button.modifiers())
-        .or_else(|| {
-            let value = button_label_text(button.label());
-            (!value.is_empty()).then_some(value)
+        .or_else(|| match button.label() {
+            ViewButtonLabel::Empty => None,
+            label => Some(button_label_text(label)),
         })
         .unwrap_or_else(|| fallback_label_from_public_id(button_id))
 }

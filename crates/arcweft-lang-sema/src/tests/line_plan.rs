@@ -448,11 +448,11 @@ wait(mark(.release_focus))
 }
 
 #[test]
-fn rejects_removed_spawn_and_malformed_flat_fences() {
+fn rejects_unknown_flow_items_and_malformed_flat_fences() {
     for (source, message) in [
         (
-            "flow @flow.x x { spawn load_avatar() }",
-            "`spawn` was removed",
+            "flow @flow.x x { launch load_avatar() }",
+            "unsupported flow item",
         ),
         (
             "flow @flow.x x {\n=== thread worker ===\nfoo()\n=== /scope ===\n}",
@@ -476,7 +476,7 @@ fn rejects_removed_spawn_and_malformed_flat_fences() {
 }
 
 #[test]
-fn rejects_duplicate_marks_missing_handlers_and_local_hook_tags() {
+fn rejects_duplicate_marks_and_missing_handlers() {
     let duplicate = parse_ok(
         r"
 flow @flow.opening opening {
@@ -519,25 +519,23 @@ flow @flow.opening opening {
             .message()
             .contains("does not name a `[mark .missing]`")
     }));
+}
 
-    let hook = parse_ok(
+#[test]
+fn unregistered_dialogue_tags_do_not_gain_builtin_hook_semantics() {
+    let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    alice[古い記法。[hook old][p]]
+    alice[拡張タグ。[project_extension payload][p]]
 }
 ",
     );
-    let hook_hir = lower_to_hir(&hook).expect("hook fixture lowers");
-    let hook_errors = typecheck_hir(
-        &hook_hir,
+    let hir = lower_to_hir(&tree).expect("open tag fixture lowers");
+    typecheck_hir(
+        &hir,
         &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
     )
-    .expect_err("local hook tag is rejected");
-    assert!(
-        hook_errors
-            .iter()
-            .any(|error| error.message().contains("`[hook ...]` syntax was removed"))
-    );
+    .expect("an unregistered tag is preserved without acquiring mark or hook behavior");
 }
 
 #[test]
@@ -651,7 +649,7 @@ flow @flow.opening opening {
     alice:
         聞いて。[p]
     with {
-        assert(textbox_ready)
+        assert(dialogue_view_ready)
         debug_assert(route_count > 0)
     }
 }
@@ -669,7 +667,7 @@ flow @flow.opening opening {
         LinePlanItem::Assert {
             debug: false,
             expr: Expr::Path(path)
-        } if path == "textbox_ready"
+        } if path == "dialogue_view_ready"
     ));
 
     let hir = lower_to_hir(&tree).expect("line plan assertions lower");
@@ -678,7 +676,7 @@ flow @flow.opening opening {
         &hir,
         &TypeCheckEnv::new()
             .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
-            .with_symbol("textbox_ready", TypeKind::Bool)
+            .with_symbol("dialogue_view_ready", TypeKind::Bool)
             .with_symbol("route_count", TypeKind::I64),
     )
     .expect("typecheck succeeds");

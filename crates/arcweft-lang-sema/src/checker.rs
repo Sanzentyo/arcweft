@@ -5,6 +5,7 @@ use crate::borrow::{
 use crate::diagnostics::{
     TraitDiagnostic, TypeCheckError, TypeCheckReadinessError, TypeCheckWarning,
 };
+use crate::dialogue_view::DialogueViewModelRegistry;
 use crate::effect_analysis::EffectAnalysisReport;
 use crate::effect_collector::EffectCollector;
 use crate::effect_model::{CallableId, CallableKind, EffectContract, EffectSite, Visibility};
@@ -399,6 +400,7 @@ struct TypeChecker<'a> {
     global_type_aliases: HashMap<String, TypeKind>,
     action_signatures: HashMap<String, ActionSignature>,
     nominal_fields: HashMap<String, HashMap<String, TypeKind>>,
+    dialogue_view_models: DialogueViewModelRegistry,
     nominal_variant_payloads: HashMap<String, HashMap<String, EnumVariantPayload>>,
     trait_catalog: TraitCatalog,
     trait_predicate_stack: Vec<Vec<TraitPredicate>>,
@@ -682,7 +684,8 @@ impl TypeChecker<'_> {
             ordinary_source_functions: HashSet::new(),
             global_type_aliases: HashMap::new(),
             action_signatures: HashMap::new(),
-            nominal_fields: HashMap::new(),
+            nominal_fields: env.nominal_records.clone(),
+            dialogue_view_models: env.dialogue_view_models.clone(),
             nominal_variant_payloads: HashMap::new(),
             trait_catalog: TraitCatalog::default(),
             trait_predicate_stack: Vec::new(),

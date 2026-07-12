@@ -17,16 +17,7 @@ impl DialogueStyleDefaults {
         self.base_styles.is_empty()
             && self.style_contributions.is_empty()
             && self.default_inline_failure_policy.is_none()
-            && self.window.is_none()
-    }
-
-    fn merge(&mut self, other: Self) {
-        self.base_styles.extend(other.base_styles);
-        self.style_contributions.extend(other.style_contributions);
-        self.default_inline_failure_policy = other
-            .default_inline_failure_policy
-            .or_else(|| self.default_inline_failure_policy.clone());
-        self.window = other.window.or_else(|| self.window.clone());
+            && self.view.is_none()
     }
 }
 
@@ -67,32 +58,7 @@ fn character_display_assignment(body: &str) -> Option<String> {
         })
 }
 
-pub(crate) fn textbox_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {
-    let mut defaults = DialogueStyleDefaults::default();
-    if let Some(body) = item.body() {
-        if let Some(block) = named_style_block(body, item.body_range(), "dialogue_style") {
-            defaults.merge(style_defaults_from_body(
-                block.source,
-                None,
-                RichTextCascadeLayer::TextBoxTheme,
-                Some(item.id().body()),
-                block.absolute_start,
-            ));
-        }
-        if let Some(block) = named_style_block(body, item.body_range(), "rich_text") {
-            defaults.merge(style_defaults_from_body(
-                block.source,
-                Some("rich_text"),
-                RichTextCascadeLayer::TextBoxTheme,
-                Some(item.id().body()),
-                block.absolute_start,
-            ));
-        }
-    }
-    defaults
-}
-
-pub(crate) fn entity_style_keys(item: &EntityDeclItem) -> Vec<String> {
+fn entity_style_keys(item: &EntityDeclItem) -> Vec<String> {
     [
         item.surface_alias().map(str::to_owned),
         item.name().map(str::to_owned),
@@ -105,12 +71,6 @@ pub(crate) fn entity_style_keys(item: &EntityDeclItem) -> Vec<String> {
     .into_iter()
     .flatten()
     .collect()
-}
-
-pub(crate) fn entity_ref_keys(raw: &str) -> Vec<String> {
-    let mut keys = Vec::new();
-    push_character_callee_key(&mut keys, raw);
-    keys
 }
 
 pub(crate) fn character_callee_keys(callee: &str) -> Vec<String> {
@@ -212,13 +172,13 @@ fn append_style_default(
     if let Some(policy) = policy.clone() {
         defaults.default_inline_failure_policy = Some(policy);
     }
-    if path == "window" {
-        defaults.window = Some(entity_ref_label(expr));
+    if path == "view" {
+        defaults.view = Some(entity_ref_label(expr));
     }
 
     let style_index = defaults.base_styles.len();
     let styles = display_styles_from_named_expr(&path, expr);
-    let active = policy.is_some() || path == "window" || !styles.is_empty();
+    let active = policy.is_some() || path == "view" || !styles.is_empty();
     let style_index = (!styles.is_empty()).then_some(style_index);
     defaults.base_styles.extend(styles);
     defaults

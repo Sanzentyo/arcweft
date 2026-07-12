@@ -23,6 +23,14 @@ pub(super) type EntityDeclHead = (
     Option<String>,
     String,
 );
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EntitySurfaceAliasSplit {
+    signature_tail: String,
+    alias: Option<String>,
+    unexpected_tail: Option<String>,
+}
+
 pub(super) fn parse_function_kind_and_signature(source: &str) -> (FunctionKind, &str) {
     [
         ("task ", FunctionKind::Task),
@@ -89,7 +97,6 @@ pub(super) fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
         ("metric", EntityDeclKind::Metric),
         ("signal", EntityDeclKind::Signal),
         ("layer", EntityDeclKind::Layer),
-        ("textbox", EntityDeclKind::Textbox),
         ("voice profile", EntityDeclKind::Voice),
         ("voice", EntityDeclKind::Voice),
         ("se", EntityDeclKind::Se),
@@ -119,7 +126,6 @@ pub(super) fn entity_decl_family(kind: EntityDeclKind) -> &'static str {
         EntityDeclKind::Signal => "signal",
         EntityDeclKind::Metric => "metric",
         EntityDeclKind::Layer => "layer",
-        EntityDeclKind::Textbox => "textbox",
         EntityDeclKind::Voice => "voice",
         EntityDeclKind::Se => "se",
         EntityDeclKind::Bgm => "bgm",
@@ -173,7 +179,7 @@ pub(super) fn parse_entity_decl_head(
             }
         };
         let rest = rest.trim();
-        let (name, signature_tail) = parse_name_and_tail(rest);
+        let (name, signature_tail) = parse_explicit_entity_name_and_tail(rest);
         (id, name, signature_tail)
     } else {
         let (name, signature_tail) = parse_dotted_decl_name_and_tail(rest);
@@ -193,8 +199,99 @@ pub(super) fn parse_entity_decl_head(
             signature_tail,
         )
     };
-    let (signature_tail, surface_alias) = split_surface_alias(signature_tail);
-    Some((kind, visibility, id, name, surface_alias, signature_tail))
+    let alias = split_surface_alias(signature_tail);
+    if let Some(unexpected) = alias.unexpected_tail.as_deref() {
+        push_unexpected_entity_header_tail(head, base, unexpected, errors);
+        return None;
+    }
+    if !entity_decl_header_tail_is_valid(&alias.signature_tail) {
+        push_unexpected_entity_header_tail(head, base, &alias.signature_tail, errors);
+        return None;
+    }
+    Some((
+        kind,
+        visibility,
+        id,
+        name,
+        alias.alias,
+        alias.signature_tail,
+    ))
+}
+
+/// An explicit generated identity may be followed by a declaration name. A
+/// leading `Ident EntityRef` pair is instead retained as one generic relation
+/// tail so compact and fully elaborated declarations use the same tail grammar.
+fn parse_explicit_entity_name_and_tail(input: &str) -> (Option<String>, String) {
+    let (name, tail) = parse_name_and_tail(input);
+    if name.is_some() && tail.trim_start().starts_with('@') {
+        (None, input.trim().to_owned())
+    } else {
+        (name, tail)
+    }
+}
+
+fn entity_decl_header_tail_is_valid(signature_tail: &str) -> bool {
+    let tail = signature_tail.trim();
+    if tail.is_empty() {
+        return true;
+    }
+    if tail.starts_with('(') || tail.starts_with('<') {
+        return parse_fn_signature(&format!("fn entity{tail}")).is_ok();
+    }
+    if let Some(type_source) = tail.strip_prefix(':') {
+        let type_source = type_source.trim();
+        return !type_source.is_empty()
+            && parse_fn_signature(&format!("fn entity() -> {type_source}")).is_ok();
+    }
+    entity_relation_tail_is_valid(tail)
+}
+
+fn entity_relation_tail_is_valid(tail: &str) -> bool {
+    let Some((_relation, target)) = split_leading_ident(tail) else {
+        return false;
+    };
+    let trimmed_target = target.trim_start();
+    if !trimmed_target.starts_with('@') {
+        return false;
+    }
+    let mut errors = Vec::new();
+    parse_required_entity_ref(trimmed_target, 0, &mut errors)
+        .is_some_and(|(_, remaining)| errors.is_empty() && remaining.trim().is_empty())
+}
+
+fn push_unexpected_entity_header_tail(
+    head: &str,
+    base: usize,
+    tail: &str,
+    errors: &mut Vec<ParseError>,
+) {
+    let tail = tail.trim();
+    let found = first_header_token(tail);
+    let offset = head
+        .rfind(found)
+        .unwrap_or_else(|| head.len().saturating_sub(found.len()));
+    let range = TextRange::new(base + offset, base + offset + found.len());
+    errors.push(ParseError::new(
+        range,
+        vec![
+            "end of declaration header".to_owned(),
+            "typed signature, type annotation, or entity relation".to_owned(),
+        ],
+        Some(found.to_owned()),
+        "unexpected token in entity declaration header".to_owned(),
+        vec![RecoverySuggestion::new(
+            "remove the unexpected token or use a typed declaration-header tail",
+        )],
+        SourceAnchor::new(SourceName::path("<memory>"), range.as_range()),
+    ));
+}
+
+fn first_header_token(source: &str) -> &str {
+    let end = source
+        .char_indices()
+        .find_map(|(index, ch)| ch.is_whitespace().then_some(index))
+        .unwrap_or(source.len());
+    &source[..end]
 }
 
 pub(super) fn rebase_relative_declaration_entity(
@@ -224,25 +321,29 @@ pub(super) fn slice_offset(source: &str, slice: &str) -> usize {
     (slice.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }
 
-pub(super) fn split_surface_alias(signature_tail: String) -> (String, Option<String>) {
+fn split_surface_alias(signature_tail: String) -> EntitySurfaceAliasSplit {
     let (before, after) = split_top_level_keyword_once(&signature_tail, "as");
     if let Some(after) = after {
-        let alias = after
-            .split_whitespace()
-            .next()
-            .filter(|value| is_simple_identifier(value))
-            .map(str::to_owned);
-        return (before.trim().to_owned(), alias);
+        let after = after.trim();
+        let Some((alias, trailing)) = split_leading_ident(after) else {
+            return EntitySurfaceAliasSplit {
+                signature_tail: before.trim().to_owned(),
+                alias: None,
+                unexpected_tail: Some(if after.is_empty() { "as" } else { after }.to_owned()),
+            };
+        };
+        let unexpected_tail = (!trailing.trim().is_empty()).then(|| trailing.trim().to_owned());
+        return EntitySurfaceAliasSplit {
+            signature_tail: before.trim().to_owned(),
+            alias: Some(alias.to_owned()),
+            unexpected_tail,
+        };
     }
-    (signature_tail, None)
-}
-
-pub(super) fn is_simple_identifier(source: &str) -> bool {
-    let mut chars = source.chars();
-    chars
-        .next()
-        .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
-        && chars.all(|ch| ch.is_alphanumeric() || ch == '_')
+    EntitySurfaceAliasSplit {
+        signature_tail,
+        alias: None,
+        unexpected_tail: None,
+    }
 }
 
 pub(super) fn normalize_trailing_colon_id(entity: EntityRef, rest: &str) -> (EntityRef, String) {

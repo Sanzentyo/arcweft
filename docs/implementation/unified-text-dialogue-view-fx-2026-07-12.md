@@ -1,19 +1,139 @@
-# Unified Text / TextBox / View / Fx implementation status — 2026-07-12
+# Unified Text / Dialogue View / Fx implementation status — 2026-07-12
 
 Design source:
 
 - external directive `arcweft-unified-text-textbox-view-implementation-directive.md`
 - user-supplied final numeric/time/transform/target/bundle/save decisions
-- [final repository design](../design/unified-text-textbox-view-fx-final-design-2026-07-12.md)
+- [final repository design](../design/unified-text-dialogue-view-fx-final-design-2026-07-12.md)
 
 Baseline revision: `d934189ba1e414bfa23f7792658e69fd8c60d714`.
+
+## Final dialogue View correction — 2026-07-13
+
+The final language and runtime contract has no public `textbox` declaration,
+entity kind, reference family, line option, manifest, runtime domain object, or
+renderer primitive. Dialogue presentation is an authored persistent View whose
+typed input is `DialogueView`. This decision supersedes every earlier cut-log
+entry below that describes the intermediate dedicated presentation store or a
+Rust-created standard panel; those entries remain only as implementation
+history and are not design authority.
+
+Acceptance criteria for the correction are:
+
+- canonical source uses `pub dialogue defaults { view = @view.Name }`;
+- named profiles use direct IDs such as `@dialogue.mobile`, while the ordinary
+  defaults declaration omits the redundant defaults ID;
+- `DialogueView` is a public standard-prelude nominal record visible to type
+  checking and LSP, and `#[dialogue_view]` custom nominal records must match the
+  exact closed six-field runtime projection contract;
+- the standard minimal dialogue presentation is the reserved linked View
+  resource `std.view.dialogue`, so an omitted project selection and an explicit
+  project selection use the
+  same evaluator, mount, prepared-text, renderer, interaction, accessibility,
+  Agent, capture, and save/load path;
+- authored identity is `DialogueViewDefinition`, runtime target identity is
+  `DialoguePresentationId`, and each occurrence retains a persistent
+  `ViewMountId`; multiple targets using one definition remain independent;
+- all project samples and positive language fixtures use `style`, `view`,
+  `DialogueView`, the `view` option, and `wrap = container`;
+- no compatibility aliases, special removed-spelling parser branches, dual
+  readers, or migration versions are introduced;
+- Native, Web, and headless color/object-ID/mask evidence retains vertical,
+  ruby, JLREQ, reveal, and Fx behavior through the authored View path.
+
+The product-path correction is now implemented. The intermediate presentation
+identities and renderer-created panel were deleted; dialogue occurrences mount
+an authored `ViewProgram` through `BundleViewRuntime`, including the linked
+`std.view.dialogue` resource. Dynamic `Text`/`RichText` retains authored
+`x`/`y`/`width`/`height`, `Panel`/`Box` nodes lower to authored surfaces, and the
+surface union supplies root render, hit, accessibility, avoidance, Agent, and
+capture bounds. No renderer-local dialogue layout fallback remains.
+
+The regression found by the first 2026-07-13 authored-View smoke is closed.
+For `samples/unified-text-visual-parity/main.arcw`, Agent observation now reports
+the custom root at `x=57, y=460, width=1166, height=203`; the vertical content
+run remains `x=958, y=518, width=237, height=142`. The standard View integration
+test also exercises vertical-rl text and ruby through the same prepared-text
+path.
+
+The six-field runtime projection is closed and nominal rather than a stringly
+View convention:
+
+| Field | Type |
+| --- | --- |
+| `speaker` | `String` |
+| `content` | `DialogueContent` |
+| `occurrence` | `DialogueOccurrenceId` |
+| `stage` | `DialogueStage` |
+| `reveal` | `DialogueReveal` |
+| `primary_action` | `DialogueAction` |
+
+The standard-prelude `DialogueView` and exact `#[dialogue_view]` role expose
+this contract through ordinary sema and LSP metadata. Missing, additional,
+duplicate, or wrongly typed role fields are structured errors; the attribute
+does not introduce an open projection bag or a second View type system.
+
+### Final authored-View visual and semantic evidence
+
+The final `just unified-text-visual-parity` packet under
+`target/unified-text-visual-parity/` passes its generated
+`verification-summary.json`. All eight checkpoints are pixel-exact between
+Native and Web:
+
+- vertical-RL and vertical-LR, including ruby and text-combine;
+- JLREQ loose and strict composition;
+- source-defined Fx at the 4,000 ms and quantized 4,512 ms checkpoints;
+- typewriter reveal at 20,000 ms and the quantized 20,512 ms checkpoint.
+
+The verifier records a 16 ms logical-clock quantum and the following non-zero
+semantic/temporal differences, identically on both backends:
+
+| Comparison | Native MSE | Web MSE |
+| --- | ---: | ---: |
+| JLREQ loose vs strict | 0.0012708181137564513 | 0.0012708181137564513 |
+| Fx 4,000 ms vs 4,512 ms | 0.00029181310643758816 | 0.00029181310643758816 |
+| reveal 20,000 ms vs 20,512 ms | 0.00033434599967655405 | 0.00033434599967655405 |
+
+The scoped vertical-RL, vertical-LR, and Fx packets also retain color,
+object-ID, and mask attachments. The transparent full-panel primary action
+keeps its authored hit geometry, while its empty label emits zero prepared-text
+items. Glyph Fx sampling now rebases `ctx.ordinal` to the first logical glyph
+of each retained Fx application, so a later span does not inherit the whole
+document's glyph index. Frame observation reports effective glyph opacity after
+the local paint opacity, resolved transform opacity, and complete mask chain;
+effective-zero glyphs are not reported as visible or included in visible
+ranges.
+
+This closes the final image-parity gate without overwriting a checked-in
+golden. Cut 9 remains open only until the final workspace-wide validation and
+current-checkout structural audit running at the integration cut point have
+passed and their exact results are appended here.
+
+### Final integration validation — in progress
+
+The integration cut point must append the Jujutsu change/revision, exact test
+counts, audit file/LOC/warning totals, and any corrected failure before changing
+Cut 9 to complete. The final commands currently running or still to be recorded
+are:
+
+```bash
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-workspace
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-dialogue-view-final-2026-07-13
+```
+
+Passing the visual packet does not waive a failure in this list. Conversely,
+these source/build gates do not replace the pixel, attachment, temporal, and
+semantic evidence recorded above.
 
 ## Acceptance boundary
 
 This goal is complete only when all display text converges on
 `ResolvedTextDocument -> TextLayout -> PreparedTextItem ->
 ViewPrimitive::Text -> SharedRenderer`, shared Fx executes for View and
-RichText, TextBox renders through a persistent View mount, native capture uses
+RichText, dialogue renders through a persistent authored View mount, native capture uses
 the shared prepared frame, and all legacy renderer paths listed by the source
 directive are removed without compatibility shims.
 
@@ -36,7 +156,11 @@ At the baseline revision:
 - presentation holds only one dialogue snapshot rather than a per-target
   TextBox store.
 
-## Visual witness status
+## Historical migration-witness status
+
+This section records the pre-implementation baseline packet and the defects it
+was intended to catch. The final authored-View packet above supersedes it as
+completion evidence; the baseline images are not the expected final output.
 
 The existing checked-in vertical fixtures remain untouched. A candidate packet
 was started under `target/unified-text-baseline-d934189b/`; its first release
@@ -73,9 +197,10 @@ panel path. Representative metrics are:
 | `vertical_tutr_golden` | 13.3255 dB | 0.004647 | 0.0465000 | 0.205113 |
 | `vertical_lr_ruby_text_combine_golden` | 13.5004 dB | 0.003128 | 0.0446643 | 0.203239 |
 
-The final shared path must restore the typed vertical/ruby/text-combine
-behavior represented by the checked-in goldens; matching only the already
-regressed baseline candidate is not sufficient.
+This established that the final shared path had to restore typed
+vertical/ruby/text-combine behavior rather than match the already regressed
+baseline candidate. The final authored-View packet above closes that
+requirement independently of the historical system-font images.
 
 `samples/rich-text-windows-fonts.arcw` was also excluded from image generation
 because its current source has mismatched `[/strong]`/`[/em]` closes while a
@@ -91,11 +216,15 @@ final shared-path goldens have distinct roles as specified by the final design.
 - [x] Cut 2: typed Fx IR/evaluator/bundle/symbol/save contracts
 - [x] Cut 3: shaped shared text layout and glyphon engine
 - [x] Cut 4: prepared text batch and all ordinary producers
-- [ ] Cut 5: RichText/reveal/shared Fx and native registry removal
+- [x] Cut 5: RichText/reveal/shared Fx and native registry removal
 - [x] Cut 6: direct View text painter order and executable per-mount View
 - [x] Cut 7: shared capture and prepared-layout Agent geometry
-- [x] Cut 8: persistent TextBox View and hardcoded dialogue removal
-- [ ] Cut 9: final cleanup, parity, docs, and structural audit
+- [x] Cut 8: persistent authored dialogue View and dedicated presentation-path removal
+- [ ] Cut 9: final workspace validation, structural audit, and integration-cut record
+
+The per-slice status statements below are chronological records. Any sentence
+that says a now-completed earlier cut “remains open” describes that historical
+working change, not the current remainder summarized above.
 
 ### Implemented substrate after the design cut
 

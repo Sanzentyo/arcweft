@@ -98,7 +98,7 @@
       "source": {
         "kind": "object",
         "id": "object.dialogue.0.0",
-        "role": "dialogue_textbox",
+        "role": "dialogue_view",
         "layer": "dialogue"
       }
     }

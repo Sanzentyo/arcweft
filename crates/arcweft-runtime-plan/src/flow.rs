@@ -129,7 +129,7 @@ impl RuntimePlanLowerOptions {
     }
 
     /// Selects a dialogue defaults profile by entity ID, for example
-    /// `dialogue.defaults.mobile`.
+    /// `dialogue.mobile`.
     #[must_use]
     pub fn with_dialogue_defaults(mut self, id: impl Into<String>) -> Self {
         self.dialogue_defaults = Some(id.into());

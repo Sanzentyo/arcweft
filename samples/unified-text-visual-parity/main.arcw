@@ -12,13 +12,52 @@ pub character parity {
     }
 }
 
-pub textbox unified_text_panel {
+pub style unified_text_panel {
+    .unified_text_panel {
+        background = rgba(17, 18, 16, 242)
+    }
+    .unified_text_speaker {
+        font-family = text("Noto Sans JP")
+        color = rgba(174, 226, 142, 255)
+        font-size = 18000milli
+        line-height = 28000milli
+        font-weight = text("700")
+    }
+    .unified_text_content {
+        font-family = text("Noto Sans JP")
+        color = rgba(238, 247, 255, 255)
+        font-size = 30000milli
+        line-height = 40000milli
+    }
+    .unified_text_action {
+        background = rgba(0, 0, 0, 0)
+    }
+}
+
+pub view UnifiedTextPanel(dialogue: DialogueView) {
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = unified_text_panel) {
+        Text(dialogue.speaker)
+            .x(85.6px)
+            .y(480.8px)
+            .width(1108.8px)
+            .height(28px)
+            .part(unified_text_speaker)
+        RichText(dialogue.content)
+            .x(85.6px)
+            .y(518.8px)
+            .width(1108.8px)
+            .height(125.6px)
+            .part(unified_text_content)
+        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+            .part(unified_text_action)
+            .on_click { dialogue.primary_action }
+    }
+        .part(unified_text_panel)
+}
+
+pub dialogue defaults {
+    view = @view.UnifiedTextPanel
     rich_text {
-        text {
-            font = "Noto Sans JP"
-            color = rgb("#eef7ff")
-            size = 30px
-        }
         ruby {
             size = 14px
             gap = 1px
@@ -26,10 +65,6 @@ pub textbox unified_text_panel {
             collision_gap = 2px
         }
     }
-}
-
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.unified_text_panel
 }
 
 #[fx]

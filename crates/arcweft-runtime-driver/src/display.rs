@@ -1,6 +1,6 @@
 use crate::dialogue::{
-    BundlePresentationTransition, DialogueAdvanceTarget, TextBoxPresentationOperation,
-    TextBoxPresentationStore, TextBoxStoreError, TextBoxTargetId,
+    BundlePresentationTransition, DialogueAdvanceTarget, DialoguePresentationOperation,
+    DialoguePresentationStore, DialoguePresentationStoreError, DialogueViewDefinition,
 };
 use crate::fx_runtime::{BundleFxRuntimeError, BundleFxRuntimeSnapshot};
 use crate::presentation_handles::{
@@ -28,7 +28,6 @@ use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StagePlacement, StageRect};
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_render_text::{LineDisplayCatalog, RuntimeLineContext};
-use arcweft_view::ViewMountAllocator;
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +49,7 @@ pub struct BundleViewportFit {
 /// Display frames and non-fatal display diagnostics resolved from one VM step.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayResolution {
-    pub textbox_operations: Vec<TextBoxPresentationOperation>,
+    pub dialogue_operations: Vec<DialoguePresentationOperation>,
     pub diagnostics: Vec<String>,
 }
 
@@ -60,7 +59,7 @@ pub struct DisplayResolution {
 #[derive(Clone, Default, Deserialize, PartialEq, Serialize)]
 pub struct BundlePresentationSnapshot {
     pub revision: u64,
-    pub textboxes: TextBoxPresentationStore,
+    pub dialogue: DialoguePresentationStore,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -117,11 +116,12 @@ pub fn resolve_display_frames(
                 match spec.resolve_frame(&RuntimeLineContext::new(bindings.clone())) {
                     Ok(frame) => {
                         resolution
-                            .textbox_operations
-                            .push(TextBoxPresentationOperation::append(
-                                spec.window
-                                    .as_deref()
-                                    .map_or_else(TextBoxTargetId::default, TextBoxTargetId::from),
+                            .dialogue_operations
+                            .push(DialoguePresentationOperation::append(
+                                spec.view.as_deref().map_or_else(
+                                    DialogueViewDefinition::default,
+                                    DialogueViewDefinition::from,
+                                ),
                                 frame,
                             ));
                     }
@@ -157,13 +157,10 @@ impl BundlePresentationSnapshot {
         status: &FlowFiberStatus,
         effects: &[LineEffectRequest],
         resources: BundlePresentationResources<'_>,
-        mount_allocator: &mut ViewMountAllocator,
-    ) -> Result<Vec<PresentationHandleDiagnostic>, TextBoxStoreError> {
-        let mut next_textboxes = self.textboxes.clone();
-        let mut next_mount_allocator = *mount_allocator;
-        next_textboxes
-            .apply_operations(&resolution.textbox_operations, &mut next_mount_allocator)?;
-        next_textboxes.synchronize_waiting_line(waiting_dialogue_line(status))?;
+    ) -> Result<Vec<PresentationHandleDiagnostic>, DialoguePresentationStoreError> {
+        let mut next_dialogue = self.dialogue.clone();
+        next_dialogue.apply_operations(&resolution.dialogue_operations)?;
+        next_dialogue.synchronize_waiting_line(waiting_dialogue_line(status))?;
         let next_choices = choices_from_status(status);
         let (handle_operations, mut handle_diagnostics) =
             presentation_handle_operations_from_effects(effects);
@@ -206,7 +203,7 @@ impl BundlePresentationSnapshot {
         ));
         let next_focus_navigation =
             filter_presentation_focus_navigation(raw_focus_navigation, &next_presentation_handles);
-        if self.textboxes != next_textboxes
+        if self.dialogue != next_dialogue
             || self.choices != next_choices
             || self.images != next_images
             || self.presentation_handle_epoch != next_presentation_handle_epoch
@@ -220,7 +217,7 @@ impl BundlePresentationSnapshot {
             || self.focus_navigation != next_focus_navigation
         {
             self.revision = self.revision.saturating_add(1);
-            self.textboxes = next_textboxes;
+            self.dialogue = next_dialogue;
             self.choices = next_choices;
             self.images = next_images;
             self.presentation_handle_epoch = next_presentation_handle_epoch;
@@ -233,7 +230,6 @@ impl BundlePresentationSnapshot {
             self.focus_groups = next_focus_groups;
             self.focus_navigation = next_focus_navigation;
         }
-        *mount_allocator = next_mount_allocator;
         Ok(handle_diagnostics)
     }
 
@@ -271,9 +267,9 @@ impl BundlePresentationSnapshot {
         BundlePresentationTransition,
         Option<arcweft_core::plan::RuntimeLineId>,
     ) {
-        let before = self.textboxes.clone();
-        let result = self.textboxes.advance_dialogue(target);
-        if self.textboxes != before {
+        let before = self.dialogue.clone();
+        let result = self.dialogue.advance_dialogue(target);
+        if self.dialogue != before {
             self.revision = self.revision.saturating_add(1);
         }
         result
@@ -305,7 +301,7 @@ impl fmt::Debug for BundlePresentationSnapshot {
         formatter
             .debug_struct("BundlePresentationSnapshot")
             .field("revision", &self.revision)
-            .field("textboxes", &self.textboxes)
+            .field("dialogue", &self.dialogue)
             .field("choices", &self.choices)
             .field("images", &self.images)
             .field("presentation_handle_epoch", &self.presentation_handle_epoch)
@@ -869,17 +865,14 @@ mod tests {
             callee: "presentation.handle.dispose".to_owned(),
             args: vec!["handle = @handle.flow.save.panel".to_owned()],
         });
-        let mut mount_allocator = ViewMountAllocator::default();
-
         let diagnostics = snapshot
             .update(
                 &DisplayResolution::default(),
                 &FlowFiberStatus::Running,
                 &[create, dispose],
                 resources,
-                &mut mount_allocator,
             )
-            .expect("TextBox store updates");
+            .expect("dialogue presentation store updates");
 
         assert!(diagnostics.is_empty());
         assert_eq!(snapshot.presentation_handle_epoch, 2);
@@ -906,9 +899,8 @@ mod tests {
                 &FlowFiberStatus::Running,
                 &[stale_show],
                 resources,
-                &mut mount_allocator,
             )
-            .expect("TextBox store updates");
+            .expect("dialogue presentation store updates");
 
         assert_eq!(
             diagnostics[0].code,
@@ -1437,16 +1429,14 @@ mod tests {
         effects: &[LineEffectRequest],
         resources: BundlePresentationResources<'_>,
     ) -> Vec<PresentationHandleDiagnostic> {
-        let mut mount_allocator = ViewMountAllocator::default();
         snapshot
             .update(
                 &DisplayResolution::default(),
                 &FlowFiberStatus::Running,
                 effects,
                 resources,
-                &mut mount_allocator,
             )
-            .expect("TextBox store updates")
+            .expect("dialogue presentation store updates")
     }
 
     fn assert_view_controls_visible(

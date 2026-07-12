@@ -10,7 +10,7 @@ The JSON fixtures mirror the seq06.5 `selected_capture` shape consumed by the
 new visual smoke tests:
 
 - `selected-layer-smoke-metadata.json`: selected dialogue layer PNG smoke.
-- `selected-object-smoke-metadata.json`: selected textbox object PNG smoke.
+- `selected-object-smoke-metadata.json`: selected dialogue View object PNG smoke.
 - `exact-native-golden-policy.json`: checked-in native golden policy and imq
   tolerance contract.
 

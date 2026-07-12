@@ -25,7 +25,7 @@ This directory contains intentionally checked-in native-renderer image fixtures.
   replaces them.
 - `unified_text_reveal_vertical_migration_baseline.arcw` keeps the reveal,
   stacked motion, and vertical-effect rows inside the visible two-line region
-  of the legacy standard TextBox so fixed-time captures contain actual pixels
+  of the standard authored dialogue View so fixed-time captures contain actual pixels
   for those features rather than clipped authored content.
 - `vertical_tutr_golden.png` is the Windows native `arcw agent observe`
   framebuffer golden generated from that source with the `MS Mincho` font.

@@ -26,18 +26,41 @@ pub character narrator {
     }
 }
 
-pub textbox zundamon_panel {
-    rich_text {
-        text {
-            font = "Yu Gothic UI"
-            color = rgb("#f7f4e8")
-            size = 24px
-        }
+pub style zundamon_panel {
+    .dialogue_panel {
+        background = rgba(17, 18, 16, 242)
+    }
+    .dialogue_action {
+        background = rgba(0, 0, 0, 0)
+    }
+    .zundamon_panel {
+        font-family = text("Yu Gothic UI")
+        color = rgba(247, 244, 232, 255)
+        font-size = 24000milli
     }
 }
 
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.zundamon_panel
+pub view ZundamonPanel(dialogue: DialogueView) {
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
+        Text(dialogue.speaker)
+            .x(85.6px)
+            .y(480.8px)
+            .width(1108.8px)
+            .height(28px)
+        RichText(dialogue.content)
+            .x(85.6px)
+            .y(518.8px)
+            .width(1108.8px)
+            .height(125.6px)
+            .style(@style.zundamon_panel)
+        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+            .part(dialogue_action)
+            .on_click { dialogue.primary_action }
+    }
+}
+
+pub dialogue defaults {
+    view = @view.ZundamonPanel
 }
 
 pub asset zundamon.normal {
@@ -94,10 +117,10 @@ flow normal {
     image(@image.zundamon.normal)
 
     narrator(id=@say.zundamon.intro, voice=auto):
-        立ち絵はローカル生成されたずんだもん素材を使う。語り手は別surfaceなので、色とフォントが明確に違う。[p]
+        立ち絵はローカル生成されたずんだもん素材を使う。語り手は別characterなので、色とフォントが明確に違う。[p]
 
     zundamon(id=@say.zundamon.normal, voice=auto, look=.normal):
-        ぼくのsurfaceでは緑の文字になるのだ。既定のタイプライターで表示されて、[.wave amp=4px freq=8]この部分だけ少し揺れる[/]のだ。[p]
+        ぼくのcharacter styleでは緑の文字になるのだ。既定のタイプライターで表示されて、[.wave amp=4px freq=8]この部分だけ少し揺れる[/]のだ。[p]
 
     choice @choice.zundamon.normal {
         @choice.zundamon.to_smile "笑顔に切り替える" -> @flow.smile
@@ -125,6 +148,6 @@ flow done_normal {
 
 flow done_smile {
     narrator(id=@say.zundamon.done_smile, voice=auto):
-        笑顔で終了。surface、画像、choiceの表示をまとめて確認できる。[p]
+        笑顔で終了。character style、画像、choiceの表示をまとめて確認できる。[p]
     return "done_smile"
 }

@@ -8,6 +8,7 @@ mod text_controls;
 use self::content::{assign_action_button_bounds, lower_button, lower_image, lower_text};
 use self::modifiers::{
     lower_button_modifiers, lower_modifiers, lower_navigation_group, lower_navigation_target,
+    lower_text_modifiers,
 };
 use self::scroll::lower_scroll_region;
 pub(in crate::app) use self::scroll::{
@@ -30,20 +31,24 @@ use arcweft_bundle::{
         ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
         ViewFxArgumentBindingRef, ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource,
         ViewLogicalRect, ViewParameterResource, ViewPartStyleRule, ViewProgramResource,
-        ViewRuntimeButtonBounds, ViewScrollAxis, ViewScrollIndicatorsPolicy,
-        ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
-        ViewStyleResource, ViewSurfaceResource, ViewTextBlockBounds, ViewTextBlockResource,
-        ViewTextResource,
+        ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds, ViewScrollAxis,
+        ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
+        ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockBounds,
+        ViewTextBlockResource, ViewTextResource,
         view::{
-            CompositionOnBlurPolicy, EnterKeyHint, StyleAssignOp, StyleSourceIdentity,
-            StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization, ViewElementKind,
-            ViewFocusAutoScrollPolicy, ViewInputKind, ViewInputOptions, ViewInputPurpose,
-            ViewProgramInstruction, ViewSecureInputPolicy, ViewSemanticTarget, ViewStyleApplyRef,
-            ViewStyleDeclaration, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
-            ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
+            CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, StyleAssignOp,
+            StyleSourceIdentity, StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization,
+            ViewElementKind, ViewFocusAutoScrollPolicy, ViewInputKind, ViewInputOptions,
+            ViewInputPurpose, ViewProgramInstruction, ViewSecureInputPolicy, ViewSemanticTarget,
+            ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleSelector, ViewStyleSelectorPart,
+            ViewStyleValue, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
             ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
         },
     },
+};
+use arcweft_lang_sema::dialogue_view::{
+    DialogueViewModel, DialogueViewModelRegistry,
+    DialogueViewProjection as SemanticDialogueViewProjection,
 };
 use arcweft_lang_syntax::{
     ast::{
@@ -69,8 +74,8 @@ use thiserror::Error;
 use super::super::bundle_view_layout::{
     VIEW_LAYOUT_GAP_MILLI, VIEW_LAYOUT_SCROLL_VIEWPORT_HEIGHT_MILLI,
     VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI, ViewLayoutCursor, ViewLayoutFrame, button_bounds,
-    modifier_layout_length_u32, named_arg, named_layout_length_u32, parse_px_milli,
-    text_block_frame, u32_to_i32_saturating,
+    modifier_layout_length_i32, modifier_layout_length_u32, named_arg, named_layout_length_i32,
+    named_layout_length_u32, parse_px_milli, text_block_frame, u32_to_i32_saturating,
 };
 use super::super::bundle_view_overflow::validate_interactive_overflow_modifiers;
 use super::super::bundle_view_schema::{ViewValueCompileError, ViewValueProgramCompiler};
@@ -116,12 +121,17 @@ pub(in crate::app) enum ViewSidecarError {
     },
     #[error("View Text source `{expression}` is not a literal or typed text projection")]
     UnsupportedTextSource { expression: String },
+    #[error(
+        "View action projection `{expression}` must select `primary_action` from a dialogue View parameter"
+    )]
+    InvalidDialogueActionProjection { expression: String },
 }
 
 #[derive(Default)]
 struct ViewLoweringState {
     fx_definitions: BTreeMap<String, ViewFxDefinition>,
     view_schemas: BTreeMap<String, ViewDefinitionSchema>,
+    dialogue_parameters: BTreeMap<String, DialogueViewModel>,
     definitions: Vec<ViewDefinitionResource>,
     value_compiler: ViewValueProgramCompiler,
     instructions: Vec<ViewProgramInstruction>,
@@ -150,6 +160,7 @@ struct ViewLoweringState {
     scroll_counter: u32,
     text_block_counter: u32,
     image_counter: u32,
+    element_counter: u32,
     group_counter: u32,
     handler_counter: u32,
     patch_counter: u32,
@@ -173,17 +184,19 @@ struct ViewParameterSchema {
     value_type: Option<FxRuntimeType>,
     source_type: String,
     default: Option<Expr>,
+    dialogue_model: Option<DialogueViewModel>,
 }
 
 pub(in crate::app) fn view_sidecars(
     views: &[&EntityDeclItem],
+    dialogue_view_models: &DialogueViewModelRegistry,
     style_resource: Option<&ViewStyleResource>,
     source_image_objects: &[BundleImageObject],
     fx_definitions: &[FxDefinition],
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
         fx_definitions: view_fx_definitions(fx_definitions),
-        view_schemas: view_definition_schemas(views)?,
+        view_schemas: view_definition_schemas(views, dialogue_view_models)?,
         style_resource: style_resource.cloned(),
         source_image_objects: source_image_objects.to_vec(),
         ..ViewLoweringState::default()
@@ -209,8 +222,19 @@ pub(in crate::app) fn view_sidecars(
             )?;
             let parameters =
                 compile_view_parameters(&schema, &parameter_slots, &mut state.value_compiler)?;
+            state.dialogue_parameters = schema
+                .parameters
+                .iter()
+                .filter_map(|parameter| {
+                    parameter
+                        .dialogue_model
+                        .clone()
+                        .map(|model| (parameter.name.clone(), model))
+                })
+                .collect();
             let start_instruction = usize_to_u32_saturating(state.instructions.len());
             lower_view_body(view.id(), body, &mut state)?;
+            state.dialogue_parameters.clear();
             let end_instruction = usize_to_u32_saturating(state.instructions.len());
             state.definitions.push(ViewDefinitionResource {
                 public_id,
@@ -220,6 +244,13 @@ pub(in crate::app) fn view_sidecars(
             });
         }
     }
+    finish_view_sidecars(first, state)
+}
+
+fn finish_view_sidecars(
+    first: &EntityDeclItem,
+    mut state: ViewLoweringState,
+) -> Result<ViewBundleSidecars, ViewSidecarError> {
     assign_action_button_bounds(&mut state);
     let compiled_values = std::mem::take(&mut state.value_compiler).finish()?;
     if state.instructions.is_empty()
@@ -304,6 +335,7 @@ fn view_fx_definitions(definitions: &[FxDefinition]) -> BTreeMap<String, ViewFxD
 
 fn view_definition_schemas(
     views: &[&EntityDeclItem],
+    dialogue_view_models: &DialogueViewModelRegistry,
 ) -> Result<BTreeMap<String, ViewDefinitionSchema>, ViewSidecarError> {
     let mut schemas = BTreeMap::new();
     for view in views {
@@ -334,6 +366,10 @@ fn view_definition_schemas(
                     value_type: view_scalar_type(parameter.ty()),
                     source_type: format!("{:?}", parameter.ty()),
                     default: parameter.default().cloned(),
+                    dialogue_model: match parameter.ty() {
+                        TypeRef::Path(type_name) => dialogue_view_models.model(type_name).cloned(),
+                        _ => None,
+                    },
                 })
             })
             .collect::<Result<Vec<_>, ViewSidecarError>>()?;
@@ -799,14 +835,20 @@ fn lower_element(
             element.modifiers(),
             kind.layout_kind() == Some(ViewElementLayoutKind::Scroll),
         )?;
+        let origin = ViewLayoutCursor {
+            x_milli: named_layout_length_i32(element.args(), &["x"]).unwrap_or(layout.x_milli),
+            y_milli: named_layout_length_i32(element.args(), &["y"]).unwrap_or(layout.y_milli),
+        };
+        let target = next_element_id(view_id, state);
+        let part = element_part(element);
         let open_instruction = state.instructions.len();
         state
             .instructions
             .push(ViewProgramInstruction::OpenElement {
                 element: kind,
-                target: None,
+                target: Some(target.clone()),
                 style: None,
-                part: first_part(element.modifiers()),
+                part,
                 key: None,
                 source: None,
             });
@@ -814,21 +856,41 @@ fn lower_element(
         lower_modifiers(view_id, element.modifiers(), state)?;
         let frame = match kind.layout_kind() {
             Some(ViewElementLayoutKind::Row) => {
-                lower_layout_row(view_id, element.children(), state, *layout)?
+                lower_layout_row(view_id, element.children(), state, origin)?
             }
             Some(ViewElementLayoutKind::Column) => {
-                lower_layout_column(view_id, element.children(), state, *layout)?
+                lower_layout_column(view_id, element.children(), state, origin)?
             }
             Some(ViewElementLayoutKind::Scroll) => {
-                lower_scroll_region(view_id, element, state, *layout, open_instruction)?
+                lower_scroll_region(view_id, element, state, origin, open_instruction)?
             }
             Some(ViewElementLayoutKind::Stack) => {
-                lower_layout_stack(view_id, element.children(), state, *layout)?
+                lower_layout_stack(view_id, element.children(), state, origin)?
             }
             None if kind.is_action_control() => ViewLayoutFrame::action_button(),
             None => ViewInputKind::from_element(kind)
                 .map_or(ViewLayoutFrame::zero(), ViewLayoutFrame::text_control),
         };
+        let frame = ViewLayoutFrame::new(
+            named_layout_length_u32(element.args(), &["width", "w"]).unwrap_or(frame.width_milli),
+            named_layout_length_u32(element.args(), &["height", "h"]).unwrap_or(frame.height_milli),
+        );
+        if matches!(kind, ViewElementKind::Panel | ViewElementKind::Box) && !frame.is_empty() {
+            state.surfaces.push(ViewSurfaceResource {
+                public_id: target,
+                view: Some(view_resource_id(view_id)),
+                containing_scroll_region: state.scroll_stack.last().cloned(),
+                element: kind,
+                bounds: ViewRuntimeSurfaceBounds::new(
+                    origin.x_milli,
+                    origin.y_milli,
+                    frame.width_milli,
+                    frame.height_milli,
+                ),
+                style: None,
+                source: None,
+            });
+        }
         if pushed_group {
             state.focus_group_stack.pop();
         }
@@ -846,6 +908,16 @@ fn lower_element(
         lower_modifiers(view_id, element.modifiers(), state)?;
         Ok(ViewLayoutFrame::zero())
     }
+}
+
+fn next_element_id(view_id: &str, state: &mut ViewLoweringState) -> String {
+    let id = format!("element.{view_id}.{}", state.element_counter);
+    state.element_counter = state.element_counter.saturating_add(1);
+    id
+}
+
+fn element_part(element: &ViewElement) -> Option<String> {
+    first_part(element.modifiers()).or_else(|| named_arg(element.args(), "part").map(expr_source))
 }
 
 fn lower_layout_column(

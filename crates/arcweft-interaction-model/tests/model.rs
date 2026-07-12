@@ -19,7 +19,7 @@ fn routed_input_roundtrip_preserves_routing_metadata() {
     let event = RoutedInputEvent::new(
         InputEpoch::new(7),
         InputSequence::new(41),
-        InteractionTarget::new("textbox.main").expect("target"),
+        InteractionTarget::new("view.dialogue.main").expect("target"),
         InputEventKind::KeyDown {
             key: KeyCode::new("Enter").expect("key"),
             repeat: false,
@@ -33,7 +33,7 @@ fn routed_input_roundtrip_preserves_routing_metadata() {
     assert_eq!(decoded, event);
     assert_eq!(decoded.epoch.get(), 7);
     assert_eq!(decoded.sequence.get(), 41);
-    assert_eq!(decoded.target.as_str(), "textbox.main");
+    assert_eq!(decoded.target.as_str(), "view.dialogue.main");
 }
 
 #[test]

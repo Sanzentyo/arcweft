@@ -290,7 +290,7 @@ scope {
     }
 
     layer @layer.view.game {
-        TextBox(current_text())
+        view(@view.MainDialogue)
         ChoiceList(choices)
     }
 }

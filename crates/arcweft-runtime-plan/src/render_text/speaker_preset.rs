@@ -9,7 +9,7 @@ use arcweft_render_text::{
 use crate::labels::expr_label;
 
 use super::defaults::{
-    DEFAULT_DIALOGUE_WINDOW, DialogueDisplayDefaults, DialogueSpeakerPreset, DialogueStyleDefaults,
+    DEFAULT_DIALOGUE_VIEW, DialogueDisplayDefaults, DialogueSpeakerPreset, DialogueStyleDefaults,
 };
 use super::helpers::entity_ref_label;
 use super::inline_failure::inline_default_from_named_expr;
@@ -93,13 +93,13 @@ fn append_speaker_preset_arg(
     if let Some(policy) = policy.clone() {
         defaults.default_inline_failure_policy = Some(policy);
     }
-    if path == "window" {
-        defaults.window = Some(entity_ref_label(value));
+    if path == "view" {
+        defaults.view = Some(entity_ref_label(value));
     }
 
     let style_index = defaults.base_styles.len();
     let styles = display_styles_from_named_expr(path, value);
-    let active = policy.is_some() || path == "window" || !styles.is_empty();
+    let active = policy.is_some() || path == "view" || !styles.is_empty();
     let style_index = (!styles.is_empty()).then_some(style_index);
     defaults.base_styles.extend(styles);
     defaults
@@ -159,19 +159,19 @@ fn preset_names(callee: &str) -> impl Iterator<Item = &str> {
     )
 }
 
-pub(crate) fn effective_dialogue_window(
+pub(crate) fn effective_dialogue_view(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
 ) -> Option<String> {
     dialogue
-        .window()
+        .view()
         .map(|id| id.body().to_owned())
         .or_else(|| {
             speaker_preset_chain(dialogue.callee(), speaker_presets)
                 .into_iter()
                 .rev()
-                .find_map(|preset| preset.defaults.window.clone())
+                .find_map(|preset| preset.defaults.view.clone())
         })
         .or_else(|| {
             let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
@@ -180,8 +180,8 @@ pub(crate) fn effective_dialogue_window(
                 .map_or_else(|| dialogue.callee(), |preset| preset.callee());
             defaults
                 .character_for_callee(character_callee)
-                .and_then(|character| character.window.clone())
+                .and_then(|character| character.view.clone())
         })
-        .or_else(|| defaults.global.window.clone())
-        .or_else(|| Some(DEFAULT_DIALOGUE_WINDOW.to_owned()))
+        .or_else(|| defaults.global.view.clone())
+        .or_else(|| Some(DEFAULT_DIALOGUE_VIEW.to_owned()))
 }

@@ -127,10 +127,10 @@ use arcweft_tooling::agent_repl::{
     agent_repl_parse_fragment,
 };
 
-const AGENT_ROLE_DIALOGUE_TEXTBOX: &str = "dialogue_textbox";
+const AGENT_ROLE_DIALOGUE_VIEW: &str = "dialogue_view";
 
-fn agent_is_dialogue_textbox(object: &AgentObservedObject) -> bool {
-    object.role == AGENT_ROLE_DIALOGUE_TEXTBOX
+fn agent_is_dialogue_view(object: &AgentObservedObject) -> bool {
+    object.role == AGENT_ROLE_DIALOGUE_VIEW
 }
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clap::ValueEnum;

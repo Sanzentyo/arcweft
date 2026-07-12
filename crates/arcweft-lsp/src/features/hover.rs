@@ -1,6 +1,7 @@
 use crate::documents::DocumentSnapshot;
 use crate::features::cascade::effective_dialogue_cascade_at;
 use crate::features::character_metadata::character_hover_markdown;
+use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
@@ -55,7 +56,46 @@ pub fn hover(
             range: None,
         });
     }
+    if let Some(hover) = dialogue_view_hover(profile, document, &word) {
+        return Some(hover);
+    }
     profile_hover(&profile.context(), &word)
+}
+
+fn dialogue_view_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    word: &str,
+) -> Option<Hover> {
+    for model in dialogue_view_types(profile, Some(document)) {
+        if model.name == word {
+            return Some(Hover {
+                contents: HoverContents::Scalar(MarkedString::String(format!(
+                    "Dialogue View input model\n\n{}",
+                    model.declaration()
+                ))),
+                range: None,
+            });
+        }
+        if let Some((projection, ty)) = DialogueViewTypeMetadata::fields()
+            .into_iter()
+            .find(|(projection, _)| projection.field() == word)
+        {
+            let ty = match ty {
+                arcweft_lang_sema::types::TypeKind::Named(name) => name,
+                other => format!("{other:?}"),
+            };
+            return Some(Hover {
+                contents: HoverContents::Scalar(MarkedString::String(format!(
+                    "{}.{}: {ty}\n\nRuntime-supplied dialogue View field.",
+                    model.name,
+                    projection.field()
+                ))),
+                range: None,
+            });
+        }
+    }
+    None
 }
 
 fn closure_effect_row_hover(
@@ -401,7 +441,7 @@ fn all_cascade_layers() -> [RichTextCascadeLayer; 7] {
         RichTextCascadeLayer::LineOptions,
         RichTextCascadeLayer::SpeakerPreset,
         RichTextCascadeLayer::CharacterDialogueStyle,
-        RichTextCascadeLayer::TextBoxTheme,
+        RichTextCascadeLayer::DialogueViewStyle,
         RichTextCascadeLayer::DialogueDefaults,
         RichTextCascadeLayer::EngineDefaults,
     ]
@@ -413,7 +453,7 @@ fn cascade_layer_label(layer: RichTextCascadeLayer) -> &'static str {
         RichTextCascadeLayer::LineOptions => "line_options",
         RichTextCascadeLayer::SpeakerPreset => "speaker_preset",
         RichTextCascadeLayer::CharacterDialogueStyle => "character_dialogue_style",
-        RichTextCascadeLayer::TextBoxTheme => "text_box_theme",
+        RichTextCascadeLayer::DialogueViewStyle => "dialogue_view_style",
         RichTextCascadeLayer::DialogueDefaults => "dialogue_defaults",
         RichTextCascadeLayer::EngineDefaults => "engine_defaults",
     }
@@ -533,7 +573,7 @@ mod tests {
     #[test]
     fn hover_describes_dialogue_default_assignment() {
         let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -573,7 +613,7 @@ pub dialogue defaults @dialogue.defaults {
     #[test]
     fn hover_describes_effective_dialogue_style_cascade() {
         let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         text {
             color = rgb("#101112")

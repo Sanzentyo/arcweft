@@ -4886,7 +4886,7 @@ fn agent_rag_query_uses_debug_db_graph_and_history_channels() {
 
     assert_agent_rag_debug_store_item(
         &db_path,
-        "uses_textbox",
+        "uses_dialogue_view",
         Some("2"),
         "graph_summary",
         "graph:2",
@@ -5164,21 +5164,21 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
         .expect("upsert graph edge");
     store
         .upsert_graph_symbol(&DebugGraphSymbol {
-            symbol_id: "symbol:textbox.main".to_owned(),
+            symbol_id: "symbol:view.main".to_owned(),
             program_hash: program_hash.clone(),
             public_id: Some(
-                arcweft_agent_protocol::ids::PublicId::new("@textbox.main")
+                arcweft_agent_protocol::ids::PublicId::new("@view.main")
                     .expect("valid public id"),
             ),
-            qualified_name: Some("textbox.main".to_owned()),
-            kind: "textbox".to_owned(),
+            qualified_name: Some("view.main".to_owned()),
+            kind: "view".to_owned(),
             type_json: None,
             source_path: None,
             source_content_hash: None,
             start_byte: None,
             end_byte: None,
             semantic_hash: None,
-            summary: "Main textbox reached through Alice choice".to_owned(),
+            summary: "Main View reached through Alice choice".to_owned(),
             metadata: BTreeMap::new(),
         })
         .expect("upsert graph expanded symbol");
@@ -5186,8 +5186,8 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
         .upsert_graph_edge(&DebugGraphEdge {
             program_hash,
             from_symbol_id: "symbol:choice.alice".to_owned(),
-            to_symbol_id: "symbol:textbox.main".to_owned(),
-            edge_kind: "uses_textbox".to_owned(),
+            to_symbol_id: "symbol:view.main".to_owned(),
+            edge_kind: "uses_view".to_owned(),
             weight: 1.0,
             metadata: BTreeMap::new(),
         })
@@ -5247,4 +5247,3 @@ fn seed_debug_prune_db(path: &Path) {
             .expect("retention chunk");
     }
 }
-

@@ -13,7 +13,6 @@ pub enum EntityKind {
     View,
     Action,
     Activity,
-    Textbox,
     DialogueLine,
     Text,
     Content,

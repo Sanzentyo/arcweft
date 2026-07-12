@@ -5,7 +5,7 @@ Arcweft supports concise dialogue while preserving typed control over voice, BGM
 Related:
 
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
-- [Dialogue Character Methods, Dialogue Windows, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
+- [Dialogue Character Methods, Dialogue Views, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-views.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
@@ -349,7 +349,7 @@ Characters expose object-like stage APIs. These APIs return handles that can be 
 
 ```arcw
 preload next @flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.main)
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], view=@view.MainDialogue)
     alice.voice_for(@say.alice_intro.001).preload()
     bgm.prepare(@bgm.alice_theme)
 ```

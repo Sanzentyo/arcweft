@@ -1,4 +1,4 @@
-pub dialogue defaults @dialogue:.defaults.full {
+pub dialogue defaults @dialogue.full {
     inline_error = InlineFailure.fallback("?")
 
     rich_text {
@@ -12,7 +12,7 @@ pub dialogue defaults @dialogue:.defaults.full {
             writing_mode = horizontal_tb
             jlreq = normal
             vertical_latin = mixed
-            wrap = textbox
+            wrap = container
             overflow = page
         }
 

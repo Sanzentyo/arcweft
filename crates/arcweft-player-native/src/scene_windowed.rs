@@ -708,7 +708,7 @@ impl NativeSceneState {
         let presentation = session.presentation();
         let fx_definitions = session.fx_definitions();
         let dialogue_visual = self.dialogue_visual_clock.progress(
-            presentation.textboxes.latest_active(),
+            presentation.dialogue.latest_active(),
             elapsed,
             None,
         );
@@ -1215,17 +1215,8 @@ impl NativeSceneState {
         match progress {
             DialogueProgress::None => {}
             DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_stage(),
-            DialogueProgress::Advance => {
-                let target = self
-                    .runtime
-                    .session()
-                    .presentation()
-                    .textboxes
-                    .latest_active()
-                    .and_then(|(textbox, _)| textbox.advance_target());
-                if let Some(target) = target {
-                    self.runtime.session_mut().queue_dialogue_advance(target);
-                }
+            DialogueProgress::Advance { target } => {
+                self.runtime.session_mut().queue_dialogue_advance(target);
             }
         }
     }

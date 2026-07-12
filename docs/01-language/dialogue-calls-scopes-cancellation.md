@@ -13,8 +13,8 @@ Related:
 
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
-- [Dialogue Windows, Character Styles, and Read-State Hooks](dialogue-windows-and-hooks.md)
-- [Dialogue Character Methods, Dialogue Windows, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
+- [Dialogue Views, Character Styles, and Read-State Hooks](dialogue-views-and-hooks.md)
+- [Dialogue Character Methods, Dialogue Views, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-views.md)
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [Hooks and Memoization](hooks-and-memoization.md)
@@ -29,7 +29,7 @@ Use these roles consistently:
 ```text
 @foo.bar
   Entity reference only.
-  Example: @flow.opening, @say.opening.001, @textbox.main.
+  Example: @flow.opening, @say.opening.001, @view.MainDialogue.
 
 speaker(args): text
   Compact dialogue sugar.
@@ -47,10 +47,11 @@ with { plan } / with:
   `with { plan }` is canonical. `with:` is indentation sugar used when `speaker:` form needs the same plan behavior.
 ```
 
-`@` is the entity-reference marker. A line ID, window, voice, or hook reference is passed like any other option:
+`@` is the entity-reference marker. A line ID, View, voice, or hook reference
+is passed like any other option:
 
 ```arcw
-alice(id=@say.opening.greeting, window=@textbox.side, voice=auto, look=smile):
+alice(id=@say.opening.greeting, view=@view.SideDialogue, voice=auto, look=smile):
     おはよう。[p]
 ```
 
@@ -65,7 +66,7 @@ Older compact option styles without parentheses are not part of the stable gramm
 A character can be called with line options to produce a reusable speaker preset. This is the preferred way to avoid repeating `voice`, `look`, `window`, and style options.
 
 ```arcw
-let alice2 = alice(look=smile, voice=auto, window=@textbox.side)
+let alice2 = alice(look=smile, voice=auto, view=@view.SideDialogue)
 
 alice2: おはよう。[p]
 
@@ -86,7 +87,7 @@ local to a block without mutating `@character.alice`.
 ```arcw
 alice.say(
     id = @say.opening.dream_hint,
-    window = @textbox.main,
+    view = @view.MainDialogue,
     voice = auto,
     look = smile,
 )[
@@ -109,7 +110,7 @@ This creates and executes a `DialogueLine`.
 pub fn Character.say(
     self: Ref<Character>,
     id: Option<Ref<DialogueLine>> = None,
-    window: Ref<Textbox> = @textbox.main,
+    view: Ref<View> = @view.MainDialogue,
     voice: VoicePolicy = auto,
     look: Option<Expression> = None,
     style: Option<TextStylePatch> = None,

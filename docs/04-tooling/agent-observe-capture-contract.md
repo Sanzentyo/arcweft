@@ -213,9 +213,9 @@ captures preserve both the render `layer` and the semantic `object_layer` /
 `object_depth` resolved from `rich_text_ref`, so a saved crop remains
 self-describing when inspected without the original observation object list.
 `image.object.parent_id` preserves the containing presentation object for
-object-scoped crops. Dialogue textboxes have no parent; rich-text page, line,
+object-scoped crops. Dialogue View mounts have no text-object parent; rich-text page, line,
 run, glyph, cluster, ruby, and proxy crops preserve the immediate text object
-parent when that parent exists. The normal chain is textbox -> page -> line ->
+parent when that parent exists. The normal chain is View mount -> dialogue content -> page -> line ->
 run -> proxy/glyph/cluster, while ruby objects attach to their containing line.
 `image.object.bbox` and `image.object.polygon` preserve the viewport geometry of
 the captured object, matching the object descriptor used for hit-testing and
@@ -383,6 +383,11 @@ The observation should include the effective presentation summary needed to
 debug rich text: layout fields, ruby defaults/overrides, transforms, effects,
 shader refs, object proxy metadata, hit-test regions, source anchors, and the
 resolved `object_layer` / `object_depth` used by text objects.
+Prepared-glyph `opacity_milli` is the effective local opacity after the paint
+opacity, resolved transform opacity, and complete closed mask chain. A glyph
+with effective zero opacity is reported as not visible and is excluded from
+the derived visible source ranges; observation must not expose the pre-mask
+paint alpha as if it were rendered coverage.
 For `text_object_proxy` hit regions, the region itself carries the proxy id,
 type, declaration provenance, role, layer, depth, and `proxy_params`.
 `proxy_declaration` records the Arcweft struct name and attribute family that

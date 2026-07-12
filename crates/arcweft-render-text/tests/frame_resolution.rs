@@ -17,7 +17,7 @@ fn spec(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,

@@ -393,7 +393,7 @@ fn text_control_handler_arg(args: &[ViewArg], name: &str) -> Option<String> {
 fn text_control_submit_action_handler(field: &ViewTextField) -> Option<String> {
     match field.submit_action()? {
         ViewAction::ActionInvoke(action) => Some(normalize_entity_ref(action.action())),
-        ViewAction::Noop => None,
+        ViewAction::Noop | ViewAction::Projection(_) => None,
     }
 }
 

@@ -36,7 +36,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
         }
 
         layer @layer.dialogue {
-            TextBox(current_text())
+            view(@view.MainDialogue)
         }
 
         layer @layer.choices {

@@ -236,7 +236,7 @@ pub(super) fn parse_line_options(
             state.look = Some(parse_expr_lossy(arg.trim()));
             continue;
         };
-        parse_named_line_option(&mut state, name, value, arg.len(), arg_source_base, errors);
+        parse_named_line_option(&mut state, name, value, arg_source_base, errors);
     }
     LineOptions::new(LineOptionsInit {
         id: state.id,
@@ -247,7 +247,7 @@ pub(super) fn parse_line_options(
         portrait: state.portrait,
         focus: state.focus,
         cleanup: state.cleanup,
-        window: state.window,
+        view: state.view,
         source_locale: state.source_locale,
         hooks: state.hooks,
         style: state.style,
@@ -270,7 +270,7 @@ struct LineOptionsParseState {
     portrait: Option<Expr>,
     focus: Option<Expr>,
     cleanup: Option<Expr>,
-    window: Option<EntityRefSyntax>,
+    view: Option<EntityRefSyntax>,
     source_locale: Option<String>,
     hooks: Vec<Expr>,
     style: Option<Expr>,
@@ -286,7 +286,6 @@ fn parse_named_line_option(
     state: &mut LineOptionsParseState,
     name_raw: &str,
     value_raw: &str,
-    arg_len: usize,
     arg_base: usize,
     errors: &mut Vec<ParseError>,
 ) {
@@ -305,18 +304,12 @@ fn parse_named_line_option(
         }
         "voice" => state.voice = Some(parse_expr_lossy(value)),
         "look" => state.look = Some(parse_expr_lossy(value)),
-        "face" => errors.push(simple_error(
-            arg_base,
-            arg_len,
-            "`face` is not a canonical dialogue line option",
-            "use `look = expr` or the first positional look option",
-        )),
         "stage" => state.stage = Some(parse_expr_lossy(value)),
         "portrait" => state.portrait = Some(parse_expr_lossy(value)),
         "focus" => state.focus = Some(parse_expr_lossy(value)),
         "cleanup" => state.cleanup = Some(parse_expr_lossy(value)),
-        "window" => {
-            state.window = parse_required_entity_ref_syntax(value, value_start, errors)
+        "view" => {
+            state.view = parse_required_entity_ref_syntax(value, value_start, errors)
                 .map(|(entity, _)| entity);
         }
         "source_locale" => state.source_locale = Some(value.to_owned()),

@@ -280,7 +280,7 @@ async function openReady(browser, baseUrl, checkpoint) {
   await page.waitForFunction(
     () => Boolean(window.__arcweftFatal) ||
       Boolean(window.__arcweftLastFrameObservation?.text?.some((item) =>
-        item.owner?.kind?.endsWith(":body")
+        item.owner?.kind?.startsWith("dialogue:")
       )),
     null,
     { timeout: 10_000 },
@@ -324,7 +324,7 @@ async function advanceDialoguePages(page, count) {
   for (let index = 0; index < count; index += 1) {
     const before = await page.evaluate(() => {
       const item = window.__arcweftLastFrameObservation?.text?.find((candidate) =>
-        candidate.owner?.kind?.endsWith(":body")
+        candidate.owner?.kind?.startsWith("dialogue:")
       );
       return item
         ? { identity: item.owner.kind, text: item.text, visibleText: item.visible_text }
@@ -336,7 +336,7 @@ async function advanceDialoguePages(page, count) {
       await page.waitForFunction(
         (text) => Boolean(window.__arcweftFatal) ||
           window.__arcweftLastFrameObservation?.text?.some((item) =>
-            item.owner?.kind?.endsWith(":body") &&
+            item.owner?.kind?.startsWith("dialogue:") &&
             item.text === text &&
             item.visible_text === item.text
           ),
@@ -349,7 +349,7 @@ async function advanceDialoguePages(page, count) {
     await page.waitForFunction(
       (identity) => Boolean(window.__arcweftFatal) ||
         window.__arcweftLastFrameObservation?.text?.some((item) =>
-          item.owner?.kind?.endsWith(":body") && item.owner.kind !== identity
+          item.owner?.kind?.startsWith("dialogue:") && item.owner.kind !== identity
         ),
       before.identity,
       { timeout: 2_000 },
@@ -378,7 +378,9 @@ async function assertCanvasOnlySample(page, checkpoint) {
   for (const token of checkpointRequiredText(checkpoint)) {
     expect(text.includes(token), `missing ${JSON.stringify(token)} for ${checkpoint}`);
   }
-  const paragraph = frame.text?.find((item) => item.owner?.kind?.endsWith(":body"));
+  const paragraph = frame.text?.find((item) =>
+    item.owner?.kind?.startsWith("dialogue:")
+  );
   expect(paragraph?.lines?.length > 0, `missing prepared text lines for ${checkpoint}`);
   expect(paragraph?.runs?.length > 0, `missing prepared text runs for ${checkpoint}`);
   expect(paragraph?.glyphs?.length > 0, `missing prepared text glyphs for ${checkpoint}`);

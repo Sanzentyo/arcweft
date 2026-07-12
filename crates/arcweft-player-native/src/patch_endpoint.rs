@@ -555,7 +555,7 @@ mod tests {
         );
         assert_eq!(
             step.presentation
-                .textboxes
+                .dialogue
                 .latest_active()
                 .and_then(|(_, entry)| entry.current_stage())
                 .map(arcweft_render_text::LineDisplayStage::text),
@@ -969,7 +969,7 @@ mod tests {
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
-            window: None,
+            view: None,
             voice: None,
             look: None,
             style: None,

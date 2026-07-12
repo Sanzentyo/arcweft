@@ -9,6 +9,7 @@ mod product;
 pub mod product_awbc;
 pub mod release;
 pub mod resource_codec;
+pub mod standard_view;
 
 use crate::character_package::BundleCharacterPackage;
 use crate::fx_definitions::FxDefinitions;
@@ -547,9 +548,9 @@ impl ArcweftBundle {
             character_packages: Vec::new(),
             audio: None,
             image_objects: Vec::new(),
-            view_program: None,
-            view_style: None,
-            view_text: None,
+            view_program: Some(standard_view::dialogue_program()),
+            view_style: Some(standard_view::dialogue_style()),
+            view_text: Some(standard_view::dialogue_text()),
             view_input: None,
             view_theme: None,
         }
@@ -631,19 +632,34 @@ impl ArcweftBundle {
 
     #[must_use]
     pub fn with_view_program(mut self, resource: ViewProgramResource) -> Self {
-        self.view_program = Some(resource);
+        self.view_program = Some(standard_view::merge_program(
+            self.view_program
+                .take()
+                .unwrap_or_else(standard_view::dialogue_program),
+            resource,
+        ));
         self
     }
 
     #[must_use]
     pub fn with_view_style(mut self, resource: ViewStyleResource) -> Self {
-        self.view_style = Some(resource);
+        self.view_style = Some(standard_view::merge_style(
+            self.view_style
+                .take()
+                .unwrap_or_else(standard_view::dialogue_style),
+            resource,
+        ));
         self
     }
 
     #[must_use]
     pub fn with_view_text(mut self, resource: ViewTextResource) -> Self {
-        self.view_text = Some(resource);
+        self.view_text = Some(standard_view::merge_text(
+            self.view_text
+                .take()
+                .unwrap_or_else(standard_view::dialogue_text),
+            resource,
+        ));
         self
     }
 

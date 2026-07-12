@@ -45,7 +45,7 @@ an explicit ID use the same implicit ID as `@.name`. It is
 not a general entity reference; write `goto @flow.opening.next` or the
 recommended family-relative `goto @flow:.next`, not `goto .next`. In general
 entity-reference contexts, relative references must include an entity family:
-`@flow:.next`, `@asset:.room`, `@textbox:.side`.
+`@flow:.next`, `@asset:.room`, `@view:.SideDialogue`.
 `@.suffix` resolves in the current ID scope. Each extra dot walks one parent ID
 scope outward: `@..suffix` is one parent, `@...suffix` is two parents, and so
 on. The explicit spelling `@super.suffix` / `@super.super.suffix` is accepted
@@ -167,7 +167,29 @@ Inner and outer attributes inside flow bodies are currently diagnostics rather
 than statement syntax; future block-scope attribute surfaces must add explicit
 AST attachment instead of falling through as raw statements.
 
-Asset declarations use the ordinary entity declaration surface:
+Entity declarations share one closed header grammar. The entity family selects
+the declaration kind, but it does not make otherwise free-form header words
+legal:
+
+```text
+EntityDecl       := Attribute* Visibility? EntityKind DeclIdentity EntityHeaderTail? EntityBody?
+EntityHeaderTail := (CallableTail | TypeTail | RelationTail)? Alias?
+CallableTail     := GenericParams? ParamGroup+ ReturnType? WhereClause*
+TypeTail         := ':' Type
+RelationTail     := Ident EntityRef
+Alias            := 'as' Ident
+```
+
+The callable form is parsed as one typed function-signature tail, including
+generic parameters. `Ident EntityRef` retains relation headers such as
+`parent @bus.master`; whether a particular relation or typed tail is meaningful
+for an entity kind is a semantic rule. A second unstructured identifier after
+a compact declaration name is not a header extension. For example,
+`asset set extra { ... }` is a syntax error at `extra`, does not produce an
+entity declaration AST node, and recovery resumes after that declaration's
+line or balanced block.
+
+Asset declarations use this ordinary entity declaration surface:
 
 ```text
 AssetDecl := Visibility? 'asset' DeclIdentity AssetBody?
@@ -191,8 +213,8 @@ records encoded files and decoded metadata.
 `height`, `fit`, `alignment.*`, `opacity`, `playback.*`, `transform.*`,
 `depth`, `enabled`, `visible`, `action`, `param.*`, and `proxy.*`.
 `image(@image.id)` lowers through the same semantic `ImagePresentationObject`
-path as an inline bounded `image(...)` call; it is not a renderer adapter or
-compatibility surface.
+path as an inline bounded `image(...)` call; it remains a compiled presentation
+object rather than a renderer adapter.
 
 ## Flow
 
@@ -233,8 +255,8 @@ function-like declarations.
 
 `crate`, `self`, and `super` are canonical module-path roots. `parent` is a
 reserved alias for `super`; formatters should normalize it to `super`.
-`lazy use` and `eager use` are not part of the grammar. `use` introduces names
-only; build demand and content availability are compiler and packaging policy.
+`use` introduces names only; build demand and content availability are compiler
+and packaging policy.
 
 Declaration identities have a hand-written canonical surface and a generated
 surface. Hand-written flows should use either `flow opening(...)` or
@@ -273,7 +295,7 @@ RelativeLineId := RelativeId | FamilyRelativeEntityRef
 LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'text_key' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'voice' '=' Expr
-                | 'window' '=' EntityRef
+                | 'view' '=' EntityRef
                 | 'source_locale' '=' Locale
                 | 'hooks' '=' Expr
                 | 'style' '=' Expr
@@ -394,24 +416,20 @@ choice @.first outside a scope -> @choice.opening.first
 DialogueDefaultsDecl :=
     Visibility? 'dialogue' 'defaults' EntityRef? Block
 
-Dialogue defaults declare a defaults profile. `pub dialogue defaults
-@dialogue.defaults` is the conventional exported project-wide profile; other
-profiles are selected explicitly by project/build configuration or tooling and
-are not merged merely because they are visible. Product/test lowering must
-diagnose multiple visible defaults profiles when no active profile can be
-chosen unambiguously.
-
-Relative IDs such as `dialogue defaults @.mobile` are not canonical and should
-be rejected for defaults profiles. The mobile defaults profile is written as
-`pub dialogue defaults @dialogue.defaults.mobile { ... }` or the equivalent
-family-relative spelling `pub dialogue defaults @dialogue:.defaults.mobile {
-... }` so the profile family is explicit.
+Dialogue defaults declare a defaults profile. `pub dialogue defaults { ... }`
+is the canonical exported project-wide profile; its identity is supplied by
+the declaration role and does not repeat `defaults` in an entity reference.
+Other profiles are selected explicitly by project/build configuration or
+tooling and are not merged merely because they are visible. A named mobile
+profile is written `pub dialogue defaults @dialogue.mobile { ... }`.
+Product/test lowering diagnoses multiple applicable profiles when no active
+profile can be chosen unambiguously.
 
 Inside the block, structured RichText typography is written as a nested
 assignment block:
 
 ```text
-dialogue defaults {
+pub dialogue defaults {
   rich_text {
     text   { font = Expr, size = Expr, color = Expr, ... }
     layout { writing_mode = Expr, jlreq = Expr, vertical_latin = Expr, ... }
@@ -450,7 +468,7 @@ HookEffects:= 'effects' Expr (',' Expr)*
 
 `check` is not part of the canonical hook header. Use `when` for conditions.
 Dialogue defaults preserve structured assignment expressions for later style,
-window, voice, hook, and localization lowering.
+View, voice, hook, and localization lowering.
 
 ## Types
 

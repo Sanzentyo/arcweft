@@ -18,7 +18,7 @@ use super::fx::{
 };
 use super::inline_failure::{inline_default_from_named_expr, lower_default_inline_failure_policy};
 use super::raw::{dialogue_option_source, mark_shadowed_style_contributions, source_range};
-use super::speaker_preset::{effective_dialogue_window, speaker_preset_chain};
+use super::speaker_preset::{effective_dialogue_view, speaker_preset_chain};
 use super::style_expr::{display_styles_from_expr, display_styles_from_named_expr};
 
 #[cfg(test)]
@@ -84,7 +84,7 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets_and_fx(
             .speaker_label_for_callee(character_callee)
             .map(str::to_owned),
         text_key: dialogue.text_key().map(|id| id.body().to_owned()),
-        window: effective_dialogue_window(dialogue, defaults, speaker_presets),
+        view: effective_dialogue_view(dialogue, defaults, speaker_presets),
         voice: dialogue.voice().map(expr_label),
         look: dialogue.look().map(expr_label),
         style: dialogue.style().map(expr_label),
@@ -115,12 +115,6 @@ fn lower_effective_dialogue_base_styles(
 ) -> Vec<RichTextStyle> {
     let mut styles = defaults.global.base_styles.clone();
     let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
-    if let Some(textbox) = effective_dialogue_window(dialogue, defaults, speaker_presets)
-        .as_deref()
-        .and_then(|window| defaults.textbox_for_window(window))
-    {
-        styles.extend(textbox.base_styles.clone());
-    }
     let character_callee = preset_chain
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
@@ -162,10 +156,6 @@ fn lower_effective_inline_failure_policy(
     let character_callee = preset_chain
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());
-    let textbox_policy = effective_dialogue_window(dialogue, defaults, speaker_presets)
-        .as_deref()
-        .and_then(|window| defaults.textbox_for_window(window))
-        .and_then(|textbox| textbox.default_inline_failure_policy.clone());
     lower_default_inline_failure_policy(dialogue.args())
         .or_else(|| {
             preset_chain
@@ -178,7 +168,6 @@ fn lower_effective_inline_failure_policy(
                 .character_for_callee(character_callee)
                 .and_then(|character| character.default_inline_failure_policy.clone())
         })
-        .or(textbox_policy)
         .or_else(|| defaults.global.default_inline_failure_policy.clone())
 }
 
@@ -193,12 +182,6 @@ fn lower_effective_dialogue_style_contributions(
 
     append_style_contributions(&mut contributions, &defaults.global, &mut base_offset);
     let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
-    if let Some(textbox) = effective_dialogue_window(dialogue, defaults, speaker_presets)
-        .as_deref()
-        .and_then(|window| defaults.textbox_for_window(window))
-    {
-        append_style_contributions(&mut contributions, textbox, &mut base_offset);
-    }
     let character_callee = preset_chain
         .first()
         .map_or_else(|| dialogue.callee(), |preset| preset.callee());

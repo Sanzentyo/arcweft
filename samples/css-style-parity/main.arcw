@@ -12,22 +12,47 @@ pub character stylist {
     }
 }
 
-pub textbox style_panel {
+pub style style_panel {
+    .dialogue_panel {
+        background = rgba(17, 18, 16, 242)
+    }
+    .dialogue_action {
+        background = rgba(0, 0, 0, 0)
+    }
+    .style_panel {
+        font-family = text("Arcweft Demo")
+        color = rgba(248, 251, 255, 255)
+        font-size = 24000milli
+    }
+}
+
+pub view StylePanel(dialogue: DialogueView) {
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
+        Text(dialogue.speaker)
+            .x(85.6px)
+            .y(480.8px)
+            .width(1108.8px)
+            .height(28px)
+        RichText(dialogue.content)
+            .x(85.6px)
+            .y(518.8px)
+            .width(1108.8px)
+            .height(125.6px)
+            .style(@style.style_panel)
+        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+            .part(dialogue_action)
+            .on_click { dialogue.primary_action }
+    }
+}
+
+pub dialogue defaults {
+    view = @view.StylePanel
     rich_text {
-        text {
-            font = "Arcweft Demo"
-            color = rgb("#f8fbff")
-            size = 24px
-        }
         ruby {
             size = 10px
             gap = 1px
         }
     }
-}
-
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.style_panel
 }
 
 style css_style_parity {

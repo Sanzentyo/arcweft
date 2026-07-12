@@ -39,7 +39,7 @@ pub enum LayerKind {
     World2D,
     Character,
     Effects,
-    TextBox,
+    Dialogue,
     GameView,
     HtmlView,
     Activity,
@@ -116,7 +116,7 @@ pub enum LayerInputPolicy {
 pub enum LayerContent {
     Empty,
     Character(crate::character::CharacterRenderSpec),
-    TextBox(PublicId),
+    Dialogue(PublicId),
     Activity(PublicId),
     NativeView(PublicId),
     Html(PublicId),

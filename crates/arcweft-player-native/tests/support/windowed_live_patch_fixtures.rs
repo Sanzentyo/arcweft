@@ -763,7 +763,7 @@ impl WindowedSmokeHarness {
                 queued_patch_count: self.runtime.queued_patch_count(),
                 is_finished: self.runtime.session().is_finished(),
                 presentation_text: presentation
-                    .textboxes
+                    .dialogue
                     .latest_active()
                     .and_then(|(_, entry)| entry.current_stage())
                     .map(|stage| stage.text().to_owned()),
@@ -873,7 +873,7 @@ impl SmokeVisualClock {
 
     fn advance_from_runtime(&mut self, runtime: &WindowedRuntimeOwner, presented_frames: u64) {
         let elapsed_millis = presented_frames.saturating_mul(16);
-        let dialogue = runtime.session().presentation().textboxes.latest_active();
+        let dialogue = runtime.session().presentation().dialogue.latest_active();
         let Some((_, entry)) = dialogue else {
             self.line = None;
             self.started_at_millis = elapsed_millis;
@@ -1047,7 +1047,7 @@ fn dialogue_display_catalog(line: RuntimeLineId, display_text: &str) -> LineDisp
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,

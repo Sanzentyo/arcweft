@@ -76,7 +76,7 @@ pub enum FallbackStylePolicy {
     Apply { styles: Vec<RichTextStyle> },
 }
 
-/// Textbox-local control instruction.
+/// Text-container-local control instruction.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RichTextControl {

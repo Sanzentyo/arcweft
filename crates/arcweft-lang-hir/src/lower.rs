@@ -299,7 +299,7 @@ flow @flow.opening opening {
         let tree = parse_source(
             r#"
 #[profile(note="mobile defaults")]
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         ruby {
             size = 10px

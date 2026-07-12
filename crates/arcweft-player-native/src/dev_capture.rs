@@ -151,7 +151,7 @@ fn prepare_bundle_frame(
                 preferences: RenderPreferences::default(),
             },
         )?;
-        if step.presentation.textboxes.latest_active().is_some() {
+        if step.presentation.dialogue.latest_active().is_some() {
             return Ok((prepared, fonts));
         }
         if first_visual_frame.is_none() && frame_has_visual_content(&prepared.frame) {
@@ -289,7 +289,7 @@ mod tests {
             prepare_bundle_frame(&bundle, NativePlayerCaptureRequest::new(640, 360, 8))
                 .expect("dialogue frame prepares");
 
-        assert_eq!(prepared.frame.textboxes().len(), 1);
+        assert_eq!(prepared.frame.dialogue_views().len(), 1);
         assert!(!prepared.frame.text.is_empty());
     }
 
@@ -317,7 +317,7 @@ mod tests {
             callee: "narrator".to_owned(),
             speaker_label: None,
             text_key: None,
-            window: None,
+            view: None,
             voice: None,
             look: None,
             style: None,

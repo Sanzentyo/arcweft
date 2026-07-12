@@ -12,7 +12,7 @@ pub struct SpeakerRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TextBox {}
+pub enum View {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueLine {
@@ -29,7 +29,7 @@ pub struct SayOptions {
     pub text_key: Option<TextKey>,
     pub voice: Option<VoicePolicy>,
     pub look: Option<PublicId>,
-    pub window: Option<Ref<TextBox>>,
+    pub view: Option<Ref<View>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -252,8 +252,8 @@ pub fn character(name: &str) -> SpeakerRef {
     SpeakerRef::new(domain_id("character", name))
 }
 
-pub fn textbox(name: &str) -> Ref<TextBox> {
-    Ref::new(Id::new(entity_domain_id("textbox", name)))
+pub fn view(name: &str) -> Ref<View> {
+    Ref::new(Id::new(entity_domain_id("view", name)))
 }
 
 /// Creates a dialogue line id from a full public id such as `say.opening.001`.
@@ -338,7 +338,7 @@ impl SayOptions {
             text_key: None,
             voice: None,
             look: None,
-            window: None,
+            view: None,
         }
     }
 
@@ -355,8 +355,8 @@ impl SayOptions {
     }
 
     #[must_use]
-    pub fn with_window(mut self, window: Ref<TextBox>) -> Self {
-        self.window = Some(window);
+    pub fn with_view(mut self, view: Ref<View>) -> Self {
+        self.view = Some(view);
         self
     }
 
@@ -366,7 +366,7 @@ impl SayOptions {
             text_key: override_options.text_key.or(self.text_key),
             voice: override_options.voice.or(self.voice),
             look: override_options.look.or(self.look),
-            window: override_options.window.or(self.window),
+            view: override_options.view.or(self.view),
         }
     }
 }
@@ -398,8 +398,8 @@ impl SpeakerPreset {
     }
 
     #[must_use]
-    pub fn window(mut self, window: Ref<TextBox>) -> Self {
-        self.options.window = Some(window);
+    pub fn view(mut self, view: Ref<View>) -> Self {
+        self.options.view = Some(view);
         self
     }
 
@@ -691,8 +691,8 @@ impl DialogueLineBuilder {
     }
 
     #[must_use]
-    pub fn window(mut self, window: Ref<TextBox>) -> Self {
-        self.options.window = Some(window);
+    pub fn view(mut self, view: Ref<View>) -> Self {
+        self.options.view = Some(view);
         self
     }
 

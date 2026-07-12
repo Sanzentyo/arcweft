@@ -11,7 +11,7 @@ run with `arcw`.
   with game, CLI, server, test, and bench entry examples.
 - [rich-text-showcase.arcw](rich-text-showcase.arcw) - rich-text rendering
   showcase with Windows fonts, vertical snippets, canonical nested typography
-  defaults, textbox theme defaults, speaker preset overrides, and line ruby
+  defaults, authored dialogue-View styles, speaker preset overrides, and line ruby
   overrides for Agent observe provenance checks.
 - [rich-text-full-grammar.arcw](rich-text-full-grammar.arcw) - broad
   rich-text grammar sample covering ruby forms, interpolation, control tags,

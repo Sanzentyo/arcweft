@@ -413,7 +413,7 @@ fn parses_and_lowers_dialogue_defaults_attributes() {
     let tree = parse_ok(
         r#"
 #[profile(note="mobile defaults")]
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         text {
             font = "Meiryo"

@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
-    FiniteF32, FxColor, FxNamedValue, FxPhase, FxRendererInterface, FxResolvedValue, FxResourceId,
-    FxRuntimeValue, FxVec2, Length, Opacity, ResolvedValueOperation,
+    FiniteF32, FxColor, FxDiagnosticCode, FxNamedValue, FxPhase, FxRendererInterface,
+    FxResolvedValue, FxResourceId, FxRuntimeValue, FxVec2, Length, Opacity, ResolvedValueOperation,
 };
 
 /// One extra glyph raster pass emitted before the main glyph pass.
@@ -122,6 +122,25 @@ pub enum FxRenderResourceError {
     InvalidNonNegative { property: String },
     #[error("Fx render direction must be a non-zero finite vector")]
     InvalidDirection,
+}
+
+impl FxRenderResourceError {
+    /// Stable diagnostic category for this closed render-resource failure.
+    pub const fn diagnostic_code(&self) -> FxDiagnosticCode {
+        match self {
+            Self::DuplicateResource { .. } => FxDiagnosticCode::DuplicateProvider,
+            Self::UnknownResource { .. } => FxDiagnosticCode::MissingProvider,
+            Self::WrongInterface { .. } | Self::UnsupportedPhase { .. } => {
+                FxDiagnosticCode::UnsupportedCapability
+            }
+            Self::InvalidOpacity { .. } => FxDiagnosticCode::InvalidOpacity,
+            Self::MissingResource
+            | Self::DuplicateProperty { .. }
+            | Self::InvalidProperty { .. }
+            | Self::InvalidNonNegative { .. }
+            | Self::InvalidDirection => FxDiagnosticCode::ProgramValidation,
+        }
+    }
 }
 
 impl ResolvedFxGlyphPass {
@@ -768,8 +787,8 @@ mod tests {
         FxRenderResourceError, FxRenderResourceTable, ResolvedFxMask, ResolvedFxOffscreenPass,
     };
     use crate::fx::{
-        FiniteF32, FxNamedValue, FxPhase, FxRendererInterface, FxResolvedValue, FxResourceId,
-        FxRuntimeValue, FxTarget, Length, ResolvedValueOperation,
+        FiniteF32, FxDiagnosticCode, FxNamedValue, FxPhase, FxRendererInterface, FxResolvedValue,
+        FxResourceId, FxRuntimeValue, FxTarget, Length, ResolvedValueOperation,
     };
 
     #[test]
@@ -823,6 +842,13 @@ mod tests {
             Err(FxRenderResourceError::UnknownResource {
                 resource: "missing.shader".to_owned(),
             })
+        );
+        assert_eq!(
+            FxRenderResourceError::UnknownResource {
+                resource: "missing.shader".to_owned(),
+            }
+            .diagnostic_code(),
+            FxDiagnosticCode::MissingProvider
         );
     }
 

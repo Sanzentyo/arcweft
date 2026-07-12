@@ -166,13 +166,16 @@ impl InputController {
         let focused_view_control = focused
             .as_ref()
             .is_some_and(|target| frame_target_is_view_control(frame, target));
-        activation_outcome(
+        let mut outcome = activation_outcome(
             frame,
             actions,
             text_control_write_backs,
             diagnostics,
             !activates_choice && !focused_view_control,
-        )
+        );
+        outcome.dialogue_progress = outcome.dialogue_progress.merge(submit.dialogue_progress);
+        outcome.redraw |= submit.dialogue_progress.redraws();
+        outcome
     }
 
     fn dialogue_advance_from_keyboard(&self, frame: &PreparedFrame) -> InputOutcome {
@@ -188,7 +191,7 @@ impl InputController {
     }
 
     pub(super) fn dialogue_can_advance_from_unfocused_input(&self, frame: &PreparedFrame) -> bool {
-        frame.has_textboxes()
+        frame.has_dialogue_views()
             && frame.choices.is_empty()
             && !self.focused_target_is_view_control(frame)
     }

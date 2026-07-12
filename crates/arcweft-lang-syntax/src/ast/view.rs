@@ -121,6 +121,8 @@ pub enum ViewButtonLabel {
 pub enum ViewAction {
     Noop,
     ActionInvoke(ViewActionInvokeAction),
+    /// Typed action value projected from a View parameter.
+    Projection(Expr),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -353,11 +355,25 @@ impl ViewBody {
         invokes
     }
 
+    /// Returns typed action-value projections used by View controls.
+    pub fn action_projections(&self) -> Vec<&Expr> {
+        let mut projections = Vec::new();
+        collect_action_projections(&self.value, &mut projections);
+        projections
+    }
+
     /// Returns nested View calls in authored depth-first order.
     pub fn view_calls(&self) -> Vec<&ViewCall> {
         let mut calls = Vec::new();
         collect_view_calls(&self.value, &mut calls);
         calls
+    }
+
+    /// Returns text leaves in authored depth-first order.
+    pub fn text_nodes(&self) -> Vec<&ViewText> {
+        let mut text = Vec::new();
+        collect_text_nodes(&self.value, &mut text);
+        text
     }
 
     /// Returns View-side Fx applications in authored depth-first order.
@@ -1141,6 +1157,46 @@ fn collect_view_calls<'a>(expr: &'a ViewExpr, calls: &mut Vec<&'a ViewCall>) {
     }
 }
 
+fn collect_text_nodes<'a>(expr: &'a ViewExpr, text: &mut Vec<&'a ViewText>) {
+    match expr {
+        ViewExpr::Text(node) => text.push(node),
+        ViewExpr::Fragment(children) => {
+            for child in children {
+                collect_text_nodes(child, text);
+            }
+        }
+        ViewExpr::Element(element) => {
+            for child in element.children() {
+                collect_text_nodes(child, text);
+            }
+        }
+        ViewExpr::If(view_if) => {
+            collect_text_nodes(view_if.then_branch(), text);
+            if let Some(else_branch) = view_if.else_branch() {
+                collect_text_nodes(else_branch, text);
+            }
+        }
+        ViewExpr::Match(view_match) => {
+            for arm in view_match.arms() {
+                collect_text_nodes(arm.value(), text);
+            }
+        }
+        ViewExpr::ForEach(view_for_each) => collect_text_nodes(view_for_each.body(), text),
+        ViewExpr::Await(view_await) => {
+            for branch in view_await.branches() {
+                collect_text_nodes(branch.value(), text);
+            }
+        }
+        ViewExpr::ViewCall(_)
+        | ViewExpr::Image(_)
+        | ViewExpr::TextField(_)
+        | ViewExpr::Button(_)
+        | ViewExpr::Let(_)
+        | ViewExpr::Expr(_)
+        | ViewExpr::Raw(_) => {}
+    }
+}
+
 fn collect_action_invokes(expr: &ViewExpr, invokes: &mut Vec<ViewActionInvokeAction>) {
     match expr {
         ViewExpr::Fragment(children) => {
@@ -1198,6 +1254,56 @@ fn collect_action_invokes(expr: &ViewExpr, invokes: &mut Vec<ViewActionInvokeAct
             }
         }
         ViewExpr::Let(_) | ViewExpr::Expr(_) | ViewExpr::Raw(_) => {}
+    }
+}
+
+fn collect_action_projections<'a>(expr: &'a ViewExpr, projections: &mut Vec<&'a Expr>) {
+    match expr {
+        ViewExpr::Fragment(children) => {
+            for child in children {
+                collect_action_projections(child, projections);
+            }
+        }
+        ViewExpr::Element(element) => {
+            for child in element.children() {
+                collect_action_projections(child, projections);
+            }
+        }
+        ViewExpr::Button(button) => {
+            if let Some(ViewAction::Projection(projection)) = button.activation() {
+                projections.push(projection);
+            }
+        }
+        ViewExpr::TextField(field) => {
+            if let Some(ViewAction::Projection(projection)) = field.submit_action() {
+                projections.push(projection);
+            }
+        }
+        ViewExpr::If(view_if) => {
+            collect_action_projections(view_if.then_branch(), projections);
+            if let Some(else_branch) = view_if.else_branch() {
+                collect_action_projections(else_branch, projections);
+            }
+        }
+        ViewExpr::Match(view_match) => {
+            for arm in view_match.arms() {
+                collect_action_projections(arm.value(), projections);
+            }
+        }
+        ViewExpr::ForEach(view_for_each) => {
+            collect_action_projections(view_for_each.body(), projections);
+        }
+        ViewExpr::Await(view_await) => {
+            for branch in view_await.branches() {
+                collect_action_projections(branch.value(), projections);
+            }
+        }
+        ViewExpr::ViewCall(_)
+        | ViewExpr::Text(_)
+        | ViewExpr::Image(_)
+        | ViewExpr::Let(_)
+        | ViewExpr::Expr(_)
+        | ViewExpr::Raw(_) => {}
     }
 }
 

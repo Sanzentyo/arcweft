@@ -31,7 +31,7 @@ just ime-sample-check
 
 The Web sample uses the normal Web player path. The active page contains a canvas
 host and minimal loading/fatal elements only. It does not contain a visible DOM
-textbox, mirrored text spans, CSS caret, DOM selection/composition surfaces, or
+dialogue View, mirrored text spans, CSS caret, DOM selection/composition surfaces, or
 status/font cards.
 
 The visible controls are Arcweft-rendered from product/runtime text-control data:

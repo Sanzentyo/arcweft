@@ -122,7 +122,6 @@ fn dialogue_override_actions(
         line_override_actions(uri, document, &cascade.spec.style_contributions, insertion);
     actions.extend(character_override_actions(uri, document, &cascade.spec));
     actions.extend(speaker_preset_actions(uri, document, &cascade.spec));
-    actions.extend(textbox_theme_actions(uri, document, &cascade.spec));
     actions.extend(dialogue_defaults_actions(
         uri,
         document,
@@ -204,32 +203,6 @@ fn speaker_preset_actions(
                 uri,
                 document,
                 format!("Extract `{}` override to speaker preset", contribution.path),
-                &edit,
-            ))
-        })
-        .collect()
-}
-
-fn textbox_theme_actions(
-    uri: &Uri,
-    document: &DocumentSnapshot,
-    spec: &LineDisplaySpec,
-) -> Vec<CodeAction> {
-    spec.style_contributions
-        .iter()
-        .filter(|contribution| extractable_textbox_theme_override(contribution))
-        .take(8)
-        .filter_map(|contribution| {
-            let edit = textbox_theme_edit(
-                document.text(),
-                spec.window.as_deref()?,
-                &contribution.path,
-                &contribution.value,
-            )?;
-            Some(extraction_code_action(
-                uri,
-                document,
-                format!("Extract `{}` override to textbox theme", contribution.path),
                 &edit,
             ))
         })
@@ -476,14 +449,6 @@ fn extractable_dialogue_defaults_override(contribution: &RichTextStyleContributi
     contribution.active
         && contribution.op == RichTextAssignOp::Replace
         && contribution.layer != RichTextCascadeLayer::DialogueDefaults
-        && !contribution.path.is_empty()
-        && !contribution.value.is_empty()
-}
-
-fn extractable_textbox_theme_override(contribution: &RichTextStyleContribution) -> bool {
-    contribution.active
-        && contribution.op == RichTextAssignOp::Replace
-        && contribution.layer != RichTextCascadeLayer::TextBoxTheme
         && !contribution.path.is_empty()
         && !contribution.value.is_empty()
 }
@@ -874,103 +839,9 @@ fn dialogue_defaults_edit(
     let target = defaults
         .iter()
         .copied()
-        .find(|defaults| {
-            defaults
-                .id()
-                .is_some_and(|id| id.body() == "dialogue.defaults")
-        })
+        .find(|defaults| defaults.id().is_none())
         .or_else(|| (defaults.len() == 1).then(|| defaults[0]))?;
     block_path_assignment_insertion(source, target.range(), path, value)
-}
-
-fn textbox_theme_edit(source: &str, window: &str, path: &str, value: &str) -> Option<TextEdit> {
-    let parsed = parse_source(source);
-    if !parsed.errors().is_empty() {
-        return None;
-    }
-    parsed
-        .typed_tree()
-        .items()
-        .iter()
-        .find_map(|item| match item {
-            Item::EntityDecl(entity)
-                if entity.kind() == EntityDeclKind::Textbox
-                    && entity_matches_ref(entity, window) =>
-            {
-                entity_textbox_theme_edit(source, entity, path, value)
-            }
-            _ => None,
-        })
-}
-
-fn entity_matches_ref(entity: &EntityDeclItem, raw_ref: &str) -> bool {
-    let key = raw_ref
-        .trim()
-        .strip_prefix("@<")
-        .and_then(|inner| inner.strip_suffix('>'))
-        .or_else(|| raw_ref.trim().strip_prefix('@'))
-        .unwrap_or(raw_ref)
-        .trim();
-    [
-        Some(entity.id().body()),
-        entity.name(),
-        entity.surface_alias(),
-        entity
-            .id()
-            .body()
-            .rsplit_once('.')
-            .map(|(_, suffix)| suffix),
-    ]
-    .into_iter()
-    .flatten()
-    .any(|candidate| candidate == key || format!("@<{candidate}>") == key)
-}
-
-fn entity_textbox_theme_edit(
-    source: &str,
-    entity: &EntityDeclItem,
-    path: &str,
-    value: &str,
-) -> Option<TextEdit> {
-    let body = entity.body()?;
-    let body_range = entity.body_range()?;
-    if let Some(rest) = path.strip_prefix("rich_text.") {
-        if let Some(insertion) =
-            existing_named_block_insertion(source, body, body_range, "rich_text", rest, value)
-        {
-            return Some(insertion);
-        }
-        let parts = assignment_path_parts(rest);
-        if parts.is_empty() {
-            return None;
-        }
-        return Some(TextEdit {
-            start: body_range.end(),
-            end: body_range.end(),
-            replacement: format!(
-                "\n    rich_text {{\n{}    }}",
-                nested_assignment_text("    ", &parts, value)
-            ),
-        });
-    }
-    if let Some(insertion) =
-        existing_named_block_insertion(source, body, body_range, "dialogue_style", path, value)
-    {
-        return Some(insertion);
-    }
-    let replacement = if let Some(parts) = nested_path_parts(path) {
-        format!(
-            "\n    dialogue_style {{\n{}    }}",
-            nested_assignment_text("    ", &parts, value)
-        )
-    } else {
-        format!("\n    dialogue_style {{\n        {path} = {value}\n    }}")
-    };
-    Some(TextEdit {
-        start: body_range.end(),
-        end: body_range.end(),
-        replacement,
-    })
 }
 
 fn speaker_preset_edit(source: &str, callee: &str, path: &str, value: &str) -> Option<TextEdit> {
@@ -1466,51 +1337,6 @@ mod tests {
     }
 
     #[test]
-    fn textbox_theme_edit_creates_rich_text_block_for_window() {
-        let source = "pub textbox @textbox.phone PhoneBox {}\nflow opening {\n    alice(window=@textbox.phone): Hello[p]\n}\n";
-        let edit = textbox_theme_edit(source, "textbox.phone", "rich_text.ruby.size", "14px")
-            .expect("textbox theme edit");
-
-        assert_eq!(
-            edit.start,
-            source.find("{}").expect("empty textbox body") + 1
-        );
-        assert_eq!(
-            edit.replacement,
-            "\n    rich_text {\n        ruby {\n            size = 14px\n        }\n    }"
-        );
-    }
-
-    #[test]
-    fn textbox_theme_edit_appends_existing_rich_text_leaf_block() {
-        let source = "pub textbox @textbox.phone PhoneBox {\n    rich_text {\n        ruby {\n            gap = 1px\n        }\n    }\n}\n";
-        let edit = textbox_theme_edit(source, "@textbox.phone", "rich_text.ruby.size", "14px")
-            .expect("textbox theme edit");
-
-        assert_eq!(
-            edit.start,
-            source.find("        }\n    }\n}\n").expect("ruby close")
-        );
-        assert_eq!(edit.replacement, "            size = 14px\n");
-    }
-
-    #[test]
-    fn textbox_theme_edit_uses_dialogue_style_for_non_rich_text_paths() {
-        let source = "pub textbox @textbox.phone PhoneBox {}\n";
-        let edit = textbox_theme_edit(source, "phone", "text_color", "rgb(\"#202122\")")
-            .expect("textbox dialogue style edit");
-
-        assert_eq!(
-            edit.start,
-            source.find("{}").expect("empty textbox body") + 1
-        );
-        assert_eq!(
-            edit.replacement,
-            "\n    dialogue_style {\n        text_color = rgb(\"#202122\")\n    }"
-        );
-    }
-
-    #[test]
     fn speaker_preset_edit_appends_existing_call_options() {
         let source =
             "flow opening {\n    let alice_side = alice(voice=auto)\n    alice_side: Hello[p]\n}\n";
@@ -1539,7 +1365,7 @@ mod tests {
 
     #[test]
     fn dialogue_defaults_edit_uses_canonical_profile() {
-        let source = "pub dialogue defaults @dialogue.defaults.debug {\n}\n\npub dialogue defaults @dialogue.defaults {\n}\n";
+        let source = "pub dialogue defaults @dialogue.debug {\n}\n\npub dialogue defaults {\n}\n";
         let edit = dialogue_defaults_edit(source, None, "text_color", "rgb(\"#202122\")")
             .expect("defaults edit");
         let expected = source
@@ -1552,10 +1378,10 @@ mod tests {
 
     #[test]
     fn dialogue_defaults_edit_uses_selected_profile() {
-        let source = "pub dialogue defaults @dialogue.defaults {\n}\n\npub dialogue defaults @dialogue.defaults.mobile {\n}\n";
+        let source = "pub dialogue defaults {\n}\n\npub dialogue defaults @dialogue.mobile {\n}\n";
         let edit = dialogue_defaults_edit(
             source,
-            Some("dialogue.defaults.mobile"),
+            Some("dialogue.mobile"),
             "text_color",
             "rgb(\"#202122\")",
         )
@@ -1570,12 +1396,12 @@ mod tests {
 
     #[test]
     fn dialogue_defaults_edit_skips_missing_selected_profile() {
-        let source = "pub dialogue defaults @dialogue.defaults {\n}\n";
+        let source = "pub dialogue defaults {\n}\n";
 
         assert!(
             dialogue_defaults_edit(
                 source,
-                Some("dialogue.defaults.mobile"),
+                Some("dialogue.mobile"),
                 "text_color",
                 "rgb(\"#202122\")"
             )
@@ -1585,7 +1411,7 @@ mod tests {
 
     #[test]
     fn dialogue_defaults_edit_creates_nested_rich_text_blocks() {
-        let source = "pub dialogue defaults @dialogue.defaults {\n}\n";
+        let source = "pub dialogue defaults {\n}\n";
         let edit = dialogue_defaults_edit(source, None, "rich_text.ruby.size", "14px")
             .expect("defaults edit");
         let expected = source.find("}\n").expect("defaults close");
@@ -1638,7 +1464,7 @@ mod tests {
 
     #[test]
     fn dialogue_defaults_edit_appends_missing_nested_child_block() {
-        let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n}\n";
+        let source = "pub dialogue defaults {\n    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n}\n";
         let edit = dialogue_defaults_edit(source, None, "rich_text.ruby.size", "14px")
             .expect("defaults edit");
         let expected = source.find("    }\n}\n").expect("rich_text close");
@@ -1652,7 +1478,7 @@ mod tests {
 
     #[test]
     fn dialogue_defaults_edit_appends_existing_nested_leaf_block() {
-        let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text {\n        ruby {\n            gap = 1px\n        }\n    }\n}\n";
+        let source = "pub dialogue defaults {\n    rich_text {\n        ruby {\n            gap = 1px\n        }\n    }\n}\n";
         let edit = dialogue_defaults_edit(source, None, "rich_text.ruby.size", "14px")
             .expect("defaults edit");
         let expected = source.find("        }\n    }\n}\n").expect("ruby close");

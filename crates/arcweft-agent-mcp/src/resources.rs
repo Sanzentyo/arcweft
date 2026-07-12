@@ -36,7 +36,7 @@ pub fn agent_resource_templates() -> Vec<McpResourceTemplateDescriptor> {
             "arcweft://session/{session_id}/frame/{tick}/objects.json",
             "observed-objects",
             "Observed objects",
-            "Observed object JSON for the frame, including textbox and rich-text child bboxes plus object-local capture refs.",
+            "Observed object JSON for the frame, including dialogue View and rich-text child bboxes plus object-local capture refs.",
             Some("application/json"),
         ),
         resource_template(

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Two-dimensional point in textbox-local pixels.
+/// Two-dimensional point in text-container-local pixels.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct LayoutPoint {
     /// X coordinate.
@@ -18,7 +18,7 @@ impl LayoutPoint {
     }
 }
 
-/// Two-dimensional size in textbox-local pixels.
+/// Two-dimensional size in text-container-local pixels.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct LayoutSize {
     /// Width.
@@ -34,7 +34,7 @@ impl LayoutSize {
     }
 }
 
-/// Axis-aligned rectangle in textbox-local pixels.
+/// Axis-aligned rectangle in text-container-local pixels.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct LayoutRect {
     /// Left edge.

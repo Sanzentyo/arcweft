@@ -669,7 +669,7 @@ fn plan_json_uses_profile_selected_dialogue_defaults() {
     fs::write(
         &source_path,
         r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -677,7 +677,7 @@ pub dialogue defaults @dialogue.defaults {
     }
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         ruby {
             size = 10px
@@ -702,7 +702,7 @@ flow opening {
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 "#,
     )
     .expect("write profile manifest");
@@ -797,8 +797,8 @@ fn rich_text_profiled_sample_checks_profiles_and_plan_defaults() {
         .and_then(|catalog| catalog.first())
         .expect("sample profile plan includes a line display");
     assert_eq!(
-        display["window"], "textbox.mobile",
-        "mobile profile should select the mobile textbox: {stdout}"
+        display["view"], "view.MobileDialogue",
+        "mobile profile should select the mobile dialogue View: {stdout}"
     );
     let contributions = display["style_contributions"]
         .as_array()
@@ -809,11 +809,11 @@ fn rich_text_profiled_sample_checks_profiles_and_plan_defaults() {
         contributions,
         PlanStyleContribution {
             layer: "dialogue_defaults",
-            path: "window",
-            value: "@textbox.mobile",
+            path: "view",
+            value: "@view.MobileDialogue",
             active: Some(true),
             requires_range: true,
-            context: "sample mobile textbox defaults",
+            context: "sample mobile dialogue View defaults",
         },
     );
     assert_plan_style_contribution(
@@ -843,7 +843,7 @@ fn rich_text_profiled_sample_checks_profiles_and_plan_defaults() {
     assert!(
         contributions.iter().all(|contribution| {
             !(contribution["layer"] == "dialogue_defaults"
-                && contribution["source"]["item_id"] == "dialogue.defaults"
+                && contribution["source"]["item_id"].is_null()
                 && contribution["active"] == true)
         }),
         "mobile profile should not activate desktop dialogue defaults: {stdout}"
@@ -854,19 +854,18 @@ fn runtime_plan_fixture_path() -> PathBuf {
     temp_arcw(
         "runtime-plan",
         r##"
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.plan
-    rich_text {
-        ruby {
-            size = 14px
-        }
+pub view PlanDialogue(dialogue: DialogueView) {
+    Panel {
+        Text(dialogue.speaker)
+        RichText(dialogue.content)
     }
 }
 
-pub textbox plan {
+pub dialogue defaults {
+    view = @view.PlanDialogue
     rich_text {
-        text {
-            color = "#303132"
+        ruby {
+            size = 14px
         }
     }
 }
@@ -917,18 +916,6 @@ fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Va
             active: None,
             requires_range: true,
             context: "character dialogue_style",
-        },
-    );
-    assert_plan_style_contribution(
-        stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "text_box_theme",
-            path: "rich_text.text.color",
-            value: "\"#303132\"",
-            active: Some(false),
-            requires_range: true,
-            context: "textbox theme",
         },
     );
     assert_plan_style_contribution(
@@ -2826,7 +2813,7 @@ fn fmt_expand_sugar_respects_source_allow_attribute_when_writing() {
 
 #[test]
 fn fmt_expand_sugar_nests_dotted_dialogue_defaults_when_writing() {
-    let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
+    let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
     let path = temp_arcw("fmt-expand-dialogue-defaults", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -7323,7 +7310,7 @@ fn profile_check_loads_rust_metadata_for_extern_module() {
     fs::write(
         &source,
         r#"
-extern rust mod mini_games::truck from crate "truck_game" {
+extern rust mod mini_games.truck from crate "truck_game" {
     pub type Rank
     pub fn score_to_rank(score: i32) -> Rank
 }
@@ -7401,7 +7388,7 @@ fn profile_check_reports_rust_metadata_read_error() {
     fs::write(
         &source,
         r#"
-extern rust mod mini_games::truck from crate "truck_game" {
+extern rust mod mini_games.truck from crate "truck_game" {
     pub fn score_to_rank(score: i32) -> i64
 }
 
@@ -7452,7 +7439,7 @@ fn profile_check_reports_rust_metadata_parse_error() {
     fs::write(
         &source,
         r#"
-extern rust mod mini_games::truck from crate "truck_game" {
+extern rust mod mini_games.truck from crate "truck_game" {
     pub fn score_to_rank(score: i32) -> i64
 }
 
@@ -7504,7 +7491,7 @@ fn profile_json_loads_rust_metadata_for_extern_module() {
     fs::write(
         &source,
         r#"
-extern rust mod mini_games::truck from crate "truck_game" {
+extern rust mod mini_games.truck from crate "truck_game" {
     pub type Rank
     pub fn score_to_rank(score: i32) -> Rank
 }
@@ -7686,7 +7673,7 @@ fn serve_profile_preserves_rust_metadata_when_adapter_comes_from_profile() {
     fs::write(
         &source,
         r#"
-extern rust mod mini_games::truck from crate "truck_game" {
+extern rust mod mini_games.truck from crate "truck_game" {
     pub type Rank
     pub fn score_to_rank(score: i32) -> Rank
 }

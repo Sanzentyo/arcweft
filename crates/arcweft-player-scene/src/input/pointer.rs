@@ -235,7 +235,7 @@ impl InputController {
         let text_input_activation = routed
             .event()
             .is_some_and(|event| frame_target_is_text_input(frame, event.target()));
-        activation_outcome(
+        let mut outcome = activation_outcome(
             frame,
             effects.actions,
             effects.text_control_write_backs,
@@ -244,7 +244,10 @@ impl InputController {
                 && drag.as_ref().is_some_and(|drag| drag.advances_dialogue)
                 && !text_input_activation
                 && !effects.action_button_activation,
-        )
+        );
+        outcome.dialogue_progress = outcome.dialogue_progress.merge(effects.dialogue_progress);
+        outcome.redraw |= effects.dialogue_progress.redraws();
+        outcome
     }
 
     pub fn pointer_context_menu(

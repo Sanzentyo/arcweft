@@ -13,10 +13,10 @@ flow opening effects { signal.write } {
     signal.set(@signal.current_flow, @flow.opening)
 
     narrator:
-        Visual regression textbox.[p]
+        Visual regression dialogue View.[p]
 
     narrator:
-        Second observed textbox.[p]
+        Second observed dialogue View.[p]
 
     return "opening"
 }

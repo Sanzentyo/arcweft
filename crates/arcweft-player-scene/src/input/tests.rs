@@ -8,8 +8,8 @@ use arcweft_presentation::text_input::{
     TextRange,
 };
 use arcweft_render_wgpu::geometry::{
-    PreparedTextBoxState, RenderActionButton, RenderControlStyle, RenderPreferences, RenderScene,
-    RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
+    PreparedDialogueViewState, RenderActionButton, RenderControlStyle, RenderPreferences,
+    RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
     RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanContext,
 };
 
@@ -53,10 +53,10 @@ fn scene(control: RenderTextInputControl) -> RenderScene {
     }
 }
 
-fn prepare_with_textbox(scene: &RenderScene, reveal_complete: bool) -> PreparedFrame {
+fn prepare_with_dialogue_view(scene: &RenderScene, reveal_complete: bool) -> PreparedFrame {
     let mut frame = prepare(scene).expect("frame prepares");
-    frame.push_textbox(PreparedTextBoxState {
-        textbox: 0,
+    frame.push_dialogue_view(PreparedDialogueViewState {
+        dialogue: 0,
         entry: 0,
         mount: 0,
         revision: 0,
@@ -65,6 +65,13 @@ fn prepare_with_textbox(scene: &RenderScene, reveal_complete: bool) -> PreparedF
         bounds: HitRect::new(32.0, 180.0, 576.0, 148.0),
         reveal_complete,
         advance_available: true,
+        primary_action: Some(arcweft_view::DialogueAdvanceTarget::new(
+            arcweft_view::DialoguePresentationId::new(0),
+            arcweft_view::DialogueEntryId::new(0),
+            arcweft_view::DialogueInstanceId::new(0),
+            arcweft_view::DialogueStageIndex::new(0),
+            arcweft_view::DialogueRevision::new(0),
+        )),
     });
     frame
 }
@@ -486,7 +493,7 @@ fn pointer_activation_on_text_input_does_not_advance_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control.clone()), false);
+    let frame = prepare_with_dialogue_view(&scene(control.clone()), false);
     let mut input = InputController::default();
     input.activate_text_control(&control).unwrap();
     let position = ViewportPoint::new(30.0, 40.0);
@@ -524,7 +531,7 @@ fn pointer_activation_on_action_button_clears_text_editor_focus() {
         }],
         ..scene(control.clone())
     };
-    let frame = prepare_with_textbox(&scene, false);
+    let frame = prepare_with_dialogue_view(&scene, false);
     let mut input = InputController::default();
     input.activate_text_control(&control).unwrap();
     assert!(input.focused_text_editor().is_some());
@@ -551,7 +558,7 @@ fn pointer_activation_on_blank_area_advances_dialogue_without_view_control_focus
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control), true);
+    let frame = prepare_with_dialogue_view(&scene(control), true);
     let mut input = InputController::default();
     let position = ViewportPoint::new(500.0, 80.0);
 
@@ -574,7 +581,7 @@ fn pointer_activation_on_revealing_dialogue_completes_reveal_before_advance() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control), false);
+    let frame = prepare_with_dialogue_view(&scene(control), false);
     let mut input = InputController::default();
     let position = ViewportPoint::new(500.0, 80.0);
 
@@ -599,7 +606,7 @@ fn enter_without_view_control_focus_advances_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control.clone()), true);
+    let frame = prepare_with_dialogue_view(&scene(control.clone()), true);
     let mut input = InputController::default();
 
     let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
@@ -619,7 +626,7 @@ fn enter_without_view_control_focus_completes_dialogue_reveal_before_advance() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control.clone()), false);
+    let frame = prepare_with_dialogue_view(&scene(control.clone()), false);
     let mut input = InputController::default();
 
     let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
@@ -640,7 +647,7 @@ fn enter_with_text_input_focus_does_not_advance_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control.clone()), false);
+    let frame = prepare_with_dialogue_view(&scene(control.clone()), false);
     let mut input = InputController::default();
     let position = ViewportPoint::new(30.0, 40.0);
     input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
@@ -663,7 +670,7 @@ fn backspace_advances_dialogue_only_without_view_control_focus() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control), true);
+    let frame = prepare_with_dialogue_view(&scene(control), true);
     let mut input = InputController::default();
 
     let unfocused = input.keyboard(&frame, "Backspace", KeyPhase::Down);
@@ -689,7 +696,7 @@ fn pointer_down_outside_view_control_clears_text_focus_without_advancing() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(&scene(control.clone()), true);
+    let frame = prepare_with_dialogue_view(&scene(control.clone()), true);
     let mut input = InputController::default();
 
     let text_position = ViewportPoint::new(30.0, 40.0);
@@ -844,7 +851,7 @@ fn submit_command_with_text_focus_does_not_advance_active_dialogue() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = prepare_with_textbox(
+    let frame = prepare_with_dialogue_view(
         &RenderScene {
             interaction: InteractionVisualState {
                 focused: Some(target),

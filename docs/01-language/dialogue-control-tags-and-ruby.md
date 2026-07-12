@@ -5,7 +5,7 @@ Arcweft supports KAG-like bracket tags inside dialogue text, but the feature is 
 Related:
 
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
-- [Dialogue Character Methods, TextBox Targets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
+- [Dialogue Character Methods, Dialogue Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
 - [Localization for Dialogue](localization-dialogue.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
@@ -171,7 +171,7 @@ canonicalizes as an effect span and lowers to the same registry effect id as
 
 Layout selectors accept `jlreq=loose|normal|strict` to choose the vertical
 Japanese punctuation-pair planning preset for that span. Omitting it keeps the
-host textbox/default layout preset.
+host View/default layout preset.
 
 Ruby-position selectors also accept local typography overrides:
 
@@ -236,10 +236,8 @@ pure and deterministic: it cannot hide waits, pages, reveal-speed changes,
 marks, object proxies, host events, state mutation, actions, I/O, tasks, or
 View-child construction.
 
-The removed `decoration`, `[decorate ...]`, `#[text_motion]`,
-`#[text_effect]`, and `#[text_shader]` surfaces are not compatibility aliases.
-They fail through ordinary parser/semantic diagnostics rather than being
-silently interpreted as Fx calls.
+`#[fx] fn ... -> Fx` and the two application forms above are the complete
+reusable presentation-effect grammar.
 
 ---
 
@@ -256,7 +254,7 @@ Meaning:
 [p]  wait for user advance; close the current logical page before later text.
 ```
 
-Logical page boundaries are authored behavior, not a TextBox setting. If more
+Logical page boundaries are authored behavior, not a View setting. If more
 content follows a `[p]`, advancing starts that content on a new logical page.
 If `[p]` is the terminal control, it does not manufacture an empty page: the
 advance at that stage releases the line to its continuation. `[l]` never closes
@@ -309,7 +307,7 @@ remains active until a later speed/reset boundary or the end of the line.
 alice: 通常。[speed slow]ゆっくり。[speed 56]速く。[reset]通常。[p]
 ```
 
-TextBox themes may animate or style a logical-page transition, but they do not
+Dialogue Views may animate or style a logical-page transition, but they do not
 change whether `[p]` closes a page, `[l]` retains it, or a terminal `[p]`
 releases the line.
 
@@ -368,7 +366,7 @@ Ruby typography is resolved from the active RichText cascade before layout:
 inline [.ruby_over ruby_size=... ruby_gap=...]
   -> line / speaker preset rich_text.ruby
   -> character dialogue_style.rich_text.ruby
-  -> dialogue window theme rich_text.ruby
+  -> authored dialogue View style rich_text.ruby
   -> selected dialogue defaults rich_text.ruby
   -> engine defaults
 ```
@@ -541,7 +539,9 @@ pub dialogue fn mark_keyword(
 }
 ```
 
-`[hook ...]`, `#[hook ...]`, `#[mark ...]`, and local `hook name:` blocks are not valid line-local syntax. Top-level `hook @hook...` declarations still exist for engine phase hooks, but dialogue text uses `[mark .name]` and line-plan `on mark(.name):` handlers.
+Dialogue text declares local synchronization points with `[mark .name]` and
+handles them with line-plan `on mark(.name):` clauses. Top-level
+`hook @hook...` declarations are a separate engine-phase construct.
 
 ---
 
@@ -649,7 +649,7 @@ pub character alice {
 Built-in read/unread hook:
 
 ```arcw
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
         read = rgb("#b8b8c0"),

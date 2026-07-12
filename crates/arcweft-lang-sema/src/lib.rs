@@ -8,6 +8,7 @@ pub mod borrow;
 pub mod check;
 pub mod checker;
 pub mod diagnostics;
+pub mod dialogue_view;
 pub mod effect_analysis;
 pub mod effect_catalog;
 pub mod effect_collector;

@@ -18,6 +18,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
 arcweft-text-layout = { path = "../arcweft-text-layout" }
+arcweft-view = { path = "../arcweft-view" }
 num-traits = "0.2.19"
 oxifont-webfont.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -25,7 +26,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-core = { path = "../arcweft-core" }
-arcweft-view = { path = "../arcweft-view" }
 serde_json.workspace = true
 
 [lib]

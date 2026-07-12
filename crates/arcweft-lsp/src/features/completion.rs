@@ -1,3 +1,5 @@
+use crate::documents::DocumentSnapshot;
+use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
 use crate::profiles::LspProfile;
 use arcweft_character::manifest::{CharacterManifest, CharacterPart, CharacterVariant};
 use arcweft_lang_sema::types::TypeKind;
@@ -6,11 +8,55 @@ use lsp_types::{CompletionItem, CompletionItemKind, Documentation};
 use std::collections::BTreeSet;
 
 /// Computes completion items from resolved adapter, runtime-host, and character facts.
-pub fn completions(profile: &LspProfile) -> Vec<CompletionItem> {
+pub fn completions(
+    profile: &LspProfile,
+    document: Option<&DocumentSnapshot>,
+) -> Vec<CompletionItem> {
     let mut items = profile_completions(&profile.context());
     items.extend(character_metadata_completions(profile));
     items.extend(enum_variant_completions(profile));
+    items.extend(dialogue_view_completions(profile, document));
     dedup_completion_items(items)
+}
+
+fn dialogue_view_completions(
+    profile: &LspProfile,
+    document: Option<&DocumentSnapshot>,
+) -> Vec<CompletionItem> {
+    dialogue_view_types(profile, document)
+        .into_iter()
+        .flat_map(|model| {
+            let declaration = model.declaration();
+            let mut items = vec![CompletionItem {
+                label: model.name.clone(),
+                kind: Some(CompletionItemKind::STRUCT),
+                detail: Some(declaration.clone()),
+                documentation: Some(Documentation::String(format!(
+                    "Dialogue View input model.\n\n{declaration}"
+                ))),
+                ..CompletionItem::default()
+            }];
+            items.extend(DialogueViewTypeMetadata::fields().map(|(projection, ty)| {
+                CompletionItem {
+                    label: projection.field().to_owned(),
+                    kind: Some(CompletionItemKind::FIELD),
+                    detail: Some(format!(
+                        "{}.{}: {}",
+                        model.name,
+                        projection.field(),
+                        type_kind_label(&ty)
+                    )),
+                    documentation: Some(Documentation::String(format!(
+                        "Runtime-supplied `{}` field of dialogue View model `{}`.",
+                        projection.field(),
+                        model.name
+                    ))),
+                    ..CompletionItem::default()
+                }
+            }));
+            items
+        })
+        .collect()
 }
 
 fn character_metadata_completions(profile: &LspProfile) -> Vec<CompletionItem> {

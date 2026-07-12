@@ -55,8 +55,8 @@ use arcweft_presentation::text_input::{
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::dialogue::{
-    BundlePresentationTransition, DialogueAdvanceRejection, DialogueStageAdvanceKind,
-    TextBoxEntryState,
+    BundlePresentationTransition, DialogueAdvanceRejection, DialogueEntryState,
+    DialogueStageAdvanceKind,
 };
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::session::{
@@ -72,6 +72,8 @@ use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
+mod dialogue_restore;
+
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
 }
@@ -82,13 +84,13 @@ fn line_id(value: &str) -> RuntimeLineId {
 
 fn dialogue_text(presentation: &BundlePresentationSnapshot) -> Option<&str> {
     latest_dialogue(presentation)
-        .and_then(TextBoxEntryState::current_stage)
+        .and_then(DialogueEntryState::current_stage)
         .map(arcweft_render_text::LineDisplayStage::text)
 }
 
-fn latest_dialogue(presentation: &BundlePresentationSnapshot) -> Option<&TextBoxEntryState> {
+fn latest_dialogue(presentation: &BundlePresentationSnapshot) -> Option<&DialogueEntryState> {
     presentation
-        .textboxes
+        .dialogue
         .latest_active()
         .map(|(_, entry)| entry)
 }
@@ -96,9 +98,9 @@ fn latest_dialogue(presentation: &BundlePresentationSnapshot) -> Option<&TextBox
 fn queue_current_dialogue_advance(session: &mut BundleSession) {
     let target = session
         .presentation()
-        .textboxes
+        .dialogue
         .latest_active()
-        .and_then(|(textbox, _)| textbox.advance_target())
+        .and_then(|(dialogue_view, _)| dialogue_view.advance_target())
         .expect("dialogue is waiting for advance");
     session.queue_dialogue_advance(target);
 }
@@ -115,7 +117,7 @@ fn paged_fixture_bundle() -> ArcweftBundle {
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,
@@ -511,7 +513,7 @@ fn fixture_bundle_from_parts(
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,
@@ -720,7 +722,7 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
         callee: "concierge".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,
@@ -959,9 +961,9 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
     );
     let first_target = first
         .presentation
-        .textboxes
+        .dialogue
         .latest_active()
-        .and_then(|(textbox, _)| textbox.advance_target())
+        .and_then(|(dialogue_view, _)| dialogue_view.advance_target())
         .expect("advance target");
     assert_eq!(dialogue_text(&first.presentation), Some("A"));
 
@@ -1022,9 +1024,9 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
 
     let final_target = session
         .presentation()
-        .textboxes
+        .dialogue
         .latest_active()
-        .and_then(|(textbox, _)| textbox.advance_target())
+        .and_then(|(dialogue_view, _)| dialogue_view.advance_target())
         .expect("final stage is actionable");
     session.queue_dialogue_advance(final_target);
     session.queue_dialogue_advance(final_target);
@@ -1036,7 +1038,7 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
     assert!(
         !choice
             .presentation
-            .textboxes
+            .dialogue
             .latest_active()
             .map(|(_, entry)| entry)
             .expect("retained dialogue")
@@ -1058,7 +1060,7 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
 #[test]
 fn session_save_restores_complete_per_mount_virtual_range_state() {
     let mut bundle = paged_fixture_bundle();
-    bundle.view_program = Some(ViewProgramResource {
+    bundle = bundle.with_view_program(ViewProgramResource {
         program_id: "view.program.inventory".to_owned(),
         definitions: vec![ViewDefinitionResource {
             public_id: "view.inventory".to_owned(),
@@ -1368,7 +1370,7 @@ fn raw_dialogue_events_cannot_bypass_the_presentation_stage_target() {
     );
     let line = first
         .presentation
-        .textboxes
+        .dialogue
         .latest_active()
         .map(|(_, entry)| entry)
         .expect("dialogue")
@@ -1404,7 +1406,7 @@ fn raw_dialogue_events_cannot_bypass_the_presentation_stage_target() {
     assert!(
         rejected
             .presentation
-            .textboxes
+            .dialogue
             .latest_active()
             .map(|(_, entry)| entry)
             .expect("dialogue remains active")
@@ -1434,7 +1436,7 @@ fn malformed_dialogue_frame_restore_is_rejected_without_mutating_the_session() {
     let before = session.snapshot_session().expect("live snapshot exports");
     let mut value = serde_json::to_value(&before).expect("snapshot encodes as JSON value");
     let controls = value
-        .pointer_mut("/presentation/textboxes/textboxes/0/entries/0/frame/display_map/controls")
+        .pointer_mut("/presentation/dialogue/presentations/0/entries/0/frame/display_map/controls")
         .and_then(serde_json::Value::as_array_mut)
         .expect("dialogue controls are present");
     controls[1]["text_offset"] = serde_json::json!(0);

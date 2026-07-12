@@ -75,7 +75,6 @@ impl FxCatalog {
         };
 
         for function in module.functions() {
-            reject_removed_fx_attributes(function, errors);
             if !function.has_attribute("fx") {
                 continue;
             }
@@ -332,27 +331,6 @@ impl FxCatalog {
             }
         }
         active.remove(name);
-    }
-}
-
-fn reject_removed_fx_attributes(function: &HirFunction, errors: &mut Vec<TypeCheckError>) {
-    for attribute in function.attributes() {
-        if matches!(
-            attribute.name(),
-            "text_motion"
-                | "rich_text_motion"
-                | "text_effect"
-                | "rich_text_effect"
-                | "text_shader"
-                | "rich_text_shader"
-                | "presentation.effect_impl"
-                | "effect_impl"
-        ) {
-            errors.push(TypeCheckError::new(format!(
-                "`#[{}]` was removed; use one `#[fx] fn ... -> Fx` graph factory",
-                attribute.name()
-            )));
-        }
     }
 }
 

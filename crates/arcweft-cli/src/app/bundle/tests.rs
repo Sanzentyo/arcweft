@@ -1186,6 +1186,101 @@ flow test {
 }
 
 #[test]
+fn dialogue_view_text_style_and_primary_action_lower_to_typed_resources() {
+    use arcweft_bundle::resource_codec::view::{
+        DialogueTextProjection, ViewActionButtonActionResource, ViewProgramInstruction,
+        ViewTextSourceKind,
+    };
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+pub style dialogue_text {}
+
+pub view DialoguePanel(dialogue: DialogueView) {
+  Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
+    Text(dialogue.speaker)
+      .x(85.6px)
+      .y(480.8px)
+      .width(1108.8px)
+      .height(28px)
+    RichText(dialogue.content)
+      .x(85.6px)
+      .y(518.8px)
+      .width(1108.8px)
+      .height(125.6px)
+      .style(@style.dialogue_text)
+    Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+      .on_click { dialogue.primary_action }
+  }
+}
+
+pub dialogue defaults {
+  view = @view.DialoguePanel
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let text = sidecars.text.expect("dialogue text sidecar");
+    assert!(text.sources.iter().any(|source| {
+        source.kind
+            == ViewTextSourceKind::Dialogue {
+                parameter: "dialogue".to_owned(),
+                projection: DialogueTextProjection::Speaker,
+            }
+    }));
+    assert!(text.sources.iter().any(|source| {
+        source.kind
+            == ViewTextSourceKind::Dialogue {
+                parameter: "dialogue".to_owned(),
+                projection: DialogueTextProjection::Content,
+            }
+    }));
+
+    let program = sidecars.program.expect("dialogue View program");
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        ViewProgramInstruction::EmitText {
+            style: Some(style),
+            ..
+        } if style == "style.dialogue_text"
+    )));
+    assert!(program.action_buttons.iter().any(|button| matches!(
+        &button.action,
+        ViewActionButtonActionResource::DialoguePrimaryAction { parameter }
+            if parameter == "dialogue"
+    )));
+    let primary_action = program
+        .action_buttons
+        .iter()
+        .find(|button| {
+            matches!(
+                &button.action,
+                ViewActionButtonActionResource::DialoguePrimaryAction { .. }
+            )
+        })
+        .expect("dialogue primary action button");
+    assert!(text.sources.iter().any(|source| {
+        source.public_id == primary_action.label_text_source
+            && source.kind
+                == ViewTextSourceKind::Literal {
+                    value: String::new(),
+                }
+    }));
+    assert_eq!(program.surfaces.len(), 1);
+    assert_eq!(program.surfaces[0].bounds.x_milli, 57_600);
+    assert_eq!(program.surfaces[0].bounds.y_milli, 460_800);
+    assert_eq!(program.surfaces[0].bounds.width_milli, 1_164_800);
+    assert_eq!(program.surfaces[0].bounds.height_milli, 201_600);
+    assert_eq!(program.text_blocks[0].bounds.x_milli, 85_600);
+    assert_eq!(program.text_blocks[0].bounds.y_milli, 480_800);
+    assert_eq!(program.text_blocks[1].bounds.x_milli, 85_600);
+    assert_eq!(program.text_blocks[1].bounds.y_milli, 518_800);
+    assert_eq!(program.text_blocks[1].bounds.height_milli, 125_600);
+}
+
+#[test]
 fn view_declaration_is_not_mounted_implicitly() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
@@ -1535,7 +1630,7 @@ fn bundle_hydrates_default_view_localization_from_matching_display_text_key() {
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: Some("text.opening.dream".to_owned()),
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,

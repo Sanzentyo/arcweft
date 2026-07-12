@@ -1,4 +1,4 @@
-//! Authored static RichText transform resolution against shaped geometry.
+//! Authored static `RichText` transform resolution against shaped geometry.
 
 use arcweft_presentation::fx::{
     Angle, FiniteF32, FxTarget, Length, ResolvedTransform2D, Transform2D,

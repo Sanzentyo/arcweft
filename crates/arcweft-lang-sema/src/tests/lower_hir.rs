@@ -48,21 +48,24 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn lowering_rejects_unstructured_raw_items() {
-    let tree = parse_ok("unknown top level syntax");
-    let errors = lower_to_hir(&tree).expect_err("raw item cannot lower");
-    assert!(errors[0].message().contains("raw"));
+fn parser_rejects_unstructured_top_level_syntax() {
+    let errors = parse_errors("unknown top level syntax");
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].message(), "unexpected top-level item");
 }
 
 #[test]
 fn lowering_rejects_flow_recovery_nodes_with_span() {
-    let tree = parse_ok(
+    let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
 flow @flow.raw_example {
     unknown surface form
 }
 ",
     );
+    assert_eq!(parsed.errors().len(), 1);
+    assert_eq!(parsed.errors()[0].message(), "unsupported flow item");
+    let tree = parsed.typed_tree().clone();
     let errors = lower_to_hir(&tree).expect_err("raw flow item cannot lower");
     assert!(errors[0].message().contains("FlowItem"));
     assert!(errors[0].range().is_some());

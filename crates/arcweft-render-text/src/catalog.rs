@@ -18,7 +18,7 @@ pub struct LineDisplaySpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker_label: Option<String>,
     pub text_key: Option<String>,
-    pub window: Option<String>,
+    pub view: Option<String>,
     pub voice: Option<String>,
     pub look: Option<String>,
     pub style: Option<String>,
@@ -56,7 +56,7 @@ pub enum RichTextCascadeLayer {
     LineOptions,
     SpeakerPreset,
     CharacterDialogueStyle,
-    TextBoxTheme,
+    DialogueViewStyle,
     DialogueDefaults,
     EngineDefaults,
 }

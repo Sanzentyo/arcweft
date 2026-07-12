@@ -678,13 +678,13 @@ fn player_observed_objects(
                 player_semantic_object(step, node, control, &view_by_target)
             }),
     );
-    for (textbox, entry, stage) in presentation.textboxes.iter().filter_map(|textbox| {
-        let entry = textbox.active_entry()?;
-        Some((textbox, entry, entry.current_stage()?))
+    for (dialogue, entry, stage) in presentation.dialogue.iter().filter_map(|dialogue| {
+        let entry = dialogue.active_entry()?;
+        Some((dialogue, entry, entry.current_stage()?))
     }) {
         let mut dialogue_objects = agent_dialogue_prepared_text_objects(
             step,
-            usize::try_from(textbox.id().get()).unwrap_or(usize::MAX),
+            usize::try_from(dialogue.id().get()).unwrap_or(usize::MAX),
             usize::try_from(entry.id().get()).unwrap_or(usize::MAX),
             stage.to_frame(),
             &prepared.frame,
@@ -957,7 +957,7 @@ fn player_semantic_text(
             .map(|control| control.value.clone())
             .or_else(|| label.map(str::to_owned)),
         SemanticRole::Button
-        | SemanticRole::TextBox
+        | SemanticRole::Dialogue
         | SemanticRole::Activity
         | SemanticRole::Image
         | SemanticRole::Debug
@@ -967,7 +967,7 @@ fn player_semantic_text(
 
 fn player_semantic_role(role: SemanticRole) -> &'static str {
     match role {
-        SemanticRole::TextBox => "text_box",
+        SemanticRole::Dialogue => "dialogue_view",
         SemanticRole::Activity => "activity",
         SemanticRole::Button => "button",
         SemanticRole::TextField => "text_field",
@@ -985,7 +985,7 @@ fn player_semantic_object_type(role: SemanticRole) -> &'static str {
             "text_input"
         }
         SemanticRole::Button => "button",
-        SemanticRole::TextBox => "text_box",
+        SemanticRole::Dialogue => "dialogue_view",
         SemanticRole::Activity => "activity",
         SemanticRole::Image => "image",
         SemanticRole::Debug => "debug",

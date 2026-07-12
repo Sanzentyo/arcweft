@@ -134,7 +134,7 @@ fn slot_value_behaves_like_static_option() {
 
 #[test]
 fn routed_input_keeps_raw_epoch_and_stable_target() {
-    let target = InteractionTarget::new(PublicId::try_new("target.textbox.main").unwrap());
+    let target = InteractionTarget::new(PublicId::try_new("target.dialogue.main").unwrap());
     let raw = RawInputEvent::new(
         InputEpoch(7),
         RawInputKind::Agent(AgentInput {
@@ -305,12 +305,12 @@ fn layer_tree_derives_render_and_input_order_from_same_nodes() {
     tree.insert(
         LayerNode::new(
             dialogue.clone(),
-            LayerKind::TextBox,
+            LayerKind::Dialogue,
             layer_order(RenderPhase::Dialogue, 0, 10),
         )
         .with_parent(root.clone())
-        .with_content(LayerContent::TextBox(
-            PublicId::try_new("textbox.main").unwrap(),
+        .with_content(LayerContent::Dialogue(
+            PublicId::try_new("dialogue.main").unwrap(),
         ))
         .with_input_policy(LayerInputPolicy::HitTest),
     )
@@ -344,8 +344,8 @@ fn layer_tree_derives_render_and_input_order_from_same_nodes() {
     );
     assert_eq!(
         tree.get(&layer_id("dialogue")).map(LayerNode::content),
-        Some(&LayerContent::TextBox(
-            PublicId::try_new("textbox.main").unwrap()
+        Some(&LayerContent::Dialogue(
+            PublicId::try_new("dialogue.main").unwrap()
         ))
     );
 }
@@ -558,7 +558,7 @@ fn router_keeps_agent_invocation_inside_layer_and_modal_policy() {
 fn router_routes_keyboard_and_text_to_focus_target() {
     let root = layer_id("root");
     let dialogue = layer_id("dialogue");
-    let target = interaction_target("textbox.main");
+    let target = interaction_target("dialogue.main");
     let mut tree = LayerTree::new(LayerNode::new(
         root.clone(),
         LayerKind::Root,
@@ -567,7 +567,7 @@ fn router_routes_keyboard_and_text_to_focus_target() {
     tree.insert(
         LayerNode::new(
             dialogue.clone(),
-            LayerKind::TextBox,
+            LayerKind::Dialogue,
             layer_order(RenderPhase::Dialogue, 0, 10),
         )
         .with_parent(root)
@@ -624,7 +624,7 @@ fn router_routes_keyboard_and_text_to_focus_target() {
 fn replay_hash_redacts_sensitive_text_input_payloads() {
     let root = layer_id("root");
     let dialogue = layer_id("dialogue");
-    let target = interaction_target("textbox.password");
+    let target = interaction_target("dialogue.password");
     let mut tree = LayerTree::new(LayerNode::new(
         root.clone(),
         LayerKind::Root,
@@ -633,7 +633,7 @@ fn replay_hash_redacts_sensitive_text_input_payloads() {
     tree.insert(
         LayerNode::new(
             dialogue.clone(),
-            LayerKind::TextBox,
+            LayerKind::Dialogue,
             layer_order(RenderPhase::Dialogue, 0, 10),
         )
         .with_parent(root)
@@ -1164,8 +1164,8 @@ fn gesture_arena_cancel_reports_current_winner_and_removes_session() {
 }
 
 #[test]
-fn semantic_tree_lowers_textbox_and_activity_actions_to_shared_action_batch_targets() {
-    let textbox_target = interaction_target("textbox.main");
+fn semantic_tree_lowers_dialogue_and_activity_actions_to_shared_action_batch_targets() {
+    let dialogue_target = interaction_target("dialogue.main");
     let activity_target = interaction_target("activity.truck");
     let advance = PublicId::try_new("action.advance").unwrap();
     let pause = PublicId::try_new("action.pause").unwrap();
@@ -1173,8 +1173,8 @@ fn semantic_tree_lowers_textbox_and_activity_actions_to_shared_action_batch_targ
     semantics.push(
         SemanticNode::new(
             layer_id("dialogue"),
-            textbox_target.clone(),
-            SemanticRole::TextBox,
+            dialogue_target.clone(),
+            SemanticRole::Dialogue,
             HitRect::new(0.0, 0.0, 640.0, 160.0),
         )
         .with_label("Dialogue")
@@ -1191,14 +1191,14 @@ fn semantic_tree_lowers_textbox_and_activity_actions_to_shared_action_batch_targ
         .with_action(pause.clone()),
     );
 
-    let textbox_action = semantics
-        .lower_action(&textbox_target, &advance)
-        .expect("textbox action lowers");
+    let dialogue_action = semantics
+        .lower_action(&dialogue_target, &advance)
+        .expect("dialogue action lowers");
     assert_eq!(
-        textbox_action.target(),
-        &ActionTarget::Entity(textbox_target.clone())
+        dialogue_action.target(),
+        &ActionTarget::Entity(dialogue_target.clone())
     );
-    assert_eq!(textbox_action.kind(), &advance);
+    assert_eq!(dialogue_action.kind(), &advance);
 
     let activity_action = semantics
         .lower_action(&activity_target, &pause)

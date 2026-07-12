@@ -28,7 +28,7 @@ impl ActionId {
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum ActionTarget {
     Runtime,
-    TextBox,
+    Dialogue,
     Activity(Identifier),
     ViewEntity(Identifier),
 }

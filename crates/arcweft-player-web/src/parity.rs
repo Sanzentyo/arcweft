@@ -196,9 +196,9 @@ pub fn prepare_bundle_parity_frame(
         if !ready
             && let Some(target) = step
                 .presentation
-                .textboxes
+                .dialogue
                 .latest_active()
-                .and_then(|(textbox, _)| textbox.advance_target())
+                .and_then(|(dialogue, _)| dialogue.advance_target())
         {
             session.queue_dialogue_advance(target);
         }

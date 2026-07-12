@@ -8,7 +8,8 @@
 mod evaluator;
 mod value;
 
-use crate::presentation_handles::PresentationHandleId;
+use crate::dialogue::{DialogueViewInput, DialogueViewState};
+use crate::presentation_handles::{PresentationHandleId, PresentationHandleRecord};
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::resource_codec::view::{ViewObserveClassification, ViewTextSelectionPolicy};
 use arcweft_bundle::resource_codec::{
@@ -75,6 +76,7 @@ pub enum BundleViewDiagnosticCode {
     MissingRichTextDocument,
     MissingDisplayFrame,
     InvalidDisplayStage,
+    MissingDialogueInput,
 }
 
 impl BundleViewDiagnosticCode {
@@ -98,6 +100,7 @@ impl BundleViewDiagnosticCode {
             Self::MissingRichTextDocument => "VIEW015_MISSING_RICH_TEXT_DOCUMENT",
             Self::MissingDisplayFrame => "VIEW016_MISSING_DISPLAY_FRAME",
             Self::InvalidDisplayStage => "VIEW017_INVALID_DISPLAY_STAGE",
+            Self::MissingDialogueInput => "VIEW018_MISSING_DIALOGUE_INPUT",
         }
     }
 }
@@ -138,6 +141,11 @@ pub enum BundleViewTextValue {
     },
     RichTextDocument {
         document: Box<RichTextDocument>,
+    },
+    /// Speaker label retaining the same resolved frame/style provenance as content.
+    DialogueSpeaker {
+        label: String,
+        frame: Box<LineDisplayFrame>,
     },
     DisplayFrame {
         frame: Box<LineDisplayFrame>,
@@ -205,6 +213,8 @@ pub struct BundleViewMountOutput {
     pub mount: ViewMountId,
     pub view: String,
     pub path: BundleViewInstancePath,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialogue: Option<DialogueViewState>,
     pub active_targets: Vec<String>,
     pub active_images: Vec<String>,
     pub paint: Vec<BundleViewPaintItem>,
@@ -441,35 +451,165 @@ impl BundleViewRuntime {
         self.logical_time
     }
 
-    /// Shared allocator for authored and Rust-backed retained View mounts.
-    pub(crate) const fn mount_allocator_mut(&mut self) -> &mut ViewMountAllocator {
-        &mut self.allocator
-    }
-
-    /// Validates externally retained Rust-backed mounts against authored mounts
-    /// and the same persisted allocator cursor.
-    pub(crate) fn validate_reserved_mounts(
+    /// Validates store, retained mount, and serialized frame identity as one
+    /// atomic dialogue View save-point contract.
+    pub(crate) fn validate_dialogue_snapshot(
         &self,
-        reserved: impl IntoIterator<Item = ViewMountId>,
+        frame: &BundleViewFrame,
+        dialogue: &[DialogueViewInput<'_>],
+        presentation_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
-        let authored = self
-            .mounts
-            .values()
-            .map(|mount| mount.state.mount())
-            .collect::<BTreeSet<_>>();
-        let mut seen = BTreeSet::new();
-        for mount in reserved {
-            if authored.contains(&mount) || !seen.insert(mount) {
-                return Err(BundleViewRuntimeError::DuplicateMount { mount });
+        let mut expected = BTreeMap::new();
+        for input in dialogue {
+            if expected
+                .insert(input.handle.clone(), (input.view, input.state))
+                .is_some()
+            {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "dialogue occurrence `{}` appears more than once in the presentation store",
+                        input.handle
+                    ),
+                });
             }
-            if mount.get() >= self.allocator.next() {
-                return Err(BundleViewRuntimeError::UnallocatedMount {
-                    mount,
-                    next: self.allocator.next(),
+        }
+
+        let output_occurrences = self.validate_dialogue_frame_outputs(frame, &expected)?;
+        self.validate_snapshot_mount_owners(&expected, presentation_handles)?;
+        let retained_occurrences = self
+            .mounts
+            .keys()
+            .filter(|key| expected.contains_key(&key.handle))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if let Some(missing) = retained_occurrences.difference(&output_occurrences).next() {
+            return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                message: format!(
+                    "dialogue occurrence `{}` at path {:?} has no serialized View output",
+                    missing.handle, missing.path
+                ),
+            });
+        }
+
+        for (handle, (view, _)) in &expected {
+            let key = ViewOccurrenceKey {
+                handle: handle.clone(),
+                path: BundleViewInstancePath::default(),
+            };
+            let mounted = self.mounts.get(&key).ok_or_else(|| {
+                BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "dialogue occurrence `{handle}` has no retained root View mount"
+                    ),
+                }
+            })?;
+            if mounted.definition != *view {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "dialogue occurrence `{}` retains View `{}`, expected `{}`",
+                        handle, mounted.definition, view
+                    ),
+                });
+            }
+            if !output_occurrences.contains(&key) {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "dialogue occurrence `{handle}` has no serialized root View output"
+                    ),
                 });
             }
         }
         Ok(())
+    }
+
+    fn validate_snapshot_mount_owners(
+        &self,
+        dialogue: &BTreeMap<PresentationHandleId, (&str, DialogueViewState)>,
+        presentation_handles: &[PresentationHandleRecord],
+    ) -> Result<(), BundleViewRuntimeError> {
+        let ordinary = presentation_handles
+            .iter()
+            .filter(|handle| !handle.is_terminal())
+            .filter(|handle| self.definitions.contains_key(&handle.resource_id))
+            .map(|handle| handle.id.clone())
+            .collect::<BTreeSet<_>>();
+        if let Some(orphan) = self
+            .mounts
+            .keys()
+            .find(|key| !dialogue.contains_key(&key.handle) && !ordinary.contains(&key.handle))
+        {
+            return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                message: format!(
+                    "retained View occurrence `{}` at path {:?} has no live presentation owner",
+                    orphan.handle, orphan.path
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    fn validate_dialogue_frame_outputs(
+        &self,
+        frame: &BundleViewFrame,
+        expected: &BTreeMap<PresentationHandleId, (&str, DialogueViewState)>,
+    ) -> Result<BTreeSet<ViewOccurrenceKey>, BundleViewRuntimeError> {
+        let mut occurrences = BTreeSet::new();
+        for output in &frame.mounts {
+            let expectation = expected.get(&output.handle);
+            if output.dialogue.is_some() && expectation.is_none() {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "serialized View output `{}` at path {:?} has dialogue state but no presentation-store occurrence",
+                        output.handle, output.path
+                    ),
+                });
+            }
+            let Some((_, state)) = expectation else {
+                continue;
+            };
+            if output.dialogue != Some(*state) {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "dialogue occurrence `{}` at path {:?} serialized state does not match its presentation store",
+                        output.handle, output.path
+                    ),
+                });
+            }
+            let key = ViewOccurrenceKey {
+                handle: output.handle.clone(),
+                path: output.path.clone(),
+            };
+            if !occurrences.insert(key.clone()) {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "dialogue occurrence `{}` at path {:?} appears more than once in the serialized frame",
+                        output.handle, output.path
+                    ),
+                });
+            }
+            let mounted = self.mounts.get(&key).ok_or_else(|| {
+                BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "serialized dialogue View output `{}` at path {:?} has no retained mount",
+                        output.handle, output.path
+                    ),
+                }
+            })?;
+            if mounted.definition != output.view || mounted.state.mount() != output.mount {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "dialogue occurrence `{}` at path {:?} records view `{}`/mount {:?}, expected `{}`/{:?}",
+                        output.handle,
+                        output.path,
+                        output.view,
+                        output.mount,
+                        mounted.definition,
+                        mounted.state.mount()
+                    ),
+                });
+            }
+        }
+        Ok(occurrences)
     }
 
     /// Style-cascade diagnostics produced for typed text targets at construction.

@@ -130,7 +130,7 @@ fn reveal_changes_only_paint() {
 }
 
 #[test]
-fn clear_projects_the_remaining_stage_to_the_textbox_origin() {
+fn clear_projects_the_remaining_stage_to_the_dialogue_view_origin() {
     let frame = frame(vec![
         RichTextNode::Text {
             text: "before".to_owned(),
@@ -202,6 +202,9 @@ fn typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint() {
     let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
     let application = FxApplication::try_new(id, Vec::new(), 0, None).expect("application");
     let frame = frame(vec![
+        RichTextNode::Text {
+            text: "前".to_owned(),
+        },
         RichTextNode::StyleStart {
             style: RichTextStyle::Fx {
                 application: application.clone(),
@@ -220,8 +223,10 @@ fn typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint() {
 
     assert_eq!(at_zero.layout.hash, later.layout.hash);
     assert_ne!(at_zero.paint, later.paint);
-    let first_y = at_zero.paint.glyphs[0].transform.resolved().translation()[1].pixels();
-    let second_y = at_zero.paint.glyphs[1].transform.resolved().translation()[1].pixels();
+    let prefix_y = at_zero.paint.glyphs[0].transform.resolved().translation()[1].pixels();
+    let first_y = at_zero.paint.glyphs[1].transform.resolved().translation()[1].pixels();
+    let second_y = at_zero.paint.glyphs[2].transform.resolved().translation()[1].pixels();
+    assert!(prefix_y.abs() <= 0.001);
     assert!(first_y.abs() <= 0.001);
     assert!((second_y - std::f32::consts::FRAC_1_SQRT_2 * 4.0).abs() <= 0.001);
 }
@@ -423,10 +428,13 @@ fn missing_typed_shader_is_a_typed_diagnostic() {
             .iter()
             .all(|glyph| glyph.effects.is_empty())
     );
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == arcweft_presentation::fx::FxDiagnosticCode::MissingProvider
-            && diagnostic.message.contains("missing.shader")
-    }));
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == arcweft_presentation::fx::FxDiagnosticCode::MissingProvider
+                && diagnostic.message.contains("missing.shader")
+        }),
+        "{diagnostics:#?}"
+    );
 }
 
 fn prepare(
@@ -465,7 +473,7 @@ fn frame(nodes: Vec<RichTextNode>) -> arcweft_render_text::LineDisplayFrame {
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,

@@ -4,7 +4,7 @@
 
 `seq06.16` and `seq06.16.1` made View-authored `TextField`,
 `TextArea`, and `SecureField` controls produce typed input, text, semantic
-and action-button resources without removed top-level text-control declarations.
+and action-button resources through ordinary View-owned text controls.
 The remaining gap was that runtime text-control bounds were still supplied by
 `ViewRuntimeTextControlBounds::default_stacked_slots`, so known View layout
 was discarded at the resource/runtime boundary.
@@ -142,7 +142,7 @@ legacy stacked fallback.
 
 ## Non-Goals
 
-- No compatibility declarations for removed top-level text-control syntax.
+- View remains the only declaration owner for text-control structure.
 - No platform-widget, DOM, CSS screenshot, or source-string fallback behavior.
 - No redesign of the seq06.16/seq06.16.1 submit substrate.
 - No full CSS or style-driven layout resolver in this cut.

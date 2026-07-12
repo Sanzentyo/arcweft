@@ -29,8 +29,8 @@ Scoped presentation handles are both lexical resources and runtime-owned
 entities.
 
 The language owns the lexical value. The value is move-only and typed, for
-example `ImageHandle`, `ComponentHandle`, `MenuHandle`, `OverlayHandle`,
-`TextBoxHandle`, or `RuntimeControlHandle`. Leaving the owning scope emits a
+example `ImageHandle`, `ViewHandle`, `MenuHandle`, `OverlayHandle`, or
+`RuntimeControlHandle`. Leaving the owning scope emits a
 runtime lifecycle operation in reverse creation order unless ownership was moved,
 detached, or explicitly disposed.
 
@@ -66,7 +66,6 @@ PresentationHandleCreateExpr :=
   | view(EntityRef, MountArgs?)
   | menu(EntityRef, MountArgs?)
   | overlay(EntityRef, MountArgs?)
-  | textbox(EntityRef, MountArgs?)
   | runtime_control(EntityRef, MountArgs?)
 
 MountArgs := named arguments including:
@@ -123,7 +122,6 @@ enum HirPresentationHandleKind {
     View,
     Menu,
     Overlay,
-    TextBox,
     RuntimeControl,
 }
 
@@ -205,7 +203,7 @@ On each VM step, `arcweft-runtime-driver`:
 3. resolves existing explicit image effects exactly as before;
 4. overlays scoped image handles onto the active image object list;
 5. filters text controls, action buttons, focus groups, and focus navigation for
-   hidden/unmounted/released/destroyed view/menu/overlay/textbox/control
+   hidden/unmounted/released/destroyed view/menu/overlay/control
    handles;
 6. increments snapshot revision when either the filtered presentation data or the
    handle table changes;
@@ -259,7 +257,6 @@ ImageHandle          -> show/hide/unmount/release/destroy, image playback query
 ViewHandle           -> show/hide/unmount/release/destroy, view capture id
 MenuHandle           -> overlay stack and modal focus APIs
 OverlayHandle        -> pop/close result APIs
-TextBoxHandle        -> text reveal/cursor APIs
 RuntimeControlHandle -> focus/input/writeback APIs
 ```
 
@@ -303,7 +300,7 @@ synthetic visual substitute.
 Diagnostics are stable and structured:
 
 The referenced resource is reusable definition/asset identity. Two distinct live
-handles may therefore mount the same View, image, menu, overlay, TextBox, or
+handles may therefore mount the same View, image, menu, overlay, or
 runtime-control resource at the same time. Ownership and lifecycle attach to the
 handle occurrence, not exclusively to the resource. Reusing a live handle id for
 a different occurrence remains invalid.

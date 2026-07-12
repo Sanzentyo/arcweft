@@ -1,16 +1,18 @@
 use super::support::resolve_mount_path;
 use super::{EvaluationFailure, ViewEvaluator};
+use crate::presentation_handles::PresentationHandleId;
 use crate::view_runtime::value::{fx_scalar_text, runtime_scalar_text};
 use crate::view_runtime::{
     BundleViewDiagnosticCode, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
     MountedView,
 };
 use arcweft_bundle::resource_codec::ViewDefinitionResource;
-use arcweft_bundle::resource_codec::view::ViewTextSourceKind;
+use arcweft_bundle::resource_codec::view::{DialogueTextProjection, ViewTextSourceKind};
 
 impl ViewEvaluator<'_> {
     pub(super) fn resolve_text(
         &self,
+        handle: &PresentationHandleId,
         definition: &ViewDefinitionResource,
         mounted: &MountedView,
         source_id: &str,
@@ -30,7 +32,8 @@ impl ViewEvaluator<'_> {
                     format!("View text source `{source_id}` does not exist"),
                 )
             })?;
-        let value = self.resolve_text_value(definition, mounted, &source.kind, instruction)?;
+        let value =
+            self.resolve_text_value(handle, definition, mounted, &source.kind, instruction)?;
         let targets = self
             .program
             .text_blocks
@@ -67,6 +70,7 @@ impl ViewEvaluator<'_> {
 
     fn resolve_text_value(
         &self,
+        handle: &PresentationHandleId,
         definition: &ViewDefinitionResource,
         mounted: &MountedView,
         source: &ViewTextSourceKind,
@@ -90,6 +94,84 @@ impl ViewEvaluator<'_> {
             }
             ViewTextSourceKind::DisplayFrame { frame } => {
                 self.resolve_display_frame(frame, instruction)
+            }
+            ViewTextSourceKind::Dialogue {
+                parameter,
+                projection,
+            } => {
+                self.resolve_dialogue_text(handle, definition, parameter, *projection, instruction)
+            }
+        }
+    }
+
+    fn resolve_dialogue_text(
+        &self,
+        handle: &PresentationHandleId,
+        definition: &ViewDefinitionResource,
+        parameter: &str,
+        projection: DialogueTextProjection,
+        instruction: usize,
+    ) -> Result<BundleViewTextValue, EvaluationFailure> {
+        if !definition
+            .parameters
+            .iter()
+            .any(|candidate| candidate.name == parameter)
+        {
+            return Err(EvaluationFailure::new(
+                BundleViewDiagnosticCode::MissingInput,
+                Some(instruction),
+                format!(
+                    "View `{}` has no dialogue parameter `{parameter}`",
+                    definition.public_id
+                ),
+            ));
+        }
+        let input = self.dialogue_inputs.get(handle).ok_or_else(|| {
+            EvaluationFailure::new(
+                BundleViewDiagnosticCode::MissingDialogueInput,
+                Some(instruction),
+                format!(
+                    "View `{}` requires typed dialogue input `{parameter}` for handle `{handle}`",
+                    definition.public_id
+                ),
+            )
+        })?;
+        match projection {
+            DialogueTextProjection::Speaker => Ok(BundleViewTextValue::DialogueSpeaker {
+                label: input
+                    .frame
+                    .speaker_label
+                    .clone()
+                    .unwrap_or_else(|| input.frame.callee.clone()),
+                frame: Box::new(input.frame.clone()),
+            }),
+            DialogueTextProjection::Content => {
+                let stage_index_value = input.state.stage.index.get();
+                let stage_index = usize::try_from(stage_index_value).map_err(|_| {
+                    EvaluationFailure::new(
+                        BundleViewDiagnosticCode::InvalidDisplayStage,
+                        Some(instruction),
+                        format!("dialogue stage {stage_index_value} exceeds this platform"),
+                    )
+                })?;
+                input.frame.validate().map_err(|error| {
+                    EvaluationFailure::new(
+                        BundleViewDiagnosticCode::InvalidDisplayStage,
+                        Some(instruction),
+                        format!("dialogue display frame is invalid: {error}"),
+                    )
+                })?;
+                if input.frame.stage(stage_index).is_none() {
+                    return Err(EvaluationFailure::new(
+                        BundleViewDiagnosticCode::InvalidDisplayStage,
+                        Some(instruction),
+                        format!("dialogue display frame has no stage {stage_index_value}"),
+                    ));
+                }
+                Ok(BundleViewTextValue::DisplayFrame {
+                    frame: Box::new(input.frame.clone()),
+                    stage_index: stage_index_value,
+                })
             }
         }
     }

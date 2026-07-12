@@ -53,7 +53,6 @@ pub enum PresentationHandleKind {
     View,
     Menu,
     Overlay,
-    TextBox,
     RuntimeControl,
 }
 
@@ -65,7 +64,6 @@ impl PresentationHandleKind {
             Self::View => "view",
             Self::Menu => "menu",
             Self::Overlay => "overlay",
-            Self::TextBox => "text_box",
             Self::RuntimeControl => "runtime_control",
         }
     }
@@ -76,7 +74,6 @@ impl PresentationHandleKind {
             "view" => Some(Self::View),
             "menu" => Some(Self::Menu),
             "overlay" => Some(Self::Overlay),
-            "text_box" => Some(Self::TextBox),
             "runtime_control" => Some(Self::RuntimeControl),
             _ => None,
         }
@@ -266,7 +263,7 @@ impl PresentationHandleOperation {
             return Err(PresentationHandleDiagnostic::new(
                 PresentationHandleDiagnosticCode::InvalidCall,
                 Some(id),
-                "presentation.handle.create requires kind = image|view|menu|overlay|text_box|runtime_control",
+                "presentation.handle.create requires kind = image|view|menu|overlay|runtime_control",
             ));
         };
         let resource_id = named_runtime_arg(&call.args, "resource")
@@ -733,11 +730,10 @@ pub(crate) fn hidden_focus_diagnostics(
         .collect()
 }
 
-const RUNTIME_CONTROL_FAMILIES: [PresentationHandleKind; 5] = [
+const RUNTIME_CONTROL_FAMILIES: [PresentationHandleKind; 4] = [
     PresentationHandleKind::View,
     PresentationHandleKind::Menu,
     PresentationHandleKind::Overlay,
-    PresentationHandleKind::TextBox,
     PresentationHandleKind::RuntimeControl,
 ];
 

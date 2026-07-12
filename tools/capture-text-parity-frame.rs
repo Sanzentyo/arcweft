@@ -125,9 +125,9 @@ fn prepare_text_parity_frame(
         let step = session.step_with_clock(clock, BundleStepInput::default());
         let advance_target = step
             .presentation
-            .textboxes
+            .dialogue
             .latest_active()
-            .and_then(|(textbox, _)| textbox.advance_target());
+            .and_then(|(dialogue_view, _)| dialogue_view.advance_target());
         presentation = Some(step.presentation);
         if advance_count > 0
             && let Some(target) = advance_target
@@ -141,7 +141,7 @@ fn prepare_text_parity_frame(
         }
     }
     let presentation = presentation.ok_or("text parity sample produced no presentation frame")?;
-    if advance_count != 0 || presentation.textboxes.latest_active().is_none() {
+    if advance_count != 0 || presentation.dialogue.latest_active().is_none() {
         return Err(format!(
             "text parity sample did not reach the requested dialogue page within {max_ticks} ticks (remaining advances: {advance_count})"
         )
@@ -516,17 +516,14 @@ fn write_text_scope_capture(
         .find(|owner| {
             matches!(
                 owner.kind,
-                arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox {
-                    part: arcweft_render_wgpu::geometry::PreparedTextBoxPart::Body,
-                    ..
-                }
+                arcweft_render_wgpu::geometry::PreparedTextOwnerKind::DialogueView { .. }
             )
         })
-        .ok_or("prepared frame has no TextBox body capture owner")?;
+        .ok_or("prepared frame has no dialogue View content capture owner")?;
     let item = frame
         .text
         .get(owner.text)
-        .ok_or("prepared TextBox body owner has no text item")?;
+        .ok_or("prepared dialogue View content owner has no text item")?;
     let object_id_rgba = [53, 159, 212, u8::MAX];
     let scoped = capture.capture(
         frame,

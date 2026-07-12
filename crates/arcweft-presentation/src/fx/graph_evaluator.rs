@@ -36,16 +36,19 @@ impl FxTargetSample {
         }
     }
 
+    #[must_use]
     pub const fn with_geometry(mut self, geometry: FxSampleGeometry) -> Self {
         self.geometry = geometry;
         self
     }
 
+    #[must_use]
     pub const fn with_reduce_motion(mut self, reduce_motion: bool) -> Self {
         self.reduce_motion = reduce_motion;
         self
     }
 
+    #[must_use]
     pub const fn with_interactive(mut self, interactive: bool) -> Self {
         self.interactive = interactive;
         self

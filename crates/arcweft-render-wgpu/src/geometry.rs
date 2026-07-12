@@ -527,15 +527,15 @@ pub struct PreparedFrame {
     pub scroll_indicators: Vec<PreparedScrollIndicator>,
     pub focus_graph: PreparedFocusGraph,
     view_scenes: Vec<PreparedViewScene>,
-    textboxes: Vec<PreparedTextBoxState>,
+    dialogue_views: Vec<PreparedDialogueViewState>,
     interaction: InteractionVisualState,
     focused_text_input: Option<PreparedTextInputTarget>,
 }
 
-/// Runtime identity, visual progress, and actionability for one prepared `TextBox` View.
+/// Runtime identity, visual progress, and actionability for one authored dialogue View.
 #[derive(Clone, Debug, PartialEq)]
-pub struct PreparedTextBoxState {
-    pub textbox: u64,
+pub struct PreparedDialogueViewState {
+    pub dialogue: u64,
     pub entry: u64,
     pub mount: u64,
     pub revision: u64,
@@ -544,29 +544,22 @@ pub struct PreparedTextBoxState {
     pub bounds: HitRect,
     pub reveal_complete: bool,
     pub advance_available: bool,
+    pub primary_action: Option<arcweft_view::DialogueAdvanceTarget>,
 }
 
 /// Semantic ownership for one canonical prepared-text item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PreparedTextOwnerKind {
-    /// Dialogue content rendered inside one persistent `TextBox` View mount.
-    TextBox {
-        textbox: u64,
+    /// Dialogue content rendered inside one persistent authored View mount.
+    DialogueView {
+        dialogue: u64,
         entry: u64,
         mount: u64,
-        part: PreparedTextBoxPart,
     },
     /// Authored or Rust-backed View text.
     View { mount: u64 },
     /// Shared player control text associated with an interaction target.
     Control,
-}
-
-/// Authored painter part within one standard `TextBox` View.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PreparedTextBoxPart {
-    Speaker,
-    Body,
 }
 
 /// Renderer-neutral identity and geometry associated with one prepared item.
@@ -818,13 +811,13 @@ impl PreparedFrame {
         &self.text_owners
     }
 
-    pub fn push_textbox(&mut self, textbox: PreparedTextBoxState) {
-        self.textboxes.push(textbox);
+    pub fn push_dialogue_view(&mut self, dialogue: PreparedDialogueViewState) {
+        self.dialogue_views.push(dialogue);
     }
 
     #[must_use]
-    pub fn textboxes(&self) -> &[PreparedTextBoxState] {
-        &self.textboxes
+    pub fn dialogue_views(&self) -> &[PreparedDialogueViewState] {
+        &self.dialogue_views
     }
 
     /// Returns the renderer-backed focused text target for platform IME sync.
@@ -873,26 +866,28 @@ impl PreparedFrame {
     }
 
     #[must_use]
-    pub fn has_textboxes(&self) -> bool {
-        !self.textboxes.is_empty()
+    pub fn has_dialogue_views(&self) -> bool {
+        !self.dialogue_views.is_empty()
     }
 
     #[must_use]
-    pub fn latest_textbox(&self) -> Option<&PreparedTextBoxState> {
-        self.textboxes.iter().max_by_key(|textbox| textbox.instance)
-    }
-
-    #[must_use]
-    pub fn has_revealing_textbox(&self) -> bool {
-        self.latest_textbox()
-            .is_some_and(|textbox| !textbox.reveal_complete)
-    }
-
-    #[must_use]
-    pub fn textbox_advance_available(&self) -> bool {
-        self.textboxes
+    pub fn latest_dialogue_view(&self) -> Option<&PreparedDialogueViewState> {
+        self.dialogue_views
             .iter()
-            .any(|textbox| textbox.advance_available)
+            .max_by_key(|dialogue| dialogue.instance)
+    }
+
+    #[must_use]
+    pub fn has_revealing_dialogue(&self) -> bool {
+        self.latest_dialogue_view()
+            .is_some_and(|dialogue| !dialogue.reveal_complete)
+    }
+
+    #[must_use]
+    pub fn dialogue_advance_available(&self) -> bool {
+        self.dialogue_views
+            .iter()
+            .any(|dialogue| dialogue.advance_available)
     }
 
     fn map_to_viewport(&mut self, mapping: PreparedFrameViewportMapping) {
@@ -1273,7 +1268,7 @@ impl SharedFramePlanContext {
                 scene.focus_navigation.clone(),
             ),
             view_scenes: Vec::new(),
-            textboxes: Vec::new(),
+            dialogue_views: Vec::new(),
             interaction: scene.interaction.clone(),
             focused_text_input: None,
         };

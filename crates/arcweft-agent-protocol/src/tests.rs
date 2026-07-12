@@ -260,7 +260,7 @@ fn test_serialization_observation_report() -> AgentObservationReport {
         parent_id: None,
         entity: Some("alice".to_owned()),
         layer: "dialogue".to_owned(),
-        role: "dialogue_textbox".to_owned(),
+        role: "dialogue_view".to_owned(),
         visible: true,
         enabled: true,
         polygon: bbox.polygon(),
@@ -593,7 +593,7 @@ fn observation_report_serializes_stable_snake_case_enums() {
     );
     assert_eq!(
         json["presentation_tree"]["nodes"][2]["role"],
-        "dialogue_textbox"
+        "dialogue_view"
     );
     assert_eq!(
         json["presentation_tree"]["nodes"][2]["rich_text_kind"],
@@ -1038,7 +1038,7 @@ fn capture_metadata_serializes_selected_object_image_resource() {
             parent_id: None,
             entity: Some("alice".to_owned()),
             layer: "dialogue".to_owned(),
-            role: "dialogue_textbox".to_owned(),
+            role: "dialogue_view".to_owned(),
             object_layer: None,
             object_depth: None,
             rich_text: None,
@@ -1072,7 +1072,7 @@ fn capture_metadata_serializes_selected_object_image_resource() {
     );
     assert_eq!(
         json["image"]["selected_capture"]["source"]["role"],
-        "dialogue_textbox"
+        "dialogue_view"
     );
 }
 

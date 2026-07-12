@@ -5,7 +5,7 @@ fn agent_observe_writes_layer_png_and_object_raw_images() {
     let path = temp_arcw(
         "agent-observe-image-capture",
         r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     font = serif
     text_color = rgb("#101112")
     inline_error = InlineFailure.fallback("?")
@@ -783,9 +783,9 @@ flow @flow.main main {
 }
 
 #[test]
-fn agent_observe_native_textbox_capture_bounds_include_ruby_extents() {
+fn agent_observe_native_dialogue_view_capture_bounds_include_ruby_extents() {
     let path = temp_arcw(
-        "agent-observe-native-textbox-ruby-crop-bounds",
+        "agent-observe-native-dialogue_view-ruby-crop-bounds",
         r"
 character @character.alice Alice as alice {}
 
@@ -794,17 +794,17 @@ flow @flow.main main {
 }
 ",
     );
-    let dir = temp_dir("agent-observe-native-textbox-ruby-crop-bounds");
-    let raw_path = dir.join("textbox-ruby-mask.rgba");
+    let dir = temp_dir("agent-observe-native-dialogue_view-ruby-crop-bounds");
+    let raw_path = dir.join("dialogue_view-ruby-mask.rgba");
 
-    let json = observe_native_textbox_object_raw_report(
+    let json = observe_native_dialogue_view_object_raw_report(
         &path,
         &raw_path,
         "mask",
         &[],
     );
     let image = &json["images"][0];
-    let textbox = find_textbox_object(&json);
+    let dialogue_view = find_dialogue_view_object(&json);
     let ruby = find_rich_text_ruby_object(&json, 0);
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
 
@@ -813,28 +813,28 @@ flow @flow.main main {
     assert_eq!(image["scope"]["id"], "object.dialogue.0.0");
     assert!(
         image["crop_origin"]["y"].as_u64().unwrap() <= agent_json_bbox_y(annotation),
-        "textbox object capture should start above the measured ruby annotation: {json}"
+        "dialogue_view object capture should start above the measured ruby annotation: {json}"
     );
     assert!(
         image["crop_origin"]["y"].as_u64().unwrap() + image["height"].as_u64().unwrap()
             >= agent_json_bbox_bottom(annotation),
-        "textbox object capture should include the measured ruby annotation: {json}"
+        "dialogue_view object capture should include the measured ruby annotation: {json}"
     );
     assert!(
-        agent_json_bbox_y(&textbox["bbox"]) <= agent_json_bbox_y(annotation)
-            && agent_json_bbox_bottom(&textbox["bbox"]) >= agent_json_bbox_bottom(annotation),
-        "textbox reserved layout bounds should include the measured ruby annotation: {json}"
+        agent_json_bbox_y(&dialogue_view["bbox"]) <= agent_json_bbox_y(annotation)
+            && agent_json_bbox_bottom(&dialogue_view["bbox"]) >= agent_json_bbox_bottom(annotation),
+        "dialogue_view reserved layout bounds should include the measured ruby annotation: {json}"
     );
-    assert_object_capture_ref_matches_image(textbox, image, "mask", "application/octet-stream");
+    assert_object_capture_ref_matches_image(dialogue_view, image, "mask", "application/octet-stream");
 
-    fs::remove_file(&path).expect("remove temp native textbox ruby crop source");
-    fs::remove_dir_all(&dir).expect("remove temp native textbox ruby crop dir");
+    fs::remove_file(&path).expect("remove temp native dialogue_view ruby crop source");
+    fs::remove_dir_all(&dir).expect("remove temp native dialogue_view ruby crop dir");
 }
 
 #[test]
-fn agent_observe_native_textbox_capture_bounds_include_vertical_columns() {
+fn agent_observe_native_dialogue_view_capture_bounds_include_vertical_columns() {
     let path = temp_arcw(
-        "agent-observe-native-textbox-vertical-crop-bounds",
+        "agent-observe-native-dialogue_view-vertical-crop-bounds",
         r"
 character @character.alice Alice as alice {}
 
@@ -843,17 +843,17 @@ flow @flow.main main {
 }
 ",
     );
-    let dir = temp_dir("agent-observe-native-textbox-vertical-crop-bounds");
-    let raw_path = dir.join("textbox-vertical-mask.rgba");
+    let dir = temp_dir("agent-observe-native-dialogue_view-vertical-crop-bounds");
+    let raw_path = dir.join("dialogue_view-vertical-mask.rgba");
 
-    let json = observe_native_textbox_object_raw_report(
+    let json = observe_native_dialogue_view_object_raw_report(
         &path,
         &raw_path,
         "mask",
         &[],
     );
     let image = &json["images"][0];
-    let textbox = find_textbox_object(&json);
+    let dialogue_view = find_dialogue_view_object(&json);
     let vertical_bottom = json["objects"]
         .as_array()
         .expect("objects are reported")
@@ -869,16 +869,16 @@ flow @flow.main main {
     assert!(
         image["crop_origin"]["y"].as_u64().unwrap() + image["height"].as_u64().unwrap()
             >= vertical_bottom,
-        "textbox object capture should include measured vertical cluster extents: {json}"
+        "dialogue_view object capture should include measured vertical cluster extents: {json}"
     );
     assert!(
-        agent_json_bbox_bottom(&textbox["bbox"]) >= vertical_bottom,
-        "textbox reserved layout bounds should include measured vertical cluster extents: {json}"
+        agent_json_bbox_bottom(&dialogue_view["bbox"]) >= vertical_bottom,
+        "dialogue_view reserved layout bounds should include measured vertical cluster extents: {json}"
     );
-    assert_object_capture_ref_matches_image(textbox, image, "mask", "application/octet-stream");
+    assert_object_capture_ref_matches_image(dialogue_view, image, "mask", "application/octet-stream");
 
-    fs::remove_file(&path).expect("remove temp native textbox vertical crop source");
-    fs::remove_dir_all(&dir).expect("remove temp native textbox vertical crop dir");
+    fs::remove_file(&path).expect("remove temp native dialogue_view vertical crop source");
+    fs::remove_dir_all(&dir).expect("remove temp native dialogue_view vertical crop dir");
 }
 
 #[test]
@@ -1636,13 +1636,13 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
     assert_eq!(image["composition"], "masked_framebuffer_crop");
     assert!(image["content_pixels"].as_u64().unwrap() > 0);
 
-    let textbox = json["objects"]
+    let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .expect("textbox object is observed");
-    let text_runs = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
+    let text_runs = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .expect("text runs are reported");
     assert!(
@@ -2877,13 +2877,13 @@ flow @flow.main main {
         serde_json::from_slice(&output.stdout).expect("expanded JLREQ report is JSON");
     assert_native_rich_text_layer_image_has_content(&json);
 
-    let textbox = json["objects"]
+    let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .expect("textbox object is observed");
-    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
+    let run = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .first()
@@ -3484,13 +3484,13 @@ flow @flow.main main {
     fs::remove_file(&path).expect("remove temp expanded normal JLREQ source");
     assert_native_rich_text_layer_image_has_content(&json);
 
-    let textbox = json["objects"]
+    let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .expect("textbox object is observed");
-    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
+    let run = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .first()
@@ -5356,13 +5356,13 @@ flow @flow.main main {
     fs::remove_file(&path).expect("remove temp strict JLREQ source");
     assert_native_rich_text_layer_image_has_content(&json);
 
-    let textbox = json["objects"]
+    let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .expect("textbox object is observed");
-    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
+    let run = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .first()

@@ -54,7 +54,7 @@ The importer validates:
 - placeholders are preserved.
 - source_hash matches or row is marked stale.
 - voice ID exists or missing voice policy allows it.
-- untrusted locale files do not introduce effectful tags: [call], [hook], [signal].
+- untrusted locale files do not introduce effectful tags such as [call] or [signal].
 - translated p/l/r/w control tags are allowed only if policy permits them.
 ```
 

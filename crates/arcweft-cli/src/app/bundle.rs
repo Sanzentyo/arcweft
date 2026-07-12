@@ -64,6 +64,7 @@ use arcweft_core::{
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
+use arcweft_lang_sema::dialogue_view::DialogueViewModelRegistry;
 use arcweft_lang_syntax::ast::{
     items::{
         StyleItem, ViewStyleAssignOpDecl, ViewStyleEnvironmentPredicateDecl,
@@ -535,15 +536,27 @@ fn collect_bundle_dsl_view_resources_for_package(
         })
         .collect::<Vec<_>>();
     let style = dsl_view_style_resource(&styles)?;
+    let dialogue_view_models = DialogueViewModelRegistry::from_hir(module).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+        ExitCode::FAILURE
+    })?;
     let fx_definitions = lower_fx_definitions_for_package(module, package).map_err(|error| {
         eprintln!("error: failed to compile View-visible Fx definitions: {error}");
         ExitCode::FAILURE
     })?;
-    let view_sidecars = view_sidecars(&views, style.as_ref(), image_objects, &fx_definitions)
-        .map_err(|error| {
-            eprintln!("{error}");
-            ExitCode::FAILURE
-        })?;
+    let view_sidecars = view_sidecars(
+        &views,
+        &dialogue_view_models,
+        style.as_ref(),
+        image_objects,
+        &fx_definitions,
+    )
+    .map_err(|error| {
+        eprintln!("{error}");
+        ExitCode::FAILURE
+    })?;
     let mut sidecars = BundleViewSidecars {
         style,
         ..BundleViewSidecars::default()

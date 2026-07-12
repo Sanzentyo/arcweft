@@ -19,7 +19,6 @@ use thiserror::Error;
 
 mod focus_navigation;
 mod surfaces;
-mod textboxes;
 mod view_text;
 
 /// Player-owned frame inputs shared by native, web, and Agent observation.
@@ -151,12 +150,6 @@ impl From<BundleViewportFit> for PlayerFrameFit {
 }
 
 impl PlayerFramePlanner {
-    /// Returns standard Rust-backed `TextBox` View bounds in stable target order.
-    #[must_use]
-    pub fn standard_textbox_bounds(viewport: RenderViewport, count: usize) -> Vec<HitRect> {
-        textboxes::standard_textbox_bounds(viewport, count)
-    }
-
     pub fn render_scene(
         input: &mut InputController,
         request: PlayerFrameRequest<'_>,
@@ -168,15 +161,7 @@ impl PlayerFramePlanner {
             &text_inputs,
         )?;
         Ok(RenderScene {
-            content_avoidance_regions: textboxes::standard_textbox_bounds(
-                request.viewport,
-                request
-                    .presentation
-                    .textboxes
-                    .iter()
-                    .filter(|textbox| textbox.active_entry().is_some())
-                    .count(),
-            ),
+            content_avoidance_regions: dialogue_content_avoidance_regions(request.presentation),
             choices: request
                 .presentation
                 .choices
@@ -226,6 +211,39 @@ impl PlayerFramePlanner {
         }
         planner.prepare(input, request)
     }
+}
+
+fn dialogue_content_avoidance_regions(presentation: &BundlePresentationSnapshot) -> Vec<HitRect> {
+    presentation
+        .view
+        .mounts
+        .iter()
+        .filter(|mount| mount.dialogue.is_some() && mount.path.segments().is_empty())
+        .filter_map(|mount| {
+            let owner = mount.scoped_id(&mount.view);
+            presentation
+                .surfaces
+                .iter()
+                .filter(|surface| surface.view.as_deref() == Some(owner.as_str()))
+                .map(|surface| {
+                    HitRect::new(
+                        milli_i32_to_f32(surface.bounds.x_milli),
+                        milli_i32_to_f32(surface.bounds.y_milli),
+                        milli_u32_to_f32(surface.bounds.width_milli),
+                        milli_u32_to_f32(surface.bounds.height_milli),
+                    )
+                })
+                .reduce(union_hit_rects)
+        })
+        .collect()
+}
+
+fn union_hit_rects(left: HitRect, right: HitRect) -> HitRect {
+    let min_x = left.x.min(right.x);
+    let min_y = left.y.min(right.y);
+    let max_x = (left.x + left.width).max(right.x + right.width);
+    let max_y = (left.y + left.height).max(right.y + right.height);
+    HitRect::new(min_x, min_y, max_x - min_x, max_y - min_y)
 }
 
 fn render_scroll_region(
@@ -450,10 +468,15 @@ impl PlayerFramePlannerState {
         let prepared_view_text = view_text::prepare_runtime_view_text(
             &mut self.shared,
             &mut frame,
-            input,
-            scene,
-            &presentation.view,
-            content_rect,
+            view_text::RuntimeViewTextRequest {
+                input,
+                scene,
+                presentation,
+                fx_definitions: request.fx_definitions,
+                visual_time_millis: request.visual_time_millis,
+                latest_reveal_complete: request.dialogue_reveal_complete,
+                content: content_rect,
+            },
         )?;
         surfaces::push_runtime_view_scene(
             &mut frame,
@@ -463,15 +486,6 @@ impl PlayerFramePlannerState {
             &prepared_view_text,
             content_rect,
         );
-        let textbox_request = textboxes::TextBoxViewFrameRequest::new(
-            scene,
-            presentation,
-            request.fx_definitions,
-            request.visual_time_millis,
-            request.dialogue_reveal_complete,
-            content_rect,
-        );
-        textboxes::push_textbox_views(&mut self.shared, &mut frame, &textbox_request)?;
         Ok(frame)
     }
 }

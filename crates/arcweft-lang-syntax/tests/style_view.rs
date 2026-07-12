@@ -751,3 +751,33 @@ pub view ButtonRow() {
         ViewModifier::Style(ViewStyleModifier::InlineCss(_))
     )));
 }
+
+#[test]
+fn view_container_accepts_a_trailing_modifier_chain() {
+    let parsed = parse_source(
+        r#"
+pub view DialoguePanel() {
+    Panel(width = 400px, height = 160px) {
+        Text("Hello")
+    }
+        .part(dialogue_panel)
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("view View body");
+    let panel = find_element(view.value(), "Panel").expect("expected root Panel");
+    assert!(matches!(
+        panel.modifiers(),
+        [ViewModifier::Part(part)] if part == "dialogue_panel"
+    ));
+}

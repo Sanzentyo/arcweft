@@ -63,7 +63,7 @@
 Style/defaults navigation is based on the effective presentation context at the
 cursor position, not only lexical scope. A context may include the selected
 project/build profile, module, flow, named scope path, current dialogue line or
-content call, speaker preset, character, textbox theme, selected dialogue
+content call, speaker preset, character, authored dialogue View style, selected dialogue
 defaults profile, and inline rich-text span stack.
 
 The dialogue RichText cascade is:
@@ -73,7 +73,7 @@ inline rich-text span
   -> line options
   -> speaker preset options
   -> character dialogue_style
-  -> dialogue window theme
+  -> authored dialogue View style
   -> selected dialogue defaults
   -> engine defaults
 ```
@@ -107,9 +107,9 @@ LSP features use that shared index:
   field in the current entry profile, including the manifest value that selected
   a dialogue defaults profile when that profile contributes to the field
 - go to active profile selection jumps to the manifest or build profile that
-  selected `@dialogue.defaults.mobile`
+  selected `@dialogue.mobile`
 - code actions can extract an override to a line option, speaker preset,
-  character `dialogue_style`, textbox theme, or dialogue defaults profile
+  character `dialogue_style`, authored View style, or dialogue defaults profile
 
 Generated or fully elaborated source is also surfaced through diagnostics.
 Domain lint names are used in user-authored attributes, while stable numeric

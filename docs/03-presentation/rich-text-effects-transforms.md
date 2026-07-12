@@ -87,7 +87,10 @@ and renderer-interface compatibility and a semantic hash for the body and
 resource bindings. Each View application or rich-text span derives a separate
 deterministic `FxInstanceId` from its retained location, authored ordinal, and
 optional local key; state and default seeds therefore do not collide between
-uses of the same definition.
+uses of the same definition. For a glyph-targeted application, `ctx.ordinal`
+is the logical glyph index relative to the first glyph reached by that
+application. It starts at zero independently for each application and is never
+a UTF-8 byte offset or the containing document's global glyph index.
 
 Extern Rust or WASM entries use the same declaration model:
 
@@ -101,15 +104,14 @@ extern rust mod studio_fx from crate "studio_fx" {
 }
 ```
 
-The removed `decoration`, `#[text_motion]`, `#[text_effect]`, and
-`#[text_shader]` forms have no compatibility aliases.
+Presentation extensions use the ordinary typed `#[fx] fn ... -> Fx` boundary.
 
 ---
 
 ## Effective presentation
 
 Each rich-text run and ruby annotation receives an effective
-`RichTextPresentation` after defaults, textbox theme, character style, line
+`RichTextPresentation` after defaults, authored View style, character style, line
 options, and inline spans are merged.
 
 Scalar fields such as `italic`, `oblique`, `opacity`, `layer`, and `z_index` use nearest
@@ -146,7 +148,7 @@ from ruby-specific overrides such as `ruby_size`, `ruby_gap`,
 | `scale` | post-layout scale |
 | `skew` | post-layout skew |
 | `origin` | pivot selection: baseline start, baseline center, center, or glyph center |
-| `target` | document, line, sentence, run, glyph, textbox, or screen |
+| `target` | node, content, background, line, glyph, or viewport |
 
 Transforms are visual operations unless their effect phase is explicitly
 `before_layout` or `layout_transform`. Visual transforms must not alter source
@@ -169,20 +171,18 @@ glyphs and ruby annotation glyphs.
 
 ---
 
-## Effect descriptor
+## Typed Fx application
 
-`RichTextEffectDescriptor` contains:
+RichText retains a typed `FxApplication`: definition ID, stable instance ID,
+validated parameter slots, target, phase, and source range. The referenced
+`FxDefinition` owns the complete typed graph, sampler programs, renderer
+interfaces, ABI hash, and semantic hash. Runtime does not interpret a second
+renderer-local effect descriptor or retain raw parameter tokens.
 
-| Field | Meaning |
-|---|---|
-| `id` | selector id without the leading dot, such as `shake` |
-| `params` | typed and raw authoring parameters |
-| `target` | effect target |
-| `phase` | execution phase |
-| `state_scope` | state lifetime for deterministic animation classes |
-
-Targets are `document`, `line`, `sentence`, `run`, `glyph`, `textbox`, and
-`screen`. The default target is `run`.
+Targets are `node`, `content`, `background`, `line`, `glyph`, and `viewport`.
+The default target is `content`. Per-instance state and deterministic sampling
+belong to `FxInstanceId`; no authored state-scope field selects an unrelated
+renderer cache.
 
 Phases run in this order:
 
@@ -259,25 +259,23 @@ registering a separate source-language motion-function attribute.
 `.typewriter` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
 `cps`, `delay`, `cursor`, and `capture_time` supplied by the observe/capture
-request. Native parameter interpretation treats `delay` as seconds; raw tokens
-with `s` or `ms` suffixes, such as `0.5s` or `500ms`, are accepted by the native
-renderer registry boundary. `cursor=true` asks the renderer to expose the next
-unrevealed glyph as a low-alpha ghost preview without changing layout; native
-adapters use `cursor_alpha` / `cursor_opacity` as an optional opacity override.
+request. Time literals such as `0.5s` or `500ms` are converted once during
+typed compilation; renderer adapters do not parse raw duration tokens or keep
+a native-only effect registry. `cursor=true` asks the typed built-in graph to
+expose the next unrevealed glyph as a low-alpha ghost preview without changing
+layout, with `cursor_alpha` / `cursor_opacity` as an optional typed override.
 
-`.shader` references a renderer shader registry entry. It does not embed shader
-source in dialogue text. Common parameters are `id`, `amount`, `dir`, `phase`,
-`color`, and registry-specific raw tokens. Native adapters support registered
-`run_offscreen_pass` glyph passes, registered `glyph_color` main-glyph tint
-passes, and registered `post_process` raster passes.
+`.shader` references a resource in the bundle's typed renderer-resource table;
+it does not embed shader source in dialogue text. Common parameters are `id`,
+`amount`, `dir`, `phase`, and `color`. Shared evaluation resolves glyph,
+offscreen, and post-process operations before a backend adapter receives them.
+Unknown resources and invalid uniform schemas are typed diagnostics rather
+than backend-local no-ops.
 
-`.host` and unknown custom effect ids are registry-dispatched. `.host` is the
-explicit host-dispatched form; its `id`, `effect`, or `name` parameter names the
-renderer registry entry and is descriptor metadata rather than a custom
-parameter. For example, `[.host id=sparkle]...[/]` lowers to an effect descriptor
-with id `sparkle`. If no registry entry exists, the descriptor is preserved and
-observation reports it; rendering may no-op with a diagnostic, but must not
-silently reinterpret it as a different builtin.
+Unknown custom effect shorthand retains its exact missing definition identity
+and produces a diagnostic; it is not reinterpreted as a built-in basename.
+`.host` is not a visual-registry escape hatch. Host dispatch is represented by
+the explicit typed `phase=host_event` path described below.
 
 If an effect selector uses `phase=host_event`, it is not a visual presentation
 style. Lowering emits a typed `DialogueHostEvent::Effect` marker with the
@@ -348,37 +346,14 @@ child captures instead of a synthetic compatibility raster.
 ## Conformance expectations
 
 An adapter may advertise a narrower renderer profile during development, but
-the data contract does not change by profile. These fields must round-trip
-through parsing, lowering, observation, and resource metadata even when a visual
-renderer has not implemented every operation:
+the data contract does not change by profile. Typed transforms, targets,
+phases, shader resource IDs, sampler programs, and ruby presentations must
+round-trip through parsing, lowering, bundle codecs, evaluation, observation,
+and capture.
 
-- transform `skew`, `origin`, and `target`
-- effect `target`, `phase`, and `state_scope`
-- unknown custom effect parameters as raw tokens
-- shader refs and registry-owned parameters
-- ruby base and annotation presentations
-
-Unsupported rendering behavior is reported as diagnostics or profile metadata.
-It must not introduce alternate syntax, compatibility aliases, hidden fallback
-semantics, or silent no-op behavior for a recognized effect at the wrong phase.
-The native rich-text placement renderer currently supports builtin placement
-effects for `before_layout`, `layout_transform`, and `glyph_transform`, builtin
-typewriter masking for `glyph_mask`, registry-dispatched custom placement
-effects, and registry-dispatched custom `glyph_color` effects for observe,
-visual-plan, and framebuffer capture paths. The native renderer also supports
-registered `run_offscreen_pass` shaders for text and ruby glyph submissions and
-registered `glyph_color` shaders that tint the main glyph pass through the same
-native shader registry, plus registered `post_process` shaders over native
-color framebuffer/readback captures. The default registry provides `soft_glow`,
-`warm_glow`, and `screen_tint`, and native adapters may register additional
-shader IDs through the shader registry. Unsupported shader ids, supported
-shader ids used at phases other than `run_offscreen_pass` / `glyph_color` /
-`post_process`, builtin effects used at unsupported visual phases,
-unregistered motion function ids, and unregistered custom effects must be
-diagnosed instead of being silently reinterpreted as placement effects.
-`host_event` phase effects leave the visual effect pipeline during lowering and
-become typed host event markers.
-For builtin wave
-placement, `target=glyph` evaluates the phase per glyph, while `target=run` and
-broader targets evaluate the placement as one group; shake and jitter grouping
-is controlled by `state_scope`.
+Unknown parameters fail closed-schema compilation. Missing resources, ABI
+mismatch, unsupported target/interface pairs, non-finite arithmetic, and
+budget exhaustion produce typed diagnostics carrying the definition and
+instance identities. They do not introduce alternate syntax, hidden fallback
+semantics, or silent no-op rendering. Native, Web, WASM, and headless hosts use
+the same reference evaluator and submit only its resolved plan.

@@ -595,20 +595,21 @@ impl FramePreparedText {
         }
         let style = self.style_for_glyph(glyph_index)?;
         let text = self.text.get(start..end).unwrap_or("").to_owned();
+        let visible = glyph.visible && glyph.opacity_milli > 0;
         Some(FrameText {
             text,
             bounds: glyph.ink_bounds,
             font_size_milli: i64::from(style.font_size_milli),
             line_height_milli: i64::from(style.line_height_milli),
             rgba: glyph.rgba,
-            visible: glyph.visible,
+            visible,
             source: FrameTextSource {
                 kind: TextRunSourceKind::PreparedTextGlyph,
                 prepared_text_index: Some(item_index),
                 line_index: Some(glyph.line_index as usize),
                 source_start: Some(start),
                 source_end: Some(end),
-                reveal_state: Some(if glyph.visible {
+                reveal_state: Some(if visible {
                     "visible".to_owned()
                 } else {
                     "hidden".to_owned()

@@ -30,6 +30,7 @@ struct DialogueFxEvaluator<'a> {
     resolver: &'a dyn FxApplicationResolver,
     capabilities: FxCapabilitySet,
     budgets: BTreeMap<FxInstanceId, FxEvaluationBudget>,
+    ordinal_origins: BTreeMap<FxInstanceId, u32>,
     diagnostics: Vec<FxDiagnostic>,
     resources: FxRenderResourceTable,
     offscreen_passes: Vec<ResolvedFxOffscreenPass>,
@@ -43,6 +44,7 @@ impl<'a> DialogueFxEvaluator<'a> {
             resolver,
             capabilities: FxCapabilitySet::canonical(),
             budgets: BTreeMap::new(),
+            ordinal_origins: BTreeMap::new(),
             diagnostics: Vec::new(),
             resources: FxRenderResourceTable::arcweft_builtins(),
             offscreen_passes: Vec::new(),
@@ -52,6 +54,19 @@ impl<'a> DialogueFxEvaluator<'a> {
     }
 
     fn evaluate(&mut self, application: &FxApplication, ordinal: u32) -> ResolvedFxPlan {
+        self.evaluate_with_scope(application, ordinal, false)
+    }
+
+    fn evaluate_glyph(&mut self, application: &FxApplication, ordinal: u32) -> ResolvedFxPlan {
+        self.evaluate_with_scope(application, ordinal, true)
+    }
+
+    fn evaluate_with_scope(
+        &mut self,
+        application: &FxApplication,
+        ordinal: u32,
+        glyph_scope: bool,
+    ) -> ResolvedFxPlan {
         let binding = match self.resolver.resolve(application) {
             Ok(binding) => binding,
             Err(diagnostic) => {
@@ -59,6 +74,13 @@ impl<'a> DialogueFxEvaluator<'a> {
                 self.record(diagnostic.clone());
                 return ResolvedFxPlan::from_diagnostic(diagnostic);
             }
+        };
+        let ordinal = if glyph_scope {
+            let instance = binding.instance.instance;
+            let origin = *self.ordinal_origins.entry(instance).or_insert(ordinal);
+            ordinal.saturating_sub(origin)
+        } else {
+            ordinal
         };
         let budget = self.budgets.entry(binding.instance.instance).or_default();
         let plan = FxGraphEvaluator::evaluate(
@@ -77,13 +99,34 @@ impl<'a> DialogueFxEvaluator<'a> {
     }
 
     fn unsupported(&mut self, application: &FxApplication, message: impl Into<String>) {
+        self.application_error(
+            application,
+            FxDiagnosticCode::UnsupportedCapability,
+            message,
+        );
+    }
+
+    fn render_resource_error(
+        &mut self,
+        application: &FxApplication,
+        error: &FxRenderResourceError,
+    ) {
+        self.application_error(application, error.diagnostic_code(), error.to_string());
+    }
+
+    fn application_error(
+        &mut self,
+        application: &FxApplication,
+        code: FxDiagnosticCode,
+        message: impl Into<String>,
+    ) {
         let instance = self
             .resolver
             .resolve(application)
             .ok()
             .map(|binding| binding.instance.instance);
         self.record(FxDiagnostic::error(
-            FxDiagnosticCode::UnsupportedCapability,
+            code,
             FxDiagnosticContext {
                 definition: Some(application.definition().clone()),
                 instance,
@@ -130,7 +173,7 @@ impl<'a> DialogueFxEvaluator<'a> {
                 }),
             };
             if let Err(error) = result {
-                self.unsupported(application, error.to_string());
+                self.render_resource_error(application, &error);
                 return false;
             }
         }
@@ -145,7 +188,7 @@ impl<'a> DialogueFxEvaluator<'a> {
             let output = match self.resources.resolve_shader(operation) {
                 Ok(output) => output,
                 Err(error) => {
-                    self.unsupported(application, error.to_string());
+                    self.render_resource_error(application, &error);
                     return false;
                 }
             };
@@ -532,13 +575,14 @@ fn apply_glyph_fx(
     fx: &mut DialogueFxEvaluator<'_>,
 ) -> Result<(), FramePlanError> {
     for application in &presentation.fx {
-        let plan = fx.evaluate(application, logical_ordinal);
+        let plan = fx.evaluate_glyph(application, logical_ordinal);
         if !plan.is_conformant() {
             continue;
         }
         let mut candidate = glyph_paint.clone();
         let mut transform = candidate.transform.resolved();
         let mut unsupported = None;
+        let mut render_error = None;
         for operation in plan.glyph() {
             if !matches!(
                 operation.target(),
@@ -575,7 +619,7 @@ fn apply_glyph_fx(
                             break;
                         }
                         Err(error) => {
-                            unsupported = Some(error.to_string());
+                            render_error = Some(error);
                             break;
                         }
                     }
@@ -607,7 +651,7 @@ fn apply_glyph_fx(
                         break;
                     }
                     Err(error) => {
-                        unsupported = Some(error.to_string());
+                        render_error = Some(error);
                         break;
                     }
                 }
@@ -628,7 +672,7 @@ fn apply_glyph_fx(
                     match ResolvedFxMask::from_operation(operation) {
                         Ok(mask) => candidate.masks.push(mask),
                         Err(error) => {
-                            unsupported = Some(error.to_string());
+                            render_error = Some(error);
                             break;
                         }
                     }
@@ -640,6 +684,10 @@ fn apply_glyph_fx(
                     break;
                 }
             }
+        }
+        if let Some(error) = render_error {
+            fx.render_resource_error(application, &error);
+            continue;
         }
         if let Some(message) = unsupported {
             fx.unsupported(application, message);

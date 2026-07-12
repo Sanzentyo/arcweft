@@ -61,13 +61,22 @@ fn parses_positional_look_and_extended_line_options() {
 }
 
 #[test]
-fn rejects_removed_face_line_option() {
-    let errors = parse_errors("alice(face=smile):[おはよう。[p]]");
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("`face` is not a canonical"))
-    );
+fn unreserved_line_options_remain_extension_arguments_without_builtin_meaning() {
+    let tree = parse_ok("alice(project_option=soft):[おはよう。[p]]");
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected speaker line");
+    };
+    let FlowItem::SpeakerLine(line) = item.as_ref() else {
+        panic!("expected speaker line");
+    };
+
+    assert!(line.options().look().is_none());
+    assert!(matches!(
+        line.options().args(),
+        [argument]
+            if argument.name() == "project_option"
+                && matches!(argument.value(), Expr::Path(path) if path == "soft")
+    ));
 }
 
 #[test]
@@ -104,7 +113,7 @@ fn speaker_preset_options_parse_but_reject_unresolved_atoms() {
     let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    let alice2 = alice(face=smile, mood=embarrassed, custom_style=soft, window=@textbox:.side)
+    let alice2 = alice(face=smile, mood=embarrassed, custom_style=soft, view=@view:.side)
     alice2: おはよう。[p]
     alice.face(worried)
 }
@@ -145,7 +154,7 @@ fn speaker_preset_options_accept_resolved_variant_atoms() {
     let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    let alice2 = alice(face=.smile, voice=auto, window=@textbox:.side)
+    let alice2 = alice(face=.smile, voice=auto, view=@view:.side)
     alice2: おはよう。[p]
     alice.face(.worried)
 }
@@ -631,7 +640,7 @@ fn lowers_narrator_aliases_and_family_relative_windows() {
         r"
 flow @flow.opening opening {
     scope rain {
-        ナレーション(id=@.voiceover, window=@textbox:.narrator):
+        ナレーション(id=@.voiceover, view=@view:.narrator):
             扉の向こうから、雨の音がした。[p]
     }
 }
@@ -651,8 +660,8 @@ flow @flow.opening opening {
         "say.opening.narrator.rain.voiceover"
     );
     assert_eq!(
-        line.window().expect("window").body(),
-        "textbox.opening.rain.narrator"
+        line.view().expect("view").body(),
+        "view.opening.rain.narrator"
     );
 }
 

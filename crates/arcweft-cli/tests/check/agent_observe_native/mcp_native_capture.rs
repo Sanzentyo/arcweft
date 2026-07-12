@@ -4,7 +4,7 @@ fn agent_mcp_stdio_observes_and_reads_rich_text_child_image() {
     let path = temp_arcw(
         "agent-mcp-rich-text-image",
         r#"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     font = serif
 }
 
@@ -146,25 +146,25 @@ fn agent_mcp_stdio_observes_profile_selected_dialogue_defaults() {
     );
     assert_eq!(session["observed"], true);
     assert_eq!(session["source"], "main.arcw");
-    let textbox = session["objects"]
+    let dialogue_view = session["objects"]
         .as_array()
         .expect("MCP session objects are listed")
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .unwrap_or_else(|| panic!("MCP profile observation should include textbox: {session}"));
-    let contributions = observed_object_rich_text_frame(textbox)["style_contributions"]
+        .find(|object| object["role"] == "dialogue_view")
+        .unwrap_or_else(|| panic!("MCP profile observation should include dialogue_view: {session}"));
+    let contributions = observed_object_rich_text_frame(dialogue_view)["style_contributions"]
         .as_array()
-        .expect("MCP textbox style contributions are reported");
+        .expect("MCP dialogue_view style contributions are reported");
     assert!(contributions.iter().any(|contribution| {
-        contribution["path"] == "window"
-            && contribution["value"] == "@textbox.mobile"
-            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+        contribution["path"] == "view"
+            && contribution["value"] == "@view.MobileDialogue"
+            && contribution["source"]["item_id"] == "dialogue.mobile"
             && contribution["active"] == true
     }));
     assert!(contributions.iter().any(|contribution| {
         contribution["path"] == "rich_text.ruby.gap"
             && contribution["value"] == "1px"
-            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+            && contribution["source"]["item_id"] == "dialogue.mobile"
             && contribution["active"] == true
     }));
 }
@@ -1043,7 +1043,7 @@ fn agent_mcp_stdio_captures_source_without_prior_observe() {
     let path = temp_arcw(
         "agent-mcp-direct-capture",
         r#"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     font = serif
 }
 
@@ -1251,7 +1251,7 @@ flow @flow.main main {
     assert_eq!(metadata["image"]["renderer"], "native");
     assert!(
         metadata["image"]["content_bbox"]["x"].as_u64().unwrap() >= 96,
-        "native MCP capture should align with the observed textbox bbox"
+        "native MCP capture should align with the observed dialogue_view bbox"
     );
     assert_mcp_png_capture_content(&responses[2], "native capture resource metadata is JSON");
     let read_metadata = mcp_content_metadata(
@@ -1444,7 +1444,7 @@ flow @flow.main main {
     assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
         metadata["image"]["content_pixels"].as_u64().unwrap() < capture_width * capture_height,
-        "native object color capture should isolate glyph regions inside the textbox crop"
+        "native object color capture should isolate glyph regions inside the dialogue_view crop"
     );
 }
 
@@ -1761,11 +1761,11 @@ flow @flow.main main {
     );
     assert!(
         metadata["image"]["width"].as_u64().unwrap() < 180,
-        "native ruby element crop should be much narrower than the textbox"
+        "native ruby element crop should be much narrower than the dialogue_view"
     );
     assert!(
         metadata["image"]["height"].as_u64().unwrap() < 120,
-        "native ruby element crop should be much shorter than the textbox"
+        "native ruby element crop should be much shorter than the dialogue_view"
     );
     assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
     assert!(

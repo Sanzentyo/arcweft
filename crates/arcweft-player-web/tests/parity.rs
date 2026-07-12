@@ -146,7 +146,7 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
             && item
                 .owner
                 .as_ref()
-                .is_some_and(|owner| owner.kind.ends_with(":speaker"))
+                .is_some_and(|owner| owner.kind.starts_with("view:"))
     }));
 }
 
@@ -300,9 +300,9 @@ fn web_frame_report_serializes_canonical_prepared_text_evidence() {
         .find(|item| {
             item.owner
                 .as_ref()
-                .is_some_and(|owner| owner.kind.ends_with(":body"))
+                .is_some_and(|owner| owner.kind.starts_with("dialogue:"))
         })
-        .expect("prepared TextBox body");
+        .expect("prepared DialogueView body");
 
     assert!(!body.lines.is_empty());
     assert!(!body.runs.is_empty());
@@ -582,7 +582,7 @@ fn dialogue_text(report: &WebFrameObservationReport) -> String {
         .filter(|item| {
             item.owner
                 .as_ref()
-                .is_some_and(|owner| owner.kind.ends_with(":body"))
+                .is_some_and(|owner| owner.kind.starts_with("dialogue:"))
         })
         .map(|item| item.visible_text.as_str())
         .collect()

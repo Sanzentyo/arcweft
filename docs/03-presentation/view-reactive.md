@@ -1,6 +1,6 @@
 # Game Native View
 
-Game Native View は SwiftUI 風の宣言的・リアクティブ View。HTML/CSS とは別に、ゲーム画面、選択肢、HUD、text box、debug overlay、Agent 観測に使う。
+Game Native View は SwiftUI 風の宣言的・リアクティブ View。HTML/CSS とは別に、ゲーム画面、選択肢、HUD、dialogue View、debug overlay、Agent 観測に使う。
 
 ## View
 
@@ -64,7 +64,7 @@ no-op へは落とさない。空の View body は長さ 0 の正規 span とし
 flow から mount された View を root とし、View body 内の nested View call を
 再帰的にたどった到達可能な定義だけを bundle に含める。`mod game.opening` 内の
 `Child(...)` は `view.game.opening.Child` へ解決される。module path の区切りは
-`.` であり、`mod game::opening` は構文診断になる。
+`.` である。
 
 ## Retained execution and mount identity
 
@@ -80,6 +80,8 @@ View evaluator は bundle の `ViewValueProgram` を共通の typed value evalua
 読み、未初期化 slot、型不一致、非有限値、budget 超過は structured diagnostic に
 なる。placeholder 値を実行値として使わない。context time は mount activation から
 の logical seconds、ordinal は対象内の logical instruction/item index である。
+glyph-target sampler の ordinal は Fx application ごとに最初の対象 glyph を 0
+として rebase し、文書全体の glyph index や UTF-8 byte offset を渡さない。
 reduce-motion 時は sampler time を 0 に固定する。
 
 `Await` の state discriminant は `pending = 0`、`ready = 1`、`error = 2`、

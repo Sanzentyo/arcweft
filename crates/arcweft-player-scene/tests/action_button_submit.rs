@@ -15,9 +15,9 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, PreparedFrame, PreparedTextBoxState, RenderActionButton,
-    RenderActionButtonAction, RenderControlStyle, RenderPreferences, RenderScene,
-    RenderTextInputControl, RenderViewport, SharedFramePlanContext,
+    ChoiceScroll, InteractionVisualState, PreparedDialogueViewState, PreparedFrame,
+    RenderActionButton, RenderActionButtonAction, RenderControlStyle, RenderPreferences,
+    RenderScene, RenderTextInputControl, RenderViewport, SharedFramePlanContext,
 };
 
 fn prepare(
@@ -117,10 +117,10 @@ fn action_invoke_scene() -> RenderScene {
     }
 }
 
-fn prepare_with_textbox(scene: &RenderScene) -> PreparedFrame {
+fn prepare_with_dialogue_view(scene: &RenderScene) -> PreparedFrame {
     let mut frame = prepare(scene).expect("frame prepares");
-    frame.push_textbox(PreparedTextBoxState {
-        textbox: 0,
+    frame.push_dialogue_view(PreparedDialogueViewState {
+        dialogue: 0,
         entry: 0,
         mount: 0,
         revision: 0,
@@ -129,6 +129,13 @@ fn prepare_with_textbox(scene: &RenderScene) -> PreparedFrame {
         bounds: HitRect::new(32.0, 300.0, 736.0, 148.0),
         reveal_complete: true,
         advance_available: true,
+        primary_action: Some(arcweft_view::DialogueAdvanceTarget::new(
+            arcweft_view::DialoguePresentationId::new(0),
+            arcweft_view::DialogueEntryId::new(0),
+            arcweft_view::DialogueInstanceId::new(0),
+            arcweft_view::DialogueStageIndex::new(0),
+            arcweft_view::DialogueRevision::new(0),
+        )),
     });
     frame
 }
@@ -159,7 +166,7 @@ fn pointer_activation_on_action_button_emits_semantic_action() {
 #[test]
 fn pointer_activation_on_action_button_does_not_implicitly_advance_dialogue() {
     let scene = action_invoke_scene();
-    let frame = prepare_with_textbox(&scene);
+    let frame = prepare_with_dialogue_view(&scene);
     let mut input = InputController::default();
     let position = ViewportPoint::new(80.0, 72.0);
 
@@ -317,6 +324,31 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
         panic!("expected action invoke render action");
     };
     assert_eq!(payload.as_deref(), Some("input.visitor_name.text"));
+}
+
+#[test]
+fn unavailable_dialogue_primary_action_lowers_as_a_disabled_noop() {
+    let buttons = RuntimeActionButtonLowerer::lower_buttons(
+        &[ViewRuntimeActionButton {
+            public_id: "button.dialogue.primary".to_owned(),
+            target: "button.dialogue.primary".to_owned(),
+            view: Some("view.mount.4".to_owned()),
+            containing_scroll_region: None,
+            label: String::new(),
+            enabled: false,
+            bounds: ViewRuntimeButtonBounds::new(57_600, 460_800, 1_164_800, 201_600),
+            action: ViewRuntimeActionButtonAction::DialoguePrimaryAction {
+                parameter: "dialogue".to_owned(),
+                target: None,
+            },
+            style: ViewRuntimeControlStyle::default(),
+        }],
+        &[],
+    )
+    .expect("an unavailable typed dialogue action is a valid disabled control");
+
+    assert!(!buttons[0].enabled);
+    assert_eq!(buttons[0].action, RenderActionButtonAction::Noop);
 }
 
 #[test]

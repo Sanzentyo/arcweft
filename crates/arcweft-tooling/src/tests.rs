@@ -242,7 +242,7 @@ fn expand_sugar_preserves_source_allowed_decl_identity_surface() {
 
 #[test]
 fn expand_sugar_nests_dotted_dialogue_defaults_assignments() {
-    let source = "pub dialogue defaults @dialogue.defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
+    let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
     let report = format_source(
         source,
         FormatOptions {

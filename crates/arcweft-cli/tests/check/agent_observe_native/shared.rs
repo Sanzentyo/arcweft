@@ -36,7 +36,7 @@ fn capture_native_png_report(source_path: &Path, png_path: &Path) -> serde_json:
     serde_json::from_slice(&output.stdout).expect("native capture report is JSON")
 }
 
-fn observe_native_textbox_object_raw_report(
+fn observe_native_dialogue_view_object_raw_report(
     source_path: &Path,
     raw_path: &Path,
     capture_kind: &str,
@@ -65,24 +65,24 @@ fn observe_native_textbox_object_raw_report(
     command.args(extra_args);
     let output = command
         .output()
-        .expect("arcw agent observe writes native textbox object raw crop");
+        .expect("arcw agent observe writes native dialogue_view object raw crop");
 
     assert!(
         output.status.success(),
-        "native textbox object {capture_kind} capture should succeed, stderr: {}",
+        "native dialogue_view object {capture_kind} capture should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("native textbox object raw report is JSON");
+        serde_json::from_slice(&output.stdout).expect("native dialogue_view object raw report is JSON");
     let width = json["images"][0]["width"]
         .as_u64()
-        .expect("native textbox object raw width is reported");
+        .expect("native dialogue_view object raw width is reported");
     let height = json["images"][0]["height"]
         .as_u64()
-        .expect("native textbox object raw height is reported");
+        .expect("native dialogue_view object raw height is reported");
     assert_eq!(
         fs::read(raw_path)
-            .expect("read native textbox object raw crop")
+            .expect("read native dialogue_view object raw crop")
             .len(),
         4 * usize::try_from(width).expect("raw width fits usize")
             * usize::try_from(height).expect("raw height fits usize")
@@ -133,16 +133,16 @@ fn observe_native_rich_text_layer_report_with_viewport(
     serde_json::from_slice(&output.stdout).expect("native rich-text layer report is JSON")
 }
 
-fn find_textbox_object(report: &serde_json::Value) -> &serde_json::Value {
+fn find_dialogue_view_object(report: &serde_json::Value) -> &serde_json::Value {
     report["objects"]
         .as_array()
         .expect("objects are reported")
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .unwrap_or_else(|| panic!("textbox object should be observed: {report}"))
+        .find(|object| object["role"] == "dialogue_view")
+        .unwrap_or_else(|| panic!("dialogue_view object should be observed: {report}"))
 }
 
-fn find_textbox_object_by_rich_text_line<'a>(
+fn find_dialogue_view_object_by_rich_text_line<'a>(
     report: &'a serde_json::Value,
     line: &str,
 ) -> &'a serde_json::Value {
@@ -151,11 +151,11 @@ fn find_textbox_object_by_rich_text_line<'a>(
         .expect("objects are reported")
         .iter()
         .find(|object| {
-            object["role"] == "dialogue_textbox"
+            object["role"] == "dialogue_view"
                 && observed_object_rich_text_frame(object)["line"] == line
         })
         .unwrap_or_else(|| {
-            panic!("textbox object for rich-text line `{line}` should be observed: {report}")
+            panic!("dialogue_view object for rich-text line `{line}` should be observed: {report}")
         })
 }
 
@@ -168,18 +168,18 @@ fn observed_object_rich_text_frame(object: &serde_json::Value) -> &serde_json::V
     &object["content"]["frame"]
 }
 
-fn rich_text_text_runs(textbox: &serde_json::Value) -> &[serde_json::Value] {
-    observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
+fn rich_text_text_runs(dialogue_view: &serde_json::Value) -> &[serde_json::Value] {
+    observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
-        .unwrap_or_else(|| panic!("textbox display_map should expose text_runs: {textbox}"))
+        .unwrap_or_else(|| panic!("dialogue_view display_map should expose text_runs: {dialogue_view}"))
 }
 
-fn rich_text_text_run_has_effect(textbox: &serde_json::Value, id: &str) -> bool {
-    rich_text_text_run_effect_count(textbox, id) > 0
+fn rich_text_text_run_has_effect(dialogue_view: &serde_json::Value, id: &str) -> bool {
+    rich_text_text_run_effect_count(dialogue_view, id) > 0
 }
 
-fn rich_text_text_run_effect_count(textbox: &serde_json::Value, id: &str) -> usize {
-    rich_text_text_runs(textbox)
+fn rich_text_text_run_effect_count(dialogue_view: &serde_json::Value, id: &str) -> usize {
+    rich_text_text_runs(dialogue_view)
         .iter()
         .flat_map(|run| {
             run["presentation"]["effects"]
@@ -191,8 +191,8 @@ fn rich_text_text_run_effect_count(textbox: &serde_json::Value, id: &str) -> usi
         .count()
 }
 
-fn rich_text_text_run_has_shader(textbox: &serde_json::Value, id: &str) -> bool {
-    rich_text_text_runs(textbox).iter().any(|run| {
+fn rich_text_text_run_has_shader(dialogue_view: &serde_json::Value, id: &str) -> bool {
+    rich_text_text_runs(dialogue_view).iter().any(|run| {
         run["presentation"]["shaders"]
             .as_array()
             .into_iter()
@@ -202,10 +202,10 @@ fn rich_text_text_run_has_shader(textbox: &serde_json::Value, id: &str) -> bool 
 }
 
 fn rich_text_text_run_has_object_proxy(
-    textbox: &serde_json::Value,
+    dialogue_view: &serde_json::Value,
     predicate: impl Fn(&serde_json::Value) -> bool,
 ) -> bool {
-    rich_text_text_runs(textbox).iter().any(|run| {
+    rich_text_text_runs(dialogue_view).iter().any(|run| {
         run["presentation"]["object_proxies"]
             .as_array()
             .into_iter()
@@ -685,10 +685,10 @@ fn assert_full_grammar_text_line_object_readback(source_path: &Path, json: &serd
 }
 
 fn rich_text_text_run_has_transform(
-    textbox: &serde_json::Value,
+    dialogue_view: &serde_json::Value,
     predicate: impl Fn(&serde_json::Value) -> bool,
 ) -> bool {
-    rich_text_text_runs(textbox).iter().any(|run| {
+    rich_text_text_runs(dialogue_view).iter().any(|run| {
         let transform = &run["presentation"]["transform"];
         !transform.is_null() && predicate(transform)
     })
@@ -931,13 +931,13 @@ fn find_rich_text_line_object_by_line<'a>(
 }
 
 fn first_text_run_presentation_layout(report: &serde_json::Value) -> &serde_json::Value {
-    let textbox = report["objects"]
+    let dialogue_view = report["objects"]
         .as_array()
         .expect("objects are reported")
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .unwrap_or_else(|| panic!("textbox object should be observed: {report}"));
-    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
+        .find(|object| object["role"] == "dialogue_view")
+        .unwrap_or_else(|| panic!("dialogue_view object should be observed: {report}"));
+    let run = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .expect("text runs are reported")
         .first()
@@ -1032,13 +1032,13 @@ fn rich_text_proxy_parent_id(object: &serde_json::Value) -> String {
     let object_id = object["id"]
         .as_str()
         .unwrap_or_else(|| panic!("rich-text object id is reported: {object}"));
-    let (textbox_id, suffix) = object_id
+    let (dialogue_view_id, suffix) = object_id
         .split_once(".proxy.")
         .unwrap_or_else(|| panic!("rich-text proxy object id should include .proxy.: {object_id}"));
     let run_index = suffix.split('.').next().unwrap_or_else(|| {
         panic!("rich-text proxy object id should include run index: {object_id}")
     });
-    format!("{textbox_id}.run.{run_index}")
+    format!("{dialogue_view_id}.run.{run_index}")
 }
 
 fn presentation_tree_node<'a>(

@@ -137,10 +137,10 @@ trusted axiom @axiom.resource_manifest_hashes {
 }
 
 #[test]
-fn rejects_old_memo_attribute_and_cache_option() {
+fn rejects_unknown_top_level_sigil_and_invalid_memo_option() {
     let errors = parse_errors(
         r"
-@memo(scope = scene)
+@project_attribute(scope = scene)
 fn route_title(route: Ref<Flow>) -> String {
     registry.flow(route).title
 }
@@ -153,7 +153,11 @@ cache session
 ",
     );
 
-    assert!(errors.iter().any(|error| error.message().contains("@memo")));
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message() == "`@` does not start a top-level item")
+    );
     assert!(errors.iter().any(|error| error.message().contains("cache")));
 }
 
@@ -1003,11 +1007,9 @@ fn score(base: i64, bonus: i64) -> i64 {
 fn declaration_relative_ids_normalize_to_their_decl_family() {
     let tree = parse_ok(
         r"
-character @.alice Alice as alice {
-}
+character @.alice {}
 
-character @. bob Bob as bob {
-}
+character @. bob {}
 
 signal @signal:.current_flow: Watch<Ref<Flow>>
 
@@ -1019,7 +1021,7 @@ hook @.choice_visible {
 }
 
 dialogue defaults @dialogue:.opening {
-    window = @textbox.side
+    view = @view.side
 }
 
 source @source:.events() {
@@ -1450,7 +1452,7 @@ pub parser parse_image_header<'a>: Parser<ImageHeader<'a>, ParseError>
 fn parses_extern_rust_module_declaration_from_docs() {
     let tree = parse_ok(
         r#"
-extern rust mod mini_games::truck from crate "truck_game" {
+extern rust mod mini_games.truck from crate "truck_game" {
     pub event TruckEvent
     pub type TruckResult
     pub fn score_to_rank(score: i32) -> Rank
@@ -1462,7 +1464,7 @@ extern rust mod mini_games::truck from crate "truck_game" {
         panic!("expected extern module item");
     };
     assert_eq!(item.abi(), "rust");
-    assert_eq!(item.path(), "mini_games::truck");
+    assert_eq!(item.path(), "mini_games.truck");
     assert_eq!(item.source(), Some(r#"crate "truck_game""#));
     assert!(item.body().contains("pub activity truck_game"));
     assert!(matches!(

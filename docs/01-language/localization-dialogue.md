@@ -381,7 +381,7 @@ Import validation checks:
 - placeholders are preserved.
 - rich text markup is well-formed.
 - ruby syntax is valid if present.
-- untrusted locale files cannot add [call], [hook], [signal], or other effectful tags.
+- untrusted locale files cannot add effectful tags such as [call] or [signal].
 - p/l/r/w tags appear only if locale policy allows translated control marks.
 ```
 
@@ -566,7 +566,7 @@ Diagnostics:
 - invalid rich text markup
 - forbidden translated control tag
 - missing voice for locale
-- text too long for textbox
+- text too long for its View container
 - choice label exceeds layout constraints
 ```
 

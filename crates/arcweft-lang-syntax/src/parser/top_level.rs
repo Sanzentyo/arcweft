@@ -84,15 +84,7 @@ impl Parser<'_> {
                 *sinks.source_attrs_open = false;
                 self.reject_pending_doc(range);
                 self.reject_pending_attrs(range);
-                if Self::use_line_has_removed_execution_mode(trimmed) {
-                    self.push_error(
-                        range,
-                        "`lazy use` and `eager use` were removed from Arcweft import syntax",
-                        ["use module::path"],
-                        Some(trimmed),
-                        ["remove the import qualifier; use compiler build settings and content availability declarations for demand policy"],
-                    );
-                } else if let Some(tree) = Self::use_tree_source(trimmed)
+                if let Some(tree) = Self::use_tree_source(trimmed)
                     && self.validate_use_tree(tree, range)
                 {
                     match parse_use_line(trimmed, range) {
@@ -155,12 +147,6 @@ impl Parser<'_> {
         }
     }
 
-    fn use_line_has_removed_execution_mode(trimmed: &str) -> bool {
-        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
-        let rest = rest.trim_start();
-        rest.starts_with("lazy use ") || rest.starts_with("eager use ")
-    }
-
     fn use_tree_source(trimmed: &str) -> Option<&str> {
         let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
         rest.trim_start().strip_prefix("use ").map(str::trim)
@@ -175,14 +161,9 @@ impl Parser<'_> {
     ) {
         *sinks.source_attrs_open = false;
         if trimmed.starts_with('@') {
-            let message = if trimmed.starts_with("@memo") {
-                "`@memo` is not valid Arcweft syntax"
-            } else {
-                "`@` does not start a top-level item"
-            };
             self.push_error(
                 range,
-                message,
+                "`@` does not start a top-level item",
                 ["fn name(...) { ... }", "#[attribute]"],
                 Some(trimmed),
                 ["use `#[...]` for attributes or an ordinary item keyword"],

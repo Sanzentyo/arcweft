@@ -7,8 +7,8 @@ use core::time::Duration;
 #[test]
 fn models_speaker_preset_and_line_plan_out() {
     let alice = SpeakerRef::new(PublicId::try_new("character.alice").expect("valid speaker id"));
-    let window = Ref::<TextBox>::new(Id::new(
-        EntityId::try_new("textbox.side").expect("valid textbox id"),
+    let view = Ref::<View>::new(Id::new(
+        EntityId::try_new("view.side").expect("valid view id"),
     ));
     let smile = PublicId::try_new("expression.smile").expect("valid expression id");
     let worried = "worried".to_owned();
@@ -17,7 +17,7 @@ fn models_speaker_preset_and_line_plan_out() {
         SayOptions::empty()
             .with_look(smile.clone())
             .with_voice(VoicePolicy::Auto)
-            .with_window(window),
+            .with_view(view),
     );
 
     let content = DialogueContent::new([

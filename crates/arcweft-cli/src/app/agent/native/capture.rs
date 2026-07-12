@@ -565,8 +565,8 @@ fn agent_related_rich_capture_object(
     if root.id == candidate.id {
         return false;
     }
-    let same_textbox = rich_text_root_id(&root.id) == rich_text_root_id(&candidate.id);
-    if !same_textbox {
+    let same_dialogue = rich_text_root_id(&root.id) == rich_text_root_id(&candidate.id);
+    if !same_dialogue {
         return false;
     }
     match root_ref.kind {

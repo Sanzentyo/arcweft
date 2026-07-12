@@ -12,20 +12,39 @@ pub character lumi {
     }
 }
 
-pub textbox migration_effects_panel {
-    rich_text {
-        text {
-            color = "#f2f6ff"
-        }
-        ruby {
-            size = 12px
-            gap = 0px
-        }
+pub style migration_effects_panel {
+    .dialogue_panel {
+        background = rgba(17, 18, 16, 242)
+    }
+    .dialogue_action {
+        background = rgba(0, 0, 0, 0)
+    }
+    .migration_effects_panel {
+        color = rgba(242, 246, 255, 255)
     }
 }
 
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.migration_effects_panel
+pub view MigrationEffectsPanel(dialogue: DialogueView) {
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
+        Text(dialogue.speaker)
+            .x(85.6px)
+            .y(480.8px)
+            .width(1108.8px)
+            .height(28px)
+        RichText(dialogue.content)
+            .x(85.6px)
+            .y(518.8px)
+            .width(1108.8px)
+            .height(125.6px)
+            .style(@style.migration_effects_panel)
+        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+            .part(dialogue_action)
+            .on_click { dialogue.primary_action }
+    }
+}
+
+pub dialogue defaults {
+    view = @view.MigrationEffectsPanel
     rich_text {
         layout {
             writing_mode = horizontal_tb

@@ -314,7 +314,6 @@ Recommended first milestones:
 4. Dialogue surface model:
    - `DialogueLine`
    - `SpeakerRef`
-   - `TextBoxRef`
    - `DialogueContent`
    - `DialogueTag`
    - `LinePlan`

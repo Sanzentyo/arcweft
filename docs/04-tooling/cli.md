@@ -60,7 +60,7 @@ source = "src/server.arcw"
 entry = "http"
 adapter = "native-http"
 listen = "127.0.0.1:8787"
-dialogue_defaults = "dialogue.defaults.debug"
+dialogue_defaults = "dialogue.debug"
 rust_metadata = ["target/arcweft/truck_game.json"]
 
 [profiles."server.dev".pure]
@@ -79,10 +79,10 @@ profile-aware checks for adapter-backed entries.
 `dialogue_defaults` optionally selects the `dialogue defaults` profile used by
 runtime lowering, `run`/`cli`/`serve`/`test`/`bench`, bundle builds, and Agent
 observe. It stores the canonical entity body without the `@` sigil, for example
-`dialogue.defaults.mobile`. When omitted, runtime lowering uses
-`@dialogue.defaults`, a single visible public profile, or a single visible
-profile; multiple visible profiles without a selected profile are reported as an
-ambiguity instead of being merged by source order.
+`dialogue.mobile`. When omitted, runtime lowering uses the ID-free project-wide
+public defaults declaration or the standard profile. Multiple applicable named
+profiles without a selected profile are reported as an ambiguity instead of
+being merged by source order.
 
 Profiles may register project-local adapter manifests through
 `adapter_manifests`. These paths are resolved relative to `arcw.toml` and are
@@ -538,10 +538,9 @@ future terminal editor does not reimplement bracket, string, or item/statement
 boundary rules. Incomplete cells return explicit expected boundary tokens such
 as `)`, `]`, `}`, or `"` for multiline continuation.
 This REPL remains an Agent/runtime interaction frontend rather than a general
-Arcweft language REPL. Its load, reload, warm, inspection, completion, and
-runtime-binding behavior must not reintroduce `lazy use` or `eager use`;
-ordinary `use` stays name introduction, while compiler demand and REPL commands
-decide when interfaces, bodies, tool schemas, or runtime artifacts are prepared.
+Arcweft language REPL. Ordinary `use` stays name introduction, while compiler
+demand and REPL commands decide when interfaces, bodies, tool schemas, or
+runtime artifacts are prepared.
 `:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
 scripted REPL's native observation target for later `:observe` and `:capture`
 cells. `--connect <target>` accepts the same `current`, `source PATH`, direct
@@ -585,7 +584,7 @@ evaluator.
 
 ## Agent Observation
 
-`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--capture-step N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--viewport-width PX] [--viewport-height PX] [--textbox-height PX] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
+`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--capture-step N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--viewport-width PX] [--viewport-height PX] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
 is the first Agent Debug Bus CLI slice. `arcw agent mcp` exposes the same
 observation and resource-read path as a minimal line-delimited JSON-RPC stdio
 MCP server for local Agent debugging. The stdio server supports
@@ -599,13 +598,12 @@ are treated as `sensitive`, and trace JSON uses explicit record privacy when
 present. When `arcweft.resource.read` receives a debug SQLite `path`, allowed
 and blocked reads are also written as `resource_read` debug events with URI,
 resource kind, privacy ceiling, and outcome payloads so product-mode clients can
-audit sensitive readback decisions. `--viewport-width` and `--viewport-height` set the observed
-screen size used by Agent geometry and native PNG/raw framebuffer capture.
-`--textbox-height` optionally overrides the observed dialogue textbox height,
-which is useful for layout-sensitive rich-text debugging such as long vertical
-words, ruby collision checks, and page/crop reproduction.
+audit sensitive readback decisions. `--viewport-width` and `--viewport-height`
+set the observed screen size used by Agent geometry and native PNG/raw
+framebuffer capture. Dialogue layout comes from the selected authored View and
+cannot be overridden by a second Agent-only geometry input.
 
-`arcw agent hit-test <file.arcw> --x PX --y PX [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--capture-step N] [--capture-time SECONDS] [--viewport-width PX] [--viewport-height PX] [--textbox-height PX] [--json]`
+`arcw agent hit-test <file.arcw> --x PX --y PX [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--capture-step N] [--capture-time SECONDS] [--viewport-width PX] [--viewport-height PX] [--json]`
 runs the same bounded observation path, then resolves the viewport coordinate
 against observed `rich_text_ref.hit_regions`. The JSON result is an
 `AgentHitTestReport` with `top_object_id` and a ranked `hits` array. Hits are
@@ -640,7 +638,7 @@ observation:
   future MCP resources
 - `layers` for visible render layers, including viewport bbox, object count, and
   layer-local color/object-id/mask capture refs in PNG and raw RGBA forms
-- `objects` for visible dialogue textboxes, including viewport bbox, polygon,
+- `objects` for visible dialogue View mounts, including viewport bbox, polygon,
   resolved text, structured rich-text nodes, base styles, host events, inline
   failures, unresolved interpolation names, object-local capture refs, and
   object-id debug colors. The rich-text frame also includes a `display_map` that
@@ -726,7 +724,7 @@ rich-text regions, and debug-geometry captures. If `--read-uri` targets a captur
 `--image`. `--resource image` returns the selected image as an MCP-style
 `AgentResource` with a base64 body; `--resource all` includes that image
 resource when `--image` is present and also materializes layer-local and
-object-local color/object-id/mask capture refs for textbox and rich-text child
+object-local color/object-id/mask capture refs for dialogue View and rich-text child
 objects. Add
 `--mcp` with `--resource` to emit MCP `resources/read` compatible output (`text`
 for textual resources and base64 `blob` for PNG/raw images) through
@@ -816,11 +814,11 @@ The PNG/raw path uses native offscreen readback. It fills the same `images`
 slots for full-viewport, layer-crop, and object-crop color readback, and
 text/ruby/text-glyph/glyph-cluster-backed native object-id/mask captures are
 rendered through the offscreen text framebuffer before optional cropping.
-Rich-text-only native color captures and textbox-parent object/layer color captures report
+Rich-text-only native color captures and dialogue-View parent object/layer color captures report
 `composition = "isolated_regions"` because they redraw selected glyph regions
-with original styling before cropping. Native textbox-parent object-id/mask
+with original styling before cropping. Native dialogue-View parent object-id/mask
 captures expand through the rich-text display map, so the image contains glyph
-geometry rather than a filled textbox bbox and reports `framebuffer` or
+geometry rather than a filled panel bbox and reports `framebuffer` or
 `framebuffer_crop`. Native color scopes that have no rich-text element mapping
 now use `masked_framebuffer_crop`; native object-id/mask scopes without a
 rich-text mapping still fall back to `debug_geometry`. Later player sessions

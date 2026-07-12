@@ -228,6 +228,7 @@ impl ViewProgramResource {
         self.validate_scroll_regions()?;
         self.validate_surfaces()?;
         self.validate_text_blocks()?;
+        self.validate_action_buttons()?;
         self.validate_focus_targets()?;
         self.validate_fx_applications()
     }
@@ -686,6 +687,36 @@ impl ViewProgramResource {
         }
     }
 
+    fn validate_action_buttons(&self) -> Result<(), SectionCodecError> {
+        for button in &self.action_buttons {
+            let super::model::ViewActionButtonActionResource::DialoguePrimaryAction { parameter } =
+                &button.action
+            else {
+                continue;
+            };
+            let Some(definition) = button.view.as_deref().and_then(|view| {
+                self.definitions
+                    .iter()
+                    .find(|definition| definition.public_id == view)
+            }) else {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_dialogue_primary_action_owner",
+                ));
+            };
+            if !valid_identifier(parameter)
+                || !definition
+                    .parameters
+                    .iter()
+                    .any(|candidate| candidate.name == *parameter)
+            {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_dialogue_primary_action_parameter",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn validate_focus_targets(&self) -> Result<(), SectionCodecError> {
         let authored_targets = self
             .focus_navigation
@@ -878,7 +909,8 @@ fn semantic_target_public_ids(target: &super::model::ViewSemanticTarget) -> Vec<
 
 fn action_button_public_ids(button: &super::model::ViewActionButtonResource) -> Vec<String> {
     let action_ids = match &button.action {
-        super::model::ViewActionButtonActionResource::Noop => Vec::new(),
+        super::model::ViewActionButtonActionResource::Noop
+        | super::model::ViewActionButtonActionResource::DialoguePrimaryAction { .. } => Vec::new(),
         super::model::ViewActionButtonActionResource::ActionInvoke { action, payload } => {
             std::iter::once(action.clone())
                 .chain(action_payload_refs(payload.as_ref()))
@@ -1253,6 +1285,7 @@ impl ViewTextResource {
                 .display_frames
                 .iter()
                 .any(|entry| entry.public_id == *frame),
+            ViewTextSourceKind::Dialogue { parameter, .. } => valid_identifier(parameter),
             ViewTextSourceKind::Literal { .. } | ViewTextSourceKind::Localized { .. } => true,
         });
         let valid_display_frames = self.display_frames.iter().all(|entry| {
@@ -1859,7 +1892,8 @@ fn text_source_kind_public_ids(kind: &ViewTextSourceKind) -> impl Iterator<Item 
     match kind {
         ViewTextSourceKind::Literal { .. }
         | ViewTextSourceKind::Projection { .. }
-        | ViewTextSourceKind::Local { .. } => Vec::new(),
+        | ViewTextSourceKind::Local { .. }
+        | ViewTextSourceKind::Dialogue { .. } => Vec::new(),
         ViewTextSourceKind::RichTextDocument { document } => vec![document.clone()],
         ViewTextSourceKind::DisplayFrame { frame } => vec![frame.clone()],
         ViewTextSourceKind::Localized { key, locale } => [Some(key.clone()), locale.clone()]

@@ -212,7 +212,7 @@ pub struct LineOptions {
     portrait: Option<Expr>,
     focus: Option<Expr>,
     cleanup: Option<Expr>,
-    window: Option<EntityRefSyntax>,
+    view: Option<EntityRefSyntax>,
     source_locale: Option<String>,
     hooks: Vec<Expr>,
     style: Option<Expr>,
@@ -235,7 +235,7 @@ pub(crate) struct LineOptionsInit {
     pub(crate) portrait: Option<Expr>,
     pub(crate) focus: Option<Expr>,
     pub(crate) cleanup: Option<Expr>,
-    pub(crate) window: Option<EntityRefSyntax>,
+    pub(crate) view: Option<EntityRefSyntax>,
     pub(crate) source_locale: Option<String>,
     pub(crate) hooks: Vec<Expr>,
     pub(crate) style: Option<Expr>,
@@ -844,7 +844,7 @@ impl LineOptions {
             portrait: init.portrait,
             focus: init.focus,
             cleanup: init.cleanup,
-            window: init.window,
+            view: init.view,
             source_locale: init.source_locale,
             hooks: init.hooks,
             style: init.style,
@@ -889,8 +889,8 @@ impl LineOptions {
         self.cleanup.as_ref()
     }
 
-    pub const fn window(&self) -> Option<&EntityRefSyntax> {
-        self.window.as_ref()
+    pub const fn view(&self) -> Option<&EntityRefSyntax> {
+        self.view.as_ref()
     }
 
     pub fn source_locale(&self) -> Option<&str> {

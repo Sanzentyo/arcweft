@@ -70,7 +70,7 @@ fn assert_agent_observe_rich_text_display_report(json: &serde_json::Value) {
     );
     let object = &json["objects"][0];
     let rich_text = observed_object_rich_text_frame(object);
-    assert_eq!(object["role"], "dialogue_textbox");
+    assert_eq!(object["role"], "dialogue_view");
     assert_eq!(object["bbox"]["space"], "viewport");
     assert_eq!(object["text"], "Hello Aoi 夢\n");
     assert_agent_observe_object_capture_refs(object);
@@ -203,7 +203,7 @@ fn agent_observe_json_reports_rich_text_display_objects() {
     let path = temp_arcw(
         "agent-observe-rich-text",
         r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     font = serif
     text_color = rgb("#101112")
     inline_error = InlineFailure.fallback("?")
@@ -483,8 +483,8 @@ flow @flow.main main {
     let observe_json: serde_json::Value =
         serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
 
-    let textbox = find_textbox_object(&observe_json);
-    assert!(rich_text_text_run_has_object_proxy(textbox, |proxy| {
+    let dialogue_view = find_dialogue_view_object(&observe_json);
+    assert!(rich_text_text_run_has_object_proxy(dialogue_view, |proxy| {
         proxy["id"] == "QuestHit"
             && proxy["type_name"] == "QuestHit"
             && proxy["declaration"]["struct_name"] == "QuestHit"
@@ -860,8 +860,8 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
     path: &Path,
     observe_json: &serde_json::Value,
 ) {
-    let textbox = find_textbox_object(observe_json);
-    assert!(rich_text_text_run_has_object_proxy(textbox, |proxy| proxy
+    let dialogue_view = find_dialogue_view_object(observe_json);
+    assert!(rich_text_text_run_has_object_proxy(dialogue_view, |proxy| proxy
         ["id"]
         == "hotspot"
         && proxy["type_name"] == "KeywordHit"
@@ -871,7 +871,7 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         && proxy["depth"] == 4000
         && proxy["hit_test"] == true
         && proxy["params"]["channel"]["value"] == "inventory",));
-    assert!(rich_text_text_run_has_object_proxy(textbox, |proxy| proxy
+    assert!(rich_text_text_run_has_object_proxy(dialogue_view, |proxy| proxy
         ["id"]
         == "HoverHit"
         && proxy["type_name"] == "HoverHit"
@@ -882,7 +882,7 @@ fn assert_inferred_text_proxy_struct_shorthand_observe(
         && proxy["depth"] == 7000
         && proxy["hit_test"] == true
         && proxy["params"]["tone"]["value"] == "alert",));
-    assert!(rich_text_text_run_has_effect(textbox, "sparkle"));
+    assert!(rich_text_text_run_has_effect(dialogue_view, "sparkle"));
 
     assert_inferred_text_proxy_presentation_tree_indexes(path, observe_json);
 
@@ -1447,8 +1447,8 @@ fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() 
         "profiled native image should contain rendered pixels: {json}"
     );
 
-    let textbox = find_textbox_object(&json);
-    let base_styles = observed_object_rich_text_frame(textbox)["base_styles"]
+    let dialogue_view = find_dialogue_view_object(&json);
+    let base_styles = observed_object_rich_text_frame(dialogue_view)["base_styles"]
         .as_array()
         .expect("base styles are reported");
     assert!(
@@ -1457,29 +1457,29 @@ fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() 
                 && style["family"]["kind"] == "named"
                 && style["family"]["name"] == "Meiryo"
         }),
-        "mobile dialogue defaults should select the Meiryo base font: {textbox}"
+        "mobile dialogue defaults should select the Meiryo base font: {dialogue_view}"
     );
     assert!(
         base_styles
             .iter()
             .any(|style| style["kind"] == "size" && style["raw"] == "24"),
-        "mobile dialogue defaults should select the 24px base text size: {textbox}"
+        "mobile dialogue defaults should select the 24px base text size: {dialogue_view}"
     );
 
-    let contributions = observed_object_rich_text_frame(textbox)["style_contributions"]
+    let contributions = observed_object_rich_text_frame(dialogue_view)["style_contributions"]
         .as_array()
         .expect("style contributions are reported");
     assert!(contributions.iter().any(|contribution| {
-        contribution["path"] == "window"
-            && contribution["value"] == "@textbox.mobile"
+        contribution["path"] == "view"
+            && contribution["value"] == "@view.MobileDialogue"
             && contribution["active"] == true
-            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+            && contribution["source"]["item_id"] == "dialogue.mobile"
     }));
     assert!(contributions.iter().any(|contribution| {
         contribution["path"] == "rich_text.ruby.gap"
             && contribution["value"] == "1px"
             && contribution["active"] == true
-            && contribution["source"]["item_id"] == "dialogue.defaults.mobile"
+            && contribution["source"]["item_id"] == "dialogue.mobile"
     }));
     assert!(contributions.iter().any(|contribution| {
         contribution["path"] == "rich_text.effect"
@@ -1490,8 +1490,22 @@ fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() 
 
 fn profiled_observe_source() -> &'static str {
     r##"
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.desktop
+pub view DesktopDialogue(dialogue: DialogueView) {
+    Panel {
+        Text(dialogue.speaker)
+        RichText(dialogue.content)
+    }
+}
+
+pub view MobileDialogue(dialogue: DialogueView) {
+    Panel {
+        Text(dialogue.speaker)
+        RichText(dialogue.content)
+    }
+}
+
+pub dialogue defaults {
+    view = @view.DesktopDialogue
     rich_text {
         text {
             font = "Yu Gothic"
@@ -1505,8 +1519,8 @@ pub dialogue defaults @dialogue.defaults {
     }
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
-    window = @textbox.mobile
+pub dialogue defaults @dialogue.mobile {
+    view = @view.MobileDialogue
     rich_text {
         text {
             font = "Meiryo"
@@ -1519,9 +1533,6 @@ pub dialogue defaults @dialogue.defaults.mobile {
         }
     }
 }
-
-pub textbox desktop {}
-pub textbox mobile {}
 
 pub character alice {
     display = "Alice"
@@ -1547,13 +1558,12 @@ fn profiled_observe_manifest() -> &'static str {
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults"
 
 [profiles.mobile]
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 "#
 }
 
@@ -1647,4 +1657,3 @@ flow @flow.main main {
             .any(|event| event["event"]["kind"] == "voice")
     );
 }
-

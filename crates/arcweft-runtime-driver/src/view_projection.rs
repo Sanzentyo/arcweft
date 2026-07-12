@@ -165,6 +165,14 @@ fn project_action_buttons(
                 {
                     *input = scoped_id(mount, input);
                 }
+                if let ViewRuntimeActionButtonAction::DialoguePrimaryAction { target, .. } =
+                    &mut button.action
+                {
+                    *target = mount
+                        .dialogue
+                        .and_then(|dialogue| dialogue.primary_action.target);
+                    button.enabled &= target.is_some();
+                }
                 button
             }),
     );

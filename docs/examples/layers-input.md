@@ -49,7 +49,7 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
         }
 
         layer @layer.view.game {
-            TextBox(current_text())
+            view(@view.MainDialogue)
             ChoiceList(opening_choices())
         }
     }

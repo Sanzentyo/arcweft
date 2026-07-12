@@ -410,11 +410,11 @@ flow main {
 fn runtime_plan_options_select_dialogue_defaults_profile() {
     let parsed = parse_source(
         r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     text_color = rgb("#101112")
 }
 
-pub dialogue defaults @dialogue:.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     text_color = rgb("#202122")
 }
 
@@ -428,7 +428,7 @@ flow @flow.main main {
     let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
     let report = lower_runtime_plan_with_stats_and_options(
         &hir,
-        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.mobile"),
     )
     .expect("runtime plan lowers with selected dialogue defaults");
     let spec = report
@@ -452,7 +452,7 @@ flow @flow.main main {
 #[test]
 fn speaker_preset_styles_join_dialogue_cascade() {
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     text_color = rgb("#101112")
 }
 
@@ -558,73 +558,14 @@ flow @flow.main main {
 }
 
 #[test]
-fn textbox_theme_styles_join_dialogue_cascade() {
-    let parsed = parse_source(
-        r##"
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.phone_message
-}
-
-pub textbox @textbox.phone_message PhoneMessageBox {
-    rich_text {
-        text {
-            color = rgb("#303132")
-        }
-    }
-}
-
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice(rich_text=rich_text_style(text=text_style(color=rgb("#404142")))): Hello[p]
-}
-"##,
-    );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
-    let spec = report
-        .line_display_catalog
-        .lines()
-        .first()
-        .expect("line display spec");
-
-    assert_eq!(spec.window.as_deref(), Some("textbox.phone_message"));
-    assert!(spec.base_styles.iter().any(|style| {
-        matches!(
-            style,
-            RichTextStyle::Color {
-                value: RichTextColor::Rgb {
-                    red: 48,
-                    green: 49,
-                    blue: 50,
-                }
-            }
-        )
-    }));
-    assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::TextBoxTheme
-            && contribution.path == "rich_text.text.color"
-            && contribution.value == "rgb(\"#303132\")"
-            && !contribution.active
-            && contribution.shadowed_by.is_some()
-    }));
-    assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::LineOptions
-            && contribution.path == "rich_text.text.color"
-            && contribution.value == "rgb(\"#404142\")"
-            && contribution.active
-    }));
-}
-
-#[test]
 fn runtime_plan_reports_ambiguous_dialogue_defaults_profiles() {
     let parsed = parse_source(
         r##"
-pub dialogue defaults @dialogue.defaults.debug {
+pub dialogue defaults @dialogue.debug {
     text_color = rgb("#101112")
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     text_color = rgb("#202122")
 }
 
@@ -651,7 +592,7 @@ flow @flow.main main {
 fn runtime_plan_reports_missing_selected_dialogue_defaults_profile() {
     let parsed = parse_source(
         r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     text_color = rgb("#101112")
 }
 
@@ -665,14 +606,14 @@ flow @flow.main main {
     let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
     let errors = lower_runtime_plan_with_stats_and_options(
         &hir,
-        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.mobile"),
     )
     .expect_err("missing selected dialogue defaults should fail runtime lowering");
 
     assert!(
         errors
             .iter()
-            .any(|error| error.message().contains("dialogue.defaults.mobile")),
+            .any(|error| error.message().contains("dialogue.mobile")),
         "{errors:#?}"
     );
 }

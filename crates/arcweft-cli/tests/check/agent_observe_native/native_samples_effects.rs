@@ -39,15 +39,15 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     let json = observe_native_rich_text_layer_report(&source_path);
 
     assert_native_rich_text_layer_image_has_content(&json);
-    let textbox = json["objects"]
+    let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
         .iter()
         .find(|object| {
-            object["role"] == "dialogue_textbox" && observed_object_rich_text_frame(object)["line"] == "say.full.005"
+            object["role"] == "dialogue_view" && observed_object_rich_text_frame(object)["line"] == "say.full.005"
         })
-        .expect("target textbox object is observed");
-    let vertical_rl_display_run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
+        .expect("target dialogue_view object is observed");
+    let vertical_rl_display_run = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .iter()
@@ -149,10 +149,10 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
         "say.full.008",
         "say.full.009",
     ] {
-        find_textbox_object_by_rich_text_line(&json, line);
+        find_dialogue_view_object_by_rich_text_line(&json, line);
     }
 
-    let inferred = find_textbox_object_by_rich_text_line(&json, "say.full.005");
+    let inferred = find_dialogue_view_object_by_rich_text_line(&json, "say.full.005");
     assert!(rich_text_text_run_has_effect(inferred, "wave"));
     assert!(rich_text_text_run_has_effect(inferred, "shake"));
     assert!(rich_text_text_run_has_effect(inferred, "typewriter"));
@@ -184,7 +184,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     assert_full_grammar_typewriter_capture_step_readback(&source_path, &json);
     assert_full_grammar_animated_effect_readbacks(&source_path, &json);
 
-    let explicit = find_textbox_object_by_rich_text_line(&json, "say.full.006");
+    let explicit = find_dialogue_view_object_by_rich_text_line(&json, "say.full.006");
     assert!(rich_text_text_run_has_transform(
         explicit,
         |transform| transform["skew"]["x"] == 2000
@@ -211,16 +211,16 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     assert_full_grammar_text_line_object_readback(&source_path, &json);
     assert_full_grammar_soft_glow_shader_readback(&source_path, &json);
 
-    let cue = find_textbox_object_by_rich_text_line(&json, "say.full.007");
+    let cue = find_dialogue_view_object_by_rich_text_line(&json, "say.full.007");
     assert_eq!(cue["text"], "cue: 代替");
-    let raw_short = find_textbox_object_by_rich_text_line(&json, "say.full.008");
+    let raw_short = find_dialogue_view_object_by_rich_text_line(&json, "say.full.008");
     assert!(
         raw_short["text"]
             .as_str()
             .is_some_and(|text| text.contains("[p]や#[expr]をそのまま表示")),
         "raw shorthand text should render literally: {raw_short}"
     );
-    let raw_block = find_textbox_object_by_rich_text_line(&json, "say.full.009");
+    let raw_block = find_dialogue_view_object_by_rich_text_line(&json, "say.full.009");
     assert!(
         raw_block["text"]
             .as_str()
@@ -247,7 +247,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
         "say.effects.motion",
         "say.effects.reveal",
     ] {
-        find_textbox_object_by_rich_text_line(&json, line);
+        find_dialogue_view_object_by_rich_text_line(&json, line);
     }
 
     let combo_run = find_rich_text_run_object(&json, "重ね掛けtypewriter");
@@ -1885,8 +1885,8 @@ flow @flow.main main {
         .as_array()
         .expect("objects array")
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .expect("textbox object");
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object");
     let host_events = observed_object_rich_text_frame(object)["host_events"]
         .as_array()
         .expect("host events array");
@@ -2018,11 +2018,11 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["mime_type"], "image/png");
     assert!(
         json["images"][0]["width"].as_u64().unwrap() < 1088,
-        "rich-text layer crop should be narrower than the textbox"
+        "rich-text layer crop should be narrower than the dialogue_view"
     );
     assert!(
         json["images"][0]["height"].as_u64().unwrap() < 124,
-        "rich-text layer crop should be shorter than the textbox"
+        "rich-text layer crop should be shorter than the dialogue_view"
     );
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
     assert!(
@@ -2093,15 +2093,15 @@ flow @flow.main main {
         json["images"][0]["crop_origin"]["x"].as_u64().unwrap()
             + json["images"][0]["content_bbox"]["x"].as_u64().unwrap()
     );
-    let textbox = json["objects"]
+    let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "dialogue_textbox")
-        .expect("textbox object is observed");
-    assert_eq!(textbox["text"], "BeforeAfter");
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
+    assert_eq!(dialogue_view["text"], "BeforeAfter");
     assert!(
-        observed_object_rich_text_frame(textbox)["display_map"]["controls"]
+        observed_object_rich_text_frame(dialogue_view)["display_map"]["controls"]
             .as_array()
             .unwrap()
             .iter()
@@ -2268,7 +2268,7 @@ fn assert_page_selected_native_rich_text_object_report(
     assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
         json["images"][0]["width"].as_u64().unwrap() < 1088,
-        "page-selected run crop should be narrower than the textbox"
+        "page-selected run crop should be narrower than the dialogue_view"
     );
     assert!(
         json["objects"]
@@ -3646,7 +3646,7 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["height"], ruby_object["bbox"]["height"]);
     assert!(
         json["images"][0]["crop_origin"]["x"].as_u64().unwrap() >= 96,
-        "native ruby crop origin should be in textbox viewport bounds"
+        "native ruby crop origin should be in dialogue_view viewport bounds"
     );
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();

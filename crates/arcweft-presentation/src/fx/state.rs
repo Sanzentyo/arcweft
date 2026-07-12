@@ -392,6 +392,7 @@ impl FxSampleContext {
         }
     }
 
+    #[must_use]
     pub const fn with_geometry(mut self, geometry: FxSampleGeometry) -> Self {
         self.geometry = geometry;
         self

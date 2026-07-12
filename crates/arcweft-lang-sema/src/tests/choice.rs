@@ -28,18 +28,16 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn rejects_sigiled_choice_keyword_syntax() {
+fn rejects_unknown_sigiled_flow_statements_generically() {
     let errors = parse_errors(
-        r#"
+        r"
 flow @flow.opening opening {
-    @choice @choice.opening.first {
-        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
-    }
+    @project_command opening
 }
-"#,
+",
     );
 
-    assert!(errors[0].message().contains("@choice"));
+    assert_eq!(errors[0].message(), "`@` does not start a flow statement");
     assert!(
         errors[0]
             .expected()

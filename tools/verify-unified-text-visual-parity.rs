@@ -7,7 +7,7 @@ edition = "2024"
 serde_json = "1.0.150"
 ---
 
-//! Verifies the generated unified Text/TextBox/View/Fx visual evidence packet.
+//! Verifies the generated unified Text/View/Fx visual evidence packet.
 
 use serde_json::{Value, json};
 use std::error::Error;
@@ -356,10 +356,8 @@ fn verify_scoped_packets(
             format!("{checkpoint}: scoped checkpoint identity differs"),
         )?;
         require(
-            metadata["semantic_id"]
-                .as_str()
-                .is_some_and(|id| id.ends_with(".body")),
-            format!("{checkpoint}: scoped capture is not the TextBox body"),
+            metadata["semantic_id"] == body(report)?["owner"]["semantic_id"],
+            format!("{checkpoint}: scoped capture is not the dialogue View content"),
         )?;
         require(
             metadata["layout_hash"] == body(report)?["layout_hash"],
@@ -462,10 +460,10 @@ fn body(report: &Value) -> Result<&Value, Box<dyn Error>> {
             items.iter().find(|item| {
                 item.pointer("/owner/kind")
                     .and_then(Value::as_str)
-                    .is_some_and(|kind| kind.ends_with(":body"))
+                    .is_some_and(|kind| kind.starts_with("dialogue:"))
             })
         })
-        .ok_or_else(|| failure("frame report has no TextBox body"))
+        .ok_or_else(|| failure("frame report has no dialogue View content"))
 }
 
 fn font_fingerprints(report: &Value) -> Result<Vec<String>, Box<dyn Error>> {

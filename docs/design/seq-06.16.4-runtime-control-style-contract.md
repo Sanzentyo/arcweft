@@ -103,7 +103,7 @@ Runtime session construction preserves these as display diagnostics so unsupport
 
 ## Non-goals
 
-- Restoring removed top-level text-control declarations.
+- Adding a second declaration family beside View-owned text controls.
 - CSS parsing, external CSS loading, DOM overlays, canvas/image fallback, browser-native controls, or sample-specific geometry.
 - Duplicating Takumi or seq06.13e box-shadow rendering.
 - Full CSS specificity, cascade layers, inheritance, media queries, or pseudo-element support.

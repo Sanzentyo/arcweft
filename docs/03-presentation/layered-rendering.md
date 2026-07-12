@@ -65,7 +65,7 @@ pub enum LayerKind {
     Prop,
     Particle,
     Video,
-    TextBox,
+    View,
     Choice,
     NativeView,
     HtmlView,
@@ -89,7 +89,7 @@ root
     particles
   activity
   dialogue
-    textbox
+    view
     choices
   view
     hud
@@ -243,7 +243,7 @@ scope {
     }
 
     layer @layer.dialogue {
-        TextBox(current_text())
+        view(@view.MainDialogue)
     }
 
     layer @layer.choices {
@@ -268,7 +268,7 @@ scope {
         fit = "cover"
     )
     character layer @layer.characters sprite(@asset:.char.alice.default).at(center)
-    view layer @layer.dialogue TextBox(current_text())
+    view layer @layer.dialogue view(@view.MainDialogue)
 }
 ```
 
@@ -326,7 +326,7 @@ layer 単位で shader を適用できる。
 
 ```arcw
 layer @layer.dialogue {
-    TextBox(current_text())
+    view(@view.MainDialogue)
 }
 .shader(@shader.view.glass_panel) {
     blur_amount = 12.0

@@ -980,13 +980,13 @@ rust_metadata = ["target/arcweft/bad.json"]
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 
 [profiles.other]
 kind = "game"
 source = "src/main.arcw"
 adapter = "sans-io"
-dialogue_defaults = "dialogue.defaults.debug"
+dialogue_defaults = "dialogue.debug"
 "#;
         project.write("arcw.toml", manifest);
         project.write("src/main.arcw", "flow @.main main {}\n");
@@ -998,10 +998,7 @@ dialogue_defaults = "dialogue.defaults.debug"
             .expect("dialogue defaults source selection");
         let range = selection.value_range();
 
-        assert_eq!(
-            &selection.source()[range.clone()],
-            "dialogue.defaults.mobile"
-        );
+        assert_eq!(&selection.source()[range.clone()], "dialogue.mobile");
         assert_eq!(selection.path(), project.path("arcw.toml").as_path());
         assert!(selection.uri().is_some());
     }

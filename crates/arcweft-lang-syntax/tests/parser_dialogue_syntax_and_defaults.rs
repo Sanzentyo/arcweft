@@ -151,7 +151,7 @@ fn multiline_let_dialogue_call_expr_range_slices_lf_and_crlf_source() {
 #[test]
 fn dialogue_line_options_are_structured_not_raw_args() {
     let source = r#"
-alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]
+alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, view=@view.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]
 "#;
     let tree = parse_ok(source);
 
@@ -171,7 +171,7 @@ alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto,
         "text.opening.dream_hint"
     );
     assert!(matches!(options.voice(), Some(Expr::Path(path)) if path == "auto"));
-    assert_eq!(options.window().expect("window").body(), "textbox.side");
+    assert_eq!(options.view().expect("view").body(), "view.side");
     assert_eq!(options.hooks().len(), 1);
     assert!(matches!(options.style(), Some(Expr::EntityRef(id)) if id.body() == "style.dream"));
     assert_eq!(options.style_raw(), Some("@style.dream"));
@@ -440,8 +440,8 @@ fn bracket_content_call_ranges_project_from_normalized_lines() {
 #[test]
 fn dialogue_defaults_are_preserved_as_top_level_declarations() {
     let source = r"
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.main
+pub dialogue defaults {
+    view = @view.main
     voice = auto
     rich_text {
         ruby {
@@ -456,13 +456,10 @@ pub dialogue defaults @dialogue.defaults {
     let Item::DialogueDefaults(defaults) = &tree.items()[0] else {
         panic!("expected dialogue defaults");
     };
-    assert_eq!(
-        defaults.id().expect("defaults id").body(),
-        "dialogue.defaults"
-    );
+    assert!(defaults.id().is_none());
     let assignments = defaults.assignments();
     assert_eq!(assignments.len(), 4);
-    assert_eq!(assignments[0].path().dotted(), "window");
+    assert_eq!(assignments[0].path().dotted(), "view");
     assert_eq!(assignments[2].path().dotted(), "rich_text.ruby.size");
     assert_eq!(assignments[3].path().dotted(), "rich_text.ruby.gap");
     assert_eq!(
@@ -496,7 +493,7 @@ fn dialogue_defaults_preserve_attached_attributes() {
         r"
 #[generated]
 #[allow(style::explicit_decl_id)]
-pub dialogue defaults @dialogue:.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         ruby {
             size = 11px
@@ -516,7 +513,7 @@ pub dialogue defaults @dialogue:.defaults.mobile {
     assert_eq!(attrs[1].args(), Some("style::explicit_decl_id"));
     assert_eq!(
         defaults.id().expect("defaults id").body(),
-        "dialogue.defaults.mobile"
+        "dialogue.mobile"
     );
     assert_eq!(
         defaults.assignments()[0].path().dotted(),
@@ -548,10 +545,10 @@ pub dialogue defaults @.mobile {
 }
 
 #[test]
-fn dialogue_defaults_accept_family_relative_profile_ids() {
+fn dialogue_defaults_accept_named_profile_ids() {
     let tree = parse_ok(
         r"
-pub dialogue defaults @dialogue:.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     rich_text {
         ruby {
             size = 11px
@@ -566,6 +563,6 @@ pub dialogue defaults @dialogue:.defaults.mobile {
     };
     assert_eq!(
         defaults.id().expect("defaults id").body(),
-        "dialogue.defaults.mobile"
+        "dialogue.mobile"
     );
 }

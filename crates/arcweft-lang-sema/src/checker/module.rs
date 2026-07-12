@@ -13,6 +13,9 @@ use super::{
     type_ref_kind_with_generics, validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
+use crate::dialogue_view::{
+    DialogueViewModelRegistry, DialogueViewProjection, STANDARD_DIALOGUE_VIEW_RESOURCE,
+};
 use crate::effect_model::{
     CallableId, CallableKind, EffectContract, Visibility as EffectVisibility,
 };
@@ -28,8 +31,7 @@ use arcweft_lang_syntax::ast::items::{
 use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{
-    FnParam, FnSignature, NonCanonicalPrimitiveSpelling, TypeRef, parse_fn_signature,
-    parse_type_ref,
+    FnParam, FnSignature, TypeRef, parse_fn_signature, parse_type_ref,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -122,6 +124,7 @@ impl TypeChecker<'_> {
         self.bind_top_level_entity_aliases(module);
         self.bind_top_level_type_aliases(module);
         self.bind_top_level_nominal_fields(module);
+        self.bind_dialogue_view_models(module);
         self.bind_top_level_nominal_variant_payloads(module);
         self.bind_extern_capability_functions(module);
         self.register_effect_callables(module);
@@ -469,13 +472,24 @@ impl TypeChecker<'_> {
     }
 
     fn bind_top_level_nominal_fields(&mut self, module: &HirModule) {
-        self.nominal_fields.clear();
+        self.nominal_fields = self.env.nominal_records.clone();
         for declaration in module.declarations() {
             let HirTopLevelDecl::Struct(item) = declaration else {
                 continue;
             };
             self.nominal_fields
                 .insert(item.name().to_owned(), struct_field_types(item));
+        }
+    }
+
+    fn bind_dialogue_view_models(&mut self, module: &HirModule) {
+        match DialogueViewModelRegistry::from_hir(module) {
+            Ok(models) => self.dialogue_view_models = models,
+            Err(errors) => self.errors.extend(
+                errors
+                    .into_iter()
+                    .map(|error| TypeCheckError::new(error.to_string())),
+            ),
         }
     }
 
@@ -641,8 +655,8 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
-            HirTopLevelDecl::DialogueDefaults(_)
-            | HirTopLevelDecl::Enum(_)
+            HirTopLevelDecl::DialogueDefaults(item) => self.check_dialogue_defaults(item),
+            HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_)
@@ -667,6 +681,13 @@ impl TypeChecker<'_> {
                 }
             }
             HirTopLevelDecl::EntityDecl(item) => {
+                if item.kind() == EntityDeclKind::View
+                    && item.id().body() == STANDARD_DIALOGUE_VIEW_RESOURCE
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "View resource `{STANDARD_DIALOGUE_VIEW_RESOURCE}` is reserved by the standard dialogue runtime"
+                    )));
+                }
                 self.expect_entity_kind(
                     item.id(),
                     &entity_kind_for_decl(item.kind()),
@@ -674,6 +695,7 @@ impl TypeChecker<'_> {
                 );
                 self.check_view_action_invokes(item);
                 self.check_view_fx_applications(item);
+                self.check_view_dialogue_text_sources(item);
             }
             HirTopLevelDecl::Callable(item) => {
                 self.clear_borrow_state();
@@ -731,6 +753,124 @@ impl TypeChecker<'_> {
 
     fn check_style_decl(&mut self, item: &StyleItem) {
         self.expect_entity_kind(item.id(), &EntityKind::Style, "style id");
+    }
+
+    fn check_dialogue_defaults(
+        &mut self,
+        item: &arcweft_lang_syntax::ast::dialogue::DialogueDefaultsItem,
+    ) {
+        for assignment in item
+            .assignments()
+            .iter()
+            .filter(|assignment| assignment.path().dotted() == "view")
+        {
+            if !matches!(
+                assignment.value(),
+                Expr::EntityRef(reference)
+                    if entity_syntax_kind(reference) == Some(EntityKind::View)
+            ) {
+                self.errors.push(TypeCheckError::new(
+                    "dialogue defaults `view` must be a typed View reference".to_owned(),
+                ));
+            }
+        }
+    }
+
+    fn check_view_dialogue_text_sources(&mut self, item: &EntityDeclItem) {
+        let Some(view) = item.view_body().and_then(|body| body.view()) else {
+            return;
+        };
+        let signature = match parse_fn_signature(&format!("fn view{}", item.signature_tail())) {
+            Ok(signature) => signature,
+            Err(error) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "View `{}` has an invalid parameter signature: {error}",
+                    item.id().body()
+                )));
+                return;
+            }
+        };
+        let parameters = signature
+            .param_groups()
+            .iter()
+            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+            .filter_map(|parameter| {
+                let name = parameter.pattern().simple_binding_name()?;
+                let TypeRef::Path(type_name) = parameter.ty() else {
+                    return None;
+                };
+                Some((name, type_name.as_str()))
+            })
+            .collect::<HashMap<_, _>>();
+
+        for text in view.text_nodes() {
+            let Some(label) = text.source().dotted_selector_label() else {
+                continue;
+            };
+            let Some((parameter, field)) = label.split_once('.') else {
+                continue;
+            };
+            let Some(type_name) = parameters.get(parameter) else {
+                continue;
+            };
+            let Some(model) = self.dialogue_view_models.model(type_name) else {
+                continue;
+            };
+            let Some(projection) = model.projection(field) else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "dialogue View parameter `{parameter}` has no runtime projection `{field}`"
+                )));
+                continue;
+            };
+            let rich = text.rich_surface().is_some();
+            match projection {
+                DialogueViewProjection::Content if !rich => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "dialogue content projection `{label}` must be emitted by `RichText(...)`"
+                    )));
+                }
+                DialogueViewProjection::Speaker if rich => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "dialogue speaker projection `{label}` must be emitted by `Text(...)`"
+                    )));
+                }
+                DialogueViewProjection::Speaker | DialogueViewProjection::Content => {}
+                DialogueViewProjection::Occurrence
+                | DialogueViewProjection::Stage
+                | DialogueViewProjection::Reveal
+                | DialogueViewProjection::PrimaryAction => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "dialogue lifecycle projection `{label}` is not text content"
+                    )));
+                }
+            }
+        }
+
+        for action in view.action_projections() {
+            let Some(label) = action.dotted_selector_label() else {
+                continue;
+            };
+            let Some((parameter, field)) = label.split_once('.') else {
+                continue;
+            };
+            let Some(type_name) = parameters.get(parameter) else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "View action projection `{label}` has no matching parameter"
+                )));
+                continue;
+            };
+            let Some(model) = self.dialogue_view_models.model(type_name) else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "View action projection `{label}` does not come from a dialogue View model"
+                )));
+                continue;
+            };
+            if model.projection(field) != Some(DialogueViewProjection::PrimaryAction) {
+                self.errors.push(TypeCheckError::new(format!(
+                    "View action projection `{label}` must select `primary_action`"
+                )));
+            }
+        }
     }
 
     fn check_view_action_invokes(&mut self, item: &EntityDeclItem) {
@@ -1134,6 +1274,9 @@ impl TypeChecker<'_> {
         if let Some(text_key) = dialogue.text_key() {
             self.expect_entity_kind(text_key, &EntityKind::Text, "dialogue text key");
         }
+        if let Some(view) = dialogue.view() {
+            self.expect_entity_kind(view, &EntityKind::View, "dialogue View");
+        }
         if let Some(look) = dialogue.look() {
             self.check_expr(look);
         }
@@ -1196,18 +1339,6 @@ impl TypeChecker<'_> {
     }
 
     fn check_type_ref_shape(&mut self, ty: &TypeRef) {
-        if is_removed_asset_set_ref_type(ty) {
-            self.errors.push(TypeCheckError::new(format!(
-                "`{}` is not part of the v1 Arcweft source grammar; use manifest-backed finite sets at extern/reflection boundaries",
-                type_ref_label(ty)
-            )));
-        }
-        if let TypeRef::Path(path) = ty
-            && let Some(diagnostic) = NonCanonicalPrimitiveSpelling::classify(path)
-        {
-            self.errors
-                .push(TypeCheckError::new(diagnostic.message(path)));
-        }
         match ty {
             TypeRef::Choice(alternatives) => {
                 let mut erased = HashMap::<String, String>::new();
@@ -1494,14 +1625,6 @@ fn unknown_default_inline_fallback_field(namespace: &str, field: &str) -> Option
     (namespace == "InlineFallback"
         && !matches!(field, "expr_source" | "call_source" | "value_plain"))
     .then(|| format!("{namespace}.{field}"))
-}
-
-fn is_removed_asset_set_ref_type(ty: &TypeRef) -> bool {
-    match ty {
-        TypeRef::Path(path) => path == "AssetSetRef",
-        TypeRef::Generic { base, .. } => base == "AssetSetRef",
-        _ => false,
-    }
 }
 
 fn default_inline_policy_label(expr: &Expr) -> String {

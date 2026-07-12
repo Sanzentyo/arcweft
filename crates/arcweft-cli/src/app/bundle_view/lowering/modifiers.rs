@@ -17,8 +17,28 @@ pub(super) fn lower_modifiers(
     modifiers: &[ViewModifier],
     state: &mut ViewLoweringState,
 ) -> Result<(), ViewSidecarError> {
+    lower_modifiers_with_text_style(view_id, modifiers, state, false)
+}
+
+pub(super) fn lower_text_modifiers(
+    view_id: &str,
+    modifiers: &[ViewModifier],
+    state: &mut ViewLoweringState,
+) -> Result<(), ViewSidecarError> {
+    lower_modifiers_with_text_style(view_id, modifiers, state, true)
+}
+
+fn lower_modifiers_with_text_style(
+    view_id: &str,
+    modifiers: &[ViewModifier],
+    state: &mut ViewLoweringState,
+    mut skip_first_named_style: bool,
+) -> Result<(), ViewSidecarError> {
     for modifier in modifiers {
         match modifier {
+            ViewModifier::Style(ViewStyleModifier::Named(_)) if skip_first_named_style => {
+                skip_first_named_style = false;
+            }
             ViewModifier::Style(style) => {
                 let style = lower_style_apply(view_id, style, state);
                 state.instructions.push(ViewProgramInstruction::ApplyStyle {

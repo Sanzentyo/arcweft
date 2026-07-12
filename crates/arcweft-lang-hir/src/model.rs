@@ -153,7 +153,7 @@ pub struct HirDialogue {
     pub(crate) portrait: Option<Expr>,
     pub(crate) focus: Option<Expr>,
     pub(crate) cleanup: Option<Expr>,
-    pub(crate) window: Option<EntityRef>,
+    pub(crate) view: Option<EntityRef>,
     pub(crate) source_locale: Option<String>,
     pub(crate) hooks: Vec<Expr>,
     pub(crate) style: Option<Expr>,
@@ -518,7 +518,7 @@ impl HirDialogue {
             portrait: None,
             focus: None,
             cleanup: None,
-            window: None,
+            view: None,
             source_locale: None,
             hooks: Vec::new(),
             style: None,
@@ -569,8 +569,8 @@ impl HirDialogue {
         self.cleanup.as_ref()
     }
 
-    pub const fn window(&self) -> Option<&EntityRef> {
-        self.window.as_ref()
+    pub const fn view(&self) -> Option<&EntityRef> {
+        self.view.as_ref()
     }
 
     pub fn source_locale(&self) -> Option<&str> {

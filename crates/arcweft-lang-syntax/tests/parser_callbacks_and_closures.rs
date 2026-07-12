@@ -26,7 +26,7 @@ fn assert_selected_call<'a>(expr: &'a Expr, path: &str) -> &'a [CallArg] {
 
 #[test]
 fn speaker_preset_call_arguments_are_typed_expressions() {
-    let expr = parse_expr("alice(face=.smile, voice=auto, window=@textbox:.side)")
+    let expr = parse_expr("alice(face=.smile, voice=auto, view=@view:.side)")
         .expect("speaker preset argument list parses");
     let Expr::Call { callee, args } = expr else {
         panic!("expected call expression");

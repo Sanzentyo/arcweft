@@ -422,11 +422,11 @@ pub(super) fn native_agent_advance_text_presentation_input(
     });
     let target = action
         .and_then(|action| {
-            presentation.textboxes.iter().find_map(|textbox| {
-                let target = textbox.advance_target()?;
+            presentation.dialogue.iter().find_map(|dialogue| {
+                let target = dialogue.advance_target()?;
                 let object = format!(
                     "object.dialogue.{}.{}",
-                    target.textbox.get(),
+                    target.dialogue.get(),
                     target.entry.get()
                 );
                 (action.target == object).then_some(target)

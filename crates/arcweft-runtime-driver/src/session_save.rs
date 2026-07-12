@@ -155,7 +155,7 @@ pub(crate) fn validate_presentation_snapshot(
             diagnostic: Box::new(error.diagnostic()),
         })?;
     snapshot
-        .textboxes
+        .dialogue
         .validate()
         .map_err(|error| BundleSessionSaveError::Presentation {
             message: error.to_string(),
@@ -193,8 +193,8 @@ pub(crate) fn validate_presentation_runtime_status(
 ) -> Result<(), BundleSessionSaveError> {
     match status {
         FlowFiberStatus::Dialogue(state) => {
-            let mut waiting = snapshot.textboxes.waiting_entries();
-            let Some((textbox, dialogue)) = waiting.next() else {
+            let mut waiting = snapshot.dialogue.waiting_entries();
+            let Some((presentation, dialogue)) = waiting.next() else {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
                         "runtime waits for dialogue `{}` but the presentation has no dialogue",
@@ -204,15 +204,15 @@ pub(crate) fn validate_presentation_runtime_status(
             };
             if waiting.next().is_some() {
                 return Err(BundleSessionSaveError::Presentation {
-                    message: "runtime has more than one actionable TextBox entry".to_owned(),
+                    message: "runtime has more than one actionable dialogue occurrence".to_owned(),
                 });
             }
             if dialogue.frame().line != state.line {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
-                        "runtime waits for dialogue `{}` but TextBox {} occurrence {} retains `{}`",
+                        "runtime waits for dialogue `{}` but presentation {} occurrence {} retains `{}`",
                         state.line,
-                        textbox.id().get(),
+                        presentation.id().get(),
                         dialogue.instance().get(),
                         dialogue.frame().line,
                     ),
@@ -220,11 +220,11 @@ pub(crate) fn validate_presentation_runtime_status(
             }
         }
         _ => {
-            if let Some((textbox, dialogue)) = snapshot.textboxes.waiting_entries().next() {
+            if let Some((presentation, dialogue)) = snapshot.dialogue.waiting_entries().next() {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
-                        "TextBox {} presentation occurrence {} is actionable while runtime status is {status:?}",
-                        textbox.id().get(),
+                        "dialogue presentation {} occurrence {} is actionable while runtime status is {status:?}",
+                        presentation.id().get(),
                         dialogue.instance().get(),
                     ),
                 });

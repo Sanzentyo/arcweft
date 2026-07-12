@@ -23,7 +23,7 @@ Arcweft source declares the imported Rust module shape, and a launch profile
 selects the metadata file that makes those names visible to sema and LSP:
 
 ```arcw
-extern rust mod mini_games::truck from crate "truck_game" {
+extern rust mod mini_games.truck from crate "truck_game" {
     pub type TruckInput
     pub type TruckResult
 

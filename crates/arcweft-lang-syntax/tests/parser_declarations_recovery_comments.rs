@@ -48,21 +48,22 @@ flow opening {
 }
 
 #[test]
-fn removed_import_execution_modes_are_parse_diagnostics() {
+fn unrecognized_import_prefixes_use_generic_top_level_recovery() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
-lazy use game.heavy.{shader}
-eager use game.generated.{RouteMap}
+deferred use game.heavy.{shader}
+scheduled use game.generated.{RouteMap}
 use game.prelude.*
 ",
     );
 
     assert_eq!(parsed.errors().len(), 2);
-    assert!(parsed.errors().iter().all(|error| {
-        error
-            .message()
-            .contains("`lazy use` and `eager use` were removed")
-    }));
+    assert!(
+        parsed
+            .errors()
+            .iter()
+            .all(|error| error.message() == "unexpected top-level item")
+    );
     let tree = parsed.typed_tree();
     assert_eq!(tree.uses().len(), 1);
     assert_eq!(tree.uses()[0].tree().source(), "game.prelude.*");
@@ -72,7 +73,7 @@ use game.prelude.*
 fn unknown_braced_top_level_item_uses_generic_recovery() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-pub surface character alice {
+pub unknown_panel alice {
     display = "Alice"
 }
 
@@ -83,7 +84,7 @@ pub character bob {}
     assert_eq!(parsed.errors().len(), 1);
     let error = &parsed.errors()[0];
     assert_eq!(error.message(), "unexpected top-level item");
-    assert_eq!(error.found(), Some("pub surface character alice {"));
+    assert_eq!(error.found(), Some("pub unknown_panel alice {"));
     assert!(
         error
             .recovery()
@@ -95,6 +96,25 @@ pub character bob {}
         [Item::Raw(_), Item::EntityDecl(item)]
             if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
             && item.id().body() == "character.bob"
+    ));
+}
+
+#[test]
+fn arbitrary_unknown_braced_item_recovers_to_the_next_declaration() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        "pub unknown_widget legacy {\n color = rgb(\"#fff\")\n}\npub view DialoguePanel() {\n Text(\"ok\")\n}\n",
+    );
+
+    assert_eq!(parsed.errors().len(), 1);
+    assert_eq!(parsed.errors()[0].message(), "unexpected top-level item");
+    assert_eq!(
+        parsed.errors()[0].found(),
+        Some("pub unknown_widget legacy {")
+    );
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::Raw(_), Item::EntityDecl(item)]
+            if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::View
     ));
 }
 
@@ -222,6 +242,87 @@ pub action feedback.submit_name(value: String)
 }
 
 #[test]
+fn entity_headers_accept_the_shared_typed_tail_grammar() {
+    let tree = parse_ok(
+        r#"
+#[generated(tool)]
+pub view GenericPanel<T: Display>(value: T) {
+    Text("ok")
+}
+
+pub action feedback.submit<T>(value: T)
+pub signal current_flow: Watch<Ref<Flow>>
+pub layer overlay: NativeView {}
+pub audio bus music parent @bus.master {}
+pub character @character.alice Alice as alice {}
+"#,
+    );
+
+    let entities = tree
+        .items()
+        .iter()
+        .filter_map(|item| match item {
+            Item::EntityDecl(entity) => Some(entity),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(entities.len(), 6);
+    assert_eq!(entities[0].signature_tail(), "<T: Display>(value: T)");
+    assert_eq!(entities[1].signature_tail(), "<T>(value: T)");
+    assert_eq!(entities[2].signature_tail(), ": Watch<Ref<Flow>>");
+    assert_eq!(entities[3].signature_tail(), ": NativeView");
+    assert_eq!(entities[4].signature_tail(), "parent @bus.master");
+    assert_eq!(entities[5].surface_alias(), Some("alice"));
+}
+
+#[test]
+fn invalid_entity_block_header_is_not_an_ast_node_and_recovers_after_its_block() {
+    let source = r#"pub asset set foo {
+    file = "obsolete.png"
+}
+pub character bob {}
+"#;
+    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+
+    assert_eq!(parsed.errors().len(), 1);
+    let error = &parsed.errors()[0];
+    assert_eq!(
+        error.message(),
+        "unexpected token in entity declaration header"
+    );
+    assert_eq!(error.found(), Some("foo"));
+    assert_eq!(&source[error.range().as_range()], "foo");
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::EntityDecl(item)]
+            if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
+                && item.id().body() == "character.bob"
+    ));
+}
+
+#[test]
+fn invalid_entity_line_header_recovers_at_the_next_declaration() {
+    let source =
+        "pub action feedback.submit payload junk\npub view StatusPanel() { Text(\"ok\") }\n";
+    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+
+    assert_eq!(parsed.errors().len(), 1);
+    let error = &parsed.errors()[0];
+    assert_eq!(
+        error.message(),
+        "unexpected token in entity declaration header"
+    );
+    assert_eq!(error.found(), Some("payload"));
+    assert_eq!(&source[error.range().as_range()], "payload");
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::EntityDecl(item)]
+            if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::View
+                && item.id().body() == "view.StatusPanel"
+    ));
+}
+
+#[test]
 fn at_is_entity_ref_and_slash_comments_are_comments() {
     let tree = parse_ok(
         r"
@@ -293,13 +394,16 @@ pub fn open_route(
 
 #[test]
 fn flow_recovery_nodes_keep_family_and_source_range() {
-    let tree = parse_ok(
+    let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
 flow @flow.raw_example {
     unknown surface form
 }
 ",
     );
+    assert_eq!(parsed.errors().len(), 1);
+    assert_eq!(parsed.errors()[0].message(), "unsupported flow item");
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };

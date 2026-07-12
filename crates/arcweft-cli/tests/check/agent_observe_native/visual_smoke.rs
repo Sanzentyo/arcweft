@@ -27,9 +27,9 @@ fn visual_smoke_viewport_layer_and_object_captures_expose_selected_metadata() {
         "viewport capture is full-frame metadata, not a selected object/layer capture: \
          {viewport_image}"
     );
-    let textbox_id = find_textbox_object(&viewport)["id"]
+    let dialogue_view_id = find_dialogue_view_object(&viewport)["id"]
         .as_str()
-        .expect("observed textbox id is a string")
+        .expect("observed dialogue_view id is a string")
         .to_owned();
 
     let layer_path = dir.join("visual-smoke-dialogue-layer.png");
@@ -72,19 +72,19 @@ fn visual_smoke_viewport_layer_and_object_captures_expose_selected_metadata() {
         &object_path,
         "png",
         None,
-        &["--object", textbox_id.as_str()],
+        &["--object", dialogue_view_id.as_str()],
         &[],
     );
     let object_image = visual_smoke_image(&object);
     assert_visual_smoke_png(&object_path);
     assert_eq!(object_image["kind"], "color");
     assert_eq!(object_image["scope"]["kind"], "object");
-    assert_eq!(object_image["scope"]["id"], textbox_id);
+    assert_eq!(object_image["scope"]["id"], dialogue_view_id);
     assert!(object_image["content_pixels"].as_u64().unwrap_or_default() > 0);
     assert_visual_smoke_selected_capture(
         object_image,
         "object",
-        &textbox_id,
+        &dialogue_view_id,
         &[
             "framebuffer_crop",
             "isolated_regions",
@@ -93,8 +93,8 @@ fn visual_smoke_viewport_layer_and_object_captures_expose_selected_metadata() {
     );
     let object_selected = visual_smoke_selected_capture(object_image);
     assert_eq!(object_selected["source"]["kind"], "object");
-    assert_eq!(object_selected["source"]["id"], textbox_id);
-    assert_eq!(object_selected["source"]["role"], "dialogue_textbox");
+    assert_eq!(object_selected["source"]["id"], dialogue_view_id);
+    assert_eq!(object_selected["source"]["role"], "dialogue_view");
     assert_visual_smoke_selected_crop_matches_image(object_image);
 
     fs::remove_file(&path).expect("remove temp visual smoke source");
@@ -142,9 +142,9 @@ fn visual_smoke_object_id_and_mask_captures_have_debug_pixels_and_metadata() {
         object_ids.len(),
         "object-id attachment should encode one debug color per selected object: {object_id}"
     );
-    let textbox_id = find_textbox_object(&object_id)["id"]
+    let dialogue_view_id = find_dialogue_view_object(&object_id)["id"]
         .as_str()
-        .expect("observed textbox id is a string")
+        .expect("observed dialogue_view id is a string")
         .to_owned();
 
     let mask_path = dir.join("visual-smoke-dialogue-object-mask.rgba");
@@ -153,13 +153,13 @@ fn visual_smoke_object_id_and_mask_captures_have_debug_pixels_and_metadata() {
         &mask_path,
         "raw-rgba",
         Some("mask"),
-        &["--object", textbox_id.as_str()],
+        &["--object", dialogue_view_id.as_str()],
         &[],
     );
     let mask_image = visual_smoke_image(&mask);
     assert_eq!(mask_image["kind"], "mask");
     assert_eq!(mask_image["mime_type"], "application/octet-stream");
-    assert_visual_smoke_selected_capture(mask_image, "object", &textbox_id, &["mask_attachment"]);
+    assert_visual_smoke_selected_capture(mask_image, "object", &dialogue_view_id, &["mask_attachment"]);
     assert_visual_smoke_raw_len_matches_image(&mask_path, mask_image);
     let mask_bytes = fs::read(&mask_path).expect("read visual smoke mask RGBA");
     let opaque_pixels = mask_bytes
@@ -186,11 +186,11 @@ fn visual_smoke_object_id_and_mask_captures_have_debug_pixels_and_metadata() {
     );
     assert_eq!(mask_selected["mask"]["availability"], "available");
     assert_eq!(mask_selected["source"]["kind"], "object");
-    assert_eq!(mask_selected["source"]["id"], textbox_id);
-    assert_eq!(mask_selected["source"]["role"], "dialogue_textbox");
+    assert_eq!(mask_selected["source"]["id"], dialogue_view_id);
+    assert_eq!(mask_selected["source"]["role"], "dialogue_view");
     assert_eq!(
         mask_selected["mask"]["object_ids"],
-        serde_json::json!([textbox_id])
+        serde_json::json!([dialogue_view_id])
     );
     assert_visual_smoke_selected_crop_matches_image(mask_image);
 

@@ -150,6 +150,13 @@ impl<'a> Parser<'a> {
             } else {
                 let current = nested.current().clone();
                 let line = current.text.trim().to_owned();
+                nested.push_error(
+                    TextRange::new(current.start, current.end),
+                    "unsupported flow item",
+                    ["an expression statement", "a structured flow item"],
+                    Some(&line),
+                    ["use a current Arcweft flow-item form"],
+                );
                 items.push(FlowItem::Raw(RawSyntax::flow_item(
                     line,
                     Some(TextRange::new(current.start, current.end)),
@@ -324,29 +331,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_line_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
-        if trimmed.starts_with("spawn ") {
-            self.push_error(
-                TextRange::new(line.start, line.end),
-                "`spawn` was removed; use `thread` or `thread detached`",
-                ["thread { ... }", "thread detached { ... }"],
-                Some(trimmed),
-                ["rewrite this unstructured task as a scoped thread"],
-            );
-            self.index += 1;
-            return Some(FlowItem::Raw(RawSyntax::flow_item(
-                trimmed,
-                Some(TextRange::new(line.start, line.end)),
-            )));
-        }
         if trimmed.starts_with('@') && !trimmed.contains('[') {
-            let message = if trimmed.starts_with("@choice") {
-                "`@choice` is not valid Arcweft syntax"
-            } else {
-                "`@` does not start a flow statement"
-            };
             self.push_error(
                 TextRange::new(line.start, line.end),
-                message,
+                "`@` does not start a flow statement",
                 ["choice @choice.id { ... }", "bg(@asset:.id)"],
                 Some(trimmed),
                 ["use an ordinary statement or function-call style command"],

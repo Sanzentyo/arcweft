@@ -8,6 +8,33 @@ pub character narrator {
     default_voice = auto
 }
 
+pub style side_dialogue {
+    .dialogue_panel {
+        background = rgba(17, 18, 16, 242)
+    }
+    .dialogue_action {
+        background = rgba(0, 0, 0, 0)
+    }
+}
+
+pub view SideDialogue(dialogue: DialogueView) {
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
+        Text(dialogue.speaker)
+            .x(85.6px)
+            .y(480.8px)
+            .width(1108.8px)
+            .height(28px)
+        RichText(dialogue.content)
+            .x(85.6px)
+            .y(518.8px)
+            .width(1108.8px)
+            .height(125.6px)
+        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+            .part(dialogue_action)
+            .on_click { dialogue.primary_action }
+    }
+}
+
 signal current_flow: Watch<Ref<Flow>>
 metric gauge opening_lines: i32
 
@@ -26,7 +53,7 @@ effects { signal.write, metric.write }
         雨の音だけが、古い駅舎に残っていた。[p]
     ]
 
-    let alice2 = alice(face=.smile, voice=auto, window=@textbox:.side)
+    let alice2 = alice(face=.smile, voice=auto, view=@view.SideDialogue)
     alice2:
         おはよう。[p]
 

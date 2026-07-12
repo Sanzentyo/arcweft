@@ -13,7 +13,7 @@ Runtime observation now has two Phase 2.0 headless slices:
   diagnostics.
 - `arcw agent observe ... --json` reports the first Agent-shaped frame
   observation for dialogue/rich-text debugging. It resolves runtime dialogue
-  events against the rich-text display catalog and returns textbox objects,
+  events against the rich-text display catalog and returns dialogue View objects,
   viewport-space bounds, semantic advance actions, logs/signals/metrics/events,
   diagnostics, and optional image resources.
 
@@ -67,9 +67,9 @@ object crops use the sampled native presentation geometry. If
 `capture_step` is set without `capture_time`, native capture uses the step count
 as the animation sample time in seconds and records it as
 `capture_time_millis` on image resources. They also
-accept `viewport_width` and `viewport_height` to reproduce non-default screen sizes;
-when a source is observed, `textbox_height` can enlarge the observed dialogue
-textbox for layout-sensitive rich-text debugging without changing source text.
+accept `viewport_width` and `viewport_height` to reproduce non-default screen
+sizes. Dialogue geometry comes from the selected authored View; Agent requests
+do not carry a second layout-height override.
 Observation reports include a `scene_graph` entry with
 `kind = "layout.viewport_scale"` that records the output viewport, canonical
 1280x720 design viewport, raw `scale_policy = "none"`, content rect, and
@@ -101,7 +101,7 @@ captures, and native object-id/mask attachments.
 `resources/list` includes the standard observation/log/signal/audio resources,
 the selected frame image when present, layer color/object-id/mask PNG/raw
 capture refs, and object-local color/object-id/mask PNG/raw capture refs for
-textbox and rich-text child objects. Image descriptors also summarize the
+dialogue View and rich-text child objects. Image descriptors also summarize the
 image kind, renderer, scope, composition, and dimensions in their MCP
 description field, so debuggers can choose a viewport, layer, or object capture
 from the list before fetching the full resource body and metadata.
@@ -304,10 +304,10 @@ from the normal `SharedRenderer` framebuffer. Full viewport, layer bbox
 crops, and object bbox crops are supported. Rich-text child object crops use
 the retained `TextLayout` bounds for text runs, ruby annotations, glyphs, and
 logical clusters.
-The implemented object slice is focused on rich-text/textbox debugging: each
+The implemented object slice is focused on rich-text/dialogue-View debugging: each
 observed layer includes a viewport bbox, object count, and stable
 `capture_refs` for color/object-id/mask PNG and raw RGBA images. Each
-observed textbox includes resolved display text, structured rich-text nodes,
+observed dialogue View includes resolved display text, structured rich-text nodes,
 host events, inline interpolation failures, base styles, viewport bbox, polygon,
 object-local `capture_refs` for color/object-id/mask PNG and raw RGBA crops, the
 object-id debug color used in object-id images, rich-text `display_map` ranges

@@ -1,6 +1,7 @@
 # arcw entries, capabilities, virtual paths, and host effects
 
-This document proposes grammar changes that should land destructively. No legacy spellings, aliases, or migration wrappers are added.
+This document defines the current entry, capability, virtual-path, and host
+effect grammar.
 
 ## Entry declarations
 

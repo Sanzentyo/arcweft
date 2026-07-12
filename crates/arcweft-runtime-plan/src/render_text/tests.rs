@@ -50,7 +50,7 @@ flow @flow.main main {
     let defaults = DialogueDisplayDefaults::from_module(&hir);
     let spec = lower_dialogue_display(line_id("say.opening.001"), dialogue, &defaults);
 
-    assert_eq!(spec.window.as_deref(), Some("textbox.main"));
+    assert_eq!(spec.view.as_deref(), Some("std.view.dialogue"));
     assert_eq!(
         spec.base_styles,
         vec![
@@ -1209,7 +1209,7 @@ flow @flow.main main {
 #[test]
 fn rich_text_defaults_and_line_options_lower_to_ruby_layout() {
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -1315,15 +1315,15 @@ flow @flow.main main {
 fn dialogue_display_uses_canonical_defaults_profile_when_multiple_exist() {
     let parsed = parse_source(
         r##"
-pub dialogue defaults @dialogue.defaults.debug {
+pub dialogue defaults @dialogue.debug {
     text_color = rgb("#ff0000")
 }
 
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     text_color = rgb("#101112")
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
+pub dialogue defaults @dialogue.mobile {
     text_color = rgb("#00ff00")
 }
 
@@ -1497,7 +1497,7 @@ flow @flow.main main {
 #[test]
 fn inline_rich_text_span_contributes_cascade_provenance() {
     let source = r"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     rich_text {
         ruby {
             size = 14px
@@ -1630,7 +1630,7 @@ flow @flow.main main {
 #[test]
 fn dialogue_display_inherits_global_and_character_style_defaults() {
     let source = r##"
-pub dialogue defaults @dialogue.defaults {
+pub dialogue defaults {
     font = serif
     text_color = rgb("#101112")
     inline_error = InlineFailure.fallback("global")

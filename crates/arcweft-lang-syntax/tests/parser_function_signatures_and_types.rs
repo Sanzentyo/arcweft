@@ -115,51 +115,39 @@ fn function_signatures_keep_function_typed_parameters() {
 }
 
 #[test]
-fn type_parser_rejects_removed_primitive_spellings_at_the_syntax_boundary() {
-    for (source, remedy) in [
-        ("Bool", "`bool`"),
-        ("Char", "`char`"),
-        ("string", "`String`"),
-        ("int", "explicit-width signed integer"),
-        ("uint", "explicit-width unsigned integer"),
-        ("float", "explicit-width float"),
-        ("Number", "explicit-width numeric primitive"),
-        ("Vec<Bool>", "`bool`"),
-    ] {
-        let error = parse_type_ref(source).expect_err("removed primitive spelling must reject");
-        assert!(
-            error.to_string().contains(remedy),
-            "unexpected diagnostic for {source}: {error}"
-        );
-    }
-
+fn type_parser_preserves_unregistered_names_as_nominal_type_paths() {
     assert!(matches!(
-        parse_type_ref("domain.Bool").expect("qualified nominal type remains distinct"),
-        TypeRef::Path(path) if path == "domain.Bool"
+        parse_type_ref("ProjectFlag").expect("nominal type path parses"),
+        TypeRef::Path(path) if path == "ProjectFlag"
+    ));
+    assert!(matches!(
+        parse_type_ref("Vec<ProjectFlag>").expect("nominal generic argument parses"),
+        TypeRef::Generic { base, args }
+            if base == "Vec" && args == vec![TypeRef::Path("ProjectFlag".to_owned())]
+    ));
+    assert!(matches!(
+        parse_type_ref("domain.ProjectFlag").expect("qualified nominal type parses"),
+        TypeRef::Path(path) if path == "domain.ProjectFlag"
     ));
 }
 
 #[test]
-fn source_parser_reports_noncanonical_types_in_every_owned_type_surface() {
+fn source_parser_uses_the_same_open_nominal_grammar_on_owned_type_surfaces() {
     for source in [
-        "flow bad { let value: Bool = true }",
-        "type Bad = Bool",
-        "struct Bad { value: Bool }",
-        "state Bad { value: Bool = true }",
-        "flow bad(value: Bool) {}",
-        "fn bad(value: Bool) -> Unit {}",
-        "trait Bad { fn value(input: Bool) -> Unit }",
-        "impl Bad for Thing { fn value(input: Bool) -> Unit {} }",
-        "extern mod rust bad { fn value(input: Bool) -> Unit }",
+        "flow bad { let value: ProjectFlag = true }",
+        "type Bad = ProjectFlag",
+        "struct Bad { value: ProjectFlag }",
+        "state Bad { value: ProjectFlag = true }",
+        "flow bad(value: ProjectFlag) {}",
+        "fn bad(value: ProjectFlag) -> Unit {}",
+        "trait Bad { fn value(input: ProjectFlag) -> Unit }",
+        "impl Bad for Thing { fn value(input: ProjectFlag) -> Unit {} }",
+        "extern rust mod bad from crate \"bad\" { pub fn value(input: ProjectFlag) -> Unit }",
     ] {
         let parsed = parse_source(source);
         assert!(
-            parsed.errors().iter().any(|error| {
-                error
-                    .message()
-                    .contains("`Bool` is not a canonical primitive type spelling")
-            }),
-            "noncanonical type was silently accepted for `{source}`: {:?}",
+            parsed.errors().is_empty(),
+            "nominal type path should parse uniformly for `{source}`: {:?}",
             parsed.errors()
         );
     }

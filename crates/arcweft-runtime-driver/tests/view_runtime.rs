@@ -1,6 +1,6 @@
 use arcweft_bundle::resource_codec::view::{
-    ViewObserveClassification, ViewProgramInstruction, ViewSecureRedactionMetadata,
-    ViewTextSourceKind, ViewTextSourceRecord,
+    DialogueTextProjection, ViewObserveClassification, ViewProgramInstruction,
+    ViewSecureRedactionMetadata, ViewTextSourceKind, ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
     ViewCallArgumentBindingRef, ViewDefinitionResource, ViewDisplayFrameResource,
@@ -14,12 +14,20 @@ use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
 use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RichTextNode, RuntimeLineContext};
+use arcweft_runtime_driver::dialogue::{
+    DialoguePageIndex, DialoguePresentationOperation, DialoguePresentationStore, DialogueViewInput,
+    DialogueViewOccurrence, DialogueViewPrimaryAction, DialogueViewReveal, DialogueViewStage,
+    DialogueViewState,
+};
 use arcweft_runtime_driver::presentation_handles::{
     PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
     PresentationResourceState,
 };
 use arcweft_runtime_driver::view_runtime::{
     BundleViewDiagnosticCode, BundleViewPaintItem, BundleViewRuntime, BundleViewTextValue,
+};
+use arcweft_view::{
+    DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
@@ -631,7 +639,7 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,
@@ -719,5 +727,221 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
     assert_eq!(
         failure.diagnostics[0].code,
         BundleViewDiagnosticCode::MissingLocalizedText
+    );
+}
+
+#[test]
+fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence() {
+    let (program, text) = typed_dialogue_view_resources();
+    let display_frame = typed_dialogue_display_frame();
+    let first_handle = PresentationHandleId::try_new("dialogue.40").unwrap();
+    let first_inputs = [DialogueViewInput {
+        handle: first_handle.clone(),
+        view: "view.Dialogue",
+        frame: &display_frame,
+        state: dialogue_view_state(40),
+    }];
+    let mut runtime = BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None)
+        .expect("dialogue View runtime builds");
+    let first = runtime.evaluate_with_dialogue(&[], &first_inputs, &[], false);
+    assert!(first.diagnostics.is_empty(), "{first:#?}");
+    assert_eq!(first.mounts.len(), 1);
+    assert_eq!(first.mounts[0].handle, first_handle);
+    assert_eq!(first.mounts[0].dialogue, Some(dialogue_view_state(40)));
+    assert!(matches!(
+        &first.mounts[0].text[0].value,
+        BundleViewTextValue::DialogueSpeaker { label, frame }
+            if label == "Hero" && frame.as_ref() == &display_frame
+    ));
+    assert!(matches!(
+        &first.mounts[0].text[1].value,
+        BundleViewTextValue::DisplayFrame { frame, stage_index: 0 }
+            if frame.as_ref() == &display_frame
+    ));
+    let first_mount = first.mounts[0].mount;
+
+    let snapshot = runtime.snapshot();
+    let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
+    restored.restore(&snapshot).expect("mount graph restores");
+    let second_handle = PresentationHandleId::try_new("dialogue.41").unwrap();
+    let two_inputs = [
+        DialogueViewInput {
+            handle: first_inputs[0].handle.clone(),
+            view: "view.Dialogue",
+            frame: &display_frame,
+            state: dialogue_view_state(40),
+        },
+        DialogueViewInput {
+            handle: second_handle,
+            view: "view.Dialogue",
+            frame: &display_frame,
+            state: dialogue_view_state(41),
+        },
+    ];
+    let after_restore = restored.evaluate_with_dialogue(&[], &two_inputs, &[], false);
+    assert!(after_restore.diagnostics.is_empty(), "{after_restore:#?}");
+    assert_eq!(after_restore.mounts.len(), 2);
+    assert_eq!(
+        after_restore
+            .mounts
+            .iter()
+            .find(|mount| mount.handle == first_inputs[0].handle)
+            .expect("first occurrence remains mounted")
+            .mount,
+        first_mount
+    );
+    assert_ne!(after_restore.mounts[0].mount, after_restore.mounts[1].mount);
+}
+
+fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
+    let program = ViewProgramResource {
+        program_id: "view.program.dialogue".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.Dialogue".to_owned(),
+            body: ViewInstructionSpan::new(0, 2),
+            parameters: vec![ViewParameterResource {
+                ordinal: 0,
+                name: "dialogue".to_owned(),
+                value_type: None,
+                value_slot: None,
+                default_program: None,
+            }],
+            state_schema_hash: 91,
+        }],
+        instructions: ["speaker", "content"]
+            .into_iter()
+            .map(|suffix| ViewProgramInstruction::EmitText {
+                text_source: format!("text.dialogue.{suffix}"),
+                style: None,
+                part: None,
+                source: None,
+            })
+            .collect(),
+        text_blocks: ["speaker", "content"]
+            .into_iter()
+            .map(|suffix| {
+                ViewTextBlockResource::new(
+                    format!("text.block.{suffix}"),
+                    Some("view.Dialogue".to_owned()),
+                    None,
+                    format!("text.dialogue.{suffix}"),
+                    ViewTextBlockBounds::from_px(0, 0, 640, 96),
+                )
+            })
+            .collect(),
+        ..ViewProgramResource::default()
+    };
+    let text = text_resource([
+        (
+            "text.dialogue.speaker",
+            ViewTextSourceKind::Dialogue {
+                parameter: "dialogue".to_owned(),
+                projection: DialogueTextProjection::Speaker,
+            },
+        ),
+        (
+            "text.dialogue.content",
+            ViewTextSourceKind::Dialogue {
+                parameter: "dialogue".to_owned(),
+                projection: DialogueTextProjection::Content,
+            },
+        ),
+    ]);
+    (program, text)
+}
+
+fn typed_dialogue_display_frame() -> arcweft_render_text::LineDisplayFrame {
+    LineDisplaySpec {
+        line: RuntimeLineId::from_runtime_line_value("say.dialogue.typed").unwrap(),
+        callee: "character.hero".to_owned(),
+        speaker_label: Some("Hero".to_owned()),
+        text_key: None,
+        view: Some("view.Dialogue".to_owned()),
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![RichTextNode::Ruby {
+            base: "夢".to_owned(),
+            ruby: "ゆめ".to_owned(),
+        }]),
+    }
+    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+    .unwrap()
+}
+
+fn dialogue_view_state(identity: u64) -> DialogueViewState {
+    DialogueViewState {
+        occurrence: DialogueViewOccurrence {
+            presentation: DialoguePresentationId::new(identity),
+            entry: DialogueEntryId::new(identity),
+            instance: DialogueInstanceId::new(identity),
+        },
+        stage: DialogueViewStage {
+            index: DialogueStageIndex::new(0),
+            page: DialoguePageIndex::new(0),
+            stage_count: 1,
+            page_count: 1,
+        },
+        reveal: DialogueViewReveal::complete(),
+        primary_action: DialogueViewPrimaryAction { target: None },
+    }
+}
+
+#[test]
+fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
+    let frame = LineDisplaySpec {
+        line: RuntimeLineId::from_runtime_line_value("say.standard.dialogue").unwrap(),
+        callee: "narrator".to_owned(),
+        speaker_label: Some("Narrator".to_owned()),
+        text_key: None,
+        view: None,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![RichTextNode::Text {
+            text: "Standard authored View".to_owned(),
+        }]),
+    }
+    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+    .unwrap();
+    let mut dialogue = DialoguePresentationStore::default();
+    dialogue
+        .apply_operations(&[DialoguePresentationOperation::append(
+            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+            frame,
+        )])
+        .unwrap();
+    dialogue
+        .synchronize_waiting_line(Some(
+            &RuntimeLineId::from_runtime_line_value("say.standard.dialogue").unwrap(),
+        ))
+        .unwrap();
+    let mut runtime = BundleViewRuntime::try_new(
+        Some(arcweft_bundle::standard_view::dialogue_program()),
+        Some(arcweft_bundle::standard_view::dialogue_text()),
+        Some(&arcweft_bundle::standard_view::dialogue_style()),
+    )
+    .unwrap();
+    let output = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
+
+    assert!(output.diagnostics.is_empty(), "{output:#?}");
+    assert_eq!(output.mounts.len(), 1);
+    assert_eq!(
+        output.mounts[0].view,
+        arcweft_bundle::standard_view::DIALOGUE_VIEW_ID
+    );
+    assert_eq!(output.mounts[0].text.len(), 2);
+    assert!(
+        output.mounts[0]
+            .dialogue
+            .is_some_and(|state| state.primary_action.target.is_some())
     );
 }

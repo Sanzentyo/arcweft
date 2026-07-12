@@ -7,8 +7,8 @@ use crate::expr::{Expr, collect_dialogue_call_content_ranges};
 use super::headers::{parse_optional_decl_entity_ref, parse_visibility_prefix, simple_error};
 use super::{
     BlockStyle, ContentCall, ContentCallParse, CstLine, DialogueContent, FlowItem, LinePlan,
-    MappedDialogueSource, MappedDialogueSourceBuilder, Parser, ScopeBlock, SpeakerLine, Stmt,
-    TextRange, attach_plan_to_dialogue_expr, contains_dialogue_expr, find_content_bracket,
+    MappedDialogueSource, MappedDialogueSourceBuilder, Parser, RawSyntax, ScopeBlock, SpeakerLine,
+    Stmt, TextRange, attach_plan_to_dialogue_expr, contains_dialogue_expr, find_content_bracket,
     find_matching_punctuation, find_top_level_punctuation, flat_block_head, indentation,
     is_with_brace_head, parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy,
     parse_flat_fence, parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
@@ -42,7 +42,7 @@ impl Parser<'_> {
             self.push_error(
                 TextRange::new(start_line.start, start_line.start + head.len()),
                 "dialogue defaults profiles cannot use relative IDs",
-                ["@dialogue.defaults", "@dialogue.defaults.mobile"],
+                ["@dialogue.mobile", "@dialogue.debug"],
                 Some(after_defaults),
                 ["write the full defaults profile ID"],
             );
@@ -247,6 +247,7 @@ impl Parser<'_> {
             )));
         }
 
+        let content_call_start = self.index;
         if let Some((callee, args, content, consumed_end, inline_plan, trailing_block)) =
             self.try_take_content_call()
         {
@@ -261,6 +262,13 @@ impl Parser<'_> {
                 content,
                 plan,
                 TextRange::new(line.start, consumed_end),
+            )));
+        }
+
+        if self.index != content_call_start {
+            return Some(FlowItem::Raw(RawSyntax::flow_item(
+                trimmed,
+                Some(TextRange::new(line.start, self.previous_end())),
             )));
         }
 

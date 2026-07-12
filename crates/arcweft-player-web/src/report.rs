@@ -5,7 +5,7 @@ use arcweft_render_text::{
     TextSlant, TextWeight,
 };
 use arcweft_render_wgpu::geometry::{
-    PreparedFrame, PreparedTextBoxPart, PreparedTextOwner, PreparedTextOwnerKind, RenderImage,
+    PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind, RenderImage,
 };
 use arcweft_runtime_driver::{dialogue::BundlePresentationTransition, session::BundleSessionStep};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect};
@@ -40,10 +40,11 @@ pub struct WebObservationReport {
 /// Input-gated dialogue state exposed for browser integration tests and hosts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebDialogueObservation {
-    pub textbox: u64,
+    pub dialogue: u64,
     pub entry: u64,
     pub revision: u64,
-    pub view_mount: u64,
+    pub view: String,
+    pub view_mount: Option<u64>,
     pub instance: u64,
     pub stage_index: u32,
     pub page_index: Option<u32>,
@@ -66,13 +67,23 @@ impl WebObservationReport {
             presentation_revision: step.presentation.revision,
             dialogue: step
                 .presentation
-                .textboxes
+                .dialogue
                 .latest_active()
-                .map(|(textbox, entry)| WebDialogueObservation {
-                    textbox: textbox.id().get(),
+                .map(|(dialogue, entry)| WebDialogueObservation {
+                    dialogue: dialogue.id().get(),
                     entry: entry.id().get(),
-                    revision: textbox.revision().get(),
-                    view_mount: textbox.mount().get(),
+                    revision: dialogue.revision().get(),
+                    view: dialogue.view().as_str().to_owned(),
+                    view_mount: step
+                        .presentation
+                        .view
+                        .mounts
+                        .iter()
+                        .find(|mount| {
+                            mount.handle == entry.view_handle_id()
+                                && mount.path.segments().is_empty()
+                        })
+                        .map(|mount| mount.mount.get()),
                     instance: entry.instance().get(),
                     stage_index: entry.stage_index().get(),
                     page_index: entry
@@ -303,21 +314,24 @@ impl WebFramePreparedText {
             .glyphs
             .iter()
             .zip(&item.paint.glyphs)
-            .map(|(glyph, paint)| WebFramePreparedGlyph {
-                source_start: glyph.source_range.start,
-                source_end: glyph.source_range.end,
-                line_index: glyph.line_index,
-                cluster_index: glyph.cluster_index,
-                logical_ordinal: glyph.logical_ordinal,
-                bounds: WebFrameBounds::from_layout_rect(glyph.layout_bounds),
-                ink_bounds: WebFrameBounds::from_layout_rect(glyph.ink_bounds),
-                visible: paint.visible,
-                opacity_milli: paint.opacity_milli,
-                rgba: paint.color.channels(),
-                orientation: orientation_label(glyph.orientation).to_owned(),
-                vertical_form: vertical_form_label(glyph.vertical_form).to_owned(),
-                inline_scale_milli: f32_milli(glyph.inline_scale),
-                transform: WebFrameGlyphTransform::from_paint(paint),
+            .map(|(glyph, paint)| {
+                let opacity_milli = paint.effective_opacity_milli();
+                WebFramePreparedGlyph {
+                    source_start: glyph.source_range.start,
+                    source_end: glyph.source_range.end,
+                    line_index: glyph.line_index,
+                    cluster_index: glyph.cluster_index,
+                    logical_ordinal: glyph.logical_ordinal,
+                    bounds: WebFrameBounds::from_layout_rect(glyph.layout_bounds),
+                    ink_bounds: WebFrameBounds::from_layout_rect(glyph.ink_bounds),
+                    visible: paint.visible && opacity_milli > 0,
+                    opacity_milli,
+                    rgba: paint.color.channels(),
+                    orientation: orientation_label(glyph.orientation).to_owned(),
+                    vertical_form: vertical_form_label(glyph.vertical_form).to_owned(),
+                    inline_scale_milli: f32_milli(glyph.inline_scale),
+                    transform: WebFrameGlyphTransform::from_paint(paint),
+                }
             })
             .collect::<Vec<_>>();
         Self {
@@ -469,7 +483,7 @@ fn visible_body_ranges(item: &PreparedTextItem) -> Vec<RichTextRange> {
         .glyphs
         .iter()
         .zip(&item.paint.glyphs)
-        .filter(|(_, paint)| paint.visible && paint.opacity_milli > 0)
+        .filter(|(_, paint)| paint.visible && paint.effective_opacity_milli() > 0)
         .map(|(glyph, _)| glyph.source_range)
         .collect::<Vec<_>>();
     ranges.sort_by_key(|range| (range.start, range.end));
@@ -494,18 +508,11 @@ fn text_for_ranges(text: &str, ranges: &[RichTextRange]) -> String {
 
 fn owner_kind_label(kind: PreparedTextOwnerKind) -> String {
     match kind {
-        PreparedTextOwnerKind::TextBox {
-            textbox,
+        PreparedTextOwnerKind::DialogueView {
+            dialogue,
             entry,
             mount,
-            part,
-        } => format!(
-            "textbox:{textbox}:{entry}:{mount}:{}",
-            match part {
-                PreparedTextBoxPart::Speaker => "speaker",
-                PreparedTextBoxPart::Body => "body",
-            }
-        ),
+        } => format!("dialogue:{dialogue}:{entry}:{mount}"),
         PreparedTextOwnerKind::View { mount } => format!("view:{mount}"),
         PreparedTextOwnerKind::Control => "control".to_owned(),
     }

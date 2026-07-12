@@ -67,6 +67,7 @@ fn push_view_text(
 ) {
     let source_id = format!("source.{target}");
     presentation.view.mounts.push(BundleViewMountOutput {
+        dialogue: None,
         handle: PresentationHandleId::try_new(format!("handle.{target}")).expect("handle id"),
         mount: ViewMountId::from_raw(0),
         view: view.to_owned(),
@@ -704,7 +705,7 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,

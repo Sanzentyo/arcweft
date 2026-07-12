@@ -210,7 +210,9 @@ pub enum DialogueProgress {
     #[default]
     None,
     Reveal,
-    Advance,
+    Advance {
+        target: arcweft_view::DialogueAdvanceTarget,
+    },
 }
 
 impl DialogueProgress {
@@ -219,7 +221,7 @@ impl DialogueProgress {
     }
 
     pub const fn advances(self) -> bool {
-        matches!(self, Self::Advance)
+        matches!(self, Self::Advance { .. })
     }
 
     pub const fn redraws(self) -> bool {
@@ -229,7 +231,9 @@ impl DialogueProgress {
     fn merge(self, other: Self) -> Self {
         match (self, other) {
             (Self::Reveal, _) | (_, Self::Reveal) => Self::Reveal,
-            (Self::Advance, _) | (_, Self::Advance) => Self::Advance,
+            (Self::Advance { target }, _) | (_, Self::Advance { target }) => {
+                Self::Advance { target }
+            }
             (Self::None, Self::None) => Self::None,
         }
     }
@@ -254,6 +258,7 @@ struct ActionButtonSubmitOutcome {
     action: Option<Action>,
     write_back: Option<TextControlWriteBack>,
     diagnostic: Option<InputDiagnostic>,
+    dialogue_progress: DialogueProgress,
 }
 
 #[derive(Debug, Default)]
@@ -262,6 +267,7 @@ struct PointerActivationEffects {
     text_control_write_backs: Vec<TextControlWriteBack>,
     diagnostics: Vec<InputDiagnostic>,
     action_button_activation: bool,
+    dialogue_progress: DialogueProgress,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -710,8 +716,15 @@ impl InputController {
         if !button.enabled {
             return ActionButtonSubmitOutcome::default();
         }
-        let RenderActionButtonAction::ActionInvoke { action, payload } = &button.action else {
-            return ActionButtonSubmitOutcome::default();
+        let (action, payload) = match &button.action {
+            RenderActionButtonAction::Noop => return ActionButtonSubmitOutcome::default(),
+            RenderActionButtonAction::DialoguePrimaryAction { target } => {
+                return ActionButtonSubmitOutcome {
+                    dialogue_progress: dialogue_progress_for_target(frame, *target),
+                    ..ActionButtonSubmitOutcome::default()
+                };
+            }
+            RenderActionButtonAction::ActionInvoke { action, payload } => (action, payload),
         };
         let action = match frame.semantics.lower_action(target, action) {
             Ok(action) => Some(match payload {
@@ -729,6 +742,7 @@ impl InputController {
                         },
                         target: target.clone(),
                     }),
+                    dialogue_progress: DialogueProgress::None,
                 };
             }
         };
@@ -736,6 +750,7 @@ impl InputController {
             action,
             write_back: None,
             diagnostic: None,
+            dialogue_progress: DialogueProgress::None,
         }
     }
 
@@ -854,8 +869,8 @@ fn activation_outcome(
     let dialogue_progress = dialogue_progress_for_frame(
         frame,
         advances_dialogue
-            && frame.has_textboxes()
-            && frame.textbox_advance_available()
+            && frame.has_dialogue_views()
+            && frame.dialogue_advance_available()
             && frame.choices.is_empty(),
     );
     InputOutcome {
@@ -873,11 +888,34 @@ fn dialogue_progress_for_frame(frame: &PreparedFrame, requested: bool) -> Dialog
     if !requested {
         return DialogueProgress::None;
     }
-    if frame.has_revealing_textbox() {
-        DialogueProgress::Reveal
-    } else {
-        DialogueProgress::Advance
+    let Some(dialogue) = frame.latest_dialogue_view() else {
+        return DialogueProgress::None;
+    };
+    if !dialogue.reveal_complete {
+        return DialogueProgress::Reveal;
     }
+    dialogue
+        .primary_action
+        .map_or(DialogueProgress::None, |target| DialogueProgress::Advance {
+            target,
+        })
+}
+
+fn dialogue_progress_for_target(
+    frame: &PreparedFrame,
+    target: arcweft_view::DialogueAdvanceTarget,
+) -> DialogueProgress {
+    frame
+        .dialogue_views()
+        .iter()
+        .find(|dialogue| dialogue.primary_action == Some(target))
+        .map_or(DialogueProgress::None, |dialogue| {
+            if dialogue.reveal_complete {
+                DialogueProgress::Advance { target }
+            } else {
+                DialogueProgress::Reveal
+            }
+        })
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -974,6 +1012,7 @@ fn pointer_activation_effects(
         text_control_write_backs: submit.write_back.into_iter().collect(),
         diagnostics: submit.diagnostic.into_iter().collect(),
         action_button_activation: frame_target_is_action_button(frame, event.target()),
+        dialogue_progress: submit.dialogue_progress,
     }
 }
 

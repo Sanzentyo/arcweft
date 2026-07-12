@@ -2984,10 +2984,10 @@ fn shared_capture_object_id_preserves_supplied_painter_order() {
 
 #[test]
 fn shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage() {
-    let mut textbox = test_observed_object("object.dialogue.0.0", 1, 1, 4, 2);
-    textbox.layer = "dialogue".to_owned();
+    let mut dialogue = test_observed_object("object.dialogue.0.0", 1, 1, 4, 2);
+    dialogue.layer = "dialogue".to_owned();
     let mut cluster = test_observed_object("object.dialogue.0.0.cluster.0", 2, 1, 1, 2);
-    cluster.parent_id = Some(textbox.id.clone());
+    cluster.parent_id = Some(dialogue.id.clone());
     cluster.layer = "dialogue.rich_text".to_owned();
     let mut report = test_agent_observation_report(None);
     report.viewport = AgentViewport {
@@ -2995,7 +2995,7 @@ fn shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage() 
         height: 4,
         scale: 1.0,
     };
-    report.objects = vec![textbox, cluster];
+    report.objects = vec![dialogue, cluster];
     report.layers = agent_observed_layers("cli", 3, &report.objects);
     let frames = test_shared_attachment_store(&report, [9, 8, 7, 255]);
 
@@ -3014,9 +3014,9 @@ fn shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage() 
     )
     .unwrap();
 
-    let textbox_color = agent_object_id_color("object.dialogue.0.0");
-    assert_eq!(rgba_pixel(&result.bytes, 4, 0, 0), textbox_color);
-    assert_eq!(rgba_pixel(&result.bytes, 4, 1, 0), textbox_color);
+    let dialogue_color = agent_object_id_color("object.dialogue.0.0");
+    assert_eq!(rgba_pixel(&result.bytes, 4, 0, 0), dialogue_color);
+    assert_eq!(rgba_pixel(&result.bytes, 4, 1, 0), dialogue_color);
     let mask = result
         .image
         .selected_capture

@@ -207,7 +207,7 @@ is not accepted because `..` already appears in range and rest-pattern syntax.
 
 General entity references must still name their family, but authoring should
 prefer family-relative spellings when that family has a default public-id
-prefix. Use `@flow:.next`, `@asset:.room`, or `@textbox:.side`
+prefix. Use `@flow:.next`, `@asset:.room`, or `@view:.SideDialogue`
 for normal source references. Use absolute spellings such as `@asset.bg.room`
 only for generated surfaces, manifest/tooling output, and external interfaces
 that need the stored public id verbatim. Unqualified `@.next` is rejected in
@@ -233,13 +233,13 @@ emitted as an empty path component.
 For module and import paths, use Rust-like roots instead:
 
 ```arcw
-use self::characters::{alice}
-use super::common::{route_gate}
-use crate::game::prelude::*
+use self.characters.{alice}
+use super.common.{route_gate}
+use crate.game.prelude.*
 ```
 
-`parent::` is reserved as an alias for `super::`, but canonical formatting uses
-`super::`.
+`parent.` is reserved as an alias for `super.`, but canonical formatting uses
+`super.`.
 
 ## let-else decision
 

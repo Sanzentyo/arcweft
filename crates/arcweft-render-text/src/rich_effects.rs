@@ -108,7 +108,7 @@ pub enum RichTextRubyPosition {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RichTextJlreqStrictness {
-    /// Inherit the host textbox/layout configuration.
+    /// Inherit the host text-container/layout configuration.
     #[default]
     Auto,
     /// Looser Japanese punctuation pairing.

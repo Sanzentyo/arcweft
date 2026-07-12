@@ -9,10 +9,10 @@ use crate::router::{InputRouter, RouteDecision};
 use crate::text_input::TextInputOptions;
 use arcweft_id::PublicId;
 
-/// Semantic role shared by `TextBox`, `Activity`, View, Agent, and accessibility.
+/// Semantic role shared by dialogue Views, Activity, View, Agent, and accessibility.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SemanticRole {
-    TextBox,
+    Dialogue,
     Activity,
     Button,
     TextField,
@@ -42,7 +42,7 @@ impl SemanticRole {
             Self::TextField => Some(options),
             Self::TextArea => Some(options.multiline(true)),
             Self::SecureTextField => Some(options.secure(true)),
-            Self::TextBox
+            Self::Dialogue
             | Self::Activity
             | Self::Button
             | Self::Image
@@ -65,7 +65,7 @@ pub struct SemanticNode {
     visible: bool,
 }
 
-/// Frame semantic tree normalized across `TextBox`, `Activity`, and View output.
+/// Frame semantic tree normalized across dialogue, Activity, and View output.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SemanticTree {
     nodes: Vec<SemanticNode>,
@@ -162,7 +162,7 @@ impl SemanticNode {
     fn action_target(&self) -> ActionTarget {
         match self.role {
             SemanticRole::Activity => ActionTarget::Activity(self.target.clone()),
-            SemanticRole::TextBox
+            SemanticRole::Dialogue
             | SemanticRole::Button
             | SemanticRole::TextField
             | SemanticRole::TextArea

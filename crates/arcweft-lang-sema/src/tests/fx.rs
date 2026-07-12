@@ -25,6 +25,17 @@ view Warning(state: WarningState) {
 }
 
 #[test]
+fn unregistered_function_attributes_do_not_register_fx_factories() {
+    typecheck(
+        r"
+#[project_extension]
+fn ordinary() -> Unit {}
+",
+    )
+    .expect("an open extension attribute does not give an ordinary function Fx semantics");
+}
+
+#[test]
 fn view_fx_rejects_unknown_definition() {
     let errors = typecheck(
         r#"

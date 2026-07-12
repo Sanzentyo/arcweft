@@ -772,7 +772,7 @@ entry = "http"
 adapter = "native-http"
 adapter_manifests = ["adapters/http.toml"]
 listen = "127.0.0.1:8787"
-dialogue_defaults = "dialogue.defaults.mobile"
+dialogue_defaults = "dialogue.mobile"
 rust_metadata = ["target/arcweft/truck_game.json"]
 
 [profiles."server.dev".pure]
@@ -813,10 +813,7 @@ object_artifacts = true
             &[PathBuf::from("game/adapters/http.toml")]
         );
         assert_eq!(resolved.listen(), Some("127.0.0.1:8787"));
-        assert_eq!(
-            resolved.dialogue_defaults(),
-            Some("dialogue.defaults.mobile")
-        );
+        assert_eq!(resolved.dialogue_defaults(), Some("dialogue.mobile"));
         assert_eq!(
             resolved.rust_metadata(),
             &[PathBuf::from("game/target/arcweft/truck_game.json")]

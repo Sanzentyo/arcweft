@@ -80,7 +80,7 @@ pub enum LayerKind {
     World2D,
     Character,
     Effects,
-    TextBox,
+    View,
     GameView,
     HtmlView,
     Activity,
@@ -100,7 +100,7 @@ root
   world
   characters
   effects
-  textbox
+  dialogue
   game_view
   html_view
   modal
@@ -264,7 +264,7 @@ pub enum LayerInputPolicy {
 background:     PassThrough
 world:          HitTest
 characters:     HitTest or PassThrough
-textbox:        CaptureOnHit
+dialogue:       CaptureOnHit
 choice/view:    CaptureOnHit
 html_view:      CaptureOnHit or Modal
 modal:          Modal
@@ -363,7 +363,7 @@ pub struct InputScope {
 例:
 
 ```arcw
-input_scope @input.opening on layer @layer.textbox {
+input_scope @input.opening on layer @layer.dialogue {
     key Enter => action AdvanceText
     key Space => action AdvanceText
     gamepad South => action AdvanceText
@@ -392,7 +392,7 @@ layer @layer.characters: Character {
     input = hit_test
 }
 
-layer @layer.textbox: TextBox {
+layer @layer.dialogue: View {
     order = view(10)
     input = capture_on_hit
 }
@@ -433,9 +433,9 @@ scope {
             .agent_target(@character.alice)
     }
 
-    layer @layer.textbox {
-        TextBox(current_text())
-            .agent_target(@view.textbox.main)
+    layer @layer.dialogue {
+        view(@view.MainDialogue)
+            .agent_target(@view.MainDialogue)
     }
 
     layer @layer.choice_view if choices_visible {
@@ -614,7 +614,7 @@ pub struct LayerSecurityPolicy {
 例:
 
 ```text
-text box / choice:
+dialogue View / choice:
   observable=true, clickable=true
 
 save data debug panel:
@@ -646,7 +646,7 @@ visual:
 test @test.layer_order_opening visual {
     goto @flow.opening
     capture.image(.overlay, path="opening_layers.png")
-    assert.layer_above(@layer.textbox, @layer.characters)
+    assert.layer_above(@layer.dialogue, @layer.characters)
     assert.layer_input_policy(@layer.choice_view, .capture_on_hit)
 }
 ```

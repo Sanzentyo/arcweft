@@ -536,15 +536,17 @@ fn parse_view_block(
                 ));
                 return (ViewExpr::Raw(head.to_owned()), index + 1);
             }
+            let (modifiers, modifier_lines) =
+                parse_view_modifiers(&lines[index + 1..], base, module_path, errors);
             return (
                 ViewExpr::Element(ViewElement::new(
                     callee.to_owned(),
                     args,
                     child_list,
-                    Vec::new(),
+                    modifiers,
                     range,
                 )),
-                index + 1,
+                index + 1 + modifier_lines,
             );
         }
     }
@@ -619,10 +621,20 @@ fn parse_view_chain(
     errors: &mut Vec<ParseError>,
 ) -> ParsedViewChain {
     let head = parse_view_head(lines[0], base, module_path, errors);
+    let (modifiers, _) = parse_view_modifiers(&lines[1..], base, module_path, errors);
+    ParsedViewChain { head, modifiers }
+}
+
+fn parse_view_modifiers(
+    lines: &[&str],
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> (Vec<ViewModifier>, usize) {
     let mut modifiers = Vec::new();
     let mut fx_ordinal = 0_u32;
-    let mut index = 1;
-    while index < lines.len() {
+    let mut index = 0;
+    while index < lines.len() && is_view_modifier_line(lines[index]) {
         let line = lines[index];
         let error_count = errors.len();
         let rejected_consumed = if line.trim().starts_with(".fx") {
@@ -654,7 +666,7 @@ fn parse_view_chain(
             index += rejected_consumed;
         }
     }
-    ParsedViewChain { head, modifiers }
+    (modifiers, index)
 }
 
 fn parse_view_head(
@@ -975,6 +987,8 @@ fn view_on_event(name: &str, body: Expr) -> ViewModifier {
 
 fn view_property_modifier(line: &str) -> Option<(&'static str, &str)> {
     [
+        (".x", "x"),
+        (".y", "y"),
         (".width", "width"),
         (".height", "height"),
         (".w", "w"),
@@ -1278,11 +1292,21 @@ fn click_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
             let parsed = parse_expr_lossy(body);
             action_invoke_action(&parsed, range)
                 .or_else(|| noop_action(&parsed))
+                .or_else(|| projected_action(&parsed))
                 .or_else(|| action_invoke_action(&Expr::Raw(body.to_owned()), range))
                 .or_else(|| noop_action(&Expr::Raw(body.to_owned())))
+                .or_else(|| projected_action(&Expr::Raw(body.to_owned())))
         }
-        _ => action_invoke_action(expr, range).or_else(|| noop_action(expr)),
+        _ => action_invoke_action(expr, range)
+            .or_else(|| noop_action(expr))
+            .or_else(|| projected_action(expr)),
     }
+}
+
+fn projected_action(expr: &Expr) -> Option<ViewAction> {
+    expr.dotted_selector_label()
+        .is_some_and(|label| label.split_once('.').is_some())
+        .then(|| ViewAction::Projection(expr.clone()))
 }
 
 fn noop_action(expr: &Expr) -> Option<ViewAction> {

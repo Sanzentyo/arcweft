@@ -8,6 +8,18 @@ use std::collections::BTreeSet;
 
 pub(super) fn mounted_view_ids(module: &HirModule) -> BTreeSet<String> {
     let mut ids = BTreeSet::new();
+    for declaration in module.declarations() {
+        let HirTopLevelDecl::DialogueDefaults(defaults) = declaration else {
+            continue;
+        };
+        for assignment in defaults
+            .assignments()
+            .iter()
+            .filter(|assignment| assignment.path().dotted() == "view")
+        {
+            ids.insert(normalize_view_call(assignment.value()));
+        }
+    }
     for flow in module.flows() {
         collect_mounted_view_ids(flow.body(), &mut ids);
     }
@@ -125,10 +137,12 @@ fn collect_mounted_view_ids(items: &[HirFlowItem], ids: &mut BTreeSet<String>) {
                     collect_mounted_view_ids(branch.body(), ids);
                 }
             }
-            HirFlowItem::Dialogue(_)
-            | HirFlowItem::Choice(_)
-            | HirFlowItem::LetChoice { .. }
-            | HirFlowItem::Include(_) => {}
+            HirFlowItem::Dialogue(dialogue) => {
+                if let Some(view) = dialogue.view() {
+                    ids.insert(format!("view.{}", view.body().trim_start_matches("view.")));
+                }
+            }
+            HirFlowItem::Choice(_) | HirFlowItem::LetChoice { .. } | HirFlowItem::Include(_) => {}
         }
     }
 }

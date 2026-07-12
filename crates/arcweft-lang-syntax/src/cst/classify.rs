@@ -164,7 +164,7 @@ fn looks_like_style_item(trimmed: &str) -> bool {
 
 fn looks_like_use_line(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
-    rest.starts_with("use ") || rest.starts_with("lazy use ") || rest.starts_with("eager use ")
+    rest.starts_with("use ")
 }
 
 fn looks_like_flow(trimmed: &str) -> bool {
@@ -231,7 +231,6 @@ fn looks_like_entity_decl_item(trimmed: &str) -> bool {
         "metric",
         "signal",
         "layer",
-        "textbox",
         "voice",
         "se",
         "bgm",

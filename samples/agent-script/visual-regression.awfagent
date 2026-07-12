@@ -18,25 +18,25 @@ effects {
     )
 
     let frame = try observe()
-    let textbox = try frame.objects.require_role("dialogue_textbox")
+    let dialogue_view = try frame.objects.require_role("dialogue_view")
 
     let color = try capture(
-        object(textbox.id),
+        object(dialogue_view.id),
         format = .png,
         kind = .color,
-        name = "dialogue-textbox-color",
+        name = "dialogue-view-color",
     )
     let mask = try capture(
-        object(textbox.id),
+        object(dialogue_view.id),
         format = .raw_rgba,
         kind = .mask,
-        name = "dialogue-textbox-mask",
+        name = "dialogue-view-mask",
     )
 
     attach(color)
     attach(mask)
-    expect(textbox.bbox.width > 0u32)
-    expect(textbox.bbox.height > 0u32)
+    expect(dialogue_view.bbox.width > 0u32)
+    expect(dialogue_view.bbox.height > 0u32)
 
     Ok(())
 }

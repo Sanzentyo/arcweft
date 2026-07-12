@@ -178,7 +178,7 @@ fn hash_layer_node(hasher: &mut StableHasher, node: &LayerNode) {
 fn hash_layer_content(hasher: &mut StableHasher, content: &LayerContent) {
     match content {
         LayerContent::Empty => hasher.u32(0),
-        LayerContent::TextBox(id) => {
+        LayerContent::Dialogue(id) => {
             hasher.u32(1);
             hasher.public_id(id);
         }
@@ -459,7 +459,7 @@ const fn layer_kind_code(kind: LayerKind) -> u32 {
         LayerKind::World2D => 2,
         LayerKind::Character => 3,
         LayerKind::Effects => 4,
-        LayerKind::TextBox => 5,
+        LayerKind::Dialogue => 5,
         LayerKind::GameView => 6,
         LayerKind::HtmlView => 7,
         LayerKind::Activity => 8,

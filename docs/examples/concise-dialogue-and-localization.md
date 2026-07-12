@@ -1,4 +1,4 @@
-# Concise Dialogue, Tags, Ruby, Windows, and Localization Example
+# Concise Dialogue, Tags, Ruby, Views, and Localization Example
 
 This example shows Arcweft's flow-integrated dialogue surface. There is no separate `script` item: concise dialogue and typed logic coexist inside `flow`. Ordinary lines use `character:` sugar, while complex lines use the canonical `character.say()[...]` form.
 
@@ -9,8 +9,8 @@ use game.prelude.*
 use game.characters.{alice}
 use tag game.fx.{flash}
 
-dialogue defaults {
-    window = @textbox.main
+pub dialogue defaults {
+    view = @view.MainDialogue
     hooks {
         before_text_style += @hook.dialogue.read_state_color
         before_voice_resolve += @hook.dialogue.auto_voice_key
@@ -173,7 +173,7 @@ Preload for a likely next flow can be explicit:
 
 ```arcw
 preload next @flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.main)
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], view=@view.MainDialogue)
     alice.voice_for(@say.alice_intro.001).preload()
     bgm.prepare(@bgm.alice_theme)
 ```

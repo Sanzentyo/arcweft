@@ -59,7 +59,7 @@ pub struct RenderCaptureOptions {
 ```text
 sprite alice       → object id 101
 choice listen     → object id 205
-textbox           → object id 300
+dialogue view     → object id 300
 ```
 
 これにより bbox / polygon / segmentation mask をエンジン情報から生成できる。

@@ -1,4 +1,4 @@
-# Dialogue Character Methods, Dialogue Windows, Speaker Presets, Interpolation, and Preload
+# Dialogue Character Methods, Dialogue Views, Speaker Presets, Interpolation, and Preload
 
 Arcweft dialogue is written through character objects. The concise `alice:` form remains available, but it is syntax sugar over `alice.say()[ ... ]`. This keeps ordinary conversation compact while giving complex lines a typed, composable form.
 
@@ -8,7 +8,7 @@ Related:
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
-- [Dialogue Windows, Character Styles, and Read-State Hooks](dialogue-windows-and-hooks.md)
+- [Dialogue Views, Character Styles, and Read-State Hooks](dialogue-views-and-hooks.md)
 - [Localization for Dialogue](localization-dialogue.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [View Reactive](../03-presentation/view-reactive.md)
@@ -32,7 +32,7 @@ alice.say(
     id = @say.opening.greeting,
     voice = auto,
     look = smile,
-    window = @textbox.main,
+    view = @view.MainDialogue,
 )[
     おはよう。[p]
 ]
@@ -113,7 +113,7 @@ portrait  portrait surface or portrait policy
 focus     focus profile; `focus=.soft` statically guarantees `'line.focus`
 cleanup   cleanup profile for line-scoped handles and child tasks
 voice     voice policy
-window    textbox target
+view      authored dialogue View target
 ```
 
 The same rule applies to the built-in narrator aliases:
@@ -189,30 +189,30 @@ display text immediately; it returns a **speaker preset** that carries default
 line options.
 
 ```arcw
-let alice2 = alice(look=smile, voice=auto, window=@textbox.side)
+let alice2 = alice(look=smile, voice=auto, view=@view.SideDialogue)
 
 alice2: おはよう。[p]
 
 alice2(id=@say.opening.side_001):
-    こっちのウィンドウで話すね。[p]
+    こっちのViewで話すね。[p]
 ```
 
 This is equivalent to:
 
 ```arcw
-alice(look=smile, voice=auto, window=@textbox.side)[
+alice(look=smile, voice=auto, view=@view.SideDialogue)[
     おはよう。[p]
 ]
 
 alice2(id=@say.opening.side_001)[
-    こっちのウィンドウで話すね。[p]
+    こっちのViewで話すね。[p]
 ]
 ```
 
 Presets can be refined by calling them again. Later options override earlier options.
 
 ```arcw
-let alice_side = alice(window=@textbox.side, voice=auto)
+let alice_side = alice(view=@view.SideDialogue, voice=auto)
 let alice_worried = alice_side(look=worried)
 
 alice_worried: ……本当に、大丈夫？[p]
@@ -239,7 +239,7 @@ inline rich-text span
   -> per-line options
   -> speaker preset options
   -> character dialogue_style
-  -> dialogue window theme
+  -> authored dialogue View style
   -> selected dialogue defaults
   -> engine defaults
 ```
@@ -257,7 +257,7 @@ pub fn SpeakerPreset.say(self, options: SayOptions = {}) -> DialogueContentCall
 The `:` sugar accepts both `Ref<Character>` and `SpeakerPreset`.
 
 ```arcw
-let phone_alice = alice(window=@textbox.phone_message, voice=auto)
+let phone_alice = alice(view=@view.PhoneMessage, voice=auto)
 phone_alice: スマホに通知が届いた。[p]
 ```
 
@@ -287,7 +287,7 @@ A `preload next` block explicitly prepares assets for a future flow.
 
 ```arcw
 preload next @flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.main)
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], view=@view.MainDialogue)
     alice.voice_for(@say.alice_intro.001).preload()
     bgm.prepare(@bgm.alice_theme)
 ```
@@ -296,70 +296,69 @@ Preload is a hint, not a hidden blocking operation. If the resource is not ready
 
 ---
 
-## Dialogue window target
+## Dialogue View target
 
-A dialogue line always targets a text window. If no window is specified, Arcweft uses the global default dialogue window.
+A dialogue line always targets an authored persistent View. If no `view` is
+specified, Arcweft resolves the selected defaults profile and then the standard
+library's minimal dialogue View resource.
 
 ```arcw
 alice.say()[おはよう。[p]]
 ```
 
-is equivalent to:
+resolves to the reserved `std.view.dialogue` resource when no project default
+selects another View. The reserved identity is not written as a source
+`EntityRef` and cannot be redeclared.
 
-```arcw
-alice.say(window=@textbox.main)[おはよう。[p]]
-```
-
-Built-in textboxes:
+The standard resource has the same contract as a project View:
 
 | ID | Meaning |
 |---|---|
-| `@textbox.main` | Default main dialogue textbox |
-| `@textbox.narrator` | Optional narration textbox; defaults to `@textbox.main` unless configured |
-| `@textbox.system` | System messages / debug messages |
+| `std.view.dialogue` | Reserved minimal standard speaker/content View resource |
 
 Project default:
 
 ```toml
-[dialogue.default_window]
-main = "textbox.main"
-narrator = "textbox.narrator"
-missing = "textbox.main"
+[dialogue]
+view = "std.view.dialogue"
 ```
 
-Custom dialogue windows can be declared as Views or text surfaces:
+Projects normally declare a style and a typed View:
 
 ```arcw
-pub textbox @textbox.phone_message PhoneMessageBox {
-    layer = @layer.view.messages
-    anchor = bottom_right
-    width = 420
+pub style phone_message {
+    .phone_message {
+        color = rgba(216, 240, 255, 255)
+    }
+}
 
-    rich_text {
-        text {
-            color = rgb("#d8f0ff")
-        }
+pub view PhoneMessage(dialogue: DialogueView) {
+    Panel {
+        Text(dialogue.speaker)
+        RichText(dialogue.content)
+            .style(@style.phone_message)
     }
 }
 ```
 
-The `rich_text` block on a textbox is the textbox theme contribution for
-dialogue rendered into that window. It participates in the same effective
-RichText cascade as dialogue defaults, character `dialogue_style`, speaker
-presets, line options, and inline spans.
+`DialogueView` is a standard-prelude nominal record and is visible to the type
+checker and LSP. The View body chooses the exact `Text` or `RichText` consumer;
+its style participates in the same effective RichText cascade as dialogue
+defaults, character `dialogue_style`, speaker presets, line options, and inline
+spans.
 
 Use it from dialogue:
 
 ```arcw
-alice.say(window=@textbox.phone_message, voice=auto)[
+alice.say(view=@view.PhoneMessage, voice=auto)[
     スマホに通知が届いた。[p]
 ]
 ```
 
-The canonical parameter name is `window`. `textbox` is not a line option name;
-it remains the entity kind for dialogue window objects.
-
-A dialogue window target is a stateful View object. Updating a line in that textbox affects the selected window only. Agent observation exposes the target window, current line ID, visible text, reveal cursor, and actionable wait state.
+The canonical parameter name is `view`. Each active target is a stateful,
+persistent View mount. Updating one target affects only that mount. Agent
+observation exposes the mount, current line ID, visible text, reveal cursor,
+and actionable wait state.
 
 ---
 
@@ -378,7 +377,7 @@ pub character alice {
         name_color = rgb("#e070ff")
         unread_text_color = rgb("#ffffff")
         read_text_color = rgb("#c8c8d0")
-        window = @textbox.main
+        view = @view.MainDialogue
     }
 
     voice {
@@ -396,7 +395,7 @@ inline rich-text span
   -> line options
   -> speaker preset options
   -> character dialogue_style
-  -> dialogue window theme
+  -> authored dialogue View style
   -> selected dialogue defaults
   -> engine defaults
 ```
@@ -418,11 +417,11 @@ not an implicit source-order macro and `pub` does not make the profile apply by
 itself. `pub` only makes the defaults profile visible to project manifests,
 other modules, tooling, and build profiles.
 
-The conventional project-wide profile is:
+The conventional project-wide profile omits a redundant ID:
 
 ```arcw
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.main
+pub dialogue defaults {
+    view = @view.MainDialogue
     reveal = typewriter(speed=normal)
 }
 ```
@@ -430,11 +429,11 @@ pub dialogue defaults @dialogue.defaults {
 Resolution is:
 
 1. A project or build profile may explicitly select a defaults profile by ID.
-2. If none is selected, `@dialogue.defaults` is the canonical implicit profile
-   when it is visible from the entry module.
-3. If `@dialogue.defaults` is absent and exactly one visible `dialogue defaults`
-   declaration exists for the entry module, that profile may be used by dev
-   tooling.
+2. If none is selected, the visible unqualified `pub dialogue defaults`
+   declaration is the project-wide profile.
+3. If no project-wide declaration exists, the standard dialogue defaults and
+   reserved `std.view.dialogue` resource are selected through the ordinary
+   linker path.
 4. If multiple visible profiles exist and none is selected, product/test
    lowering reports an ambiguity diagnostic instead of merging them by source
    order.
@@ -442,13 +441,13 @@ Resolution is:
 Additional defaults profiles are inert until selected:
 
 ```arcw
-pub dialogue defaults @dialogue.defaults.debug {
-    window = @textbox.system
+pub dialogue defaults @dialogue.debug {
+    view = @view.DebugDialogue
     reveal = instant
 }
 
-pub dialogue defaults @dialogue.defaults.mobile {
-    window = @textbox.phone_message
+pub dialogue defaults @dialogue.mobile {
+    view = @view.PhoneMessage
     rich_text {
         text {
             size = 24px
@@ -469,7 +468,7 @@ inline rich-text span
   -> line options
   -> speaker preset options
   -> character dialogue_style
-  -> dialogue window theme
+  -> authored dialogue View style
   -> selected dialogue defaults
   -> engine defaults
 ```
@@ -482,7 +481,7 @@ global ruby gap. Lists and hook collections must use explicit operators:
 spelled explicitly rather than inferred.
 
 `dialogue defaults` should carry dialogue policy, not arbitrary renderer state.
-Window choice, reveal behavior, voice policy, hooks, localization policy, and
+View choice, reveal behavior, voice policy, hooks, localization policy, and
 RichText typography are appropriate. Per-scene state, temporary line-plan
 variables, and stage handles belong in flows, speaker presets, or line plans.
 
@@ -496,9 +495,7 @@ font choice, wrapping, effects, and future typography parameters in one
 namespace that can also be reused by choices, View text, logs, and HUD text.
 
 ```arcw
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.main
-
+pub dialogue defaults {
     rich_text {
         text {
             font = "Yu Gothic"
@@ -510,7 +507,7 @@ pub dialogue defaults @dialogue.defaults {
             writing_mode = horizontal_tb
             jlreq = normal
             vertical_latin = mixed
-            wrap = textbox
+            wrap = container
             overflow = page
         }
 
@@ -551,7 +548,7 @@ Line and speaker preset options may pass the same data as a typed value:
 
 ```arcw
 let phone_alice = alice(
-    window = @textbox.phone_message,
+    view = @view.PhoneMessage,
     rich_text = rich_text_style(
         text = text_style(size=24px),
         ruby = ruby_style(size=11px, gap=1px),
@@ -576,8 +573,7 @@ record path already disambiguates the field.
 Common visual-novel patterns are built in.
 
 ```arcw
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.main
+pub dialogue defaults {
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
         read = rgb("#b8b8c0"),
@@ -799,7 +795,9 @@ with:
 ]
 ```
 
-Hooks may read line context, speaker, dialogue window, read state, locale, and reveal cursor. They may not mutate global state unless explicitly declared with capability.
+Hooks may read line context, speaker, dialogue View mount, read state, locale,
+and reveal cursor. They may not mutate global state unless explicitly declared
+with capability.
 
 ---
 
@@ -931,7 +929,7 @@ anticipate @flow.alice_intro {
 1. `Character.say(...)[...]` is canonical for character-alias dialogue.
 2. `speaker:` is only sugar for applying dialogue content to a speaker value. For `Ref<Character>` this is `speaker.say()[...]`; for `SpeakerPreset` this is `speaker()[...]`.
 3. There is no `script` item and no script-lowering phase.
-4. A missing dialogue window target resolves to `@textbox.main`.
+4. A missing dialogue View target resolves to the standard authored View resource through normal linking.
 5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.

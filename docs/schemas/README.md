@@ -25,4 +25,4 @@ over strings or byte slices.
 - [Dialogue Line Manifest](dialogue-line-manifest.md)
 - [Localization Catalog](localization-catalog.md)
 
-- [TextBox Manifest](textbox-manifest.md)
+- [Dialogue View Manifest](dialogue-view-manifest.md)

@@ -6,7 +6,7 @@ use arcweft_presentation::fx::{FxId, FxRuntimeType};
 use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
-use arcweft_view::{ViewValueProgram, ViewValueProgramId};
+use arcweft_view::{DialogueAdvanceTarget, ViewValueProgram, ViewValueProgramId};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -387,6 +387,10 @@ pub enum ViewActionButtonActionResource {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<ViewActionPayloadResource>,
     },
+    /// Invokes the stale-safe primary action supplied by a dialogue View input.
+    DialoguePrimaryAction {
+        parameter: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -585,6 +589,28 @@ pub enum ViewRuntimeActionButtonAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<ViewActionPayloadResource>,
     },
+    /// Typed dialogue action. `target` is populated when the owning mount is projected.
+    DialoguePrimaryAction {
+        parameter: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<DialogueAdvanceTarget>,
+    },
+}
+
+impl ViewRuntimeActionButtonAction {
+    /// Returns the stale-safe dialogue target carried by a projected primary action.
+    #[must_use]
+    pub const fn dialogue_advance_target(&self) -> Option<DialogueAdvanceTarget> {
+        match self {
+            Self::DialoguePrimaryAction {
+                target: Some(target),
+                ..
+            } => Some(*target),
+            Self::Noop
+            | Self::ActionInvoke { .. }
+            | Self::DialoguePrimaryAction { target: None, .. } => None,
+        }
+    }
 }
 
 /// Authored focus group metadata for Arcweft-owned player navigation.
@@ -941,12 +967,41 @@ pub struct ViewTextSourceRecord {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewTextSourceKind {
-    Literal { value: String },
-    Projection { path: Vec<String> },
-    Local { name: String },
-    Localized { key: String, locale: Option<String> },
-    RichTextDocument { document: String },
-    DisplayFrame { frame: String },
+    Literal {
+        value: String,
+    },
+    Projection {
+        path: Vec<String>,
+    },
+    Local {
+        name: String,
+    },
+    Localized {
+        key: String,
+        locale: Option<String>,
+    },
+    RichTextDocument {
+        document: String,
+    },
+    DisplayFrame {
+        frame: String,
+    },
+    /// A typed projection from the dialogue input bound to this View mount.
+    ///
+    /// The input remains a resolved `LineDisplayFrame` at runtime. It is not
+    /// coerced through `RuntimeValue` or reconstructed from a string payload.
+    Dialogue {
+        parameter: String,
+        projection: DialogueTextProjection,
+    },
+}
+
+/// Field of the nominal dialogue input consumed by an authored View text node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DialogueTextProjection {
+    Speaker,
+    Content,
 }
 
 /// One locale-exact `RichText` document available to View text resolution.
@@ -1317,7 +1372,8 @@ impl ViewTextResource {
                 | ViewTextSourceKind::Local { .. }
                 | ViewTextSourceKind::Localized { .. }
                 | ViewTextSourceKind::RichTextDocument { .. }
-                | ViewTextSourceKind::DisplayFrame { .. } => None,
+                | ViewTextSourceKind::DisplayFrame { .. }
+                | ViewTextSourceKind::Dialogue { .. } => None,
             })
     }
 
@@ -1511,6 +1567,12 @@ impl ViewProgramResource {
                         ViewRuntimeActionButtonAction::ActionInvoke {
                             action: action.clone(),
                             payload: payload.clone(),
+                        }
+                    }
+                    ViewActionButtonActionResource::DialoguePrimaryAction { parameter } => {
+                        ViewRuntimeActionButtonAction::DialoguePrimaryAction {
+                            parameter: parameter.clone(),
+                            target: None,
                         }
                     }
                 },

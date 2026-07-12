@@ -1,23 +1,23 @@
 use arcweft_bundle::container::{BundleDigest, BundleSectionKind};
 use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::view::{
-    ColorSchemeDefault, CompositionOnBlurPolicy, ContrastPreference, EnterKeyHint,
-    ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp, StyleSourceIdentity,
-    StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride, TextAssistPolicy,
-    TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef, ViewDefinitionResource,
-    ViewElementKind, ViewElementState, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef,
-    ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
-    ViewInstructionSpan, ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
-    ViewObserveClassification, ViewParameterResource, ViewProgramInstruction, ViewProgramResource,
-    ViewResourceBudget, ViewResourceCompatibility, ViewScrollAxis, ViewScrollIndicatorsPolicy,
-    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
-    ViewSecureInputPolicy, ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStyleDeclaration,
-    ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken,
-    ViewStyleValue, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
-    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
-    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
-    ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
-    migrated_view_section_compatibility,
+    ColorSchemeDefault, CompositionOnBlurPolicy, ContrastPreference, DialogueTextProjection,
+    EnterKeyHint, ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp,
+    StyleSourceIdentity, StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride,
+    TextAssistPolicy, TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
+    ViewDefinitionResource, ViewElementKind, ViewElementState, ViewFocusAutoScrollPolicy,
+    ViewFxArgumentBindingRef, ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose,
+    ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource, ViewLocalizedTextResource,
+    ViewLogicalRect, ViewObserveClassification, ViewParameterResource, ViewProgramInstruction,
+    ViewProgramResource, ViewResourceBudget, ViewResourceCompatibility, ViewScrollAxis,
+    ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
+    ViewScrollRegionResource, ViewSecureInputPolicy, ViewSecureRedactionMetadata,
+    ViewSemanticTarget, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewTextBlockBounds,
+    ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    ViewThemeEnvironmentDefaults, ViewThemeResource, ViewValueInputNamespace,
+    ViewValueInputResource, ViewValueInputSource, migrated_view_section_compatibility,
 };
 use arcweft_render_text::{RichTextDocument, RichTextNode};
 
@@ -816,6 +816,14 @@ fn fixture_style() -> ViewStyleResource {
 fn fixture_text() -> ViewTextResource {
     ViewTextResource {
         sources: vec![
+            ViewTextSourceRecord {
+                public_id: "text.dialogue.content".to_owned(),
+                kind: ViewTextSourceKind::Dialogue {
+                    parameter: "dialogue".to_owned(),
+                    projection: DialogueTextProjection::Content,
+                },
+                source: None,
+            },
             ViewTextSourceRecord {
                 public_id: "text.dialogue.name".to_owned(),
                 kind: ViewTextSourceKind::Localized {

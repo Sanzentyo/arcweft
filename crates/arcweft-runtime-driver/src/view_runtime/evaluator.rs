@@ -15,8 +15,10 @@ use super::{
     BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime, BundleViewTextOutput,
     MountedView, ViewOccurrenceKey, definition_program_id, deterministic_mount_seed,
 };
+use crate::dialogue::DialogueViewInput;
 use crate::presentation_handles::{
-    PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+    PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
+    PresentationResourceState,
 };
 use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
 use arcweft_bundle::resource_codec::{
@@ -124,12 +126,83 @@ struct ViewEvaluator<'a> {
     logical_time: arcweft_presentation::fx::FxLogicalTime,
     allocator: &'a mut arcweft_view::ViewMountAllocator,
     root_bindings: &'a BTreeMap<String, RuntimeValue>,
+    dialogue_inputs:
+        BTreeMap<crate::presentation_handles::PresentationHandleId, DialogueTextInput<'a>>,
     mounts: &'a mut BTreeMap<ViewOccurrenceKey, MountedView>,
     reduce_motion: bool,
     instruction_budget: u32,
     value_budget: FxEvaluationBudget,
     visited: BTreeSet<ViewOccurrenceKey>,
     diagnostics: Vec<BundleViewDiagnostic>,
+}
+
+struct DialogueTextInput<'a> {
+    frame: &'a arcweft_render_text::LineDisplayFrame,
+    state: crate::dialogue::DialogueViewState,
+}
+
+type ReconciledRootHandles<'a> = (
+    Vec<PresentationHandleRecord>,
+    BTreeMap<PresentationHandleId, DialogueTextInput<'a>>,
+    Vec<BundleViewDiagnostic>,
+);
+
+fn reconcile_root_handles<'a>(
+    handles: &[PresentationHandleRecord],
+    dialogue: &'a [DialogueViewInput<'a>],
+) -> ReconciledRootHandles<'a> {
+    let dialogue_handles = dialogue
+        .iter()
+        .map(|input| {
+            PresentationHandleRecord::new(
+                input.handle.clone(),
+                PresentationHandleKind::View,
+                input.view.to_owned(),
+                Some("dialogue".to_owned()),
+                PresentationResourceState::Mounted,
+                None,
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let dialogue_handle_ids = dialogue_handles
+        .iter()
+        .map(|handle| handle.id.clone())
+        .collect::<BTreeSet<_>>();
+    let diagnostics = handles
+        .iter()
+        .filter(|handle| dialogue_handle_ids.contains(&handle.id))
+        .map(|handle| BundleViewDiagnostic {
+            code: BundleViewDiagnosticCode::InvalidControlFlow,
+            handle: Some(handle.id.clone()),
+            mount: None,
+            view: Some(handle.resource_id.clone()),
+            instruction: None,
+            message: format!(
+                "presentation handle `{}` collides with a retained dialogue occurrence",
+                handle.id
+            ),
+        })
+        .collect();
+    let handles = handles
+        .iter()
+        .filter(|handle| !dialogue_handle_ids.contains(&handle.id))
+        .cloned()
+        .chain(dialogue_handles)
+        .collect();
+    let inputs = dialogue
+        .iter()
+        .map(|input| {
+            (
+                input.handle.clone(),
+                DialogueTextInput {
+                    frame: input.frame,
+                    state: input.state,
+                },
+            )
+        })
+        .collect();
+    (handles, inputs, diagnostics)
 }
 
 impl BundleViewRuntime {
@@ -144,6 +217,17 @@ impl BundleViewRuntime {
         bindings: &[RuntimeBinding],
         reduce_motion: bool,
     ) -> BundleViewFrame {
+        self.evaluate_with_dialogue(handles, &[], bindings, reduce_motion)
+    }
+
+    /// Reconciles ordinary handles together with typed dialogue View occurrences.
+    pub fn evaluate_with_dialogue<'a>(
+        &mut self,
+        handles: &[PresentationHandleRecord],
+        dialogue: &'a [DialogueViewInput<'a>],
+        bindings: &[RuntimeBinding],
+        reduce_motion: bool,
+    ) -> BundleViewFrame {
         for binding in bindings {
             self.root_bindings
                 .insert(binding.name.clone(), binding.value.clone());
@@ -153,7 +237,8 @@ impl BundleViewRuntime {
             return BundleViewFrame::default();
         };
 
-        let live_handles = handles
+        let (all_handles, dialogue_inputs, collisions) = reconcile_root_handles(handles, dialogue);
+        let live_handles = all_handles
             .iter()
             .filter(|handle| !handle.is_terminal())
             .filter(|handle| self.definitions.contains_key(&handle.resource_id))
@@ -171,17 +256,18 @@ impl BundleViewRuntime {
             logical_time: self.logical_time,
             allocator: &mut self.allocator,
             root_bindings: &self.root_bindings,
+            dialogue_inputs,
             mounts: &mut self.mounts,
             reduce_motion,
             instruction_budget: VIEW_FRAME_OPERATION_BUDGET,
             value_budget: FxEvaluationBudget::new(VIEW_VALUE_OPERATION_BUDGET),
             visited: BTreeSet::new(),
-            diagnostics: Vec::new(),
+            diagnostics: collisions,
         };
         let mut output = Vec::new();
         let mut evaluated_handles = BTreeSet::new();
 
-        for handle in handles {
+        for handle in &all_handles {
             if handle.is_terminal() {
                 continue;
             }
@@ -317,7 +403,7 @@ impl ViewEvaluator<'_> {
             .expect("prepared occurrence was inserted above");
         let result = self
             .refresh_projected_state(&definition, &mut mounted)
-            .and_then(|()| self.refresh_parameters(&definition, &mut mounted, call_arguments));
+            .and_then(|()| self.refresh_parameters(key, &definition, &mut mounted, call_arguments));
         self.mounts.insert(key.clone(), mounted);
         result
     }
@@ -376,6 +462,7 @@ impl ViewEvaluator<'_> {
     )]
     fn refresh_parameters(
         &mut self,
+        key: &ViewOccurrenceKey,
         definition: &ViewDefinitionResource,
         mounted: &mut MountedView,
         call_arguments: Option<&BTreeMap<u16, FxRuntimeValue>>,
@@ -476,7 +563,12 @@ impl ViewEvaluator<'_> {
             let initialized = parameter
                 .value_slot
                 .is_some_and(|slot| mounted.initialized_parameters.contains(&slot))
-                || mounted.runtime_parameters.contains_key(&parameter.name);
+                || mounted.runtime_parameters.contains_key(&parameter.name)
+                || (self.dialogue_inputs.contains_key(&key.handle)
+                    && self.definition_consumes_dialogue_parameter(
+                        &definition.public_id,
+                        &parameter.name,
+                    ));
             if !initialized && parameter.default_program.is_none() {
                 return Err(EvaluationFailure::new(
                     BundleViewDiagnosticCode::MissingInput,
@@ -489,6 +581,30 @@ impl ViewEvaluator<'_> {
             }
         }
         Ok(())
+    }
+
+    fn definition_consumes_dialogue_parameter(&self, definition: &str, parameter: &str) -> bool {
+        let Some(text) = self.text else {
+            return false;
+        };
+        self.program
+            .text_blocks
+            .iter()
+            .filter(|block| block.view.as_deref() == Some(definition))
+            .filter_map(|block| {
+                text.sources
+                    .iter()
+                    .find(|source| source.public_id == block.text_source)
+            })
+            .any(|source| {
+                matches!(
+                    &source.kind,
+                    arcweft_bundle::resource_codec::view::ViewTextSourceKind::Dialogue {
+                        parameter: source_parameter,
+                        ..
+                    } if source_parameter == parameter
+                )
+            })
     }
 
     fn evaluate_occurrence(
@@ -535,12 +651,17 @@ impl ViewEvaluator<'_> {
         match result {
             Ok(()) => {
                 let mount_id = mounted.state.mount();
+                let dialogue = self
+                    .dialogue_inputs
+                    .get(&key.handle)
+                    .map(|input| input.state);
                 self.mounts.insert(key.clone(), mounted);
                 let mut output = vec![BundleViewMountOutput {
                     handle: key.handle,
                     mount: mount_id,
                     view: definition.public_id,
                     path: key.path,
+                    dialogue,
                     active_targets: builder.targets.into_iter().collect(),
                     active_images: builder.images.into_iter().collect(),
                     paint: builder.paint,
@@ -1006,7 +1127,8 @@ impl ViewEvaluator<'_> {
                     cursor += 1;
                 }
                 ViewProgramInstruction::EmitText { text_source, .. } => {
-                    let text = self.resolve_text(definition, mounted, text_source, cursor)?;
+                    let text =
+                        self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?;
                     for target in &text.targets {
                         builder.retain_target(&target.public_id);
                         builder.paint.push(BundleViewPaintItem::Text {
@@ -1037,7 +1159,8 @@ impl ViewEvaluator<'_> {
                     if let Some(source) = label_text_source
                         && !builder.text.iter().any(|text| text.source_id == *source)
                     {
-                        let text = self.resolve_text(definition, mounted, source, cursor)?;
+                        let text =
+                            self.resolve_text(&key.handle, definition, mounted, source, cursor)?;
                         for target in &text.targets {
                             builder.retain_target(&target.public_id);
                         }

@@ -1,5 +1,6 @@
 //! Sans I/O View entity and fragment data for Arcweft presentation.
 
+pub mod dialogue;
 pub mod display;
 pub mod entity;
 pub mod fragment;
@@ -23,6 +24,10 @@ pub mod virtualization;
 
 use thiserror::Error;
 
+pub use dialogue::{
+    DialogueAdvanceTarget, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
+    DialogueRevision, DialogueStageIndex,
+};
 pub use display::{
     DisplayItem, DisplayItemId, DisplayItemKind, DisplayList, ResolvedDisplayItem,
     ResolvedDisplayList,

@@ -33,7 +33,7 @@ character_manifests = ["assets/zundamon.awchar"]
         profile.diagnostics()
     );
 
-    let labels = completions(&profile)
+    let labels = completions(&profile, None)
         .into_iter()
         .map(|item| item.label)
         .collect::<Vec<_>>();

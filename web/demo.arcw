@@ -26,18 +26,51 @@ pub character narrator {
     }
 }
 
-pub textbox web_panel {
-    rich_text {
-        text {
-            font = "Yu Gothic UI"
-            color = rgb("#f7f4e8")
-            size = 24px
-        }
+pub style web_panel {
+    .web_panel {
+        background = rgba(17, 18, 16, 242)
+    }
+    .web_speaker {
+        font-family = text("Yu Gothic UI")
+        color = rgba(174, 226, 142, 255)
+        font-size = 18000milli
+        line-height = 28000milli
+        font-weight = text("700")
+    }
+    .web_content {
+        font-family = text("Yu Gothic UI")
+        color = rgba(247, 244, 232, 255)
+        font-size = 24000milli
+        line-height = 34000milli
+    }
+    .web_action {
+        background = rgba(0, 0, 0, 0)
     }
 }
 
-pub dialogue defaults @dialogue.defaults {
-    window = @textbox.web_panel
+pub view WebPanel(dialogue: DialogueView) {
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {
+        Text(dialogue.speaker)
+            .x(85.6px)
+            .y(480.8px)
+            .width(1108.8px)
+            .height(28px)
+            .part(web_speaker)
+        RichText(dialogue.content)
+            .x(85.6px)
+            .y(518.8px)
+            .width(1108.8px)
+            .height(125.6px)
+            .part(web_content)
+        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+            .part(web_action)
+            .on_click { dialogue.primary_action }
+    }
+        .part(web_panel)
+}
+
+pub dialogue defaults {
+    view = @view.WebPanel
 }
 
 pub asset generated.background {

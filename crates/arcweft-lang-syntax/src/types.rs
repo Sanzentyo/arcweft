@@ -140,57 +140,6 @@ pub struct TypeParseError {
     message: String,
 }
 
-/// Classification of a removed primitive spelling and its canonical remedy.
-///
-/// These spellings are rejected by the type parser instead of being retained
-/// as nominal paths. Keeping the classification in the syntax layer gives
-/// parser recovery and defensive semantic checks one authoritative table.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NonCanonicalPrimitiveSpelling {
-    CanonicalReplacement(&'static str),
-    ExplicitWidthInteger,
-    ExplicitWidthUnsignedInteger,
-    ExplicitWidthFloat,
-    ExplicitWidthNumber,
-}
-
-impl NonCanonicalPrimitiveSpelling {
-    /// Classifies an exact removed primitive spelling.
-    pub fn classify(source: &str) -> Option<Self> {
-        Some(match source {
-            "Bool" => Self::CanonicalReplacement("bool"),
-            "Char" => Self::CanonicalReplacement("char"),
-            "string" => Self::CanonicalReplacement("String"),
-            "int" | "Int" => Self::ExplicitWidthInteger,
-            "uint" | "Uint" | "UInt" => Self::ExplicitWidthUnsignedInteger,
-            "float" | "Float" => Self::ExplicitWidthFloat,
-            "Number" => Self::ExplicitWidthNumber,
-            _ => return None,
-        })
-    }
-
-    /// Builds the stable diagnostic for the rejected source spelling.
-    pub fn message(self, source: &str) -> String {
-        match self {
-            Self::CanonicalReplacement(canonical) => {
-                format!("`{source}` is not a canonical primitive type spelling; use `{canonical}`")
-            }
-            Self::ExplicitWidthInteger => format!(
-                "`{source}` is not a concrete primitive type in Arcweft; use an explicit-width signed integer such as `i32` or `i64`"
-            ),
-            Self::ExplicitWidthUnsignedInteger => format!(
-                "`{source}` is not a concrete primitive type in Arcweft; use an explicit-width unsigned integer such as `u32` or `u64`"
-            ),
-            Self::ExplicitWidthFloat => format!(
-                "`{source}` is not a concrete primitive type in Arcweft; use an explicit-width float such as `f32` or `f64`"
-            ),
-            Self::ExplicitWidthNumber => format!(
-                "`{source}` is not a concrete primitive type in Arcweft; use an explicit-width numeric primitive such as `i32`, `u64`, `f32`, or `f64`"
-            ),
-        }
-    }
-}
-
 /// Parses an Arcweft type expression.
 pub fn parse_type_ref(source: &str) -> Result<TypeRef, TypeParseError> {
     let source = source.trim();
@@ -468,9 +417,6 @@ fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
 }
 
 fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
-    if let Some(spelling) = NonCanonicalPrimitiveSpelling::classify(source) {
-        return Err(TypeParseError::new(&spelling.message(source)));
-    }
     if let Some(inner) = parenthesized_type(source) {
         let parts = split_top_level_punctuation(inner, ',');
         if parts.len() > 1 {
@@ -508,9 +454,6 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
         return Ok(TypeRef::Slice(Box::new(parse_type_ref(inner.trim())?)));
     }
     if let Some((base, args)) = split_generic_type(source) {
-        if let Some(spelling) = NonCanonicalPrimitiveSpelling::classify(base) {
-            return Err(TypeParseError::new(&spelling.message(base)));
-        }
         let parsed_args = split_type_args(args)
             .into_iter()
             .map(parse_type_arg)

@@ -494,7 +494,7 @@ flow @flow.opening {
     #[test]
     fn diagnostics_respect_allow_attribute_for_flow_module_mismatch() {
         let source = r"
-mod route::opening
+mod route.opening
 
 #[allow(id::flow_module_mismatch)]
 flow @flow.prologue {

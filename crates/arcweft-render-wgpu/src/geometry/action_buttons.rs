@@ -38,6 +38,9 @@ pub enum RenderActionButtonAction {
         action: PublicId,
         payload: Option<String>,
     },
+    DialoguePrimaryAction {
+        target: arcweft_view::DialogueAdvanceTarget,
+    },
 }
 
 /// Prepared button hit-test and activation payload.
@@ -160,6 +163,9 @@ fn push_action_button_text(
     line_height: f32,
     visible_bounds: HitRect,
 ) -> Result<(), FramePlanError> {
+    if button.label.is_empty() {
+        return Ok(());
+    }
     let Some(clip_bounds) = clipped_viewport_bounds(button.bounds, button) else {
         return Ok(());
     };
@@ -302,7 +308,7 @@ impl RenderActionButtonAction {
     pub const fn semantic_action_id(&self) -> Option<&PublicId> {
         match self {
             Self::ActionInvoke { action, .. } => Some(action),
-            Self::Noop => None,
+            Self::Noop | Self::DialoguePrimaryAction { .. } => None,
         }
     }
 }

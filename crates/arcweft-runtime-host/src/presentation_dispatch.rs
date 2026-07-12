@@ -12,7 +12,7 @@ use thiserror::Error;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PresentationActionDestination {
     Runtime,
-    TextBox,
+    Dialogue,
     Activity,
     ViewEntity,
 }
@@ -85,7 +85,7 @@ pub enum PresentationActionExecutionError {
     },
 }
 
-/// Runtime-host adapter contract for `TextBox`, `Activity`, View, and runtime actions.
+/// Runtime-host adapter contract for `Dialogue`, `Activity`, View, and runtime actions.
 pub trait PresentationActionHandlers {
     fn handle_runtime_action(
         &mut self,
@@ -93,7 +93,7 @@ pub trait PresentationActionHandlers {
         output: &mut PresentationActionHandlerOutput,
     ) -> Result<(), PresentationActionHandlerError>;
 
-    fn handle_textbox_action(
+    fn handle_dialogue_action(
         &mut self,
         action: &Action,
         output: &mut PresentationActionHandlerOutput,
@@ -112,7 +112,7 @@ pub trait PresentationActionHandlers {
     ) -> Result<(), PresentationActionHandlerError>;
 }
 
-/// Registered host-side action handlers for concrete `TextBox`, `Activity`, View, and runtime adapters.
+/// Registered host-side action handlers for concrete `Dialogue`, `Activity`, View, and runtime adapters.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PresentationActionHandlerRegistry {
     handlers: Vec<PresentationActionHandlerRegistration>,
@@ -187,7 +187,7 @@ pub fn dispatch_presentation_action(
             PresentationActionDestination::Activity
         }
         ActionTarget::Entity(target) => match role_for_target(semantics, target)? {
-            SemanticRole::TextBox => PresentationActionDestination::TextBox,
+            SemanticRole::Dialogue => PresentationActionDestination::Dialogue,
             SemanticRole::Activity => PresentationActionDestination::Activity,
             SemanticRole::Button
             | SemanticRole::TextField
@@ -228,8 +228,8 @@ pub fn execute_presentation_action_plan(
             PresentationActionDestination::Runtime => {
                 handlers.handle_runtime_action(dispatched.action(), &mut output)
             }
-            PresentationActionDestination::TextBox => {
-                handlers.handle_textbox_action(dispatched.action(), &mut output)
+            PresentationActionDestination::Dialogue => {
+                handlers.handle_dialogue_action(dispatched.action(), &mut output)
             }
             PresentationActionDestination::Activity => {
                 handlers.handle_activity_action(dispatched.action(), &mut output)
@@ -351,12 +351,12 @@ impl PresentationActionHandlers for PresentationActionHandlerRegistry {
         self.handle_registered_action(PresentationActionDestination::Runtime, action, output)
     }
 
-    fn handle_textbox_action(
+    fn handle_dialogue_action(
         &mut self,
         action: &Action,
         output: &mut PresentationActionHandlerOutput,
     ) -> Result<(), PresentationActionHandlerError> {
-        self.handle_registered_action(PresentationActionDestination::TextBox, action, output)
+        self.handle_registered_action(PresentationActionDestination::Dialogue, action, output)
     }
 
     fn handle_activity_action(
@@ -582,15 +582,15 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_batch_partitions_textbox_activity_view_and_runtime_actions() {
-        let textbox = target("textbox.main");
+    fn dispatch_batch_partitions_dialogue_activity_view_and_runtime_actions() {
+        let dialogue = target("dialogue.main");
         let activity = target("activity.truck");
         let button = target("view.button");
         let mut semantics = SemanticTree::default();
         semantics.push(SemanticNode::new(
             layer_id("dialogue"),
-            textbox.clone(),
-            SemanticRole::TextBox,
+            dialogue.clone(),
+            SemanticRole::Dialogue,
             HitRect::new(0.0, 0.0, 100.0, 20.0),
         ));
         semantics.push(SemanticNode::new(
@@ -608,7 +608,7 @@ mod tests {
 
         let mut batch = ActionBatch::default();
         batch.push(Action::new(
-            ActionTarget::Entity(textbox),
+            ActionTarget::Entity(dialogue),
             public_id("action.advance"),
         ));
         batch.push(Action::new(
@@ -633,7 +633,7 @@ mod tests {
         assert_eq!(
             destinations,
             vec![
-                PresentationActionDestination::TextBox,
+                PresentationActionDestination::Dialogue,
                 PresentationActionDestination::Activity,
                 PresentationActionDestination::ViewEntity,
                 PresentationActionDestination::Runtime,
@@ -767,14 +767,14 @@ mod tests {
 
     #[test]
     fn execute_plan_calls_handlers_in_dispatch_order_and_collects_output() {
-        let textbox = target("textbox.main");
+        let dialogue = target("dialogue.main");
         let activity = target("activity.truck");
         let button = target("view.button");
         let mut plan = PresentationActionDispatchPlan::default();
         plan.push(DispatchedPresentationAction {
-            destination: PresentationActionDestination::TextBox,
+            destination: PresentationActionDestination::Dialogue,
             action: Action::new(
-                ActionTarget::Entity(textbox.clone()),
+                ActionTarget::Entity(dialogue.clone()),
                 public_id("action.advance"),
             ),
         });
@@ -800,7 +800,7 @@ mod tests {
         assert_eq!(
             handlers.calls,
             vec![
-                "textbox:action.advance",
+                "dialogue:action.advance",
                 "activity:action.pause",
                 "view:action.select",
                 "runtime:action.open_menu",
@@ -808,7 +808,7 @@ mod tests {
         );
         assert_eq!(
             output.actions().as_slice()[0].target(),
-            &ActionTarget::Entity(textbox)
+            &ActionTarget::Entity(dialogue)
         );
         assert_eq!(
             output.host_events().as_slice()[0].source(),
@@ -854,13 +854,13 @@ mod tests {
 
     #[test]
     fn registered_handlers_emit_configured_actions_and_host_events() {
-        let textbox = target("textbox.main");
+        let dialogue = target("dialogue.main");
         let activity = target("activity.truck");
         let mut plan = PresentationActionDispatchPlan::default();
         plan.push(DispatchedPresentationAction::new(
-            PresentationActionDestination::TextBox,
+            PresentationActionDestination::Dialogue,
             Action::new(
-                ActionTarget::Entity(textbox.clone()),
+                ActionTarget::Entity(dialogue.clone()),
                 public_id("action.advance"),
             ),
         ));
@@ -876,12 +876,12 @@ mod tests {
         registry
             .register(
                 PresentationActionHandlerRegistration::new(
-                    PresentationActionDestination::TextBox,
+                    PresentationActionDestination::Dialogue,
                     public_id("action.advance"),
                 )
                 .with_effect(PresentationActionHandlerEffect::action(
                     PresentationActionEffectTarget::Incoming,
-                    public_id("action.textbox.advance_committed"),
+                    public_id("action.dialogue.advance_committed"),
                 )),
             )
             .unwrap();
@@ -901,11 +901,11 @@ mod tests {
         let output = execute_presentation_action_plan(&plan, &mut registry).unwrap();
         assert_eq!(
             output.actions().as_slice()[0].target(),
-            &ActionTarget::Entity(textbox)
+            &ActionTarget::Entity(dialogue)
         );
         assert_eq!(
             output.actions().as_slice()[0].kind().as_str(),
-            "action.textbox.advance_committed"
+            "action.dialogue.advance_committed"
         );
         assert_eq!(
             output.host_events().as_slice()[0].source(),
@@ -976,18 +976,18 @@ mod tests {
         let mut registry = PresentationActionHandlerRegistry::default();
         registry
             .register(PresentationActionHandlerRegistration::new(
-                PresentationActionDestination::TextBox,
+                PresentationActionDestination::Dialogue,
                 action.clone(),
             ))
             .unwrap();
 
         assert_eq!(
             registry.register(PresentationActionHandlerRegistration::new(
-                PresentationActionDestination::TextBox,
+                PresentationActionDestination::Dialogue,
                 action.clone(),
             )),
             Err(PresentationActionHandlerRegistrationError::Duplicate {
-                destination: PresentationActionDestination::TextBox,
+                destination: PresentationActionDestination::Dialogue,
                 action,
             })
         );
@@ -1017,16 +1017,16 @@ mod tests {
             Ok(())
         }
 
-        fn handle_textbox_action(
+        fn handle_dialogue_action(
             &mut self,
             action: &Action,
             output: &mut PresentationActionHandlerOutput,
         ) -> Result<(), PresentationActionHandlerError> {
-            self.record("textbox", action);
+            self.record("dialogue", action);
             if let ActionTarget::Entity(target) = action.target() {
                 output.push_action(Action::new(
                     ActionTarget::Entity(target.clone()),
-                    public_id("action.textbox.after_advance"),
+                    public_id("action.dialogue.after_advance"),
                 ));
             }
             Ok(())

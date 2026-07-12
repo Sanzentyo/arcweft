@@ -239,7 +239,9 @@ impl ArcweftLspSession {
                 let (id, params) = extract::<CompletionParams>(request, Completion::METHOD)?;
                 let profile =
                     self.profile_for_uri(&params.text_document_position.text_document.uri);
-                let items = features::completion::completions(profile);
+                let document =
+                    self.document_for_params(&params.text_document_position.text_document.uri);
+                let items = features::completion::completions(profile, document);
                 Ok(Response::new_ok(id, Some(CompletionResponse::Array(items))))
             }
             HoverRequest::METHOD => {

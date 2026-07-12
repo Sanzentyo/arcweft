@@ -331,6 +331,32 @@ impl TextGlyphPaint {
             masks: Vec::new(),
         }
     }
+
+    /// Effective local glyph opacity after the authored transform and closed
+    /// mask chain, before a containing View's opacity is applied.
+    #[must_use]
+    pub fn effective_opacity(&self) -> f32 {
+        let mask_coverage = self.masks.iter().fold(1.0, |coverage, mask| {
+            coverage * mask.effective_coverage().value().get()
+        });
+        f32::from(self.opacity_milli) / 1_000.0
+            * self.transform.resolved().opacity().value().get()
+            * mask_coverage
+    }
+
+    /// Effective local glyph opacity in the frame-observation milli contract.
+    #[must_use]
+    pub fn effective_opacity_milli(&self) -> u16 {
+        let milli = (self.effective_opacity() * 1_000.0).round();
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "closed paint opacity is finite and constrained to [0, 1]"
+        )]
+        {
+            milli as u16
+        }
+    }
 }
 
 impl TextPaintPlan {
@@ -685,13 +711,7 @@ fn glyph_color(
             ]
         },
     );
-    let mask_coverage = paint.masks.iter().fold(1.0, |coverage, mask| {
-        coverage * mask.effective_coverage().value().get()
-    });
-    let opacity = f32::from(paint.opacity_milli) / 1_000.0
-        * paint.transform.resolved().opacity().value().get()
-        * mask_coverage
-        * context_opacity;
+    let opacity = paint.effective_opacity() * context_opacity;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let alpha = (f32::from(alpha) * opacity).round() as u8;
     Color::rgba(red, green, blue, alpha)
@@ -757,6 +777,19 @@ mod tests {
                 opacity_milli: 1_001,
             })
         ));
+    }
+
+    #[test]
+    fn effective_opacity_includes_the_closed_mask_chain() {
+        let mut paint = TextGlyphPaint::opaque(TextColor::default());
+        paint.opacity_milli = 500;
+        paint.masks.push(ResolvedFxMask {
+            coverage: Opacity::try_new(FiniteF32::ZERO).expect("zero opacity"),
+            invert: false,
+        });
+
+        assert!(paint.effective_opacity().abs() <= f32::EPSILON);
+        assert_eq!(paint.effective_opacity_milli(), 0);
     }
 
     #[test]

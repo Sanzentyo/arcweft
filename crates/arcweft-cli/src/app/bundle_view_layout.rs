@@ -116,6 +116,20 @@ pub(in crate::app) fn modifier_layout_length_u32(
     })
 }
 
+pub(in crate::app) fn modifier_layout_length_i32(
+    modifiers: &[ViewModifier],
+    names: &[&str],
+) -> Option<i32> {
+    modifiers.iter().find_map(|modifier| match modifier {
+        ViewModifier::Property { name, value }
+            if names.iter().any(|candidate| name == candidate) =>
+        {
+            expr_px_milli(value)
+        }
+        _ => None,
+    })
+}
+
 pub(in crate::app) fn text_block_frame(text: &str, modifiers: &[ViewModifier]) -> ViewLayoutFrame {
     let width_milli = modifier_style_or_property_length_u32(
         modifiers,
@@ -147,7 +161,7 @@ pub(in crate::app) fn u32_to_i32_saturating(value: u32) -> i32 {
     i32::try_from(value).unwrap_or(i32::MAX)
 }
 
-fn named_layout_length_i32(args: &[ViewArg], names: &[&str]) -> Option<i32> {
+pub(in crate::app) fn named_layout_length_i32(args: &[ViewArg], names: &[&str]) -> Option<i32> {
     names
         .iter()
         .find_map(|name| named_arg(args, name))

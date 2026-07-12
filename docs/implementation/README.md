@@ -7,6 +7,10 @@ Design specifications remain in the numbered `docs/` chapters. Files here descri
 The current operational worktree map is
 `docs/implementation/current-work-status-2026-07-10.md`.
 
+The current unified text, authored dialogue View, and Fx acceptance boundary is
+tracked in
+`docs/implementation/unified-text-dialogue-view-fx-2026-07-12.md`.
+
 The revised function/closure/currying/pipeline goal is summarized in
 `docs/implementation/function-stack-final-state-2026-07-10.md`. The dated
 2026-07-09 current-state, gap-map, and status-rollup files remain historical
@@ -109,13 +113,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `arcw agent observe` exposes the first Agent Debug Bus-shaped observation
   slice for rich-text debugging. It keeps the runtime-plan display catalog,
   resolves emitted dialogue-line events against runtime bindings, and reports
-  textbox objects, viewport bounds, semantic actions, diagnostics, optional
+  dialogue View mounts, viewport bounds, semantic actions, diagnostics, optional
   overlay SVG, and deterministic PNG/raw RGBA debug captures for color,
   object-id, and mask passes over the full viewport, a selected layer, or a
   selected object bbox without adding renderer or MCP dependencies to
   `arcweft-core`. Observation JSON now exposes first-class layer entries with
   stable color/object-id/mask PNG and raw RGBA capture refs, matching the
-  object-local refs used by textbox and rich-text child objects. Image resource
+  object-local refs used by dialogue View and rich-text child objects. Image resource
   metadata includes renderer kind plus structured capture scope so MCP clients
   can identify native viewport/layer/object captures without parsing URIs. PNG
   and raw RGBA requests use native offscreen readback for full-viewport,
@@ -223,11 +227,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   consistently. Runtime-plan lowering now includes lexical speaker preset
   rich-text/style options in that cascade, including chained presets such as
   `let worried = side(...)`, and records them as `SpeakerPreset` contributions
-  between character `dialogue_style` and per-line options. Dialogue window
-  targets now resolve through the same cascade, defaulting to `textbox.main`, and
-  textbox `rich_text` / `dialogue_style` blocks contribute
-  `TextBoxTheme` values between selected dialogue defaults and character
-  `dialogue_style`. Flow `let` statements now retain their expression source
+  between character `dialogue_style` and per-line options. Dialogue targets are
+  authored View resources; an omitted project selection links the standard
+  dialogue View through the same mount evaluator. View style contributions are
+  resolved with selected dialogue defaults and character `dialogue_style`.
+  Flow `let` statements now retain their expression source
   text and byte range when parsed from source, so speaker preset contributions
   expose source value ranges through runtime-plan JSON, LSP definition, and LSP
   reference features. Hover, definition, and references now preserve the
@@ -243,7 +247,7 @@ Phase 0 / Phase 1 minimal Rust workspace:
   content outside a selected inline style field still falls back to the whole
   effective cascade. LSP effective cascade lowering now uses the opened
   document's launch profile selection, so `dialogue_defaults =
-  "dialogue.defaults.mobile"` changes hover, definition, references, and
+  "dialogue.mobile"` changes hover, definition, references, and
   extraction actions to the selected defaults profile instead of always using
   the canonical implicit profile. Definition and reference requests include the
   manifest value that selected that defaults profile when the selected defaults
@@ -253,17 +257,17 @@ Phase 0 / Phase 1 minimal Rust workspace:
   provenance instead of source-local implicit defaults. `arcw agent observe
   --manifest ... --profile ... --image png` uses the same profile-selected
   defaults for Agent JSON and native image debug output, including selected
-  textbox targets, rich-text base styles, ruby layout defaults, and inline
+  dialogue View targets, rich-text base styles, ruby layout defaults, and inline
   effect provenance. Selection-scoped code actions can extract active non-line
   contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
   options, can lift selected defaults into the current lexical speaker preset's
   call options, can lift them into the matching character's `dialogue_style`
   block when the character declaration is in the current document, can extract
-  active contributors into the effective textbox theme (`rich_text` for
+  active contributors into the effective authored View style (`rich_text` for
   `rich_text.*` paths, `dialogue_style` for other dialogue style paths), or move
   active non-default contributors into the profile-selected `dialogue defaults`
-  block when one is selected, falling back to the canonical `@dialogue.defaults`
-  or single visible defaults block only when no profile selection is active.
+  block when one is selected, falling back to the ID-free project-wide defaults
+  block only when no profile selection is active.
   Block extraction targets use canonical nested style blocks such as
   `rich_text { ruby { size = ... } }`. Source-level sugar
   expansion and canonical
@@ -938,11 +942,10 @@ Current high-confidence state:
   `@...suffix`, `@super...`, and ID-context family forms such as
   `@say:.suffix` / `@choice:.suffix` are accepted in ID-bearing contexts;
   general relative references use family-qualified forms such as `@flow:.next`
-  and `@textbox:.side`. HIR lowering normalizes these structured nodes against
+  and `@view:.SideDialogue`. HIR lowering normalizes these structured nodes against
   the current flow, speaker, choice, and named-scope stack.
-- Old `@` command and attribute spellings are no longer treated as migration
-  syntax. Attributes are `#[...]`; staging operations use canonical ordinary
-  calls such as `bg(@asset:.bg.room, fade = 300ms)` and
+- Attributes are `#[...]`; staging operations use ordinary calls such as
+  `bg(@asset:.bg.room, fade = 300ms)` and
   `show(@character.alice, .normal)`.
 - `arcweft-dialogue` contains the current Sans I/O model for scoped
   dialogue lines, speaker presets, content, and line plans. Presentation

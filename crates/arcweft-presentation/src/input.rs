@@ -94,7 +94,7 @@ pub enum InputEventKind {
     AgentInvoke { action: PublicId },
 }
 
-/// Typed semantic action emitted by Component, `TextBox`, Activity, or Agent
+/// Typed semantic action emitted by Component, a dialogue View, Activity, or Agent
 /// handlers after routed input has been accepted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Action {
@@ -104,7 +104,7 @@ pub struct Action {
 }
 
 /// Target family for semantic actions. This is intentionally not named
-/// `ViewEvent`; View, `TextBox`, Activity, and runtime handlers share the same data.
+/// `ViewEvent`; View, dialogue, Activity, and runtime handlers share the same data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ActionTarget {
     Runtime,

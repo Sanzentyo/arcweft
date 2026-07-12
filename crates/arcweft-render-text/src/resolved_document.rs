@@ -472,7 +472,7 @@ impl TextStyleCascade {
     /// Resolves an authored style stack over this cascade's base style.
     ///
     /// Presentation adapters use this for sibling content, such as a
-    /// `TextBox` speaker label, that must inherit the same frame-level style
+    /// dialogue View speaker label, that must inherit the same frame-level style
     /// as the canonical rich-text document without reimplementing cascade
     /// rules.
     pub fn resolve_style<'a>(
@@ -690,7 +690,7 @@ impl<'a> ResolvedTextDocument<'a> {
     /// Borrows a validated document-local subrange and rebases its metadata.
     ///
     /// This is used by display controls such as `[clear]`: the remaining text
-    /// starts again at the `TextBox` origin without cloning the source string or
+    /// starts again at the dialogue View origin without cloning the source string or
     /// rebuilding its style cascade.
     pub fn project(
         &self,

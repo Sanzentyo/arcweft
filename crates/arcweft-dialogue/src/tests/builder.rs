@@ -8,7 +8,7 @@ fn builder_api_builds_dialogue_line_from_concise_call_shape()
     let alice = SpeakerPreset::new(character("alice"))
         .voice(VoicePolicy::Auto)
         .look("smile")
-        .window(textbox("side"));
+        .view(view("side"));
 
     let line = alice
         .say()
@@ -33,10 +33,10 @@ fn builder_api_builds_dialogue_line_from_concise_call_shape()
     );
     assert_eq!(
         line.options()
-            .window
+            .view
             .as_ref()
-            .map(|window| window.id().entity_id().as_str()),
-        Some("textbox.side")
+            .map(|view| view.id().entity_id().as_str()),
+        Some("view.side")
     );
     assert!(matches!(line.options().voice, Some(VoicePolicy::Auto)));
     assert_eq!(line.content().parts().len(), 4);

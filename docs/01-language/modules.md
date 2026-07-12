@@ -1,6 +1,6 @@
-# module / use / pub
+# mod / use / pub
 
-## module
+## mod
 
 ```arcw
 mod game.logic.affection
@@ -94,8 +94,8 @@ to:
 use super.common.{route_gate}
 ```
 
-`lazy use` and `eager use` are removed syntax. `use` introduces names only.
-Compiler-owned build demand and content availability decide when bodies,
+`use` introduces names only. Compiler-owned build demand and content
+availability decide when bodies,
 artifacts, and runtime content are built or mounted.
 
 Callable declarations have one typed original identity made from the canonical

@@ -3,10 +3,10 @@
 `rich-text-profiled` is a compact project-shaped sample for launch-profile
 selection of `dialogue defaults`.
 
-The same source file declares a canonical desktop defaults profile and a mobile
-profile. `arcw.toml` selects the active profile through `dialogue_defaults`, so
-runtime-plan JSON and LSP cascade features can point at the selected defaults
-block instead of always using `@dialogue.defaults`.
+The same source file declares an ID-free desktop defaults profile and a named
+mobile profile. The desktop launch profile omits `dialogue_defaults`; the
+mobile launch profile selects `dialogue.mobile`. Runtime-plan JSON and LSP
+cascade features can therefore point at the selected defaults block.
 
 ## Useful commands
 

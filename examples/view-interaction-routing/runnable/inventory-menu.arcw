@@ -1,4 +1,5 @@
-character operator Operator {
+character operator {
+    display = "Operator"
 }
 
 entry game @entry.main { goto @flow.main }

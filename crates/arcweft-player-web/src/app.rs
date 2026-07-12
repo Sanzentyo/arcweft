@@ -616,7 +616,7 @@ fn prepare_web_player_frame(
     let presentation = state.session.presentation();
     let fx_definitions = state.session.fx_definitions();
     let dialogue_visual = state.dialogue_visual_clock.progress(
-        presentation.textboxes.latest_active(),
+        presentation.dialogue.latest_active(),
         host_millis,
         dialogue_visual_time_override_millis(),
     );
@@ -681,17 +681,7 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClip
     match dialogue_progress {
         DialogueProgress::None => {}
         DialogueProgress::Reveal => state.dialogue_visual_clock.complete_current_stage(),
-        DialogueProgress::Advance => {
-            let target = state
-                .session
-                .presentation()
-                .textboxes
-                .latest_active()
-                .and_then(|(textbox, _)| textbox.advance_target());
-            if let Some(target) = target {
-                state.session.queue_dialogue_advance(target);
-            }
-        }
+        DialogueProgress::Advance { target } => state.session.queue_dialogue_advance(target),
     }
     for action in actions {
         if let Err(error) = state.session.queue_semantic_action(&action) {

@@ -190,7 +190,7 @@ public-id prefix を持つ family を参照する場合は、absolute ID を手�
 ```arcw
 goto @flow:.next
 include @flow:.intro
-window = @textbox:.side
+view = @view:.SideDialogue
 asset.load(@asset:.room)
 ```
 

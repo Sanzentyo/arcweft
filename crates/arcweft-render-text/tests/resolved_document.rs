@@ -20,7 +20,7 @@ fn line(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: None,
-        window: None,
+        view: None,
         voice: None,
         look: None,
         style: None,

@@ -3,7 +3,7 @@
 Arcweft text is a typed presentation object tree, not only a string submitted to
 a renderer. `character.say` and `narrator.say` are high-level facades that create
 the same kind of presentation objects as image, sprite, model, and View layers.
-The default dialogue facade chooses sensible text-box, line, run, glyph-cluster,
+The default dialogue View chooses sensible content, line, run, glyph-cluster,
 ruby, glyph, object-id, hit-test, depth, and capture behavior, while still
 preserving the authored rich-text surface.
 
@@ -12,16 +12,17 @@ preserving the authored rich-text surface.
 Text adapters may expose these object levels:
 
 ```text
-textbox
-  page
-    line
-      run
-        proxy_object
-        glyph
-        glyph_cluster
-        ruby_object
-          ruby_base
-          ruby_annotation
+view_mount
+  dialogue_content
+    page
+      line
+        run
+          proxy_object
+          glyph
+          glyph_cluster
+          ruby_object
+            ruby_base
+            ruby_annotation
 ```
 
 Every observed object must have a stable object id, a `parent_id` when it is a
@@ -31,7 +32,7 @@ hit-test regions when hit testing is enabled. Renderers may also expose
 layer-specific children such as shader passes, IME caret objects, or selection
 handles, but those children must reference the text object they decorate.
 Agent observation exposes the flat object table and a typed `presentation_tree`;
-the tree is the canonical way to traverse layer, textbox, page, line, run,
+the tree is the canonical way to traverse layer, View mount, dialogue content, page, line, run,
 ruby, glyph/cluster, and proxy relationships without re-parsing object ids.
 Tree object nodes also expose lightweight effect, shader, transform,
 motion-function, and proxy indexes. Proxy indexes include the authored proxy id,
@@ -160,11 +161,11 @@ another proxy, carry a higher local depth, and still be returned as the top hit
 without losing the lower-ranked proxy.
 
 Agent observation also emits each authored proxy span as its own
-`rich_text_proxy` observed object. Its object id is rooted at the parent textbox
+`rich_text_proxy` observed object. Its object id is rooted at the parent dialogue View mount
 and includes the native run index plus proxy index:
 
 ```text
-object.dialogue.<step>.<textbox>.proxy.<run>.<proxy>
+object.dialogue.<step>.<view-mount>.proxy.<run>.<proxy>
 ```
 
 The proxy object uses the same measured post-transform bbox and native capture
@@ -192,7 +193,7 @@ metadata remains visible in Agent JSON.
 Agent observe/capture must be able to retrieve:
 
 - the whole text layer as color, raw RGBA, mask, and object-id images
-- individual textbox, page, line, run, glyph, glyph-cluster, ruby, and
+- individual dialogue-View content, page, line, run, glyph, glyph-cluster, ruby, and
   proxy-decorated object crops
 - effective presentation metadata, including proxy ids and attributes
 - hit regions and depth ordering metadata

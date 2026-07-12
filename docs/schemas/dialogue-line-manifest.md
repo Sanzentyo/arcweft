@@ -1,6 +1,8 @@
 # Dialogue Line Manifest Schema
 
-A dialogue line is the compiled unit connecting source text, localization key, speaker, window target, voice, control tags, dialogue interpolation, stage timeline, history, and agent observation.
+A dialogue line is the compiled unit connecting source text, localization key,
+speaker, authored View target, voice, control tags, dialogue interpolation,
+stage timeline, history, and Agent observation.
 
 ```json
 {
@@ -8,7 +10,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
   "line_id": "say.opening.alice.002",
   "text_key": "text.opening.alice.002",
   "speaker": "character.alice",
-  "window": "textbox.main",
+  "view": "view.MainDialogue",
   "source_locale": "ja-JP",
   "source_text": "今日は少しだけ、変な夢を見たんだ。",
   "source_rich_text": "今日は少しだけ、#[fmt(\"変な夢\", color=dream_color, fallback=\"変な夢\")]を見たんだ。[p]",
@@ -75,7 +77,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
   "agent": {
     "observable": true,
     "action_targets": ["advance_text"],
-    "window": "textbox.main"
+    "view": "view.MainDialogue"
   }
 }
 ```
@@ -87,7 +89,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
 | `line_id` | Stable narrative line entity |
 | `text_key` | Localization key |
 | `speaker` | Character or built-in narrator |
-| `window` | Dialogue window target; defaults to `textbox.main` |
+| `view` | Authored dialogue View target; defaults to the standard library resource |
 | `source_locale` | Locale of inline/source text |
 | `source_text` | Plain source text, without non-text control tags |
 | `source_rich_text` | Source rich text including ruby, dialogue interpolation, and permitted control tags |
@@ -165,18 +167,19 @@ scope rain {
 }
 ```
 
-## Window target
+## View target
 
-If no window is specified in source, the manifest records the resolved target.
+If no View is specified in source, the manifest records the resolved standard
+or project resource.
 
 ```json
-{ "window": "textbox.main" }
+{ "view": "std.view.dialogue" }
 ```
 
-Custom textboxes are recorded by entity ID:
+Project Views are recorded by entity ID:
 
 ```json
-{ "window": "textbox.phone_message" }
+{ "view": "view.PhoneMessage" }
 ```
 
 ## Text fragments
@@ -249,7 +252,7 @@ The manifest compiles into:
 ```text
 DialogueLine
   -> Character.say command
-  -> Window target update
+  -> persistent View mount update
   -> AudioCommand / VoiceCue
   -> TextRevealPlan
   -> StageCommandTimeline

@@ -119,7 +119,7 @@ fn player_capture_region_order(
         let phase = match owner.kind {
             arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => 1,
             arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Control => 3,
-            arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox { .. } => 4,
+            arcweft_render_wgpu::geometry::PreparedTextOwnerKind::DialogueView { .. } => 4,
         };
         let element_order = prepared.text.get(owner.text).map_or(0, |item| {
             player_text_element_paint_order(owner, item, object)
@@ -140,19 +140,14 @@ fn player_object_belongs_to_text_owner(
     owner: &arcweft_render_wgpu::geometry::PreparedTextOwner,
 ) -> bool {
     match owner.kind {
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox {
-            textbox,
+        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::DialogueView {
+            dialogue,
             entry,
-            part: arcweft_render_wgpu::geometry::PreparedTextBoxPart::Body,
             ..
         } => {
-            let root = format!("object.dialogue.{textbox}.{entry}");
+            let root = format!("object.dialogue.{dialogue}.{entry}");
             object.id == root || object.id.starts_with(&format!("{root}."))
         }
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox {
-            part: arcweft_render_wgpu::geometry::PreparedTextBoxPart::Speaker,
-            ..
-        } => false,
         arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => object
             .entity
             .as_deref()

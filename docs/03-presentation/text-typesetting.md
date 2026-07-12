@@ -59,7 +59,7 @@ rich_text {
         writing_mode = horizontal_tb
         jlreq = normal
         vertical_latin = mixed
-        wrap = textbox
+        wrap = container
         overflow = page
     }
 
@@ -73,7 +73,7 @@ rich_text {
 }
 ```
 
-Dialogue defaults, textbox themes, character `dialogue_style`, speaker presets,
+Dialogue defaults, authored View styles, character `dialogue_style`, speaker presets,
 line options, and inline spans all contribute to the same effective RichText
 style. Records deep-merge by field. The nearest explicit field wins, while
 unspecified sibling fields continue to inherit from lower-priority defaults.
@@ -96,11 +96,11 @@ authoring `gap = 0px` remains close to standard HTML ruby placement.
 
 ### Horizontal wrapping
 
-`horizontal_tb` RichText wraps inside the textbox layout width by default.
+`horizontal_tb` RichText wraps inside its View container width by default.
 The current deterministic layout model places one visual cluster at a time and
 starts a new line before a cluster that would exceed `origin.x + size.width`.
-Explicit hard line breaks reset `x` to the textbox origin and advance `y` by the
-line advance. A single cluster wider than the textbox is placed at the line
+Explicit hard line breaks reset `x` to the content origin and advance `y` by the
+line advance. A single cluster wider than the container is placed at the line
 start and may overhang; this keeps geometry deterministic until word-aware
 UAX14 wrapping and overflow diagnostics are implemented.
 

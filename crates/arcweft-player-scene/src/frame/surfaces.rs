@@ -611,6 +611,7 @@ mod tests {
         let child_mount = ViewMountId::from_raw(11);
         let handle = PresentationHandleId::try_new("handle.view").unwrap();
         let root = BundleViewMountOutput {
+            dialogue: None,
             handle: handle.clone(),
             mount: root_mount,
             view: "view.Root".to_owned(),
@@ -632,6 +633,7 @@ mod tests {
             fx: Vec::new(),
         };
         let child = BundleViewMountOutput {
+            dialogue: None,
             handle,
             mount: child_mount,
             view: "view.Child".to_owned(),

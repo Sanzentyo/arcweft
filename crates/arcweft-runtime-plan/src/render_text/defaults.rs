@@ -13,16 +13,14 @@ use arcweft_render_text::{
 use super::attrs::{param_from_value, parse_attr_args, trim_quotes, truthy_attr};
 use super::entity_defaults::{
     character_callee_keys, character_display_label, character_style_defaults, character_style_keys,
-    entity_ref_keys, entity_style_keys, style_defaults_from_dialogue_defaults,
-    textbox_style_defaults,
+    style_defaults_from_dialogue_defaults,
 };
 
-pub(crate) const DEFAULT_DIALOGUE_WINDOW: &str = "textbox.main";
+pub(crate) const DEFAULT_DIALOGUE_VIEW: &str = "std.view.dialogue";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct DialogueDisplayDefaults {
     pub(crate) global: DialogueStyleDefaults,
-    pub(crate) textboxes: BTreeMap<String, DialogueStyleDefaults>,
     pub(crate) characters: BTreeMap<String, DialogueStyleDefaults>,
     pub(crate) character_labels: BTreeMap<String, String>,
     pub(crate) text_proxies: BTreeMap<String, TextProxyTypeDefaults>,
@@ -33,7 +31,7 @@ pub(crate) struct DialogueStyleDefaults {
     pub(crate) base_styles: Vec<RichTextStyle>,
     pub(crate) style_contributions: Vec<RichTextStyleContribution>,
     pub(crate) default_inline_failure_policy: Option<InlineFailurePolicy>,
-    pub(crate) window: Option<String>,
+    pub(crate) view: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -83,14 +81,6 @@ impl DialogueDisplayDefaults {
                         }
                     }
                 }
-                HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Textbox => {
-                    let style = textbox_style_defaults(item);
-                    if !style.is_empty() {
-                        for key in entity_style_keys(item) {
-                            defaults.textboxes.insert(key, style.clone());
-                        }
-                    }
-                }
                 HirTopLevelDecl::Struct(item) => {
                     if let Some(proxy_defaults) = text_proxy_defaults_from_struct(item) {
                         defaults
@@ -114,12 +104,6 @@ impl DialogueDisplayDefaults {
         character_callee_keys(callee)
             .into_iter()
             .find_map(|key| self.character_labels.get(&key).map(String::as_str))
-    }
-
-    pub(crate) fn textbox_for_window(&self, window: &str) -> Option<&DialogueStyleDefaults> {
-        entity_ref_keys(window)
-            .into_iter()
-            .find_map(|key| self.textboxes.get(&key))
     }
 }
 
@@ -166,12 +150,21 @@ fn selected_dialogue_defaults<'a>(
                 id: selected_profile.to_owned(),
             });
     }
-    if let Some(item) = items
+    let anonymous = items
         .iter()
         .copied()
-        .find(|item| item.id().is_some_and(|id| id.body() == "dialogue.defaults"))
-    {
-        return Ok(Some(item));
+        .filter(|item| item.id().is_none())
+        .collect::<Vec<_>>();
+    if anonymous.len() == 1 {
+        return Ok(Some(anonymous[0]));
+    }
+    if anonymous.len() > 1 {
+        return Err(DialogueDefaultsSelectionError::Ambiguous {
+            profiles: anonymous
+                .iter()
+                .map(|item| dialogue_defaults_label(item))
+                .collect(),
+        });
     }
     let public = items
         .iter()

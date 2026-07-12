@@ -5,6 +5,7 @@ pub mod cascade;
 pub mod character_metadata;
 pub mod completion;
 pub mod definition;
+mod dialogue_view_metadata;
 pub mod hover;
 pub mod inlay;
 pub mod references;

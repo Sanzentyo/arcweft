@@ -13,7 +13,7 @@ The concise dialogue surface is parsed as normal `FlowItem` syntax. There is no 
 
 Related:
 
-- [Dialogue Character Methods, TextBox Targets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
+- [Dialogue Character Methods, Dialogue Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
@@ -53,7 +53,7 @@ alice.say(
     id = @say.opening.greeting,
     voice = auto,
     look = .smile,
-    window = @textbox.side,
+    view = @view.SideDialogue,
 )[
     おはよう。[p]
 ]
@@ -129,7 +129,8 @@ alice(id=@.comment)
   -> @voice.ja-JP.alice.opening.rain.comment
 ```
 
-The long method form is preferred when the line has a custom window, timed cues, cancellation, local variables, or custom hooks.
+The long method form is preferred when the line has a custom dialogue View,
+timed cues, cancellation, local variables, or custom hooks.
 
 ---
 
@@ -475,18 +476,19 @@ Meaning:
 
 | Form | Meaning |
 |---|---|
-| `alice:` | speaker is `@character.alice`; line ID, text key, voice, and window are inferred |
+| `alice:` | speaker is `@character.alice`; line ID, text key, voice, and dialogue View are inferred |
 | `look=.smile` | expression cue before text display |
 | `voice=@voice...` | explicit voice binding |
 | `voice=auto` | derive voice cue from line ID, locale, and speaker |
 | `id=@say...` | explicit line entity ID |
 
-The implicit window is `@textbox.main` unless the character, line, or project defaults override it.
+The implicit target is the standard authored dialogue View unless the character,
+line, or project defaults override it.
 
 Speaker presets are allowed in the same position:
 
 ```arcw
-let alice2 = alice(look=.smile, voice=auto, window=@textbox.side)
+let alice2 = alice(look=.smile, voice=auto, view=@view.SideDialogue)
 
 alice2: おはよう。[p]
 
@@ -547,7 +549,7 @@ pub character @character.narrator narrator {
     nameplate = hidden
     localizable_name = false
     dialogue_style {
-        window = @textbox.narrator
+        view = @view.NarrationDialogue
     }
 }
 ```
@@ -577,7 +579,7 @@ Project configuration can disable Japanese aliases or rename them:
 entity = "character.narrator"
 aliases = ["narrator", "地の文", "地"]
 nameplate = "hidden"
-window = "textbox.narrator"
+view = "view.NarrationDialogue"
 ```
 
 ---

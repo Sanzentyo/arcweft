@@ -143,7 +143,7 @@ z=000  Background      背景
 z=100  World2D         小物、演出
 z=200  Character       立ち絵
 z=300  Effect          パーティクル、前景演出
-z=500  Dialogue        textbox
+z=500  Dialogue        authored View
 z=550  Choice          選択肢
 z=700  NativeView        HUD、設定ショートカット
 z=800  HtmlView          Servo/DOM panel
@@ -277,7 +277,7 @@ pub enum HitTestSource {
 Native View:
   LayoutBoxes / Polygon
 
-TextBox:
+Dialogue View:
   LayoutBoxes
 
 Choice:
@@ -382,7 +382,7 @@ layer @layer.confirm_dialog phase Modal z 900 {
 }
 ```
 
-このlayerが表示中は、下のchoiceやtextboxはclickされない。
+このlayerが表示中は、下のchoiceやdialogue Viewはclickされない。
 
 ---
 
@@ -405,8 +405,8 @@ scope {
 
     layer @layer.dialog phase Dialogue z 500 {
         input hit_test
-        TextBox(current_text())
-            .agent_target(@view.textbox.main)
+        view(@view.MainDialogue)
+            .agent_target(@view.MainDialogue)
     }
 
     layer @layer.choices phase Dialogue z 550 {

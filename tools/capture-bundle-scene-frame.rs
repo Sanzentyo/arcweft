@@ -184,7 +184,7 @@ fn prepare_frame(
         if selected
             && presentation.as_ref().is_some_and(|presentation| {
                 !presentation.images.is_empty()
-                    && (presentation.textboxes.latest_active().is_some()
+                    && (presentation.dialogue.latest_active().is_some()
                         || !presentation.choices.is_empty())
             })
         {

@@ -1049,18 +1049,18 @@ fn graph_search_filters_project_privacy_before_limit() {
         .expect("edge");
     store
         .upsert_graph_symbol(&DebugGraphSymbol {
-            symbol_id: "symbol:textbox.main".to_owned(),
+            symbol_id: "symbol:view.main".to_owned(),
             program_hash: program_hash.clone(),
-            public_id: Some(PublicId::new("@textbox.main").expect("public id")),
-            qualified_name: Some("textbox.main".to_owned()),
-            kind: "textbox".to_owned(),
+            public_id: Some(PublicId::new("@view.main").expect("public id")),
+            qualified_name: Some("view.main".to_owned()),
+            kind: "view".to_owned(),
             type_json: None,
             source_path: None,
             source_content_hash: None,
             start_byte: None,
             end_byte: None,
             semantic_hash: None,
-            summary: "Main textbox reached through Alice choice".to_owned(),
+            summary: "Main View reached through Alice choice".to_owned(),
             metadata: BTreeMap::new(),
         })
         .expect("expanded symbol");
@@ -1068,8 +1068,8 @@ fn graph_search_filters_project_privacy_before_limit() {
         .upsert_graph_edge(&DebugGraphEdge {
             program_hash,
             from_symbol_id: "symbol:choice.alice".to_owned(),
-            to_symbol_id: "symbol:textbox.main".to_owned(),
-            edge_kind: "uses_textbox".to_owned(),
+            to_symbol_id: "symbol:view.main".to_owned(),
+            edge_kind: "uses_view".to_owned(),
             weight: 1.0,
             metadata: BTreeMap::new(),
         })

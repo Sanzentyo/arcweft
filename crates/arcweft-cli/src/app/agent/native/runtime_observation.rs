@@ -287,7 +287,7 @@ pub(super) fn agent_action_targets_for_object(
     object: &AgentObservedObject,
 ) -> Vec<AgentActionTarget> {
     match &object.content {
-        AgentObservedObjectContent::RichText { .. } if agent_is_dialogue_textbox(object) => {
+        AgentObservedObjectContent::RichText { .. } if agent_is_dialogue_view(object) => {
             vec![AgentActionTarget {
                 id: format!("action.advance_text.{}", object.id),
                 target: object.id.clone(),

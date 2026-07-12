@@ -119,7 +119,6 @@ fn entity_decl_registry_kind(kind: EntityDeclKind) -> EntityKind {
         EntityDeclKind::Signal => EntityKind::Signal,
         EntityDeclKind::Metric => EntityKind::Metric,
         EntityDeclKind::Layer => EntityKind::Layer,
-        EntityDeclKind::Textbox => EntityKind::Textbox,
         EntityDeclKind::Voice => EntityKind::Voice,
         EntityDeclKind::Se => EntityKind::Se,
         EntityDeclKind::Bgm => EntityKind::Bgm,

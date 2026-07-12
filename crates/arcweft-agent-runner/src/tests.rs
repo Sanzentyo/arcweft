@@ -1167,7 +1167,7 @@ fn observation_payload_exposes_observed_objects_for_visual_regression_scripts() 
                     "parent_id": "object.dialogue.0",
                     "entity": "dialogue.main",
                     "layer": "dialogue.rich_text",
-                    "role": "dialogue_textbox",
+                    "role": "dialogue_view",
                     "visible": true,
                     "enabled": true,
                     "bbox": {
@@ -1202,7 +1202,7 @@ fn observation_payload_exposes_observed_objects_for_visual_regression_scripts() 
 
     assert_eq!(
         runtime_record_get(&object_fields, "role"),
-        Ok(&RuntimeValue::String("dialogue_textbox".to_owned()))
+        Ok(&RuntimeValue::String("dialogue_view".to_owned()))
     );
     assert_eq!(
         runtime_record_get(bbox_fields, "width"),

@@ -1,4 +1,4 @@
-# Unified Text / TextBox / View / Fx final design
+# Unified Text / Dialogue View / Fx final design
 
 Date: 2026-07-12
 
@@ -7,7 +7,7 @@ Design baseline: `d934189ba1e414bfa23f7792658e69fd8c60d714`
 Status: final implementation contract
 
 This document closes the remaining implementation decisions in the unified
-Text / TextBox / View / Fx directive. It replaces provisional renderer-local
+Text / dialogue View / Fx directive. It replaces provisional renderer-local
 text and Fx contracts directly. Arcweft has not released the affected APIs or
 wire formats, so no compatibility alias, dual reader, deprecated wrapper, or
 migration version is part of the design.
@@ -44,7 +44,7 @@ hosting, provider loading, command submission, and readback.
 | `arcweft-presentation::fx` | Typed Fx graph/value/program model, evaluator, plans, diagnostics, instance snapshots |
 | `arcweft-view` | Executable View value programs, per-mount evaluator, mount-based Fx identity |
 | `arcweft-bundle` | Deterministic `FxDefinitions` and executable View program sections/codecs |
-| `arcweft-runtime-driver` | Logical clock, live Fx/TextBox/View instance stores, atomic save/restore |
+| `arcweft-runtime-driver` | Logical clock, dialogue occurrences, live Fx/View mounts, atomic save/restore |
 | `arcweft-player-scene` | Source-store joins and frame preparation orchestration |
 | `arcweft-render-wgpu` | View composition, resolved-plan GPU submission, and shared prepared-frame Color/ObjectId/Mask capture |
 | `arcweft-player-native` | Native window/surface host and developer capture adapter |
@@ -170,7 +170,7 @@ pub struct PreparedTextItem {
 ```
 
 `PreparedTextId` is frame-local. Stable cross-frame identity belongs to the
-source/View/TextBox/Fx instance records, not this index.
+source/View/Fx instance records, not this index.
 
 `PreparedFrame` contains one `PreparedTextBatch`; it contains no parallel plain,
 styled, selectable, or dialogue text list. Selection rectangles, caret,
@@ -311,9 +311,10 @@ pub const FX_GOLDEN_ANGLE_RAD: f32 = f32::from_bits(0x4019_98ff); // 2.3999631
 `(ordinal as f32 * FX_GOLDEN_ANGLE_RAD).rem_euclid(TAU)`.
 
 View Fx identity contains `ViewMountId`, node key, optional repeat key, authored
-ordinal, and optional local key. RichText identity contains TextBox runtime ID,
-entry ID, authored node index, authored Fx ordinal, and optional local key.
-Stage/page index is not part of the default identity.
+ordinal, and optional local key. Dialogue RichText identity contains the
+persistent View mount, dialogue occurrence, authored node index, authored Fx
+ordinal, and optional local key. Stage/page index is not part of the default
+identity.
 
 The default seed is the first 64 little-endian bits of BLAKE3 over domain
 `arcweft.fx-seed.v1`, `FxInstanceId`, semantic hash, optional authored seed
@@ -362,7 +363,7 @@ its own origin before matrix composition.
 The final target enum is closed:
 
 ```text
-.node        whole retained View/TextBox node
+.node        whole retained View node
 .content     the application content group
 .background  the node background paint group
 .line        one logical text line
@@ -371,8 +372,8 @@ The final target enum is closed:
 ```
 
 `.content` is the shared meaning of a View content subtree and a RichText Fx
-span/run. Provisional document/run/textbox/screen/sentence target vocabulary is
-replaced, not aliased. Default target is `.content`.
+span/run. The closed enum above is the complete source vocabulary, and its
+default is `.content`.
 
 Renderer interfaces are typed enum values, not strings: text/style, color,
 transform, mask, filter, shader-uniform, offscreen-pass, post-process,
@@ -504,51 +505,78 @@ pub struct FxInstanceSnapshot {
 ```
 
 Provider state is typed, bounded, provider-versioned data; it is not an opaque
-native pointer. The runtime session save atomically includes TextBox entries,
-View mounts/local state, Fx instances, reveal state, transitions, and logical
-clock. Restore validates all definition IDs and ABI hashes before mutating the
-live session. A single mismatch rejects the atomic restore with a typed
-diagnostic.
+native pointer. The runtime session save atomically includes dialogue
+occurrences, View mounts/local state, Fx instances, reveal state, transitions,
+and logical clock. Restore validates all definition IDs and ABI hashes before
+mutating the live session. A single mismatch rejects the atomic restore with a
+typed diagnostic.
 
 All Fx diagnostics include a stable code, severity, definition ID when known,
 instance ID when known, graph child path, target/interface when relevant,
 source range when available, and message. The same records flow to native,
 Web, headless, save errors, and Agent observation.
 
-## 15. TextBox as a persistent View implementation
+## 15. Dialogue presentation is an authored persistent View
 
-`TextBox` remains a dialogue domain/output/lifecycle object. Its display is a
-persistent View mount. No `ViewElementKind::TextBox` is added.
+There is no separate dialogue-presentation declaration, entity kind, reference
+family, runtime domain object, or renderer primitive. Dialogue selects a View
+resource:
 
-```rust
-pub struct TextBoxPresentationStore {
-    textboxes: BTreeMap<TextBoxRuntimeId, TextBoxPresentation>,
+```arcw
+pub style unified_text_panel {
+    .unified_text_panel {
+        font-family = text("Noto Sans JP")
+        color = rgba(238, 247, 255, 255)
+        font-size = 30000milli
+    }
 }
 
-pub struct TextBoxPresentation {
-    pub revision: TextBoxRevision,
-    pub entries: Vec<TextBoxEntryState>,
-    pub active: Option<TextBoxEntryId>,
-    pub mount: ViewMountId,
+pub view UnifiedTextPanel(dialogue: DialogueView) {
+    Panel {
+        Text(dialogue.speaker)
+        RichText(dialogue.content)
+            .style(@style.unified_text_panel)
+    }
+}
+
+pub dialogue defaults {
+    view = @view.UnifiedTextPanel
 }
 ```
 
-Runtime output is applied as ordered append, replace, and clear operations; no
-`frames.last()` projection is allowed. Each target has an independent mount,
-local state, focus state, and Fx state. Standard TextBox is a Rust-backed View
-using the same props schema and `ViewPrimitive::Text` as authored Views.
+`DialogueView` is a public nominal record owned by the standard prelude. It is
+visible to ordinary type checking, completion, hover, go-to-definition, and
+signature help. Its closed standard fields include the speaker projection,
+rich dialogue content, occurrence and stage identity, reveal state, and the
+typed primary action. A project may declare a custom dialogue-view input model
+with `#[dialogue_view] pub struct ...` only when it has exactly those six fields
+with their prescribed types. Additional project data is supplied through a
+separate ordinary View parameter. The attribute assigns a role to an ordinary
+nominal record and does not introduce a second declaration grammar.
 
-Primary action completes reveal while reveal is active, then advances the
-captured target occurrence/stage/revision. Stale actions are rejected.
-Dialogue page/wait/speed semantics stay in the dialogue/runtime owner and do
-not move into layout or renderer code.
+The standard library supplies the reserved minimal dialogue View resource
+`std.view.dialogue`; projects cannot override that identity. If a project does
+not select `view`, the linker resolves that resource explicitly; runtime does
+not manufacture a special fallback panel. A project View decides which
+`Text` or `RichText` node consumes each typed dialogue field. Styling uses the
+ordinary View style and Fx modifiers.
+
+`DialogueViewDefinition` identifies the authored resource and
+`DialoguePresentationId` identifies an independent runtime target. Each active
+entry/occurrence owns a persistent `ViewMountId` with independent local,
+focus, and Fx state. Runtime output is applied as ordered append, replace, and
+clear operations; no `frames.last()` projection is allowed. Primary action
+completes reveal while reveal is active, then advances the captured
+presentation/mount/occurrence/stage/revision. Stale actions are rejected. Dialogue
+page/wait/speed semantics stay in the dialogue/runtime owner and do not move
+into layout or renderer code.
 
 ## 16. Shared capture and Agent geometry
 
 `arcweft-render-wgpu::SharedOffscreenCapture` owns the reusable device, queue,
 shared renderer, and readback resources. Its only scene input is
 `PreparedFrame`. Shared capture supports Color, ObjectId, and Mask attachments
-plus frame/layer/View/TextBox/run/ruby/glyph scopes. Alternate attachments are
+plus frame/layer/View/dialogue-content/run/ruby/glyph scopes. Alternate attachments are
 generated from the same prepared geometry and caller-supplied painter order.
 Native and CLI hosts retain those attachments; they do not own a second text
 renderer or a second layout/effect state store.
@@ -598,7 +626,7 @@ Implementation proceeds in reviewable, compiling cuts:
 5. RichText/reveal/Fx migration and removal of renderer-local registries;
 6. direct View text painter order and live per-mount View evaluator;
 7. shared capture/Agent geometry and native adapter reduction;
-8. persistent TextBox View composition and legacy cleanup;
+8. persistent authored dialogue View composition and obsolete-path cleanup;
 9. cross-backend visual parity, stable docs, and structural audit.
 
 Completion requires all directive conditions, all typed/behavior tests, all

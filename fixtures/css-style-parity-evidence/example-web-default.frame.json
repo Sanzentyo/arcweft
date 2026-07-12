@@ -29,9 +29,9 @@
       "layout_hash": "335d5aa6c01dab44c45576a8fccdf7df62cca1ffaa64ea3d8bfeb32b6ac10bed",
       "source_origin": 0,
       "owner": {
-        "semantic_id": "textbox.runtime.0.entry.0.body",
-        "parent_id": "view.textbox.0",
-        "kind": "textbox:0:0:0:body",
+        "semantic_id": "view_mount_0.text.block.view.StylePanel.1",
+        "parent_id": "view.mount.0",
+        "kind": "dialogue:0:0:0",
         "object_bounds": {
           "x_milli": 57600,
           "y_milli": 460800,

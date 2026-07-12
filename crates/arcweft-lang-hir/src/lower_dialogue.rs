@@ -17,10 +17,10 @@ pub(crate) fn lower_speaker_line(
     let id = normalize_line_id(line.options().id(), &speaker, context, *line.range())?;
     let text_key =
         normalize_line_text_key(line.options().text_key(), id.as_ref(), &speaker, context)?;
-    let window = line
+    let view = line
         .options()
-        .window()
-        .map(|window| normalize_entity_ref_syntax(window, context))
+        .view()
+        .map(|view| normalize_entity_ref_syntax(view, context))
         .transpose()?;
     Ok(HirDialogue {
         callee: line.speaker().to_owned(),
@@ -32,7 +32,7 @@ pub(crate) fn lower_speaker_line(
         portrait: line.options().portrait().cloned(),
         focus: line.options().focus().cloned(),
         cleanup: line.options().cleanup().cloned(),
-        window,
+        view,
         source_locale: line.options().source_locale().map(str::to_owned),
         hooks: line.options().hooks().to_vec(),
         style: line.options().style().cloned(),
@@ -60,10 +60,10 @@ pub(crate) fn lower_content_call(
     let id = normalize_line_id(call.options().id(), &speaker, context, *call.range())?;
     let text_key =
         normalize_line_text_key(call.options().text_key(), id.as_ref(), &speaker, context)?;
-    let window = call
+    let view = call
         .options()
-        .window()
-        .map(|window| normalize_entity_ref_syntax(window, context))
+        .view()
+        .map(|view| normalize_entity_ref_syntax(view, context))
         .transpose()?;
     Ok(HirDialogue {
         callee: call.callee().to_owned(),
@@ -75,7 +75,7 @@ pub(crate) fn lower_content_call(
         portrait: call.options().portrait().cloned(),
         focus: call.options().focus().cloned(),
         cleanup: call.options().cleanup().cloned(),
-        window,
+        view,
         source_locale: call.options().source_locale().map(str::to_owned),
         hooks: call.options().hooks().to_vec(),
         style: call.options().style().cloned(),

@@ -285,11 +285,6 @@ impl TypeChecker<'_> {
                         )));
                     }
                 }
-                DialogueToken::Tag(tag) if tag.name() == "hook" => {
-                    self.errors.push(TypeCheckError::new(
-                        "local dialogue `[hook ...]` syntax was removed; use `[mark .name]` with `with: on mark(.name):`".to_owned(),
-                    ));
-                }
                 DialogueToken::Tag(tag) if tag.name() == "w" => {
                     if let Err(error) = tag.wait_duration() {
                         self.errors.push(TypeCheckError::new(error.to_string()));
