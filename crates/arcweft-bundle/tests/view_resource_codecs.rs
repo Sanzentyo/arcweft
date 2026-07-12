@@ -4,18 +4,19 @@ use arcweft_bundle::resource_codec::view::{
     ColorSchemeDefault, CompositionOnBlurPolicy, ContrastPreference, EnterKeyHint,
     ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp, StyleSourceIdentity,
     StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride, TextAssistPolicy,
-    TextCapitalization, ViewAwaitBranchSpan, ViewChildSpan, ViewElementKind, ViewElementState,
-    ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewHandlerRef, ViewInputKind,
-    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
-    ViewLogicalRect, ViewObserveClassification, ViewProgramInstruction, ViewProgramResource,
-    ViewResourceBudget, ViewResourceCompatibility, ViewRuntimeTextBlockBounds, ViewScrollAxis,
+    TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef, ViewDefinitionResource,
+    ViewElementKind, ViewElementState, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef,
+    ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
+    ViewInstructionSpan, ViewLayoutBoundsResource, ViewLogicalRect, ViewObserveClassification,
+    ViewParameterResource, ViewProgramInstruction, ViewProgramResource, ViewResourceBudget,
+    ViewResourceCompatibility, ViewRuntimeTextBlockBounds, ViewScrollAxis,
     ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
     ViewScrollRegionResource, ViewSecureInputPolicy, ViewSecureRedactionMetadata,
-    ViewSemanticTarget, ViewStateSchemaHashRef, ViewStyleDeclaration, ViewStyleResource,
-    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
-    ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
-    ViewThemeEnvironmentDefaults, ViewThemeResource, migrated_view_section_compatibility,
+    ViewSemanticTarget, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewTextBlockResource, ViewTextResource,
+    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
+    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
+    ViewThemeResource, migrated_view_section_compatibility,
 };
 
 use arcweft_bundle::resource_codec::{
@@ -24,7 +25,7 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_bundle::{BundleVirtualFileRef, BundleVirtualFileSpace};
 use arcweft_presentation::fx::{
-    FiniteF32, FxId, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
+    FiniteF32, FxId, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
@@ -102,10 +103,12 @@ fn view_fx_bindings_are_canonical_bounded_and_unique() {
     first
         .instructions
         .push(instruction(vec![binding("speed"), binding("amplitude")]));
+    first.definitions[0].body.end_instruction = first.instructions.len().try_into().unwrap();
     let mut second = fixture_program();
     second
         .instructions
         .push(instruction(vec![binding("amplitude"), binding("speed")]));
+    second.definitions[0].body.end_instruction = second.instructions.len().try_into().unwrap();
     assert_eq!(
         first.encode_canonical_section().expect("first encodes"),
         second.encode_canonical_section().expect("second encodes")
@@ -115,6 +118,8 @@ fn view_fx_bindings_are_canonical_bounded_and_unique() {
     duplicate
         .instructions
         .push(instruction(vec![binding("speed"), binding("speed")]));
+    duplicate.definitions[0].body.end_instruction =
+        duplicate.instructions.len().try_into().unwrap();
     assert!(duplicate.encode_canonical_section().is_err());
 
     let bytes = first
@@ -128,6 +133,74 @@ fn view_fx_bindings_are_canonical_bounded_and_unique() {
 }
 
 #[test]
+fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
+    let binding = |ordinal, name: &str, value_program| ViewCallArgumentBindingRef {
+        ordinal,
+        name: Some(name.to_owned()),
+        value_program: ViewValueProgramId(value_program),
+    };
+    let program = |arguments| ViewProgramResource {
+        program_id: "view.program.nested".to_owned(),
+        definitions: vec![
+            ViewDefinitionResource {
+                public_id: "view.Caller".to_owned(),
+                body: ViewInstructionSpan::new(0, 1),
+                parameters: Vec::new(),
+                state_schema_hash: 1,
+            },
+            ViewDefinitionResource {
+                public_id: "view.Child".to_owned(),
+                body: ViewInstructionSpan::new(1, 1),
+                parameters: vec![
+                    ViewParameterResource {
+                        ordinal: 0,
+                        name: "count".to_owned(),
+                        value_type: Some(FxRuntimeType::I32),
+                        default_program: None,
+                    },
+                    ViewParameterResource {
+                        ordinal: 1,
+                        name: "opacity".to_owned(),
+                        value_type: Some(FxRuntimeType::F32),
+                        default_program: None,
+                    },
+                ],
+                state_schema_hash: 2,
+            },
+        ],
+        value_programs: vec![
+            constant_value_program(ViewValueProgramId(0), FxRuntimeValue::I32(2)),
+            constant_value_program(
+                ViewValueProgramId(1),
+                FxRuntimeValue::F32(FiniteF32::try_new(0.5).unwrap()),
+            ),
+        ],
+        instructions: vec![ViewProgramInstruction::CallView {
+            view: "view.Child".to_owned(),
+            arguments,
+            style: None,
+            part: None,
+            key: None,
+            source: None,
+        }],
+        ..ViewProgramResource::default()
+    };
+
+    let authored_reverse = program(vec![binding(1, "opacity", 1), binding(0, "count", 0)]);
+    let authored_forward = program(vec![binding(0, "count", 0), binding(1, "opacity", 1)]);
+    assert_eq!(
+        authored_reverse.encode_canonical_section().unwrap(),
+        authored_forward.encode_canonical_section().unwrap()
+    );
+
+    let missing_required = program(vec![binding(0, "count", 0)]);
+    assert!(missing_required.encode_canonical_section().is_err());
+
+    let wrong_type = program(vec![binding(0, "count", 1), binding(1, "opacity", 1)]);
+    assert!(wrong_type.encode_canonical_section().is_err());
+}
+
+#[test]
 fn view_value_program_references_require_existing_programs_and_result_types() {
     let mut missing = fixture_program();
     missing.instructions.push(ViewProgramInstruction::Branch {
@@ -136,6 +209,7 @@ fn view_value_program_references_require_existing_programs_and_result_types() {
         else_span: None,
         source: None,
     });
+    missing.definitions[0].body.end_instruction = missing.instructions.len().try_into().unwrap();
     assert!(missing.encode_canonical_section().is_err());
 
     let mut wrong_type = fixture_program();
@@ -147,6 +221,8 @@ fn view_value_program_references_require_existing_programs_and_result_types() {
             else_span: None,
             source: None,
         });
+    wrong_type.definitions[0].body.end_instruction =
+        wrong_type.instructions.len().try_into().unwrap();
     assert!(wrong_type.encode_canonical_section().is_err());
 
     let mut malformed_input = fixture_program();
@@ -530,7 +606,12 @@ fn view_program_bytes_without_scroll_region_field(field_name: &str) -> Vec<u8> {
 fn fixture_program() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.program.dialogue".to_owned(),
-        root_view: "view.dialogue".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.dialogue".to_owned(),
+            body: ViewInstructionSpan::new(0, 4),
+            parameters: Vec::new(),
+            state_schema_hash: 0xD1A1_06A0_0000_0001,
+        }],
         value_programs: vec![
             constant_value_program(ViewValueProgramId(0), FxRuntimeValue::I32(1)),
             constant_value_program(
@@ -570,17 +651,12 @@ fn fixture_program() -> ViewProgramResource {
             },
             ViewProgramInstruction::CloseElement,
         ],
-        child_spans: vec![ViewChildSpan::new(1, 2)],
         handlers: vec![ViewHandlerRef {
             handler_id: "handler.dialogue.submit".to_owned(),
             event: "submit".to_owned(),
             awbc_function_index: 2,
             handler_abi: BundleDigest::of(b"handler-abi"),
             function_binding: None,
-        }],
-        state_schema_hashes: vec![ViewStateSchemaHashRef {
-            public_id: Some("state.dialogue".to_owned()),
-            hash: BundleDigest::of(b"state-schema"),
         }],
         exported_parts: vec![],
         semantic_targets: vec![ViewSemanticTarget {

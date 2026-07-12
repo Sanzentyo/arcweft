@@ -25,11 +25,12 @@ use arcweft_bundle::{
     resource_codec::{
         ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
         ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
-        ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy,
-        ViewFocusNavigationEdge, ViewFocusNavigationResource, ViewFocusSkipPolicy,
-        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewFxArgumentBindingRef,
-        ViewInputResource, ViewLayoutBoundsResource, ViewLogicalRect, ViewPartStyleRule,
-        ViewProgramResource, ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
+        ViewDefinitionResource, ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource,
+        ViewFocusInitialPolicy, ViewFocusNavigationEdge, ViewFocusNavigationResource,
+        ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
+        ViewFxArgumentBindingRef, ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource,
+        ViewLogicalRect, ViewParameterResource, ViewPartStyleRule, ViewProgramResource,
+        ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
         ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
         ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockResource,
         ViewTextResource,
@@ -50,18 +51,19 @@ use arcweft_lang_syntax::{
         items::EntityDeclItem,
         view::{
             ViewAction, ViewActionPayload, ViewArg, ViewAwait, ViewAwaitBranchKind, ViewBody,
-            ViewButton, ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewFxApplication,
-            ViewIf, ViewImage, ViewLet, ViewMatch, ViewMatchArm, ViewModifier,
+            ViewButton, ViewButtonLabel, ViewCall, ViewElement, ViewExpr, ViewForEach,
+            ViewFxApplication, ViewIf, ViewImage, ViewLet, ViewMatch, ViewMatchArm, ViewModifier,
             ViewNavigationDirection, ViewNavigationInitial, ViewNavigationTarget,
             ViewNavigationTrap, ViewStyleModifier, ViewText, ViewTextControlPayloadField,
             ViewTextField, ViewTextFieldMode,
         },
     },
     expr::{CallArg, Expr, Literal},
+    types::{TypeRef, parse_fn_signature},
 };
 use arcweft_presentation::fx::{FxDefinition, FxId, FxRuntimeType};
 use arcweft_view::ViewElementLayoutKind;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 use super::super::bundle_view_layout::{
@@ -100,6 +102,18 @@ pub(in crate::app) enum ViewSidecarError {
     ValueProgram(#[from] ViewValueCompileError),
     #[error("View call has more than 65,536 arguments")]
     TooManyViewCallArguments,
+    #[error("View `{view}` has an invalid parameter signature: {message}")]
+    InvalidViewSignature { view: String, message: String },
+    #[error("View `{view}` parameter {ordinal} must use one identifier binding")]
+    UnsupportedViewParameter { view: String, ordinal: usize },
+    #[error("View call references unknown definition `{view}`")]
+    UnknownViewCall { view: String },
+    #[error("View call `{view}` has invalid argument `{argument}`: {reason}")]
+    InvalidViewCallArgument {
+        view: String,
+        argument: String,
+        reason: String,
+    },
     #[error("View Text source `{expression}` is not a literal or typed text projection")]
     UnsupportedTextSource { expression: String },
 }
@@ -107,6 +121,8 @@ pub(in crate::app) enum ViewSidecarError {
 #[derive(Default)]
 struct ViewLoweringState {
     fx_definitions: BTreeMap<String, ViewFxDefinition>,
+    view_schemas: BTreeMap<String, ViewDefinitionSchema>,
+    definitions: Vec<ViewDefinitionResource>,
     value_compiler: ViewValueProgramCompiler,
     instructions: Vec<ViewProgramInstruction>,
     text_sources: Vec<ViewTextSourceRecord>,
@@ -145,6 +161,20 @@ struct ViewFxDefinition {
     parameters: Vec<(String, FxRuntimeType)>,
 }
 
+#[derive(Clone)]
+struct ViewDefinitionSchema {
+    public_id: String,
+    parameters: Vec<ViewParameterSchema>,
+}
+
+#[derive(Clone)]
+struct ViewParameterSchema {
+    name: String,
+    value_type: Option<FxRuntimeType>,
+    source_type: String,
+    default: Option<Expr>,
+}
+
 pub(in crate::app) fn view_sidecars(
     views: &[&EntityDeclItem],
     style_resource: Option<&ViewStyleResource>,
@@ -153,6 +183,7 @@ pub(in crate::app) fn view_sidecars(
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
         fx_definitions: view_fx_definitions(fx_definitions),
+        view_schemas: view_definition_schemas(views)?,
         style_resource: style_resource.cloned(),
         source_image_objects: source_image_objects.to_vec(),
         ..ViewLoweringState::default()
@@ -162,7 +193,22 @@ pub(in crate::app) fn view_sidecars(
     };
     for view in views {
         if let Some(body) = view.view_body().and_then(|body| body.view()) {
+            let public_id = view_resource_id(view.id().body());
+            let schema = state.view_schemas.get(&public_id).cloned().ok_or_else(|| {
+                ViewSidecarError::UnknownViewCall {
+                    view: public_id.clone(),
+                }
+            })?;
+            let parameters = compile_view_parameters(&schema, &mut state.value_compiler)?;
+            let start_instruction = usize_to_u32_saturating(state.instructions.len());
             lower_view_body(view.id(), body, &mut state)?;
+            let end_instruction = usize_to_u32_saturating(state.instructions.len());
+            state.definitions.push(ViewDefinitionResource {
+                public_id,
+                body: ViewInstructionSpan::new(start_instruction, end_instruction),
+                parameters,
+                state_schema_hash: view_state_schema_hash(&schema, body),
+            });
         }
     }
     assign_action_button_bounds(&mut state);
@@ -187,13 +233,11 @@ pub(in crate::app) fn view_sidecars(
     Ok(ViewBundleSidecars {
         program: Some(ViewProgramResource {
             program_id: format!("view.program.{}", first.id().body()),
-            root_view: first.id().body().to_owned(),
+            definitions: state.definitions,
             value_programs: compiled_values.programs,
             value_inputs: compiled_values.inputs,
             instructions: state.instructions,
-            child_spans: Vec::new(),
             handlers: Vec::new(),
-            state_schema_hashes: Vec::new(),
             exported_parts: Vec::new(),
             semantic_targets: state.semantic_targets,
             layout_bounds: state.layout_bounds,
@@ -249,6 +293,133 @@ fn view_fx_definitions(definitions: &[FxDefinition]) -> BTreeMap<String, ViewFxD
     result
 }
 
+fn view_definition_schemas(
+    views: &[&EntityDeclItem],
+) -> Result<BTreeMap<String, ViewDefinitionSchema>, ViewSidecarError> {
+    let mut schemas = BTreeMap::new();
+    for view in views {
+        let public_id = view_resource_id(view.id().body());
+        let signature =
+            parse_fn_signature(&format!("fn view{}", view.signature_tail())).map_err(|error| {
+                ViewSidecarError::InvalidViewSignature {
+                    view: public_id.clone(),
+                    message: error.to_string(),
+                }
+            })?;
+        let parameters = signature
+            .param_groups()
+            .iter()
+            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+            .enumerate()
+            .map(|(ordinal, parameter)| {
+                let name = parameter
+                    .pattern()
+                    .simple_binding_name()
+                    .ok_or_else(|| ViewSidecarError::UnsupportedViewParameter {
+                        view: public_id.clone(),
+                        ordinal,
+                    })?
+                    .to_owned();
+                Ok(ViewParameterSchema {
+                    name,
+                    value_type: view_scalar_type(parameter.ty()),
+                    source_type: format!("{:?}", parameter.ty()),
+                    default: parameter.default().cloned(),
+                })
+            })
+            .collect::<Result<Vec<_>, ViewSidecarError>>()?;
+        let schema = ViewDefinitionSchema {
+            public_id: public_id.clone(),
+            parameters,
+        };
+        if schemas.insert(public_id.clone(), schema).is_some() {
+            return Err(ViewSidecarError::InvalidViewSignature {
+                view: public_id,
+                message: "duplicate View definition".to_owned(),
+            });
+        }
+    }
+    Ok(schemas)
+}
+
+fn compile_view_parameters(
+    schema: &ViewDefinitionSchema,
+    compiler: &mut ViewValueProgramCompiler,
+) -> Result<Vec<ViewParameterResource>, ViewSidecarError> {
+    schema
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(ordinal, parameter)| {
+            let ordinal =
+                u16::try_from(ordinal).map_err(|_| ViewSidecarError::TooManyViewCallArguments)?;
+            let default_program = parameter
+                .default
+                .as_ref()
+                .map(|default| {
+                    let expected = parameter.value_type.ok_or_else(|| {
+                        ViewSidecarError::InvalidViewSignature {
+                            view: schema.public_id.clone(),
+                            message: format!(
+                                "parameter `{}` has a non-scalar default outside ViewValueProgram",
+                                parameter.name
+                            ),
+                        }
+                    })?;
+                    compiler
+                        .compile(default, Some(expected))
+                        .map_err(ViewSidecarError::from)
+                })
+                .transpose()?;
+            Ok(ViewParameterResource {
+                ordinal,
+                name: parameter.name.clone(),
+                value_type: parameter.value_type,
+                default_program,
+            })
+        })
+        .collect()
+}
+
+fn view_scalar_type(ty: &TypeRef) -> Option<FxRuntimeType> {
+    let TypeRef::Path(path) = ty else {
+        return None;
+    };
+    Some(match path.as_str() {
+        "bool" => FxRuntimeType::Bool,
+        "i32" => FxRuntimeType::I32,
+        "f32" => FxRuntimeType::F32,
+        "Length" => FxRuntimeType::Length,
+        "Angle" => FxRuntimeType::Angle,
+        "Seconds" | "Duration" => FxRuntimeType::Seconds,
+        "Color" => FxRuntimeType::Color,
+        "Vec2" => FxRuntimeType::Vec2,
+        "Transform2D" => FxRuntimeType::Transform2D,
+        _ => return None,
+    })
+}
+
+fn view_state_schema_hash(schema: &ViewDefinitionSchema, body: &ViewBody) -> u64 {
+    let mut canonical = String::from("arcweft.view-state-schema.v1\n");
+    canonical.push_str(&schema.public_id);
+    for parameter in &schema.parameters {
+        canonical.push_str("\nparam:");
+        canonical.push_str(&parameter.name);
+        canonical.push(':');
+        canonical.push_str(&parameter.source_type);
+    }
+    for local in body.locals() {
+        canonical.push_str("\nlocal:");
+        canonical.push_str(local.name());
+        canonical.push(':');
+        canonical.push_str(local.ty().unwrap_or("_"));
+    }
+    let digest = BundleDigest::of(canonical.as_bytes());
+    let mut hash = [0_u8; 8];
+    hash.copy_from_slice(&digest.as_bytes()[..8]);
+    u64::from_le_bytes(hash)
+}
+
 fn lower_view_body(
     view_id: &EntityRef,
     body: &ViewBody,
@@ -267,6 +438,103 @@ fn view_resource_id(view_id: &str) -> String {
     }
 }
 
+pub(in crate::app) fn normalize_view_call(view: &Expr) -> String {
+    let source = match view {
+        Expr::EntityRef(reference) => normalize_entity_ref(reference),
+        _ => expr_source(view),
+    };
+    let source = source
+        .trim()
+        .trim_start_matches('@')
+        .trim_start_matches("view:.")
+        .trim_start_matches('.');
+    view_resource_id(source)
+}
+
+fn lower_nested_view_call(
+    owner_view: &str,
+    call: &ViewCall,
+    state: &mut ViewLoweringState,
+) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    let view = normalize_view_call(call.view());
+    let schema = state
+        .view_schemas
+        .get(&view)
+        .cloned()
+        .ok_or_else(|| ViewSidecarError::UnknownViewCall { view: view.clone() })?;
+    let mut bound = BTreeSet::new();
+    let arguments = call
+        .args()
+        .iter()
+        .enumerate()
+        .map(|(authored_ordinal, argument)| {
+            let authored_ordinal = u16::try_from(authored_ordinal)
+                .map_err(|_| ViewSidecarError::TooManyViewCallArguments)?;
+            let (ordinal, name, parameter, value) = match argument {
+                ViewArg::Positional(value) => {
+                    let parameter = schema
+                        .parameters
+                        .get(usize::from(authored_ordinal))
+                        .ok_or_else(|| ViewSidecarError::InvalidViewCallArgument {
+                            view: view.clone(),
+                            argument: authored_ordinal.to_string(),
+                            reason: "positional argument exceeds the parameter list".to_owned(),
+                        })?;
+                    (authored_ordinal, None, parameter, value)
+                }
+                ViewArg::Named { name, value } => {
+                    let (ordinal, parameter) = schema
+                        .parameters
+                        .iter()
+                        .enumerate()
+                        .find(|(_, parameter)| parameter.name == *name)
+                        .ok_or_else(|| ViewSidecarError::InvalidViewCallArgument {
+                            view: view.clone(),
+                            argument: name.clone(),
+                            reason: "no parameter has this name".to_owned(),
+                        })?;
+                    let ordinal = u16::try_from(ordinal)
+                        .map_err(|_| ViewSidecarError::TooManyViewCallArguments)?;
+                    (ordinal, Some(name.clone()), parameter, value)
+                }
+            };
+            if !bound.insert(ordinal) {
+                return Err(ViewSidecarError::InvalidViewCallArgument {
+                    view: view.clone(),
+                    argument: name.clone().unwrap_or_else(|| authored_ordinal.to_string()),
+                    reason: "parameter is bound more than once".to_owned(),
+                });
+            }
+            Ok(ViewCallArgumentBindingRef {
+                ordinal,
+                name,
+                value_program: state.value_compiler.compile(value, parameter.value_type)?,
+            })
+        })
+        .collect::<Result<Vec<_>, ViewSidecarError>>()?;
+    for (ordinal, parameter) in schema.parameters.iter().enumerate() {
+        let ordinal =
+            u16::try_from(ordinal).map_err(|_| ViewSidecarError::TooManyViewCallArguments)?;
+        if !bound.contains(&ordinal) && parameter.default.is_none() {
+            return Err(ViewSidecarError::InvalidViewCallArgument {
+                view: view.clone(),
+                argument: parameter.name.clone(),
+                reason: "required parameter is missing".to_owned(),
+            });
+        }
+    }
+    state.instructions.push(ViewProgramInstruction::CallView {
+        view,
+        arguments,
+        style: None,
+        part: first_part(call.modifiers()),
+        key: None,
+        source: None,
+    });
+    lower_modifiers(owner_view, call.modifiers(), state)?;
+    Ok(ViewLayoutFrame::zero())
+}
+
 fn lower_view_expr(
     view_id: &str,
     expr: &ViewExpr,
@@ -281,37 +549,7 @@ fn lower_view_expr(
         ViewExpr::Image(image) => lower_image(view_id, image, state, *layout)?,
         ViewExpr::Let(view_let) => lower_view_let(view_let, state)?,
         ViewExpr::Fragment(children) => lower_layout_column(view_id, children, state, *layout)?,
-        ViewExpr::ViewCall(call) => {
-            let arguments = call
-                .args()
-                .iter()
-                .enumerate()
-                .map(|(ordinal, argument)| {
-                    let ordinal = u16::try_from(ordinal)
-                        .map_err(|_| ViewSidecarError::TooManyViewCallArguments)?;
-                    let (name, value) = match argument {
-                        ViewArg::Positional(value) => (None, value),
-                        ViewArg::Named { name, value } => (Some(name.clone()), value),
-                    };
-                    Ok(ViewCallArgumentBindingRef {
-                        ordinal,
-                        name,
-                        value_program: state.value_compiler.compile_untyped(value)?,
-                    })
-                })
-                .collect::<Result<Vec<_>, ViewSidecarError>>()?;
-            state.instructions.push(ViewProgramInstruction::CallView {
-                view: expr_source(call.view()),
-                child_span: 0,
-                arguments,
-                style: None,
-                part: first_part(call.modifiers()),
-                key: None,
-                source: None,
-            });
-            lower_modifiers(view_id, call.modifiers(), state)?;
-            ViewLayoutFrame::zero()
-        }
+        ViewExpr::ViewCall(call) => lower_nested_view_call(view_id, call, state)?,
         ViewExpr::Raw(raw) => {
             state.instructions.push(ViewProgramInstruction::EmitCustom {
                 element: raw.clone(),

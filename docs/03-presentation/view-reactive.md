@@ -43,6 +43,26 @@ pub view SettingsPanel(
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。
 
+## Bundle execution contract
+
+View program bundle は単一の暗黙 root や index-only child span を持たない。各
+View 宣言を、次の閉じた定義 record として保持する。
+
+- package/module scoped `public_id`
+- 共通 instruction inventory 内の半開区間 `body`
+- authored order の parameter schema（ordinal、name、scalar runtime type、typed default program）
+- mount-state schema hash
+
+`CallView` は対象 definition ID と、parameter ordinal/name に結び付いた
+`ViewValueProgramId` を保持する。必須引数の欠落、未知の引数、型不一致、重複
+binding、未知の View は bundle 作成または decode 時の structured failure であり、
+no-op へは落とさない。空の View body は長さ 0 の正規 span として有効である。
+
+flow から mount された View を root とし、View body 内の nested View call を
+再帰的にたどった到達可能な定義だけを bundle に含める。`mod game.opening` 内の
+`Child(...)` は `view.game.opening.Child` へ解決される。module path の区切りは
+`.` であり、`mod game::opening` は構文診断になる。
+
 ```arcw
 Slider(value = bind state.config.master_volume, range = 0.0..1.0)
 ```

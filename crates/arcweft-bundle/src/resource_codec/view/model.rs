@@ -13,13 +13,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewProgramResource {
     pub program_id: String,
-    pub root_view: String,
+    pub definitions: Vec<ViewDefinitionResource>,
     pub value_programs: Vec<ViewValueProgram>,
     pub value_inputs: Vec<ViewValueInputResource>,
     pub instructions: Vec<ViewProgramInstruction>,
-    pub child_spans: Vec<ViewChildSpan>,
     pub handlers: Vec<ViewHandlerRef>,
-    pub state_schema_hashes: Vec<ViewStateSchemaHashRef>,
     pub exported_parts: Vec<ViewExportedPart>,
     pub semantic_targets: Vec<ViewSemanticTarget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -72,7 +70,6 @@ pub enum ViewProgramInstruction {
     },
     CallView {
         view: String,
-        child_span: u32,
         arguments: Vec<ViewCallArgumentBindingRef>,
         style: Option<String>,
         part: Option<String>,
@@ -145,6 +142,26 @@ pub struct ViewCallArgumentBindingRef {
     pub value_program: ViewValueProgramId,
 }
 
+/// One independently mountable Arcweft View definition in the program.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewDefinitionResource {
+    pub public_id: String,
+    pub body: ViewInstructionSpan,
+    pub parameters: Vec<ViewParameterResource>,
+    pub state_schema_hash: u64,
+}
+
+/// One ordered View parameter and its optional executable scalar default.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewParameterResource {
+    pub ordinal: u16,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<FxRuntimeType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_program: Option<ViewValueProgramId>,
+}
+
 /// One typed external value projected into the common View value-program schema.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewValueInputResource {
@@ -201,7 +218,7 @@ impl ViewStyleApplyRef {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewChildSpan {
+pub struct ViewInstructionSpan {
     pub start_instruction: u32,
     pub end_instruction: u32,
 }
@@ -213,12 +230,6 @@ pub struct ViewHandlerRef {
     pub awbc_function_index: u32,
     pub handler_abi: BundleDigest,
     pub function_binding: Option<CrossSectionRef>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewStateSchemaHashRef {
-    pub public_id: Option<String>,
-    pub hash: BundleDigest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1236,7 +1247,7 @@ pub struct ViewThemeEnvironmentDefaults {
     pub text_scale_milli: u32,
 }
 
-impl ViewChildSpan {
+impl ViewInstructionSpan {
     pub const fn new(start_instruction: u32, end_instruction: u32) -> Self {
         Self {
             start_instruction,

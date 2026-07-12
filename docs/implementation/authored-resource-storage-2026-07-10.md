@@ -36,8 +36,10 @@ The stable design contract is
   project-root `assets/` directory.
 - Reactive View sidecars are tracked under project-root `content/`; its sample
   has an explicit manifest/profile route. The previously ignored files also
-  required the current View schema names `root_view` and `panel` when they
-  became part of normal bundle validation.
+  required the current View ownership name `view` and canonical `panel` kind
+  when they became part of normal bundle validation. The later executable View
+  contract replaced the provisional single `root_view` field with a typed
+  per-definition inventory; no compatibility alias was retained.
 - Responsive placement and Web demo generated assets now have one canonical
   visible path. The Web demo uses a dedicated manifest-selected
   `bundle-assets/` root, so unrelated browser fonts and ignored local files in

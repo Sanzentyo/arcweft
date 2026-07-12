@@ -8,9 +8,10 @@ use arcweft_bundle::patch::{
     SectionOperation, encode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLogicalRect, ViewProgramResource,
-    ViewScrollAxis, ViewScrollRegionResource, ViewSecureInputPolicy, ViewTextSelectionPolicy,
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
+    ViewDefinitionResource, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
+    ViewInstructionSpan, ViewLogicalRect, ViewProgramResource, ViewScrollAxis,
+    ViewScrollRegionResource, ViewSecureInputPolicy, ViewTextSelectionPolicy,
     ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::{
@@ -831,7 +832,12 @@ fn session_save_restores_complete_per_mount_virtual_range_state() {
     let mut bundle = paged_fixture_bundle();
     bundle.view_program = Some(ViewProgramResource {
         program_id: "view.program.inventory".to_owned(),
-        root_view: "view.inventory".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.inventory".to_owned(),
+            body: ViewInstructionSpan::new(0, 0),
+            parameters: Vec::new(),
+            state_schema_hash: 0,
+        }],
         scroll_regions: vec![ViewScrollRegionResource::new(
             "scroll.inventory",
             Some("view.inventory".to_owned()),

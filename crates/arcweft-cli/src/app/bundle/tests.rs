@@ -106,6 +106,72 @@ flow test {
 }
 
 #[test]
+fn nested_view_calls_retain_definition_spans_typed_parameters_and_reachability() {
+    use arcweft_bundle::resource_codec::view::{ViewProgramInstruction, ViewProgramResource};
+    use arcweft_presentation::fx::FxRuntimeType;
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view Child(value: i32 = 2) {
+  if value > 0 {
+    Text("child")
+  }
+}
+
+view Parent() {
+  Child(value = 3)
+}
+
+flow test {
+  view(@view:.Parent)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+
+    assert_eq!(program.definitions.len(), 2);
+    let child = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id == "view.Child")
+        .expect("transitively reachable child definition");
+    let parent = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id == "view.Parent")
+        .expect("mounted parent definition");
+    assert_eq!(child.body.start_instruction, 0);
+    assert_eq!(child.body.end_instruction, parent.body.start_instruction);
+    assert_eq!(
+        parent.body.end_instruction as usize,
+        program.instructions.len()
+    );
+    assert_eq!(child.parameters.len(), 1);
+    assert_eq!(child.parameters[0].ordinal, 0);
+    assert_eq!(child.parameters[0].name, "value");
+    assert_eq!(child.parameters[0].value_type, Some(FxRuntimeType::I32));
+    assert!(child.parameters[0].default_program.is_some());
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        ViewProgramInstruction::CallView { view, arguments, .. }
+            if view == "view.Child"
+                && arguments.len() == 1
+                && arguments[0].ordinal == 0
+                && arguments[0].name.as_deref() == Some("value")
+    )));
+
+    let bytes = program
+        .encode_canonical_section()
+        .expect("nested View program encodes");
+    let decoded =
+        ViewProgramResource::decode_canonical_section(&bytes).expect("nested View program decodes");
+    assert_eq!(decoded.encode_canonical_section().unwrap(), bytes);
+}
+
+#[test]
 fn view_fx_modifier_lowers_typed_bindings_key_and_ordinal() {
     use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
 

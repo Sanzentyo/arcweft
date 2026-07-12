@@ -353,11 +353,36 @@ impl ViewBody {
         invokes
     }
 
+    /// Returns nested View calls in authored depth-first order.
+    pub fn view_calls(&self) -> Vec<&ViewCall> {
+        let mut calls = Vec::new();
+        collect_view_calls(&self.value, &mut calls);
+        calls
+    }
+
     /// Returns View-side Fx applications in authored depth-first order.
     pub fn fx_applications(&self) -> Vec<&ViewFxApplication> {
         let mut applications = Vec::new();
         fx::collect_fx_applications(&self.value, &mut applications);
         applications
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewLocalState {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn ty(&self) -> Option<&str> {
+        self.ty.as_deref()
+    }
+
+    pub const fn initial(&self) -> &Expr {
+        &self.initial
     }
 
     pub const fn range(&self) -> TextRange {
@@ -1071,6 +1096,46 @@ fn collect_text_control_inputs<'a>(expr: &'a ViewExpr, inputs: &mut Vec<&'a Enti
         | ViewExpr::Text(_)
         | ViewExpr::Image(_)
         | ViewExpr::Button(_)
+        | ViewExpr::Expr(_)
+        | ViewExpr::Raw(_) => {}
+    }
+}
+
+fn collect_view_calls<'a>(expr: &'a ViewExpr, calls: &mut Vec<&'a ViewCall>) {
+    match expr {
+        ViewExpr::ViewCall(call) => calls.push(call),
+        ViewExpr::Fragment(children) => {
+            for child in children {
+                collect_view_calls(child, calls);
+            }
+        }
+        ViewExpr::Element(element) => {
+            for child in element.children() {
+                collect_view_calls(child, calls);
+            }
+        }
+        ViewExpr::If(view_if) => {
+            collect_view_calls(view_if.then_branch(), calls);
+            if let Some(else_branch) = view_if.else_branch() {
+                collect_view_calls(else_branch, calls);
+            }
+        }
+        ViewExpr::Match(view_match) => {
+            for arm in view_match.arms() {
+                collect_view_calls(arm.value(), calls);
+            }
+        }
+        ViewExpr::ForEach(view_for_each) => collect_view_calls(view_for_each.body(), calls),
+        ViewExpr::Await(view_await) => {
+            for branch in view_await.branches() {
+                collect_view_calls(branch.value(), calls);
+            }
+        }
+        ViewExpr::Text(_)
+        | ViewExpr::Image(_)
+        | ViewExpr::TextField(_)
+        | ViewExpr::Button(_)
+        | ViewExpr::Let(_)
         | ViewExpr::Expr(_)
         | ViewExpr::Raw(_) => {}
     }

@@ -13,29 +13,21 @@ pub(super) fn merge_view_programs(
     merge_value_inventories(&mut left, &mut right)?;
     let instruction_offset = u32::try_from(left.instructions.len())
         .map_err(|_| "left instruction inventory exceeds u32::MAX".to_owned())?;
-    let child_span_offset = u32::try_from(left.child_spans.len())
-        .map_err(|_| "left child-span inventory exceeds u32::MAX".to_owned())?;
-    for span in &mut right.child_spans {
-        span.start_instruction = span
+    for definition in &mut right.definitions {
+        definition.body.start_instruction = definition
+            .body
             .start_instruction
             .checked_add(instruction_offset)
-            .ok_or_else(|| "View child-span start overflow".to_owned())?;
-        span.end_instruction = span
+            .ok_or_else(|| "View definition-span start overflow".to_owned())?;
+        definition.body.end_instruction = definition
+            .body
             .end_instruction
             .checked_add(instruction_offset)
-            .ok_or_else(|| "View child-span end overflow".to_owned())?;
-    }
-    for instruction in &mut right.instructions {
-        if let ViewProgramInstruction::CallView { child_span, .. } = instruction {
-            *child_span = child_span
-                .checked_add(child_span_offset)
-                .ok_or_else(|| "View call child-span index overflow".to_owned())?;
-        }
+            .ok_or_else(|| "View definition-span end overflow".to_owned())?;
     }
     left.instructions.extend(right.instructions);
-    left.child_spans.extend(right.child_spans);
+    left.definitions.extend(right.definitions);
     left.handlers.extend(right.handlers);
-    left.state_schema_hashes.extend(right.state_schema_hashes);
     left.exported_parts.extend(right.exported_parts);
     left.semantic_targets.extend(right.semantic_targets);
     left.layout_bounds.extend(right.layout_bounds);
@@ -112,6 +104,13 @@ fn merge_value_inventories(
     for instruction in &mut right.instructions {
         remap_program_references(instruction, program_offset)?;
     }
+    for definition in &mut right.definitions {
+        for parameter in &mut definition.parameters {
+            if let Some(default_program) = &mut parameter.default_program {
+                remap(default_program, program_offset)?;
+            }
+        }
+    }
     left.value_programs.append(&mut right.value_programs);
     left.value_inputs.append(&mut right.value_inputs);
     Ok(())
@@ -175,12 +174,7 @@ fn remap_program_references(
     instruction: &mut ViewProgramInstruction,
     offset: u32,
 ) -> Result<(), String> {
-    let remap = |id: &mut ViewValueProgramId| -> Result<(), String> {
-        id.0 =
-            id.0.checked_add(offset)
-                .ok_or_else(|| "View value-program reference overflow".to_owned())?;
-        Ok(())
-    };
+    let remap = |id: &mut ViewValueProgramId| remap(id, offset);
     match instruction {
         ViewProgramInstruction::CallView { arguments, .. } => {
             for argument in arguments {
@@ -221,5 +215,12 @@ fn remap_program_references(
         | ViewProgramInstruction::BindHandler { .. }
         | ViewProgramInstruction::AttachSemantic { .. } => {}
     }
+    Ok(())
+}
+
+fn remap(id: &mut ViewValueProgramId, offset: u32) -> Result<(), String> {
+    id.0 =
+        id.0.checked_add(offset)
+            .ok_or_else(|| "View value-program reference overflow".to_owned())?;
     Ok(())
 }

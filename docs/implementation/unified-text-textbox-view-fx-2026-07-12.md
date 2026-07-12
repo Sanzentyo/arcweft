@@ -688,6 +688,56 @@ after mixed prior feature/profile builds had accumulated 288.58 GiB; the final
 workspace test used the same recipe feature set with incremental compilation
 and test debug symbols disabled solely to bound disposable artifact size.
 
+Executable View definition-contract closure at the succeeding working change:
+
+- `ViewProgramResource` now owns one `ViewDefinitionResource` per reachable
+  View declaration. Each record carries its exact instruction span, ordered
+  parameter schema, executable scalar default, and mount-state schema hash.
+- `CallView` addresses the target definition directly. Its arguments are
+  canonicalized by parameter ordinal and validated for target existence,
+  duplicate/missing bindings, authored-name agreement, program existence, and
+  scalar result type.
+- the provisional single `root_view`, unowned `child_spans`, digest-only state
+  schema list, and `CallView.child_span` were replaced directly; this is an
+  unpublished internal format, so no alias, dual reader, migration shim, or
+  version bump was added;
+- compact nested calls such as `Child(value = 3)` now produce the existing
+  typed `ViewCall` AST. Plain and relative calls are module-scoped, so under
+  `mod game.opening` the call resolves to `view.game.opening.Child`;
+- bundle inclusion starts from flow-mounted roots and computes the transitive
+  nested-View closure. Cycles converge by ID set, while unknown definitions are
+  structured lowering failures.
+
+Focused validation covers dotted module scoping, parser preservation, nested
+reachability, exact non-overlapping definition coverage, typed/default
+parameters, canonical argument order, missing required arguments, wrong result
+types, canonical codec round trips, and existing View resource consumers.
+
+Validation at Jujutsu working change `tqkzspus`:
+
+```bash
+cargo test -p arcweft-lang-syntax --all-targets
+cargo test -p arcweft-bundle --all-targets --no-fail-fast
+cargo test -p arcweft-cli app::bundle::tests --lib -- --nocapture
+cargo test -p arcweft-runtime-driver --test session \
+  session_save_restores_complete_per_mount_virtual_range_state -- --exact
+cargo check -p arcweft-lang-syntax -p arcweft-bundle -p arcweft-cli \
+  -p arcweft-runtime-driver -p arcweft-player-web --all-targets
+cargo clippy -p arcweft-lang-syntax -p arcweft-bundle -p arcweft-cli \
+  -p arcweft-runtime-driver -p arcweft-player-web --all-targets -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-view-definitions-2026-07-12
+```
+
+All commands pass. The syntax suite retains the explicit rejection of
+`mod game::opening` and exercises canonical `mod game.opening`; the bundle
+suite passes 80 unit tests and every integration suite, including 15 View codec
+tests; and the focused CLI bundle suite passes 41 tests. The structural audit
+records 1,250 Rust files / 627,340 physical Rust LOC, 0 errors, and 143 tracked
+warnings. The audit README records exact changed-file sizes, current largest
+workspace Rust files, their classifications/responsibilities, and the absence
+of dependency-edge changes.
+
 ## Non-goals
 
 There are no deferred items from the supplied implementation directive. Typst

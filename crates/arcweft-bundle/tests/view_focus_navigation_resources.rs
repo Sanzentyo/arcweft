@@ -7,13 +7,11 @@ use arcweft_bundle::resource_codec::{
 fn program() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.program.focus".to_owned(),
-        root_view: "view.focus".to_owned(),
+        definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
         instructions: Vec::new(),
-        child_spans: Vec::new(),
         handlers: Vec::new(),
-        state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),

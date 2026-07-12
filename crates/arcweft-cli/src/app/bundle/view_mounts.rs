@@ -1,4 +1,5 @@
-use arcweft_lang_hir::model::{HirFlowItem, HirModule};
+use crate::app::bundle_view::normalize_view_call;
+use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
     ast::flow::{FlowItem, Stmt, WaitTarget},
     expr::{CallArg, Expr},
@@ -11,7 +12,31 @@ pub(super) fn mounted_view_ids(module: &HirModule) -> BTreeSet<String> {
         collect_mounted_view_ids(flow.body(), &mut ids);
     }
     collect_mounted_view_ids(module.top_level_items(), &mut ids);
+    include_nested_view_dependencies(module, &mut ids);
     ids
+}
+
+fn include_nested_view_dependencies(module: &HirModule, ids: &mut BTreeSet<String>) {
+    loop {
+        let mut changed = false;
+        for declaration in module.declarations() {
+            let HirTopLevelDecl::EntityDecl(view) = declaration else {
+                continue;
+            };
+            if !mounted_view_matches(ids, view.id().body()) {
+                continue;
+            }
+            let Some(body) = view.view_body().and_then(|body| body.view()) else {
+                continue;
+            };
+            for call in body.view_calls() {
+                changed |= ids.insert(normalize_view_call(call.view()));
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
 }
 
 pub(super) fn mounted_view_matches(mounted: &BTreeSet<String>, declared: &str) -> bool {
@@ -25,10 +50,7 @@ fn view_ids_equivalent(left: &str, right: &str) -> bool {
 }
 
 fn view_id_suffix(value: &str) -> &str {
-    value
-        .strip_prefix("view.")
-        .or_else(|| value.strip_prefix("view."))
-        .unwrap_or(value)
+    value.strip_prefix("view.").unwrap_or(value)
 }
 
 fn collect_mounted_view_ids(items: &[HirFlowItem], ids: &mut BTreeSet<String>) {

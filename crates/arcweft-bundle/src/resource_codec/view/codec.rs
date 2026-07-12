@@ -33,9 +33,9 @@ pub struct ViewResourceBudget {
     pub value_inputs: usize,
     pub program_instructions: usize,
     pub fx_arguments: usize,
-    pub child_spans: usize,
+    pub definitions: usize,
+    pub definition_parameters: usize,
     pub handlers: usize,
-    pub state_schema_hashes: usize,
     pub exported_parts: usize,
     pub semantic_targets: usize,
     pub layout_bounds: usize,
@@ -88,9 +88,9 @@ impl Default for ViewResourceBudget {
             value_inputs: 512,
             program_instructions: 262_144,
             fx_arguments: 1_000_000,
-            child_spans: 262_144,
+            definitions: 65_536,
+            definition_parameters: 262_144,
             handlers: 65_536,
-            state_schema_hashes: 65_536,
             exported_parts: 65_536,
             semantic_targets: 262_144,
             layout_bounds: 262_144,
@@ -169,7 +169,7 @@ impl ViewProgramResource {
         if self.adapter_requirements != next.adapter_requirements {
             return ViewResourceCompatibility::RestartRequired;
         }
-        if self.state_schema_hashes != next.state_schema_hashes || self.handlers != next.handlers {
+        if self.definitions != next.definitions || self.handlers != next.handlers {
             return ViewResourceCompatibility::CodeGenerational;
         }
         ViewResourceCompatibility::ContentOnly
@@ -180,18 +180,21 @@ impl ViewProgramResource {
             .sort_by_key(arcweft_view::ViewValueProgram::id);
         self.value_inputs
             .sort_by_key(|input| (input.namespace, input.slot));
+        self.definitions
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         for instruction in &mut self.instructions {
-            if let ViewProgramInstruction::ApplyFx { arguments, .. } = instruction {
-                arguments.sort_by(|left, right| left.parameter.cmp(&right.parameter));
+            match instruction {
+                ViewProgramInstruction::CallView { arguments, .. } => {
+                    arguments.sort_by_key(|argument| argument.ordinal);
+                }
+                ViewProgramInstruction::ApplyFx { arguments, .. } => {
+                    arguments.sort_by(|left, right| left.parameter.cmp(&right.parameter));
+                }
+                _ => {}
             }
         }
         self.handlers
             .sort_by(|left, right| left.handler_id.cmp(&right.handler_id));
-        self.state_schema_hashes.sort_by(|left, right| {
-            left.public_id
-                .cmp(&right.public_id)
-                .then_with(|| left.hash.as_bytes().cmp(&right.hash.as_bytes()))
-        });
         self.exported_parts
             .sort_by(|left, right| left.part_id.cmp(&right.part_id));
         self.semantic_targets
@@ -218,7 +221,7 @@ impl ViewProgramResource {
     fn validate(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
         self.validate_budgets(budget)?;
         self.validate_value_programs()?;
-        self.validate_child_spans()?;
+        self.validate_definitions()?;
         self.validate_control_flow_spans()?;
         self.validate_unique_ids()?;
         self.validate_layout_bounds()?;
@@ -265,16 +268,19 @@ impl ViewProgramResource {
             "view_fx_arguments",
         )?;
         check_budget(
-            self.child_spans.len(),
-            budget.child_spans,
-            "view_child_spans",
+            self.definitions.len(),
+            budget.definitions,
+            "view_definitions",
+        )?;
+        check_budget(
+            self.definitions
+                .iter()
+                .map(|definition| definition.parameters.len())
+                .sum::<usize>(),
+            budget.definition_parameters,
+            "view_definition_parameters",
         )?;
         check_budget(self.handlers.len(), budget.handlers, "view_handlers")?;
-        check_budget(
-            self.state_schema_hashes.len(),
-            budget.state_schema_hashes,
-            "view_state_schema_hashes",
-        )?;
         check_budget(
             self.exported_parts.len(),
             budget.exported_parts,
@@ -333,9 +339,20 @@ impl ViewProgramResource {
         self.validate_value_inputs(&inventory)?;
         for instruction in &self.instructions {
             match instruction {
-                ViewProgramInstruction::CallView { arguments, .. } => {
+                ViewProgramInstruction::CallView {
+                    view, arguments, ..
+                } => {
+                    let target = self
+                        .definitions
+                        .iter()
+                        .find(|definition| definition.public_id == *view);
                     for argument in arguments {
-                        validate_program(&inventory, argument.value_program, None)?;
+                        let expected = target
+                            .and_then(|definition| {
+                                definition.parameters.get(usize::from(argument.ordinal))
+                            })
+                            .and_then(|parameter| parameter.value_type);
+                        validate_program(&inventory, argument.value_program, expected)?;
                     }
                 }
                 ViewProgramInstruction::Branch {
@@ -415,20 +432,72 @@ impl ViewProgramResource {
         Ok(())
     }
 
-    fn validate_child_spans(&self) -> Result<(), SectionCodecError> {
-        self.child_spans.iter().try_for_each(|span| {
-            if span.start_instruction > span.end_instruction
+    fn validate_definitions(&self) -> Result<(), SectionCodecError> {
+        reject_duplicates(
+            self.definitions
+                .iter()
+                .map(|definition| definition.public_id.clone()),
+            "view_definitions",
+        )?;
+        let mut spans = self
+            .definitions
+            .iter()
+            .map(|definition| definition.body)
+            .collect::<Vec<_>>();
+        spans.sort_by_key(|span| (span.start_instruction, span.end_instruction));
+        let mut cursor = 0_u32;
+        for span in spans {
+            if span.start_instruction != cursor
+                || span.start_instruction > span.end_instruction
                 || span.end_instruction as usize > self.instructions.len()
             {
-                Err(SectionCodecError::NonCanonicalTable("view_child_spans"))
-            } else {
-                Ok(())
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_definition_spans",
+                ));
             }
-        })
+            cursor = span.end_instruction;
+        }
+        if cursor as usize != self.instructions.len() {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_definition_coverage",
+            ));
+        }
+        let inventory = ViewValueProgramInventory::from_programs(self.value_programs.clone())
+            .map_err(|_| SectionCodecError::NonCanonicalTable("view_value_program_inventory"))?;
+        for definition in &self.definitions {
+            let mut names = BTreeSet::new();
+            for (ordinal, parameter) in definition.parameters.iter().enumerate() {
+                if usize::from(parameter.ordinal) != ordinal
+                    || !valid_identifier(&parameter.name)
+                    || !names.insert(parameter.name.as_str())
+                {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_definition_parameters",
+                    ));
+                }
+                validate_optional_program(
+                    &inventory,
+                    parameter.default_program,
+                    parameter.value_type,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     fn validate_control_flow_spans(&self) -> Result<(), SectionCodecError> {
         for (index, instruction) in self.instructions.iter().enumerate() {
+            let definition_end = self
+                .definitions
+                .iter()
+                .find(|definition| {
+                    definition.body.start_instruction as usize <= index
+                        && index < definition.body.end_instruction as usize
+                })
+                .map(|definition| definition.body.end_instruction as usize)
+                .ok_or(SectionCodecError::NonCanonicalTable(
+                    "view_definition_coverage",
+                ))?;
             let body_start = index.saturating_add(1);
             let valid_end = |offset: u32, span: u32| {
                 usize::try_from(offset)
@@ -439,7 +508,7 @@ impl ViewProgramResource {
                             .ok()
                             .and_then(|span| start.checked_add(span))
                     })
-                    .is_some_and(|end| end <= self.instructions.len())
+                    .is_some_and(|end| end <= definition_end)
             };
             let valid = match instruction {
                 ViewProgramInstruction::Branch {
@@ -616,7 +685,52 @@ impl ViewProgramResource {
     }
 
     fn validate_fx_applications(&self) -> Result<(), SectionCodecError> {
+        let definitions = self
+            .definitions
+            .iter()
+            .map(|definition| definition.public_id.as_str())
+            .collect::<BTreeSet<_>>();
         for instruction in &self.instructions {
+            if let ViewProgramInstruction::CallView {
+                view, arguments, ..
+            } = instruction
+            {
+                if !definitions.contains(view.as_str()) {
+                    return Err(SectionCodecError::NonCanonicalTable("view_call_definition"));
+                }
+                let target = self
+                    .definitions
+                    .iter()
+                    .find(|definition| definition.public_id == *view)
+                    .expect("definition membership checked above");
+                let mut ordinals = BTreeSet::new();
+                let mut names = BTreeSet::new();
+                for argument in arguments {
+                    if usize::from(argument.ordinal) >= target.parameters.len()
+                        || !ordinals.insert(argument.ordinal)
+                        || argument
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| !names.insert(name) || !valid_identifier(name))
+                    {
+                        return Err(SectionCodecError::NonCanonicalTable("view_call_arguments"));
+                    }
+                    if let Some(name) = argument.name.as_deref()
+                        && target.parameters[usize::from(argument.ordinal)].name != name
+                    {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_call_argument_names",
+                        ));
+                    }
+                }
+                if target.parameters.iter().any(|parameter| {
+                    parameter.default_program.is_none() && !ordinals.contains(&parameter.ordinal)
+                }) {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_call_required_arguments",
+                    ));
+                }
+            }
             let ViewProgramInstruction::ApplyFx { arguments, .. } = instruction else {
                 continue;
             };
@@ -639,18 +753,21 @@ impl ViewProgramResource {
 
     fn public_ids(&self) -> Vec<String> {
         unique_strings(
-            [self.program_id.clone(), self.root_view.clone()]
+            [self.program_id.clone()]
                 .into_iter()
+                .chain(self.definitions.iter().flat_map(|definition| {
+                    std::iter::once(definition.public_id.clone()).chain(
+                        definition
+                            .parameters
+                            .iter()
+                            .map(|parameter| parameter.name.clone()),
+                    )
+                }))
                 .chain(self.instructions.iter().flat_map(instruction_public_ids))
                 .chain(
                     self.handlers
                         .iter()
                         .flat_map(|handler| [handler.handler_id.clone(), handler.event.clone()]),
-                )
-                .chain(
-                    self.state_schema_hashes
-                        .iter()
-                        .filter_map(|schema| schema.public_id.clone()),
                 )
                 .chain(
                     self.exported_parts
@@ -690,6 +807,13 @@ impl ViewProgramResource {
 
     fn record_count(&self) -> u32 {
         saturating_u32(self.value_programs.len())
+            .saturating_add(saturating_u32(self.definitions.len()))
+            .saturating_add(saturating_u32(
+                self.definitions
+                    .iter()
+                    .map(|definition| definition.parameters.len())
+                    .sum::<usize>(),
+            ))
             .saturating_add(saturating_u32(self.value_inputs.len()))
             .saturating_add(saturating_u32(self.instructions.len()))
             .saturating_add(saturating_u32(self.layout_bounds.len()))

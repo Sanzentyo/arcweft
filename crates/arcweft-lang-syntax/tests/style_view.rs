@@ -568,19 +568,13 @@ pub view InvalidFx() {
 }
 
 #[test]
-fn unsupported_view_element_names_are_rejected() {
+fn unsupported_view_block_element_names_are_rejected() {
     let parsed = parse_source(
         r#"
 pub view FeedbackForm() {
   Card {
     Text("Message")
   }
-}
-
-pub view ListForm() {
-  Badge("Message")
-    .tone(.info)
-    Text("Message")
 }
 "#,
     );
@@ -595,11 +589,62 @@ pub view ListForm() {
             .iter()
             .any(|message| message.contains("unsupported View element `Card`"))
     );
-    assert!(
-        messages
-            .iter()
-            .any(|message| message.contains("unsupported View expression head `Badge`"))
+}
+
+#[test]
+fn non_intrinsic_view_calls_are_preserved_for_typed_resolution() {
+    let parsed = parse_source(
+        r#"
+mod game.opening
+
+pub view Child(label: String) {
+  Text(label)
+}
+
+pub view Parent() {
+  Child(label = "Message")
+}
+
+pub view ParentRelative() {
+  @view:.Child(label = "Relative")
+}
+"#,
     );
+
+    assert_eq!(parsed.errors(), &[]);
+    let parent = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(view) if view.id().body() == "view.game.opening.Parent" => {
+                view.view_body()?.view()
+            }
+            _ => None,
+        })
+        .expect("parent View");
+    assert!(matches!(
+        parent.value(),
+        ViewExpr::ViewCall(call)
+            if call.args().len() == 1
+                && matches!(call.view(), arcweft_lang_syntax::expr::Expr::EntityRef(reference) if reference.canonical_body() == "view.game.opening.Child")
+    ));
+    let relative = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(view) if view.id().body() == "view.game.opening.ParentRelative" => {
+                view.view_body()?.view()
+            }
+            _ => None,
+        })
+        .expect("relative parent View");
+    assert!(matches!(
+        relative.value(),
+        ViewExpr::ViewCall(call)
+            if matches!(call.view(), arcweft_lang_syntax::expr::Expr::EntityRef(reference) if reference.canonical_body() == "view.game.opening.Child")
+    ));
 }
 
 fn find_button(

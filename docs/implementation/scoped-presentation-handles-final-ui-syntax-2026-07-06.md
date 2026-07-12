@@ -22,9 +22,10 @@ The current canonical authoring surface is `view`, not `component`.
 - Top-level retained View declarations are authored as `pub view Name() { ... }`.
 - Flow-side mounting uses `view(@view:.Name, ...)`; `component(...)` and
   `@component` are not canonical in the current syntax stack.
-- Runtime UI ownership metadata now uses `view` fields and `root_view` in the
-  View resource model. No serde compatibility alias is added for the removed
-  `component` field names in this internal refactor.
+- Runtime UI ownership metadata uses `view` fields. The later executable View
+  bundle contract owns one typed definition record per View instead of a
+  provisional single `root_view`; no serde compatibility alias was added for
+  either discarded internal shape.
 - Text-control submission samples no longer use `text_submit`. They declare a
   typed `pub action ...`, emit it from `Button(...).on_click { action.invoke(...) }`
   or `TextField(...).on_submit { action.invoke(...) }`, and receive it in flow
@@ -157,7 +158,8 @@ The policy recorded from that review is:
 
 - `component` is no longer a public UI authoring term. Public syntax,
   diagnostics, samples, tests, Agent observe/capture, and layout capture use
-  `view`, `@view`, and `root_view`.
+  `view` and `@view`; bundle execution identifies each root or nested View by
+  its typed definition ID.
 - `Scroll` remains a View-tree structural element. Authors put image, text,
   button, and input leaves inside `Scroll { ... }`; they do not attach scroll
   attributes to those leaves.
@@ -186,8 +188,8 @@ adding aliases or serde compatibility shims.
 Renamed types include:
 
 - `ViewProgramResource`, `ViewProgramInstruction`, and related program metadata
-  such as `ViewChildSpan`, `ViewHandlerRef`, `ViewSemanticTarget`, and
-  `ViewStyleApplyRef`;
+  such as `ViewDefinitionResource`, `ViewInstructionSpan`, `ViewHandlerRef`,
+  `ViewSemanticTarget`, and `ViewStyleApplyRef`;
 - retained View leaf/container resources such as `ViewLayoutBoundsResource`,
   `ViewScrollRegionResource`, `ViewTextBlockResource`,
   `ViewActionButtonResource`, `ViewFocusGroupResource`, and

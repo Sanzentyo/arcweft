@@ -32,13 +32,11 @@ fn view_input_resource_emits_runtime_text_control_shape() {
     };
     let program = ViewProgramResource {
         program_id: "view.program.main".to_owned(),
-        root_view: "view.root".to_owned(),
+        definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
         instructions: Vec::new(),
-        child_spans: Vec::new(),
         handlers: Vec::new(),
-        state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: vec![ViewSemanticTarget {
             public_id: "target.player_name".to_owned(),
@@ -191,13 +189,11 @@ fn view_program_layout_bounds_override_stacked_runtime_text_control_fallback() {
     };
     let program = ViewProgramResource {
         program_id: "view.program.feedback".to_owned(),
-        root_view: "view.feedback".to_owned(),
+        definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
         instructions: Vec::new(),
-        child_spans: Vec::new(),
         handlers: Vec::new(),
-        state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: vec![

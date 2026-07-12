@@ -4,5 +4,5 @@ mod lowering;
 
 pub(in crate::app) use lowering::{
     ViewSidecarError, expr_source, inline_style_properties, normalize_property_name,
-    style_layout_length_u32, view_sidecars,
+    normalize_view_call, style_layout_length_u32, view_sidecars,
 };

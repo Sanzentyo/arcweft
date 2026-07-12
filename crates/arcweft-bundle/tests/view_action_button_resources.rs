@@ -8,13 +8,11 @@ use arcweft_bundle::resource_codec::view::{
 fn runtime_action_button_resolves_label_and_noop_action() {
     let program = ViewProgramResource {
         program_id: "view.program.test".to_owned(),
-        root_view: "view.view.test".to_owned(),
+        definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
         instructions: Vec::new(),
-        child_spans: Vec::new(),
         handlers: Vec::new(),
-        state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
@@ -59,13 +57,11 @@ fn runtime_action_button_resolves_label_and_noop_action() {
 fn runtime_action_button_resolves_action_invoke_action() {
     let program = ViewProgramResource {
         program_id: "view.program.test".to_owned(),
-        root_view: "view.view.test".to_owned(),
+        definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
         instructions: Vec::new(),
-        child_spans: Vec::new(),
         handlers: Vec::new(),
-        state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),

@@ -862,13 +862,11 @@ fn literal_text_source(public_id: &str, value: &str) -> ViewTextSourceRecord {
 fn authored_view_program_resource() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.web_panel".to_owned(),
-        root_view: "view.WebPanel".to_owned(),
+        definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
         instructions: Vec::new(),
-        child_spans: Vec::new(),
         handlers: Vec::new(),
-        state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: vec![ViewLayoutBoundsResource::text_control(

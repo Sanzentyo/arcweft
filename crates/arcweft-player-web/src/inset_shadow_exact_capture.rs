@@ -1,8 +1,9 @@
 use arcweft_bundle::resource_codec::view::{
-    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax, ViewElementKind,
-    ViewProgramInstruction, ViewProgramResource, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
-    ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleValue, ViewSurfaceResource,
+    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax,
+    ViewDefinitionResource, ViewElementKind, ViewInstructionSpan, ViewProgramInstruction,
+    ViewProgramResource, ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewStyleDeclaration,
+    ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
+    ViewSurfaceResource,
 };
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::images::BundleImageCatalog;
@@ -244,7 +245,12 @@ fn exact_surfaces() -> Result<Vec<ViewRuntimeSurface>, String> {
 fn exact_view_program() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.seq06_13e1_inset_box_shadow_exact".to_owned(),
-        root_view: "InsetShadowExactFixture".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.InsetShadowExactFixture".to_owned(),
+            body: ViewInstructionSpan::new(0, 4),
+            parameters: Vec::new(),
+            state_schema_hash: 0,
+        }],
         instructions: vec![
             panel_part("rounded_inset_shadow_card"),
             ViewProgramInstruction::CloseElement,

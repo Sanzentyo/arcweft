@@ -3,9 +3,9 @@ use crate::ast::flow::Stmt;
 use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
     ViewAction, ViewActionInvokeAction, ViewActionPayload, ViewArg, ViewAwait, ViewAwaitBranch,
-    ViewAwaitBranchKind, ViewBody, ViewButton, ViewButtonLabel, ViewElement, ViewExpr, ViewForEach,
-    ViewFxApplication, ViewFxApplicationOrdinal, ViewIf, ViewImage, ViewLet, ViewMatch,
-    ViewMatchArm, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
+    ViewAwaitBranchKind, ViewBody, ViewButton, ViewButtonLabel, ViewCall, ViewElement, ViewExpr,
+    ViewForEach, ViewFxApplication, ViewFxApplicationOrdinal, ViewIf, ViewImage, ViewLet,
+    ViewMatch, ViewMatchArm, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
     ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
 };
@@ -45,6 +45,10 @@ enum ViewHead {
         id: Option<EntityRefSyntax>,
         enabled: Option<Expr>,
         focusable: bool,
+    },
+    ViewCall {
+        view: Expr,
+        args: Vec<ViewArg>,
     },
     Raw(String),
 }
@@ -614,7 +618,7 @@ fn parse_view_chain(
     module_path: Option<&str>,
     errors: &mut Vec<ParseError>,
 ) -> ParsedViewChain {
-    let head = parse_view_head(lines[0], base, errors);
+    let head = parse_view_head(lines[0], base, module_path, errors);
     let mut modifiers = Vec::new();
     let mut fx_ordinal = 0_u32;
     let mut index = 1;
@@ -653,7 +657,12 @@ fn parse_view_chain(
     ParsedViewChain { head, modifiers }
 }
 
-fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> ViewHead {
+fn parse_view_head(
+    line: &str,
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> ViewHead {
     let Some((callee, args_source)) = split_simple_call(line) else {
         return ViewHead::Raw(line.to_owned());
     };
@@ -699,16 +708,47 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
             input: text_field_input_arg(&args),
             args,
         },
-        _ => {
+        _ => ViewHead::ViewCall {
+            view: parse_view_call_target(callee, base, module_path, errors),
+            args,
+        },
+    }
+}
+
+fn parse_view_call_target(
+    callee: &str,
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> Expr {
+    let range = TextRange::new(base, base.saturating_add(callee.len()));
+    if callee.starts_with('@') {
+        let Some((id, trailing)) = parse_required_id_ref(callee, base, errors) else {
+            return Expr::Raw(callee.to_owned());
+        };
+        if !trailing.trim().is_empty() {
             errors.push(simple_error(
                 base,
-                line.len(),
-                &format!("unsupported View expression head `{callee}`"),
-                "Panel(...) | Box(...) | Scroll(...) | Row(...) | Column(...) | Stack(...) | Button(...) | Text(...) | RichText(...) | TextField(...) | TextArea(...) | SecureField(...)",
+                callee.len(),
+                "unexpected tokens after nested View reference",
+                "Child(...) | @view:.Child(...) | @view:package.Child(...)",
             ));
-            ViewHead::Raw(line.to_owned())
+            return Expr::Raw(callee.to_owned());
         }
+        let relative = matches!(id, IdRef::Relative(_) | IdRef::FamilyRelative(_));
+        let Some(entity) = normalize_decl_id_ref(id, "view", errors) else {
+            return Expr::Raw(callee.to_owned());
+        };
+        let entity = if relative {
+            rebase_family_ref_entity(entity, "view", module_path)
+        } else {
+            entity
+        };
+        return Expr::EntityRef(EntityRefSyntax::absolute(entity));
     }
+    Expr::EntityRef(EntityRefSyntax::absolute(
+        EntityRef::module_scoped_declaration("view", callee, module_path, range),
+    ))
 }
 
 fn is_view_container_element(callee: &str) -> bool {
@@ -968,10 +1008,18 @@ fn parse_view_style_ref<'a>(
 }
 
 fn rebase_style_ref_entity(entity: EntityRef, module_path: Option<&str>) -> EntityRef {
-    let Some(suffix) = entity.body().strip_prefix("style.") else {
+    rebase_family_ref_entity(entity, "style", module_path)
+}
+
+fn rebase_family_ref_entity(
+    entity: EntityRef,
+    family: &str,
+    module_path: Option<&str>,
+) -> EntityRef {
+    let Some(suffix) = entity.body().strip_prefix(&format!("{family}.")) else {
         return entity;
     };
-    EntityRef::module_scoped_declaration("style", suffix, module_path, *entity.range())
+    EntityRef::module_scoped_declaration(family, suffix, module_path, *entity.range())
 }
 
 fn parse_navigation_modifier(source: &str, range: TextRange) -> Option<ViewNavigationModifier> {
@@ -1081,6 +1129,9 @@ fn build_view_expr(chain: ParsedViewChain, range: TextRange) -> ViewExpr {
                     .with_focusable(focusable)
                     .with_activation(activation),
             )
+        }
+        ViewHead::ViewCall { view, args } => {
+            ViewExpr::ViewCall(ViewCall::new(view, args, chain.modifiers, range))
         }
         ViewHead::Raw(source) => ViewExpr::Raw(source),
     }

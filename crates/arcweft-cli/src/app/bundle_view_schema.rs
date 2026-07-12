@@ -113,22 +113,6 @@ impl ViewValueProgramCompiler {
         self.compile(expression, Some(FxRuntimeType::Bool))
     }
 
-    pub(in crate::app) fn compile_untyped(
-        &mut self,
-        expression: &Expr,
-    ) -> Result<ViewValueProgramId, ViewValueCompileError> {
-        match self.compile_with_type(expression, None) {
-            Ok((program, _)) => Ok(program),
-            Err(
-                ViewValueCompileError::MissingExpectedType { .. }
-                | ViewValueCompileError::UnsupportedExpression { .. },
-            ) => self
-                .compile_symbolic(expression)
-                .map(|(program, _)| program),
-            Err(error) => Err(error),
-        }
-    }
-
     pub(in crate::app) fn compile_local(
         &mut self,
         pattern: &Pattern,
