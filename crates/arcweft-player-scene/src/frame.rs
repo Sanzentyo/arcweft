@@ -440,8 +440,13 @@ impl PlayerFramePlannerState {
         request: PlayerFrameRequest<'_>,
         content_rect: Option<ContentRect>,
     ) -> Result<PreparedFrame, PlayerFrameError> {
-        let frame = self.prepare_base_frame(scene)?;
-        let mut frame = map_prepared_frame(frame, request, content_rect);
+        let mut frame = match content_rect {
+            Some(content_rect) => {
+                self.shared
+                    .prepare_mapped(scene, request.viewport, content_rect)?
+            }
+            None => self.shared.prepare(scene)?,
+        };
         let prepared_view_text = view_text::prepare_runtime_view_text(
             &mut self.shared,
             &mut frame,
@@ -458,7 +463,6 @@ impl PlayerFramePlannerState {
             &prepared_view_text,
             content_rect,
         );
-        self.shared.finalize_text(&mut frame)?;
         let textbox_request = textboxes::TextBoxViewFrameRequest::new(
             scene,
             presentation,
@@ -469,24 +473,6 @@ impl PlayerFramePlannerState {
         );
         textboxes::push_textbox_views(&mut self.shared, &mut frame, &textbox_request)?;
         Ok(frame)
-    }
-
-    fn prepare_base_frame(
-        &mut self,
-        scene: &RenderScene,
-    ) -> Result<PreparedFrame, PlayerFrameError> {
-        Ok(self.shared.prepare(scene)?)
-    }
-}
-
-fn map_prepared_frame(
-    frame: PreparedFrame,
-    request: PlayerFrameRequest<'_>,
-    content_rect: Option<ContentRect>,
-) -> PreparedFrame {
-    match content_rect {
-        Some(content_rect) => frame.mapped_to_viewport(request.viewport, content_rect),
-        None => frame,
     }
 }
 

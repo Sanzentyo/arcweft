@@ -154,7 +154,7 @@ function checkpointOptions(name) {
 function frameText(frame) {
   const textBlocks = frame?.text?.map((item) => item.text) ?? [];
   const preparedText =
-    frame?.prepared_text?.map((item) => item.visible_text ?? item.text) ?? [];
+    frame?.text?.map((item) => item.visible_text ?? item.text) ?? [];
   return [...textBlocks, ...preparedText].join("");
 }
 
@@ -184,7 +184,7 @@ async function openReady(browser, baseUrl, checkpoint) {
           const frame = window.__arcweftLastFrameObservation;
           const textBlocks = frame?.text?.map((item) => item.text) ?? [];
           const preparedText =
-            frame?.prepared_text?.map((item) => item.visible_text ?? item.text) ?? [];
+            frame?.text?.map((item) => item.visible_text ?? item.text) ?? [];
           const text = [...textBlocks, ...preparedText].join("");
           return text.includes("DSL-styled text") && text.includes("wave motion");
         })()),
@@ -220,8 +220,8 @@ async function assertCanvasOnlySample(page, checkpoint) {
   expect(frame.image_count === 0, "CSS style parity sample should have no image assets");
   expect(frame.text_count >= 2, `expected styled text evidence, got ${frame.text_count}`);
   expect(
-    frame.prepared_text_count >= 2,
-    `expected canonical prepared text evidence, got ${frame.prepared_text_count}`,
+    frame.text_count >= 2,
+    `expected canonical prepared text evidence, got ${frame.text_count}`,
   );
   const text = frameText(frame);
   expect(text.includes("DSL-styled text"), `missing styled sample text for ${checkpoint}`);
@@ -229,7 +229,7 @@ async function assertCanvasOnlySample(page, checkpoint) {
     expect(text.includes("color"), `missing color sample text for ${checkpoint}`);
     expect(text.includes("wave motion"), `missing wave sample text for ${checkpoint}`);
   }
-  const paragraph = frame.prepared_text?.find((item) => item.owner?.kind?.endsWith(":body"));
+  const paragraph = frame.text?.find((item) => item.owner?.kind?.endsWith(":body"));
   expect(paragraph?.lines?.length > 0, `missing prepared text lines for ${checkpoint}`);
   expect(paragraph?.runs?.length > 0, `missing prepared text runs for ${checkpoint}`);
   expect(paragraph?.glyphs?.length > 0, `missing prepared text glyphs for ${checkpoint}`);

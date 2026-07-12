@@ -20,11 +20,13 @@ use arcweft_render_wgpu::geometry::{
     RenderChoiceItem, RenderControlStyle, RenderFocusAutoScrollPolicy, RenderPreferences,
     RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
     RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl, RenderViewport,
-    SharedFramePlanner,
 };
 
+mod support;
+use support::prepare;
+
 fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {
@@ -58,7 +60,7 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
 }
 
 fn frame_with_containing_scroll_region() -> arcweft_render_wgpu::geometry::PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -98,7 +100,7 @@ fn frame_with_containing_scroll_region() -> arcweft_render_wgpu::geometry::Prepa
 }
 
 fn frame_with_horizontal_scroll_region() -> arcweft_render_wgpu::geometry::PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -141,7 +143,7 @@ fn frame_with_action_button(
     buttons: Vec<RenderActionButton>,
     focused: Option<InteractionTarget>,
 ) -> arcweft_render_wgpu::geometry::PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -274,17 +276,16 @@ fn web_hidden_runtime_text_control_rejects_stale_writeback() {
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
     let target = controls[0].target.clone();
-    let _focused_frame =
-        SharedFramePlanner::prepare(&scene_with_text_inputs(controls.clone(), Some(target)))
-            .expect("focused frame prepares");
+    let _focused_frame = prepare(&scene_with_text_inputs(controls.clone(), Some(target)))
+        .expect("focused frame prepares");
     input
         .activate_text_control(&controls[0])
         .expect("text editor activates");
 
     let hidden_controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, &[]).expect("hidden controls lower");
-    let hidden_frame = SharedFramePlanner::prepare(&scene_with_text_inputs(hidden_controls, None))
-        .expect("hidden frame prepares");
+    let hidden_frame =
+        prepare(&scene_with_text_inputs(hidden_controls, None)).expect("hidden frame prepares");
 
     assert!(input.focused_text_editor().is_none());
     assert!(input.visual_state().focused.is_none());
@@ -352,9 +353,8 @@ fn web_hidden_view_text_control_rejects_stale_hit_and_focus() {
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
     let target = controls[0].target.clone();
-    let live_frame =
-        SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target.clone())))
-            .expect("focused frame prepares");
+    let live_frame = prepare(&scene_with_text_inputs(controls, Some(target.clone())))
+        .expect("focused frame prepares");
 
     assert!(live_frame.hits.find_target(&target).is_some());
     assert!(live_frame.focused_text_input_target().is_some());
@@ -362,8 +362,8 @@ fn web_hidden_view_text_control_rejects_stale_hit_and_focus() {
 
     let hidden_controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, &[]).expect("hidden controls lower");
-    let hidden_frame = SharedFramePlanner::prepare(&scene_with_text_inputs(hidden_controls, None))
-        .expect("hidden frame prepares");
+    let hidden_frame =
+        prepare(&scene_with_text_inputs(hidden_controls, None)).expect("hidden frame prepares");
 
     assert!(hidden_frame.hits.find_target(&target).is_none());
     assert!(hidden_frame.focused_text_input_target().is_none());

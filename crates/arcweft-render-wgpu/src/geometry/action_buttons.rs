@@ -1,19 +1,21 @@
 use super::control_style::{
     ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
     PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
-    control_font_family, fill_with_opacity, push_control_backdrop_plan, push_control_border,
-    push_control_corner_frame, push_control_filter_plan, push_control_focus_ring,
-    push_control_shadow_plan, state_from_interaction,
+    RenderControlVisualStyle, control_font_families, fill_with_opacity, push_control_backdrop_plan,
+    push_control_border, push_control_corner_frame, push_control_filter_plan,
+    push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
 };
 use super::{
-    PaintRect, Palette, RenderScene, RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant,
-    RenderTextWeight,
+    FramePlanError, PaintRect, Palette, PlannedFrameText, PlannedPlainText, PlannedTextOwner,
+    PreparedTextDocumentRequest, RenderScene,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
+use arcweft_render_text::{ResolvedTextRunSource, TextSlant, TextWeight};
+use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
 
 /// Player-rendered action button lowered from product View resources.
 #[derive(Clone, Debug, PartialEq)]
@@ -50,7 +52,7 @@ pub struct PreparedActionButton {
 pub(super) struct ActionButtonBuildOutput<'a> {
     pub(super) semantics: &'a mut SemanticTree,
     pub(super) rectangles: &'a mut Vec<PaintRect>,
-    pub(super) text: &'a mut Vec<RenderTextBlock>,
+    pub(super) text: &'a mut Vec<PlannedFrameText>,
     pub(super) control_backdrops: &'a mut Vec<PreparedControlBackdrop>,
     pub(super) control_shadows: &'a mut Vec<PreparedControlShadow>,
     pub(super) control_filters: &'a mut Vec<PreparedControlFilter>,
@@ -73,7 +75,7 @@ pub(super) fn build_action_button(
     palette: &Palette,
     font_size: f32,
     line_height: f32,
-) -> (PreparedActionButton, PreparedControlPaint) {
+) -> Result<(PreparedActionButton, PreparedControlPaint), FramePlanError> {
     let ActionButtonBuildOutput {
         semantics,
         rectangles,
@@ -116,31 +118,15 @@ pub(super) fn build_action_button(
         }
     }
     let text_start = text.len();
-    let text_bounds = HitRect::new(
-        button.bounds.x + 18.0,
-        button.bounds.y + (button.bounds.height - line_height) * 0.5,
-        (button.bounds.width - 36.0).max(1.0),
+    push_action_button_text(
+        text,
+        button,
+        &visual,
+        palette,
+        font_size,
         line_height,
-    );
-    if let Some(clip_bounds) = clipped_viewport_bounds(button.bounds, button) {
-        text.push(RenderTextBlock {
-            target: None,
-            text: button.label.clone(),
-            bounds: text_bounds,
-            clip_bounds: Some(clip_bounds),
-            buffer_width: Some((button.bounds.width - 36.0).max(1.0)),
-            buffer_height: Some(line_height),
-            font_size,
-            line_height,
-            font_family: control_font_family(&visual),
-            weight: RenderTextWeight::Bold,
-            slant: RenderTextSlant::Upright,
-            rgba: visual.text.unwrap_or(palette.choice_text),
-            selection_policy: RenderTextSelectionPolicy::Disabled,
-            selection: None,
-            selection_rgba: palette.choice_active,
-        });
-    }
+        visible_bounds,
+    )?;
     let filter_start = control_filters.len();
     push_control_filter_plan(control_filters, &button.target, visible_bounds, &visual);
     apply_viewport_clip_to_rectangles(&mut rectangles[rectangle_start..], button.viewport_clip);
@@ -153,6 +139,82 @@ pub(super) fn build_action_button(
         shadow_range: shadow_start..control_shadows.len(),
         filter_range: filter_start..control_filters.len(),
     };
+    push_action_button_semantic(semantics, layer, button, visible_bounds);
+    Ok((
+        PreparedActionButton {
+            target: button.target.clone(),
+            label: button.label.clone(),
+            enabled: button.enabled,
+            action: button.action.clone(),
+        },
+        paint,
+    ))
+}
+
+fn push_action_button_text(
+    text: &mut Vec<PlannedFrameText>,
+    button: &RenderActionButton,
+    visual: &RenderControlVisualStyle,
+    palette: &Palette,
+    font_size: f32,
+    line_height: f32,
+    visible_bounds: HitRect,
+) -> Result<(), FramePlanError> {
+    let Some(clip_bounds) = clipped_viewport_bounds(button.bounds, button) else {
+        return Ok(());
+    };
+    let text_bounds = HitRect::new(
+        button.bounds.x + 18.0,
+        button.bounds.y + (button.bounds.height - line_height) * 0.5,
+        (button.bounds.width - 36.0).max(1.0),
+        line_height,
+    );
+    let style = super::prepared_text::resolved_plain_style(
+        control_font_families(visual),
+        font_size,
+        line_height,
+        TextWeight::Bold,
+        TextSlant::Upright,
+        visual.text.unwrap_or(palette.choice_text),
+    )?;
+    text.push(PlannedFrameText::Plain(Box::new(PlannedPlainText {
+        text: button.label.clone(),
+        style,
+        source: ResolvedTextRunSource::Generated,
+        request: PreparedTextDocumentRequest {
+            origin: LayoutPoint::new(text_bounds.x, text_bounds.y),
+            size: LayoutSize::new(text_bounds.width, line_height),
+            container_bounds: LayoutRect::new(
+                text_bounds.x,
+                text_bounds.y,
+                text_bounds.width,
+                text_bounds.height,
+            ),
+            clip: Some(LayoutRect::new(
+                clip_bounds.x,
+                clip_bounds.y,
+                clip_bounds.width,
+                clip_bounds.height,
+            )),
+            target: None,
+            selection_enabled: false,
+            selection: None,
+            selection_rgba: palette.choice_active,
+        },
+        owner: PlannedTextOwner {
+            semantic_id: button.target.id().clone(),
+            object_bounds: visible_bounds,
+        },
+    })));
+    Ok(())
+}
+
+fn push_action_button_semantic(
+    semantics: &mut SemanticTree,
+    layer: &LayerId,
+    button: &RenderActionButton,
+    visible_bounds: HitRect,
+) {
     let mut node = SemanticNode::new(
         layer.clone(),
         button.target.clone(),
@@ -165,15 +227,6 @@ pub(super) fn build_action_button(
         node = node.with_action(action.clone());
     }
     semantics.push(node);
-    (
-        PreparedActionButton {
-            target: button.target.clone(),
-            label: button.label.clone(),
-            enabled: button.enabled,
-            action: button.action.clone(),
-        },
-        paint,
-    )
 }
 
 fn visible_button_bounds(button: &RenderActionButton) -> Option<HitRect> {

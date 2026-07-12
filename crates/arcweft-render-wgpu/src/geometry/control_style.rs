@@ -1,4 +1,4 @@
-use super::{PaintRect, PaintRectRadii, RenderFontFamily};
+use super::{PaintRect, PaintRectRadii};
 use crate::view_box_shadow::ViewBoxShadowPassPlan;
 use crate::view_scene::{
     ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList, ViewBoxShadowRadii,
@@ -6,6 +6,7 @@ use crate::view_scene::{
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
+use arcweft_render_text::TextFontFamily;
 use std::ops::Range;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -316,13 +317,8 @@ pub(super) fn fill_with_opacity(fill: [f32; 4], opacity: Option<f32>) -> [f32; 4
     fill
 }
 
-pub(super) fn control_font_family(visual: &RenderControlVisualStyle) -> RenderFontFamily {
-    visual
-        .font_family
-        .as_ref()
-        .map_or(RenderFontFamily::SansSerif, |font_family| {
-            RenderFontFamily::from_css_stack(font_family)
-        })
+pub(super) fn control_font_families(visual: &RenderControlVisualStyle) -> Vec<TextFontFamily> {
+    super::prepared_text::css_font_families(visual.font_family.as_deref())
 }
 
 pub(super) fn push_control_border(

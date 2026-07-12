@@ -12,7 +12,7 @@ use arcweft_presentation::text_editor::{
 use arcweft_presentation::text_input::{
     TextByteOffset, TextGeometryTransform, TextRange, TextWritingMode,
 };
-use arcweft_text_layout::{LaidOutText, LayoutRect};
+use arcweft_text_layout::{LayoutRect, TextLayout};
 use core::cmp::Ordering;
 
 /// Renderer/player transform context for one focused text-control geometry pump.
@@ -21,6 +21,7 @@ pub struct TextEditorGeometryContext {
     pub text_local_control_rect: HitRect,
     pub caret_width: f32,
     pub writing_mode: TextWritingMode,
+    pub layout_to_text_local: TextGeometryTransform,
     pub text_local_to_viewport: TextGeometryTransform,
     pub viewport_to_screen: TextGeometryTransform,
 }
@@ -35,6 +36,7 @@ impl Default for TextEditorGeometryContext {
             text_local_control_rect: HitRect::new(0.0, 0.0, 320.0, 24.0),
             caret_width: 1.0,
             writing_mode: TextWritingMode::HorizontalTb,
+            layout_to_text_local: TextGeometryTransform::identity(),
             text_local_to_viewport: TextGeometryTransform::identity(),
             viewport_to_screen: TextGeometryTransform::identity(),
         }
@@ -61,6 +63,12 @@ impl TextEditorGeometryContext {
     }
 
     #[must_use]
+    pub const fn with_layout_to_text_local(mut self, transform: TextGeometryTransform) -> Self {
+        self.layout_to_text_local = transform;
+        self
+    }
+
+    #[must_use]
     pub const fn with_text_local_to_viewport(mut self, transform: TextGeometryTransform) -> Self {
         self.text_local_to_viewport = transform;
         self
@@ -75,21 +83,23 @@ impl TextEditorGeometryContext {
 
 impl TextEditorGeometryPump {
     /// Builds a renderer-backed editor layout from the latest text-layout output.
-    pub fn layout_from_laid_out_text(
+    pub fn layout_from_text_layout(
         text: &str,
-        laid_out: &LaidOutText,
+        layout: &TextLayout,
         context: TextEditorGeometryContext,
     ) -> Result<TextEditorLayout, TextEditorLayoutError> {
-        let glyphs = laid_out
+        let glyphs = layout
             .glyphs
             .iter()
             .map(|glyph| {
                 TextEditorGlyphGeometry::new(
                     TextRange::new(
-                        TextByteOffset(u32::try_from(glyph.range.start).unwrap_or(u32::MAX)),
-                        TextByteOffset(u32::try_from(glyph.range.end).unwrap_or(u32::MAX)),
+                        TextByteOffset(u32::try_from(glyph.source_range.start).unwrap_or(u32::MAX)),
+                        TextByteOffset(u32::try_from(glyph.source_range.end).unwrap_or(u32::MAX)),
                     ),
-                    layout_rect_to_hit_rect(glyph.bounds),
+                    context
+                        .layout_to_text_local
+                        .transform_rect(layout_rect_to_hit_rect(glyph.layout_bounds)),
                 )
             })
             .collect::<Vec<_>>();
@@ -207,46 +217,67 @@ fn layout_rect_to_hit_rect(rect: LayoutRect) -> HitRect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_render_text::{RichTextPresentation, RichTextRange, RichTextWritingMode};
+    use arcweft_render_text::RichTextRange;
     use arcweft_text_layout::{
-        GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LayoutPoint, LayoutSize,
+        FontFaceId, FontInventoryHash, GlyphOrientation, GlyphVerticalForm, LayoutPoint,
+        LayoutSize, ShapedGlyphKey, TextLayoutGlyph, TextLayoutHash, TextLayoutSourceMap,
     };
 
-    fn glyph(start: usize, end: usize, x: f32, width: f32) -> LaidOutGlyph {
+    fn glyph(start: usize, end: usize, x: f32, width: f32) -> TextLayoutGlyph {
         glyph_at(start, end, x, 4.0, width)
     }
 
-    fn glyph_at(start: usize, end: usize, x: f32, y: f32, width: f32) -> LaidOutGlyph {
-        LaidOutGlyph {
+    fn glyph_at(start: usize, end: usize, x: f32, y: f32, width: f32) -> TextLayoutGlyph {
+        let bounds = LayoutRect::new(x, y, width, 18.0);
+        TextLayoutGlyph {
             run_index: 0,
-            range: RichTextRange::new(start, end),
-            text: String::new(),
+            source_range: RichTextRange::new(start, end),
+            line_index: 0,
+            cluster_index: u32::try_from(start).unwrap_or(u32::MAX),
+            logical_ordinal: u32::try_from(start).unwrap_or(u32::MAX),
             origin: LayoutPoint::new(x, y),
             advance: LayoutSize::new(width, 0.0),
-            bounds: LayoutRect::new(x, y, width, 18.0),
-            writing_mode: RichTextWritingMode::HorizontalTb,
+            layout_bounds: bounds,
+            ink_bounds: bounds,
             orientation: GlyphOrientation::Upright,
             vertical_form: GlyphVerticalForm::None,
-            presentation: RichTextPresentation::default(),
+            inline_scale: 1.0,
+            shape_key: ShapedGlyphKey {
+                face: FontFaceId::from_bytes([0; 32]),
+                glyph_id: 0,
+                font_size_bits: 16.0_f32.to_bits(),
+                font_weight: 400,
+                flags: 0,
+            },
+        }
+    }
+
+    fn text_layout(glyphs: Vec<TextLayoutGlyph>) -> TextLayout {
+        TextLayout {
+            lines: Vec::new(),
+            runs: Vec::new(),
+            glyphs,
+            ruby: Vec::new(),
+            bounds: None,
+            source_map: TextLayoutSourceMap::new(Vec::new()),
+            hash: TextLayoutHash::from_bytes([0; 32]),
+            font_inventory: FontInventoryHash::from_bytes([0; 32]),
         }
     }
 
     #[test]
     fn converts_real_layout_glyphs_to_renderer_backed_editor_layout() {
         let text = "A日本🦀";
-        let laid_out = LaidOutText {
-            glyphs: vec![
-                glyph(0, 1, 8.0, 9.0),
-                glyph(1, 4, 17.0, 18.0),
-                glyph(4, 7, 35.0, 18.0),
-                glyph(7, 11, 53.0, 22.0),
-            ],
-            ..LaidOutText::default()
-        };
+        let text_layout = text_layout(vec![
+            glyph(0, 1, 8.0, 9.0),
+            glyph(1, 4, 17.0, 18.0),
+            glyph(4, 7, 35.0, 18.0),
+            glyph(7, 11, 53.0, 22.0),
+        ]);
 
-        let layout = TextEditorGeometryPump::layout_from_laid_out_text(
+        let layout = TextEditorGeometryPump::layout_from_text_layout(
             text,
-            &laid_out,
+            &text_layout,
             TextEditorGeometryContext::default()
                 .with_text_local_control_rect(HitRect::new(0.0, 0.0, 120.0, 28.0))
                 .with_viewport_to_screen(TextGeometryTransform::translation(200.0, 100.0)),
@@ -261,19 +292,16 @@ mod tests {
     #[test]
     fn merges_identical_non_empty_renderer_ranges_into_one_editor_cluster() {
         let text = "abcde";
-        let laid_out = LaidOutText {
-            glyphs: vec![
-                glyph(0, 1, 0.0, 8.0),
-                glyph(1, 4, 8.0, 5.0),
-                glyph(1, 4, 13.0, 7.0),
-                glyph(4, 5, 20.0, 8.0),
-            ],
-            ..LaidOutText::default()
-        };
+        let text_layout = text_layout(vec![
+            glyph(0, 1, 0.0, 8.0),
+            glyph(1, 4, 8.0, 5.0),
+            glyph(1, 4, 13.0, 7.0),
+            glyph(4, 5, 20.0, 8.0),
+        ]);
 
-        let layout = TextEditorGeometryPump::layout_from_laid_out_text(
+        let layout = TextEditorGeometryPump::layout_from_text_layout(
             text,
-            &laid_out,
+            &text_layout,
             TextEditorGeometryContext::default(),
         )
         .unwrap();
@@ -290,23 +318,20 @@ mod tests {
     #[test]
     fn mixed_script_fallback_ranges_do_not_reach_editor_layout_as_duplicates() {
         let text = "( ﾟДﾟ)";
-        let laid_out = LaidOutText {
-            glyphs: vec![
-                glyph(0, 1, 0.0, 8.0),
-                glyph(1, 2, 8.0, 5.0),
-                glyph(2, 5, 13.0, 4.0),
-                glyph(2, 5, 17.0, 6.0),
-                glyph(5, 7, 23.0, 11.0),
-                glyph(7, 10, 34.0, 4.0),
-                glyph(7, 10, 38.0, 6.0),
-                glyph(10, 11, 44.0, 8.0),
-            ],
-            ..LaidOutText::default()
-        };
+        let text_layout = text_layout(vec![
+            glyph(0, 1, 0.0, 8.0),
+            glyph(1, 2, 8.0, 5.0),
+            glyph(2, 5, 13.0, 4.0),
+            glyph(2, 5, 17.0, 6.0),
+            glyph(5, 7, 23.0, 11.0),
+            glyph(7, 10, 34.0, 4.0),
+            glyph(7, 10, 38.0, 6.0),
+            glyph(10, 11, 44.0, 8.0),
+        ]);
 
-        let layout = TextEditorGeometryPump::layout_from_laid_out_text(
+        let layout = TextEditorGeometryPump::layout_from_text_layout(
             text,
-            &laid_out,
+            &text_layout,
             TextEditorGeometryContext::default(),
         )
         .unwrap();
@@ -321,18 +346,15 @@ mod tests {
     #[test]
     fn collapsed_range_inside_non_empty_cluster_is_dropped_before_validation() {
         let text = "abcd";
-        let laid_out = LaidOutText {
-            glyphs: vec![
-                glyph(0, 3, 0.0, 30.0),
-                glyph(1, 1, 10.0, 0.0),
-                glyph(3, 4, 30.0, 10.0),
-            ],
-            ..LaidOutText::default()
-        };
+        let text_layout = text_layout(vec![
+            glyph(0, 3, 0.0, 30.0),
+            glyph(1, 1, 10.0, 0.0),
+            glyph(3, 4, 30.0, 10.0),
+        ]);
 
-        let layout = TextEditorGeometryPump::layout_from_laid_out_text(
+        let layout = TextEditorGeometryPump::layout_from_text_layout(
             text,
-            &laid_out,
+            &text_layout,
             TextEditorGeometryContext::default(),
         )
         .unwrap();
@@ -349,20 +371,17 @@ mod tests {
     #[test]
     fn collapsed_range_at_distinct_caret_stop_is_preserved() {
         let text = "abcd";
-        let laid_out = LaidOutText {
-            glyphs: vec![
-                glyph(0, 1, 0.0, 10.0),
-                glyph(1, 2, 10.0, 10.0),
-                glyph_at(2, 2, 0.0, 26.0, 0.0),
-                glyph_at(2, 3, 0.0, 26.0, 10.0),
-                glyph_at(3, 4, 10.0, 26.0, 10.0),
-            ],
-            ..LaidOutText::default()
-        };
+        let text_layout = text_layout(vec![
+            glyph(0, 1, 0.0, 10.0),
+            glyph(1, 2, 10.0, 10.0),
+            glyph_at(2, 2, 0.0, 26.0, 0.0),
+            glyph_at(2, 3, 0.0, 26.0, 10.0),
+            glyph_at(3, 4, 10.0, 26.0, 10.0),
+        ]);
 
-        let layout = TextEditorGeometryPump::layout_from_laid_out_text(
+        let layout = TextEditorGeometryPump::layout_from_text_layout(
             text,
-            &laid_out,
+            &text_layout,
             TextEditorGeometryContext::default(),
         )
         .unwrap();
@@ -378,14 +397,11 @@ mod tests {
     #[test]
     fn partial_renderer_range_overlap_remains_a_layout_error() {
         let text = "abcdef";
-        let laid_out = LaidOutText {
-            glyphs: vec![glyph(0, 4, 0.0, 30.0), glyph(2, 5, 30.0, 30.0)],
-            ..LaidOutText::default()
-        };
+        let text_layout = text_layout(vec![glyph(0, 4, 0.0, 30.0), glyph(2, 5, 30.0, 30.0)]);
 
-        let error = TextEditorGeometryPump::layout_from_laid_out_text(
+        let error = TextEditorGeometryPump::layout_from_text_layout(
             text,
-            &laid_out,
+            &text_layout,
             TextEditorGeometryContext::default(),
         )
         .unwrap_err();

@@ -71,6 +71,9 @@ where
 pub struct TextLayoutRequest {
     pub origin: LayoutPoint,
     pub size: LayoutSize,
+    /// Horizontal line-wrapping policy. Vertical writing always follows its
+    /// column constraints.
+    pub horizontal_wrap: HorizontalWrap,
     pub default_writing_mode: RichTextWritingMode,
     pub jlreq_strictness: JlreqStrictness,
 }
@@ -80,10 +83,22 @@ impl Default for TextLayoutRequest {
         Self {
             origin: LayoutPoint::new(24.0, 24.0),
             size: LayoutSize::new(720.0, 360.0),
+            horizontal_wrap: HorizontalWrap::Wrap,
             default_writing_mode: RichTextWritingMode::HorizontalTb,
             jlreq_strictness: JlreqStrictness::Normal,
         }
     }
+}
+
+/// Horizontal line wrapping selected by the resolved text container.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HorizontalWrap {
+    /// Wrap shaped clusters at the container inline boundary.
+    #[default]
+    Wrap,
+    /// Keep each hard source line on one visual line so an editable control can scroll it.
+    NoWrap,
 }
 
 /// Static layout configuration supplied by the host textbox.

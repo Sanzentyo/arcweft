@@ -5,15 +5,26 @@ use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
+use arcweft_render_text::TextFontFamily;
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PaintRectCornerRadius, PaintRectRadii,
     RenderActionButton, RenderActionButtonAction, RenderControlBorderStyle,
     RenderControlCornerFrameStyle, RenderControlFilter, RenderControlFilterList,
     RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
-    RenderControlVisualStyle, RenderFontFamily, RenderPreferences, RenderScene,
-    RenderTextInputControl, RenderViewport, RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
+    RenderControlVisualStyle, RenderPreferences, RenderScene, RenderTextInputControl,
+    RenderViewport, RuntimeControlBackdropSamplePolicy,
 };
 use arcweft_render_wgpu::view_scene::ViewFilter;
+
+const TEST_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
+
+fn prepare(scene: &RenderScene) -> arcweft_render_wgpu::geometry::PreparedFrame {
+    let mut planner = arcweft_render_wgpu::geometry::SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("test font registers");
+    planner.prepare(scene).expect("frame prepares")
+}
 
 #[test]
 fn action_button_hover_uses_authored_fill_and_text_color() {
@@ -27,7 +38,7 @@ fn action_button_hover_uses_authored_fill_and_text_color() {
         },
     );
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
 
     assert!(
         frame
@@ -35,12 +46,14 @@ fn action_button_hover_uses_authored_fill_and_text_color() {
             .iter()
             .any(|rect| rgba_near(rect.rgba, [0.1, 0.2, 0.3, 0.8]))
     );
-    assert!(
-        frame
-            .text
-            .iter()
-            .any(|text| text.text == "Send" && text.rgba == [240, 248, 255, 255])
-    );
+    assert!(frame.text.items().iter().any(|text| {
+        text.interaction.text == "Send"
+            && text
+                .paint
+                .glyphs
+                .iter()
+                .all(|glyph| glyph.color.channels() == [240, 248, 255, 255])
+    }));
 }
 
 #[test]
@@ -72,7 +85,7 @@ fn focused_text_control_uses_authored_focus_ring() {
         },
     );
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
 
     assert!(
         frame
@@ -124,19 +137,18 @@ fn focused_text_control_uses_authored_selection_and_caret_colors() {
         },
     );
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
 
-    assert!(
-        frame
-            .rectangles
-            .iter()
-            .any(|rect| rgba_near(rect.rgba, [0.2, 0.5, 0.8, 0.6]))
-    );
-    assert!(
-        frame
-            .rectangles
-            .iter()
-            .any(|rect| rgba_near(rect.rgba, [0.9, 0.8, 0.1, 1.0]))
+    let interaction = &frame.text.items()[0].interaction;
+    assert!(rgba_near(interaction.selection_rgba, [0.2, 0.5, 0.8, 0.6]));
+    assert!(!interaction.selection_rects.is_empty());
+    assert_eq!(
+        interaction
+            .caret
+            .expect("focused caret exists")
+            .color
+            .channels(),
+        [230, 204, 26, 255]
     );
 }
 
@@ -171,20 +183,22 @@ fn text_control_fill_and_inner_marks_use_authored_corner_radii() {
         },
     );
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let fill = frame
         .rectangles
         .iter()
         .find(|rect| rgba_near(rect.rgba, [0.1, 0.2, 0.3, 0.4]))
         .expect("fill rect exists");
-    let selection = frame
-        .rectangles
-        .iter()
-        .find(|rect| rgba_near(rect.rgba, [0.2, 0.5, 0.8, 0.6]))
-        .expect("selection rect exists");
-
     assert_eq!(fill.radii, radii);
-    assert_eq!(selection.clip.expect("selection clip").radii, radii);
+    let item = &frame.text.items()[0];
+    assert!(!item.interaction.selection_rects.is_empty());
+    let clip = item.clip.expect("text interaction clip exists");
+    assert!(item.interaction.selection_rects.iter().all(|selection| {
+        selection.x >= clip.x
+            && selection.y >= clip.y
+            && selection.right() <= clip.right()
+            && selection.bottom() <= clip.bottom()
+    }));
 }
 
 #[test]
@@ -204,7 +218,7 @@ fn text_control_corner_frame_draws_independent_corner_segments() {
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let corner_segments = frame
         .rectangles
         .iter()
@@ -230,7 +244,7 @@ fn text_control_corner_frame_draws_independent_corner_segments() {
 fn supported_box_shadow_reaches_existing_shadow_pass_plan() {
     let button_target = target("button.submit_feedback");
     let scene = scene_with_button(button_target.clone(), InteractionVisualState::default());
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
 
     let shadow = frame
         .control_shadows
@@ -258,7 +272,7 @@ fn backdrop_filter_reaches_runtime_control_backdrop_plan() {
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let backdrop = frame
         .control_backdrops
         .iter()
@@ -291,7 +305,7 @@ fn runtime_control_paint_span_carries_inline_backdrop_order() {
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let paint = frame
         .control_paints
         .iter()
@@ -305,7 +319,10 @@ fn runtime_control_paint_span_carries_inline_backdrop_order() {
             .iter()
             .any(|rect| rgba_near(rect.rgba, [0.2, 0.4, 0.6, 0.5]))
     );
-    assert_eq!(frame.text[paint.text_range.start].text, "hello");
+    assert_eq!(
+        frame.text.items()[paint.text_range.start].interaction.text,
+        "hello"
+    );
 }
 
 #[test]
@@ -342,33 +359,35 @@ fn text_controls_and_buttons_use_authored_font_family() {
         InteractionVisualState::default(),
     );
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let input_text = frame
         .text
+        .items()
         .iter()
-        .find(|text| text.text == "hello")
+        .find(|text| text.interaction.text == "hello")
         .expect("input text block exists");
     let button_text = frame
         .text
+        .items()
         .iter()
-        .find(|text| text.text == "Send")
+        .find(|text| text.interaction.text == "Send")
         .expect("button text block exists");
 
     assert_eq!(
-        input_text.font_family,
-        RenderFontFamily::Stack(vec![
-            "Arcweft Demo".to_owned(),
-            "Yu Gothic".to_owned(),
-            "system-view".to_owned(),
-        ])
+        input_text.layout.runs[0].style.font_families(),
+        &[
+            TextFontFamily::Named("Arcweft Demo".to_owned()),
+            TextFontFamily::Named("Yu Gothic".to_owned()),
+            TextFontFamily::Named("system-view".to_owned()),
+        ]
     );
     assert_eq!(
-        button_text.font_family,
-        RenderFontFamily::Stack(vec![
-            "Arcweft Demo".to_owned(),
-            "Yu Gothic".to_owned(),
-            "system-view".to_owned(),
-        ])
+        button_text.layout.runs[0].style.font_families(),
+        &[
+            TextFontFamily::Named("Arcweft Demo".to_owned()),
+            TextFontFamily::Named("Yu Gothic".to_owned()),
+            TextFontFamily::Named("system-view".to_owned()),
+        ]
     );
 }
 
@@ -384,15 +403,16 @@ fn text_control_uses_authored_font_metrics() {
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let input_text = frame
         .text
+        .items()
         .iter()
-        .find(|text| text.text == "hello")
+        .find(|text| text.interaction.text == "hello")
         .expect("input text block exists");
 
-    assert!((input_text.font_size - 18.0).abs() < f32::EPSILON);
-    assert!((input_text.line_height - 24.0).abs() < f32::EPSILON);
+    assert_eq!(input_text.layout.runs[0].style.font_size_milli(), 18_000);
+    assert_eq!(input_text.layout.runs[0].style.line_height_milli(), 24_000);
 }
 
 #[test]
@@ -423,7 +443,7 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
         InteractionVisualState::default(),
     );
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let filter = frame
         .control_filters
         .iter()
@@ -462,7 +482,7 @@ fn runtime_control_color_matrix_filters_reach_view_filter_plan() {
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
     let backdrop = frame
         .control_backdrops
         .iter()
@@ -512,7 +532,7 @@ fn authored_control_depth_orders_text_inputs_and_buttons_together() {
     };
     let scene = scene(vec![input], vec![button], InteractionVisualState::default());
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let frame = prepare(&scene);
 
     let button_rect = frame
         .rectangles

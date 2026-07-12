@@ -121,7 +121,7 @@ fn player_capture_region_order(
             arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Control => 3,
             arcweft_render_wgpu::geometry::PreparedTextOwnerKind::TextBox { .. } => 4,
         };
-        let element_order = prepared.prepared_text.get(owner.text).map_or(0, |item| {
+        let element_order = prepared.text.get(owner.text).map_or(0, |item| {
             player_text_element_paint_order(owner, item, object)
         });
         return (phase, owner_index, element_order, source_index);
@@ -233,7 +233,7 @@ fn player_prepared_text_element_is_visible(
     reference: &arcweft_agent_protocol::rich_text::AgentRichTextElementRef,
 ) -> bool {
     prepared.prepared_text_owners().iter().any(|owner| {
-        let Some(item) = prepared.prepared_text.get(owner.text) else {
+        let Some(item) = prepared.text.get(owner.text) else {
             return false;
         };
         let Some(start) = reference.range.start.checked_sub(owner.source_origin) else {

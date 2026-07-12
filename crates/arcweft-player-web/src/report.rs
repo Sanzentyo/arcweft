@@ -6,7 +6,6 @@ use arcweft_render_text::{
 };
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedTextBoxPart, PreparedTextOwner, PreparedTextOwnerKind, RenderImage,
-    RenderTextBlock,
 };
 use arcweft_runtime_driver::{dialogue::BundlePresentationTransition, session::BundleSessionStep};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect};
@@ -102,11 +101,9 @@ pub struct WebFrameObservationReport {
     pub rectangle_count: usize,
     pub image_count: usize,
     pub text_count: usize,
-    pub prepared_text_count: usize,
     pub choice_count: usize,
     pub images: Vec<WebFrameImage>,
-    pub text: Vec<WebFrameText>,
-    pub prepared_text: Vec<WebFramePreparedText>,
+    pub text: Vec<WebFramePreparedText>,
     pub choices: Vec<WebFrameChoice>,
     pub focus: arcweft_render_wgpu::geometry::FocusNavigationDebug,
 }
@@ -136,15 +133,6 @@ pub struct WebFrameImage {
     pub frame_height: u32,
     pub opacity_milli: u16,
     pub rgba_hash: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WebFrameText {
-    pub text: String,
-    pub bounds: WebFrameBounds,
-    pub font_size_milli: i64,
-    pub line_height_milli: i64,
-    pub rgba: [u8; 4],
 }
 
 /// Canonical layout and paint evidence for one frame-local prepared item.
@@ -269,8 +257,7 @@ impl WebFrameObservationReport {
             },
             rectangle_count: frame.rectangles.len(),
             image_count: frame.images.len(),
-            text_count: frame.prepared_text.len() + frame.text.len(),
-            prepared_text_count: frame.prepared_text.len(),
+            text_count: frame.text.len(),
             choice_count: frame.choices.len(),
             images: frame
                 .images
@@ -279,11 +266,6 @@ impl WebFrameObservationReport {
                 .collect(),
             text: frame
                 .text
-                .iter()
-                .map(WebFrameText::from_text_block)
-                .collect(),
-            prepared_text: frame
-                .prepared_text
                 .iter()
                 .map(|(id, item)| {
                     let owner = frame
@@ -477,18 +459,6 @@ impl WebFrameImage {
             frame_height: image.frame.height,
             opacity_milli: image.opacity_milli,
             rgba_hash: stable_hash(&image.frame.rgba),
-        }
-    }
-}
-
-impl WebFrameText {
-    fn from_text_block(text: &RenderTextBlock) -> Self {
-        Self {
-            text: text.text.clone(),
-            bounds: WebFrameBounds::from_hit_rect(text.bounds),
-            font_size_milli: f32_milli(text.font_size),
-            line_height_milli: f32_milli(text.line_height),
-            rgba: text.rgba,
         }
     }
 }

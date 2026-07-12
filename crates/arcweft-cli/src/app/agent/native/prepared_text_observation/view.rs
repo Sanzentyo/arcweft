@@ -13,7 +13,7 @@ pub(in super::super) fn agent_view_prepared_text_objects(
         .filter(|owner| matches!(owner.kind, PreparedTextOwnerKind::View { .. }))
         .filter_map(|owner| {
             prepared
-                .prepared_text
+                .text
                 .get(owner.text)
                 .and_then(|item| view_text_objects(step, owner, item, viewport))
         })

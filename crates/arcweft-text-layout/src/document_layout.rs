@@ -217,7 +217,8 @@ impl DocumentLayoutState {
             self.sync_horizontal_hard_line(hard_line, line_height);
             let cluster_width = cluster.iter().map(|glyph| glyph.advance.width).sum::<f32>();
             let right = self.request.origin.x + self.request.size.width;
-            if self.horizontal.x > self.request.origin.x
+            if self.request.horizontal_wrap == crate::HorizontalWrap::Wrap
+                && self.horizontal.x > self.request.origin.x
                 && self.horizontal.x + cluster_width > right
             {
                 self.break_horizontal_line(line_height);

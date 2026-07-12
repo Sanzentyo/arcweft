@@ -10,8 +10,21 @@ use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderControlBorderStyle, RenderControlFilter,
     RenderControlFilterList, RenderControlStyle, RenderControlVisualStyle, RenderImage,
     RenderImageFrame, RenderPreferences, RenderScene, RenderTextInputControl, RenderViewport,
-    SharedFramePlanner,
+    SharedFramePlanContext,
 };
+
+const TEST_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
+
+fn prepare(
+    scene: &RenderScene,
+) -> Result<
+    arcweft_render_wgpu::geometry::PreparedFrame,
+    arcweft_render_wgpu::geometry::FramePlanError,
+> {
+    let mut planner = SharedFramePlanContext::new();
+    planner.register_font_bytes(TEST_FONT.to_vec())?;
+    planner.prepare(scene)
+}
 use arcweft_render_wgpu::offscreen::{
     CaptureAttachment, CaptureRequest, SharedFrameCapture, SharedOffscreenCapture,
 };
@@ -25,8 +38,11 @@ fn prepared_control_backdrop_blur_executes_shared_renderer_path() {
         eprintln!("no compatible wgpu adapter available for runtime backdrop smoke");
         return;
     };
-    let baseline = SharedFramePlanner::prepare(&scene(false)).expect("baseline frame prepares");
-    let blurred = SharedFramePlanner::prepare(&scene(true)).expect("blurred frame prepares");
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture font registers");
+    let baseline = prepare(&scene(false)).expect("baseline frame prepares");
+    let blurred = prepare(&scene(true)).expect("blurred frame prepares");
 
     let baseline = capture
         .capture(&baseline, &CaptureRequest::whole_frame_color())
@@ -53,10 +69,11 @@ fn prepared_control_foreground_filter_blur_executes_shared_renderer_path() {
         eprintln!("no compatible wgpu adapter available for runtime foreground filter smoke");
         return;
     };
-    let baseline = SharedFramePlanner::prepare(&foreground_scene(false))
-        .expect("baseline foreground frame prepares");
-    let blurred = SharedFramePlanner::prepare(&foreground_scene(true))
-        .expect("blurred foreground frame prepares");
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture font registers");
+    let baseline = prepare(&foreground_scene(false)).expect("baseline foreground frame prepares");
+    let blurred = prepare(&foreground_scene(true)).expect("blurred foreground frame prepares");
 
     let baseline = capture
         .capture(&baseline, &CaptureRequest::whole_frame_color())
@@ -83,8 +100,11 @@ fn rounded_runtime_control_stroke_draws_straight_edges() {
         eprintln!("no compatible wgpu adapter available for runtime stroke smoke");
         return;
     };
-    let baseline = SharedFramePlanner::prepare(&stroke_scene(false)).expect("baseline prepares");
-    let stroked = SharedFramePlanner::prepare(&stroke_scene(true)).expect("stroked prepares");
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture font registers");
+    let baseline = prepare(&stroke_scene(false)).expect("baseline prepares");
+    let stroked = prepare(&stroke_scene(true)).expect("stroked prepares");
 
     let baseline = capture
         .capture(&baseline, &CaptureRequest::whole_frame_color())

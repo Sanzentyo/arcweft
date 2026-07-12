@@ -6,9 +6,6 @@
 //! browser fetch, surface creation, or blocking readback.
 
 mod convert;
-mod font_family;
-mod font_system;
-
 pub mod geometry;
 pub mod offscreen;
 pub mod renderer;

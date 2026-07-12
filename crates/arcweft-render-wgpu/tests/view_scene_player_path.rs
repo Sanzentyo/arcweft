@@ -1,7 +1,7 @@
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedViewScene, RenderPreferences, RenderScene,
-    RenderViewport, SharedFramePlanner,
+    RenderViewport, SharedFramePlanContext,
 };
 use arcweft_render_wgpu::view_compositor::ViewCompositorPlan;
 use arcweft_render_wgpu::view_scene::{
@@ -64,7 +64,8 @@ fn direct_scene() -> ViewScene {
 
 #[test]
 fn view_scene_attaches_to_prepared_frame_without_replacing_base_fields() {
-    let prepared = SharedFramePlanner::prepare(&empty_scene())
+    let prepared = SharedFramePlanContext::new()
+        .prepare(&empty_scene())
         .expect("base prepared frame")
         .with_view_scenes([PreparedViewScene::new(direct_scene())]);
 

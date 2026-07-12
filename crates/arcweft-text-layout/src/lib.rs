@@ -25,7 +25,9 @@ mod vertical_clusters;
 mod vertical_columns;
 mod vertical_orientation;
 
-pub use config::{JlreqStrictness, TextLayoutConfig, TextLayoutError, TextLayoutRequest};
+pub use config::{
+    HorizontalWrap, JlreqStrictness, TextLayoutConfig, TextLayoutError, TextLayoutRequest,
+};
 pub use document_layout::layout_document;
 pub use geometry::{LayoutPoint, LayoutRect, LayoutSize};
 pub use jlreq_punctuation_data::{

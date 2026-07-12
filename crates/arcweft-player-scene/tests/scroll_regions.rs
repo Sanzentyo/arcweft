@@ -320,15 +320,19 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
     let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame prepares");
     let block = prepared
         .frame
-        .selectable_text_blocks
-        .first()
+        .text
+        .items()
+        .iter()
+        .find(|item| item.interaction.selection_enabled)
         .expect("selectable text block");
     let first = block
+        .interaction
         .character_bounds
         .first()
         .expect("text block has glyph bounds")
         .bounds;
     let last = block
+        .interaction
         .character_bounds
         .iter()
         .rev()
@@ -354,7 +358,7 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
 
     let selected = PlayerFramePlanner::prepare(&mut input, request).expect("selected frame");
     assert!(
-        !selected.frame.prepared_text.items()[0]
+        !selected.frame.text.items()[0]
             .interaction
             .selection_rects
             .is_empty(),
@@ -536,12 +540,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
     input.wheel(&prepared.frame, -32.0);
 
     let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame re-prepares");
-    let text = prepared
-        .frame
-        .prepared_text
-        .items()
-        .first()
-        .expect("prepared text");
+    let text = prepared.frame.text.items().first().expect("prepared text");
     assert_eq!(text.interaction.text, "Arcweft Concierge");
     assert!((text.interaction.container_bounds.unwrap().y - 80.0).abs() < f32::EPSILON);
     let clip = text.clip.expect("scroll clip");
@@ -552,7 +551,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
 }
 
 #[test]
-fn registered_player_planner_finalizes_runtime_text_into_prepared_batch() {
+fn registered_player_planner_prepares_runtime_text_in_canonical_batch() {
     let mut presentation = BundlePresentationSnapshot::default();
     push_view_text(
         &mut presentation,
@@ -594,9 +593,8 @@ fn registered_player_planner_finalizes_runtime_text_into_prepared_batch() {
         )
         .expect("registered frame prepares");
 
-    assert!(prepared.frame.text.is_empty());
-    assert_eq!(prepared.frame.prepared_text.len(), 1);
-    let item = &prepared.frame.prepared_text.items()[0];
+    assert_eq!(prepared.frame.text.len(), 1);
+    let item = &prepared.frame.text.items()[0];
     assert_eq!(item.interaction.text, "Prepared text");
     assert!(item.interaction.selection_enabled);
     assert_px(item.interaction.container_bounds.unwrap().x, 24.0);
@@ -657,8 +655,8 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
     )
     .expect("vertical RichText prepares");
 
-    assert_eq!(prepared.frame.prepared_text.len(), 1);
-    let item = &prepared.frame.prepared_text.items()[0];
+    assert_eq!(prepared.frame.text.len(), 1);
+    let item = &prepared.frame.text.items()[0];
     assert_eq!(item.layout.ruby.len(), 1);
     assert_eq!(
         item.layout.runs[0].writing_mode,
@@ -756,15 +754,12 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
     )
     .expect("typed View sources prepare");
 
-    assert_eq!(prepared.frame.prepared_text.len(), 2);
+    assert_eq!(prepared.frame.text.len(), 2);
     assert_eq!(
-        prepared.frame.prepared_text.items()[0].interaction.text,
+        prepared.frame.text.items()[0].interaction.text,
         "こんにちは"
     );
-    assert_eq!(
-        prepared.frame.prepared_text.items()[1].interaction.text,
-        "Stage one"
-    );
+    assert_eq!(prepared.frame.text.items()[1].interaction.text, "Stage one");
 }
 
 #[test]

@@ -4,6 +4,7 @@ use arcweft_bundle::resource_codec::view::{
 };
 use arcweft_id::PublicId;
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
+use arcweft_player_scene::fonts::DEFAULT_PLAYER_FONT_RESOURCE_BYTES;
 use arcweft_player_scene::input::{InputController, InputDiagnosticKind, InputPointerModifiers};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint};
@@ -16,8 +17,18 @@ use arcweft_presentation::text_input::{
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedFrame, PreparedTextBoxState, RenderActionButton,
     RenderActionButtonAction, RenderControlStyle, RenderPreferences, RenderScene,
-    RenderTextInputControl, RenderViewport, SharedFramePlanner,
+    RenderTextInputControl, RenderViewport, SharedFramePlanContext,
 };
+
+fn prepare(
+    scene: &RenderScene,
+) -> Result<PreparedFrame, arcweft_render_wgpu::geometry::FramePlanError> {
+    let mut planner = SharedFramePlanContext::new();
+    for bytes in DEFAULT_PLAYER_FONT_RESOURCE_BYTES {
+        planner.register_font_bytes(bytes.to_vec())?;
+    }
+    planner.prepare(scene)
+}
 
 fn target(value: &str) -> InteractionTarget {
     InteractionTarget::new(PublicId::try_new(value).unwrap())
@@ -107,7 +118,7 @@ fn action_invoke_scene() -> RenderScene {
 }
 
 fn prepare_with_textbox(scene: &RenderScene) -> PreparedFrame {
-    let mut frame = SharedFramePlanner::prepare(scene).expect("frame prepares");
+    let mut frame = prepare(scene).expect("frame prepares");
     frame.push_textbox(PreparedTextBoxState {
         textbox: 0,
         entry: 0,
@@ -125,7 +136,7 @@ fn prepare_with_textbox(scene: &RenderScene) -> PreparedFrame {
 #[test]
 fn pointer_activation_on_action_button_emits_semantic_action() {
     let scene = scene_with_text_input_and_action_button();
-    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let frame = prepare(&scene).unwrap();
     let mut input = InputController::default();
     input.activate_text_control(&scene.text_inputs[0]).unwrap();
     let position = ViewportPoint::new(500.0, 60.0);
@@ -167,7 +178,7 @@ fn pointer_activation_on_action_button_does_not_implicitly_advance_dialogue() {
 fn pointer_activation_on_noop_button_does_not_emit_action_or_write_back() {
     let mut scene = scene_with_text_input_and_action_button();
     scene.action_buttons[0].action = RenderActionButtonAction::Noop;
-    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let frame = prepare(&scene).unwrap();
     let mut input = InputController::default();
     input.activate_text_control(&scene.text_inputs[0]).unwrap();
     let position = ViewportPoint::new(500.0, 60.0);
@@ -183,7 +194,7 @@ fn pointer_activation_on_noop_button_does_not_emit_action_or_write_back() {
 #[test]
 fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
     let scene = action_invoke_scene();
-    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let frame = prepare(&scene).unwrap();
     let mut input = InputController::default();
     let position = ViewportPoint::new(64.0, 64.0);
 
@@ -205,7 +216,7 @@ fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
 #[test]
 fn pointer_activation_reports_semantic_action_rejection() {
     let scene = action_invoke_scene();
-    let mut frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let mut frame = prepare(&scene).unwrap();
     let original_node = frame
         .semantics
         .find(&target("button.continue"))
@@ -311,7 +322,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
 #[test]
 fn keyboard_activation_on_focused_action_button_emits_semantic_action() {
     let scene = scene_with_text_input_and_action_button();
-    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let frame = prepare(&scene).unwrap();
     let mut input = InputController::default();
     input.activate_text_control(&scene.text_inputs[0]).unwrap();
     input.keyboard(&frame, "Tab", KeyPhase::Down);
@@ -328,7 +339,7 @@ fn keyboard_activation_on_focused_action_button_emits_semantic_action() {
 #[test]
 fn arrow_navigation_moves_from_text_field_to_right_action_button() {
     let scene = scene_with_text_input_and_action_button();
-    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let frame = prepare(&scene).unwrap();
     let mut input = InputController::default();
     input.activate_text_control(&scene.text_inputs[0]).unwrap();
     input.ensure_choice_focus(&frame);

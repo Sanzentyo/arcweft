@@ -6,8 +6,9 @@ use arcweft_render_text::{
 };
 
 use crate::{
-    FontInventoryHash, GlyphOrientation, GlyphVerticalForm, JlreqStrictness, LayoutPoint,
-    LayoutRect, LayoutSize, TextLayoutGlyph, TextLayoutHash, TextLayoutRequest, TextLayoutRuby,
+    FontInventoryHash, GlyphOrientation, GlyphVerticalForm, HorizontalWrap, JlreqStrictness,
+    LayoutPoint, LayoutRect, LayoutSize, TextLayoutGlyph, TextLayoutHash, TextLayoutRequest,
+    TextLayoutRuby,
 };
 
 pub(crate) fn layout_hash(
@@ -24,6 +25,7 @@ pub(crate) fn layout_hash(
     hasher.update(&inventory.as_bytes());
     hash_point(&mut hasher, request.origin);
     hash_size(&mut hasher, request.size);
+    hasher.update(&[horizontal_wrap_tag(request.horizontal_wrap)]);
     hasher.update(&[writing_mode_tag(request.default_writing_mode)]);
     hasher.update(&[jlreq_strictness_tag(request.jlreq_strictness)]);
     for run in document.runs() {
@@ -174,6 +176,13 @@ fn writing_mode_tag(value: RichTextWritingMode) -> u8 {
         RichTextWritingMode::HorizontalTb => 0,
         RichTextWritingMode::VerticalRl => 1,
         RichTextWritingMode::VerticalLr => 2,
+    }
+}
+
+fn horizontal_wrap_tag(value: HorizontalWrap) -> u8 {
+    match value {
+        HorizontalWrap::Wrap => 0,
+        HorizontalWrap::NoWrap => 1,
     }
 }
 

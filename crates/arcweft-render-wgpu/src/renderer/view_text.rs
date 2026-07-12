@@ -56,13 +56,13 @@ impl ViewTextRenderer for WgpuViewPreparedTextRenderer<'_> {
         frame: &mut ViewTextRenderFrame<'_>,
         text: PreparedTextId,
     ) -> Result<(), ViewCompositorError> {
-        let item =
-            self.frame
-                .prepared_text
-                .get(text)
-                .ok_or(ViewCompositorError::MissingPreparedText {
-                    text_index: text.index(),
-                })?;
+        let item = self
+            .frame
+            .text
+            .get(text)
+            .ok_or(ViewCompositorError::MissingPreparedText {
+                text_index: text.index(),
+            })?;
         let transform = frame.context.transform;
         let affine = PreparedTextAffine::try_new(
             [

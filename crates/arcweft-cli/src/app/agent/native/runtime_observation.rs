@@ -509,7 +509,7 @@ mod scroll_observation_tests {
     use arcweft_render_wgpu::geometry::{
         ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderPreferences,
         RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
-        RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanner,
+        RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanContext,
     };
     use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
     use arcweft_view::virtualization::{
@@ -522,43 +522,44 @@ mod scroll_observation_tests {
 
     #[test]
     fn authored_scroll_is_one_action_target_with_internal_parts_metadata() {
-        let frame = SharedFramePlanner::prepare(&RenderScene {
-            content_avoidance_regions: Vec::new(),
-            choices: Vec::new(),
-            text_inputs: Vec::new(),
-            action_buttons: Vec::new(),
-            focus_groups: Vec::new(),
-            focus_navigation: Vec::new(),
-            images: Vec::new(),
-            viewport: RenderViewport {
-                logical_width: 1280.0,
-                logical_height: 720.0,
-                physical_width: 1280,
-                physical_height: 720,
-                scale_factor: 1.0,
-            },
-            visual_time_millis: 0,
-            preferences: RenderPreferences::default(),
-            interaction: InteractionVisualState::default(),
-            choice_scroll: ChoiceScroll::default(),
-            scroll_regions: vec![RenderScrollRegion {
-                id: "scroll.Inventory.0".to_owned(),
-                bounds: HitRect::new(48.0, 48.0, 420.0, 180.0),
-                content_width: 420.0,
-                content_height: 960.0,
-                offset_x: 0.0,
-                offset_y: 240.0,
-                overscroll_x: 0.0,
-                overscroll_y: 0.0,
-                axis: RenderScrollAxis::Vertical,
-                overflow: RenderScrollOverflow::Auto,
-                indicators: RenderScrollIndicatorsPolicy::Auto,
-                overscroll: RenderScrollOverscrollPolicy::Contain,
-                auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
-                indicator_activity_millis: None,
-            }],
-        })
-        .expect("scroll frame plans");
+        let frame = SharedFramePlanContext::new()
+            .prepare(&RenderScene {
+                content_avoidance_regions: Vec::new(),
+                choices: Vec::new(),
+                text_inputs: Vec::new(),
+                action_buttons: Vec::new(),
+                focus_groups: Vec::new(),
+                focus_navigation: Vec::new(),
+                images: Vec::new(),
+                viewport: RenderViewport {
+                    logical_width: 1280.0,
+                    logical_height: 720.0,
+                    physical_width: 1280,
+                    physical_height: 720,
+                    scale_factor: 1.0,
+                },
+                visual_time_millis: 0,
+                preferences: RenderPreferences::default(),
+                interaction: InteractionVisualState::default(),
+                choice_scroll: ChoiceScroll::default(),
+                scroll_regions: vec![RenderScrollRegion {
+                    id: "scroll.Inventory.0".to_owned(),
+                    bounds: HitRect::new(48.0, 48.0, 420.0, 180.0),
+                    content_width: 420.0,
+                    content_height: 960.0,
+                    offset_x: 0.0,
+                    offset_y: 240.0,
+                    overscroll_x: 0.0,
+                    overscroll_y: 0.0,
+                    axis: RenderScrollAxis::Vertical,
+                    overflow: RenderScrollOverflow::Auto,
+                    indicators: RenderScrollIndicatorsPolicy::Auto,
+                    overscroll: RenderScrollOverscrollPolicy::Contain,
+                    auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+                    indicator_activity_millis: None,
+                }],
+            })
+            .expect("scroll frame plans");
 
         let actions = agent_action_targets_for_scroll_regions(&frame);
         let observed = agent_observed_scroll_regions(&frame);

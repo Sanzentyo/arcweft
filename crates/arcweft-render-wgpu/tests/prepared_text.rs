@@ -6,11 +6,14 @@ use arcweft_presentation::{
     },
     hit::HitRect,
 };
-use arcweft_render_text::{RichTextRange, TextColor};
+use arcweft_render_text::{
+    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
+    RichTextPresentation, RichTextRange, TextColor, TextDocumentRevision, TextFontFamily,
+};
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, PreparedFrame, PreparedViewScene, RenderChoiceItem,
-    RenderFontFamily, RenderPreferences, RenderScene, RenderTextBlock, RenderTextSelectionPolicy,
-    RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanContext,
+    ChoiceScroll, InteractionVisualState, PreparedFrame, PreparedTextDocumentRequest,
+    PreparedViewScene, RenderChoiceItem, RenderPreferences, RenderScene, RenderViewport,
+    SharedFramePlanContext,
 };
 use arcweft_render_wgpu::offscreen::{
     CaptureAttachment, CaptureRequest, SharedOffscreenCapture, SharedOffscreenCaptureError,
@@ -22,7 +25,7 @@ use arcweft_render_wgpu::view_scene::{
     ViewPaintNode, ViewPrimitive, ViewPrimitiveRange, ViewScene, ViewSceneContext, ViewSolidRect,
     ViewTextPrimitive,
 };
-use arcweft_text_layout::LayoutRect;
+use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
 
 const TEST_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
 
@@ -36,39 +39,77 @@ fn viewport() -> RenderViewport {
     }
 }
 
-fn block() -> RenderTextBlock {
-    RenderTextBlock {
+fn document(text: &str) -> ResolvedTextDocument<'_> {
+    let range = RichTextRange::new(0, text.len());
+    ResolvedTextDocument::new(
+        text,
+        0,
+        (!text.is_empty())
+            .then(|| {
+                ResolvedTextRun::new(
+                    range,
+                    range,
+                    ResolvedTextStyle::new(vec![TextFontFamily::SansSerif], 24_000, 32_000)
+                        .unwrap()
+                        .with_color(TextColor::rgba(230, 235, 245, 255)),
+                    RichTextPresentation::default(),
+                    ResolvedTextRunSource::Plain,
+                )
+                .unwrap()
+            })
+            .into_iter()
+            .collect(),
+        Vec::new(),
+        TextDocumentRevision::new(0),
+    )
+    .unwrap()
+}
+
+fn request(bounds: HitRect) -> PreparedTextDocumentRequest {
+    PreparedTextDocumentRequest {
+        origin: LayoutPoint::new(bounds.x, bounds.y),
+        size: LayoutSize::new(bounds.width, bounds.height),
+        container_bounds: LayoutRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
+        clip: Some(LayoutRect::new(
+            bounds.x,
+            bounds.y,
+            bounds.width,
+            bounds.height,
+        )),
         target: None,
-        text: "office 日本".to_owned(),
-        bounds: HitRect::new(20.0, 30.0, 300.0, 80.0),
-        clip_bounds: Some(HitRect::new(20.0, 30.0, 300.0, 80.0)),
-        buffer_width: Some(300.0),
-        buffer_height: Some(80.0),
-        font_size: 24.0,
-        line_height: 32.0,
-        font_family: RenderFontFamily::SansSerif,
-        weight: RenderTextWeight::Regular,
-        slant: RenderTextSlant::Upright,
-        rgba: [230, 235, 245, 255],
-        selection_policy: RenderTextSelectionPolicy::Disabled,
+        selection_enabled: false,
         selection: None,
         selection_rgba: [0.2, 0.4, 0.8, 0.5],
     }
 }
 
+fn prepare_item(
+    planner: &mut SharedFramePlanContext,
+    text: &str,
+    bounds: HitRect,
+) -> PreparedTextItem {
+    planner
+        .prepare_text_document(&document(text), &request(bounds), viewport())
+        .expect("text prepares")
+}
+
 #[test]
-fn ordinary_block_prepares_once_with_shared_layout_and_frame_scale() {
+fn resolved_document_prepares_once_with_shared_layout_and_frame_scale() {
     let mut planner = SharedFramePlanContext::new();
     planner
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("project font registers");
 
-    let first = planner
-        .prepare_text_block(&block(), viewport())
-        .expect("ordinary text prepares");
-    let second = planner
-        .prepare_text_block(&block(), viewport())
-        .expect("same ordinary text prepares from cache");
+    let first = prepare_item(
+        &mut planner,
+        "office 日本",
+        HitRect::new(20.0, 30.0, 300.0, 80.0),
+    );
+    let second = prepare_item(
+        &mut planner,
+        "office 日本",
+        HitRect::new(20.0, 30.0, 300.0, 80.0),
+    );
 
     assert_eq!(first.layout.hash, second.layout.hash);
     assert_eq!(first.glyphs.len(), first.paint.glyphs.len());
@@ -80,7 +121,7 @@ fn ordinary_block_prepares_once_with_shared_layout_and_frame_scale() {
 }
 
 #[test]
-fn mapped_frame_finalization_replaces_ordinary_renderer_input_in_order() {
+fn controls_enter_the_prepared_batch_during_frame_planning() {
     let mut planner = SharedFramePlanContext::new();
     planner
         .register_font_bytes(TEST_FONT.to_vec())
@@ -90,19 +131,11 @@ fn mapped_frame_finalization_replaces_ordinary_renderer_input_in_order() {
         id: "choice_one".to_owned(),
         label: "選択肢 One".to_owned(),
     });
-    let mut frame = planner.prepare(&scene).expect("choice frame prepares");
-    let ordinary_count = frame.text.len();
-    assert!(ordinary_count > 0);
-
-    planner
-        .finalize_text(&mut frame)
-        .expect("mapped text finalizes");
-
-    assert!(frame.text.is_empty());
-    assert_eq!(frame.prepared_text.len(), ordinary_count);
+    let frame = planner.prepare(&scene).expect("choice frame prepares");
+    assert_eq!(frame.text.len(), 1);
     assert!(
         frame
-            .prepared_text
+            .text
             .items()
             .iter()
             .all(|item| !item.glyphs.is_empty())
@@ -120,11 +153,13 @@ fn prepared_batch_renders_without_renderer_side_shaping() {
         .prepare(&empty_scene())
         .expect("empty frame prepares");
     let mut baseline = frame.clone();
-    let mut item = planner
-        .prepare_text_block(&block(), viewport())
-        .expect("ordinary text prepares");
+    let mut item = prepare_item(
+        &mut planner,
+        "office 日本",
+        HitRect::new(20.0, 30.0, 300.0, 80.0),
+    );
     baseline
-        .prepared_text
+        .text
         .push(item.clone())
         .expect("baseline item index fits");
     let half = Opacity::try_new(FiniteF32::try_new(0.5).expect("finite")).expect("opacity");
@@ -147,10 +182,7 @@ fn prepared_batch_renders_without_renderer_side_shaping() {
         color: FxColor::from_rgba8([255, 80, 120, 255]),
         amount: half,
     });
-    frame
-        .prepared_text
-        .push(item)
-        .expect("prepared item index fits");
+    frame.text.push(item).expect("prepared item index fits");
 
     let Ok(mut capture) =
         pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
@@ -182,29 +214,22 @@ fn multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit() {
         .prepare(&empty_scene())
         .expect("empty frame prepares");
     let mut frame = baseline.clone();
-    let mut short = block();
-    short.text = "A".to_owned();
     frame
-        .prepared_text
-        .push(
-            planner
-                .prepare_text_block(&short, viewport())
-                .expect("short text prepares"),
-        )
+        .text
+        .push(prepare_item(
+            &mut planner,
+            "A",
+            HitRect::new(20.0, 30.0, 300.0, 80.0),
+        ))
         .expect("short prepared item index fits");
-    let mut long = block();
-    long.text = "prepared glyph buffer growth ".repeat(24);
-    long.bounds = HitRect::new(20.0, 70.0, 600.0, 260.0);
-    long.clip_bounds = Some(long.bounds);
-    long.buffer_width = Some(long.bounds.width);
-    long.buffer_height = Some(long.bounds.height);
+    let long = "prepared glyph buffer growth ".repeat(24);
     frame
-        .prepared_text
-        .push(
-            planner
-                .prepare_text_block(&long, viewport())
-                .expect("long text prepares"),
-        )
+        .text
+        .push(prepare_item(
+            &mut planner,
+            &long,
+            HitRect::new(20.0, 70.0, 600.0, 260.0),
+        ))
         .expect("long prepared item index fits");
 
     let Ok(mut capture) =
@@ -233,9 +258,11 @@ fn view_text_renders_at_primitive_position_without_late_duplicate_submission() {
     planner
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("project font registers");
-    let item = planner
-        .prepare_text_block(&block(), viewport())
-        .expect("ordinary text prepares");
+    let item = prepare_item(
+        &mut planner,
+        "office 日本",
+        HitRect::new(20.0, 30.0, 300.0, 80.0),
+    );
 
     let red_only = view_text_frame(&mut planner, None, false);
     let text_over_red = view_text_frame(&mut planner, Some(&item), false);
@@ -283,9 +310,11 @@ fn view_text_obeys_transform_clip_opacity_inside_offscreen_group() {
     planner
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("project font registers");
-    let item = planner
-        .prepare_text_block(&block(), viewport())
-        .expect("ordinary text prepares");
+    let item = prepare_item(
+        &mut planner,
+        "office 日本",
+        HitRect::new(20.0, 30.0, 300.0, 80.0),
+    );
     let baseline = view_text_frame(&mut planner, None, false);
     let opaque = grouped_view_text_frame(&mut planner, &item, 1.0, 1.0);
     let translucent = grouped_view_text_frame(&mut planner, &item, 0.5, 0.5);
@@ -379,9 +408,11 @@ fn view_text_interaction_paints_selection_before_glyphs_and_ime_after() {
     planner
         .register_font_bytes(TEST_FONT.to_vec())
         .expect("project font registers");
-    let mut item = planner
-        .prepare_text_block(&block(), viewport())
-        .expect("ordinary text prepares");
+    let mut item = prepare_item(
+        &mut planner,
+        "office 日本",
+        HitRect::new(20.0, 30.0, 300.0, 80.0),
+    );
     item.interaction.selection_rects = vec![LayoutRect::new(10.0, 20.0, 340.0, 100.0)];
     item.interaction.selection_rgba = [0.0, 0.0, 1.0, 1.0];
     item.interaction.caret = Some(TextCaretPaint {
@@ -425,6 +456,66 @@ fn view_text_interaction_paints_selection_before_glyphs_and_ime_after() {
     );
 }
 
+#[test]
+#[ignore = "requires a local wgpu adapter; exercised by the prepared-text Tier 2 gate"]
+fn prepared_batch_interaction_paints_selection_before_glyphs_and_ime_after() {
+    let mut planner = SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("project font registers");
+    let mut item = prepare_item(
+        &mut planner,
+        "office 日本",
+        HitRect::new(20.0, 30.0, 300.0, 80.0),
+    );
+    item.interaction.selection_rects = vec![LayoutRect::new(10.0, 20.0, 340.0, 100.0)];
+    item.interaction.selection_rgba = [0.0, 0.0, 1.0, 1.0];
+    item.interaction.caret = Some(TextCaretPaint {
+        bounds: LayoutRect::new(24.0, 34.0, 4.0, 24.0),
+        color: TextColor::rgba(255, 0, 0, 255),
+        visible: true,
+    });
+    item.interaction.composition_underlines = vec![TextCompositionUnderline {
+        source_range: RichTextRange::new(0, 1),
+        bounds: LayoutRect::new(20.0, 92.0, 100.0, 3.0),
+        color: TextColor::rgba(0, 255, 0, 255),
+        thickness: 3.0,
+    }];
+    let mut frame = planner
+        .prepare(&empty_scene())
+        .expect("base frame prepares");
+    frame.text.push(item).expect("prepared item index fits");
+
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for prepared interaction smoke");
+        return;
+    };
+    capture
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("capture registers identical project font bytes");
+    let capture = capture
+        .capture(&frame, &CaptureRequest::whole_frame_color())
+        .expect("prepared interaction frame captures");
+
+    let outside_item_clip = capture_pixel(&capture, 30, 50);
+    assert_ne!(outside_item_clip, [0, 0, 255, 255]);
+    let selected_background = capture_pixel(&capture, 620, 210);
+    assert!(
+        selected_background[2] > 220 && selected_background[0] < 32 && selected_background[1] < 32,
+        "selection must paint inside the prepared item clip"
+    );
+    let caret = capture_pixel(&capture, 52, 80);
+    assert!(caret[0] > 220 && caret[1] < 32 && caret[2] < 32);
+    let underline = capture_pixel(&capture, 100, 186);
+    assert!(underline[1] > 220 && underline[0] < 32 && underline[2] < 32);
+    assert!(
+        capture_region(&capture, 60, 68, 520, 104).any(|pixel| pixel[0] > 80 && pixel[1] > 80),
+        "glyphs must remain visible over the opaque selection background"
+    );
+}
+
 fn view_text_frame(
     planner: &mut SharedFramePlanContext,
     item: Option<&PreparedTextItem>,
@@ -446,7 +537,7 @@ fn view_text_frame(
     }));
     if let Some(item) = item {
         let text = frame
-            .prepared_text
+            .text
             .push(item.clone())
             .expect("prepared text index fits");
         scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive { text }));
@@ -483,7 +574,7 @@ fn grouped_view_text_frame(
         .prepare(&empty_scene())
         .expect("base frame prepares");
     let text = frame
-        .prepared_text
+        .text
         .push(item.clone())
         .expect("prepared text index fits");
     let mut scene = ViewScene::new(viewport().logical_width, viewport().logical_height);

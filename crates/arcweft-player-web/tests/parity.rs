@@ -35,7 +35,7 @@ use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderImage,
     RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
     RenderScrollIndicatorsPolicy, RenderScrollOverflow, RenderScrollOverscrollPolicy,
-    RenderScrollRegion, RenderViewport, SharedFramePlanner,
+    RenderScrollRegion, RenderViewport,
 };
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
@@ -45,6 +45,9 @@ use arcweft_runtime_plan::{
     fx::lower_fx_definitions,
 };
 use std::collections::BTreeMap;
+
+mod support;
+use support::prepare;
 
 #[test]
 fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
@@ -71,7 +74,6 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
         "こちらはキャラクターsurfaceの色とフォントを使う行なのだ。波打つ文字と、右上のアニメーション画像も同じフレーム計画で動いているのだ。"
     );
     assert_eq!(complete_report.text_count, 4);
-    assert_eq!(complete_report.prepared_text_count, 4);
     assert_eq!(
         report
             .images
@@ -139,7 +141,7 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
             ),
         ]
     );
-    assert!(report.prepared_text.iter().any(|item| {
+    assert!(report.text.iter().any(|item| {
         item.text == "ずんだガイド"
             && item
                 .owner
@@ -213,7 +215,7 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
         prepared.fx_diagnostics
     );
     let item = prepared
-        .prepared_text
+        .text
         .items()
         .last()
         .expect("dialogue appends a canonical prepared item");
@@ -293,7 +295,7 @@ flow opening {
 fn web_frame_report_serializes_canonical_prepared_text_evidence() {
     let report = demo_frame_report_at(2_500);
     let body = report
-        .prepared_text
+        .text
         .iter()
         .find(|item| {
             item.owner
@@ -381,7 +383,7 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
             indicator_activity_millis: None,
         }],
     };
-    let prepared = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let prepared = prepare(&scene).expect("frame prepares");
     let report = WebFrameObservationReport::from_prepared_frame(&prepared);
 
     assert_eq!(report.image_count, 1);
@@ -575,7 +577,7 @@ fn demo_frame_report_at(visual_time_millis: u64) -> WebFrameObservationReport {
 
 fn dialogue_text(report: &WebFrameObservationReport) -> String {
     report
-        .prepared_text
+        .text
         .iter()
         .filter(|item| {
             item.owner
@@ -587,7 +589,7 @@ fn dialogue_text(report: &WebFrameObservationReport) -> String {
 }
 
 fn image_frame_report(images: Vec<RenderImage>) -> WebFrameObservationReport {
-    let prepared = SharedFramePlanner::prepare(&RenderScene {
+    let prepared = prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -641,7 +643,7 @@ fn authored_image_flow_frame(
         choice_scroll: ChoiceScroll::default(),
         scroll_regions: Vec::new(),
     };
-    SharedFramePlanner::prepare(&scene).expect("authored image flow prepares")
+    prepare(&scene).expect("authored image flow prepares")
 }
 
 fn authored_view_flow_player_frame(

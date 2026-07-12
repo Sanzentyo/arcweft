@@ -24,9 +24,8 @@ fn standard_textbox_is_a_view_scene_with_canonical_vertical_ruby_text() {
     let prepared = prepare(&presentation);
 
     assert_eq!(prepared.scene.content_avoidance_regions.len(), 1);
-    assert!(prepared.frame.text.is_empty());
     assert_eq!(prepared.frame.textboxes().len(), 1);
-    assert_eq!(prepared.frame.prepared_text.len(), 2);
+    assert_eq!(prepared.frame.text.len(), 2);
     assert_eq!(prepared.frame.prepared_text_owners().len(), 2);
 
     let view = prepared
@@ -59,7 +58,7 @@ fn standard_textbox_is_a_view_scene_with_canonical_vertical_ruby_text() {
         .expect("body owner");
     let body = prepared
         .frame
-        .prepared_text
+        .text
         .get(body.text)
         .expect("body prepared text");
     assert_eq!(body.layout.ruby.len(), 1);

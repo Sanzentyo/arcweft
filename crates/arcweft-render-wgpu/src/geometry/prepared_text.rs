@@ -1,4 +1,4 @@
-//! Ordinary text-block lowering into the canonical prepared batch contract.
+//! Source-to-document lowering for text that enters the canonical prepared batch.
 
 use arcweft_glyphon::{GlyphonTextEngine, PreparedTextItem, TextInteractionPlan, TextPaintPlan};
 use arcweft_render_text::{
@@ -6,59 +6,33 @@ use arcweft_render_text::{
     RichTextPresentation, RichTextRange, TextColor, TextDocumentRevision, TextFontFamily,
     TextSlant, TextWeight,
 };
-use arcweft_text_layout::{
-    LayoutPoint, LayoutRect, LayoutSize, TextLayoutRequest, layout_document,
-};
+use arcweft_text_layout::{LayoutRect, TextLayoutRequest, layout_document};
 
-use super::{
-    FramePlanError, PreparedTextDocumentRequest, RenderFontFamily, RenderTextBlock,
-    RenderTextSlant, RenderTextWeight, RenderViewport,
-};
+use super::{FramePlanError, PreparedTextDocumentRequest, RenderViewport};
 
-pub(super) fn prepare_text_block(
+pub(super) fn prepare_plain_text(
     engine: &mut GlyphonTextEngine,
-    block: &RenderTextBlock,
+    text: &str,
+    style: ResolvedTextStyle,
+    source: ResolvedTextRunSource,
+    request: &PreparedTextDocumentRequest,
     viewport: RenderViewport,
 ) -> Result<PreparedTextItem, FramePlanError> {
-    let style = resolved_style(block)?;
-    let runs = if block.text.is_empty() {
+    let runs = if text.is_empty() {
         Vec::new()
     } else {
-        let range = RichTextRange::new(0, block.text.len());
+        let range = RichTextRange::new(0, text.len());
         vec![ResolvedTextRun::new(
             range,
             range,
             style,
             RichTextPresentation::default(),
-            ResolvedTextRunSource::Plain,
+            source,
         )?]
     };
-    let document = ResolvedTextDocument::new(
-        &block.text,
-        0,
-        runs,
-        Vec::new(),
-        TextDocumentRevision::new(0),
-    )?;
-    let request = PreparedTextDocumentRequest {
-        origin: LayoutPoint::new(block.bounds.x, block.bounds.y),
-        size: LayoutSize::new(
-            block.buffer_width.unwrap_or(block.bounds.width),
-            block.buffer_height.unwrap_or(block.bounds.height),
-        ),
-        container_bounds: hit_rect_to_layout_rect(block.bounds),
-        clip: block.clip_bounds.map(hit_rect_to_layout_rect),
-        target: block.target.clone(),
-        selection_enabled: block.selection_policy.enabled(),
-        selection: block.selection.map(|selection| {
-            RichTextRange::new(
-                usize::try_from(selection.start().get()).unwrap_or(usize::MAX),
-                usize::try_from(selection.end().get()).unwrap_or(usize::MAX),
-            )
-        }),
-        selection_rgba: block.selection_rgba,
-    };
-    prepare_text_document(engine, &document, &request, viewport)
+    let document =
+        ResolvedTextDocument::new(text, 0, runs, Vec::new(), TextDocumentRevision::new(0))?;
+    prepare_text_document(engine, &document, request, viewport)
 }
 
 pub(super) fn prepare_text_document(
@@ -97,45 +71,49 @@ pub(super) fn prepare_text_document(
         .map_err(FramePlanError::from)
 }
 
-fn resolved_style(block: &RenderTextBlock) -> Result<ResolvedTextStyle, FramePlanError> {
+pub(super) fn resolved_plain_style(
+    font_families: Vec<TextFontFamily>,
+    font_size: f32,
+    line_height: f32,
+    weight: TextWeight,
+    slant: TextSlant,
+    rgba: [u8; 4],
+) -> Result<ResolvedTextStyle, FramePlanError> {
     Ok(ResolvedTextStyle::new(
-        resolved_families(&block.font_family),
-        pixels_to_milli("font_size", block.font_size)?,
-        pixels_to_milli("line_height", block.line_height)?,
+        font_families,
+        pixels_to_milli("font_size", font_size)?,
+        pixels_to_milli("line_height", line_height)?,
     )?
-    .with_weight(match block.weight {
-        RenderTextWeight::Regular => TextWeight::Normal,
-        RenderTextWeight::Bold => TextWeight::Bold,
-    })
-    .with_slant(match block.slant {
-        RenderTextSlant::Upright => TextSlant::Upright,
-        RenderTextSlant::Italic => TextSlant::Italic,
-    })
-    .with_color(TextColor::rgba(
-        block.rgba[0],
-        block.rgba[1],
-        block.rgba[2],
-        block.rgba[3],
-    )))
+    .with_weight(weight)
+    .with_slant(slant)
+    .with_color(TextColor::rgba(rgba[0], rgba[1], rgba[2], rgba[3])))
 }
 
-fn resolved_families(family: &RenderFontFamily) -> Vec<TextFontFamily> {
-    match family {
-        RenderFontFamily::Serif => vec![TextFontFamily::Serif],
-        RenderFontFamily::SansSerif => vec![TextFontFamily::SansSerif],
-        RenderFontFamily::Monospace => vec![TextFontFamily::Monospace],
-        RenderFontFamily::Cursive => vec![TextFontFamily::Cursive],
-        RenderFontFamily::Fantasy => vec![TextFontFamily::Fantasy],
-        RenderFontFamily::Named(name) => vec![TextFontFamily::Named(name.clone())],
-        RenderFontFamily::Stack(families) => families
-            .iter()
-            .cloned()
-            .map(TextFontFamily::Named)
-            .collect(),
+pub(super) fn css_font_families(stack: Option<&str>) -> Vec<TextFontFamily> {
+    let Some(stack) = stack else {
+        return vec![TextFontFamily::SansSerif];
+    };
+    let families = stack
+        .split(',')
+        .map(|family| family.trim().trim_matches('"').trim_matches('\'').trim())
+        .filter(|family| !family.is_empty())
+        .map(|family| match family.to_ascii_lowercase().as_str() {
+            "serif" => TextFontFamily::Serif,
+            "sans-serif" | "sans_serif" => TextFontFamily::SansSerif,
+            "monospace" => TextFontFamily::Monospace,
+            "cursive" => TextFontFamily::Cursive,
+            "fantasy" => TextFontFamily::Fantasy,
+            _ => TextFontFamily::Named(family.to_owned()),
+        })
+        .collect::<Vec<_>>();
+    if families.is_empty() {
+        vec![TextFontFamily::SansSerif]
+    } else {
+        families
     }
 }
 
-fn pixels_to_milli(field: &'static str, value: f32) -> Result<u32, FramePlanError> {
+pub(super) fn pixels_to_milli(field: &'static str, value: f32) -> Result<u32, FramePlanError> {
     if !value.is_finite() || value <= 0.0 || value > 65_535.0 {
         return Err(FramePlanError::InvalidTextMetric { field });
     }

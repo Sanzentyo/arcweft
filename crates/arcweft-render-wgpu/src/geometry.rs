@@ -17,11 +17,11 @@ use arcweft_presentation::layer::{
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_presentation::text_input::{
-    TextByteOffset, TextCharacterBounds, TextGeometryTransform, TextInputClientSnapshot,
-    TextInputGeometrySnapshot, TextRange,
+    TextGeometryTransform, TextInputClientSnapshot, TextInputGeometrySnapshot,
 };
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextStyle, RichTextRange, TextResolveError,
+    ResolvedTextDocument, ResolvedTextRunSource, ResolvedTextStyle, RichTextRange, TextFontFamily,
+    TextResolveError, TextSlant, TextWeight,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize, TextLayoutError};
 use num_traits::ToPrimitive;
@@ -396,26 +396,6 @@ fn corner_scale_limit(current: f32, basis_px: f32, sum_px: f32) -> f32 {
     }
 }
 
-/// One text block prepared for glyphon.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RenderTextBlock {
-    pub target: Option<InteractionTarget>,
-    pub text: String,
-    pub bounds: HitRect,
-    pub clip_bounds: Option<HitRect>,
-    pub buffer_width: Option<f32>,
-    pub buffer_height: Option<f32>,
-    pub font_size: f32,
-    pub line_height: f32,
-    pub font_family: RenderFontFamily,
-    pub weight: RenderTextWeight,
-    pub slant: RenderTextSlant,
-    pub rgba: [u8; 4],
-    pub selection_policy: RenderTextSelectionPolicy,
-    pub selection: Option<TextRange<TextByteOffset>>,
-    pub selection_rgba: [f32; 4],
-}
-
 /// Layout, interaction, and clipping contract for one canonical resolved document.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedTextDocumentRequest {
@@ -460,81 +440,57 @@ impl PreparedTextDocumentRequest {
             selection_rgba: [0.25, 0.5, 1.0, 0.35],
         }
     }
-}
 
-/// Static text selection policy for player-rendered text blocks.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RenderTextSelectionPolicy {
-    #[default]
-    Disabled,
-    Enabled,
-}
-
-impl RenderTextSelectionPolicy {
-    pub const fn enabled(self) -> bool {
-        matches!(self, Self::Enabled)
+    fn mapped(mut self, mapping: PreparedFrameViewportMapping) -> Self {
+        self.origin = LayoutPoint::new(
+            mapping.translate_x + self.origin.x * mapping.scale_x,
+            mapping.translate_y + self.origin.y * mapping.scale_y,
+        );
+        self.size = LayoutSize::new(
+            self.size.width * mapping.scale_x.abs(),
+            self.size.height * mapping.scale_y.abs(),
+        );
+        self.container_bounds = mapping.layout_rect(self.container_bounds);
+        self.clip = self.clip.map(|clip| mapping.layout_rect(clip));
+        self
     }
 }
 
-/// Prepared hit-test geometry for a selectable static text block.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PreparedSelectableTextBlock {
-    pub target: InteractionTarget,
-    pub text: String,
-    pub bounds: HitRect,
-    pub clip_bounds: Option<HitRect>,
-    pub character_bounds: Vec<TextCharacterBounds>,
+struct PlannedPlainText {
+    text: String,
+    style: ResolvedTextStyle,
+    source: ResolvedTextRunSource,
+    request: PreparedTextDocumentRequest,
+    owner: PlannedTextOwner,
 }
 
-/// Font family requested by a prepared text block.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub enum RenderFontFamily {
-    Serif,
-    #[default]
-    SansSerif,
-    Monospace,
-    Cursive,
-    Fantasy,
-    Named(String),
-    Stack(Vec<String>),
+struct PlannedTextOwner {
+    semantic_id: PublicId,
+    object_bounds: HitRect,
 }
 
-impl RenderFontFamily {
-    pub fn from_css_stack(stack: &str) -> Self {
-        let families = stack
-            .split(',')
-            .map(|family| {
-                family
-                    .trim()
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .trim()
-                    .to_owned()
-            })
-            .filter(|family| !family.is_empty())
-            .collect::<Vec<_>>();
-        match families.as_slice() {
-            [] => Self::SansSerif,
-            [family] => Self::Named(family.clone()),
-            _ => Self::Stack(families),
+enum PlannedFrameText {
+    Plain(Box<PlannedPlainText>),
+    TextInput(Box<text_controls::PlannedTextInput>),
+}
+
+impl PlannedFrameText {
+    fn mapped(self, mapping: PreparedFrameViewportMapping) -> Result<Self, FramePlanError> {
+        match self {
+            Self::Plain(mut text) => {
+                text.style = mapped_text_style(text.style, mapping.text_scale)?;
+                text.request = text.request.mapped(mapping);
+                text.owner.object_bounds = mapping.rect(text.owner.object_bounds);
+                Ok(Self::Plain(text))
+            }
+            Self::TextInput(text) => Ok(Self::TextInput(Box::new((*text).mapped(mapping)?))),
         }
     }
 }
 
-/// Text weight requested by a prepared text block.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RenderTextWeight {
-    #[default]
-    Regular,
-    Bold,
-}
-
-/// Text slant requested by a prepared text block.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RenderTextSlant {
-    #[default]
-    Upright,
-    Italic,
+struct PlannedFrame {
+    frame: PreparedFrame,
+    text: Vec<PlannedFrameText>,
 }
 
 /// Choice geometry and stable semantic target.
@@ -556,14 +512,11 @@ pub struct PreparedFrame {
     pub hits: HitTree,
     pub rectangles: Vec<PaintRect>,
     pub images: Vec<RenderImage>,
-    /// Canonical pre-shaped text renderer input.
-    pub prepared_text: PreparedTextBatch,
+    /// The only text renderer input: canonical pre-shaped items in painter order.
+    pub text: PreparedTextBatch,
     text_owners: Vec<PreparedTextOwner>,
     /// Typed shared-Fx evaluation/capability diagnostics for this exact frame.
     pub fx_diagnostics: Vec<arcweft_presentation::fx::FxDiagnostic>,
-    /// Legacy pending text blocks removed as producers migrate to `prepared_text`.
-    pub text: Vec<RenderTextBlock>,
-    pub selectable_text_blocks: Vec<PreparedSelectableTextBlock>,
     pub choices: Vec<RenderChoice>,
     pub action_buttons: Vec<PreparedActionButton>,
     pub control_backdrops: Vec<PreparedControlBackdrop>,
@@ -761,28 +714,17 @@ fn ranges_overlap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> bool {
     a_start < b_end && b_start < a_end
 }
 
-/// Pure geometry planner shared by native and browser hosts.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct SharedFramePlanner;
-
-/// Stateful geometry planner context for hosts that prepare many frames.
-///
-/// This owns the same kind of font system used by rendering, so custom
-/// project-provided font bytes can be registered once and then reused for
-/// renderer-exact text-control caret, selection, and IME geometry planning.
+/// Stateful frame planner that owns the shared project-font shaping cache.
 #[derive(Debug, Default)]
 pub struct SharedFramePlanContext {
-    text_control_font_context: text_controls::TextControlFontContext,
     prepared_text_engine: Option<GlyphonTextEngine>,
+    registered_font_bytes: usize,
 }
 
 /// Counters exposed by the stateful frame planner.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SharedFramePlanStats {
     pub registered_font_bytes: usize,
-    pub text_control_layout_cache_hits: u64,
-    pub text_control_layout_cache_misses: u64,
-    pub text_control_layout_cache_entries: usize,
     pub prepared_text_shape_cache_hits: u64,
     pub prepared_text_shape_cache_misses: u64,
     pub prepared_text_shape_cache_entries: usize,
@@ -826,6 +768,8 @@ pub enum FramePlanError {
     MissingPreparedTextOwnerItem { index: u32 },
     #[error("prepared-text item {index} already has a semantic owner")]
     DuplicatePreparedTextOwner { index: u32 },
+    #[error("planned text item {expected} was inserted at batch index {actual}")]
+    PreparedTextOrderMismatch { expected: usize, actual: u32 },
     #[error("semantic role {role:?} is not a text-input control")]
     InvalidTextInputRole { role: SemanticRole },
     #[error(transparent)]
@@ -853,7 +797,7 @@ impl PreparedFrame {
         &mut self,
         owner: PreparedTextOwner,
     ) -> Result<(), FramePlanError> {
-        if self.prepared_text.get(owner.text).is_none() {
+        if self.text.get(owner.text).is_none() {
             return Err(FramePlanError::MissingPreparedTextOwnerItem {
                 index: owner.text.index(),
             });
@@ -896,25 +840,39 @@ impl PreparedFrame {
     }
 
     #[must_use]
-    pub fn selectable_text_block_at(
+    pub fn selectable_text_at(
         &self,
         point: arcweft_presentation::input::ViewportPoint,
-    ) -> Option<&PreparedSelectableTextBlock> {
-        self.selectable_text_blocks.iter().rev().find(|block| {
-            let visible = block.clip_bounds.unwrap_or(block.bounds);
-            visible.contains(f64::from(point.x), f64::from(point.y))
+    ) -> Option<&PreparedTextItem> {
+        self.text.items().iter().rev().find(|item| {
+            let interaction = &item.interaction;
+            if !interaction.selection_enabled || interaction.target.is_none() {
+                return false;
+            }
+            let bounds = interaction.container_bounds.or(item.layout.bounds);
+            let visible = bounds
+                .into_iter()
+                .chain(item.clip)
+                .reduce(intersect_layout_rect);
+            visible.is_some_and(|bounds| {
+                bounds.width > 0.0
+                    && bounds.height > 0.0
+                    && point.x >= bounds.x
+                    && point.x <= bounds.right()
+                    && point.y >= bounds.y
+                    && point.y <= bounds.bottom()
+            })
         })
     }
 
     #[must_use]
-    pub fn selectable_text_block_for_target(
+    pub fn selectable_text_for_target(
         &self,
         target: &InteractionTarget,
-    ) -> Option<&PreparedSelectableTextBlock> {
-        self.selectable_text_blocks
-            .iter()
-            .rev()
-            .find(|block| &block.target == target)
+    ) -> Option<&PreparedTextItem> {
+        self.text.items().iter().rev().find(|item| {
+            item.interaction.selection_enabled && item.interaction.target.as_ref() == Some(target)
+        })
     }
 
     #[must_use]
@@ -940,15 +898,12 @@ impl PreparedFrame {
             .any(|textbox| textbox.advance_available)
     }
 
-    #[must_use]
-    pub fn mapped_to_viewport(mut self, viewport: RenderViewport, content: ContentRect) -> Self {
-        let mapping = PreparedFrameViewportMapping::new(viewport, content);
-        self.viewport = viewport;
+    fn map_to_viewport(&mut self, mapping: PreparedFrameViewportMapping) {
+        self.viewport = mapping.viewport;
         self.map_surface_geometry(mapping);
         self.map_runtime_control_geometry(mapping);
         self.map_focused_text_input(mapping);
         self.map_scroll_regions(mapping);
-        self
     }
 
     fn map_surface_geometry(&mut self, mapping: PreparedFrameViewportMapping) {
@@ -977,16 +932,6 @@ impl PreparedFrame {
                 image.viewport_clip = image.viewport_clip.map(|clip| mapping.rect(clip));
                 image
             })
-            .collect();
-        self.text = self
-            .text
-            .drain(..)
-            .map(|block| map_text_block(block, mapping))
-            .collect();
-        self.selectable_text_blocks = self
-            .selectable_text_blocks
-            .drain(..)
-            .map(|block| map_selectable_text_block(block, mapping))
             .collect();
     }
 
@@ -1061,6 +1006,7 @@ impl PreparedFrame {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct PreparedFrameViewportMapping {
+    viewport: RenderViewport,
     translate_x: f32,
     translate_y: f32,
     scale_x: f32,
@@ -1077,6 +1023,7 @@ impl PreparedFrameViewportMapping {
         let scale_x = content.scale_x;
         let scale_y = content.scale_y;
         Self {
+            viewport,
             translate_x,
             translate_y,
             scale_x,
@@ -1099,6 +1046,15 @@ impl PreparedFrameViewportMapping {
             self.scale_y,
         )
     }
+
+    fn layout_rect(self, rect: LayoutRect) -> LayoutRect {
+        LayoutRect::new(
+            self.translate_x + rect.x * self.scale_x,
+            self.translate_y + rect.y * self.scale_y,
+            rect.width * self.scale_x.abs(),
+            rect.height * self.scale_y.abs(),
+        )
+    }
 }
 
 fn map_paint_rect(mut rect: PaintRect, mapping: PreparedFrameViewportMapping) -> PaintRect {
@@ -1112,35 +1068,26 @@ fn map_paint_rect(mut rect: PaintRect, mapping: PreparedFrameViewportMapping) ->
     rect
 }
 
-fn map_text_block(
-    mut block: RenderTextBlock,
-    mapping: PreparedFrameViewportMapping,
-) -> RenderTextBlock {
-    block.bounds = mapping.rect(block.bounds);
-    block.clip_bounds = block.clip_bounds.map(|bounds| mapping.rect(bounds));
-    block.buffer_width = block
-        .buffer_width
-        .map(|width| width * mapping.scale_x.abs());
-    block.buffer_height = block
-        .buffer_height
-        .map(|height| height * mapping.scale_y.abs());
-    block.font_size *= mapping.text_scale;
-    block.line_height *= mapping.text_scale;
-    block
+fn mapped_text_style(
+    style: ResolvedTextStyle,
+    scale: f32,
+) -> Result<ResolvedTextStyle, FramePlanError> {
+    let font_size = style.font_size_milli().to_f32().unwrap_or(f32::MAX) / 1_000.0 * scale;
+    let line_height = style.line_height_milli().to_f32().unwrap_or(f32::MAX) / 1_000.0 * scale;
+    style
+        .with_font_metrics(
+            prepared_text::pixels_to_milli("font_size", font_size)?,
+            prepared_text::pixels_to_milli("line_height", line_height)?,
+        )
+        .map_err(FramePlanError::from)
 }
 
-fn map_selectable_text_block(
-    mut block: PreparedSelectableTextBlock,
-    mapping: PreparedFrameViewportMapping,
-) -> PreparedSelectableTextBlock {
-    block.bounds = mapping.rect(block.bounds);
-    block.clip_bounds = block.clip_bounds.map(|bounds| mapping.rect(bounds));
-    block.character_bounds = block
-        .character_bounds
-        .into_iter()
-        .map(|bounds| TextCharacterBounds::new(bounds.range, mapping.rect(bounds.bounds)))
-        .collect();
-    block
+fn intersect_layout_rect(left: LayoutRect, right: LayoutRect) -> LayoutRect {
+    let x = left.x.max(right.x);
+    let y = left.y.max(right.y);
+    let right_edge = left.right().min(right.right());
+    let bottom_edge = left.bottom().min(right.bottom());
+    LayoutRect::new(x, y, (right_edge - x).max(0.0), (bottom_edge - y).max(0.0))
 }
 
 pub(super) fn intersect_hit_rect(left: HitRect, right: HitRect) -> Option<HitRect> {
@@ -1196,16 +1143,6 @@ impl Default for RenderPreferences {
     }
 }
 
-impl SharedFramePlanner {
-    /// # Panics
-    ///
-    /// Panics if internal layer parent ids are inconsistent. That indicates a
-    /// planner bug rather than invalid caller input.
-    pub fn prepare(scene: &RenderScene) -> Result<PreparedFrame, FramePlanError> {
-        SharedFramePlanContext::new().prepare(scene)
-    }
-}
-
 impl SharedFramePlanContext {
     #[must_use]
     pub fn new() -> Self {
@@ -1213,27 +1150,33 @@ impl SharedFramePlanContext {
     }
 
     pub fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), FramePlanError> {
-        if let Some(engine) = &mut self.prepared_text_engine {
-            engine.register_project_font(bytes.clone())?;
-        } else {
-            self.prepared_text_engine = Some(GlyphonTextEngine::from_project_fonts(
-                "und",
-                vec![bytes.clone()],
-            )?);
+        if bytes.is_empty() {
+            return Err(FramePlanError::EmptyFont);
         }
-        self.text_control_font_context.register_font_bytes(bytes)
+        let byte_len = bytes.len();
+        if let Some(engine) = &mut self.prepared_text_engine {
+            engine.register_project_font(bytes)?;
+        } else {
+            self.prepared_text_engine =
+                Some(GlyphonTextEngine::from_project_fonts("und", vec![bytes])?);
+        }
+        self.registered_font_bytes = self.registered_font_bytes.saturating_add(byte_len);
+        Ok(())
     }
 
     #[must_use]
     pub fn stats(&self) -> SharedFramePlanStats {
-        let mut stats = self.text_control_font_context.stats();
-        if let Some(engine) = &self.prepared_text_engine {
-            let prepared = engine.cache_stats();
-            stats.prepared_text_shape_cache_hits = prepared.hits;
-            stats.prepared_text_shape_cache_misses = prepared.misses;
-            stats.prepared_text_shape_cache_entries = prepared.entries;
+        let prepared = self
+            .prepared_text_engine
+            .as_ref()
+            .map(GlyphonTextEngine::cache_stats)
+            .unwrap_or_default();
+        SharedFramePlanStats {
+            registered_font_bytes: self.registered_font_bytes,
+            prepared_text_shape_cache_hits: prepared.hits,
+            prepared_text_shape_cache_misses: prepared.misses,
+            prepared_text_shape_cache_entries: prepared.entries,
         }
-        stats
     }
 
     /// # Panics
@@ -1241,6 +1184,30 @@ impl SharedFramePlanContext {
     /// Panics if internal layer parent ids are inconsistent. That indicates a
     /// planner bug rather than invalid caller input.
     pub fn prepare(&mut self, scene: &RenderScene) -> Result<PreparedFrame, FramePlanError> {
+        let planned = Self::plan(scene)?;
+        self.finish(planned)
+    }
+
+    /// Plans in design coordinates, maps the exact geometry, then shapes text
+    /// at its final output size and raster scale.
+    pub fn prepare_mapped(
+        &mut self,
+        scene: &RenderScene,
+        viewport: RenderViewport,
+        content: ContentRect,
+    ) -> Result<PreparedFrame, FramePlanError> {
+        let mut planned = Self::plan(scene)?;
+        let mapping = PreparedFrameViewportMapping::new(viewport, content);
+        planned.frame.map_to_viewport(mapping);
+        planned.text = planned
+            .text
+            .into_iter()
+            .map(|text| text.mapped(mapping))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.finish(planned)
+    }
+
+    fn plan(scene: &RenderScene) -> Result<PlannedFrame, FramePlanError> {
         validate_viewport(scene.viewport)?;
         let ids = FrameIds::new()?;
         let layers = build_frame_layers(&ids);
@@ -1277,7 +1244,6 @@ impl SharedFramePlanContext {
             &mut rectangles,
             &mut text,
             &palette,
-            &mut self.text_control_font_context,
             &mut control_backdrops,
             &mut control_shadows,
             &mut control_filters,
@@ -1285,7 +1251,7 @@ impl SharedFramePlanContext {
         let scroll_indicators = scroll::build_scroll_indicators(scene, &mut rectangles, &palette);
         let hits = semantics.to_hit_tree();
 
-        Ok(PreparedFrame {
+        let frame = PreparedFrame {
             viewport: scene.viewport,
             visual_time_millis: scene.visual_time_millis,
             preferences: scene.preferences,
@@ -1294,11 +1260,9 @@ impl SharedFramePlanContext {
             hits,
             rectangles,
             images: build_retained_images(scene),
-            prepared_text: PreparedTextBatch::default(),
+            text: PreparedTextBatch::default(),
             text_owners: Vec::new(),
             fx_diagnostics: Vec::new(),
-            text,
-            selectable_text_blocks: Vec::new(),
             choices,
             action_buttons: runtime_controls.action_buttons,
             control_backdrops,
@@ -1314,101 +1278,64 @@ impl SharedFramePlanContext {
             view_scenes: Vec::new(),
             textboxes: Vec::new(),
             interaction: scene.interaction.clone(),
-            focused_text_input: runtime_controls.focused_text_input,
-        })
+            focused_text_input: None,
+        };
+        Ok(PlannedFrame { frame, text })
     }
 
-    pub fn prepare_selectable_text_blocks(&mut self, frame: &mut PreparedFrame) {
-        let mut selectable_text_blocks = Vec::new();
-        for block in &frame.text {
-            if let Some((prepared, selection_rects)) = text_controls::build_selectable_text_block(
-                block,
-                &mut self.text_control_font_context,
-            ) {
-                frame.rectangles.extend(selection_rects);
-                selectable_text_blocks.push(prepared);
-            }
+    fn finish(&mut self, planned: PlannedFrame) -> Result<PreparedFrame, FramePlanError> {
+        let PlannedFrame {
+            mut frame,
+            text: planned_text,
+        } = planned;
+        if planned_text.is_empty() {
+            return Ok(frame);
         }
-        for item in frame.prepared_text.items() {
-            let interaction = &item.interaction;
-            if !interaction.selection_enabled {
-                continue;
-            }
-            let Some(target) = interaction.target.clone() else {
-                continue;
-            };
-            frame
-                .rectangles
-                .extend(interaction.selection_rects.iter().map(|bounds| {
-                    PaintRect::new(
-                        HitRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
-                        interaction.selection_rgba,
+        let engine = self
+            .prepared_text_engine
+            .as_mut()
+            .ok_or(FramePlanError::MissingProjectFonts)?;
+        for (expected, planned) in planned_text.into_iter().enumerate() {
+            let (item, owner, focused_text_input) = match planned {
+                PlannedFrameText::Plain(text) => {
+                    let text = *text;
+                    (
+                        prepared_text::prepare_plain_text(
+                            engine,
+                            &text.text,
+                            text.style,
+                            text.source,
+                            &text.request,
+                            frame.viewport,
+                        )?,
+                        text.owner,
+                        None,
                     )
-                }));
-            let bounds = interaction.container_bounds.unwrap_or_else(|| {
-                item.layout
-                    .bounds
-                    .unwrap_or(arcweft_text_layout::LayoutRect::new(0.0, 0.0, 0.0, 0.0))
-            });
-            let character_bounds = interaction
-                .character_bounds
-                .iter()
-                .map(|character| {
-                    TextCharacterBounds::new(
-                        TextRange::new(
-                            TextByteOffset(
-                                u32::try_from(character.source_range.start).unwrap_or(u32::MAX),
-                            ),
-                            TextByteOffset(
-                                u32::try_from(character.source_range.end).unwrap_or(u32::MAX),
-                            ),
-                        ),
-                        HitRect::new(
-                            character.bounds.x,
-                            character.bounds.y,
-                            character.bounds.width,
-                            character.bounds.height,
-                        ),
-                    )
-                })
-                .collect();
-            selectable_text_blocks.push(PreparedSelectableTextBlock {
-                target,
-                text: interaction.text.clone(),
-                bounds: HitRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
-                clip_bounds: item
-                    .clip
-                    .map(|clip| HitRect::new(clip.x, clip.y, clip.width, clip.height)),
-                character_bounds,
-            });
-        }
-        frame.selectable_text_blocks = selectable_text_blocks;
-    }
-
-    /// Converts all mapped ordinary text blocks to the single prepared batch.
-    pub fn finalize_text(&mut self, frame: &mut PreparedFrame) -> Result<(), FramePlanError> {
-        if self.prepared_text_engine.is_some() {
-            let blocks = std::mem::take(&mut frame.text);
-            for block in blocks {
-                let owner = block
-                    .target
-                    .clone()
-                    .map(|target| (target.id().clone(), block.bounds));
-                let item = self.prepare_text_block(&block, frame.viewport)?;
-                let text = frame.prepared_text.push(item)?;
-                if let Some((semantic_id, object_bounds)) = owner {
-                    frame.push_prepared_text_owner(PreparedTextOwner::new(
-                        text,
-                        semantic_id,
-                        PreparedTextOwnerKind::Control,
-                        0,
-                        object_bounds,
-                    ))?;
                 }
+                PlannedFrameText::TextInput(text) => {
+                    let prepared = (*text).prepare(engine, frame.viewport)?;
+                    (prepared.item, prepared.owner, prepared.focused_target)
+                }
+            };
+            let id = frame.text.push(item)?;
+            if usize::try_from(id.index()).ok() != Some(expected) {
+                return Err(FramePlanError::PreparedTextOrderMismatch {
+                    expected,
+                    actual: id.index(),
+                });
+            }
+            frame.push_prepared_text_owner(PreparedTextOwner::new(
+                id,
+                owner.semantic_id,
+                PreparedTextOwnerKind::Control,
+                0,
+                owner.object_bounds,
+            ))?;
+            if let Some(target) = focused_text_input {
+                frame.focused_text_input = Some(target);
             }
         }
-        self.prepare_selectable_text_blocks(frame);
-        Ok(())
+        Ok(frame)
     }
 
     /// Appends one `RichText` display stage to the canonical prepared batch.
@@ -1431,26 +1358,13 @@ impl SharedFramePlanContext {
             frame.preferences.reduce_motion,
             fx_resolver,
         )?;
-        let text = frame.prepared_text.push(item)?;
+        let text = frame.text.push(item)?;
         frame.fx_diagnostics.extend(diagnostics);
         Ok(PreparedRichTextStageResult {
             text,
             reveal_complete,
             source_origin,
         })
-    }
-
-    /// Prepares one ordinary text block without renderer-side reshaping.
-    pub fn prepare_text_block(
-        &mut self,
-        block: &RenderTextBlock,
-        viewport: RenderViewport,
-    ) -> Result<PreparedTextItem, FramePlanError> {
-        let engine = self
-            .prepared_text_engine
-            .as_mut()
-            .ok_or(FramePlanError::MissingProjectFonts)?;
-        prepared_text::prepare_text_block(engine, block, viewport)
     }
 
     /// Prepares one already-resolved document without a source-specific adapter type.
@@ -1475,17 +1389,7 @@ impl SharedFramePlanContext {
         request: &PreparedTextDocumentRequest,
     ) -> Result<PreparedTextId, FramePlanError> {
         let item = self.prepare_text_document(document, request, frame.viewport)?;
-        frame.prepared_text.push(item).map_err(FramePlanError::from)
-    }
-
-    /// Appends one ordinary prepared item to the frame batch.
-    pub fn push_prepared_text_block(
-        &mut self,
-        frame: &mut PreparedFrame,
-        block: &RenderTextBlock,
-    ) -> Result<PreparedTextId, FramePlanError> {
-        let item = self.prepare_text_block(block, frame.viewport)?;
-        frame.prepared_text.push(item).map_err(FramePlanError::from)
+        frame.text.push(item).map_err(FramePlanError::from)
     }
 }
 
@@ -1508,7 +1412,6 @@ fn build_retained_images(scene: &RenderScene) -> Vec<RenderImage> {
 }
 
 struct RuntimeControlsBuildOutput {
-    focused_text_input: Option<PreparedTextInputTarget>,
     action_buttons: Vec<PreparedActionButton>,
     control_paints: Vec<PreparedControlPaint>,
 }
@@ -1550,9 +1453,8 @@ fn build_runtime_controls(
     ids: &FrameIds,
     semantics: &mut SemanticTree,
     rectangles: &mut Vec<PaintRect>,
-    text: &mut Vec<RenderTextBlock>,
+    text: &mut Vec<PlannedFrameText>,
     palette: &Palette,
-    text_control_font_context: &mut text_controls::TextControlFontContext,
     control_backdrops: &mut Vec<PreparedControlBackdrop>,
     control_shadows: &mut Vec<PreparedControlShadow>,
     control_filters: &mut Vec<PreparedControlFilter>,
@@ -1583,7 +1485,6 @@ fn build_runtime_controls(
     let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
     let font_size = 20.0 * scale;
     let line_height = 28.0 * scale;
-    let mut focused_text_input = None;
     let mut prepared_buttons = Vec::new();
     let mut control_paints = Vec::new();
 
@@ -1600,7 +1501,7 @@ fn build_runtime_controls(
                 };
                 control.bounds = bounds;
                 control.viewport_clip = viewport_clip;
-                let (target, paint) = text_controls::build_text_input(
+                let paint = text_controls::build_text_input(
                     scene,
                     &ids.text_input,
                     &control,
@@ -1608,15 +1509,11 @@ fn build_runtime_controls(
                     rectangles,
                     text,
                     palette,
-                    text_control_font_context,
                     control_backdrops,
                     control_shadows,
                     control_filters,
                 )?;
                 control_paints.push(paint);
-                if let Some(target) = target {
-                    focused_text_input = Some(target);
-                }
             }
             RuntimeControlPlanItem::ActionButton { index, .. } => {
                 let mut button = scene.action_buttons[index].clone();
@@ -1644,7 +1541,7 @@ fn build_runtime_controls(
                     palette,
                     font_size,
                     line_height,
-                );
+                )?;
                 prepared_buttons.push(button);
                 control_paints.push(paint);
             }
@@ -1652,7 +1549,6 @@ fn build_runtime_controls(
     }
 
     Ok(RuntimeControlsBuildOutput {
-        focused_text_input,
         action_buttons: prepared_buttons,
         control_paints,
     })
@@ -1929,7 +1825,7 @@ fn build_choices(
     layer: &LayerId,
     semantics: &mut SemanticTree,
     rectangles: &mut Vec<PaintRect>,
-    text: &mut Vec<RenderTextBlock>,
+    text: &mut Vec<PlannedFrameText>,
     palette: &Palette,
     action: &PublicId,
 ) -> Result<Vec<RenderChoice>, FramePlanError> {
@@ -1954,6 +1850,14 @@ fn build_choices(
     let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
     let font_size = 22.0 * scale;
     let line_height = 30.0 * scale;
+    let text_style = prepared_text::resolved_plain_style(
+        vec![TextFontFamily::SansSerif],
+        font_size,
+        line_height,
+        TextWeight::Bold,
+        TextSlant::Upright,
+        palette.choice_text,
+    )?;
 
     scene
         .choices
@@ -1983,28 +1887,36 @@ fn build_choices(
             if is_focused {
                 push_focus_ring(rectangles, bounds, palette.focus_ring);
             }
-            text.push(RenderTextBlock {
-                target: None,
-                text: choice.label.clone(),
-                bounds: HitRect::new(
-                    bounds.x + 24.0,
-                    bounds.y + (bounds.height - line_height) * 0.5,
-                    bounds.width - 48.0,
-                    line_height,
-                ),
-                clip_bounds: None,
-                buffer_width: None,
-                buffer_height: None,
-                font_size,
+            let text_bounds = HitRect::new(
+                bounds.x + 24.0,
+                bounds.y + (bounds.height - line_height) * 0.5,
+                bounds.width - 48.0,
                 line_height,
-                font_family: RenderFontFamily::SansSerif,
-                weight: RenderTextWeight::Bold,
-                slant: RenderTextSlant::Upright,
-                rgba: palette.choice_text,
-                selection_policy: RenderTextSelectionPolicy::Disabled,
-                selection: None,
-                selection_rgba: palette.choice_active,
-            });
+            );
+            text.push(PlannedFrameText::Plain(Box::new(PlannedPlainText {
+                text: choice.label.clone(),
+                style: text_style.clone(),
+                source: ResolvedTextRunSource::Generated,
+                request: PreparedTextDocumentRequest {
+                    origin: LayoutPoint::new(text_bounds.x, text_bounds.y),
+                    size: LayoutSize::new(text_bounds.width, text_bounds.height),
+                    container_bounds: LayoutRect::new(
+                        text_bounds.x,
+                        text_bounds.y,
+                        text_bounds.width,
+                        text_bounds.height,
+                    ),
+                    clip: None,
+                    target: None,
+                    selection_enabled: false,
+                    selection: None,
+                    selection_rgba: palette.choice_active,
+                },
+                owner: PlannedTextOwner {
+                    semantic_id: target.id().clone(),
+                    object_bounds: bounds,
+                },
+            })));
             semantics.push(
                 SemanticNode::new(layer.clone(), target.clone(), SemanticRole::Button, bounds)
                     .with_label(choice.label.clone())

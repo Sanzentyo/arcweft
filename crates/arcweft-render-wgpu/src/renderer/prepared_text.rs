@@ -1,10 +1,12 @@
 //! Prepared text glyph submission and shared compositor effects.
 
 use super::{
-    PreparedTextRangeRenderRequest, SharedRendererError, clear_texture_view, frame_logical_extent,
-    runtime_control_filter_texture, slice_range, text_index_is_excluded,
+    PreparedTextRangeRenderRequest, SharedRendererError, clear_texture_view, draw_rectangle_buffer,
+    frame_logical_extent, rectangle_vertex_buffer, runtime_control_filter_texture, slice_range,
+    text_index_is_excluded,
 };
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
+use crate::geometry::PaintRect;
 use crate::view_compositor::{ViewCompositor, ViewCompositorTarget, ViewPreparedTextEffectFrame};
 use crate::view_effects::ViewTextureExtent;
 use arcweft_glyphon::{
@@ -23,6 +25,7 @@ pub(super) fn render_prepared_text_range_with_renderer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
+    rectangle_pipeline: &wgpu::RenderPipeline,
     text_renderers: &mut Vec<TextRenderer>,
     engine: Option<&mut GlyphonTextEngine>,
     atlas: &mut TextAtlas,
@@ -31,7 +34,7 @@ pub(super) fn render_prepared_text_range_with_renderer(
     request: &PreparedTextRangeRenderRequest<'_>,
 ) -> Result<(), SharedRendererError> {
     let range = request.range.clone();
-    let items = slice_range(request.frame.prepared_text.items(), range.clone())
+    let items = slice_range(request.frame.text.items(), range.clone())
         .iter()
         .enumerate()
         .filter_map(|(offset, item)| {
@@ -50,33 +53,81 @@ pub(super) fn render_prepared_text_range_with_renderer(
     );
     let logical_extent = frame_logical_extent(request.frame);
     for item in items {
-        text_renderers.push(TextRenderer::new(
-            atlas,
+        render_prepared_text_item(
             device,
-            wgpu::MultisampleState::default(),
-            None,
-        ));
-        let text_renderer = text_renderers
-            .last_mut()
-            .expect("prepared text renderer was just pushed");
-        let submission = item.submission();
-        if item.paint.offscreen_passes.is_empty() && item.paint.post_processes.is_empty() {
-            render_prepared_submission_with_renderer(
-                device,
-                queue,
-                encoder,
-                text_renderer,
-                font_system,
-                atlas,
-                viewport,
-                swash_cache,
-                request.target,
-                item.clip,
-                &submission,
-            )?;
-            continue;
-        }
+            queue,
+            encoder,
+            rectangle_pipeline,
+            text_renderers,
+            font_system,
+            swash_cache,
+            atlas,
+            viewport,
+            view_compositor,
+            request,
+            target_extent,
+            logical_extent,
+            item,
+        )?;
+    }
+    Ok(())
+}
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "One prepared item binds shared glyph, interaction, and compositor resources."
+)]
+fn render_prepared_text_item(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    rectangle_pipeline: &wgpu::RenderPipeline,
+    text_renderers: &mut Vec<TextRenderer>,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    atlas: &mut TextAtlas,
+    viewport: &Viewport,
+    view_compositor: &mut ViewCompositor,
+    request: &PreparedTextRangeRenderRequest<'_>,
+    target_extent: ViewTextureExtent,
+    logical_extent: [f32; 2],
+    item: &PreparedTextItem,
+) -> Result<(), SharedRendererError> {
+    let backgrounds = interaction_background(item);
+    render_interaction_rectangles(
+        device,
+        encoder,
+        rectangle_pipeline,
+        request.target,
+        &backgrounds,
+        logical_extent,
+        "arcweft-prepared-text-interaction-background",
+    );
+    text_renderers.push(TextRenderer::new(
+        atlas,
+        device,
+        wgpu::MultisampleState::default(),
+        None,
+    ));
+    let text_renderer = text_renderers
+        .last_mut()
+        .expect("prepared text renderer was just pushed");
+    let submission = item.submission();
+    if item.paint.offscreen_passes.is_empty() && item.paint.post_processes.is_empty() {
+        render_prepared_submission_with_renderer(
+            device,
+            queue,
+            encoder,
+            text_renderer,
+            font_system,
+            atlas,
+            viewport,
+            swash_cache,
+            request.target,
+            item.clip,
+            &submission,
+        )?;
+    } else {
         let effect_texture = runtime_control_filter_texture(
             device,
             view_compositor.format(),
@@ -119,7 +170,103 @@ pub(super) fn render_prepared_text_range_with_renderer(
             device_pixel_ratio: request.frame.viewport.physical_scale_factor_f32(),
         })?;
     }
+    let foregrounds = interaction_foreground(item);
+    render_interaction_rectangles(
+        device,
+        encoder,
+        rectangle_pipeline,
+        request.target,
+        &foregrounds,
+        logical_extent,
+        "arcweft-prepared-text-interaction-foreground",
+    );
     Ok(())
+}
+
+fn interaction_background(item: &PreparedTextItem) -> Vec<PaintRect> {
+    item.interaction
+        .selection_rects
+        .iter()
+        .filter_map(|bounds| clipped_rect(*bounds, item.clip))
+        .map(|bounds| PaintRect::new(bounds, item.interaction.selection_rgba))
+        .collect()
+}
+
+fn interaction_foreground(item: &PreparedTextItem) -> Vec<PaintRect> {
+    let mut rectangles = item
+        .interaction
+        .composition_underlines
+        .iter()
+        .filter_map(|underline| {
+            let mut bounds = underline.bounds;
+            bounds.height = underline.thickness;
+            clipped_rect(bounds, item.clip)
+                .map(|bounds| PaintRect::new(bounds, color_channels(underline.color)))
+        })
+        .collect::<Vec<_>>();
+    if let Some(caret) = item.interaction.caret.filter(|caret| caret.visible)
+        && let Some(bounds) = clipped_rect(caret.bounds, item.clip)
+    {
+        rectangles.push(PaintRect::new(bounds, color_channels(caret.color)));
+    }
+    rectangles
+}
+
+fn clipped_rect(
+    bounds: LayoutRect,
+    clip: Option<LayoutRect>,
+) -> Option<arcweft_presentation::hit::HitRect> {
+    let bounds = clip.map_or(bounds, |clip| {
+        let x = bounds.x.max(clip.x);
+        let y = bounds.y.max(clip.y);
+        let right = bounds.right().min(clip.right());
+        let bottom = bounds.bottom().min(clip.bottom());
+        LayoutRect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0))
+    });
+    (bounds.width > 0.0 && bounds.height > 0.0).then(|| {
+        arcweft_presentation::hit::HitRect::new(bounds.x, bounds.y, bounds.width, bounds.height)
+    })
+}
+
+fn color_channels(color: arcweft_render_text::TextColor) -> [f32; 4] {
+    color.channels().map(|channel| f32::from(channel) / 255.0)
+}
+
+fn render_interaction_rectangles(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    pipeline: &wgpu::RenderPipeline,
+    target: &wgpu::TextureView,
+    rectangles: &[PaintRect],
+    logical_extent: [f32; 2],
+    label: &'static str,
+) {
+    let Some((vertices, count)) = rectangle_vertex_buffer(
+        device,
+        label,
+        rectangles,
+        logical_extent[0],
+        logical_extent[1],
+    ) else {
+        return;
+    };
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            resolve_target: None,
+            depth_slice: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    draw_rectangle_buffer(&mut pass, pipeline, &vertices, count);
 }
 
 #[expect(

@@ -184,7 +184,6 @@ fn capture_viewport(request: NativePlayerCaptureRequest) -> RenderViewport {
 fn frame_has_visual_content(frame: &PreparedFrame) -> bool {
     !frame.rectangles.is_empty()
         || !frame.images.is_empty()
-        || !frame.prepared_text.is_empty()
         || !frame.text.is_empty()
         || !frame.choices.is_empty()
         || !frame.action_buttons.is_empty()
@@ -291,8 +290,7 @@ mod tests {
                 .expect("dialogue frame prepares");
 
         assert_eq!(prepared.frame.textboxes().len(), 1);
-        assert!(!prepared.frame.prepared_text.is_empty());
-        assert!(prepared.frame.text.is_empty());
+        assert!(!prepared.frame.text.is_empty());
     }
 
     fn dialogue_bundle() -> ArcweftBundle {

@@ -1,8 +1,8 @@
 use super::{
     BlankPointerPressState, DragIntent, DragState, InputController, InputOutcome,
     InputPointerModifiers, InputRouter, POINTER_ACTIVATION_DISTANCE_SQUARED, PointerCapture,
-    PointerId, PointerInput, PointerPhase, PreparedFrame, PreparedSelectableTextBlock,
-    PressedTarget, RawInputKind, RouteDecision, TextBlockSelectionState, TextEditorError,
+    PointerId, PointerInput, PointerPhase, PreparedFrame, PressedTarget, RawInputKind,
+    RouteDecision, TextBlockSelectionState, TextByteOffset, TextCharacterBounds, TextEditorError,
     TextPointerSelectionKind, TextPointerSelectionState, ViewportPoint, activation_outcome,
     frame_target_is_text_input, line_range_at_text_offset, ordered_text_range,
     pointer_activation_effects, viewport_text_hit_offset, word_range_at_text_offset,
@@ -55,11 +55,15 @@ impl InputController {
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
         self.blank_presses.remove(&pointer.0);
-        if let Some(block) = frame.selectable_text_block_at(position).cloned() {
+        if let Some(target) = frame
+            .selectable_text_at(position)
+            .and_then(|item| item.interaction.target.clone())
+        {
             self.pending_text_pointer_selection = None;
             self.deactivate_focused_text_editor();
             let _ = self.apply_text_block_pointer_selection(
-                &block,
+                frame,
+                &target,
                 position,
                 modifiers.shift(),
                 TextPointerSelectionKind::Caret,
@@ -68,7 +72,7 @@ impl InputController {
                 pointer.0,
                 DragState {
                     pointer,
-                    target: block.target.clone(),
+                    target,
                     start: position,
                     current: position,
                     modifiers,
@@ -175,17 +179,15 @@ impl InputController {
             .as_ref()
             .filter(|drag| drag.intent == DragIntent::SelectTextBlock)
         {
-            if let Some(block) = frame
-                .selectable_text_block_for_target(&drag.target)
-                .cloned()
-            {
+            if frame.selectable_text_for_target(&drag.target).is_some() {
                 let kind = if is_activation {
                     self.next_text_click_kind(&drag.target, position)
                 } else {
                     TextPointerSelectionKind::Caret
                 };
                 let _ = self.apply_text_block_pointer_selection(
-                    &block,
+                    frame,
+                    &drag.target,
                     position,
                     drag.modifiers.shift() || modifiers.shift() || !is_activation,
                     kind,
@@ -318,39 +320,38 @@ impl InputController {
             return false;
         };
         drag.current = position;
-        frame
-            .selectable_text_block_for_target(&drag.target)
-            .cloned()
-            .is_some_and(|block| {
-                self.apply_text_block_pointer_selection(
-                    &block,
-                    position,
-                    true,
-                    TextPointerSelectionKind::Caret,
-                )
-            })
+        let target = drag.target.clone();
+        frame.selectable_text_for_target(&target).is_some()
+            && self.apply_text_block_pointer_selection(
+                frame,
+                &target,
+                position,
+                true,
+                TextPointerSelectionKind::Caret,
+            )
     }
 
     fn apply_text_block_pointer_selection(
         &mut self,
-        block: &PreparedSelectableTextBlock,
+        frame: &PreparedFrame,
+        target: &arcweft_presentation::input::InteractionTarget,
         position: ViewportPoint,
         selecting: bool,
         kind: TextPointerSelectionKind,
     ) -> bool {
-        let offset = viewport_text_hit_offset(&block.character_bounds, position);
+        let Some(item) = frame.selectable_text_for_target(target) else {
+            return false;
+        };
+        let text = &item.interaction.text;
+        let offset = prepared_text_hit_offset(frame, target, position).unwrap_or_default();
         let existing_anchor = self
             .text_block_selection
             .as_ref()
-            .filter(|selection| selection.target == block.target && selection.text == block.text)
+            .filter(|selection| selection.target == *target && selection.text == *text)
             .map(|selection| selection.anchor);
         let selection = match kind {
-            TextPointerSelectionKind::Word if !selecting => {
-                word_range_at_text_offset(&block.text, offset)
-            }
-            TextPointerSelectionKind::Line if !selecting => {
-                line_range_at_text_offset(&block.text, offset)
-            }
+            TextPointerSelectionKind::Word if !selecting => word_range_at_text_offset(text, offset),
+            TextPointerSelectionKind::Line if !selecting => line_range_at_text_offset(text, offset),
             TextPointerSelectionKind::Caret
             | TextPointerSelectionKind::Word
             | TextPointerSelectionKind::Line => {
@@ -368,8 +369,8 @@ impl InputController {
             *selection.start()
         };
         let next = TextBlockSelectionState {
-            target: block.target.clone(),
-            text: block.text.clone(),
+            target: target.clone(),
+            text: text.clone(),
             anchor,
             selection,
         };
@@ -377,4 +378,32 @@ impl InputController {
         self.text_block_selection = Some(next);
         changed
     }
+}
+
+fn prepared_text_hit_offset(
+    frame: &PreparedFrame,
+    target: &arcweft_presentation::input::InteractionTarget,
+    position: ViewportPoint,
+) -> Option<TextByteOffset> {
+    let item = frame.selectable_text_for_target(target)?;
+    let bounds = item
+        .interaction
+        .character_bounds
+        .iter()
+        .map(|character| {
+            TextCharacterBounds::new(
+                super::TextRange::new(
+                    TextByteOffset(u32::try_from(character.source_range.start).unwrap_or(u32::MAX)),
+                    TextByteOffset(u32::try_from(character.source_range.end).unwrap_or(u32::MAX)),
+                ),
+                arcweft_presentation::hit::HitRect::new(
+                    character.bounds.x,
+                    character.bounds.y,
+                    character.bounds.width,
+                    character.bounds.height,
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    Some(viewport_text_hit_offset(&bounds, position))
 }

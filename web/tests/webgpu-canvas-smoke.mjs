@@ -358,7 +358,7 @@ async function main() {
           const frame = window.__arcweftLastFrameObservation;
           return [
             ...(frame?.text?.map((item) => item.text) ?? []),
-            ...(frame?.prepared_text?.map((item) => item.visible_text ?? item.text) ?? []),
+            ...(frame?.text?.map((item) => item.visible_text ?? item.text) ?? []),
           ].join("");
         });
         expect(visibleText.includes("同じdialogue lineの2ページ目"), "second page is not visible");

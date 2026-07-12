@@ -1,4 +1,5 @@
 use super::*;
+use crate::fonts::DEFAULT_PLAYER_FONT_RESOURCE_BYTES;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
@@ -9,8 +10,18 @@ use arcweft_presentation::text_input::{
 use arcweft_render_wgpu::geometry::{
     PreparedTextBoxState, RenderActionButton, RenderControlStyle, RenderPreferences, RenderScene,
     RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
-    RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanner,
+    RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanContext,
 };
+
+fn prepare(
+    scene: &RenderScene,
+) -> Result<PreparedFrame, arcweft_render_wgpu::geometry::FramePlanError> {
+    let mut planner = SharedFramePlanContext::new();
+    for bytes in DEFAULT_PLAYER_FONT_RESOURCE_BYTES {
+        planner.register_font_bytes(bytes.to_vec())?;
+    }
+    planner.prepare(scene)
+}
 
 fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
     arcweft_presentation::input::InteractionTarget::new(
@@ -43,7 +54,7 @@ fn scene(control: RenderTextInputControl) -> RenderScene {
 }
 
 fn prepare_with_textbox(scene: &RenderScene, reveal_complete: bool) -> PreparedFrame {
-    let mut frame = SharedFramePlanner::prepare(scene).expect("frame prepares");
+    let mut frame = prepare(scene).expect("frame prepares");
     frame.push_textbox(PreparedTextBoxState {
         textbox: 0,
         entry: 0,
@@ -59,7 +70,7 @@ fn prepare_with_textbox(scene: &RenderScene, reveal_complete: bool) -> PreparedF
 }
 
 fn scroll_frame() -> PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -99,7 +110,7 @@ fn scroll_frame() -> PreparedFrame {
 }
 
 fn horizontal_scroll_frame() -> PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -143,7 +154,7 @@ fn nested_scroll_frame(
     reduce_motion: bool,
     visual_time_millis: u64,
 ) -> PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: Vec::new(),
         text_inputs: Vec::new(),
@@ -418,7 +429,7 @@ fn ensure_choice_focus_does_not_autofocus_view_text_controls() {
         SemanticRole::TextArea,
         HitRect::new(20.0, 30.0, 220.0, 80.0),
     );
-    let frame = SharedFramePlanner::prepare(&scene(control)).unwrap();
+    let frame = prepare(&scene(control)).unwrap();
     let mut input = InputController::default();
 
     assert!(!input.ensure_choice_focus(&frame));
@@ -439,7 +450,7 @@ fn text_input_edits_player_owned_focused_text_editor_state() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let frame = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(target),
             hovered: None,
@@ -748,7 +759,7 @@ fn committed_text_input_emits_typed_change_write_back() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let frame = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(target),
             hovered: None,
@@ -790,7 +801,7 @@ fn submit_command_is_distinguishable_from_change() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let frame = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(target),
             hovered: None,
@@ -876,7 +887,7 @@ fn ime_preedit_does_not_write_back_until_commit() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let frame = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(target),
             hovered: None,
@@ -926,7 +937,7 @@ fn focus_loss_commits_active_ime_composition() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let frame = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(target),
             hovered: None,
@@ -984,7 +995,7 @@ fn no_op_delete_command_does_not_emit_change_write_back() {
         SemanticRole::TextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let frame = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(target),
             hovered: None,
@@ -1023,7 +1034,7 @@ fn secure_write_back_value_is_available_but_redacted_in_debug() {
         SemanticRole::SecureTextField,
         HitRect::new(20.0, 30.0, 220.0, 32.0),
     );
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let frame = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(target),
             hovered: None,

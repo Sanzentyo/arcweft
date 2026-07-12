@@ -42,7 +42,7 @@ pub(super) fn agent_dialogue_prepared_text_objects(
         eprintln!("error: dialogue frame is missing its prepared-text owner");
         return Err(ExitCode::FAILURE);
     };
-    let Some(item) = prepared.prepared_text.get(owner.text) else {
+    let Some(item) = prepared.text.get(owner.text) else {
         eprintln!(
             "error: dialogue prepared-text owner references missing item {}",
             owner.text.index()

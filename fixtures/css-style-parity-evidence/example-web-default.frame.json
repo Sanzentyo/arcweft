@@ -13,11 +13,9 @@
   "rectangle_count": 1,
   "image_count": 0,
   "text_count": 1,
-  "prepared_text_count": 1,
   "choice_count": 0,
   "images": [],
-  "text": [],
-  "prepared_text": [
+  "text": [
     {
       "id": 0,
       "text": "星影",

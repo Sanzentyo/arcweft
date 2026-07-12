@@ -5,6 +5,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
     ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
+use arcweft_player_scene::fonts::DEFAULT_PLAYER_FONT_RESOURCE_BYTES;
 use arcweft_player_scene::input::{InputController, InputPointerModifiers};
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
 use arcweft_presentation::input::{InteractionTarget, PointerId};
@@ -17,8 +18,21 @@ use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderPreferences,
     RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
     RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl, RenderViewport,
-    SharedFramePlanner,
+    SharedFramePlanContext,
 };
+
+fn prepare(
+    scene: &RenderScene,
+) -> Result<
+    arcweft_render_wgpu::geometry::PreparedFrame,
+    arcweft_render_wgpu::geometry::FramePlanError,
+> {
+    let mut planner = SharedFramePlanContext::new();
+    for bytes in DEFAULT_PLAYER_FONT_RESOURCE_BYTES {
+        planner.register_font_bytes(bytes.to_vec())?;
+    }
+    planner.prepare(scene)
+}
 
 #[test]
 fn runtime_text_control_lowers_into_render_scene_and_focused_target() {
@@ -28,7 +42,7 @@ fn runtime_text_control_lowers_into_render_scene_and_focused_target() {
         .expect("runtime controls lower");
     let target = controls[0].target.clone();
     let scene = scene_with_text_inputs(controls, Some(target));
-    let prepared = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let prepared = prepare(&scene).expect("frame prepares");
 
     assert_eq!(scene.text_inputs.len(), 1);
     assert!(prepared.focused_text_input_target().is_some());
@@ -42,7 +56,7 @@ fn committed_text_updates_player_owned_state_and_next_frame_value() {
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
     let target = controls[0].target.clone();
-    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(
+    let frame = prepare(&scene_with_text_inputs(
         controls.clone(),
         Some(target.clone()),
     ))
@@ -66,8 +80,8 @@ fn committed_text_updates_player_owned_state_and_next_frame_value() {
     let next_controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("live controls lower");
     assert_eq!(next_controls[0].value, "Ada Lovelace");
-    let next = SharedFramePlanner::prepare(&scene_with_text_inputs(next_controls, Some(target)))
-        .expect("next frame prepares");
+    let next =
+        prepare(&scene_with_text_inputs(next_controls, Some(target))).expect("next frame prepares");
     assert_eq!(
         next.focused_text_input_target()
             .expect("focused target remains")
@@ -85,7 +99,7 @@ fn selection_update_changes_next_prepared_caret_geometry() {
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
     let target = controls[0].target.clone();
-    let initial = SharedFramePlanner::prepare(&scene_with_text_inputs(
+    let initial = prepare(&scene_with_text_inputs(
         controls.clone(),
         Some(target.clone()),
     ))
@@ -115,8 +129,8 @@ fn selection_update_changes_next_prepared_caret_geometry() {
 
     let next_controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("live controls lower");
-    let next = SharedFramePlanner::prepare(&scene_with_text_inputs(next_controls, Some(target)))
-        .expect("next frame prepares");
+    let next =
+        prepare(&scene_with_text_inputs(next_controls, Some(target))).expect("next frame prepares");
     let focused = next
         .focused_text_input_target()
         .expect("focused target remains");
@@ -135,8 +149,8 @@ fn secure_runtime_text_control_redacts_snapshot_and_visual_secret() {
     let controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("secure control lowers");
     let target = controls[0].target.clone();
-    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target)))
-        .expect("secure frame prepares");
+    let frame =
+        prepare(&scene_with_text_inputs(controls, Some(target))).expect("secure frame prepares");
     let focused = frame
         .focused_text_input_target()
         .expect("secure field is focused");
@@ -144,8 +158,20 @@ fn secure_runtime_text_control_redacts_snapshot_and_visual_secret() {
     assert_eq!(focused.snapshot.surrounding_text(), "");
     assert!(focused.snapshot.character_bounds().is_empty());
     assert!(focused.geometry.viewport_character_bounds().is_empty());
-    assert!(frame.text.iter().all(|block| block.text != "secret"));
-    assert!(frame.text.iter().any(|block| block.text == "******"));
+    assert!(
+        frame
+            .text
+            .items()
+            .iter()
+            .all(|item| item.interaction.text != "secret")
+    );
+    assert!(
+        frame
+            .text
+            .items()
+            .iter()
+            .any(|item| item.interaction.text == "******")
+    );
 }
 
 #[test]
@@ -155,8 +181,7 @@ fn pointer_focus_uses_lower_for_frame_activation_path() {
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
-    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, None))
-        .expect("hit frame prepares");
+    let frame = prepare(&scene_with_text_inputs(controls, None)).expect("hit frame prepares");
 
     input.pointer_down(
         &frame,
@@ -186,8 +211,7 @@ fn pointer_click_places_caret_after_focused_geometry_is_available() {
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
-    let initial = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, None))
-        .expect("hit frame prepares");
+    let initial = prepare(&scene_with_text_inputs(controls, None)).expect("hit frame prepares");
 
     input.pointer_down(
         &initial,
@@ -199,7 +223,7 @@ fn pointer_click_places_caret_after_focused_geometry_is_available() {
     let focused_controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("focused controls lower");
-    let focused = SharedFramePlanner::prepare(&scene_with_text_inputs(
+    let focused = prepare(&scene_with_text_inputs(
         focused_controls,
         input.visual_state().focused.clone(),
     ))
@@ -228,8 +252,8 @@ fn shift_pointer_click_extends_focused_text_selection() {
     input
         .activate_text_control(&controls[0])
         .expect("text editor activates");
-    let focused = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target)))
-        .expect("focused frame prepares");
+    let focused =
+        prepare(&scene_with_text_inputs(controls, Some(target))).expect("focused frame prepares");
     let shift = InputPointerModifiers::new(true);
 
     input.pointer_down(&focused, PointerId(0), viewport_point(150.0, 60.0), shift);
@@ -247,8 +271,7 @@ fn pointer_drag_extends_focused_text_selection() {
     let controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
-    let initial = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, None))
-        .expect("hit frame prepares");
+    let initial = prepare(&scene_with_text_inputs(controls, None)).expect("hit frame prepares");
 
     input.pointer_down(
         &initial,
@@ -259,7 +282,7 @@ fn pointer_drag_extends_focused_text_selection() {
     let focused_controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("focused controls lower");
-    let focused = SharedFramePlanner::prepare(&scene_with_text_inputs(
+    let focused = prepare(&scene_with_text_inputs(
         focused_controls,
         input.visual_state().focused.clone(),
     ))
@@ -286,8 +309,8 @@ fn repeated_pointer_clicks_select_word_then_line() {
     input
         .activate_text_control(&controls[0])
         .expect("text editor activates");
-    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target)))
-        .expect("focused frame prepares");
+    let frame =
+        prepare(&scene_with_text_inputs(controls, Some(target))).expect("focused frame prepares");
     let position = viewport_point(70.0, 60.0);
 
     for _ in 0..2 {
@@ -321,8 +344,8 @@ fn selected_text_drag_moves_text_and_emits_writeback() {
     input
         .activate_text_control(&controls[0])
         .expect("text editor activates");
-    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target)))
-        .expect("focused frame prepares");
+    let frame =
+        prepare(&scene_with_text_inputs(controls, Some(target))).expect("focused frame prepares");
 
     input.pointer_down(
         &frame,
@@ -375,7 +398,7 @@ fn pointer_drag_selection_autoscrolls_containing_scroll_region() {
         auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
         indicator_activity_millis: None,
     });
-    let frame = SharedFramePlanner::prepare(&scene).expect("focused frame prepares");
+    let frame = prepare(&scene).expect("focused frame prepares");
 
     input.pointer_down(
         &frame,
@@ -423,7 +446,7 @@ fn hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback() {
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("initial controls lower");
     let target = controls[0].target.clone();
-    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(
+    let frame = prepare(&scene_with_text_inputs(
         controls.clone(),
         Some(target.clone()),
     ))
@@ -434,8 +457,8 @@ fn hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback() {
 
     let hidden_controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, &[]).expect("hidden controls lower");
-    let hidden_frame = SharedFramePlanner::prepare(&scene_with_text_inputs(hidden_controls, None))
-        .expect("hidden frame prepares");
+    let hidden_frame =
+        prepare(&scene_with_text_inputs(hidden_controls, None)).expect("hidden frame prepares");
 
     assert!(input.focused_text_editor().is_none());
     assert!(input.visual_state().focused.is_none());

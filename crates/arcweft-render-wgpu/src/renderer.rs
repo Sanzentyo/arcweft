@@ -4,13 +4,9 @@ mod view_text;
 use prepared_text::render_prepared_text_range_with_renderer;
 use view_text::WgpuViewPreparedTextRenderer;
 
-use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
-use crate::font_family::render_font_family;
-use crate::font_system::{load_font_data_and_maybe_set_primary_sans, new_font_system};
 use crate::geometry::{
     PaintRect, PreparedControlPaint, PreparedControlShadow, PreparedFrame, PreparedViewScene,
-    RenderImage, RenderTextBlock, RenderTextSlant, RenderTextWeight,
-    RuntimeControlBackdropSamplePolicy,
+    RenderImage, RuntimeControlBackdropSamplePolicy,
 };
 use crate::view_compositor::{
     ViewCompositor, ViewCompositorError, ViewCompositorFrame, ViewCompositorTarget,
@@ -22,13 +18,8 @@ use crate::view_direct_renderer::{
 use crate::view_effects::ViewTextureExtent;
 use crate::view_scene::ViewBoxShadowKind;
 use arcweft_glyphon::{GlyphonTextEngine, GlyphonTextEngineError};
-use arcweft_presentation::hit::HitRect;
 use bytemuck::{Pod, Zeroable};
-use glyphon::cosmic_text::Align;
-use glyphon::{
-    Attrs, Buffer, Cache, Color, FontSystem, Metrics, Resolution, Shaping, Style, SwashCache,
-    TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
-};
+use glyphon::{Cache, Resolution, TextAtlas, TextRenderer, Viewport};
 use std::borrow::Cow;
 use std::ops::Range;
 use thiserror::Error;
@@ -42,12 +33,9 @@ pub struct SharedRenderer {
     image_pipeline: wgpu::RenderPipeline,
     image_sampler: wgpu::Sampler,
     glyphon_cache: Cache,
-    font_system: FontSystem,
-    swash_cache: SwashCache,
     prepared_text_engine: Option<GlyphonTextEngine>,
     viewport: Viewport,
     atlas: TextAtlas,
-    text_renderer: TextRenderer,
     /// Per-submission renderers kept alive until the frame command buffer is submitted.
     ///
     /// `glyphon::TextRenderer::prepare_*` mutates or replaces its vertex buffer. Reusing one
@@ -101,13 +89,6 @@ struct ImageVertex {
     uv: [f32; 2],
 }
 
-struct TextRangeRenderRequest<'a> {
-    target: &'a wgpu::TextureView,
-    frame: &'a PreparedFrame,
-    text_range: Range<usize>,
-    excluded_text_ranges: &'a [Range<usize>],
-}
-
 struct PreparedTextRangeRenderRequest<'a> {
     target: &'a wgpu::TextureView,
     frame: &'a PreparedFrame,
@@ -115,20 +96,11 @@ struct PreparedTextRangeRenderRequest<'a> {
     excluded_ranges: &'a [Range<usize>],
 }
 
-struct TextRenderState<'a> {
-    font_system: &'a mut FontSystem,
-    atlas: &'a mut TextAtlas,
-    swash_cache: &'a mut SwashCache,
-    viewport: &'a Viewport,
-}
-
 impl SharedRenderer {
     /// Creates pipelines for a host-selected render-target format.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         let glyphon_cache = Cache::new(device);
-        let mut atlas = TextAtlas::new(device, queue, &glyphon_cache, format);
-        let text_renderer =
-            TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
+        let atlas = TextAtlas::new(device, queue, &glyphon_cache, format);
         let (image_bind_group_layout, image_pipeline, image_sampler) =
             image_quad_pipeline(device, format);
         let view_compositor = ViewCompositor::new(device, queue, format);
@@ -142,11 +114,8 @@ impl SharedRenderer {
             image_sampler,
             viewport: Viewport::new(device, &glyphon_cache),
             glyphon_cache,
-            font_system: new_font_system(),
-            swash_cache: SwashCache::new(),
             prepared_text_engine: None,
             atlas,
-            text_renderer,
             aux_text_renderers: Vec::new(),
             view_compositor,
             view_text_effect_compositor,
@@ -169,17 +138,14 @@ impl SharedRenderer {
         if bytes.is_empty() {
             return Err(SharedRendererError::EmptyFont);
         }
+        let byte_len = bytes.len();
         if let Some(engine) = &mut self.prepared_text_engine {
-            engine.register_project_font(bytes.clone())?;
+            engine.register_project_font(bytes)?;
         } else {
-            self.prepared_text_engine = Some(GlyphonTextEngine::from_project_fonts(
-                "und",
-                vec![bytes.clone()],
-            )?);
+            self.prepared_text_engine =
+                Some(GlyphonTextEngine::from_project_fonts("und", vec![bytes])?);
         }
-        let set_primary_sans = self.registered_font_bytes == 0;
-        self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
-        load_font_data_and_maybe_set_primary_sans(&mut self.font_system, bytes, set_primary_sans);
+        self.registered_font_bytes = self.registered_font_bytes.saturating_add(byte_len);
         Ok(())
     }
 
@@ -360,16 +326,12 @@ impl SharedRenderer {
         let mut next_rectangle = 1;
         let mut controls = frame.control_paints.iter().collect::<Vec<_>>();
         controls.sort_by_key(|paint| (paint.rectangle_range.start, paint.text_range.start));
-        let filtered_text_ranges = controls
+        let excluded_prepared_text_ranges = controls
             .iter()
             .filter(|paint| {
                 !slice_range(&frame.control_filters, paint.filter_range.clone()).is_empty()
             })
             .map(|paint| paint.text_range.clone())
-            .collect::<Vec<_>>();
-        let excluded_prepared_text_ranges = filtered_text_ranges
-            .iter()
-            .cloned()
             .chain(
                 frame
                     .view_scenes()
@@ -413,17 +375,6 @@ impl SharedRenderer {
             next_rectangle..frame.rectangles.len(),
             "arcweft-shared-post-control-rectangles",
         );
-        self.render_text_ranges(
-            device,
-            queue,
-            encoder,
-            &TextRangeRenderRequest {
-                target: target_view,
-                frame,
-                text_range: 0..frame.text.len(),
-                excluded_text_ranges: &filtered_text_ranges,
-            },
-        )?;
         self.render_prepared_text_range(
             device,
             queue,
@@ -431,7 +382,7 @@ impl SharedRenderer {
             &PreparedTextRangeRenderRequest {
                 target: target_view,
                 frame,
-                range: 0..frame.prepared_text.len(),
+                range: 0..frame.text.len(),
                 excluded_ranges: &excluded_prepared_text_ranges,
             },
         )?;
@@ -691,38 +642,11 @@ impl SharedRenderer {
             paint.rectangle_range.clone(),
             "arcweft-shared-runtime-control-filter-rectangles",
         );
-        self.aux_text_renderers.push(TextRenderer::new(
-            &mut self.atlas,
-            device,
-            wgpu::MultisampleState::default(),
-            None,
-        ));
-        let text_renderer = self
-            .aux_text_renderers
-            .last_mut()
-            .expect("auxiliary text renderer was just pushed");
-        render_text_ranges_with_renderer(
-            device,
-            queue,
-            encoder,
-            text_renderer,
-            TextRenderState {
-                font_system: &mut self.font_system,
-                atlas: &mut self.atlas,
-                swash_cache: &mut self.swash_cache,
-                viewport: &self.viewport,
-            },
-            &TextRangeRenderRequest {
-                target: &control_view,
-                frame,
-                text_range: paint.text_range.clone(),
-                excluded_text_ranges: &[],
-            },
-        )?;
         render_prepared_text_range_with_renderer(
             device,
             queue,
             encoder,
+            &self.rectangle_pipeline,
             &mut self.aux_text_renderers,
             self.prepared_text_engine.as_mut(),
             &mut self.atlas,
@@ -810,28 +734,6 @@ impl SharedRenderer {
         );
     }
 
-    fn render_text_ranges(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        request: &TextRangeRenderRequest<'_>,
-    ) -> Result<(), SharedRendererError> {
-        render_text_ranges_with_renderer(
-            device,
-            queue,
-            encoder,
-            &mut self.text_renderer,
-            TextRenderState {
-                font_system: &mut self.font_system,
-                atlas: &mut self.atlas,
-                swash_cache: &mut self.swash_cache,
-                viewport: &self.viewport,
-            },
-            request,
-        )
-    }
-
     fn render_prepared_text_range(
         &mut self,
         device: &wgpu::Device,
@@ -843,6 +745,7 @@ impl SharedRenderer {
             device,
             queue,
             encoder,
+            &self.rectangle_pipeline,
             &mut self.aux_text_renderers,
             self.prepared_text_engine.as_mut(),
             &mut self.atlas,
@@ -893,76 +796,6 @@ impl SharedRenderer {
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
     }
-}
-
-fn render_text_ranges_with_renderer(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    encoder: &mut wgpu::CommandEncoder,
-    text_renderer: &mut TextRenderer,
-    state: TextRenderState<'_>,
-    request: &TextRangeRenderRequest<'_>,
-) -> Result<(), SharedRendererError> {
-    let TextRenderState {
-        font_system,
-        atlas,
-        swash_cache,
-        viewport,
-    } = state;
-    let text_range = request.text_range.clone();
-    let text_blocks = slice_range(&request.frame.text, text_range.clone())
-        .iter()
-        .enumerate()
-        .filter_map(|(offset, block)| {
-            let index = text_range.start + offset;
-            (!text_index_is_excluded(index, request.excluded_text_ranges)).then_some(block)
-        })
-        .collect::<Vec<_>>();
-    if text_blocks.is_empty() {
-        return Ok(());
-    }
-    let mut buffers = text_blocks
-        .iter()
-        .map(|&block| text_buffer(font_system, block))
-        .collect::<Vec<_>>();
-    let scale_factor = request.frame.viewport.physical_scale_factor_f32();
-    let areas = buffers
-        .iter_mut()
-        .zip(text_blocks.iter().copied())
-        .map(|(buffer, block)| text_area(buffer, block, scale_factor))
-        .collect::<Vec<_>>();
-    text_renderer
-        .prepare(
-            device,
-            queue,
-            font_system,
-            atlas,
-            viewport,
-            areas,
-            swash_cache,
-        )
-        .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))
-        .and_then(|()| {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("arcweft-shared-text-range-render-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: request.target,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            text_renderer
-                .render(atlas, viewport, &mut pass)
-                .map_err(|error| SharedRendererError::TextRender(error.to_string()))
-        })
 }
 
 fn text_index_is_excluded(index: usize, excluded: &[Range<usize>]) -> bool {
@@ -1133,62 +966,6 @@ fn clear_texture_view(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-}
-
-fn text_buffer(font_system: &mut FontSystem, block: &RenderTextBlock) -> Buffer {
-    let mut buffer = Buffer::new(
-        font_system,
-        Metrics::new(block.font_size, block.line_height),
-    );
-    buffer.set_size(
-        font_system,
-        Some(block.buffer_width.unwrap_or(block.bounds.width)),
-        Some(block.buffer_height.unwrap_or(block.bounds.height)),
-    );
-    buffer.set_text(
-        font_system,
-        &block.text,
-        &text_attrs(block),
-        Shaping::Advanced,
-        Some(Align::Left),
-    );
-    buffer.shape_until_scroll(font_system, false);
-    buffer
-}
-
-fn text_attrs(block: &RenderTextBlock) -> Attrs<'_> {
-    let mut attrs = Attrs::new().family(render_font_family(&block.font_family));
-    if block.weight == RenderTextWeight::Bold {
-        attrs = attrs.weight(Weight::BOLD);
-    }
-    if block.slant == RenderTextSlant::Italic {
-        attrs = attrs.style(Style::Italic);
-    }
-    attrs
-}
-
-fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock, scale_factor: f32) -> TextArea<'a> {
-    let scale_factor = scale_factor.max(f32::EPSILON);
-    let scaled_bounds = scale_text_bounds(block.clip_bounds.unwrap_or(block.bounds), scale_factor);
-    TextArea {
-        buffer,
-        left: block.bounds.x * scale_factor,
-        top: block.bounds.y * scale_factor,
-        scale: scale_factor,
-        bounds: scaled_bounds,
-        default_color: Color::rgba(block.rgba[0], block.rgba[1], block.rgba[2], block.rgba[3]),
-        custom_glyphs: &[],
-    }
-}
-
-fn scale_text_bounds(bounds: HitRect, scale_factor: f32) -> TextBounds {
-    let scale_factor = scale_factor.max(f32::EPSILON);
-    TextBounds {
-        left: pixel_floor_as_i32(bounds.x * scale_factor),
-        top: pixel_floor_as_i32(bounds.y * scale_factor),
-        right: pixel_ceil_as_i32((bounds.x + bounds.width) * scale_factor),
-        bottom: pixel_ceil_as_i32((bounds.y + bounds.height) * scale_factor),
-    }
 }
 
 fn rectangle_vertex_buffer(
@@ -1737,6 +1514,3 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return textureSample(image_texture, image_sampler, in.uv);
 }
 ";
-
-#[cfg(test)]
-mod tests;

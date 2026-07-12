@@ -90,7 +90,7 @@ final shared-path goldens have distinct roles as specified by the final design.
 - [x] Cut 1: migration witnesses and canonical resolved text document
 - [x] Cut 2: typed Fx IR/evaluator/bundle/symbol/save contracts
 - [ ] Cut 3: shaped shared text layout and glyphon engine
-- [ ] Cut 4: prepared text batch and all ordinary producers
+- [x] Cut 4: prepared text batch and all ordinary producers
 - [ ] Cut 5: RichText/reveal/shared Fx and native registry removal
 - [x] Cut 6: direct View text painter order and executable per-mount View
 - [x] Cut 7: shared capture and prepared-layout Agent geometry
@@ -145,11 +145,12 @@ implementation cut now contains:
 - the common `FxDiagnostic` contract is carried directly in Web observations
   and projected with stable code/severity/Fx identity into Agent observations.
 
-The shaped layout contract, real project-font glyphon shaper, canonical
-`ResolvedTextDocument` consumer, and first product `PreparedTextBatch` path now
-exist. RichText and stateless/legacy text producers, View Fx
-evaluator/application mounting, direct View painter order, capture convergence,
-and TextBox convergence remain open. The overall goal therefore remains active.
+All product display-text producers now converge through the shaped
+project-font engine and one `PreparedTextBatch`. RichText, View, persistent
+TextBox, choices, action buttons, editable inputs, Native/Web capture, and
+Agent observation use the canonical prepared items. The overall goal remains
+active for final legacy-layout/API cleanup and checked vertical-LR,
+ruby/text-combine, and Fx visual evidence.
 
 ### Shaped-layout implementation slice
 
@@ -224,11 +225,10 @@ The first product path for Cut 4 is implemented:
   the structural gate detected the production file above 2,500 physical LOC.
   The production file is now 2,447 LOC and the final audit has no errors.
 
-Cut 4 remains open because the no-font stateless facade, public legacy
-`PreparedFrame::text`, and styled-paragraph/RichText producers still have live
-call sites. They are intentionally visible migration inputs, not a second
-fallback inside the new prepared contract, and must be deleted as the remaining
-producers converge.
+This earlier migration state is superseded by the canonical batch-only slice
+below. The no-font stateless facade, ordinary `RenderTextBlock`, selectable
+sidecar, styled-paragraph producer, and dual prepared-frame fields have now
+been deleted, completing Cut 4 without a compatibility wrapper.
 
 ### Canonical RichText dialogue-preparation slice
 
@@ -851,9 +851,80 @@ The linked structural audit scans 1,256 Rust files / 621,678 physical Rust LOC
 with 0 errors and 133 warnings. Deleting the duplicated contracts reduces
 `geometry.rs` to 2,196 LOC and the renderer to 1,742 LOC. The Web adapter adds
 only downward dependency edges to `arcweft-glyphon` and
-`arcweft-text-layout`; its exact fan-out is 28 and fan-in is 0. Cut 9 still
-must remove the ordinary `RenderTextBlock` staging path and resolve/promote the
-vertical-LR ruby/text-combine visual goldens before the overall goal can close.
+`arcweft-text-layout`; its exact fan-out is 28 and fan-in is 0. The following
+slice removes the remaining ordinary staging path. Cut 9 still must
+resolve/promote the vertical-LR ruby/text-combine and Fx visual goldens before
+the overall goal can close.
+
+### Canonical prepared-batch-only control text slice
+
+Cut 4 is complete in the current working change:
+
+- `PreparedFrame` owns exactly one public `text: PreparedTextBatch`; the dual
+  `prepared_text` field and ordinary `RenderTextBlock`, selectable-text
+  sidecar, font-family/weight/slant replicas, stateless planner facade, and
+  renderer-local ordinary font system/cache/renderer are deleted directly;
+- `SharedFramePlanContext` retains one project-font `GlyphonTextEngine` and
+  private pre-shaping source plans. `prepare_mapped` maps those plans before
+  shaping, so final fit, font size, clip, and device scale determine the one
+  canonical layout and raster keys;
+- choices, action buttons, and text inputs enter the prepared batch during
+  frame planning in painter order and receive typed `Control` ownership;
+- editable text resolves its displayed value once to a
+  `ResolvedTextDocument`, lays it out through the shared engine, and derives
+  editor hit/selection/caret/IME geometry from that same `TextLayout`.
+  Single-line inputs use explicit no-wrap plus horizontal scrolling,
+  multiline inputs wrap, and secure inputs prepare only their masked display;
+- the shared prepared renderer paints selection before glyph submission and
+  caret/composition marks afterward for both direct View text and ordinary
+  batch ranges. Filtered controls replay the same prepared item and never
+  reshape text;
+- Native, Web, CLI Agent observation, fixtures, and the standalone parity
+  verifier consume the same `frame.text` contract. Web observations expose
+  one `text_count` and one canonical `text` collection; and
+- source inventory confirms there is no production occurrence of the deleted
+  staging contracts. Remaining `prepared_text` spellings identify the Agent
+  observation object type, typed owner accessor, or Takumi's domain-local
+  prepared collection rather than a second renderer input.
+
+Validation for this slice includes:
+
+```bash
+cargo fmt --all
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test -p arcweft-render-wgpu --lib --tests
+cargo test -p arcweft-player-scene --lib --tests
+cargo test -p arcweft-player-web --lib --tests
+cargo test -p arcweft-player-native --lib --tests
+cargo test -p arcweft-cli --lib --bins
+cargo test -p arcweft-render-wgpu --test prepared_text --all-features \
+  prepared_batch_interaction_paints_selection_before_glyphs_and_ime_after \
+  -- --ignored --exact --nocapture
+cargo test -p arcweft-render-wgpu --test prepared_text --all-features \
+  multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit \
+  -- --ignored --exact --nocapture
+cargo test -p arcweft-render-wgpu \
+  --test runtime_control_backdrop_gpu_smoke --all-features \
+  prepared_control_foreground_filter_blur_executes_shared_renderer_path \
+  -- --ignored --exact --nocapture
+cargo +nightly -Zscript tools/verify-text-raster-parity.rs -- --self-test
+just css-style-parity
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-canonical-batch-only-2026-07-12
+```
+
+All completed commands pass. The CSS gate captures Native and browser WebGPU
+at default, compact, and HiDPI checkpoints; each full image is byte-identical
+(PSNR infinity, SSIM 1.0, MSE/MAE 0, and zero changed pixels), and all 137
+canonical text runs per checkpoint have zero raster-mask or geometry delta.
+The local-adapter readbacks pass for batch interaction order, multiple glyph
+submissions, and filtered control rendering. The linked structural audit scans
+1,254 Rust files / 620,421 physical Rust LOC with 0 errors and 131 warnings.
+It records every changed Rust file, current workspace hotspots, embedded test
+LOC, responsibilities, and exact fan-in/fan-out. `geometry.rs` is 2,108 LOC,
+the renderer is 1,516 LOC, and the rewritten text-control module is 756 LOC;
+no Cargo manifest or dependency edge changed.
 
 ## Required validation
 

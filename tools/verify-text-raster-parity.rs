@@ -288,11 +288,7 @@ struct FrameObservation {
     #[serde(default)]
     text_count: usize,
     #[serde(default)]
-    prepared_text_count: usize,
-    #[serde(default)]
-    text: Vec<FrameText>,
-    #[serde(default)]
-    prepared_text: Vec<FramePreparedText>,
+    text: Vec<FramePreparedText>,
     #[serde(default)]
     fonts: Vec<FrameFont>,
 }
@@ -305,22 +301,21 @@ impl FrameObservation {
 
     fn text_count_for_report(&self) -> usize {
         self.text_count
-            .max(self.text.len() + self.prepared_text_count)
-            .max(self.text.len() + self.prepared_text.len())
+            .max(self.text.len())
             .max(self.text_runs_for_report().len())
     }
 
     fn strict_evidence_errors(&self, label: &str) -> Vec<String> {
         let mut errors = Vec::new();
-        if self.prepared_text_count != self.prepared_text.len() {
+        if self.text_count != self.text.len() {
             errors.push(format!(
-                "{label} prepared_text_count {} does not match prepared_text {}",
-                self.prepared_text_count,
-                self.prepared_text.len()
+                "{label} text_count {} does not match canonical text evidence {}",
+                self.text_count,
+                self.text.len()
             ));
         }
         errors.extend(
-            self.prepared_text
+            self.text
                 .iter()
                 .enumerate()
                 .flat_map(|(index, item)| item.strict_evidence_errors(label, index)),
@@ -331,13 +326,8 @@ impl FrameObservation {
     fn text_runs_for_report(&self) -> Vec<FrameText> {
         self.text
             .iter()
-            .cloned()
-            .chain(
-                self.prepared_text
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(index, item)| item.text_runs_for_report(index)),
-            )
+            .enumerate()
+            .flat_map(|(index, item)| item.text_runs_for_report(index))
             .collect()
     }
 }
@@ -1558,44 +1548,17 @@ fn fnv1a64_hex(bytes: &[u8]) -> String {
 }
 
 fn run_self_test() -> Result<(), Box<dyn Error>> {
-    let mut native = RgbaImage::blank(16, 8, [0, 0, 0, 255]);
-    let mut web = RgbaImage::blank(16, 8, [0, 0, 0, 255]);
+    let mut native = RgbaImage::blank(18, 8, [0, 0, 0, 255]);
+    let mut web = RgbaImage::blank(18, 8, [0, 0, 0, 255]);
     let ink = PixelRect {
-        left: 3,
+        left: 2,
         top: 2,
-        right: 9,
+        right: 7,
         bottom: 6,
     };
     native.fill_rect(ink, [255, 255, 255, 255]);
     web.fill_rect(ink, [250, 250, 250, 255]);
-    let frame = FrameObservation {
-        schema_version: "arcweft.text_raster_parity.self_test".to_owned(),
-        viewport: FrameViewport {
-            logical_width_milli: 16_000,
-            logical_height_milli: 8_000,
-            physical_width: 16,
-            physical_height: 8,
-            scale_factor_milli: 1_000,
-        },
-        text_count: 1,
-        prepared_text_count: 0,
-        text: vec![FrameText {
-            text: "self-test".to_owned(),
-            bounds: FrameBounds {
-                x_milli: 2_000,
-                y_milli: 1_000,
-                width_milli: 8_000,
-                height_milli: 6_000,
-            },
-            font_size_milli: 12_000,
-            line_height_milli: 16_000,
-            rgba: [255, 255, 255, 255],
-            visible: true,
-            source: FrameTextSource::default(),
-        }],
-        prepared_text: Vec::new(),
-        fonts: Vec::new(),
-    };
+    let frame = prepared_self_test_frame(true);
     let args = Args {
         checkpoint: "self-test".to_owned(),
         native: PathBuf::from("native.png"),
@@ -1716,9 +1679,7 @@ fn prepared_self_test_frame(include_layout_evidence: bool) -> FrameObservation {
             scale_factor_milli: 1_000,
         },
         text_count: 1,
-        prepared_text_count: 1,
-        text: Vec::new(),
-        prepared_text: vec![FramePreparedText {
+        text: vec![FramePreparedText {
             text: "A".to_owned(),
             visible_text: "A".to_owned(),
             bounds: Some(FrameBounds {

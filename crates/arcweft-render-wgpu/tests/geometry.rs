@@ -17,9 +17,27 @@ use arcweft_render_wgpu::geometry::{
     RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
     RenderScrollIndicatorsPolicy, RenderScrollOverflow, RenderScrollOverscrollPolicy,
     RenderScrollRegion, RenderTextInputControl, RenderViewport, SharedFramePlanContext,
-    SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
+
+const TEST_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
+
+fn planner() -> SharedFramePlanContext {
+    let mut planner = SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(TEST_FONT.to_vec())
+        .expect("test font registers");
+    planner
+}
+
+fn prepare(
+    scene: &RenderScene,
+) -> Result<
+    arcweft_render_wgpu::geometry::PreparedFrame,
+    arcweft_render_wgpu::geometry::FramePlanError,
+> {
+    planner().prepare(scene)
+}
 
 fn scene() -> RenderScene {
     let viewport = RenderViewport {
@@ -151,7 +169,7 @@ fn content_rect_maps_design_rect_into_output_space() {
 
 #[test]
 fn planner_uses_the_same_choice_geometry_for_render_and_hit_test() {
-    let frame = SharedFramePlanner::prepare(&scene()).expect("frame plans");
+    let frame = prepare(&scene()).expect("frame plans");
     assert_eq!(frame.choices.len(), 2);
     for choice in &frame.choices {
         assert!(frame.hits.find_target(&choice.target).is_some());
@@ -161,7 +179,7 @@ fn planner_uses_the_same_choice_geometry_for_render_and_hit_test() {
 
 #[test]
 fn keyboard_navigation_wraps_across_stable_targets() {
-    let frame = SharedFramePlanner::prepare(&scene()).expect("frame plans");
+    let frame = prepare(&scene()).expect("frame plans");
     let first = frame.first_choice_target().expect("first target");
     let previous = frame
         .adjacent_choice_target(Some(&first), -1)
@@ -208,7 +226,7 @@ fn directional_keyboard_navigation_uses_focus_target_geometry() {
         ),
     ];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
 
     assert_eq!(
         frame.directional_keyboard_focus_target(Some(&top_left), FocusNavigationDirection::Right),
@@ -272,7 +290,7 @@ fn focus_navigation_explicit_edge_overrides_geometry() {
         }],
     }];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
 
     assert_eq!(
         frame.focus_target(Some(&top_left), FocusNavigationDirection::Right),
@@ -324,7 +342,7 @@ fn focus_navigation_next_previous_respects_no_wrap_group() {
         },
     ];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
 
     assert_eq!(
         frame.focus_target(Some(&first), FocusNavigationDirection::Next),
@@ -343,9 +361,9 @@ fn focus_navigation_next_previous_respects_no_wrap_group() {
 #[test]
 fn interaction_visual_state_changes_the_prepared_choice_rectangles() {
     let base_scene = scene();
-    let neutral = SharedFramePlanner::prepare(&base_scene).expect("neutral frame plans");
+    let neutral = prepare(&base_scene).expect("neutral frame plans");
     let first = neutral.first_choice_target().expect("first target");
-    let focused = SharedFramePlanner::prepare(&RenderScene {
+    let focused = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(first.clone()),
             hovered: None,
@@ -354,7 +372,7 @@ fn interaction_visual_state_changes_the_prepared_choice_rectangles() {
         ..base_scene.clone()
     })
     .expect("focused frame plans");
-    let pressed = SharedFramePlanner::prepare(&RenderScene {
+    let pressed = prepare(&RenderScene {
         interaction: InteractionVisualState {
             focused: Some(first.clone()),
             hovered: Some(first.clone()),
@@ -385,8 +403,8 @@ fn choice_geometry_ignores_scroll_offset() {
         visual_time_millis: 5_000,
         ..scene()
     };
-    let neutral = SharedFramePlanner::prepare(&base_scene).expect("neutral frame plans");
-    let scrolled = SharedFramePlanner::prepare(&RenderScene {
+    let neutral = prepare(&base_scene).expect("neutral frame plans");
+    let scrolled = prepare(&RenderScene {
         choice_scroll: ChoiceScroll { offset_y: 240.0 },
         ..base_scene
     })
@@ -410,7 +428,7 @@ fn choice_geometry_ignores_scroll_offset() {
 
 #[test]
 fn scroll_regions_survive_frame_planning_and_viewport_mapping() {
-    let frame = SharedFramePlanner::prepare(&RenderScene {
+    let scene = RenderScene {
         scroll_regions: vec![RenderScrollRegion {
             id: "scroll.story".to_owned(),
             bounds: HitRect::new(100.0, 50.0, 300.0, 120.0),
@@ -428,23 +446,23 @@ fn scroll_regions_survive_frame_planning_and_viewport_mapping() {
             indicator_activity_millis: None,
         }],
         ..scene()
-    })
-    .expect("frame plans")
-    .mapped_to_viewport(
-        RenderViewport {
-            logical_width: 640.0,
-            logical_height: 360.0,
-            physical_width: 640,
-            physical_height: 360,
-            scale_factor: 1.0,
-        },
-        ContentRect::calculate(
-            LayoutSize::new(1280.0, 720.0),
-            LayoutSize::new(640.0, 360.0),
-            ScalePolicy::Contain,
-        )
-        .expect("content rect"),
-    );
+    };
+    let output = RenderViewport {
+        logical_width: 640.0,
+        logical_height: 360.0,
+        physical_width: 640,
+        physical_height: 360,
+        scale_factor: 1.0,
+    };
+    let content = ContentRect::calculate(
+        LayoutSize::new(1280.0, 720.0),
+        LayoutSize::new(640.0, 360.0),
+        ScalePolicy::Contain,
+    )
+    .expect("content rect");
+    let frame = planner()
+        .prepare_mapped(&scene, output, content)
+        .expect("frame plans");
 
     let region = frame.scroll_regions.first().expect("scroll region");
     assert_eq!(region.id, "scroll.story");
@@ -498,7 +516,7 @@ fn scroll_indicator_policies_produce_observable_thumb_geometry() {
     };
     let mut visible_scene = scene();
     visible_scene.scroll_regions = vec![region.clone()];
-    let visible = SharedFramePlanner::prepare(&visible_scene).expect("visible indicator frame");
+    let visible = prepare(&visible_scene).expect("visible indicator frame");
 
     let indicator = visible
         .scroll_indicators
@@ -515,7 +533,7 @@ fn scroll_indicator_policies_produce_observable_thumb_geometry() {
     let mut hidden_scene = visible_scene.clone();
     hidden_scene.scroll_regions[0].indicators = RenderScrollIndicatorsPolicy::Hidden;
     assert!(
-        SharedFramePlanner::prepare(&hidden_scene)
+        prepare(&hidden_scene)
             .expect("hidden indicator frame")
             .scroll_indicators
             .is_empty()
@@ -543,12 +561,12 @@ fn auto_scroll_indicator_fades_deterministically_and_reduce_motion_skips_fade() 
         indicator_activity_millis: Some(0),
     }];
 
-    let fading = SharedFramePlanner::prepare(&auto_scene).expect("fading indicator frame");
+    let fading = prepare(&auto_scene).expect("fading indicator frame");
     assert!((fading.scroll_indicators[0].opacity - 0.5).abs() < f32::EPSILON);
 
     auto_scene.preferences.reduce_motion = true;
     assert!(
-        SharedFramePlanner::prepare(&auto_scene)
+        prepare(&auto_scene)
             .expect("reduced motion indicator frame")
             .scroll_indicators
             .is_empty()
@@ -557,7 +575,7 @@ fn auto_scroll_indicator_fades_deterministically_and_reduce_motion_skips_fade() 
     auto_scene.preferences.reduce_motion = false;
     auto_scene.visual_time_millis = 1_000;
     assert!(
-        SharedFramePlanner::prepare(&auto_scene)
+        prepare(&auto_scene)
             .expect("expired indicator frame")
             .scroll_indicators
             .is_empty()
@@ -619,7 +637,7 @@ fn scroll_region_offsets_and_clips_owned_text_controls() {
         indicator_activity_millis: None,
     }];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
     let hit = frame.hits.find_target(&target).expect("scrolled hit");
     assert_eq!(hit.bounds(), HitRect::new(100.0, 110.0, 280.0, 48.0));
     let semantic = frame.semantics.find(&target).expect("scrolled semantic");
@@ -627,12 +645,15 @@ fn scroll_region_offsets_and_clips_owned_text_controls() {
 
     let text = frame
         .text
+        .items()
         .iter()
-        .find(|block| block.text == "inside scroll")
+        .find(|item| item.interaction.text == "inside scroll")
         .expect("scrolled text block");
     assert_eq!(
-        text.clip_bounds,
-        Some(HitRect::new(108.0, 114.0, 264.0, 40.0))
+        text.clip,
+        Some(arcweft_text_layout::LayoutRect::new(
+            108.0, 114.0, 264.0, 40.0
+        ))
     );
 }
 
@@ -668,19 +689,22 @@ fn horizontal_scroll_region_offsets_and_clips_owned_text_controls() {
         indicator_activity_millis: None,
     }];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
     let hit = frame.hits.find_target(&target).expect("scrolled hit");
     assert_eq!(hit.bounds(), HitRect::new(100.0, 100.0, 280.0, 48.0));
     let semantic = frame.semantics.find(&target).expect("scrolled semantic");
     assert_eq!(semantic.bounds(), HitRect::new(100.0, 100.0, 280.0, 48.0));
     let text = frame
         .text
+        .items()
         .iter()
-        .find(|block| block.text == "inside horizontal scroll")
+        .find(|item| item.interaction.text == "inside horizontal scroll")
         .expect("scrolled text block");
     assert_eq!(
-        text.clip_bounds,
-        Some(HitRect::new(108.0, 104.0, 264.0, 40.0))
+        text.clip,
+        Some(arcweft_text_layout::LayoutRect::new(
+            108.0, 104.0, 264.0, 40.0
+        ))
     );
 }
 
@@ -709,7 +733,7 @@ fn scroll_region_offsets_and_clips_owned_images() {
         indicator_activity_millis: None,
     }];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
     assert_eq!(frame.images.len(), 1);
     let image = &frame.images[0];
     assert_eq!(image.bounds, HitRect::new(100.0, 110.0, 200.0, 80.0));
@@ -753,7 +777,7 @@ fn scroll_region_drops_images_outside_viewport() {
         indicator_activity_millis: None,
     }];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
     assert!(frame.images.is_empty());
 }
 
@@ -789,19 +813,22 @@ fn scroll_region_offsets_and_clips_owned_action_buttons() {
         indicator_activity_millis: None,
     }];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
     let hit = frame.hits.find_target(&target).expect("scrolled hit");
     assert_eq!(hit.bounds(), HitRect::new(100.0, 110.0, 180.0, 48.0));
     let semantic = frame.semantics.find(&target).expect("scrolled semantic");
     assert_eq!(semantic.bounds(), HitRect::new(100.0, 110.0, 180.0, 48.0));
     let text = frame
         .text
+        .items()
         .iter()
-        .find(|block| block.text == "Send")
+        .find(|item| item.interaction.text == "Send")
         .expect("button text block");
     assert_eq!(
-        text.clip_bounds,
-        Some(HitRect::new(100.0, 110.0, 180.0, 48.0))
+        text.clip,
+        Some(arcweft_text_layout::LayoutRect::new(
+            100.0, 110.0, 180.0, 48.0
+        ))
     );
 }
 
@@ -857,7 +884,7 @@ fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
         indicator_activity_millis: None,
     }];
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let frame = prepare(&scene).expect("frame plans");
     let visible = HitRect::new(100.0, 110.0, 180.0, 48.0);
     assert_eq!(frame.control_backdrops[0].bounds, visible);
     assert_eq!(frame.control_filters[0].bounds, visible);
@@ -906,8 +933,8 @@ fn focused_text_input_target_produces_real_focused_text_field() {
         hovered: None,
         pressed: None,
     };
+    let frame = prepare(&scene).expect("text input frame plans");
 
-    let frame = SharedFramePlanner::prepare(&scene).expect("text input frame plans");
     let focused = frame.focused_text_input_target().expect("focused target");
 
     assert_eq!(focused.snapshot.target(), &target);
@@ -920,7 +947,7 @@ fn focused_text_input_target_produces_real_focused_text_field() {
 }
 
 #[test]
-fn stateful_planner_reuses_text_control_layout_cache_with_registered_fonts() {
+fn stateful_planner_reuses_the_shared_text_shape_cache_for_controls() {
     let target = text_target("real.cached_text_field");
     let control = text_control(
         target.clone(),
@@ -934,7 +961,7 @@ fn stateful_planner_reuses_text_control_layout_cache_with_registered_fonts() {
     scene.text_inputs = vec![control];
     scene.interaction.focused = Some(target);
 
-    let font_bytes = include_bytes!("../../../web/assets/arcweft-demo.ttf");
+    let font_bytes = TEST_FONT;
     let mut planner = SharedFramePlanContext::new();
     planner
         .register_font_bytes(font_bytes.to_vec())
@@ -945,18 +972,18 @@ fn stateful_planner_reuses_text_control_layout_cache_with_registered_fonts() {
     planner.prepare(&scene).expect("first frame plans");
     let first = planner.stats();
     assert!(
-        first.text_control_layout_cache_misses > initial.text_control_layout_cache_misses,
-        "first prepare should shape and populate the text-control layout cache"
+        first.prepared_text_shape_cache_misses > initial.prepared_text_shape_cache_misses,
+        "first prepare should shape and populate the shared cache"
     );
 
     planner.prepare(&scene).expect("second frame plans");
     let second = planner.stats();
     assert!(
-        second.text_control_layout_cache_hits > first.text_control_layout_cache_hits,
-        "second prepare of the same scene should reuse the shaped text-control layout"
+        second.prepared_text_shape_cache_hits > first.prepared_text_shape_cache_hits,
+        "second prepare of the same scene should reuse shared shaping"
     );
     assert_eq!(
-        second.text_control_layout_cache_misses, first.text_control_layout_cache_misses,
+        second.prepared_text_shape_cache_misses, first.prepared_text_shape_cache_misses,
         "same scene should not shape again after the cache is warm"
     );
 }
@@ -976,7 +1003,7 @@ fn focused_text_input_target_secure_field_redacts_value_and_character_geometry()
     scene.text_inputs = vec![control];
     scene.interaction.focused = Some(target);
 
-    let focused = SharedFramePlanner::prepare(&scene)
+    let focused = prepare(&scene)
         .expect("secure text input frame plans")
         .focused_text_input_target()
         .expect("focused target");
@@ -1007,7 +1034,7 @@ fn focused_text_input_target_browser_and_native_use_same_geometry_snapshot_sourc
     scene.viewport.physical_height = 1440;
     scene.interaction.focused = Some(target);
 
-    let focused = SharedFramePlanner::prepare(&scene)
+    let focused = prepare(&scene)
         .expect("hidpi text input frame plans")
         .focused_text_input_target()
         .expect("focused target");
@@ -1043,7 +1070,6 @@ fn prepared_frame_fit_mapping_scales_runtime_control_geometry_and_ime_snapshots(
     scene.choices.clear();
     scene.text_inputs = vec![control];
     scene.interaction.focused = Some(target.clone());
-    let frame = SharedFramePlanner::prepare(&scene).expect("text input frame plans");
     let output = RenderViewport {
         logical_width: 640.0,
         logical_height: 360.0,
@@ -1058,7 +1084,9 @@ fn prepared_frame_fit_mapping_scales_runtime_control_geometry_and_ime_snapshots(
     )
     .expect("content rect");
 
-    let mapped = frame.mapped_to_viewport(output, content);
+    let mapped = planner()
+        .prepare_mapped(&scene, output, content)
+        .expect("text input frame plans");
     let focused = mapped
         .focused_text_input_target()
         .expect("focused target remains available");
@@ -1091,8 +1119,8 @@ fn prepared_frame_fit_mapping_scales_runtime_control_geometry_and_ime_snapshots(
 
 #[test]
 fn generated_visual_demo_supplies_background_character_and_animated_frames() {
-    let frame_a = SharedFramePlanner::prepare(&generated_scene(0)).expect("frame plans");
-    let frame_b = SharedFramePlanner::prepare(&generated_scene(170)).expect("frame plans");
+    let frame_a = prepare(&generated_scene(0)).expect("frame plans");
+    let frame_b = prepare(&generated_scene(170)).expect("frame plans");
 
     assert_eq!(frame_a.images.len(), 4);
     assert_eq!(frame_a.images[0].id, DemoImageKind::Background.asset_id());

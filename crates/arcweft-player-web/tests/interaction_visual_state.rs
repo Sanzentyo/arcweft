@@ -2,11 +2,14 @@ use arcweft_player_scene::input::{InputController, InputPointerModifiers};
 use arcweft_presentation::input::{PointerId, ViewportPoint};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene,
-    RenderViewport, SharedFramePlanner,
+    RenderViewport,
 };
 
+mod support;
+use support::prepare;
+
 fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
-    SharedFramePlanner::prepare(&RenderScene {
+    prepare(&RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {

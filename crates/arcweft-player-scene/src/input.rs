@@ -25,8 +25,8 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
-    PreparedSelectableTextBlock, RenderActionButtonAction, RenderFocusAutoScrollPolicy,
-    RenderScrollAxis, RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl,
+    RenderActionButtonAction, RenderFocusAutoScrollPolicy, RenderScrollAxis,
+    RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
