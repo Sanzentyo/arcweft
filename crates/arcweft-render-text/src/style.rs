@@ -1,11 +1,10 @@
 //! Authored rich-text styles and deterministic presentation cascade.
 
 use crate::{
-    Milli, RichTextAngle, RichTextEffectDescriptor, RichTextInlineDirection,
-    RichTextJlreqStrictness, RichTextLayout, RichTextObjectProxy, RichTextParam,
-    RichTextPresentation, RichTextRubyPosition, RichTextShaderRef, RichTextTransform,
-    RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
-    parse_z_index_token,
+    Milli, RichTextAngle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
+    RichTextObjectProxy, RichTextParam, RichTextPresentation, RichTextRubyPosition,
+    RichTextTransform, RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli,
+    parse_milli_token, parse_z_index_token,
 };
 use arcweft_presentation::fx::FxApplication;
 use serde::{Deserialize, Serialize};
@@ -46,12 +45,6 @@ pub enum RichTextStyle {
     },
     Transform {
         transform: RichTextTransform,
-    },
-    Effect {
-        effect: RichTextEffectDescriptor,
-    },
-    Shader {
-        shader: RichTextShaderRef,
     },
     Object {
         proxy: RichTextObjectProxy,
@@ -195,7 +188,7 @@ impl RichTextStyle {
             Self::Layout { .. } => "layout",
             Self::Transform { .. } => "transform",
             Self::Object { .. } => "object",
-            Self::Effect { .. } | Self::Shader { .. } | Self::Fx { .. } => "effect",
+            Self::Fx { .. } => "effect",
             Self::Unknown { name, .. } => name,
         }
     }
@@ -245,8 +238,6 @@ pub fn presentation_from_styles<'a>(
                 RichTextStyle::Transform { transform } => {
                     out.transform = Some(transform.clone());
                 }
-                RichTextStyle::Effect { effect } => out.effects.push(effect.clone()),
-                RichTextStyle::Shader { shader } => out.shaders.push(shader.clone()),
                 RichTextStyle::Object { proxy } => out.object_proxies.push(proxy.clone()),
                 RichTextStyle::Fx { application } => out.fx.push(application.clone()),
                 RichTextStyle::Presentation { presentation } => {

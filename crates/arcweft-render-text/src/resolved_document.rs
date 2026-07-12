@@ -391,8 +391,6 @@ impl ResolvedTextStyle {
             RichTextStyle::Size { points: None, .. }
             | RichTextStyle::Speed { .. }
             | RichTextStyle::Transform { .. }
-            | RichTextStyle::Effect { .. }
-            | RichTextStyle::Shader { .. }
             | RichTextStyle::Fx { .. }
             | RichTextStyle::Object { .. }
             | RichTextStyle::Presentation { .. }

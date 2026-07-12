@@ -3,14 +3,54 @@
 use super::{
     FxApplication, FxApplicationError, FxCapabilitySet, FxDiagnostic, FxDiagnosticCode,
     FxDiagnosticContext, FxEvaluationBinding, FxEvaluationBudget, FxGraph, FxNamedValue, FxNode,
-    FxNodeKind, FxPhase, FxResolvedValue, FxRuntimeValue, FxSampleContext, FxStaticValue, FxTarget,
-    ResolvedFxOperation, ResolvedFxPlan, ResolvedTransformOperation, ResolvedValueOperation,
-    Transform2DError, ValueProgramInputs,
+    FxNodeKind, FxPhase, FxResolvedValue, FxRuntimeValue, FxSampleContext, FxSampleGeometry,
+    FxStaticValue, FxTarget, ResolvedFxOperation, ResolvedFxPlan, ResolvedTransformOperation,
+    ResolvedValueOperation, Transform2DError, ValueProgramInputs,
 };
 
 /// Single renderer-independent evaluator for View and `RichText` applications.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FxGraphEvaluator;
+
+/// Renderer-supplied context for one logical Fx target sample.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FxTargetSample {
+    ordinal: u32,
+    geometry: FxSampleGeometry,
+    reduce_motion: bool,
+    interactive: bool,
+}
+
+impl FxTargetSample {
+    pub const fn new(ordinal: u32) -> Self {
+        Self {
+            ordinal,
+            geometry: FxSampleGeometry::new(
+                super::Length::ZERO,
+                super::Length::ZERO,
+                super::Length::ZERO,
+                super::Length::ZERO,
+            ),
+            reduce_motion: false,
+            interactive: false,
+        }
+    }
+
+    pub const fn with_geometry(mut self, geometry: FxSampleGeometry) -> Self {
+        self.geometry = geometry;
+        self
+    }
+
+    pub const fn with_reduce_motion(mut self, reduce_motion: bool) -> Self {
+        self.reduce_motion = reduce_motion;
+        self
+    }
+
+    pub const fn with_interactive(mut self, interactive: bool) -> Self {
+        self.interactive = interactive;
+        self
+    }
+}
 
 impl FxGraphEvaluator {
     /// Evaluates one application atomically with a caller-owned per-frame budget.
@@ -24,6 +64,25 @@ impl FxGraphEvaluator {
         ordinal: u32,
         reduce_motion: bool,
         interactive: bool,
+        capabilities: &FxCapabilitySet,
+        budget: &mut FxEvaluationBudget,
+    ) -> ResolvedFxPlan {
+        Self::evaluate_at(
+            application,
+            binding,
+            FxTargetSample::new(ordinal)
+                .with_reduce_motion(reduce_motion)
+                .with_interactive(interactive),
+            capabilities,
+            budget,
+        )
+    }
+
+    /// Evaluates one application with renderer-owned target geometry.
+    pub fn evaluate_at(
+        application: &FxApplication,
+        binding: FxEvaluationBinding<'_>,
+        sample: FxTargetSample,
         capabilities: &FxCapabilitySet,
         budget: &mut FxEvaluationBudget,
     ) -> ResolvedFxPlan {
@@ -62,11 +121,11 @@ impl FxGraphEvaluator {
         let sample_context = match FxSampleContext::from_logical_times(
             binding.runtime_time,
             binding.instance.activation_logical_time,
-            ordinal,
+            sample.ordinal,
             binding.instance.deterministic_seed,
-            reduce_motion,
+            sample.reduce_motion,
         ) {
-            Ok(context) => context,
+            Ok(context) => context.with_geometry(sample.geometry),
             Err(error) => {
                 return ResolvedFxPlan::from_diagnostic(FxDiagnostic::error(
                     FxDiagnosticCode::NumericNonFinite,
@@ -81,7 +140,7 @@ impl FxGraphEvaluator {
             binding.definition.graph(),
             binding.instance,
             sample_context,
-            interactive,
+            sample.interactive,
             &context,
             budget,
             &mut visit,

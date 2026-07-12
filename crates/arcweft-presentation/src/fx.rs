@@ -34,7 +34,7 @@ pub use graph::{
     FxDefinitionError, FxGraph, FxGraphError, FxNode, FxNodeKind, FxParameter, FxParameterSlot,
     FxProperty, FxResourceId, FxStaticType, FxStaticValue,
 };
-pub use graph_evaluator::FxGraphEvaluator;
+pub use graph_evaluator::{FxGraphEvaluator, FxTargetSample};
 pub use identity::{
     FxAbiHash, FxId, FxIdError, FxInstanceId, FxPackageId, FxQualifiedName, FxSemanticHash,
 };
@@ -61,7 +61,7 @@ pub use render_resource::{
 pub use state::{
     FX_MAX_GRAPH_CHILD_DEPTH, FX_MAX_PROVIDER_STATE_VALUES, FX_MAX_PROVIDER_STATES_PER_INSTANCE,
     FxGraphChildPath, FxInstanceSnapshot, FxInstanceSnapshotError, FxLogicalTime,
-    FxProviderStateRecord, FxSampleContext, derive_deterministic_seed,
+    FxProviderStateRecord, FxSampleContext, FxSampleGeometry, derive_deterministic_seed,
 };
 pub use value::{
     Angle, FX_GOLDEN_ANGLE_RAD, FiniteF32, FiniteF32Error, FxColor, FxRuntimeType, FxRuntimeValue,

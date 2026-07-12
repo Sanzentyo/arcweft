@@ -673,7 +673,7 @@ pub(super) fn agent_repl_completion_context(state: &AgentReplState) -> AgentRepl
         .presentation_tree
         .nodes
         .iter()
-        .flat_map(|node| node.effects.iter().map(|effect| effect.id.clone()))
+        .flat_map(|node| node.fx.iter().map(|fx| fx.id.clone()))
         .collect();
     context
 }

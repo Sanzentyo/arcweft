@@ -38,9 +38,8 @@ use arcweft_layout::{
     LayoutSize, ScalePolicy,
 };
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextAssignOp, RichTextCascadeLayer, RichTextEffectDescriptor,
-    RichTextEffectPhase, RichTextEffectTarget, RichTextObjectProxyDeclaration, RichTextParam,
-    RichTextPresentation, RichTextRange, RichTextSettingSource, RichTextStateScope,
+    LineDisplayFrame, RichTextAssignOp, RichTextCascadeLayer, RichTextObjectProxyDeclaration,
+    RichTextParam, RichTextPresentation, RichTextRange, RichTextSettingSource,
     RichTextStyleContribution, RichTextTextSource,
 };
 use std::collections::BTreeMap;
@@ -411,6 +410,15 @@ fn test_serialization_observation_report() -> AgentObservationReport {
 }
 
 fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
+    let presentation = serde_json::from_value::<RichTextPresentation>(serde_json::json!({
+        "fx": [{
+            "definition": { "package": "test", "function": "shake" },
+            "parameters": [],
+            "authored_ordinal": 0,
+            "source_range": null
+        }]
+    }))
+    .expect("typed Fx presentation fixture deserializes");
     AgentRichTextElementRef {
         kind: AgentRichTextElementKind::TextRun,
         index: 0,
@@ -419,16 +427,7 @@ fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
         node_index: 0,
         source: Some(RichTextTextSource::Text),
         ruby: None,
-        presentation: Some(RichTextPresentation {
-            effects: vec![RichTextEffectDescriptor {
-                id: "shake".to_owned(),
-                params: BTreeMap::default(),
-                target: RichTextEffectTarget::default(),
-                phase: RichTextEffectPhase::GlyphTransform,
-                state_scope: RichTextStateScope::default(),
-            }],
-            ..RichTextPresentation::default()
-        }),
+        presentation: Some(presentation),
         orientation: None,
         vertical_form: None,
         ruby_base_bbox: None,
@@ -551,12 +550,12 @@ fn observation_report_serializes_stable_snake_case_enums() {
     );
     assert_eq!(json["objects"][0]["rich_text_ref"]["source"], "text");
     assert_eq!(
-        json["objects"][0]["rich_text_ref"]["presentation"]["effects"][0]["id"],
+        json["objects"][0]["rich_text_ref"]["presentation"]["fx"][0]["definition"]["function"],
         "shake"
     );
     assert_eq!(
-        json["objects"][0]["rich_text_ref"]["presentation"]["effects"][0]["phase"],
-        "glyph_transform"
+        json["objects"][0]["rich_text_ref"]["presentation"]["fx"][0]["authored_ordinal"],
+        0
     );
     assert_eq!(json["objects"][0]["content"]["kind"], "rich_text");
     assert!(json["objects"][0].get("rich_text").is_none());
@@ -601,12 +600,12 @@ fn observation_report_serializes_stable_snake_case_enums() {
         "text_run"
     );
     assert_eq!(
-        json["presentation_tree"]["nodes"][2]["effects"][0]["id"],
-        "shake"
+        json["presentation_tree"]["nodes"][2]["fx"][0]["id"],
+        "test::shake"
     );
     assert_eq!(
-        json["presentation_tree"]["nodes"][2]["effects"][0]["phase"],
-        "glyph_transform"
+        json["presentation_tree"]["nodes"][2]["fx"][0]["authored_ordinal"],
+        0
     );
     assert_eq!(
         serde_json::to_value(AgentHitRegionKind::Object).expect("hit-region kind serializes"),

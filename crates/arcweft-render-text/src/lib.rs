@@ -12,7 +12,7 @@ pub mod rich_effects;
 pub mod rich_text;
 pub mod style;
 
-pub use arcweft_presentation::fx::FxApplication;
+pub use arcweft_presentation::fx::{FxApplication, FxTarget};
 
 mod resolve_frame;
 
@@ -32,12 +32,11 @@ pub use resolved_document::{
     TextSlant, TextStyleCascade, TextWeight,
 };
 pub use rich_effects::{
-    Milli, RichTextAngle, RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget,
-    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextObjectProxy,
-    RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation, RichTextRubyPosition,
-    RichTextShaderRef, RichTextStateScope, RichTextTransform, RichTextTransformOrigin,
-    RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli,
-    parse_milli_token, parse_z_index_token,
+    Milli, RichTextAngle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
+    RichTextObjectProxy, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
+    RichTextRubyPosition, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
+    RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
+    parse_z_index_token,
 };
 pub use rich_text::{
     DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, InlineTextFailure,

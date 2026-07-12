@@ -1,10 +1,8 @@
 //! Renderer-agnostic rich-text presentation data.
 //!
-//! This module intentionally stores only deterministic, serializable data. The
-//! native/browser renderers resolve effect IDs, shader IDs, stateful classes,
-//! and mutable closures through their own registries.
+//! This module intentionally stores only deterministic, serializable data.
 
-use arcweft_presentation::fx::FxApplication;
+use arcweft_presentation::fx::{FxApplication, FxTarget};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -121,52 +119,6 @@ pub enum RichTextJlreqStrictness {
     Strict,
 }
 
-/// Effect target granularity.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RichTextEffectTarget {
-    Document,
-    Line,
-    Sentence,
-    #[default]
-    Run,
-    Glyph,
-    TextBox,
-    Screen,
-}
-
-/// Execution phase for a rich-text effect descriptor.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RichTextEffectPhase {
-    BeforeLayout,
-    LayoutTransform,
-    #[default]
-    GlyphTransform,
-    GlyphColor,
-    GlyphMask,
-    RunOffscreenPass,
-    PostProcess,
-    HostEvent,
-}
-
-/// Renderer-side state sharing scope for one effect descriptor.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RichTextStateScope {
-    Glyph,
-    #[default]
-    Run,
-    Line,
-    Sentence,
-    Paragraph,
-    Document,
-    DialogueLine,
-    Speaker,
-    Window,
-    Global,
-}
-
 /// Transform origin for run/glyph placement.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -252,7 +204,7 @@ pub struct RichTextTransform {
     #[serde(default)]
     pub origin: RichTextTransformOrigin,
     #[serde(default)]
-    pub target: RichTextEffectTarget,
+    pub target: FxTarget,
 }
 
 const fn one_vec2() -> RichTextVec2 {
@@ -267,33 +219,9 @@ impl Default for RichTextTransform {
             scale: RichTextVec2::ONE,
             skew: RichTextVec2::ZERO,
             origin: RichTextTransformOrigin::BaselineStart,
-            target: RichTextEffectTarget::Run,
+            target: FxTarget::Content,
         }
     }
-}
-
-/// Serializable description of an effect resolved by renderer adapters.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RichTextEffectDescriptor {
-    pub id: String,
-    #[serde(default)]
-    pub params: BTreeMap<String, RichTextParam>,
-    #[serde(default)]
-    pub target: RichTextEffectTarget,
-    #[serde(default)]
-    pub phase: RichTextEffectPhase,
-    #[serde(default)]
-    pub state_scope: RichTextStateScope,
-}
-
-/// Shader/filter effect reference. Actual shader code belongs to host registry.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RichTextShaderRef {
-    pub id: String,
-    #[serde(default)]
-    pub params: BTreeMap<String, RichTextParam>,
-    #[serde(default)]
-    pub phase: RichTextEffectPhase,
 }
 
 /// Typed proxy metadata attached to a span of text presentation objects.
@@ -330,10 +258,6 @@ pub struct RichTextPresentation {
     pub layout: Option<RichTextLayout>,
     #[serde(default)]
     pub transform: Option<RichTextTransform>,
-    #[serde(default)]
-    pub effects: Vec<RichTextEffectDescriptor>,
-    #[serde(default)]
-    pub shaders: Vec<RichTextShaderRef>,
     /// Typed applications evaluated by the shared presentation evaluator.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fx: Vec<FxApplication>,
@@ -362,8 +286,6 @@ impl RichTextPresentation {
         if other.transform.is_some() {
             self.transform = other.transform;
         }
-        self.effects.extend(other.effects);
-        self.shaders.extend(other.shaders);
         self.fx.extend(other.fx);
         self.object_proxies.extend(other.object_proxies);
         self.params.extend(other.params);

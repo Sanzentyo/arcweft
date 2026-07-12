@@ -7,7 +7,7 @@ use arcweft_glyphon::{
 };
 use arcweft_id::PublicId;
 use arcweft_layout::ContentRect;
-use arcweft_presentation::fx::{FiniteF32Error, Transform2DError};
+use arcweft_presentation::fx::{FiniteF32Error, FxTarget, Transform2DError};
 use arcweft_presentation::hit::{HitRect, HitTree};
 use arcweft_presentation::input::{InteractionTarget, ViewportPoint};
 use arcweft_presentation::layer::{
@@ -29,9 +29,9 @@ use thiserror::Error;
 
 mod action_buttons;
 mod control_style;
-mod dialogue_legacy_fx;
 mod dialogue_prepared;
 mod dialogue_timeline;
+mod dialogue_transform;
 mod focus_navigation;
 mod images;
 mod prepared_text;
@@ -755,11 +755,8 @@ pub enum FramePlanError {
     InvalidFxNumber(#[from] FiniteF32Error),
     #[error(transparent)]
     InvalidFxTransform(#[from] Transform2DError),
-    #[error("rich-text effect `{effect}` has invalid parameter `{parameter}`")]
-    InvalidRichTextEffectParameter {
-        effect: String,
-        parameter: &'static str,
-    },
+    #[error("authored RichText transform target {target:?} has no inline geometry owner")]
+    UnsupportedRichTextTransformTarget { target: FxTarget },
     #[error("Fx logical ordinal {actual} exceeds the u32 runtime domain")]
     FxOrdinalOverflow { actual: usize },
     #[error("failed to construct stable presentation id `{value}`")]

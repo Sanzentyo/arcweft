@@ -1,12 +1,12 @@
 use crate::object::{AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent};
 use crate::proxy::{
-    AgentPresentationEffectRef, AgentPresentationObjectProxyParamQuery,
-    AgentPresentationObjectProxyRef, AgentPresentationShaderRef,
-    agent_presentation_object_proxy_ref, proxy_matches_param_query,
+    AgentPresentationFxRef, AgentPresentationObjectProxyParamQuery,
+    AgentPresentationObjectProxyRef, agent_presentation_object_proxy_ref,
+    proxy_matches_param_query,
 };
 use crate::rich_text::AgentRichTextElementKind;
 use crate::serde_helpers::is_false;
-use arcweft_render_text::{RichTextParam, RichTextPresentation};
+use arcweft_render_text::RichTextPresentation;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -39,15 +39,11 @@ pub struct AgentPresentationTreeNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_depth: Option<i32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub effects: Vec<AgentPresentationEffectRef>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shaders: Vec<AgentPresentationShaderRef>,
+    pub fx: Vec<AgentPresentationFxRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_proxy_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_proxies: Vec<AgentPresentationObjectProxyRef>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub motion_function_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub has_transform: bool,
 }
@@ -58,9 +54,7 @@ pub struct AgentPresentationTreeQuery {
     pub role: Option<String>,
     pub rich_text_kind: Option<AgentRichTextElementKind>,
     pub object_layer: Option<String>,
-    pub effect_id: Option<String>,
-    pub shader_id: Option<String>,
-    pub motion_function_id: Option<String>,
+    pub fx_id: Option<String>,
     pub object_proxy_id: Option<String>,
     pub object_proxy_type: Option<String>,
     pub object_proxy_role: Option<String>,
@@ -158,9 +152,7 @@ impl AgentPresentationTreeQuery {
         self.role.is_none()
             && self.rich_text_kind.is_none()
             && self.object_layer.is_none()
-            && self.effect_id.is_none()
-            && self.shader_id.is_none()
-            && self.motion_function_id.is_none()
+            && self.fx_id.is_none()
             && self.object_proxy_id.is_none()
             && self.object_proxy_type.is_none()
             && self.object_proxy_role.is_none()
@@ -181,21 +173,9 @@ impl AgentPresentationTreeQuery {
                 .as_ref()
                 .is_none_or(|object_layer| node.object_layer.as_ref() == Some(object_layer))
             && self
-                .effect_id
+                .fx_id
                 .as_ref()
-                .is_none_or(|effect_id| node.effects.iter().any(|effect| effect.id == *effect_id))
-            && self
-                .shader_id
-                .as_ref()
-                .is_none_or(|shader_id| node.shaders.iter().any(|shader| shader.id == *shader_id))
-            && self
-                .motion_function_id
-                .as_ref()
-                .is_none_or(|motion_function_id| {
-                    node.motion_function_ids
-                        .iter()
-                        .any(|candidate| candidate == motion_function_id)
-                })
+                .is_none_or(|fx_id| node.fx.iter().any(|fx| fx.id == *fx_id))
             && self.object_proxy_id.as_ref().is_none_or(|object_proxy_id| {
                 node.object_proxy_ids
                     .iter()
@@ -307,11 +287,9 @@ fn agent_presentation_root_node(root: &str, children: Vec<String>) -> AgentPrese
         rich_text_kind: None,
         object_layer: None,
         object_depth: None,
-        effects: Vec::new(),
-        shaders: Vec::new(),
+        fx: Vec::new(),
         object_proxy_ids: Vec::new(),
         object_proxies: Vec::new(),
-        motion_function_ids: Vec::new(),
         has_transform: false,
     }
 }
@@ -333,11 +311,9 @@ fn agent_presentation_layer_node(
         rich_text_kind: None,
         object_layer: None,
         object_depth: None,
-        effects: Vec::new(),
-        shaders: Vec::new(),
+        fx: Vec::new(),
         object_proxy_ids: Vec::new(),
         object_proxies: Vec::new(),
-        motion_function_ids: Vec::new(),
         has_transform: false,
     }
 }
@@ -367,21 +343,15 @@ fn agent_presentation_object_node(
         rich_text_kind: rich_text_ref.map(|rich_text_ref| rich_text_ref.kind),
         object_layer: object.resolved_object_layer(),
         object_depth: object.resolved_object_depth(),
-        effects: presentation
+        fx: presentation
             .as_ref()
-            .map_or_else(Vec::new, |summary| summary.effects.clone()),
-        shaders: presentation
-            .as_ref()
-            .map_or_else(Vec::new, |summary| summary.shaders.clone()),
+            .map_or_else(Vec::new, |summary| summary.fx.clone()),
         object_proxy_ids: presentation
             .as_ref()
             .map_or_else(Vec::new, |summary| summary.object_proxy_ids.clone()),
         object_proxies: presentation
             .as_ref()
             .map_or_else(Vec::new, |summary| summary.object_proxies.clone()),
-        motion_function_ids: presentation
-            .as_ref()
-            .map_or_else(Vec::new, |summary| summary.motion_function_ids.clone()),
         has_transform: presentation.is_some_and(|summary| summary.has_transform),
     }
 }
@@ -400,11 +370,9 @@ fn presentation_tree_object_parent_id(
 
 #[derive(Clone, Debug, Default)]
 struct AgentPresentationNodeSummary {
-    effects: Vec<AgentPresentationEffectRef>,
-    shaders: Vec<AgentPresentationShaderRef>,
+    fx: Vec<AgentPresentationFxRef>,
     object_proxy_ids: Vec<String>,
     object_proxies: Vec<AgentPresentationObjectProxyRef>,
-    motion_function_ids: Vec<String>,
     has_transform: bool,
 }
 
@@ -412,20 +380,12 @@ fn agent_presentation_node_summary(
     presentation: &RichTextPresentation,
 ) -> AgentPresentationNodeSummary {
     AgentPresentationNodeSummary {
-        effects: presentation
-            .effects
+        fx: presentation
+            .fx
             .iter()
-            .map(|effect| AgentPresentationEffectRef {
-                id: effect.id.clone(),
-                phase: effect.phase,
-            })
-            .collect(),
-        shaders: presentation
-            .shaders
-            .iter()
-            .map(|shader| AgentPresentationShaderRef {
-                id: shader.id.clone(),
-                phase: shader.phase,
+            .map(|application| AgentPresentationFxRef {
+                id: application.definition().to_string(),
+                authored_ordinal: application.authored_ordinal(),
             })
             .collect(),
         object_proxy_ids: presentation
@@ -437,19 +397,6 @@ fn agent_presentation_node_summary(
             .object_proxies
             .iter()
             .map(agent_presentation_object_proxy_ref)
-            .collect(),
-        motion_function_ids: presentation
-            .effects
-            .iter()
-            .filter(|effect| effect.id == "motion")
-            .filter_map(|effect| match effect.params.get("fn") {
-                Some(
-                    RichTextParam::Text { value }
-                    | RichTextParam::Raw { value }
-                    | RichTextParam::Selector { value },
-                ) => Some(value.clone()),
-                _ => None,
-            })
             .collect(),
         has_transform: presentation.transform.is_some(),
     }
@@ -481,7 +428,7 @@ mod tests {
     use super::*;
     use crate::proxy::AgentPresentationObjectProxyParamQuery;
     use crate::rich_text::AgentRichTextElementKind;
-    use arcweft_render_text::{RichTextEffectPhase, RichTextObjectProxyDeclaration, RichTextParam};
+    use arcweft_render_text::{RichTextObjectProxyDeclaration, RichTextParam};
     use std::collections::BTreeMap;
 
     #[test]
@@ -489,8 +436,7 @@ mod tests {
         let tree = presentation_filter_fixture();
 
         let filtered = tree.filtered(&AgentPresentationTreeQuery {
-            shader_id: Some("warm_glow".to_owned()),
-            motion_function_id: Some("breath_orbit".to_owned()),
+            fx_id: Some("opening::breath_orbit".to_owned()),
             has_transform: Some(true),
             ..AgentPresentationTreeQuery::default()
         });
@@ -553,7 +499,7 @@ mod tests {
         );
 
         let empty_filtered = tree.filtered(&AgentPresentationTreeQuery {
-            shader_id: Some("missing".to_owned()),
+            fx_id: Some("missing::fx".to_owned()),
             ..AgentPresentationTreeQuery::default()
         });
         assert_eq!(empty_filtered.nodes.len(), 1);
@@ -590,11 +536,9 @@ mod tests {
             rich_text_kind: None,
             object_layer: None,
             object_depth: None,
-            effects: Vec::new(),
-            shaders: Vec::new(),
+            fx: Vec::new(),
             object_proxy_ids: Vec::new(),
             object_proxies: Vec::new(),
-            motion_function_ids: Vec::new(),
             has_transform: false,
         }
     }
@@ -631,15 +575,10 @@ mod tests {
             rich_text_kind: Some(AgentRichTextElementKind::TextRun),
             object_layer: Some("view".to_owned()),
             object_depth: Some(4000),
-            effects: vec![AgentPresentationEffectRef {
-                id: "motion".to_owned(),
-                phase: RichTextEffectPhase::GlyphTransform,
+            fx: vec![AgentPresentationFxRef {
+                id: "opening::breath_orbit".to_owned(),
+                authored_ordinal: 2,
             }],
-            shaders: vec![AgentPresentationShaderRef {
-                id: "warm_glow".to_owned(),
-                phase: RichTextEffectPhase::RunOffscreenPass,
-            }],
-            motion_function_ids: vec!["breath_orbit".to_owned()],
             has_transform: true,
             ..base_node("object.dialogue.0.0", AgentPresentationTreeNodeKind::Object)
         }

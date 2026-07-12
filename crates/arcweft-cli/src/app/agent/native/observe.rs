@@ -1276,11 +1276,7 @@ pub(super) fn agent_presentation_tree_query_from_uri(
                 query.rich_text_kind = Some(agent_rich_text_kind_from_query_value(value)?);
             }
             "object_layer" => query.object_layer = Some(value.to_owned()),
-            "effect" | "effect_id" => query.effect_id = Some(value.to_owned()),
-            "shader" | "shader_id" => query.shader_id = Some(value.to_owned()),
-            "motion" | "motion_function" | "motion_function_id" => {
-                query.motion_function_id = Some(value.to_owned());
-            }
+            "fx" | "fx_id" => query.fx_id = Some(value.to_owned()),
             "proxy" | "object_proxy" | "object_proxy_id" => {
                 query.object_proxy_id = Some(value.to_owned());
             }

@@ -3,20 +3,11 @@ use arcweft_render_text::RichTextParam;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Lightweight effect index attached to a presentation tree object node.
+/// Lightweight typed-Fx index attached to a presentation tree object node.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AgentPresentationEffectRef {
+pub struct AgentPresentationFxRef {
     pub id: String,
-    #[serde(default)]
-    pub phase: arcweft_render_text::RichTextEffectPhase,
-}
-
-/// Lightweight shader index attached to a presentation tree object node.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AgentPresentationShaderRef {
-    pub id: String,
-    #[serde(default)]
-    pub phase: arcweft_render_text::RichTextEffectPhase,
+    pub authored_ordinal: u32,
 }
 
 /// Lightweight object-proxy index attached to a presentation tree object node.

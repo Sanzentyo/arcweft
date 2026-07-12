@@ -28,6 +28,14 @@ pub enum FxContextSlot {
     /// Golden-angle ordinal phase, represented as dimensionless radians in `F32`.
     OrdinalPhase = 2,
     ReduceMotion = 3,
+    /// Center of the current renderer target relative to the sampled glyph.
+    TargetCenterX = 4,
+    /// Center of the current renderer target relative to the sampled glyph.
+    TargetCenterY = 5,
+    /// Center of the sampled glyph in glyph-local coordinates.
+    GlyphCenterX = 6,
+    /// Center of the sampled glyph in glyph-local coordinates.
+    GlyphCenterY = 7,
 }
 
 /// Closed instruction inventory for deterministic value programs.
@@ -255,6 +263,9 @@ impl FxContextSlot {
         match self {
             Self::Time | Self::Ordinal | Self::OrdinalPhase => FxRuntimeType::F32,
             Self::ReduceMotion => FxRuntimeType::Bool,
+            Self::TargetCenterX | Self::TargetCenterY | Self::GlyphCenterX | Self::GlyphCenterY => {
+                FxRuntimeType::Length
+            }
         }
     }
 }

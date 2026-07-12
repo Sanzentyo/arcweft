@@ -3,8 +3,8 @@ use arcweft_core::plan::RuntimeLineId;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
-    DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, Milli,
-    RichTextCascadeLayer, RichTextColor, RichTextControl, RichTextEffectTarget, RichTextFontFamily,
+    DialogueHostEvent, FallbackStylePolicy, FxTarget, InlineFailurePolicy, InlineFallback, Milli,
+    RichTextCascadeLayer, RichTextColor, RichTextControl, RichTextFontFamily,
     RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam, RichTextRubyPosition,
     RichTextSettingSource, RichTextSourceRange, RichTextStyle, RichTextStyleContribution,
     RichTextTransformOrigin, RichTextWritingMode, RuntimeLineContext,
@@ -346,7 +346,6 @@ flow @flow.main main {
             .starts_with("rich_text.sparkle.")
     );
     assert!(application.parameters().is_empty());
-    assert!(effect_run.presentation.effects.is_empty());
     let plain_run = frame
         .display_map
         .text_runs
@@ -416,7 +415,7 @@ flow @flow.main main {
             .display_map
             .text_runs
             .iter()
-            .all(|run| run.presentation.effects.is_empty()),
+            .all(|run| run.presentation.fx.is_empty()),
         "host_event phase effects should not become visual presentation effects: {:#?}",
         frame.display_map.text_runs
     );
@@ -1136,7 +1135,7 @@ fn rotate_transform_selector_accepts_named_and_positional_angles() {
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.rotate angle=8deg origin=baseline_start target=glyph]BC[/]D[transform .rotate 10deg origin=glyph_center target=textbox]EF[/transform]G[p]
+    alice: A[.rotate angle=8deg origin=baseline_start target=glyph]BC[/]D[transform .rotate 10deg origin=glyph_center target=content]EF[/transform]G[p]
 }
 ",
     );
@@ -1198,13 +1197,13 @@ flow @flow.main main {
         named_transform.origin,
         RichTextTransformOrigin::BaselineStart
     );
-    assert_eq!(named_transform.target, RichTextEffectTarget::Glyph);
+    assert_eq!(named_transform.target, FxTarget::Glyph);
     assert_eq!(positional_transform.rotate.degrees, Milli(10000));
     assert_eq!(
         positional_transform.origin,
         RichTextTransformOrigin::GlyphCenter
     );
-    assert_eq!(positional_transform.target, RichTextEffectTarget::TextBox);
+    assert_eq!(positional_transform.target, FxTarget::Content);
 }
 
 #[test]

@@ -308,6 +308,14 @@ fn context_value(
             })?)
         }
         FxContextSlot::ReduceMotion => FxRuntimeValue::Bool(context.reduce_motion()),
+        FxContextSlot::TargetCenterX => {
+            FxRuntimeValue::Length(context.geometry().target_center()[0])
+        }
+        FxContextSlot::TargetCenterY => {
+            FxRuntimeValue::Length(context.geometry().target_center()[1])
+        }
+        FxContextSlot::GlyphCenterX => FxRuntimeValue::Length(context.geometry().glyph_center()[0]),
+        FxContextSlot::GlyphCenterY => FxRuntimeValue::Length(context.geometry().glyph_center()[1]),
     })
 }
 

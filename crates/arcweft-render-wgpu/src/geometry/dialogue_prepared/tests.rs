@@ -1,19 +1,17 @@
-use std::collections::BTreeMap;
-
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_presentation::{
     fx::{
-        FiniteF32, FxApplication, FxApplicationResolver, FxColor, FxDefinition, FxDiagnostic,
-        FxEvaluationBinding, FxGraph, FxGraphChildPath, FxInstanceSnapshot, FxLogicalTime, FxNode,
-        FxProperty, FxResourceId, FxRuntimeValue, FxStaticValue, FxTarget, Length, Transform2D,
+        Angle, FiniteF32, FxApplication, FxApplicationResolver, FxColor, FxContextSlot,
+        FxDefinition, FxDiagnostic, FxEvaluationBinding, FxGraph, FxGraphChildPath,
+        FxInstanceSnapshot, FxLogicalTime, FxNode, FxPhase, FxProperty, FxResourceId,
+        FxRuntimeType, FxRuntimeValue, FxSamplerProgram, FxStaticValue, FxTarget, Length,
+        Transform2D, ValueInstruction, ValueProgramSchema,
     },
     hit::HitRect,
 };
 use arcweft_render_text::{
-    InlineFailurePolicy, LineDisplaySpec, Milli, RichTextControl, RichTextDocument,
-    RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextLayout,
-    RichTextNode, RichTextParam, RichTextShaderRef, RichTextStateScope, RichTextStyle,
-    RichTextWritingMode, RuntimeLineContext, TextWeight,
+    InlineFailurePolicy, LineDisplaySpec, RichTextControl, RichTextDocument, RichTextLayout,
+    RichTextNode, RichTextStyle, RichTextWritingMode, RuntimeLineContext, TextWeight,
 };
 
 use super::*;
@@ -48,6 +46,38 @@ impl FxApplicationResolver for TestFxResolver {
             instance: &self.instance,
             runtime_time: self.runtime_time,
         })
+    }
+}
+
+fn constant(value: FxRuntimeValue) -> ValueInstruction {
+    ValueInstruction::Constant { value }
+}
+
+fn finite(value: f32) -> FiniteF32 {
+    FiniteF32::try_new(value).expect("test value is finite")
+}
+
+fn resolver(
+    definition: FxDefinition,
+    application: &FxApplication,
+    runtime_millis: u64,
+) -> TestFxResolver {
+    let instance = FxInstanceSnapshot {
+        instance: application.derive_instance_id(["dialogue", "typed-fixture"]),
+        definition: definition.id().clone(),
+        abi_hash: definition.abi_hash(),
+        activation_logical_time: FxLogicalTime::zero(),
+        deterministic_seed: 17,
+        parameters: application.parameters().to_vec(),
+        child_path: FxGraphChildPath::default(),
+        provider_state: Vec::new(),
+    };
+    TestFxResolver {
+        definition,
+        instance,
+        runtime_time: FxLogicalTime::zero()
+            .try_advance_millis(runtime_millis)
+            .expect("test logical time is finite"),
     }
 }
 
@@ -125,38 +155,68 @@ fn clear_projects_the_remaining_stage_to_the_textbox_origin() {
 }
 
 #[test]
-fn wave_uses_logical_glyph_ordinal_and_time_only_changes_paint() {
+fn typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint() {
+    let id = arcweft_presentation::fx::FxId::try_new("test", "dialogue.wave").expect("Fx id");
+    let sampler = FxSamplerProgram::validate(
+        ValueProgramSchema::new(Vec::new(), Vec::new(), FxRuntimeType::Transform2D),
+        vec![
+            constant(FxRuntimeValue::Length(Length::ZERO)),
+            ValueInstruction::LoadContext {
+                slot: FxContextSlot::Ordinal,
+            },
+            constant(FxRuntimeValue::F32(finite(8.0))),
+            ValueInstruction::Div,
+            ValueInstruction::LoadContext {
+                slot: FxContextSlot::Time,
+            },
+            ValueInstruction::Add,
+            constant(FxRuntimeValue::F32(finite(std::f32::consts::TAU))),
+            ValueInstruction::Mul,
+            ValueInstruction::Sin,
+            constant(FxRuntimeValue::Length(
+                Length::try_pixels(4.0).expect("amplitude"),
+            )),
+            ValueInstruction::Mul,
+            constant(FxRuntimeValue::F32(FiniteF32::ONE)),
+            constant(FxRuntimeValue::F32(FiniteF32::ONE)),
+            constant(FxRuntimeValue::Angle(Angle::ZERO)),
+            constant(FxRuntimeValue::Angle(Angle::ZERO)),
+            constant(FxRuntimeValue::Angle(Angle::ZERO)),
+            constant(FxRuntimeValue::Length(Length::ZERO)),
+            constant(FxRuntimeValue::Length(Length::ZERO)),
+            constant(FxRuntimeValue::F32(FiniteF32::ONE)),
+            ValueInstruction::MakeTransform2D,
+            ValueInstruction::Return,
+        ],
+    )
+    .expect("wave sampler validates");
+    let graph = FxGraph::try_new(vec![FxNode::Transform {
+        fx: id.clone(),
+        properties: vec![
+            FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
+            FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphTransform)),
+            FxProperty::new("sampler", FxStaticValue::Sampler(sampler)),
+        ],
+    }])
+    .expect("wave graph");
+    let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
+    let application = FxApplication::try_new(id, Vec::new(), 0, None).expect("application");
     let frame = frame(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Effect {
-                effect: RichTextEffectDescriptor {
-                    id: "wave".to_owned(),
-                    params: BTreeMap::from([
-                        (
-                            "amp".to_owned(),
-                            RichTextParam::Milli {
-                                value: Milli(4_000),
-                            },
-                        ),
-                        (
-                            "period".to_owned(),
-                            RichTextParam::Milli {
-                                value: Milli(8_000),
-                            },
-                        ),
-                    ]),
-                    target: RichTextEffectTarget::Glyph,
-                    phase: RichTextEffectPhase::GlyphTransform,
-                    state_scope: RichTextStateScope::Glyph,
-                },
+            style: RichTextStyle::Fx {
+                application: application.clone(),
             },
         },
         RichTextNode::Text {
             text: "漢字".to_owned(),
         },
     ]);
-    let (at_zero, _, _) = prepare(&frame, 0, false, true, &NoFxResolver);
-    let (later, _, _) = prepare(&frame, 500, false, true, &NoFxResolver);
+    let at_zero_resolver = resolver(definition.clone(), &application, 0);
+    let later_resolver = resolver(definition, &application, 500);
+    let (at_zero, _, diagnostics) = prepare(&frame, 0, false, true, &at_zero_resolver);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let (later, _, diagnostics) = prepare(&frame, 0, false, true, &later_resolver);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
 
     assert_eq!(at_zero.layout.hash, later.layout.hash);
     assert_ne!(at_zero.paint, later.paint);
@@ -230,93 +290,7 @@ fn typed_fx_application_changes_layout_style_and_post_layout_transform() {
 }
 
 #[test]
-fn legacy_shader_typewriter_and_post_process_share_prepared_paint() {
-    let frame = frame(vec![
-        RichTextNode::StyleStart {
-            style: RichTextStyle::Shader {
-                shader: RichTextShaderRef {
-                    id: "soft_glow".to_owned(),
-                    params: BTreeMap::from([
-                        (
-                            "amount".to_owned(),
-                            RichTextParam::Milli { value: Milli(650) },
-                        ),
-                        (
-                            "dir".to_owned(),
-                            RichTextParam::Vec2 {
-                                value: arcweft_render_text::RichTextVec2 {
-                                    x: Milli::ONE,
-                                    y: Milli::default(),
-                                },
-                            },
-                        ),
-                    ]),
-                    phase: RichTextEffectPhase::RunOffscreenPass,
-                },
-            },
-        },
-        RichTextNode::StyleStart {
-            style: RichTextStyle::Shader {
-                shader: RichTextShaderRef {
-                    id: "screen_tint".to_owned(),
-                    params: BTreeMap::from([
-                        (
-                            "amount".to_owned(),
-                            RichTextParam::Milli { value: Milli(550) },
-                        ),
-                        (
-                            "color".to_owned(),
-                            RichTextParam::Raw {
-                                value: "#ff4050".to_owned(),
-                            },
-                        ),
-                    ]),
-                    phase: RichTextEffectPhase::PostProcess,
-                },
-            },
-        },
-        RichTextNode::StyleStart {
-            style: RichTextStyle::Effect {
-                effect: RichTextEffectDescriptor {
-                    id: "typewriter".to_owned(),
-                    params: BTreeMap::from([(
-                        "cps".to_owned(),
-                        RichTextParam::Milli { value: Milli::ONE },
-                    )]),
-                    target: RichTextEffectTarget::Glyph,
-                    phase: RichTextEffectPhase::GlyphMask,
-                    state_scope: RichTextStateScope::Run,
-                },
-            },
-        },
-        RichTextNode::Text {
-            text: "AB".to_owned(),
-        },
-    ]);
-
-    let (item, _, diagnostics) = prepare(&frame, 1_000, false, true, &NoFxResolver);
-
-    assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    assert_eq!(item.paint.post_processes.len(), 1);
-    assert!(
-        item.paint
-            .glyphs
-            .iter()
-            .all(|glyph| glyph.effects.len() == 4)
-    );
-    assert_eq!(
-        item.paint
-            .glyphs
-            .iter()
-            .filter(|glyph| glyph.visible)
-            .count(),
-        1
-    );
-    assert_eq!(item.submission().glyphs().len(), 5);
-}
-
-#[test]
-fn typed_shader_resource_resolves_glyph_and_post_process_passes() {
+fn typed_shader_and_mask_resolve_glyph_and_post_process_passes() {
     let id =
         arcweft_presentation::fx::FxId::try_new("test", "dialogue.source_glow").expect("Fx id");
     let shader_node = |stage: &str, amount: f32, color: [u8; 4]| FxNode::Shader {
@@ -344,8 +318,24 @@ fn typed_shader_resource_resolves_glyph_and_post_process_passes() {
             ),
         ],
     };
+    let coverage = FxSamplerProgram::validate(
+        ValueProgramSchema::new(Vec::new(), Vec::new(), FxRuntimeType::F32),
+        vec![
+            constant(FxRuntimeValue::F32(finite(0.5))),
+            ValueInstruction::Return,
+        ],
+    )
+    .expect("mask sampler");
     let graph = FxGraph::try_new(vec![
         shader_node("glyph_color", 0.9, [96, 64, 255, 255]),
+        FxNode::Mask {
+            fx: id.clone(),
+            properties: vec![
+                FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
+                FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphMask)),
+                FxProperty::new("coverage", FxStaticValue::Sampler(coverage)),
+            ],
+        },
         shader_node("post_process", 0.65, [64, 176, 255, 255]),
     ])
     .expect("typed graph");
@@ -388,19 +378,36 @@ fn typed_shader_resource_resolves_glyph_and_post_process_passes() {
             .iter()
             .all(|glyph| glyph.effects.len() == 1)
     );
+    assert!(item.paint.glyphs.iter().all(|glyph| glyph.masks.len() == 1));
     assert_eq!(item.paint.post_processes.len(), 1);
 }
 
 #[test]
-fn missing_legacy_shader_is_a_typed_diagnostic() {
+fn missing_typed_shader_is_a_typed_diagnostic() {
+    let id =
+        arcweft_presentation::fx::FxId::try_new("test", "dialogue.missing_shader").expect("Fx id");
+    let graph = FxGraph::try_new(vec![FxNode::Shader {
+        fx: id.clone(),
+        properties: vec![
+            FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
+            FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphColor)),
+            FxProperty::new(
+                "resource",
+                FxStaticValue::Resource(
+                    FxResourceId::try_new("missing.shader").expect("resource id"),
+                ),
+            ),
+            FxProperty::new("uniforms", FxStaticValue::Record(Vec::new())),
+        ],
+    }])
+    .expect("shader graph");
+    let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
+    let application = FxApplication::try_new(id, Vec::new(), 0, None).expect("application");
+    let resolver = resolver(definition, &application, 0);
     let frame = frame(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Shader {
-                shader: RichTextShaderRef {
-                    id: "missing.shader".to_owned(),
-                    params: BTreeMap::new(),
-                    phase: RichTextEffectPhase::GlyphColor,
-                },
+            style: RichTextStyle::Fx {
+                application: application.clone(),
             },
         },
         RichTextNode::Text {
@@ -408,7 +415,7 @@ fn missing_legacy_shader_is_a_typed_diagnostic() {
         },
     ]);
 
-    let (item, _, diagnostics) = prepare(&frame, 0, false, true, &NoFxResolver);
+    let (item, _, diagnostics) = prepare(&frame, 0, false, true, &resolver);
 
     assert!(
         item.paint

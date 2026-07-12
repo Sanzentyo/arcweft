@@ -1,7 +1,4 @@
-use arcweft_render_text::{
-    RichTextControl, RichTextControlMarker, RichTextEffectPhase, RichTextParam, RichTextStyle,
-    RichTextTextRun,
-};
+use arcweft_render_text::{RichTextControl, RichTextControlMarker, RichTextStyle, RichTextTextRun};
 use num_traits::ToPrimitive;
 
 const DEFAULT_TYPEWRITER_CPS: f64 = 28.0;
@@ -171,21 +168,6 @@ fn cps_at(runs: &[RichTextTextRun], offset: usize) -> f64 {
             RichTextStyle::Speed { value } => parse_speed(value),
             _ => None,
         })
-        .or_else(|| {
-            run.presentation
-                .effects
-                .iter()
-                .find(|effect| {
-                    effect.id == "typewriter" && effect.phase == RichTextEffectPhase::GlyphMask
-                })
-                .and_then(|effect| {
-                    effect
-                        .params
-                        .get("cps")
-                        .or_else(|| effect.params.get("speed"))
-                        .and_then(param_speed)
-                })
-        })
         .unwrap_or(DEFAULT_TYPEWRITER_CPS)
         .clamp(MIN_TYPEWRITER_CPS, MAX_TYPEWRITER_CPS)
 }
@@ -201,18 +183,6 @@ fn parse_speed(value: &str) -> Option<f64> {
         "normal" => Some(DEFAULT_TYPEWRITER_CPS),
         "fast" => Some(56.0),
         _ => value.parse::<f64>().ok().filter(|value| value.is_finite()),
-    }
-}
-
-fn param_speed(param: &RichTextParam) -> Option<f64> {
-    match param {
-        RichTextParam::Int { value } => value.to_f64(),
-        RichTextParam::Milli { value } => value.0.to_f64().map(|value| value / 1_000.0),
-        RichTextParam::Text { value } | RichTextParam::Raw { value } => parse_speed(value),
-        RichTextParam::Bool { .. }
-        | RichTextParam::Vec2 { .. }
-        | RichTextParam::Selector { .. }
-        | RichTextParam::Expr { .. } => None,
     }
 }
 

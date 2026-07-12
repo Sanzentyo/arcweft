@@ -2,6 +2,12 @@
 
 use std::collections::BTreeMap;
 
+use super::{
+    FramePlanError, PreparedRichTextStageRequest, RenderViewport,
+    dialogue_timeline::{DialogueRevealPolicy, evaluate_dialogue_reveal},
+    dialogue_transform::presentation_transform,
+    prepared_text::hit_rect_to_layout_rect,
+};
 use arcweft_glyphon::{
     GlyphonTextEngine, PreparedTextItem, TextGlyphPaint, TextGlyphTransform, TextInteractionPlan,
     TextPaintPlan,
@@ -19,16 +25,6 @@ use arcweft_render_text::{
     TextFontFamily, TextSlant, TextStyleCascade, TextWeight,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutSize, TextLayoutRequest, layout_document};
-use num_traits::ToPrimitive;
-
-use super::{
-    FramePlanError, PreparedRichTextStageRequest, RenderViewport,
-    dialogue_legacy_fx::{
-        apply_glyph_paint as apply_legacy_glyph_paint, collect_frame_passes, presentation_transform,
-    },
-    dialogue_timeline::{DialogueRevealPolicy, evaluate_dialogue_reveal},
-    prepared_text::hit_rect_to_layout_rect,
-};
 
 struct DialogueFxEvaluator<'a> {
     resolver: &'a dyn FxApplicationResolver,
@@ -449,45 +445,11 @@ pub(super) fn prepare_stage(
         .visible_end
         .saturating_sub(reveal.display_start)
         .min(document.text().len());
-    let effect_seconds = if reduce_motion {
-        0.0
-    } else {
-        request.visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0
-    };
     let mut paint = TextPaintPlan::from_layout(&layout);
-    let (legacy_post_processes, legacy_diagnostics) = collect_frame_passes(
-        layout
-            .runs
-            .iter()
-            .map(|run| &run.presentation)
-            .chain(layout.ruby.iter().map(|ruby| &ruby.presentation)),
-        effect_seconds,
-        &fx.resources,
-    )?;
-    for diagnostic in legacy_diagnostics {
-        fx.record(diagnostic);
-    }
-    for pass in legacy_post_processes {
-        push_unique(&mut fx.post_processes, pass);
-    }
-    apply_body_paint(
-        &layout,
-        &mut paint,
-        visible_end,
-        effect_seconds,
-        reduce_motion,
-        &mut fx,
-    )?;
+    apply_body_paint(&layout, &mut paint, visible_end, &mut fx)?;
     paint.offscreen_passes.append(&mut fx.offscreen_passes);
     paint.post_processes.append(&mut fx.post_processes);
-    apply_ruby_paint(
-        &layout,
-        &mut paint,
-        visible_end,
-        effect_seconds,
-        reduce_motion,
-        &mut fx,
-    )?;
+    apply_ruby_paint(&layout, &mut paint, visible_end, &mut fx)?;
     let interaction = TextInteractionPlan::from_layout(&layout, None)
         .with_text_and_selection_color(document.text(), [0.0; 4])
         .with_container_bounds(bounds);
@@ -505,18 +467,8 @@ fn apply_body_paint(
     layout: &arcweft_text_layout::TextLayout,
     paint: &mut TextPaintPlan,
     visible_end: usize,
-    effect_seconds: f32,
-    reduce_motion: bool,
     fx: &mut DialogueFxEvaluator<'_>,
 ) -> Result<(), FramePlanError> {
-    let mut run_ordinals = BTreeMap::<u32, usize>::new();
-    let run_counts = layout
-        .glyphs
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, glyph| {
-            *counts.entry(glyph.run_index).or_insert(0usize) += 1;
-            counts
-        });
     for (glyph_index, glyph) in layout.glyphs.iter().enumerate() {
         let run = usize::try_from(glyph.run_index)
             .ok()
@@ -532,28 +484,8 @@ fn apply_body_paint(
             glyph.ink_bounds,
             glyph.advance,
             run.bounds,
-            glyph.logical_ordinal,
-            effect_seconds,
-            reduce_motion,
         )?);
         apply_glyph_fx(&run.presentation, glyph.logical_ordinal, glyph_paint, fx)?;
-        let run_ordinal = run_ordinals.entry(glyph.run_index).or_default();
-        let diagnostics = apply_legacy_glyph_paint(
-            &run.presentation,
-            glyph.logical_ordinal,
-            *run_ordinal,
-            run_counts
-                .get(&glyph.run_index)
-                .copied()
-                .unwrap_or_default(),
-            effect_seconds,
-            glyph_paint,
-            &fx.resources,
-        )?;
-        *run_ordinal = run_ordinal.saturating_add(1);
-        for diagnostic in diagnostics {
-            fx.record(diagnostic);
-        }
     }
     Ok(())
 }
@@ -562,8 +494,6 @@ fn apply_ruby_paint(
     layout: &arcweft_text_layout::TextLayout,
     paint: &mut TextPaintPlan,
     visible_end: usize,
-    effect_seconds: f32,
-    reduce_motion: bool,
     fx: &mut DialogueFxEvaluator<'_>,
 ) -> Result<(), FramePlanError> {
     let mut paint_index = layout.glyphs.len();
@@ -583,23 +513,8 @@ fn apply_ruby_paint(
                 glyph.ink_bounds,
                 glyph.advance,
                 annotation.ruby_bounds,
-                logical_ordinal,
-                effect_seconds,
-                reduce_motion,
             )?);
             apply_glyph_fx(&annotation.presentation, logical_ordinal, glyph_paint, fx)?;
-            let diagnostics = apply_legacy_glyph_paint(
-                &annotation.presentation,
-                logical_ordinal,
-                glyph_ordinal,
-                annotation.glyphs.len(),
-                effect_seconds,
-                glyph_paint,
-                &fx.resources,
-            )?;
-            for diagnostic in diagnostics {
-                fx.record(diagnostic);
-            }
             paint_index += 1;
         }
     }

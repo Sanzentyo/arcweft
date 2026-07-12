@@ -5,12 +5,11 @@ use arcweft_lang_hir::syntax::{
     text::{RichTextTagFamily, canonical_rich_text_tag_name, inferred_rich_text_tag_family},
 };
 use arcweft_render_text::{
-    DialogueHostEvent, InlineFailurePolicy, Milli, RichTextAngle, RichTextControl,
-    RichTextEffectDescriptor, RichTextEffectPhase, RichTextEffectTarget, RichTextInlineDirection,
-    RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextObjectProxy,
-    RichTextPresentationStyle, RichTextRubyPosition, RichTextShaderRef, RichTextStateScope,
-    RichTextStyle, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
-    RichTextVerticalLatinMode, RichTextWritingMode, parse_milli_token, parse_z_index_token,
+    DialogueHostEvent, FxTarget, InlineFailurePolicy, Milli, RichTextAngle, RichTextControl,
+    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextNode,
+    RichTextObjectProxy, RichTextPresentationStyle, RichTextRubyPosition, RichTextStyle,
+    RichTextTransform, RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode,
+    RichTextWritingMode, parse_milli_token, parse_z_index_token,
 };
 
 use crate::{errors::RuntimePlanLowerError, labels::expr_label};
@@ -35,7 +34,7 @@ pub(crate) fn lower_dialogue_token_parts(
             }]
         }
         DialogueToken::Tag(tag) => return lower_tag(tag, text_proxies),
-        DialogueToken::InferredTag(tag) => lower_inferred_tag(tag, text_proxies),
+        DialogueToken::InferredTag(tag) => return lower_inferred_tag(tag, text_proxies),
         DialogueToken::Mark(mark) => {
             vec![RichTextNode::Control {
                 control: RichTextControl::Mark {
@@ -115,9 +114,9 @@ fn lower_tag(
         }
         "style" => lower_style_tag(tag),
         "layout" => lower_layout_tag(tag),
-        "transform" => lower_transform_tag(tag),
+        "transform" => return lower_transform_tag(tag),
         "object" => lower_object_tag(tag, text_proxies),
-        "effect" | "fx" => lower_effect_tag(tag),
+        "effect" | "fx" => return lower_effect_tag(tag),
         "voice" => host_event(DialogueHostEvent::Voice {
             attrs: tag.attrs().to_owned(),
         }),
@@ -173,16 +172,18 @@ fn lower_tag(
 fn lower_inferred_tag(
     tag: &DialogueTag,
     text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
-) -> Vec<RichTextNode> {
+) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
     let selector = tag.name().trim_start_matches('.');
     if inferred_text_proxy_type(selector, tag.attrs(), text_proxies) {
-        return lower_object_selector(selector, tag.attrs(), text_proxies);
+        return Ok(lower_object_selector(selector, tag.attrs(), text_proxies));
     }
-    match inferred_rich_text_tag_family(selector, tag.attrs()) {
+    Ok(match inferred_rich_text_tag_family(selector, tag.attrs()) {
         Some(RichTextTagFamily::Style) => lower_style_selector(selector, tag.attrs()),
         Some(RichTextTagFamily::Layout) => lower_layout_selector(selector, tag.attrs()),
-        Some(RichTextTagFamily::Transform) => lower_transform_selector(selector, tag.attrs()),
-        Some(RichTextTagFamily::Effect) => lower_effect_selector(selector, tag.attrs()),
+        Some(RichTextTagFamily::Transform) => {
+            return lower_transform_selector(selector, tag.attrs());
+        }
+        Some(RichTextTagFamily::Effect) => return lower_effect_selector(selector, tag.attrs()),
         Some(RichTextTagFamily::Marker) | None => {
             vec![RichTextNode::Control {
                 control: RichTextControl::Mark {
@@ -190,7 +191,7 @@ fn lower_inferred_tag(
                 },
             }]
         }
-    }
+    })
 }
 
 pub(crate) fn inferred_text_proxy_type(
@@ -296,53 +297,58 @@ fn lower_layout_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
     }]
 }
 
-fn lower_transform_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+fn lower_transform_tag(tag: &DialogueTag) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
     let (selector, attrs) = split_selector_attrs(tag.attrs());
     lower_transform_selector(selector.trim_start_matches('.'), attrs)
 }
 
-fn lower_transform_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
-    vec![RichTextNode::StyleStart {
+fn lower_transform_selector(
+    selector: &str,
+    attrs: &str,
+) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
+    Ok(vec![RichTextNode::StyleStart {
         style: RichTextStyle::Transform {
-            transform: transform_from_selector(selector, attrs),
+            transform: transform_from_selector(selector, attrs)?,
         },
-    }]
+    }])
 }
 
-fn lower_effect_tag(tag: &DialogueTag) -> Vec<RichTextNode> {
+fn lower_effect_tag(tag: &DialogueTag) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
     let (selector, attrs) = split_selector_attrs(tag.attrs());
     lower_effect_selector(selector.trim_start_matches('.'), attrs)
 }
 
-fn lower_effect_selector(selector: &str, attrs: &str) -> Vec<RichTextNode> {
+fn lower_effect_selector(
+    selector: &str,
+    attrs: &str,
+) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
     if effect_selector_is_host_event(attrs) {
-        return host_event(DialogueHostEvent::Effect {
+        return Ok(host_event(DialogueHostEvent::Effect {
             id: host_event_effect_id(selector, attrs),
             attrs: attrs.trim().to_owned(),
-        });
+        }));
     }
-    if selector == "shader" {
-        return vec![RichTextNode::StyleStart {
-            style: RichTextStyle::Shader {
-                shader: shader_from_attrs(attrs),
-            },
-        }];
-    }
-    vec![RichTextNode::StyleStart {
-        style: RichTextStyle::Effect {
-            effect: effect_from_selector(selector, attrs),
-        },
-    }]
+    Err(RuntimePlanLowerError::new(format!(
+        "visual rich-text effect `{selector}` reached descriptor lowering instead of typed Fx expansion"
+    )))
 }
 
 fn effect_selector_is_host_event(attrs: &str) -> bool {
-    phase_attr(&parse_attrs(attrs)) == Some(RichTextEffectPhase::HostEvent)
+    parse_attrs(attrs)
+        .get("phase")
+        .is_some_and(|phase| phase == "host_event")
 }
 
 fn host_event_effect_id(selector: &str, attrs: &str) -> String {
     let attrs = parse_attrs(attrs);
     match selector {
-        "host" => effect_descriptor_id(selector, &attrs),
+        "host" => attrs
+            .get("id")
+            .or_else(|| attrs.get("effect"))
+            .or_else(|| attrs.get("name"))
+            .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| selector.to_owned()),
         "shader" => attrs
             .get("id")
             .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
@@ -570,7 +576,10 @@ fn jlreq_strictness_attr(attrs: &BTreeMap<String, String>) -> RichTextJlreqStric
     }
 }
 
-fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
+fn transform_from_selector(
+    selector: &str,
+    attrs: &str,
+) -> Result<RichTextTransform, RuntimePlanLowerError> {
     let raw_attrs = attrs;
     let attrs = parse_attrs(attrs);
     let mut transform = RichTextTransform::default();
@@ -600,123 +609,41 @@ fn transform_from_selector(selector: &str, attrs: &str) -> RichTextTransform {
         }
         _ => {}
     }
-    transform.target = target_attr(&attrs);
-    if let Some(origin) = transform_origin_attr(&attrs) {
+    transform.target = target_attr(&attrs)?;
+    if let Some(origin) = transform_origin_attr(&attrs)? {
         transform.origin = origin;
     }
-    transform
+    Ok(transform)
 }
 
-fn effect_from_selector(selector: &str, attrs: &str) -> RichTextEffectDescriptor {
-    let typed_attrs = parse_typed_attrs(attrs);
-    let attrs = parse_attrs(attrs);
-    let id = effect_descriptor_id(selector, &attrs);
-    RichTextEffectDescriptor {
-        id,
-        params: typed_attrs
-            .iter()
-            .filter(|(key, _)| !is_effect_descriptor_metadata_attr(selector, key))
-            .map(|(key, value)| (key.clone(), param_from_value(value)))
-            .collect(),
-        target: target_attr(&attrs),
-        phase: phase_attr(&attrs).unwrap_or_else(|| default_effect_phase(selector)),
-        state_scope: state_scope_attr(&attrs),
-    }
-}
-
-fn effect_descriptor_id(selector: &str, attrs: &BTreeMap<String, String>) -> String {
-    if selector == "host" {
-        return attrs
-            .get("id")
-            .or_else(|| attrs.get("effect"))
-            .or_else(|| attrs.get("name"))
-            .map(|value| trim_quotes(value).trim_start_matches('.').to_owned())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| selector.to_owned());
-    }
-    selector.to_owned()
-}
-
-fn is_effect_descriptor_metadata_attr(selector: &str, key: &str) -> bool {
-    matches!(key, "target" | "phase" | "state" | "scope" | "state_scope")
-        || (selector == "host" && matches!(key, "id" | "effect" | "name"))
-}
-
-fn shader_from_attrs(attrs: &str) -> RichTextShaderRef {
-    let typed_attrs = parse_typed_attrs(attrs);
-    let attrs = parse_attrs(attrs);
-    RichTextShaderRef {
-        id: attrs.get("id").cloned().unwrap_or_default(),
-        params: typed_attrs
-            .iter()
-            .filter(|(key, _)| !matches!(key.as_str(), "id" | "phase"))
-            .map(|(key, value)| (key.clone(), param_from_value(value)))
-            .collect(),
-        phase: phase_attr(&attrs).unwrap_or(RichTextEffectPhase::RunOffscreenPass),
-    }
-}
-
-fn default_effect_phase(selector: &str) -> RichTextEffectPhase {
-    match selector {
-        "shader" => RichTextEffectPhase::RunOffscreenPass,
-        "typewriter" => RichTextEffectPhase::GlyphMask,
-        _ => RichTextEffectPhase::GlyphTransform,
-    }
-}
-
-fn target_attr(attrs: &BTreeMap<String, String>) -> RichTextEffectTarget {
+fn target_attr(attrs: &BTreeMap<String, String>) -> Result<FxTarget, RuntimePlanLowerError> {
     match attrs.get("target").map(String::as_str) {
-        Some("document") => RichTextEffectTarget::Document,
-        Some("line") => RichTextEffectTarget::Line,
-        Some("sentence") => RichTextEffectTarget::Sentence,
-        Some("glyph") => RichTextEffectTarget::Glyph,
-        Some("textbox" | "box") => RichTextEffectTarget::TextBox,
-        Some("screen") => RichTextEffectTarget::Screen,
-        _ => RichTextEffectTarget::Run,
+        None | Some("content") => Ok(FxTarget::Content),
+        Some("node") => Ok(FxTarget::Node),
+        Some("background") => Ok(FxTarget::Background),
+        Some("line") => Ok(FxTarget::Line),
+        Some("glyph") => Ok(FxTarget::Glyph),
+        Some("viewport") => Ok(FxTarget::Viewport),
+        Some(target) => Err(RuntimePlanLowerError::new(format!(
+            "rich-text transform target `{target}` was removed; use node, content, background, line, glyph, or viewport"
+        ))),
     }
 }
 
-fn transform_origin_attr(attrs: &BTreeMap<String, String>) -> Option<RichTextTransformOrigin> {
-    match attrs.get("origin").map(String::as_str)? {
-        "baseline_start" | "start" => Some(RichTextTransformOrigin::BaselineStart),
-        "baseline_center" => Some(RichTextTransformOrigin::BaselineCenter),
-        "center" => Some(RichTextTransformOrigin::Center),
-        "glyph_center" | "glyph" => Some(RichTextTransformOrigin::GlyphCenter),
-        _ => None,
-    }
-}
-
-fn state_scope_attr(attrs: &BTreeMap<String, String>) -> RichTextStateScope {
-    match attrs
-        .get("state_scope")
-        .or_else(|| attrs.get("state"))
-        .or_else(|| attrs.get("scope"))
-        .map(String::as_str)
-    {
-        Some("glyph") => RichTextStateScope::Glyph,
-        Some("line") => RichTextStateScope::Line,
-        Some("sentence") => RichTextStateScope::Sentence,
-        Some("paragraph") => RichTextStateScope::Paragraph,
-        Some("document") => RichTextStateScope::Document,
-        Some("dialogue_line") => RichTextStateScope::DialogueLine,
-        Some("speaker") => RichTextStateScope::Speaker,
-        Some("window") => RichTextStateScope::Window,
-        Some("global") => RichTextStateScope::Global,
-        _ => RichTextStateScope::Run,
-    }
-}
-
-fn phase_attr(attrs: &BTreeMap<String, String>) -> Option<RichTextEffectPhase> {
-    match attrs.get("phase").map(String::as_str)? {
-        "before_layout" => Some(RichTextEffectPhase::BeforeLayout),
-        "layout_transform" => Some(RichTextEffectPhase::LayoutTransform),
-        "glyph_transform" => Some(RichTextEffectPhase::GlyphTransform),
-        "glyph_color" => Some(RichTextEffectPhase::GlyphColor),
-        "glyph_mask" => Some(RichTextEffectPhase::GlyphMask),
-        "run_offscreen" | "run_offscreen_pass" => Some(RichTextEffectPhase::RunOffscreenPass),
-        "post_process" => Some(RichTextEffectPhase::PostProcess),
-        "host_event" => Some(RichTextEffectPhase::HostEvent),
-        _ => None,
+fn transform_origin_attr(
+    attrs: &BTreeMap<String, String>,
+) -> Result<Option<RichTextTransformOrigin>, RuntimePlanLowerError> {
+    let Some(origin) = attrs.get("origin").map(String::as_str) else {
+        return Ok(None);
+    };
+    match origin {
+        "baseline_start" | "start" => Ok(Some(RichTextTransformOrigin::BaselineStart)),
+        "baseline_center" => Ok(Some(RichTextTransformOrigin::BaselineCenter)),
+        "center" => Ok(Some(RichTextTransformOrigin::Center)),
+        "glyph_center" | "glyph" => Ok(Some(RichTextTransformOrigin::GlyphCenter)),
+        origin => Err(RuntimePlanLowerError::new(format!(
+            "unknown rich-text transform origin `{origin}`"
+        ))),
     }
 }
 

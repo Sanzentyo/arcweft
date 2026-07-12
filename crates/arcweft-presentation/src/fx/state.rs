@@ -8,7 +8,7 @@ use thiserror::Error;
 use super::{
     graph::{FX_MAX_PARAMETERS_PER_DEFINITION, FxDefinition},
     identity::{FxAbiHash, FxId, FxInstanceId, FxSemanticHash, hash_bytes, hash_str},
-    value::{FX_GOLDEN_ANGLE_RAD, FiniteF32, FiniteF32Error, FxRuntimeValue, Seconds},
+    value::{FX_GOLDEN_ANGLE_RAD, FiniteF32, FiniteF32Error, FxRuntimeValue, Length, Seconds},
 };
 
 /// Maximum number of authored child ordinals retained in nested graph identity.
@@ -90,12 +90,46 @@ pub enum FxInstanceSnapshotError {
 }
 
 /// Per-target deterministic sampler context.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FxSampleGeometry {
+    target_center_x: Length,
+    target_center_y: Length,
+    glyph_center_x: Length,
+    glyph_center_y: Length,
+}
+
+impl FxSampleGeometry {
+    pub const fn new(
+        target_center_x: Length,
+        target_center_y: Length,
+        glyph_center_x: Length,
+        glyph_center_y: Length,
+    ) -> Self {
+        Self {
+            target_center_x,
+            target_center_y,
+            glyph_center_x,
+            glyph_center_y,
+        }
+    }
+
+    pub const fn target_center(self) -> [Length; 2] {
+        [self.target_center_x, self.target_center_y]
+    }
+
+    pub const fn glyph_center(self) -> [Length; 2] {
+        [self.glyph_center_x, self.glyph_center_y]
+    }
+}
+
+/// Per-target deterministic sampler context.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FxSampleContext {
     time: FiniteF32,
     ordinal: u32,
     deterministic_seed: u64,
     reduce_motion: bool,
+    geometry: FxSampleGeometry,
 }
 
 impl FxLogicalTime {
@@ -334,6 +368,7 @@ impl FxSampleContext {
             ordinal,
             deterministic_seed,
             reduce_motion,
+            geometry: FxSampleGeometry::default(),
         })
     }
 
@@ -353,7 +388,13 @@ impl FxSampleContext {
             ordinal,
             deterministic_seed,
             reduce_motion,
+            geometry: FxSampleGeometry::default(),
         }
+    }
+
+    pub const fn with_geometry(mut self, geometry: FxSampleGeometry) -> Self {
+        self.geometry = geometry;
+        self
     }
 
     pub const fn time(self) -> FiniteF32 {
@@ -374,6 +415,10 @@ impl FxSampleContext {
 
     pub const fn reduce_motion(self) -> bool {
         self.reduce_motion
+    }
+
+    pub const fn geometry(self) -> FxSampleGeometry {
+        self.geometry
     }
 
     pub fn ordinal_phase(self) -> Result<FiniteF32, FiniteF32Error> {
