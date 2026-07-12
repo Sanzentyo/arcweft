@@ -178,6 +178,10 @@ fn vertical_text_combine_sideways_latin_and_ruby_share_shaped_geometry() {
     assert_eq!(layout.ruby.len(), 1);
     assert!(!layout.ruby[0].glyphs.is_empty());
     assert!(
+        layout.ruby[0].ruby_bounds.x > layout.ruby[0].base_bounds.x,
+        "vertical_rl ruby must occupy the reserved physical-right track"
+    );
+    assert!(
         layout.ruby[0]
             .glyphs
             .iter()

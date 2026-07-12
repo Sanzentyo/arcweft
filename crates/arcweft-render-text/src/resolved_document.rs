@@ -3,8 +3,8 @@
 use crate::{
     DialogueHostEvent, LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage,
     RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily, RichTextInlineDirection,
-    RichTextNode, RichTextPresentation, RichTextRange, RichTextStyle, RichTextWritingMode,
-    presentation_from_styles,
+    RichTextNode, RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextStyle,
+    RichTextWritingMode, presentation_from_styles,
 };
 use arcweft_dialogue::rich_text::canonical_tag_name;
 use arcweft_presentation::fx::FxColor;
@@ -379,8 +379,14 @@ impl ResolvedTextStyle {
                 self.line_height_milli = u32::from(*points) * 1_350;
             }
             RichTextStyle::Layout { layout } => {
-                self.writing_mode = layout.writing_mode;
-                self.direction = layout.direction;
+                if !matches!(layout.writing_mode, RichTextWritingMode::HorizontalTb)
+                    || matches!(layout.ruby_position, RichTextRubyPosition::Auto)
+                {
+                    self.writing_mode = layout.writing_mode;
+                }
+                if !matches!(layout.direction, RichTextInlineDirection::Auto) {
+                    self.direction = layout.direction;
+                }
             }
             RichTextStyle::Size { points: None, .. }
             | RichTextStyle::Speed { .. }

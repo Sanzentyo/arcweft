@@ -3,9 +3,9 @@ use arcweft_render_text::{
     DialogueHostEvent, InlineFailurePolicy, LineDisplaySpec, Milli, ResolvedTextDocument,
     ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle, RichTextControl, RichTextDocument,
     RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextPresentation,
-    RichTextPresentationStyle, RichTextRange, RichTextStyle, RichTextWritingMode,
-    RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily, TextResolveError,
-    TextStyleCascade, TextWeight,
+    RichTextPresentationStyle, RichTextRange, RichTextRubyPosition, RichTextStyle,
+    RichTextWritingMode, RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily,
+    TextResolveError, TextStyleCascade, TextWeight,
 };
 use std::collections::BTreeMap;
 
@@ -315,6 +315,45 @@ fn cascade_applies_closed_color_and_font_values_without_losing_presentation() {
     assert_eq!(run.style().font_families(), &[TextFontFamily::Monospace]);
     assert_eq!(run.style().color(), TextColor::rgba(0x12, 0x34, 0x56, 255));
     assert_eq!(run.presentation().opacity, Some(Milli(500)));
+}
+
+#[test]
+fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
+    let document = RichTextDocument::new(vec![
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Layout {
+                layout: RichTextLayout {
+                    writing_mode: RichTextWritingMode::VerticalRl,
+                    ..RichTextLayout::default()
+                },
+            },
+        },
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Layout {
+                layout: RichTextLayout {
+                    ruby_position: RichTextRubyPosition::Under,
+                    ..RichTextLayout::default()
+                },
+            },
+        },
+        RichTextNode::Text {
+            text: "夢".to_owned(),
+        },
+    ]);
+
+    let resolved = document
+        .resolve_document(&TextStyleCascade::default())
+        .expect("nested layout resolves");
+    let run = &resolved.runs()[0];
+
+    assert_eq!(run.style().writing_mode(), RichTextWritingMode::VerticalRl);
+    let layout = run
+        .presentation()
+        .layout
+        .as_ref()
+        .expect("layout presentation is retained");
+    assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
+    assert_eq!(layout.ruby_position, RichTextRubyPosition::Under);
 }
 
 #[test]

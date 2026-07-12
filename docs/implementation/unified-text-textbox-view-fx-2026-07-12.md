@@ -926,6 +926,98 @@ LOC, responsibilities, and exact fan-in/fan-out. `geometry.rs` is 2,108 LOC,
 the renderer is 1,516 LOC, and the rewritten text-control module is 756 LOC;
 no Cargo manifest or dependency edge changed.
 
+### Shaped vertical, ruby, and capture regression closure slice
+
+The first Cut 9 implementation slice is complete in Jujutsu change
+`nyoynlov`:
+
+- canonical vertical layout now shapes all runs first and plans contiguous
+  runs with the same writing mode and resolved JLREQ strictness as one
+  paragraph. Paint, typewriter, and Fx run boundaries therefore cannot alter
+  UAX/JLREQ column composition;
+- paragraph break opportunities are derived from the complete resolved text,
+  not recomputed from each styled substring. `2026XYZ` consequently remains
+  one unbroken alphanumeric sequence even when `2026` carries a typewriter
+  effect;
+- the shaped-column DP uses real inline advances, text-combine cells,
+  sideways-Latin extents, compression/hanging rules, prohibited line heads and
+  ends, and authored loose/normal/strict JLREQ pair policy. `vertical_rl` and
+  `vertical_lr` share that inline plan and differ only in column direction;
+- side-track ruby reserves its physical track before body layout. Auto/over is
+  right for `vertical_rl` and left for `vertical_lr`; under reverses those
+  sides. Inter-character ruby instead reserves inline extent, is placed after
+  the first base cluster, and pushes the following base cluster without a side
+  track;
+- nested layout cascade is now field-wise in both presentation and
+  `ResolvedTextStyle`. An inner `.ruby_under` or `.ruby_inter_character` no
+  longer resets an outer `.vertical_rl`/`.vertical_lr` to the default
+  horizontal flow;
+- Agent observation aggregates shaped glyphs by logical `cluster_index`, so
+  text-combine `2026` and sideways `ABC`/`XYZ` have one stable cluster object,
+  union source range, union bounds, and one hit region. View and dialogue use
+  the same aggregation rule;
+- capture visibility and painter ordering use the same cluster-index plus
+  contained-source-range rule. A multi-glyph text-combine cluster can therefore
+  be hidden at logical time zero and produce nonempty color/mask/object-id
+  crops when visible without relayout; and
+- shared mask/object-id attachments retain their documented semantic-region
+  contract: the selected logical bbox is fully covered. The masked color crop
+  retains actual rendered pixels. Tests no longer ask the shared capture path
+  to recreate the deleted native-only glyph-alpha attachment.
+
+The initial visual review used candidate-only files under
+`target/unified-text-final-review`; no checked-in MS Mincho migration witness
+was overwritten. The fixed vertical-LR candidate visibly separates `ゆめ` to
+the physical left of `夢`, retains upright `2026`, and retains sideways Latin.
+At fixed logical times, the existing effect candidate changes between 4.0s and
+4.5s with PSNR 36.9419 dB, SSIM 0.97615, MSE 0.00020221, and MAE 0.00051983.
+These are diagnosis artifacts, not the final promoted project-font goldens.
+
+Validation for this slice includes:
+
+```bash
+cargo test -p arcweft-render-text --all-targets
+cargo test -p arcweft-text-layout --all-targets
+cargo test -p arcweft-glyphon --all-targets
+cargo test -p arcweft-render-wgpu --all-targets
+cargo test -p arcweft-player-scene --all-targets
+cargo test -p arcweft-cli --features native-capture --test check \
+  agent_observe_native::agent_observe_native_renderer_reports_vertical_goal_clear_smoke_geometry \
+  -- --exact --quiet
+cargo test -p arcweft-cli --features native-capture --test check \
+  agent_observe_native::agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops \
+  -- --exact --quiet
+cargo check --workspace --all-targets --all-features
+cargo clippy -p arcweft-render-text -p arcweft-text-layout \
+  -p arcweft-glyphon -p arcweft-render-wgpu -p arcweft-player-scene \
+  -p arcweft-cli --all-targets --all-features -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/unified-text-shaped-vertical-regression-2026-07-12
+```
+
+All completed commands pass. Additional focused native integration tests pass
+for RL/LR column direction, vertical ruby collision, ruby-under physical
+sides, inter-character flow, TextBox/ruby/vertical capture bounds, and the
+vertical goal-clear mask/object-id crops. Several first CLI invocations reached
+the 60-second shell limit immediately after a cold test-binary build; cached
+reruns then executed and passed, so only the rerun results are counted.
+
+The linked structural audit scans 1,255 Rust files / 621,347 physical Rust LOC
+with 0 errors and 131 warnings. No manifest or dependency edge changed. The
+largest changed production files are the 1,190-line canonical resolved-document
+module and 1,185-line prepared-text observation module, both below the 1,200
+LOC warning threshold. The new vertical planner is 254 LOC including a 64-line
+embedded unit-test module.
+
+This does not complete Cut 9. The remaining acceptance work is to promote a
+checked project-font Native/Web/headless visual packet for vertical-RL,
+vertical-LR+ruby+text-combine, a JLREQ pair that visibly distinguishes authored
+strictness, and fixed-time Fx/reveal frames; then remove the obsolete
+`layout_frame`/`LaidOutText` adapter instead of keeping a compatibility route.
+The pre-existing, currently unconsumed `--textbox-height` Agent option is also
+part of that cleanup decision: it must be connected to one typed TextBox layout
+input or removed with its stale callers, not silently treated as evidence.
+
 ## Required validation
 
 Focused tests follow the repository test policy. Reviewable cuts additionally

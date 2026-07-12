@@ -183,10 +183,7 @@ fn player_text_element_paint_order(
             .layout
             .glyphs
             .iter()
-            .position(|glyph| {
-                glyph.source_range == local_range
-                    && usize::try_from(glyph.cluster_index).ok() == Some(reference.index)
-            })
+            .position(|glyph| glyph_is_cluster_member(glyph, local_range, reference.index))
             .map_or(0, |index| index.saturating_add(1)),
         arcweft_agent_protocol::rich_text::AgentRichTextElementKind::Ruby => item
             .layout
@@ -249,10 +246,7 @@ fn player_prepared_text_element_is_visible(
                 .glyphs
                 .iter()
                 .enumerate()
-                .filter(|(_, glyph)| {
-                    glyph.source_range == local_range
-                        && usize::try_from(glyph.cluster_index).ok() == Some(reference.index)
-                })
+                .filter(|(_, glyph)| glyph_is_cluster_member(glyph, local_range, reference.index))
                 .any(|(index, _)| {
                     item.paint
                         .glyphs
@@ -280,6 +274,16 @@ fn player_prepared_text_element_is_visible(
             | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextObjectProxy => false,
         }
     })
+}
+
+fn glyph_is_cluster_member(
+    glyph: &arcweft_text_layout::TextLayoutGlyph,
+    cluster_range: arcweft_render_text::RichTextRange,
+    cluster_index: usize,
+) -> bool {
+    usize::try_from(glyph.cluster_index).ok() == Some(cluster_index)
+        && cluster_range.start <= glyph.source_range.start
+        && glyph.source_range.end <= cluster_range.end
 }
 
 fn text_paint_is_visible(paint: &arcweft_glyphon::TextGlyphPaint) -> bool {

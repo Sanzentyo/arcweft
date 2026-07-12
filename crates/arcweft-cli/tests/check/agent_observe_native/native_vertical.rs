@@ -801,7 +801,7 @@ flow @flow.main main {
         &path,
         &raw_path,
         "mask",
-        &["--textbox-height", "32"],
+        &[],
     );
     let image = &json["images"][0];
     let textbox = find_textbox_object(&json);
@@ -821,8 +821,9 @@ flow @flow.main main {
         "textbox object capture should include the measured ruby annotation: {json}"
     );
     assert!(
-        image["height"].as_u64().unwrap() > agent_json_bbox_height(&textbox["bbox"]),
-        "textbox object capture should expand beyond the intentionally small textbox bbox: {json}"
+        agent_json_bbox_y(&textbox["bbox"]) <= agent_json_bbox_y(annotation)
+            && agent_json_bbox_bottom(&textbox["bbox"]) >= agent_json_bbox_bottom(annotation),
+        "textbox reserved layout bounds should include the measured ruby annotation: {json}"
     );
     assert_object_capture_ref_matches_image(textbox, image, "mask", "application/octet-stream");
 
@@ -849,7 +850,7 @@ flow @flow.main main {
         &path,
         &raw_path,
         "mask",
-        &["--textbox-height", "32"],
+        &[],
     );
     let image = &json["images"][0];
     let textbox = find_textbox_object(&json);
@@ -871,8 +872,8 @@ flow @flow.main main {
         "textbox object capture should include measured vertical cluster extents: {json}"
     );
     assert!(
-        image["height"].as_u64().unwrap() > agent_json_bbox_height(&textbox["bbox"]),
-        "textbox object capture should expand beyond the intentionally small textbox bbox: {json}"
+        agent_json_bbox_bottom(&textbox["bbox"]) >= vertical_bottom,
+        "textbox reserved layout bounds should include measured vertical cluster extents: {json}"
     );
     assert_object_capture_ref_matches_image(textbox, image, "mask", "application/octet-stream");
 
@@ -1757,20 +1758,51 @@ fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
     assert_rich_text_cluster_metadata(json, "XYZ", 42, 45, "sideways_cw", "none");
 
     let rl_start = find_rich_text_cluster_object(json, "吾", 0, 3);
+    let rl_second = find_rich_text_cluster_object(json, "輩", 3, 6);
     let rl_text_combine = find_rich_text_cluster_object(json, "2026", 9, 13);
+    let rl_sideways = find_rich_text_cluster_object(json, "ABC", 13, 16);
     let lr_start = find_rich_text_cluster_object(json, "縦", 29, 32);
+    let lr_second = find_rich_text_cluster_object(json, "夢", 32, 35);
     let lr_text_combine = find_rich_text_cluster_object(json, "2026", 38, 42);
     let lr_after_text_combine = find_rich_text_cluster_object(json, "XYZ", 42, 45);
     assert_rich_text_hit_region_matches_bbox(rl_text_combine, "glyph_cluster", 9, 13);
     assert_rich_text_hit_region_matches_bbox(lr_text_combine, "glyph_cluster", 38, 42);
     assert_rich_text_object_has_mask_capture(lr_text_combine, "vertical goal-clear text-combine");
     assert!(
-        agent_json_bbox_y(&rl_text_combine["bbox"]) > agent_json_bbox_y(&rl_start["bbox"]),
-        "vertical_rl inline progression should move later same-column content down: {rl_text_combine}"
+        agent_json_bbox_y(&rl_second["bbox"]) > agent_json_bbox_y(&rl_start["bbox"]),
+        "vertical_rl inline progression should move later same-column content down: {rl_second}"
     );
     assert!(
-        agent_json_bbox_y(&lr_after_text_combine["bbox"]) > agent_json_bbox_y(&lr_start["bbox"]),
-        "vertical_lr inline progression should move later same-column content down: {lr_after_text_combine}"
+        agent_json_bbox_x(&rl_text_combine["bbox"]) < agent_json_bbox_x(&rl_start["bbox"]),
+        "vertical_rl should move the unbroken text-combine/Latin word into the next left column: {rl_text_combine}"
+    );
+    assert_eq!(
+        agent_json_bbox_x(&rl_sideways["bbox"]),
+        agent_json_bbox_x(&rl_text_combine["bbox"]),
+        "vertical_rl text-combine and following Latin word must stay in one column"
+    );
+    assert!(
+        agent_json_bbox_y(&rl_sideways["bbox"])
+            > agent_json_bbox_y(&rl_text_combine["bbox"]),
+        "vertical_rl sideways Latin should follow text-combine inline: {rl_sideways}"
+    );
+    assert!(
+        agent_json_bbox_y(&lr_second["bbox"]) > agent_json_bbox_y(&lr_start["bbox"]),
+        "vertical_lr inline progression should move later same-column content down: {lr_second}"
+    );
+    assert!(
+        agent_json_bbox_x(&lr_text_combine["bbox"]) > agent_json_bbox_x(&lr_start["bbox"]),
+        "vertical_lr should move the unbroken text-combine/Latin word into the next right column: {lr_text_combine}"
+    );
+    assert_eq!(
+        agent_json_bbox_x(&lr_after_text_combine["bbox"]),
+        agent_json_bbox_x(&lr_text_combine["bbox"]),
+        "vertical_lr text-combine and following Latin word must stay in one column"
+    );
+    assert!(
+        agent_json_bbox_y(&lr_after_text_combine["bbox"])
+            > agent_json_bbox_y(&lr_text_combine["bbox"]),
+        "vertical_lr sideways Latin should follow text-combine inline: {lr_after_text_combine}"
     );
 
     let rl_ruby = find_rich_text_ruby_object(json, 0);
@@ -1841,7 +1873,22 @@ flow @flow.main main {{
     );
 
     let first_column_start = find_rich_text_cluster_object(&json, "天", 0, 3);
-    let next_column_start = find_rich_text_cluster_object(&json, "夏", 9, 12);
+    let next_column_start = json["objects"]
+        .as_array()
+        .expect("native observation objects are an array")
+        .iter()
+        .filter(|object| object["role"] == "rich_text_cluster")
+        .filter(|object| object["rich_text_ref"]["range"]["start"].as_u64().unwrap_or_default() > 0)
+        .filter(|object| {
+            agent_json_bbox_x(&object["bbox"])
+                != agent_json_bbox_x(&first_column_start["bbox"])
+        })
+        .min_by_key(|object| {
+            object["rich_text_ref"]["range"]["start"]
+                .as_u64()
+                .unwrap_or(u64::MAX)
+        })
+        .expect("vertical sample should advance to another column");
     assert!(
         agent_json_bbox_y(&first_column_start["bbox"])
             .abs_diff(agent_json_bbox_y(&next_column_start["bbox"]))
@@ -2623,16 +2670,18 @@ fn assert_native_vertical_inter_character_ruby_object<'report>(
     let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
     assert_eq!(
-        agent_json_bbox_x(annotation),
-        agent_json_bbox_x(base),
-        "{writing_mode} ruby_inter_character annotation should stay in the base column: {ruby}"
+        agent_json_bbox_center_x_twice(annotation),
+        agent_json_bbox_center_x_twice(base),
+        "{writing_mode} ruby_inter_character annotation should stay centered in the base column: {ruby}"
     );
     assert!(
-        agent_json_bbox_y(annotation) >= agent_json_bbox_bottom(&dream["bbox"]),
+        agent_json_bbox_y(annotation).saturating_add(1)
+            >= agent_json_bbox_bottom(&dream["bbox"]),
         "{writing_mode} ruby_inter_character annotation should start after the first base cluster: {ruby}"
     );
     assert!(
-        agent_json_bbox_y(&star["bbox"]) >= agent_json_bbox_bottom(annotation),
+        agent_json_bbox_y(&star["bbox"]).saturating_add(1)
+            >= agent_json_bbox_bottom(annotation),
         "{writing_mode} ruby_inter_character should push the following base cluster after the annotation: {ruby}"
     );
     assert_eq!(

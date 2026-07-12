@@ -1,7 +1,7 @@
 //! Host configuration and structured layout failures.
 
 use crate::{LayoutPoint, LayoutSize};
-use arcweft_render_text::{RichTextRange, RichTextWritingMode};
+use arcweft_render_text::{RichTextJlreqStrictness, RichTextRange, RichTextWritingMode};
 use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
 use thiserror::Error;
@@ -64,6 +64,9 @@ where
         ruby_index: usize,
         glyph_index: usize,
     },
+    /// Ruby side tracks leave no finite positive body layout area.
+    #[error("ruby side-track reservation exhausts the text layout request")]
+    InsufficientRubyLayoutSpace,
 }
 
 /// Final document layout request. Font metrics come from each resolved run.
@@ -148,4 +151,17 @@ pub enum JlreqStrictness {
     Normal,
     /// Prefer stricter Japanese composition around weak punctuation pairs.
     Strict,
+}
+
+impl JlreqStrictness {
+    /// Resolves an authored run-level preset against the container default.
+    #[must_use]
+    pub const fn resolve(self, authored: RichTextJlreqStrictness) -> Self {
+        match authored {
+            RichTextJlreqStrictness::Auto => self,
+            RichTextJlreqStrictness::Loose => Self::Loose,
+            RichTextJlreqStrictness::Normal => Self::Normal,
+            RichTextJlreqStrictness::Strict => Self::Strict,
+        }
+    }
 }

@@ -147,7 +147,7 @@ const fn is_latin_or_greek_alphabetic_char(ch: char) -> bool {
     )
 }
 
-fn line_break_offsets(text: &str) -> HashSet<usize> {
+pub(crate) fn line_break_offsets(text: &str) -> HashSet<usize> {
     linebreaks(text)
         .filter_map(|(offset, opportunity)| match opportunity {
             BreakOpportunity::Allowed | BreakOpportunity::Mandatory if offset < text.len() => {

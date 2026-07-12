@@ -1,9 +1,10 @@
 use std::{error::Error, fmt};
 
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
-    RichTextInlineDirection, RichTextPresentation, RichTextRange, TextColor, TextDocumentRevision,
-    TextFontFamily,
+    ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
+    ResolvedTextStyle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
+    RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextWritingMode, TextColor,
+    TextDocumentRevision, TextFontFamily,
 };
 use arcweft_text_layout::{
     FontFaceId, FontInventoryHash, LayoutPoint, LayoutRect, LayoutSize, ShapedGlyphKey,
@@ -111,12 +112,28 @@ impl TextShaper for MockShaper {
 }
 
 fn document(text: &str, style: ResolvedTextStyle, revision: u64) -> ResolvedTextDocument<'_> {
+    document_with_presentation(
+        text,
+        style,
+        RichTextPresentation::default(),
+        Vec::new(),
+        revision,
+    )
+}
+
+fn document_with_presentation(
+    text: &str,
+    style: ResolvedTextStyle,
+    presentation: RichTextPresentation,
+    ruby: Vec<ResolvedTextRuby>,
+    revision: u64,
+) -> ResolvedTextDocument<'_> {
     let range = RichTextRange::new(0, text.len());
     let run = ResolvedTextRun::new(
         range,
         range,
         style,
-        RichTextPresentation::default(),
+        presentation,
         ResolvedTextRunSource::Plain,
     )
     .expect("test run is valid");
@@ -124,7 +141,7 @@ fn document(text: &str, style: ResolvedTextStyle, revision: u64) -> ResolvedText
         text,
         0,
         vec![run],
-        Vec::new(),
+        ruby,
         TextDocumentRevision::new(revision),
     )
     .expect("test document is valid")
@@ -259,4 +276,190 @@ fn paint_only_color_is_excluded_from_layout_hash() {
         .hash;
 
     assert_eq!(pale_hash, red_hash);
+}
+
+#[test]
+fn vertical_lr_reserves_the_left_ruby_track_before_body_layout() {
+    let text = "夢";
+    let style = style().with_flow(
+        RichTextWritingMode::VerticalLr,
+        RichTextInlineDirection::Auto,
+    );
+    let range = RichTextRange::new(0, text.len());
+    let ruby = ResolvedTextRuby::new(
+        range,
+        range,
+        "ゆめ",
+        style.clone(),
+        RichTextPresentation::default(),
+    )
+    .expect("ruby is valid");
+    let document =
+        document_with_presentation(text, style, RichTextPresentation::default(), vec![ruby], 7);
+    let layout = layout_document(&document, request(), &mut MockShaper::new(b"font"))
+        .expect("vertical ruby lays out");
+    let ruby = &layout.ruby[0];
+
+    assert!(ruby.ruby_bounds.x < ruby.base_bounds.x);
+    assert!(ruby.ruby_bounds.x >= request().origin.x);
+    assert!(ruby.ruby_bounds.right() <= request().origin.x + request().size.width);
+}
+
+#[test]
+fn vertical_inter_character_ruby_participates_in_inline_flow() {
+    let text = "夢星";
+    let style = style().with_flow(
+        RichTextWritingMode::VerticalRl,
+        RichTextInlineDirection::Auto,
+    );
+    let presentation = RichTextPresentation {
+        layout: Some(RichTextLayout {
+            writing_mode: RichTextWritingMode::VerticalRl,
+            ruby_position: RichTextRubyPosition::InterCharacter,
+            ..RichTextLayout::default()
+        }),
+        ..RichTextPresentation::default()
+    };
+    let range = RichTextRange::new(0, text.len());
+    let ruby = ResolvedTextRuby::new(range, range, "ゆめ", style.clone(), presentation.clone())
+        .expect("inter-character ruby is valid");
+    let document = document_with_presentation(text, style, presentation, vec![ruby], 10);
+    let layout = layout_document(&document, request(), &mut MockShaper::new(b"font"))
+        .expect("vertical inter-character ruby lays out");
+    let first = &layout.glyphs[0];
+    let second = &layout.glyphs[1];
+    let ruby = &layout.ruby[0];
+
+    assert!(ruby.ruby_bounds.y >= first.layout_bounds.bottom());
+    assert!(second.layout_bounds.y >= ruby.ruby_bounds.bottom());
+    assert!(
+        (ruby.ruby_bounds.x + ruby.ruby_bounds.width * 0.5
+            - (ruby.base_bounds.x + ruby.base_bounds.width * 0.5))
+            .abs()
+            < f32::EPSILON
+    );
+}
+
+#[test]
+fn authored_jlreq_strictness_changes_the_shaped_vertical_column_plan() {
+    let text = "天地。「人山川海";
+    let vertical = style().with_flow(
+        RichTextWritingMode::VerticalRl,
+        RichTextInlineDirection::Auto,
+    );
+    let with_strictness = |strictness| {
+        document_with_presentation(
+            text,
+            vertical.clone(),
+            RichTextPresentation {
+                layout: Some(RichTextLayout {
+                    writing_mode: RichTextWritingMode::VerticalRl,
+                    jlreq_strictness: strictness,
+                    ..RichTextLayout::default()
+                }),
+                ..RichTextPresentation::default()
+            },
+            Vec::new(),
+            8,
+        )
+    };
+    let request = TextLayoutRequest {
+        size: LayoutSize::new(180.0, 70.0),
+        ..request()
+    };
+    let loose = layout_document(
+        &with_strictness(RichTextJlreqStrictness::Loose),
+        request,
+        &mut MockShaper::new(b"font"),
+    )
+    .expect("loose layout succeeds");
+    let strict = layout_document(
+        &with_strictness(RichTextJlreqStrictness::Strict),
+        request,
+        &mut MockShaper::new(b"font"),
+    )
+    .expect("strict layout succeeds");
+
+    assert_ne!(loose.hash, strict.hash);
+    assert_ne!(
+        loose
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.source_range, glyph.line_index))
+            .collect::<Vec<_>>(),
+        strict
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.source_range, glyph.line_index))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn vertical_column_plan_is_independent_of_paint_run_boundaries() {
+    let text = "縦夢へ2026XYZ。";
+    let vertical = style().with_flow(
+        RichTextWritingMode::VerticalLr,
+        RichTextInlineDirection::Auto,
+    );
+    let presentation = RichTextPresentation {
+        layout: Some(RichTextLayout {
+            writing_mode: RichTextWritingMode::VerticalLr,
+            jlreq_strictness: RichTextJlreqStrictness::Strict,
+            ..RichTextLayout::default()
+        }),
+        ..RichTextPresentation::default()
+    };
+    let unsplit =
+        document_with_presentation(text, vertical.clone(), presentation.clone(), Vec::new(), 9);
+    let split_at = "縦夢へ".len();
+    let split = ResolvedTextDocument::new(
+        text,
+        0,
+        vec![
+            ResolvedTextRun::new(
+                RichTextRange::new(0, split_at),
+                RichTextRange::new(0, split_at),
+                vertical.clone(),
+                presentation.clone(),
+                ResolvedTextRunSource::Plain,
+            )
+            .expect("first split run is valid"),
+            ResolvedTextRun::new(
+                RichTextRange::new(split_at, text.len()),
+                RichTextRange::new(split_at, text.len()),
+                vertical,
+                RichTextPresentation {
+                    z_index: 1,
+                    ..presentation
+                },
+                ResolvedTextRunSource::Plain,
+            )
+            .expect("paint-only split run is valid"),
+        ],
+        Vec::new(),
+        TextDocumentRevision::new(9),
+    )
+    .expect("split document is valid");
+    let request = TextLayoutRequest {
+        size: LayoutSize::new(180.0, 70.0),
+        ..request()
+    };
+    let unsplit = layout_document(&unsplit, request, &mut MockShaper::new(b"font"))
+        .expect("unsplit vertical layout succeeds");
+    let split = layout_document(&split, request, &mut MockShaper::new(b"font"))
+        .expect("split vertical layout succeeds");
+
+    assert_eq!(
+        unsplit
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.source_range, glyph.line_index, glyph.layout_bounds))
+            .collect::<Vec<_>>(),
+        split
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.source_range, glyph.line_index, glyph.layout_bounds))
+            .collect::<Vec<_>>()
+    );
 }

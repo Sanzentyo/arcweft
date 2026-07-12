@@ -5152,8 +5152,7 @@ fn assert_vertical_goal_clear_ruby_raw_crop(
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
-    assert!(content_pixels > 0);
-    assert!(content_pixels < width * height);
+    assert_eq!(content_pixels, width * height);
     assert_eq!(opaque_pixel_count(bytes) as u64, content_pixels);
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
@@ -5162,9 +5161,6 @@ fn assert_vertical_goal_clear_ruby_raw_crop(
             content_pixels,
             &format!("{description} object-id crop"),
         );
-    } else {
-        let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
-        assert!(transparent > 0);
     }
 }
 

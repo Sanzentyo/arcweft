@@ -159,6 +159,40 @@ struct DialogueProjection<'a> {
     run_geometry: Vec<(usize, &'a RichTextTextRun, RichTextRange, AgentBBox)>,
 }
 
+struct PreparedBodyCluster<'a> {
+    index: u32,
+    run_index: u32,
+    source_range: RichTextRange,
+    bounds: LayoutRect,
+    representative: &'a TextLayoutGlyph,
+}
+
+fn prepared_body_clusters(item: &PreparedTextItem) -> Vec<PreparedBodyCluster<'_>> {
+    let mut clusters = BTreeMap::<u32, PreparedBodyCluster<'_>>::new();
+    for glyph in &item.layout.glyphs {
+        clusters
+            .entry(glyph.cluster_index)
+            .and_modify(|cluster| {
+                debug_assert_eq!(cluster.run_index, glyph.run_index);
+                debug_assert_eq!(cluster.representative.orientation, glyph.orientation);
+                debug_assert_eq!(cluster.representative.vertical_form, glyph.vertical_form);
+                cluster.source_range = RichTextRange::new(
+                    cluster.source_range.start.min(glyph.source_range.start),
+                    cluster.source_range.end.max(glyph.source_range.end),
+                );
+                cluster.bounds = cluster.bounds.union(glyph.layout_bounds);
+            })
+            .or_insert(PreparedBodyCluster {
+                index: glyph.cluster_index,
+                run_index: glyph.run_index,
+                source_range: glyph.source_range,
+                bounds: glyph.layout_bounds,
+                representative: glyph,
+            });
+    }
+    clusters.into_values().collect()
+}
+
 fn dialogue_page_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedObject> {
     let visible_range = RichTextRange::new(
         context.owner.source_origin,
@@ -517,7 +551,29 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
                 page,
             },
         ));
-        let cluster_index = usize::try_from(glyph.cluster_index).unwrap_or(usize::MAX);
+    }
+    for cluster in prepared_body_clusters(context.item) {
+        let Some(range) = global_range(
+            context.owner,
+            cluster.source_range,
+            context.frame.text.len(),
+        ) else {
+            continue;
+        };
+        let Some((run_index, run)) = find_run(context.frame, range) else {
+            continue;
+        };
+        let Some(text) =
+            text_for_range(context.frame, range).filter(|text| !text.trim().is_empty())
+        else {
+            continue;
+        };
+        let Some(bbox) = agent_bbox_from_layout(cluster.bounds, context.viewport) else {
+            continue;
+        };
+        let page = rich_text_page_for_range(context.frame, range);
+        let parent_id = run_object_id(context.textbox_id, context.entry, run_index);
+        let cluster_index = usize::try_from(cluster.index).unwrap_or(usize::MAX);
         let cluster_id = format!(
             "object.dialogue.{}.{}.cluster.{cluster_index}.{}.{}",
             context.textbox_id, context.entry, range.start, range.end
@@ -537,7 +593,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
                     page,
                     range,
                     run,
-                    glyph,
+                    cluster.representative,
                     &bbox,
                     AgentHitRegionKind::GlyphCluster,
                 ),

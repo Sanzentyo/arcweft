@@ -8,11 +8,14 @@ use arcweft_render_text::{
 };
 
 use crate::{
-    GlyphOrientation, GlyphVerticalForm, LayoutPoint, LayoutRect, LayoutSize, ShapedTextGlyph,
-    ShapedTextRun, TextLayout, TextLayoutError, TextLayoutGlyph, TextLayoutGlyphSource,
-    TextLayoutLine, TextLayoutRequest, TextLayoutRun, TextLayoutSourceMap, TextShapeRequest,
-    TextShaper, document_hash::layout_hash, document_ruby::layout_ruby, jlreq_punctuation,
-    vertical_clusters::vertical_clusters,
+    GlyphOrientation, GlyphVerticalForm, JlreqStrictness, LayoutPoint, LayoutRect, LayoutSize,
+    ShapedTextGlyph, ShapedTextRun, TextLayout, TextLayoutError, TextLayoutGlyph,
+    TextLayoutGlyphSource, TextLayoutLine, TextLayoutRequest, TextLayoutRun, TextLayoutSourceMap,
+    TextShapeRequest, TextShaper,
+    document_hash::layout_hash,
+    document_vertical::{VerticalPlanCluster, plan_vertical_segment},
+    jlreq_punctuation,
+    vertical_clusters::{line_break_offsets, vertical_clusters},
 };
 
 /// Shapes and lays out one canonical resolved-text document.
@@ -24,8 +27,8 @@ pub fn layout_document<S: TextShaper>(
     validate_request(request)?;
     let font_inventory = shaper.font_inventory_hash();
     let logical_ordinals = logical_ordinals(document);
-    let mut state = DocumentLayoutState::new(request);
-
+    let body_request = crate::document_ruby::body_request::<S::Error>(document, request)?;
+    let mut shaped_runs = Vec::with_capacity(document.runs().len());
     for (run_index, run) in document.runs().iter().enumerate() {
         let text = document
             .text()
@@ -43,18 +46,42 @@ pub fn layout_document<S: TextShaper>(
             })
             .map_err(|source| TextLayoutError::Shape { run_index, source })?;
         validate_shaped_run(document, run_index, run, &shaped_run)?;
-        state.place_run(
-            document,
+        shaped_runs.push(ShapedDocumentRun {
             run_index,
             run,
             text,
-            &shaped_run,
+            shaped: shaped_run,
+        });
+    }
+
+    let mut state = DocumentLayoutState::new(body_request);
+    let mut run_index = 0;
+    while run_index < shaped_runs.len() {
+        let input = &shaped_runs[run_index];
+        let Some(group_key) = vertical_group_key(input.run, body_request) else {
+            state.place_horizontal_run(document, input, &logical_ordinals);
+            run_index += 1;
+            continue;
+        };
+        let mut group_end = run_index + 1;
+        while shaped_runs.get(group_end).is_some_and(|candidate| {
+            vertical_group_key(candidate.run, body_request) == Some(group_key)
+        }) {
+            group_end += 1;
+        }
+        state.place_vertical_group(
+            document,
+            &shaped_runs[run_index..group_end],
+            group_key.0,
+            group_key.1,
             &logical_ordinals,
         );
+        run_index = group_end;
     }
     state.finish_line();
 
-    let mut ruby = layout_ruby(document, request, shaper, &state.glyphs, &state.runs)?;
+    let mut ruby =
+        crate::document_ruby::layout_ruby(document, request, shaper, &state.glyphs, &state.runs)?;
     crate::document_ruby::resolve_collisions(&mut ruby);
     for annotation in &ruby {
         state.include_bounds(annotation.ruby_bounds);
@@ -83,6 +110,31 @@ pub fn layout_document<S: TextShaper>(
         hash,
         font_inventory,
     })
+}
+
+struct ShapedDocumentRun<'a> {
+    run_index: usize,
+    run: &'a ResolvedTextRun,
+    text: &'a str,
+    shaped: ShapedTextRun,
+}
+
+fn vertical_group_key(
+    run: &ResolvedTextRun,
+    request: TextLayoutRequest,
+) -> Option<(RichTextWritingMode, JlreqStrictness)> {
+    let writing_mode = run.style().writing_mode();
+    if writing_mode == RichTextWritingMode::HorizontalTb {
+        return None;
+    }
+    let strictness = run
+        .presentation()
+        .layout
+        .as_ref()
+        .map_or(request.jlreq_strictness, |layout| {
+            request.jlreq_strictness.resolve(layout.jlreq_strictness)
+        });
+    Some((writing_mode, strictness))
 }
 
 struct DocumentLayoutState {
@@ -122,6 +174,22 @@ struct LocalGlyph {
     source_range: RichTextRange,
     origin: LayoutPoint,
     ink_bounds: LayoutRect,
+}
+
+struct VerticalPlacement {
+    run_index: usize,
+    font_size: f32,
+    column_step: f32,
+    source_range: RichTextRange,
+    text: String,
+    orientation: GlyphOrientation,
+    vertical_form: GlyphVerticalForm,
+    local: Vec<LocalGlyph>,
+    local_bounds: LayoutRect,
+    inline_advance: f32,
+    post_inline_advance: f32,
+    hard_line: usize,
+    break_allowed_before: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -164,25 +232,31 @@ impl DocumentLayoutState {
         }
     }
 
-    fn place_run(
+    fn place_horizontal_run(
         &mut self,
         document: &ResolvedTextDocument<'_>,
-        run_index: usize,
-        run: &ResolvedTextRun,
-        text: &str,
-        shaped: &ShapedTextRun,
+        input: &ShapedDocumentRun<'_>,
         logical_ordinals: &BTreeMap<(usize, usize), u32>,
     ) {
         let glyph_start = self.glyphs.len();
-        match run.style().writing_mode() {
-            RichTextWritingMode::HorizontalTb => {
-                self.place_horizontal(document, run_index, run, shaped, logical_ordinals);
-            }
-            RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
-                self.place_vertical(document, run_index, run, text, shaped, logical_ordinals);
-            }
-        }
+        self.place_horizontal(
+            document,
+            input.run_index,
+            input.run,
+            &input.shaped,
+            logical_ordinals,
+        );
         let glyph_end = self.glyphs.len();
+        self.record_run(input.run_index, input.run, glyph_start, glyph_end);
+    }
+
+    fn record_run(
+        &mut self,
+        run_index: usize,
+        run: &ResolvedTextRun,
+        glyph_start: usize,
+        glyph_end: usize,
+    ) {
         let run_bounds = union_rects(self.glyphs[glyph_start..glyph_end].iter().map(glyph_bounds));
         if let Some(bounds) = run_bounds {
             self.include_bounds(bounds);
@@ -260,78 +334,125 @@ impl DocumentLayoutState {
         }
     }
 
-    fn place_vertical(
+    fn place_vertical_group(
         &mut self,
         document: &ResolvedTextDocument<'_>,
-        run_index: usize,
-        run: &ResolvedTextRun,
-        text: &str,
-        shaped: &ShapedTextRun,
+        runs: &[ShapedDocumentRun<'_>],
+        writing_mode: RichTextWritingMode,
+        strictness: JlreqStrictness,
         logical_ordinals: &BTreeMap<(usize, usize), u32>,
     ) {
-        let writing_mode = run.style().writing_mode();
-        let font_size = milli_to_pixels(run.style().font_size_milli());
-        let column_step = vertical_column_step(run);
-        let vertical_latin = run
-            .presentation()
-            .layout
-            .as_ref()
-            .map_or(RichTextVerticalLatinMode::Mixed, |layout| {
-                layout.vertical_latin
-            });
-        for cluster in vertical_clusters(text, vertical_latin) {
-            if cluster.text.chars().all(|ch| matches!(ch, '\r' | '\n')) {
-                continue;
-            }
-            let source_range = RichTextRange::new(
-                run.source_range().start + cluster.range.start,
-                run.source_range().start + cluster.range.end,
-            );
-            let shaped_glyphs = shaped
-                .glyphs()
-                .iter()
-                .filter(|glyph| ranges_overlap(glyph.source_range, source_range))
-                .collect::<Vec<_>>();
-            if shaped_glyphs.is_empty() {
-                continue;
-            }
-            let hard_line = source_hard_line(document, source_range.start);
-            self.sync_vertical_hard_line(writing_mode, hard_line, column_step);
-            let local = local_glyphs(&shaped_glyphs);
-            let local_bounds = local_bounds(&local, font_size);
-            let inline_advance = match cluster.orientation {
-                GlyphOrientation::SidewaysCw => local_bounds.width.max(font_size),
-                GlyphOrientation::Upright | GlyphOrientation::TextCombineUpright => font_size,
-            };
-            if self.vertical_should_wrap(writing_mode, inline_advance, &cluster.text) {
-                self.break_vertical_line(writing_mode, column_step);
-            }
-            let (boundary_x, cursor_y) = {
-                let cursor = self.vertical_cursor(writing_mode);
-                (cursor.boundary_x, cursor.y)
-            };
-            let cell_x = match writing_mode {
-                RichTextWritingMode::VerticalRl => boundary_x - font_size,
-                RichTextWritingMode::VerticalLr => boundary_x,
-                RichTextWritingMode::HorizontalTb => unreachable!("vertical run selected"),
-            };
-            let line_index = self.ensure_line(writing_mode, cell_x);
-            let cluster_index = self.allocate_cluster();
-            let context = VerticalGlyphContext {
-                run_index,
-                line_index,
-                cluster_index,
-                logical_ordinals,
-                orientation: cluster.orientation,
-                vertical_form: cluster.vertical_form,
-                cell: LayoutRect::new(cell_x, cursor_y, font_size, inline_advance),
-            };
-            self.glyphs
-                .extend(place_vertical_glyphs(&local, context, local_bounds));
-            let cursor = self.vertical_cursor_mut(writing_mode);
-            cursor.y += inline_advance;
-            cursor.previous_cluster = Some(cluster.text);
+        let group_glyph_start = self.glyphs.len();
+        let mut placements = runs
+            .iter()
+            .flat_map(|input| {
+                let vertical_latin = input
+                    .run
+                    .presentation()
+                    .layout
+                    .as_ref()
+                    .map_or(RichTextVerticalLatinMode::Mixed, |layout| {
+                        layout.vertical_latin
+                    });
+                vertical_placements(
+                    document,
+                    input.run_index,
+                    input.run,
+                    input.text,
+                    &input.shaped,
+                    vertical_latin,
+                )
+            })
+            .collect::<Vec<_>>();
+        let paragraph_breaks = line_break_offsets(document.text());
+        for cluster in &mut placements {
+            cluster.break_allowed_before = paragraph_breaks.contains(&cluster.source_range.start);
         }
+        let mut segment_start = 0;
+        while segment_start < placements.len() {
+            let hard_line = placements[segment_start].hard_line;
+            let segment_end = placements[segment_start..]
+                .iter()
+                .position(|cluster| cluster.hard_line != hard_line)
+                .map_or(placements.len(), |offset| segment_start + offset);
+            self.sync_vertical_hard_line(
+                writing_mode,
+                hard_line,
+                placements[segment_start].column_step,
+            );
+            let plan_input = placements[segment_start..segment_end]
+                .iter()
+                .map(|cluster| VerticalPlanCluster {
+                    text: &cluster.text,
+                    advance: cluster.inline_advance + cluster.post_inline_advance,
+                    break_allowed_before: cluster.break_allowed_before,
+                })
+                .collect::<Vec<_>>();
+            let plan = plan_vertical_segment(
+                &plan_input,
+                self.request.origin.y,
+                self.vertical_cursor(writing_mode).y,
+                self.request.size.height,
+                strictness,
+            );
+            for (offset, cluster) in placements[segment_start..segment_end].iter().enumerate() {
+                if plan.breaks_before(offset) {
+                    self.break_vertical_line(writing_mode, cluster.column_step);
+                }
+                self.place_vertical_cluster(writing_mode, cluster, logical_ordinals);
+            }
+            segment_start = segment_end;
+        }
+
+        let group_glyph_end = self.glyphs.len();
+        let mut glyph_start = group_glyph_start;
+        for input in runs {
+            let run_index = saturating_u32(input.run_index);
+            let mut glyph_end = glyph_start;
+            while glyph_end < group_glyph_end && self.glyphs[glyph_end].run_index == run_index {
+                glyph_end += 1;
+            }
+            self.record_run(input.run_index, input.run, glyph_start, glyph_end);
+            glyph_start = glyph_end;
+        }
+        debug_assert_eq!(glyph_start, group_glyph_end);
+    }
+
+    fn place_vertical_cluster(
+        &mut self,
+        writing_mode: RichTextWritingMode,
+        cluster: &VerticalPlacement,
+        logical_ordinals: &BTreeMap<(usize, usize), u32>,
+    ) {
+        let font_size = cluster.font_size;
+        let (boundary_x, cursor_y) = {
+            let cursor = self.vertical_cursor(writing_mode);
+            (cursor.boundary_x, cursor.y)
+        };
+        let cell_x = match writing_mode {
+            RichTextWritingMode::VerticalRl => boundary_x - font_size,
+            RichTextWritingMode::VerticalLr => boundary_x,
+            RichTextWritingMode::HorizontalTb => unreachable!("vertical run selected"),
+        };
+        let line_index = self.ensure_line(writing_mode, cell_x);
+        let cluster_index = self.allocate_cluster();
+        let context = VerticalGlyphContext {
+            run_index: cluster.run_index,
+            line_index,
+            cluster_index,
+            logical_ordinals,
+            orientation: cluster.orientation,
+            vertical_form: cluster.vertical_form,
+            cell: LayoutRect::new(cell_x, cursor_y, font_size, cluster.inline_advance),
+        };
+        self.glyphs.extend(place_vertical_glyphs(
+            &cluster.local,
+            context,
+            cluster.local_bounds,
+        ));
+        let cursor = self.vertical_cursor_mut(writing_mode);
+        cursor.y += cluster.inline_advance + cluster.post_inline_advance;
+        cursor.previous_cluster = Some(cluster.text.clone());
     }
 
     fn sync_horizontal_hard_line(&mut self, target: usize, line_height: f32) {
@@ -376,26 +497,6 @@ impl DocumentLayoutState {
             RichTextWritingMode::HorizontalTb => unreachable!("vertical run selected"),
         };
         cursor.previous_cluster = None;
-    }
-
-    fn vertical_should_wrap(
-        &self,
-        writing_mode: RichTextWritingMode,
-        inline_advance: f32,
-        cluster_text: &str,
-    ) -> bool {
-        let cursor = self.vertical_cursor(writing_mode);
-        let bottom = self.request.origin.y + self.request.size.height;
-        if cursor.y <= self.request.origin.y || cursor.y + inline_advance <= bottom {
-            return false;
-        }
-        if jlreq_punctuation::is_line_head_prohibited_cluster(cluster_text) {
-            return false;
-        }
-        !cursor
-            .previous_cluster
-            .as_deref()
-            .is_some_and(jlreq_punctuation::is_line_end_prohibited_cluster)
     }
 
     fn vertical_cursor(&self, writing_mode: RichTextWritingMode) -> &VerticalCursor {
@@ -475,6 +576,69 @@ impl DocumentLayoutState {
                 .map_or(bounds, |existing| existing.union(bounds)),
         );
     }
+}
+
+fn vertical_placements(
+    document: &ResolvedTextDocument<'_>,
+    run_index: usize,
+    run: &ResolvedTextRun,
+    text: &str,
+    shaped: &ShapedTextRun,
+    vertical_latin: RichTextVerticalLatinMode,
+) -> Vec<VerticalPlacement> {
+    let font_size = milli_to_pixels(run.style().font_size_milli());
+    let column_step = vertical_column_step(run);
+    vertical_clusters(text, vertical_latin)
+        .into_iter()
+        .filter_map(|cluster| {
+            if cluster
+                .text
+                .chars()
+                .all(|character| matches!(character, '\r' | '\n'))
+            {
+                return None;
+            }
+            let source_range = RichTextRange::new(
+                run.source_range().start + cluster.range.start,
+                run.source_range().start + cluster.range.end,
+            );
+            let shaped_glyphs = shaped
+                .glyphs()
+                .iter()
+                .filter(|glyph| ranges_overlap(glyph.source_range, source_range))
+                .collect::<Vec<_>>();
+            if shaped_glyphs.is_empty() {
+                return None;
+            }
+            let local = local_glyphs(&shaped_glyphs);
+            let bounds = local_bounds(&local, font_size);
+            let inline_advance = if jlreq_punctuation::is_compressible_cluster(&cluster.text) {
+                font_size * 0.5
+            } else {
+                match cluster.orientation {
+                    GlyphOrientation::SidewaysCw => bounds.width.max(font_size),
+                    GlyphOrientation::Upright | GlyphOrientation::TextCombineUpright => font_size,
+                }
+            };
+            let post_inline_advance =
+                crate::document_ruby::inter_character_extent_after(document, source_range);
+            Some(VerticalPlacement {
+                run_index,
+                font_size,
+                column_step,
+                source_range,
+                text: cluster.text,
+                orientation: cluster.orientation,
+                vertical_form: cluster.vertical_form,
+                local,
+                local_bounds: bounds,
+                inline_advance,
+                post_inline_advance,
+                hard_line: source_hard_line(document, source_range.start),
+                break_allowed_before: cluster.break_allowed_before,
+            })
+        })
+        .collect()
 }
 
 fn place_vertical_glyphs(

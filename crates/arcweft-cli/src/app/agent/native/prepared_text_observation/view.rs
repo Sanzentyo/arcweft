@@ -272,34 +272,28 @@ fn view_ruby_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
 }
 
 fn view_glyph_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
+    let mut objects = view_body_glyph_objects(context);
+    objects.extend(view_body_cluster_objects(context));
+    objects
+}
+
+fn view_body_glyph_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
     context
         .item
         .layout
         .glyphs
         .iter()
         .enumerate()
-        .flat_map(|(glyph_index, glyph)| {
-            let Some(range) = global_range_unbounded(context.owner, glyph.source_range) else {
-                return Vec::new();
-            };
-            let Some(bbox) = agent_bbox_from_layout(glyph.layout_bounds, context.viewport) else {
-                return Vec::new();
-            };
-            let Some(run) = context
+        .filter_map(|(glyph_index, glyph)| {
+            let range = global_range_unbounded(context.owner, glyph.source_range)?;
+            let bbox = agent_bbox_from_layout(glyph.layout_bounds, context.viewport)?;
+            let run = context
                 .item
                 .layout
                 .runs
                 .iter()
-                .find(|run| run.run_index == glyph.run_index)
-            else {
-                return Vec::new();
-            };
-            let Ok(run_index) = usize::try_from(glyph.run_index) else {
-                return Vec::new();
-            };
-            let Ok(cluster_index) = usize::try_from(glyph.cluster_index) else {
-                return Vec::new();
-            };
+                .find(|run| run.run_index == glyph.run_index)?;
+            let run_index = usize::try_from(glyph.run_index).ok()?;
             let parent_id = format!("{}.run.{run_index}", context.root.id);
             let text = context
                 .item
@@ -308,52 +302,77 @@ fn view_glyph_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> 
                 .get(glyph.source_range.start..glyph.source_range.end)
                 .unwrap_or_default()
                 .to_owned();
-            [
-                (
-                    AgentRichTextElementKind::TextGlyph,
-                    glyph_index,
-                    "text_glyph",
-                    format!(
+            Some(view_child_object(
+                context.step,
+                context.root,
+                ViewChildSpec {
+                    parent_id,
+                    id: format!(
                         "{}.glyph.{glyph_index}.{}.{}",
                         context.root.id, range.start, range.end
                     ),
-                    AgentHitRegionKind::TextGlyph,
-                ),
-                (
-                    AgentRichTextElementKind::GlyphCluster,
-                    cluster_index,
-                    "text_cluster",
-                    format!(
+                    role: "text_glyph",
+                    text,
+                    bbox: bbox.clone(),
+                    reference: view_glyph_reference(
+                        AgentRichTextElementKind::TextGlyph,
+                        glyph_index,
+                        range,
+                        glyph,
+                        &run.presentation,
+                        &bbox,
+                        AgentHitRegionKind::TextGlyph,
+                    ),
+                },
+            ))
+        })
+        .collect()
+}
+
+fn view_body_cluster_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
+    prepared_body_clusters(context.item)
+        .into_iter()
+        .filter_map(|cluster| {
+            let range = global_range_unbounded(context.owner, cluster.source_range)?;
+            let bbox = agent_bbox_from_layout(cluster.bounds, context.viewport)?;
+            let run = context
+                .item
+                .layout
+                .runs
+                .iter()
+                .find(|run| run.run_index == cluster.run_index)?;
+            let run_index = usize::try_from(cluster.run_index).ok()?;
+            let cluster_index = usize::try_from(cluster.index).ok()?;
+            let text = context
+                .item
+                .interaction
+                .text
+                .get(cluster.source_range.start..cluster.source_range.end)
+                .unwrap_or_default()
+                .to_owned();
+            Some(view_child_object(
+                context.step,
+                context.root,
+                ViewChildSpec {
+                    parent_id: format!("{}.run.{run_index}", context.root.id),
+                    id: format!(
                         "{}.cluster.{cluster_index}.{}.{}",
                         context.root.id, range.start, range.end
                     ),
-                    AgentHitRegionKind::GlyphCluster,
-                ),
-            ]
-            .into_iter()
-            .map(|(kind, index, role, id, hit_kind)| {
-                view_child_object(
-                    context.step,
-                    context.root,
-                    ViewChildSpec {
-                        parent_id: parent_id.clone(),
-                        id,
-                        role,
-                        text: text.clone(),
-                        bbox: bbox.clone(),
-                        reference: view_glyph_reference(
-                            kind,
-                            index,
-                            range,
-                            glyph,
-                            &run.presentation,
-                            &bbox,
-                            hit_kind,
-                        ),
-                    },
-                )
-            })
-            .collect::<Vec<_>>()
+                    role: "text_cluster",
+                    text,
+                    bbox: bbox.clone(),
+                    reference: view_glyph_reference(
+                        AgentRichTextElementKind::GlyphCluster,
+                        cluster_index,
+                        range,
+                        cluster.representative,
+                        &run.presentation,
+                        &bbox,
+                        AgentHitRegionKind::GlyphCluster,
+                    ),
+                },
+            ))
         })
         .collect()
 }

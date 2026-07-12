@@ -8,6 +8,7 @@ mod config;
 mod document_hash;
 mod document_layout;
 mod document_ruby;
+mod document_vertical;
 mod effects;
 mod geometry;
 mod horizontal;
