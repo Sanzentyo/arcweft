@@ -227,6 +227,11 @@ frame, capture time, and seed must produce the same capture.
 `.pulse` applies deterministic time-varying scale. Common parameters are
 `amp`, `amount`, `speed`, `phase`, `origin`, and `target`.
 
+`.sparkle` applies deterministic shimmer as a glyph transform, glyph color, or
+post-process. It is an Arcweft-owned builtin even when authored without
+attributes; `amp`, `amount`, `speed`, `seed`, `phase`, and `target` customize
+its typed program.
+
 `.motion` applies a renderer-resolved deterministic animation function to
 translation, rotation, and scale together. Common parameters are `fn` or
 `curve`, `amp`, `angle`, `scale`, `speed`, `phase`, `seed`, `origin`, and

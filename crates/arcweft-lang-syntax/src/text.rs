@@ -7,7 +7,10 @@ use crate::ast::{
 };
 use crate::expr::{CallArg, Expr, Literal, parse_expr};
 
-pub use arcweft_dialogue::rich_text::canonical_tag_name as canonical_rich_text_tag_name;
+pub use arcweft_dialogue::rich_text::{
+    RichTextTagFamily, canonical_tag_name as canonical_rich_text_tag_name,
+    inferred_tag_family as inferred_rich_text_tag_family,
+};
 
 /// Parsed dialogue-text tokens plus recoverable text-mode diagnostics.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,42 +24,6 @@ pub struct DialogueTextParse {
 pub struct DialogueTagBoundary {
     close: usize,
     unterminated_quote_start: Option<usize>,
-}
-
-/// Rich-text family inferred from a dot-selector dialogue tag.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RichTextTagFamily {
-    /// Presentation style such as italic or opacity.
-    Style,
-    /// Writing-mode or ruby layout.
-    Layout,
-    /// Post-layout visual transform.
-    Transform,
-    /// Registry-extensible visual effect.
-    Effect,
-    /// Zero-width line marker.
-    Marker,
-}
-
-/// Resolves the canonical family of an inferred dot-selector tag.
-pub fn inferred_rich_text_tag_family(selector: &str, attrs: &str) -> Option<RichTextTagFamily> {
-    match selector {
-        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "meta"
-        | "metadata" | "data" | "z" | "z_index" => Some(RichTextTagFamily::Style),
-        "horizontal_tb"
-        | "vertical_rl"
-        | "vertical_lr"
-        | "dir"
-        | "ruby_over"
-        | "ruby_under"
-        | "ruby_inter_character" => Some(RichTextTagFamily::Layout),
-        "offset" | "pos" | "rotate" | "scale" | "skew" => Some(RichTextTagFamily::Transform),
-        "wave" | "shake" | "arc" | "spin" | "pulse" | "motion" | "typewriter" | "jitter"
-        | "shader" | "host" => Some(RichTextTagFamily::Effect),
-        "mark" => Some(RichTextTagFamily::Marker),
-        _ if !attrs.trim().is_empty() => Some(RichTextTagFamily::Effect),
-        _ => None,
-    }
 }
 
 impl DialogueTagBoundary {
@@ -930,11 +897,31 @@ fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {
 
 #[cfg(test)]
 mod tests {
-    use super::{find_dialogue_tag_boundary, parse_dialogue_text};
+    use arcweft_dialogue::rich_text::BuiltinRichTextFx;
+
+    use super::{
+        RichTextTagFamily, find_dialogue_tag_boundary, inferred_rich_text_tag_family,
+        parse_dialogue_text,
+    };
     use crate::ast::{
         common::TextRange,
         dialogue::{DialogueTagKind, DialogueToken},
     };
+
+    #[test]
+    fn every_builtin_selector_is_an_effect_with_or_without_attributes() {
+        for effect in BuiltinRichTextFx::ALL {
+            for attrs in ["", "phase=glyph_transform"] {
+                assert_eq!(
+                    inferred_rich_text_tag_family(effect.selector(), attrs),
+                    Some(RichTextTagFamily::Effect),
+                    "{} with `{attrs}`",
+                    effect.selector()
+                );
+            }
+        }
+        assert_eq!(inferred_rich_text_tag_family("unknown", ""), None);
+    }
 
     #[test]
     fn dialogue_tags_expose_language_owned_semantic_kinds() {

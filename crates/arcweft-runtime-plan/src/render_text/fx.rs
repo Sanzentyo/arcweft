@@ -118,8 +118,8 @@ impl FxCatalog {
     ) -> Result<Option<(String, FxApplication, Option<FxDefinition>)>, RuntimePlanLowerError> {
         let compiled = builtins::compile_builtin_rich_text_fx(selector, attrs)?;
         let (id, definition) = match compiled {
-            builtins::BuiltinRichTextFx::HostEvent => return Ok(None),
-            builtins::BuiltinRichTextFx::Definition(definition) => {
+            builtins::CompiledBuiltinRichTextFx::HostEvent => return Ok(None),
+            builtins::CompiledBuiltinRichTextFx::Definition(definition) => {
                 let retained = self.definitions_by_id.get(definition.id()).ok_or_else(|| {
                     fx_error(format!(
                         "bundled definition `{}` was not collected from the dialogue inventory",
@@ -134,7 +134,7 @@ impl FxCatalog {
                 }
                 (definition.id().clone(), Some(definition))
             }
-            builtins::BuiltinRichTextFx::MissingDefinition(id) => (id, None),
+            builtins::CompiledBuiltinRichTextFx::MissingDefinition(id) => (id, None),
         };
         let range = tag.attrs_range();
         let start = u32::try_from(range.start())

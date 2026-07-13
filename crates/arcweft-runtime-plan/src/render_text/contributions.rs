@@ -1,12 +1,12 @@
 use std::ops::Range;
 
+use arcweft_dialogue::rich_text::{RichTextTagFamily, inferred_tag_family};
 use arcweft_lang_hir::model::HirDialogue;
 use arcweft_lang_hir::syntax::ast::common::TextRange;
 use arcweft_lang_hir::syntax::ast::dialogue::{
     DialogueContent, DialogueTag, DialogueTagArg, DialogueToken,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
-use arcweft_lang_hir::syntax::text::{RichTextTagFamily, inferred_rich_text_tag_family};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextSourceRange,
     RichTextStyle, RichTextStyleContribution,
@@ -185,7 +185,7 @@ fn inferred_inline_assignments(
     attrs_range: Range<usize>,
     arguments: &[DialogueTagArg],
 ) -> Vec<InlineStyleAssignment> {
-    match inferred_rich_text_tag_family(selector, attrs) {
+    match inferred_tag_family(selector, attrs) {
         Some(RichTextTagFamily::Style) => style_selector_inline_assignments(
             selector,
             attrs,

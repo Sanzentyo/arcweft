@@ -5,6 +5,9 @@ mod value_expr;
 
 use std::collections::BTreeMap;
 
+use arcweft_dialogue::rich_text::{
+    BuiltinRichTextFx, BuiltinRichTextFxPhase, BuiltinRichTextFxProperty,
+};
 use arcweft_presentation::fx::{
     FxContextSlot, FxGraph, FxId, FxNode, FxPhase, FxProperty, FxResourceId, FxRuntimeType,
     FxRuntimeValue, FxSamplerProgram, FxStaticValue, FxTarget,
@@ -12,7 +15,7 @@ use arcweft_presentation::fx::{
 
 use crate::errors::RuntimePlanLowerError;
 
-use super::fx_error;
+use super::{fx_error, presentation_phase};
 use attrs::{
     alias_number, alias_seconds, authored_seed, bool_attr, direction, non_negative, number,
     optional_number, parse_color, positive_number, static_f32, static_length,
@@ -24,38 +27,29 @@ use value_expr::{
     signed_noise, sin, sub,
 };
 
-pub(super) fn is_builtin_effect(effect: &str) -> bool {
-    matches!(
-        effect,
-        "wave"
-            | "shake"
-            | "jitter"
-            | "arc"
-            | "spin"
-            | "pulse"
-            | "motion"
-            | "typewriter"
-            | "sparkle"
-    )
-}
-
 pub(super) fn effect_graph(
     id: &FxId,
-    effect: &str,
-    phase: FxPhase,
+    effect: BuiltinRichTextFx,
+    phase: BuiltinRichTextFxPhase,
     target: FxTarget,
     attrs: &BTreeMap<String, String>,
 ) -> Result<FxGraph, RuntimePlanLowerError> {
     ensure_effect_properties(effect, attrs)?;
-    ensure_effect_phase(effect, phase)?;
+    if !effect.supported_phases().contains(&phase) {
+        return Err(fx_error(format!(
+            "effect `{}` does not support phase {phase:?}",
+            effect.selector()
+        )));
+    }
+    let presentation_phase = presentation_phase(phase);
     let node = match phase {
-        FxPhase::GlyphTransform => {
+        BuiltinRichTextFxPhase::GlyphTransform => {
             ensure_text_paint_target(effect, target)?;
             FxNode::Transform {
                 fx: id.clone(),
                 properties: vec![
                     FxProperty::new("target", FxStaticValue::Target(target)),
-                    FxProperty::new("phase", FxStaticValue::Phase(phase)),
+                    FxProperty::new("phase", FxStaticValue::Phase(presentation_phase)),
                     FxProperty::new(
                         "sampler",
                         FxStaticValue::Sampler(transform_sampler(effect, attrs)?),
@@ -63,12 +57,12 @@ pub(super) fn effect_graph(
                 ],
             }
         }
-        FxPhase::GlyphColor if effect == "sparkle" => {
+        BuiltinRichTextFxPhase::GlyphColor if effect == BuiltinRichTextFx::Sparkle => {
             ensure_text_paint_target(effect, target)?;
             FxNode::Color {
                 properties: vec![
                     FxProperty::new("target", FxStaticValue::Target(target)),
-                    FxProperty::new("phase", FxStaticValue::Phase(phase)),
+                    FxProperty::new("phase", FxStaticValue::Phase(presentation_phase)),
                     FxProperty::new(
                         "tint",
                         FxStaticValue::Sampler(sparkle_color_sampler(attrs)?),
@@ -76,13 +70,13 @@ pub(super) fn effect_graph(
                 ],
             }
         }
-        FxPhase::GlyphMask if effect == "typewriter" => {
+        BuiltinRichTextFxPhase::GlyphMask if effect == BuiltinRichTextFx::Typewriter => {
             ensure_text_paint_target(effect, target)?;
             FxNode::Mask {
                 fx: id.clone(),
                 properties: vec![
                     FxProperty::new("target", FxStaticValue::Target(target)),
-                    FxProperty::new("phase", FxStaticValue::Phase(phase)),
+                    FxProperty::new("phase", FxStaticValue::Phase(presentation_phase)),
                     FxProperty::new(
                         "coverage",
                         FxStaticValue::Sampler(typewriter_coverage_sampler(attrs)?),
@@ -90,33 +84,33 @@ pub(super) fn effect_graph(
                 ],
             }
         }
-        FxPhase::PostProcess => post_process_node(id, effect, attrs)?,
+        BuiltinRichTextFxPhase::PostProcess => post_process_node(id, effect, attrs)?,
         _ => {
             return Err(fx_error(format!(
-                "effect `{effect}` does not implement phase {phase:?}"
+                "effect `{}` does not implement phase {phase:?}",
+                effect.selector()
             )));
         }
     };
     FxGraph::try_new(vec![node])
-        .map_err(|error| fx_error(format!("invalid `{effect}` graph: {error}")))
+        .map_err(|error| fx_error(format!("invalid `{}` graph: {error}", effect.selector())))
 }
 
 pub(super) fn shader_graph(
     id: &FxId,
-    phase: FxPhase,
+    effect: BuiltinRichTextFx,
+    phase: BuiltinRichTextFxPhase,
     target: FxTarget,
     attrs: &BTreeMap<String, String>,
 ) -> Result<FxGraph, RuntimePlanLowerError> {
-    ensure_properties("shader", attrs, &["id", "amount", "dir", "color"])?;
-    if !matches!(
-        phase,
-        FxPhase::GlyphColor | FxPhase::OffscreenPass | FxPhase::PostProcess
-    ) {
+    debug_assert_eq!(effect, BuiltinRichTextFx::Shader);
+    ensure_effect_properties(effect, attrs)?;
+    if !effect.supported_phases().contains(&phase) {
         return Err(fx_error(format!(
             "shader shorthand does not implement phase {phase:?}"
         )));
     }
-    if phase == FxPhase::PostProcess {
+    if phase == BuiltinRichTextFxPhase::PostProcess {
         if target != FxTarget::Viewport {
             return Err(fx_error("post-process shader must target viewport"));
         }
@@ -151,7 +145,7 @@ pub(super) fn shader_graph(
         fx: id.clone(),
         properties: vec![
             FxProperty::new("target", FxStaticValue::Target(target)),
-            FxProperty::new("phase", FxStaticValue::Phase(phase)),
+            FxProperty::new("phase", FxStaticValue::Phase(presentation_phase(phase))),
             FxProperty::new("resource", FxStaticValue::Resource(resource)),
             FxProperty::new("uniforms", FxStaticValue::Record(uniforms)),
         ],
@@ -159,109 +153,59 @@ pub(super) fn shader_graph(
     FxGraph::try_new(vec![node]).map_err(|error| fx_error(format!("invalid shader graph: {error}")))
 }
 
-fn ensure_effect_phase(effect: &str, phase: FxPhase) -> Result<(), RuntimePlanLowerError> {
-    let supported = match effect {
-        "wave" | "shake" | "jitter" | "arc" | "spin" | "pulse" | "motion" => {
-            matches!(phase, FxPhase::GlyphTransform | FxPhase::PostProcess)
-        }
-        "sparkle" => matches!(
-            phase,
-            FxPhase::GlyphTransform | FxPhase::GlyphColor | FxPhase::PostProcess
-        ),
-        "typewriter" => phase == FxPhase::GlyphMask,
-        _ => false,
-    };
-    if supported {
-        Ok(())
-    } else {
-        Err(fx_error(format!(
-            "effect `{effect}` does not support phase {phase:?}"
-        )))
-    }
-}
-
-fn ensure_text_paint_target(effect: &str, target: FxTarget) -> Result<(), RuntimePlanLowerError> {
+fn ensure_text_paint_target(
+    effect: BuiltinRichTextFx,
+    target: FxTarget,
+) -> Result<(), RuntimePlanLowerError> {
     if matches!(target, FxTarget::Content | FxTarget::Line | FxTarget::Glyph) {
         Ok(())
     } else {
         Err(fx_error(format!(
-            "effect `{effect}` target {target:?} has no inline RichText paint owner"
+            "effect `{}` target {target:?} has no inline RichText paint owner",
+            effect.selector()
         )))
     }
 }
 
 fn ensure_effect_properties(
-    effect: &str,
+    effect: BuiltinRichTextFx,
     attrs: &BTreeMap<String, String>,
 ) -> Result<(), RuntimePlanLowerError> {
-    let allowed: &[&str] = match effect {
-        "wave" => &[
-            "amp", "amount", "period", "speed", "freq", "dir", "axis", "seed",
-        ],
-        "shake" | "jitter" => &["amp", "amount", "period", "speed", "dir", "axis", "seed"],
-        "arc" => &["radius", "amp", "amount", "start", "step", "seed"],
-        "spin" => &["angle", "amp", "amount", "speed", "origin", "seed"],
-        "pulse" => &["amp", "amount", "speed", "origin", "seed"],
-        "sparkle" => &["amp", "amount", "speed", "seed"],
-        "motion" => &[
-            "fn",
-            "curve",
-            "speed",
-            "amp",
-            "radius",
-            "amount",
-            "angle",
-            "scale",
-            "scale_amp",
-            "seed",
-        ],
-        "typewriter" => &[
-            "cps",
-            "delay",
-            "start",
-            "cursor",
-            "cursor_alpha",
-            "cursor_opacity",
-            "seed",
-        ],
-        _ => &[],
-    };
-    ensure_properties(effect, attrs, allowed)
-}
-
-fn ensure_properties(
-    effect: &str,
-    attrs: &BTreeMap<String, String>,
-    allowed: &[&str],
-) -> Result<(), RuntimePlanLowerError> {
-    let common = ["phase", "target", "id", "effect", "name"];
-    if let Some(name) = attrs
-        .keys()
-        .find(|name| !common.contains(&name.as_str()) && !allowed.contains(&name.as_str()))
-    {
-        return Err(fx_error(format!(
-            "effect `{effect}` has no property named `{name}`"
-        )));
+    let schema = effect.property_schema();
+    for name in attrs.keys() {
+        let Some(property) = BuiltinRichTextFxProperty::from_source_name(name) else {
+            return Err(fx_error(format!(
+                "effect `{}` has no property named `{name}`",
+                effect.selector()
+            )));
+        };
+        if !schema.accepts(property) {
+            return Err(fx_error(format!(
+                "effect `{}` has no property named `{name}`",
+                effect.selector()
+            )));
+        }
     }
     Ok(())
 }
 
 fn transform_sampler(
-    effect: &str,
+    effect: BuiltinRichTextFx,
     attrs: &BTreeMap<String, String>,
 ) -> Result<FxSamplerProgram, RuntimePlanLowerError> {
     let fields = match effect {
-        "wave" => wave_fields(attrs)?,
-        "shake" => shake_fields(attrs, false)?,
-        "jitter" => shake_fields(attrs, true)?,
-        "arc" => arc_fields(attrs)?,
-        "spin" => spin_fields(attrs)?,
-        "pulse" => pulse_fields(attrs)?,
-        "sparkle" => sparkle_fields(attrs)?,
-        "motion" => motion_fields(attrs)?,
-        _ => {
+        BuiltinRichTextFx::Wave => wave_fields(attrs)?,
+        BuiltinRichTextFx::Shake => shake_fields(attrs, false)?,
+        BuiltinRichTextFx::Jitter => shake_fields(attrs, true)?,
+        BuiltinRichTextFx::Arc => arc_fields(attrs)?,
+        BuiltinRichTextFx::Spin => spin_fields(attrs)?,
+        BuiltinRichTextFx::Pulse => pulse_fields(attrs)?,
+        BuiltinRichTextFx::Sparkle => sparkle_fields(attrs)?,
+        BuiltinRichTextFx::Motion => motion_fields(attrs)?,
+        BuiltinRichTextFx::Typewriter | BuiltinRichTextFx::Shader => {
             return Err(fx_error(format!(
-                "effect `{effect}` has no transform sampler"
+                "effect `{}` has no transform sampler",
+                effect.selector()
             )));
         }
     };
@@ -550,18 +494,18 @@ fn typewriter_coverage_sampler(
 
 fn post_process_node(
     id: &FxId,
-    effect: &str,
+    effect: BuiltinRichTextFx,
     attrs: &BTreeMap<String, String>,
 ) -> Result<FxNode, RuntimePlanLowerError> {
     let mut uniforms = Vec::new();
     let resource = match effect {
-        "wave" | "shake" | "jitter" => {
+        BuiltinRichTextFx::Wave | BuiltinRichTextFx::Shake | BuiltinRichTextFx::Jitter => {
             let amplitude = alias_number(attrs, "amp", "amount", 3.0)?;
             let period = positive_number(attrs, "period", 64.0)?;
             let speed = number(attrs, "speed", 1.0)?;
             uniforms.push(FxProperty::new("amplitude", static_length(amplitude)?));
             uniforms.push(FxProperty::new("period", static_length(period)?));
-            let phase = if effect == "jitter" {
+            let phase = if effect == BuiltinRichTextFx::Jitter {
                 f32_expr(0.0)
             } else {
                 mul(
@@ -581,9 +525,9 @@ fn post_process_node(
                 "seed",
                 FxStaticValue::Runtime(FxRuntimeValue::I32(authored_seed(attrs))),
             ));
-            format!("arcweft.post.{effect}")
+            format!("arcweft.post.{}", effect.selector())
         }
-        "sparkle" => {
+        BuiltinRichTextFx::Sparkle => {
             let amount = alias_number(attrs, "amount", "amp", 0.35)?;
             if !(0.0..=1.0).contains(&amount) {
                 return Err(fx_error("sparkle post-process amount must be in [0, 1]"));
@@ -605,19 +549,24 @@ fn post_process_node(
             ));
             "arcweft.post.sparkle".to_owned()
         }
-        "arc" | "spin" | "pulse" | "motion" => {
+        BuiltinRichTextFx::Arc
+        | BuiltinRichTextFx::Spin
+        | BuiltinRichTextFx::Pulse
+        | BuiltinRichTextFx::Motion => {
             let amount = alias_number(attrs, "amount", "amp", 0.18)?;
             if !(0.0..=1.0).contains(&amount) {
                 return Err(fx_error(format!(
-                    "{effect} post-process amount must be in [0, 1]"
+                    "{} post-process amount must be in [0, 1]",
+                    effect.selector()
                 )));
             }
             uniforms.push(FxProperty::new("amount", static_f32(amount)?));
-            format!("arcweft.post.tint.{effect}")
+            format!("arcweft.post.tint.{}", effect.selector())
         }
-        _ => {
+        BuiltinRichTextFx::Typewriter | BuiltinRichTextFx::Shader => {
             return Err(fx_error(format!(
-                "effect `{effect}` has no post-process program"
+                "effect `{}` has no post-process program",
+                effect.selector()
             )));
         }
     };

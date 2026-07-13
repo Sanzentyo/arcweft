@@ -1260,6 +1260,7 @@ name = "arcweft-runtime-plan"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-dialogue",
  "arcweft-interaction-model",
  "arcweft-lang-hir",
  "arcweft-lang-sema",

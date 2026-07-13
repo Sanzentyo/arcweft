@@ -2,18 +2,16 @@
 
 use std::collections::BTreeMap;
 
+use arcweft_dialogue::rich_text::{RichTextTagFamily, inferred_tag_family};
 use arcweft_lang_hir::{
     model::{HirFlowItem, HirModule},
-    syntax::{
-        ast::dialogue::{DialogueContent, DialogueTag, DialogueToken},
-        text::{RichTextTagFamily, inferred_rich_text_tag_family},
-    },
+    syntax::ast::dialogue::{DialogueContent, DialogueTag, DialogueToken},
 };
 use arcweft_presentation::fx::{FxDefinition, FxId};
 
 use crate::{errors::RuntimePlanLowerError, render_text::tag::split_selector_attrs};
 
-use super::{BuiltinRichTextFx, compile_builtin_rich_text_fx, fx_error};
+use super::{CompiledBuiltinRichTextFx, compile_builtin_rich_text_fx, fx_error};
 
 pub(crate) fn builtin_rich_text_fx_definitions(
     module: &HirModule,
@@ -84,7 +82,7 @@ fn visit_dialogue(
         let Some((selector, attrs)) = builtin_selector(token) else {
             continue;
         };
-        if let BuiltinRichTextFx::Definition(definition) =
+        if let CompiledBuiltinRichTextFx::Definition(definition) =
             compile_builtin_rich_text_fx(selector, attrs)?
         {
             let id = definition.id().clone();
@@ -115,6 +113,6 @@ pub(crate) fn builtin_selector(token: &DialogueToken) -> Option<(&str, &str)> {
 }
 
 fn inferred_tag_is_effect(tag: &DialogueTag) -> bool {
-    inferred_rich_text_tag_family(tag.name().trim_start_matches('.'), tag.attrs())
+    inferred_tag_family(tag.name().trim_start_matches('.'), tag.attrs())
         == Some(RichTextTagFamily::Effect)
 }

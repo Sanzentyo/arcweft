@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
+arcweft-dialogue = { path = "../arcweft-dialogue" }
 arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-presentation = { path = "../arcweft-presentation" }

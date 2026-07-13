@@ -5,6 +5,7 @@ mod program;
 
 use std::collections::BTreeMap;
 
+use arcweft_dialogue::rich_text::{BuiltinRichTextFx, BuiltinRichTextFxPhase};
 use arcweft_presentation::fx::{FxDefinition, FxId, FxPhase, FxTarget};
 
 use crate::{errors::RuntimePlanLowerError, render_text::attrs::parse_attrs};
@@ -13,7 +14,7 @@ pub(crate) use inventory::{builtin_rich_text_fx_definitions, builtin_selector};
 
 /// Result of classifying one authored rich-text effect opener.
 #[derive(Clone, Debug)]
-pub(crate) enum BuiltinRichTextFx {
+pub(crate) enum CompiledBuiltinRichTextFx {
     /// The tag remains a runtime host event and does not create a visual Fx graph.
     HostEvent,
     /// Arcweft owns the complete executable graph.
@@ -26,60 +27,64 @@ pub(crate) enum BuiltinRichTextFx {
 pub(crate) fn compile_builtin_rich_text_fx(
     selector: &str,
     raw_attrs: &str,
-) -> Result<BuiltinRichTextFx, RuntimePlanLowerError> {
+) -> Result<CompiledBuiltinRichTextFx, RuntimePlanLowerError> {
     let selector = selector.trim().trim_start_matches('.');
     let attrs = parse_attrs(raw_attrs);
-    let phase = effect_phase(selector, &attrs)?;
-    if phase == FxPhase::Transition {
-        return Ok(BuiltinRichTextFx::HostEvent);
+    let builtin = BuiltinRichTextFx::from_selector(selector);
+    let phase = effect_phase(builtin, &attrs)?;
+    if phase == BuiltinRichTextFxPhase::HostEvent {
+        return Ok(CompiledBuiltinRichTextFx::HostEvent);
     }
     reject_removed_state_scope(&attrs)?;
     let effect = selector.to_owned();
-    let target = effect_target(&attrs, phase)?;
-    let key = canonical_semantic_key(&effect, phase, target, &attrs);
+    let presentation_phase = presentation_phase(phase);
+    let target = effect_target(&attrs, presentation_phase)?;
+    let key = canonical_semantic_key(&effect, presentation_phase, target, &attrs);
     let id = FxId::derive_builtin(&format!("rich_text.{effect}"), &key).map_err(|error| {
         fx_error(format!(
             "invalid built-in Fx identity for `{effect}`: {error}"
         ))
     })?;
-    if selector != "shader" && !program::is_builtin_effect(&effect) {
-        return Ok(BuiltinRichTextFx::MissingDefinition(id));
-    }
-    let graph = if selector == "shader" {
-        program::shader_graph(&id, phase, target, &attrs)?
+    let Some(builtin) = builtin else {
+        return Ok(CompiledBuiltinRichTextFx::MissingDefinition(id));
+    };
+    let graph = if builtin == BuiltinRichTextFx::Shader {
+        program::shader_graph(&id, builtin, phase, target, &attrs)?
     } else {
-        program::effect_graph(&id, &effect, phase, target, &attrs)?
+        program::effect_graph(&id, builtin, phase, target, &attrs)?
     };
     let definition = FxDefinition::new(id, Vec::new(), graph)
         .map_err(|error| fx_error(format!("invalid built-in `{effect}` Fx graph: {error}")))?;
-    Ok(BuiltinRichTextFx::Definition(definition))
+    Ok(CompiledBuiltinRichTextFx::Definition(definition))
 }
 
 fn effect_phase(
-    selector: &str,
+    builtin: Option<BuiltinRichTextFx>,
     attrs: &BTreeMap<String, String>,
-) -> Result<FxPhase, RuntimePlanLowerError> {
+) -> Result<BuiltinRichTextFxPhase, RuntimePlanLowerError> {
     let Some(value) = attrs.get("phase") else {
-        return Ok(if selector == "typewriter" {
-            FxPhase::GlyphMask
-        } else if selector == "shader" {
-            FxPhase::OffscreenPass
-        } else {
-            FxPhase::GlyphTransform
-        });
+        return Ok(builtin.map_or(
+            BuiltinRichTextFxPhase::GlyphTransform,
+            BuiltinRichTextFx::default_phase,
+        ));
     };
-    match value.trim().trim_start_matches('.') {
-        "before_layout" => Ok(FxPhase::BeforeLayout),
-        "layout_transform" => Ok(FxPhase::LayoutTransform),
-        "glyph_transform" => Ok(FxPhase::GlyphTransform),
-        "glyph_color" => Ok(FxPhase::GlyphColor),
-        "glyph_mask" => Ok(FxPhase::GlyphMask),
-        "offscreen_pass" | "run_offscreen_pass" => Ok(FxPhase::OffscreenPass),
-        "post_process" => Ok(FxPhase::PostProcess),
-        "host_event" => Ok(FxPhase::Transition),
-        value => Err(fx_error(format!(
+    BuiltinRichTextFxPhase::from_source_name(value).ok_or_else(|| {
+        fx_error(format!(
             "rich-text effect phase `{value}` is not in the closed Fx phase set"
-        ))),
+        ))
+    })
+}
+
+pub(super) const fn presentation_phase(phase: BuiltinRichTextFxPhase) -> FxPhase {
+    match phase {
+        BuiltinRichTextFxPhase::BeforeLayout => FxPhase::BeforeLayout,
+        BuiltinRichTextFxPhase::LayoutTransform => FxPhase::LayoutTransform,
+        BuiltinRichTextFxPhase::GlyphTransform => FxPhase::GlyphTransform,
+        BuiltinRichTextFxPhase::GlyphColor => FxPhase::GlyphColor,
+        BuiltinRichTextFxPhase::GlyphMask => FxPhase::GlyphMask,
+        BuiltinRichTextFxPhase::OffscreenPass => FxPhase::OffscreenPass,
+        BuiltinRichTextFxPhase::PostProcess => FxPhase::PostProcess,
+        BuiltinRichTextFxPhase::HostEvent => FxPhase::Transition,
     }
 }
 
@@ -153,13 +158,14 @@ pub(super) fn fx_error(message: impl Into<String>) -> RuntimePlanLowerError {
 
 #[cfg(test)]
 mod tests {
+    use arcweft_dialogue::rich_text::BuiltinRichTextFx;
     use arcweft_presentation::fx::{FxNode, FxPhase, FxStaticValue, FxTarget};
 
-    use super::{BuiltinRichTextFx, compile_builtin_rich_text_fx};
+    use super::{CompiledBuiltinRichTextFx, compile_builtin_rich_text_fx};
 
     #[test]
     fn wave_shorthand_compiles_to_one_typed_sampler_definition() {
-        let BuiltinRichTextFx::Definition(definition) = compile_builtin_rich_text_fx(
+        let CompiledBuiltinRichTextFx::Definition(definition) = compile_builtin_rich_text_fx(
             "wave",
             "amp=4px period=8 speed=1.6 target=glyph phase=glyph_transform",
         )
@@ -180,7 +186,7 @@ mod tests {
 
     #[test]
     fn shader_resource_and_phase_are_closed_graph_properties() {
-        let BuiltinRichTextFx::Definition(definition) = compile_builtin_rich_text_fx(
+        let CompiledBuiltinRichTextFx::Definition(definition) = compile_builtin_rich_text_fx(
             "shader",
             "id=soft_glow amount=0.6 dir=1,0 phase=run_offscreen_pass",
         )
@@ -217,17 +223,64 @@ mod tests {
         assert!(matches!(
             compile_builtin_rich_text_fx("host", "id=beat phase=host_event channel=debug")
                 .expect("host event classifies"),
-            BuiltinRichTextFx::HostEvent
+            CompiledBuiltinRichTextFx::HostEvent
         ));
         assert!(matches!(
             compile_builtin_rich_text_fx("missing_fx", "amp=2px")
                 .expect("unknown provider remains a runtime definition miss"),
-            BuiltinRichTextFx::MissingDefinition(_)
+            CompiledBuiltinRichTextFx::MissingDefinition(_)
         ));
         assert!(matches!(
             compile_builtin_rich_text_fx("host", "id=sparkle amp=2px")
                 .expect("visual host selector must not fall back by basename"),
-            BuiltinRichTextFx::MissingDefinition(_)
+            CompiledBuiltinRichTextFx::MissingDefinition(_)
         ));
+    }
+
+    #[test]
+    fn every_owned_builtin_compiles_with_its_default_phase() {
+        for effect in BuiltinRichTextFx::ALL {
+            let attrs = if effect == BuiltinRichTextFx::Shader {
+                "id=soft_glow"
+            } else {
+                ""
+            };
+            assert!(matches!(
+                compile_builtin_rich_text_fx(effect.selector(), attrs)
+                    .unwrap_or_else(|error| panic!("{} failed: {error}", effect.selector())),
+                CompiledBuiltinRichTextFx::Definition(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn every_owned_builtin_compiles_with_authored_attributes() {
+        for effect in BuiltinRichTextFx::ALL {
+            let phase = effect.default_phase().source_name();
+            let attrs = if effect == BuiltinRichTextFx::Shader {
+                format!("id=soft_glow phase={phase}")
+            } else {
+                format!("phase={phase}")
+            };
+            assert!(matches!(
+                compile_builtin_rich_text_fx(effect.selector(), &attrs)
+                    .unwrap_or_else(|error| panic!("{} failed: {error}", effect.selector())),
+                CompiledBuiltinRichTextFx::Definition(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn owned_property_schema_rejects_unknown_names() {
+        for effect in BuiltinRichTextFx::ALL {
+            let attrs = if effect == BuiltinRichTextFx::Shader {
+                "id=soft_glow invented=1"
+            } else {
+                "invented=1"
+            };
+            let error = compile_builtin_rich_text_fx(effect.selector(), attrs)
+                .expect_err("unknown owned property must diagnose");
+            assert!(error.to_string().contains("no property named `invented`"));
+        }
     }
 }

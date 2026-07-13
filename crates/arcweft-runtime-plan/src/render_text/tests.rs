@@ -291,13 +291,13 @@ fn assert_has_host_event(nodes: &[RichTextNode], predicate: impl Fn(&DialogueHos
 }
 
 #[test]
-fn inferred_dot_builtin_lowers_to_typed_fx_application() {
+fn inferred_dot_builtin_without_attrs_lowers_to_typed_fx_application() {
     let parsed = parse_source(
         r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: A[.sparkle amp=2px speed=1.25 seed=dialogue target=glyph phase=glyph_color]BC[/]D[p]
+    alice: A[.sparkle]BC[/]D[p]
 }
 ",
     );

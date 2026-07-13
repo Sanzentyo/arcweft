@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::syntax::{
-    ast::dialogue::{DialogueTag, DialogueToken},
-    text::{RichTextTagFamily, canonical_rich_text_tag_name, inferred_rich_text_tag_family},
-};
+use arcweft_dialogue::rich_text::{RichTextTagFamily, canonical_tag_name, inferred_tag_family};
+use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTag, DialogueToken};
 use arcweft_render_text::{
     DialogueHostEvent, FxTarget, InlineFailurePolicy, Milli, RichTextAngle, RichTextControl,
     RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextNode,
@@ -44,7 +42,7 @@ pub(crate) fn lower_dialogue_token_parts(
         }
         DialogueToken::EndTag(end) => {
             vec![RichTextNode::StyleEnd {
-                name: canonical_rich_text_tag_name(end.name()).to_owned(),
+                name: canonical_tag_name(end.name()).to_owned(),
             }]
         }
         DialogueToken::InferredEndTag => {
@@ -177,7 +175,7 @@ fn lower_inferred_tag(
     if inferred_text_proxy_type(selector, tag.attrs(), text_proxies) {
         return Ok(lower_object_selector(selector, tag.attrs(), text_proxies));
     }
-    Ok(match inferred_rich_text_tag_family(selector, tag.attrs()) {
+    Ok(match inferred_tag_family(selector, tag.attrs()) {
         Some(RichTextTagFamily::Style) => lower_style_selector(selector, tag.attrs()),
         Some(RichTextTagFamily::Layout) => lower_layout_selector(selector, tag.attrs()),
         Some(RichTextTagFamily::Transform) => {

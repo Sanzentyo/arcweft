@@ -137,12 +137,14 @@ Known selector families are style (`.italic`, `.oblique`), layout
 (`.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, ruby-position
 selectors), transform (`.offset`, `.pos`, `.rotate`, `.scale`, `.skew`), and
 effect (`.wave`, `.shake`, `.arc`, `.spin`, `.pulse`, `.motion`,
-`.typewriter`, `.jitter`, `.shader`, `.host`). Unknown dot selectors without attributes are markers and canonicalize
+`.typewriter`, `.jitter`, `.sparkle`, `.shader`, `.host`). Unknown dot selectors without attributes are markers and canonicalize
 to `[mark .name]`. If an unknown marker-like selector was accidentally written
 with a following `[/]`, canonical tooling removes that inferred close because
 markers are zero-width, not spans. Unknown dot selectors with attributes
 canonicalize to custom effect spans, for example
-`[.sparkle amp=2px]...[/]` becomes `[effect .sparkle amp=2px]...[/effect]`.
+`[.custom_glow amp=2px]...[/]` becomes
+`[effect .custom_glow amp=2px]...[/effect]`. Arcweft-owned builtins such as
+`.sparkle` remain effect spans whether or not attributes are present.
 
 Text presentation object proxies are explicit object-family spans:
 `[object .name ...]...[/object]`. They preserve custom proxy metadata for
@@ -509,10 +511,10 @@ Dot-prefixed authoring tags are inferred only when the family is unambiguous.
 Known rich-text selectors such as `[.vertical_rl]...[/]` and
 `[.shake amp=1px]...[/]` lower as `layout` / `effect` spans. Unknown selectors
 without attributes, such as `[.keyword]`, lower as zero-width marks. Unknown
-selectors with attributes, such as `[.sparkle amp=2px]...[/]`, lower as custom
+selectors with attributes, such as `[.custom_glow amp=2px]...[/]`, lower as custom
 rich-text effects because markers do not carry parameters. Tooling can
 canonicalize these inferred forms back to `[layout .vertical_rl]...[/layout]`,
-`[mark .keyword]`, and `[effect .sparkle amp=2px]...[/effect]`.
+`[mark .keyword]`, and `[effect .custom_glow amp=2px]...[/effect]`.
 
 A dialogue-safe function must declare its effects:
 

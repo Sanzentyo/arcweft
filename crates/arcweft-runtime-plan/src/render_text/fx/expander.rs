@@ -2,10 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::syntax::{
-    ast::dialogue::{DialogueTagKind, DialogueToken},
-    text::canonical_rich_text_tag_name,
-};
+use arcweft_dialogue::rich_text::canonical_tag_name;
+use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTagKind, DialogueToken};
 use arcweft_render_text::{InlineFailurePolicy, RichTextControl, RichTextNode, RichTextStyle};
 
 use crate::errors::RuntimePlanLowerError;
@@ -200,7 +198,7 @@ impl<'catalog> DialogueFxExpander<'catalog> {
         default_inline_failure_policy: Option<&InlineFailurePolicy>,
         text_proxies: &BTreeMap<String, TextProxyTypeDefaults>,
     ) -> Result<Vec<RichTextNode>, RuntimePlanLowerError> {
-        let canonical = canonical_rich_text_tag_name(name);
+        let canonical = canonical_tag_name(name);
         match self.open_spans.last() {
             Some(OpenSpan::Style { name }) if name == canonical => {
                 self.open_spans.pop();
@@ -246,7 +244,7 @@ impl<'catalog> DialogueFxExpander<'catalog> {
             Some(OpenSpan::Fx {
                 close: FxClose::Explicit(expected),
                 ..
-            }) if expected == canonical_rich_text_tag_name(name)
+            }) if expected == canonical_tag_name(name)
         )
     }
 
@@ -281,7 +279,7 @@ impl<'catalog> DialogueFxExpander<'catalog> {
                     self.open_spans.pop();
                 }
                 RichTextNode::StyleEnd { name } => {
-                    let canonical = canonical_rich_text_tag_name(name);
+                    let canonical = canonical_tag_name(name);
                     if let Some(index) = self.open_spans.iter().rposition(
                         |span| matches!(span, OpenSpan::Style { name } if name == canonical),
                     ) {
