@@ -7,6 +7,7 @@ use crate::features;
 use crate::positions::PositionEncoding;
 use crate::profiles::{LspProfile, LspProfileResolver};
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
+use arcweft_tooling::model::ToolingError;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
@@ -61,6 +62,9 @@ pub enum SessionError {
     /// Document synchronization failed.
     #[error(transparent)]
     Document(#[from] DocumentError),
+    /// Source-edit planning found an invalid tooling range or overlap.
+    #[error(transparent)]
+    Tooling(#[from] ToolingError),
 }
 
 impl ArcweftLspSession {
@@ -144,7 +148,13 @@ impl ArcweftLspSession {
         }
         self.try_handle_request(request, repl)
             .unwrap_or_else(|error| {
-                Response::new_err(id, ErrorCode::InvalidParams as i32, error.to_string())
+                let code = match &error {
+                    SessionError::Tooling(_) => ErrorCode::InternalError,
+                    SessionError::InvalidParams { .. } | SessionError::Document(_) => {
+                        ErrorCode::InvalidParams
+                    }
+                };
+                Response::new_err(id, code as i32, error.to_string())
             })
     }
 
@@ -306,7 +316,7 @@ impl ArcweftLspSession {
             }
             CodeActionRequest::METHOD => {
                 let (id, params) = extract::<CodeActionParams>(request, CodeActionRequest::METHOD)?;
-                let result = self.code_actions(&params);
+                let result = self.code_actions(&params)?;
                 Ok(Response::new_ok(id, result))
             }
             InlayHintRequest::METHOD => {
@@ -352,8 +362,10 @@ impl ArcweftLspSession {
         self.documents.get(uri)
     }
 
-    fn code_actions(&self, params: &CodeActionParams) -> Option<CodeActionResponse> {
-        let document = self.document_for_params(&params.text_document.uri)?;
+    fn code_actions(&self, params: &CodeActionParams) -> Result<CodeActionResponse, SessionError> {
+        let Some(document) = self.document_for_params(&params.text_document.uri) else {
+            return Ok(Vec::new());
+        };
         let analysis = DocumentAnalysis::analyze(
             document.text(),
             document.line_index().position_encoding(),
@@ -365,7 +377,7 @@ impl ArcweftLspSession {
             document,
             &analysis,
             params.range.start,
-        )
+        )?
         .into_iter()
         .map(|mut action| {
             action.edit = action.edit.map(|edit| {
@@ -375,7 +387,7 @@ impl ArcweftLspSession {
             CodeActionOrCommand::CodeAction(action)
         })
         .collect();
-        Some(actions)
+        Ok(actions)
     }
 
     fn execute_command(&self, params: &ExecuteCommandParams) -> Value {

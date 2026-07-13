@@ -438,7 +438,13 @@ pub(super) fn split_brace_item_with_scan<'a>(
         .then(|| (source[..open].trim(), source[open + 1..close].trim()))
 }
 
-type SpeakerLineParts<'a> = (String, Option<(String, usize)>, &'a str, usize);
+pub(super) struct SpeakerLineParts<'a> {
+    pub(super) speaker: String,
+    pub(super) arguments: Option<(String, std::ops::Range<usize>)>,
+    pub(super) inline_content: &'a str,
+    pub(super) inline_content_range: std::ops::Range<usize>,
+    pub(super) head_range: std::ops::Range<usize>,
+}
 
 pub(super) fn split_speaker_line(trimmed: &str) -> Option<SpeakerLineParts<'_>> {
     let colon = find_top_level_colon(trimmed)?;
@@ -456,12 +462,19 @@ pub(super) fn split_speaker_line(trimmed: &str) -> Option<SpeakerLineParts<'_>> 
         return None;
     }
     let (speaker, args) = split_call_head(head);
-    Some((
+    let arguments = args.map(|(args, relative)| {
+        let start = head_start + relative;
+        let end = start + args.len();
+        (args, start..end)
+    });
+    Some(SpeakerLineParts {
         speaker,
-        args.map(|(args, relative)| (args, head_start + relative)),
-        content,
-        colon + 1 + content_leading,
-    ))
+        arguments,
+        inline_content: content,
+        inline_content_range: colon + 1 + content_leading
+            ..colon + 1 + content_leading + content.len(),
+        head_range: head_start..head_start + head.len(),
+    })
 }
 
 fn has_top_level_square(input: &str) -> bool {

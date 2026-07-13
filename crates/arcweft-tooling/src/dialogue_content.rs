@@ -2,7 +2,7 @@ use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlanItem},
         common::TextRange,
-        dialogue::DialogueContent,
+        dialogue::{DialogueContent, SpeakerLine},
         flow::{AuthoredExpr, FlowItem, Stmt, WaitTarget},
         items::{ImplMember, Item, TraitMember},
         line_plan::{LinePlan, LinePlanItem},
@@ -14,24 +14,27 @@ use std::ops::Range;
 
 /// One dialogue-content occurrence with a typed route back to document bytes.
 pub(crate) enum DialogueContentSite<'a> {
-    Parsed(&'a DialogueContent),
+    Parsed {
+        content: &'a DialogueContent,
+        speaker_line: Option<&'a SpeakerLine>,
+    },
     Expression {
         raw: &'a str,
         source_range: TextRange,
     },
 }
 
-impl DialogueContentSite<'_> {
+impl<'a> DialogueContentSite<'a> {
     pub(crate) fn raw(&self) -> &str {
         match self {
-            Self::Parsed(content) => content.raw(),
+            Self::Parsed { content, .. } => content.raw(),
             Self::Expression { raw, .. } => raw,
         }
     }
 
     pub(crate) fn source_range(&self, relative: TextRange) -> Option<TextRange> {
         match self {
-            Self::Parsed(content) => content.source_range(relative),
+            Self::Parsed { content, .. } => content.source_range(relative),
             Self::Expression { raw, source_range } => {
                 if relative.start() > relative.end() || relative.end() > raw.len() {
                     return None;
@@ -46,6 +49,13 @@ impl DialogueContentSite<'_> {
 
     fn authored_range(&self) -> Option<TextRange> {
         self.source_range(TextRange::new(0, self.raw().len()))
+    }
+
+    pub(crate) const fn speaker_line(&self) -> Option<&'a SpeakerLine> {
+        match self {
+            Self::Parsed { speaker_line, .. } => *speaker_line,
+            Self::Expression { .. } => None,
+        }
     }
 }
 
@@ -71,6 +81,16 @@ pub(crate) fn collect_dialogue_content_ranges(parsed: &ParsedSource) -> Vec<Rang
         }
     });
     ranges
+}
+
+pub(crate) fn collect_speaker_lines(parsed: &ParsedSource) -> Vec<&SpeakerLine> {
+    let mut lines = Vec::new();
+    visit_dialogue_contents(parsed, |site| {
+        if let Some(line) = site.speaker_line() {
+            lines.push(line);
+        }
+    });
+    lines
 }
 
 struct DialogueContentVisitor<'a, F> {
@@ -166,10 +186,10 @@ where
     fn visit_flow_item(&mut self, item: &'a FlowItem) {
         match item {
             FlowItem::SpeakerLine(line) => {
-                self.visit_parsed_content(line.content());
+                self.visit_parsed_content(line.content(), Some(line));
             }
             FlowItem::ContentCall(call) => {
-                self.visit_parsed_content(call.content());
+                self.visit_parsed_content(call.content(), None);
             }
             FlowItem::Stmt(stmt) => self.visit_stmt(stmt),
             FlowItem::Choice(choice) => self.visit_choice(choice),
@@ -377,7 +397,11 @@ where
         }
     }
 
-    fn visit_parsed_content(&mut self, content: &'a DialogueContent) {
+    fn visit_parsed_content(
+        &mut self,
+        content: &'a DialogueContent,
+        speaker_line: Option<&'a SpeakerLine>,
+    ) {
         let Some(source_range) = content.source_range(TextRange::new(0, content.raw().len()))
         else {
             return;
@@ -386,7 +410,10 @@ where
             return;
         }
         self.visited_site_ranges.push(source_range);
-        (self.visit)(DialogueContentSite::Parsed(content));
+        (self.visit)(DialogueContentSite::Parsed {
+            content,
+            speaker_line,
+        });
     }
 
     fn visit_authored_expr(&mut self, authored: &'a AuthoredExpr) {

@@ -8,13 +8,14 @@ use super::headers::{parse_optional_decl_entity_ref, parse_visibility_prefix, si
 use super::{
     BlockStyle, ContentCall, ContentCallParse, CstLine, DialogueContent, FlowItem, LinePlan,
     MappedDialogueSource, MappedDialogueSourceBuilder, Parser, RawSyntax, ScopeBlock, SpeakerLine,
-    Stmt, TextRange, attach_plan_to_dialogue_expr, contains_dialogue_expr, find_content_bracket,
-    find_matching_punctuation, find_top_level_punctuation, flat_block_head, indentation,
-    is_with_brace_head, parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy,
-    parse_flat_fence, parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
-    parse_line_plan_attachment_with_body_base, parse_with_brace_label, parse_with_indent_label,
-    split_brace_item, split_brace_item_with_scan, split_call_head, split_leading_ident,
-    split_speaker_line, split_top_level_binding, split_top_level_punctuation_once,
+    SpeakerLineSurface, Stmt, TextRange, attach_plan_to_dialogue_expr, contains_dialogue_expr,
+    find_content_bracket, find_matching_punctuation, find_top_level_punctuation, flat_block_head,
+    indentation, is_with_brace_head, parse_binding_pattern, parse_dialogue_call_expr_source,
+    parse_expr_lossy, parse_flat_fence, parse_inline_with_colon_plan, parse_line_options,
+    parse_line_plan_attachment, parse_line_plan_attachment_with_body_base, parse_with_brace_label,
+    parse_with_indent_label, split_brace_item, split_brace_item_with_scan, split_call_head,
+    split_leading_ident, split_speaker_line, split_top_level_binding,
+    split_top_level_punctuation_once,
 };
 use crate::cst::CstPunctuationScan;
 
@@ -223,26 +224,42 @@ impl Parser<'_> {
         let trimmed = line.text.trim();
         let line_leading = line.text.len() - line.text.trim_start().len();
 
-        if let Some((speaker, args, inline_content, content_relative)) = split_speaker_line(trimmed)
-        {
+        if let Some(parts) = split_speaker_line(trimmed) {
             self.index += 1;
-            let content = if inline_content.is_empty() {
-                self.take_indented_dialogue(indentation(&line.text) + 1, line.start)
-            } else {
-                let content_start = line.start + line_leading + content_relative;
+            let has_inline_content = !parts.inline_content.is_empty();
+            let content = if has_inline_content {
+                let content_start = line.start + line_leading + parts.inline_content_range.start;
                 let inline_content =
-                    self.take_inline_dialogue_content(inline_content, content_start);
+                    self.take_inline_dialogue_content(parts.inline_content, content_start);
                 self.dialogue_content(inline_content)
+            } else {
+                self.take_indented_dialogue(indentation(&line.text) + 1, line.start)
             };
             let plan = self.take_optional_line_plan();
-            let option_args = args
-                .as_ref()
-                .map(|(args, relative)| (args.as_str(), line.start + line_leading + relative));
+            let option_args = parts.arguments.as_ref().map(|(args, relative)| {
+                (args.as_str(), line.start + line_leading + relative.start)
+            });
+            let absolute_range = |relative: &std::ops::Range<usize>| {
+                TextRange::new(
+                    line.start + line_leading + relative.start,
+                    line.start + line_leading + relative.end,
+                )
+            };
+            let surface = SpeakerLineSurface::new(
+                TextRange::new(line.start, line.end),
+                absolute_range(&parts.head_range),
+                parts
+                    .arguments
+                    .as_ref()
+                    .map(|(_, range)| absolute_range(range)),
+                has_inline_content.then(|| absolute_range(&parts.inline_content_range)),
+            );
             return Some(FlowItem::SpeakerLine(SpeakerLine::new(
-                speaker,
+                parts.speaker,
                 parse_line_options(option_args, &mut self.errors),
                 content,
                 plan,
+                surface,
                 TextRange::new(line.start, self.previous_end()),
             )));
         }

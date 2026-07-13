@@ -69,4 +69,11 @@ pub enum ToolingError {
     OverlappingEdit { start: usize, end: usize },
     #[error("text edit range {start}..{end} does not align to UTF-8 character boundaries")]
     InvalidCharBoundary { start: usize, end: usize },
+    #[error("failed to canonicalize dialogue text at {start}..{end}: {source}")]
+    DialogueCanonicalization {
+        start: usize,
+        end: usize,
+        #[source]
+        source: Box<Self>,
+    },
 }

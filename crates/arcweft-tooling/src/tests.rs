@@ -164,6 +164,284 @@ fn expands_speaker_with_and_parent_sugar() {
 }
 
 #[test]
+fn parent_path_expansion_uses_cst_path_ranges_only() {
+    let source = concat!(
+        "flow opening {\n",
+        "    let 経路 = choose(parent::first, parent::second)\n",
+        "    let normal = \"parent::normal-string\"\n",
+        "    let raw = r\"parent::raw-string\"\n",
+        "    // parent::line-comment\n",
+        "    /* parent::block-comment */\n",
+        "    alice: parent::dialogue-text[p]\n",
+        "}\n",
+    );
+
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    )
+    .expect("typed sugar expansion");
+
+    let expected = source
+        .replacen("parent::first", "super::first", 1)
+        .replacen("parent::second", "super::second", 1)
+        .replacen(
+            "alice: parent::dialogue-text[p]",
+            "alice.say()[parent::dialogue-text[p]]",
+            1,
+        );
+    assert_eq!(report.output, expected);
+
+    let path_edit_starts = report
+        .edits
+        .iter()
+        .filter(|edit| edit.replacement == "super")
+        .map(|edit| edit.start)
+        .collect::<Vec<_>>();
+    let first = source.find("parent::first").expect("first path");
+    let second = source.find("parent::second").expect("second path");
+    assert_eq!(path_edit_starts, vec![first, second]);
+    assert_eq!(&source[first..first + "parent".len()], "parent");
+}
+
+#[test]
+fn speaker_expansion_composes_contained_parent_path_edits() {
+    let source = concat!(
+        "flow opening {\n",
+        "    alice(voice=parent::auto, look=parent::portrait): こんにちは[p]\n",
+        "}\n",
+    );
+
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    )
+    .expect("contained path edits compose into the speaker replacement");
+
+    assert_eq!(
+        report.output,
+        concat!(
+            "flow opening {\n",
+            "    alice.say(voice=super::auto, look=super::portrait)[こんにちは[p]]\n",
+            "}\n",
+        )
+    );
+    assert_eq!(report.edits.len(), 1);
+    assert!(
+        report.edits[0]
+            .replacement
+            .contains("voice=super::auto, look=super::portrait")
+    );
+}
+
+#[test]
+fn await_expansion_composes_contained_parent_path_edits() {
+    let source = "flow opening {\n    await? parent::next\n}\n";
+
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    )
+    .expect("contained path edit composes into the await replacement");
+
+    assert_eq!(
+        report.output,
+        "flow opening {\n    try await super::next\n}\n"
+    );
+    assert_eq!(report.edits.len(), 1);
+    assert_eq!(report.edits[0].replacement, "try await super::next");
+}
+
+#[test]
+fn dialogue_defaults_expansion_composes_parent_paths_in_values() {
+    let source = concat!(
+        "pub dialogue defaults {\n",
+        "    rich_text.ruby.size = parent::ruby_size\n",
+        "}\n",
+    );
+
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    )
+    .expect("contained path edit composes into the dialogue-defaults replacement");
+
+    assert_eq!(
+        report.output,
+        concat!(
+            "pub dialogue defaults {\n",
+            "    rich_text {\n",
+            "        ruby {\n",
+            "            size = super::ruby_size\n",
+            "        }\n",
+            "    }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(report.edits.len(), 1);
+    assert!(report.edits[0].replacement.contains("super::ruby_size"));
+}
+
+#[test]
+fn speaker_expansion_consumes_typed_statement_context() {
+    let source = concat!(
+        "pub struct SettingsInput {\n",
+        "    text_speed: f32,\n",
+        "}\n",
+        "enum Event {\n",
+        "    Settings {\n",
+        "        text_speed: f32,\n",
+        "    },\n",
+        "}\n",
+        "flow opening {\n",
+        "    let settings: SettingsInput = SettingsInput {\n",
+        "        text_speed: 1.0,\n",
+        "    }\n",
+        "    if ready {\n",
+        "        alice(voice=auto): こんにちは[p]\n",
+        "    }\n",
+        "}\n",
+    );
+
+    let report = format_source(
+        source,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    )
+    .expect("typed speaker expansion");
+
+    let expected = source.replacen(
+        "alice(voice=auto): こんにちは[p]",
+        "alice.say(voice=auto)[こんにちは[p]]",
+        1,
+    );
+    assert_eq!(report.output, expected);
+}
+
+#[test]
+fn text_edit_planning_preserves_structured_edit_errors() {
+    use crate::{
+        edit::{SourceEditOverlay, apply_text_edits},
+        model::TextEdit,
+    };
+
+    let utf8_error = apply_text_edits(
+        "é",
+        &[TextEdit {
+            start: 1,
+            end: 1,
+            replacement: "x".to_owned(),
+        }],
+    )
+    .expect_err("mid-codepoint edit must fail");
+    assert_eq!(
+        utf8_error,
+        ToolingError::InvalidCharBoundary { start: 1, end: 1 }
+    );
+
+    let overlap_error = apply_text_edits(
+        "abcd",
+        &[
+            TextEdit {
+                start: 0,
+                end: 2,
+                replacement: String::new(),
+            },
+            TextEdit {
+                start: 1,
+                end: 3,
+                replacement: String::new(),
+            },
+        ],
+    )
+    .expect_err("overlap must fail");
+    assert_eq!(
+        overlap_error,
+        ToolingError::OverlappingEdit { start: 1, end: 3 }
+    );
+
+    let range_error = apply_text_edits(
+        "abc",
+        &[TextEdit {
+            start: 2,
+            end: 4,
+            replacement: String::new(),
+        }],
+    )
+    .expect_err("out-of-range edit must fail");
+    assert_eq!(
+        range_error,
+        ToolingError::RangeOutOfBounds {
+            start: 2,
+            end: 4,
+            len: 3,
+        }
+    );
+
+    let mut overlay = SourceEditOverlay::new(vec![TextEdit {
+        start: 0,
+        end: "parent".len(),
+        replacement: "super".to_owned(),
+    }]);
+    assert_eq!(
+        overlay
+            .rewrite_range("parent::next", 0..3)
+            .expect("non-containing rewrite remains valid"),
+        "par"
+    );
+    let mut partial_overlap = vec![TextEdit {
+        start: 0,
+        end: 3,
+        replacement: "prefix".to_owned(),
+    }];
+    partial_overlap.extend(overlay.into_unconsumed_edits());
+    assert_eq!(
+        apply_text_edits("parent::next", &partial_overlap)
+            .expect_err("partially contained overlay must remain an overlap"),
+        ToolingError::OverlappingEdit {
+            start: 0,
+            end: "parent".len(),
+        }
+    );
+}
+
+#[test]
+fn dialogue_tokenizer_canonical_edits_are_valid_utf8_plans() {
+    use crate::{
+        dialogue_sugar::{DialogueSugarContext, DialogueSugarMode, dialogue_text_canonical_edits},
+        edit::apply_text_edits,
+    };
+    let corpus = [
+        "plain 日本語[p]",
+        "[.shake amp=2px]揺れる[/][p]",
+        "nested [b]太字と[.wave]波[/][/][p]",
+        "escaped \\[ bracket and {name}[p]",
+    ];
+    for text in corpus {
+        let edits = dialogue_text_canonical_edits(
+            text,
+            DialogueSugarMode::All,
+            &DialogueSugarContext::default(),
+        );
+        apply_text_edits(text, &edits).expect("tokenizer edits form a valid UTF-8 plan");
+    }
+}
+
+#[test]
 fn expand_sugar_canonicalizes_redundant_decl_identity_only() {
     let source = "flow @flow.opening opening {\n}\nflow @flow.opening start {\n}\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\ncharacter @character.alice alice {\n}\n";
     let report = format_source(
@@ -670,7 +948,7 @@ fn canonical_rich_text_uses_the_shared_reserved_marker_classification() {
 #[test]
 fn source_code_actions_include_canonical_rich_text_edits() {
     let source = "flow @flow.opening opening {\n    alice: [.keyword][.vertical_rl]縦[/]\n}\n";
-    let actions = source_code_actions(source);
+    let actions = source_code_actions(source).expect("source code actions");
 
     let action = actions
         .iter()
@@ -692,7 +970,7 @@ fn source_code_actions_include_canonical_rich_text_edits() {
 #[test]
 fn source_code_actions_group_expand_sugar_rewrites() {
     let source = "flow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n}\n";
-    let actions = source_code_actions(source);
+    let actions = source_code_actions(source).expect("source code actions");
 
     let action = actions
         .iter()
@@ -712,7 +990,7 @@ fn source_code_actions_group_expand_sugar_rewrites() {
 fn source_code_actions_include_decl_identity_rewrite_only_when_linted() {
     let source =
         "flow @flow.opening opening {\n}\n#[generated]\nflow @flow.generated generated {\n}\n";
-    let actions = source_code_actions(source);
+    let actions = source_code_actions(source).expect("source code actions");
     let action = actions
         .iter()
         .find(|action| action.id == "arcweft.expandSugar")

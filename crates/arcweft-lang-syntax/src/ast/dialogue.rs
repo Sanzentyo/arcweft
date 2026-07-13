@@ -188,7 +188,20 @@ pub struct SpeakerLine {
     options: LineOptions,
     content: DialogueContent,
     plan: Option<LinePlan>,
+    surface: SpeakerLineSurface,
     range: TextRange,
+}
+
+/// Exact source ranges for one parsed colon-style speaker line.
+///
+/// These ranges let formatters consume the parser's statement classification
+/// without rediscovering a speaker line from raw `name: value` text.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SpeakerLineSurface {
+    source_line: TextRange,
+    head: TextRange,
+    arguments: Option<TextRange>,
+    inline_content: Option<TextRange>,
 }
 
 /// Canonical `alice.say(args)[...]` content call, plus `alice[...]` shorthand.
@@ -763,6 +776,7 @@ impl SpeakerLine {
         options: LineOptions,
         content: DialogueContent,
         plan: Option<LinePlan>,
+        surface: SpeakerLineSurface,
         range: TextRange,
     ) -> Self {
         Self {
@@ -770,6 +784,7 @@ impl SpeakerLine {
             options,
             content,
             plan,
+            surface,
             range,
         }
     }
@@ -790,8 +805,51 @@ impl SpeakerLine {
         self.plan.as_ref()
     }
 
+    /// Parser-owned source ranges for the colon-style authoring surface.
+    pub const fn surface(&self) -> SpeakerLineSurface {
+        self.surface
+    }
+
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl SpeakerLineSurface {
+    pub(crate) const fn new(
+        source_line_range: TextRange,
+        head_range: TextRange,
+        arguments_range: Option<TextRange>,
+        inline_content_range: Option<TextRange>,
+    ) -> Self {
+        Self {
+            source_line: source_line_range,
+            head: head_range,
+            arguments: arguments_range,
+            inline_content: inline_content_range,
+        }
+    }
+
+    /// Full first source line, excluding its line terminator.
+    pub const fn source_line_range(self) -> TextRange {
+        self.source_line
+    }
+
+    /// Speaker call head, excluding indentation and the separating colon.
+    pub const fn head_range(self) -> TextRange {
+        self.head
+    }
+
+    /// Trimmed call-argument contents, excluding parentheses.
+    pub const fn arguments_range(self) -> Option<TextRange> {
+        self.arguments
+    }
+
+    /// Inline dialogue content on the first source line.
+    ///
+    /// Indented multiline dialogue has no inline range.
+    pub const fn inline_content_range(self) -> Option<TextRange> {
+        self.inline_content
     }
 }
 

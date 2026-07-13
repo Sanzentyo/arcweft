@@ -14,6 +14,7 @@ pub mod format;
 pub mod id_context;
 mod line_sugar;
 pub mod model;
+mod path_sugar;
 mod speaker_presets;
 mod sugar_expansion;
 mod util;

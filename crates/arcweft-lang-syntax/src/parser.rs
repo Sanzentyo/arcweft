@@ -1,7 +1,7 @@
 use crate::ast::common::{DocBlock, ModuleDecl, TextRange, UseItem};
 use crate::ast::dialogue::{
     ContentCall, DialogueContent, DialogueContentSourceMap, DialogueContentSourceSegment,
-    SpeakerLine,
+    SpeakerLine, SpeakerLineSurface,
 };
 use crate::ast::flow::{
     AuthoredExpr, BorrowBlock, Flow, FlowInit, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock,

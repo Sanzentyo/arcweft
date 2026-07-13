@@ -6,12 +6,16 @@ use arcweft_lang_syntax::{
     source::ParsedSource,
 };
 
-use crate::model::TextEdit;
+use crate::{
+    edit::SourceEditOverlay,
+    model::{TextEdit, ToolingError},
+};
 
 pub(crate) fn dialogue_defaults_nested_assignment_edits(
     source: &str,
     parsed: &ParsedSource,
-) -> Vec<TextEdit> {
+    overlay: &mut SourceEditOverlay,
+) -> Result<Vec<TextEdit>, ToolingError> {
     let mut edits = Vec::new();
     for defaults in parsed
         .typed_tree()
@@ -22,19 +26,22 @@ pub(crate) fn dialogue_defaults_nested_assignment_edits(
             _ => None,
         })
     {
-        edits.extend(dialogue_defaults_nested_assignment_runs(source, defaults));
+        edits.extend(dialogue_defaults_nested_assignment_runs(
+            source, defaults, overlay,
+        )?);
     }
-    edits
+    Ok(edits)
 }
 
 fn dialogue_defaults_nested_assignment_runs(
     source: &str,
     defaults: &DialogueDefaultsItem,
-) -> Vec<TextEdit> {
+    overlay: &mut SourceEditOverlay,
+) -> Result<Vec<TextEdit>, ToolingError> {
     let mut edits = Vec::new();
     let mut pending = NestedAssignmentRun::default();
     for assignment in defaults.assignments() {
-        if let Some(dotted) = DottedAssignment::new(source, assignment) {
+        if let Some(dotted) = DottedAssignment::new(source, assignment, overlay)? {
             if !pending.can_append(source, &dotted)
                 && let Some(edit) = pending.finish()
             {
@@ -48,7 +55,7 @@ fn dialogue_defaults_nested_assignment_runs(
     if let Some(edit) = pending.finish() {
         edits.push(edit);
     }
-    edits
+    Ok(edits)
 }
 
 #[derive(Debug)]
@@ -62,29 +69,37 @@ struct DottedAssignment {
 }
 
 impl DottedAssignment {
-    fn new(source: &str, assignment: &DialogueDefaultAssignment) -> Option<Self> {
-        let path_source = source.get(assignment.path_range().as_range())?.trim();
+    fn new(
+        source: &str,
+        assignment: &DialogueDefaultAssignment,
+        overlay: &mut SourceEditOverlay,
+    ) -> Result<Option<Self>, ToolingError> {
+        let Some(path_source) = source.get(assignment.path_range().as_range()) else {
+            return Ok(None);
+        };
+        let path_source = path_source.trim();
         let parts = path_source
             .split('.')
             .filter(|part| !part.trim().is_empty())
             .map(|part| part.trim().to_owned())
             .collect::<Vec<_>>();
         if parts.len() <= 1 {
-            return None;
+            return Ok(None);
         }
         let line_start = source[..assignment.range().start()]
             .rfind('\n')
             .map_or(0, |offset| offset + 1);
-        Some(Self {
+        let Some(indent) = source.get(line_start..assignment.range().start()) else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
             line_start,
             end: assignment.range().end(),
-            indent: source
-                .get(line_start..assignment.range().start())?
-                .to_owned(),
+            indent: indent.to_owned(),
             parts,
             op: assignment_op_label(assignment.op()),
-            value: assignment.raw_value().to_owned(),
-        })
+            value: overlay.rewrite_range(source, assignment.value_range().as_range())?,
+        }))
     }
 }
 

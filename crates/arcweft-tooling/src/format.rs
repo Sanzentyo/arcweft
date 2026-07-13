@@ -32,7 +32,7 @@ pub fn format_source_with_dialect(
     }
     let mut edits = Vec::new();
     if options.expand_sugar {
-        edits.extend(sugar_expansion_edits(source));
+        edits.extend(sugar_expansion_edits(source)?);
     } else if options.canonical_rich_text {
         edits.extend(rich_text_canonical_edits(source));
     }

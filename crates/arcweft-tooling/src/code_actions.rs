@@ -1,18 +1,18 @@
 use crate::format::format_source;
 use crate::id_context::materialize_ids;
-use crate::model::{FormatOptions, TextEdit, ToolingCodeAction};
+use crate::model::{FormatOptions, TextEdit, ToolingCodeAction, ToolingError};
 
 /// Returns source-level code actions that are safe to expose through LSP.
-pub fn source_code_actions(source: &str) -> Vec<ToolingCodeAction> {
+pub fn source_code_actions(source: &str) -> Result<Vec<ToolingCodeAction>, ToolingError> {
     let mut actions = Vec::new();
-    if let Ok(report) = format_source(
+    let report = format_source(
         source,
         FormatOptions {
             expand_sugar: true,
             canonical_rich_text: false,
         },
-    ) && report.changed
-    {
+    )?;
+    if report.changed {
         actions.push(rewrite_action(
             "arcweft.expandSugar",
             "Expand Arcweft sugar",
@@ -20,14 +20,14 @@ pub fn source_code_actions(source: &str) -> Vec<ToolingCodeAction> {
             report.output,
         ));
     }
-    if let Ok(report) = format_source(
+    let report = format_source(
         source,
         FormatOptions {
             expand_sugar: false,
             canonical_rich_text: true,
         },
-    ) && report.changed
-    {
+    )?;
+    if report.changed {
         actions.push(rewrite_action(
             "arcweft.canonicalRichText",
             "Canonicalize inferred rich-text tags",
@@ -35,14 +35,13 @@ pub fn source_code_actions(source: &str) -> Vec<ToolingCodeAction> {
             report.output,
         ));
     }
-    if let Ok(report) = materialize_ids(source) {
-        actions.extend(report.edits.into_iter().map(|edit| ToolingCodeAction {
-            id: "arcweft.materializeId".to_owned(),
-            label: "Materialize inferred Arcweft ID".to_owned(),
-            edit: Some(edit),
-        }));
-    }
-    actions
+    let report = materialize_ids(source)?;
+    actions.extend(report.edits.into_iter().map(|edit| ToolingCodeAction {
+        id: "arcweft.materializeId".to_owned(),
+        label: "Materialize inferred Arcweft ID".to_owned(),
+        edit: Some(edit),
+    }));
+    Ok(actions)
 }
 
 fn rewrite_action(

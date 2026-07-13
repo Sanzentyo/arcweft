@@ -604,8 +604,11 @@ fn verifier_code_action_kind(kind: ToolActionKind) -> CodeActionKind {
 }
 
 /// Converts source-level Arcweft tooling actions into LSP code actions.
-pub fn source_code_actions(uri: &Uri, source: &str) -> Vec<CodeAction> {
-    arcweft_tooling::code_actions::source_code_actions(source)
+pub fn source_code_actions(
+    uri: &Uri,
+    source: &str,
+) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
+    Ok(arcweft_tooling::code_actions::source_code_actions(source)?
         .into_iter()
         .map(|action| CodeAction {
             title: action.label,
@@ -620,7 +623,7 @@ pub fn source_code_actions(uri: &Uri, source: &str) -> Vec<CodeAction> {
             }),
             ..CodeAction::default()
         })
-        .collect()
+        .collect())
 }
 
 /// Converts source-level Arcweft tooling actions into edit-bearing LSP code actions.
@@ -628,8 +631,8 @@ pub fn source_code_actions_with_mapper(
     uri: &Uri,
     source: &str,
     mapper: &impl LspPositionMapper,
-) -> Vec<CodeAction> {
-    arcweft_tooling::code_actions::source_code_actions(source)
+) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
+    Ok(arcweft_tooling::code_actions::source_code_actions(source)?
         .into_iter()
         .map(|action| {
             let edit = action
@@ -644,7 +647,7 @@ pub fn source_code_actions_with_mapper(
                 ..CodeAction::default()
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Converts one Arcweft tooling edit into an LSP workspace edit.
@@ -1130,7 +1133,7 @@ mod tests {
             .parse::<Uri>()
             .expect("uri");
         let source = "flow @.opening opening {\n    alice: [.shake amp=2px]hi[/][p]\n}\n";
-        let actions = source_code_actions(&uri, source);
+        let actions = source_code_actions(&uri, source).expect("source code actions");
         assert!(
             actions
                 .iter()
@@ -1148,7 +1151,8 @@ mod tests {
                 .iter()
                 .any(|action| action.title == "Materialize inferred Arcweft ID")
         );
-        let mapped_actions = source_code_actions_with_mapper(&uri, source, &TestMapper);
+        let mapped_actions = source_code_actions_with_mapper(&uri, source, &TestMapper)
+            .expect("mapped source code actions");
         assert!(mapped_actions.iter().any(|action| {
             action.title == "Canonicalize inferred rich-text tags" && action.edit.is_some()
         }));

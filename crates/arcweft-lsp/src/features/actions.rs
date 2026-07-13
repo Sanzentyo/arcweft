@@ -32,6 +32,7 @@ use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_types::{CodeAction, CodeActionKind, Position, Uri};
 
 use arcweft_tooling::model::TextEdit;
+use arcweft_tooling::model::ToolingError;
 
 /// Computes code actions for one open Arcweft document.
 pub fn actions(
@@ -40,8 +41,8 @@ pub fn actions(
     document: &DocumentSnapshot,
     analysis: &DocumentAnalysis,
     position: Position,
-) -> Vec<CodeAction> {
-    let mut actions = source_code_actions_with_mapper(uri, document.text(), document.line_index());
+) -> Result<Vec<CodeAction>, ToolingError> {
+    let mut actions = source_code_actions_with_mapper(uri, document.text(), document.line_index())?;
     if let Some(report) = analysis.verification_report() {
         actions.extend(code_actions_from_report_with_mapper(
             uri,
@@ -51,7 +52,7 @@ pub fn actions(
     }
     actions.extend(effect_contract_actions(profile, uri, document));
     actions.extend(dialogue_override_actions(profile, uri, document, position));
-    actions
+    Ok(actions)
 }
 
 fn effect_contract_actions(
@@ -1452,7 +1453,8 @@ mod tests {
         );
 
         assert!(analysis.verification_report().is_some());
-        let code_actions = actions(&profile, &uri, &document, &analysis, Position::new(1, 4));
+        let code_actions = actions(&profile, &uri, &document, &analysis, Position::new(1, 4))
+            .expect("code actions");
 
         assert!(code_actions.iter().any(|action| {
             action.command.as_ref().is_some_and(|command| {
