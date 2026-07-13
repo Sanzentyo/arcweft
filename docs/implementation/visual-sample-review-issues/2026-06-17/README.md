@@ -1,5 +1,10 @@
 # Visual Sample Review Issues 2026-06-17
 
+> Status note: `SVR-2026-06-17-013` is historical and its fixed ruby cell-overlap
+> conclusion was superseded by the 2026-07-13 W3C/WPT parity review. The child-ID
+> capture fix in that row remains current; canonical ruby cells now stack
+> without block-axis overlap.
+
 This directory keeps native rich-text capture evidence for the ongoing
 `samples/rich-text-full-grammar.arcw` review. Large full observation JSON files
 are intentionally not checked in; regenerate them with the commands below when

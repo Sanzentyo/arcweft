@@ -2635,7 +2635,7 @@ flow @flow.main main {{
     let height = json["images"][0]["height"].as_u64().unwrap();
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     assert!(content_pixels > 0);
-    assert!(content_pixels < width * height);
+    assert!(content_pixels <= width * height);
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
             &raw_path,
@@ -2648,7 +2648,7 @@ flow @flow.main main {{
         let opaque = opaque_pixel_count(&bytes);
         let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
         assert_eq!(opaque as u64, content_pixels);
-        assert!(transparent > 0);
+        assert_eq!(transparent as u64, width * height - content_pixels);
     }
 
     fs::remove_file(&path).expect("remove temp native ruby_inter_character source");
@@ -2667,27 +2667,34 @@ fn assert_native_vertical_inter_character_ruby_object<'report>(
 
     let dream = find_rich_text_cluster_object(json, "夢", 0, 3);
     let star = find_rich_text_cluster_object(json, "星", 3, 6);
+    let person = find_rich_text_cluster_object(json, "人", 6, 9);
     let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
     let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
-    assert_eq!(
-        agent_json_bbox_center_x_twice(annotation),
-        agent_json_bbox_center_x_twice(base),
-        "{writing_mode} ruby_inter_character annotation should stay centered in the base column: {ruby}"
-    );
-    assert!(
-        agent_json_bbox_y(annotation).saturating_add(1)
-            >= agent_json_bbox_bottom(&dream["bbox"]),
-        "{writing_mode} ruby_inter_character annotation should start after the first base cluster: {ruby}"
-    );
-    assert!(
-        agent_json_bbox_y(&star["bbox"]).saturating_add(1)
-            >= agent_json_bbox_bottom(annotation),
-        "{writing_mode} ruby_inter_character should push the following base cluster after the annotation: {ruby}"
-    );
+    if writing_mode == "vertical_rl" {
+        assert!(
+            agent_json_bbox_center_x_twice(annotation) > agent_json_bbox_center_x_twice(base),
+            "vertical_rl inter-character ruby should use the over track on the right: {ruby}"
+        );
+    } else {
+        assert!(
+            agent_json_bbox_center_x_twice(annotation) < agent_json_bbox_center_x_twice(base),
+            "vertical_lr inter-character ruby should use the over track on the left: {ruby}"
+        );
+    }
     assert_eq!(
         agent_json_bbox_x(&star["bbox"]),
         agent_json_bbox_x(&dream["bbox"]),
         "{writing_mode} ruby_inter_character base clusters should remain in the same column"
+    );
+    assert!(
+        agent_json_bbox_y(&star["bbox"]).saturating_add(1)
+            >= agent_json_bbox_bottom(&dream["bbox"]),
+        "{writing_mode} ruby_inter_character should not enter vertical inline flow: {ruby}"
+    );
+    assert!(
+        agent_json_bbox_y(&person["bbox"]).saturating_add(1)
+            >= agent_json_bbox_bottom(&star["bbox"]),
+        "{writing_mode} content following ruby should continue normal vertical inline flow: {ruby}"
     );
     assert_rich_text_hit_region_matches_ref_bbox(ruby, "ruby_base", "ruby_base_bbox", 0, 6);
     assert_rich_text_hit_region_matches_ref_bbox(

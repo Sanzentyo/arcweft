@@ -22,7 +22,8 @@ The four dialogue pages demonstrate:
 
 1. `vertical-rl`, upright Japanese punctuation, sideways Latin, ruby, and the
    automatically combined `2026` digit cluster;
-2. `vertical-lr`, ruby-under, inter-character ruby, sideways Latin, and the same
+2. `vertical-lr`, ruby-under, CSS-equivalent vertical `inter-character` (the
+   same physical track as over-ruby), sideways Latin, and the same
    text-combine-upright behavior; and
 3. the same constrained punctuation pair with `jlreq=loose` and
    `jlreq=strict`, making the authored line-breaking policy visible in separate
@@ -51,3 +52,11 @@ The representative outputs are:
 - `target/vertical-writing-style/native-vertical-lr.png`
 - `target/vertical-writing-style/native-jlreq-loose.png`
 - `target/vertical-writing-style/native-jlreq-strict.png`
+
+`reference.html` is the browser-side visual reference for the vertical-RL ruby
+case. It uses the same bundled Noto Sans JP face, 42 px base text, 14 px ruby,
+1 px authored separation, writing mode, viewport, and panel geometry as the
+sample. It also exposes `window.rubyGeometry()` so a browser inspection can
+record the base, annotation, and ruby CSSOM rectangles. Those rectangles are
+useful implementation evidence, but visible glyph collision and the CSS Ruby
+container-stacking rules remain the acceptance criteria.

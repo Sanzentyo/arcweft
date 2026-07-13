@@ -266,14 +266,28 @@ the concrete choices to follow when turning that package into production code.
   `vertical_rl` and the left annotation track for `vertical_lr`; `ruby_under`
   flips those physical sides. This keeps short edge-adjacent ruby annotations
   inside the layout box without changing the side-of-base semantics. Track
-  membership is determined by the annotation/base center side, not by requiring
-  their bboxes to be disjoint: CSS/HTML ruby permits a small natural overlap at
-  zero gap, and Arcweft mirrors that for vertical side-track ruby before adding
-  any explicit author `ruby_gap`.
-  `ruby_inter_character` is not treated as another side-track variant:
-  `arcweft-text-layout` reserves inline advance after the annotated base start,
-  places the ruby annotation in that in-column slot, leaves the body column at
-  its normal start, and pushes following base clusters after the annotation.
+  membership is determined by the annotation/base center side. Canonical ruby
+  cells follow CSS Ruby container stacking: the annotation track touches the
+  base track at `ruby_gap = 0px` and an authored gap separates them further.
+  Browser CSSOM element rectangles can overlap due to their internal font
+  metrics, but that rectangle overlap is not applied to Arcweft glyph cells and
+  cannot make annotation ink collide with the base glyph.
+  In vertical writing, `ruby_inter_character` has the same layout effect as
+  `ruby_over`, as required by CSS Ruby. It therefore uses the right annotation
+  track for `vertical_rl` and the left annotation track for `vertical_lr`
+  without inserting annotation cells into vertical inline flow. In horizontal
+  writing, the same authored value produces a `vertical-rl` annotation inline
+  immediately to the right of its base and reserves that inline advance.
+  The 2026-07-13 parity review compared this rule with the W3C
+  [CSS Ruby block-axis layout](https://www.w3.org/TR/css-ruby-1/#interlinear-block)
+  and live Chromium Web Platform Tests. Chromium reported a 6.33 px CSSOM
+  rectangle overlap for a 14 px-wide vertical annotation in
+  [`ruby-overhang-spaces-vertical-001.html`](https://wpt.live/css/css-ruby/ruby-overhang-spaces-vertical-001.html),
+  while the rendered glyphs remained separate. The former Arcweft `0.46em`
+  constant copied that rectangle ratio into glyph-cell placement and therefore
+  made Noto Sans JP ink collide. The canonical layout now tests container-cell
+  separation directly, and `samples/vertical-writing-style/reference.html`
+  retains the equivalent browser-side font and geometry for visual review.
   The native renderer consumes the same `LaidOutRuby` geometry for its ruby
   GlyphArea, while Agent observe exposes the resulting base/annotation bboxes
   and raw mask/object-id crops for both `vertical_rl` and `vertical_lr`.

@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Arcweft vertical ruby browser reference</title>
+<style>
+  @font-face {
+    font-family: "Arcweft Noto Sans JP";
+    src: url("../../web/assets/noto-sans-jp-unified-text-parity.ttf") format("truetype");
+  }
+
+  html,
+  body {
+    margin: 0;
+    width: 1280px;
+    height: 720px;
+    background: rgb(38 46 42);
+    color: rgb(244 248 255);
+    font-family: "Arcweft Noto Sans JP", sans-serif;
+  }
+
+  .panel {
+    position: absolute;
+    inset: 168px 140px;
+    background: rgb(69 81 101);
+  }
+
+  .vertical {
+    position: absolute;
+    left: 176px;
+    top: 244px;
+    width: 928px;
+    height: 164px;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 42px;
+    line-height: 56.7px;
+  }
+
+  ruby {
+    ruby-position: over;
+    ruby-align: center;
+    ruby-overhang: auto;
+  }
+
+  rt {
+    margin-block-end: 1px;
+    font-size: 14px;
+    line-height: 1;
+  }
+</style>
+<div class="panel"></div>
+<div class="vertical">
+  天地。「人」2026ARC。<ruby id="ruby"><rb id="base">夢</rb><rt id="annotation">ゆめ</rt></ruby>山川海
+</div>
+<script>
+  window.rubyGeometry = async () => {
+    await document.fonts.ready;
+    const rect = (id) => {
+      const value = document.getElementById(id).getBoundingClientRect();
+      return {
+        x: value.x,
+        y: value.y,
+        width: value.width,
+        height: value.height,
+        right: value.right,
+        bottom: value.bottom
+      };
+    };
+    const base = rect("base");
+    const annotation = rect("annotation");
+    return {
+      base,
+      annotation,
+      ruby: rect("ruby"),
+      blockAxisSeparation: annotation.x - base.right,
+      fontStatus: document.fonts.status,
+      devicePixelRatio: window.devicePixelRatio
+    };
+  };
+</script>

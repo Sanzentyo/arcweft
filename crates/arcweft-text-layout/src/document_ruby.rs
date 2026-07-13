@@ -16,10 +16,8 @@ use crate::{
     },
 };
 
-const DEFAULT_RUBY_GAP: f32 = 2.0;
-const DEFAULT_COLLISION_GAP: f32 = 2.0;
-const HORIZONTAL_OVERLAP_EM: f32 = 0.36;
-const VERTICAL_OVERLAP_EM: f32 = 0.46;
+const DEFAULT_RUBY_GAP: f32 = 0.0;
+const DEFAULT_COLLISION_GAP: f32 = 0.0;
 
 #[derive(Clone, Copy, Debug)]
 struct RubyMetrics {
@@ -60,34 +58,26 @@ pub(crate) fn body_request<E: std::error::Error + 'static>(
                 run.style().writing_mode()
             });
         let metrics = ruby_metrics(annotation);
-        let overlap = match writing_mode {
-            RichTextWritingMode::HorizontalTb => metrics.font_size * HORIZONTAL_OVERLAP_EM,
-            RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
-                metrics.font_size * VERTICAL_OVERLAP_EM
-            }
-        };
-        let reserve = (metrics.font_size + metrics.gap - overlap).max(0.0);
+        let authored_position = ruby_position(annotation);
+        let position = effective_ruby_position(writing_mode, authored_position);
+        let reserve = metrics.font_size + metrics.gap;
         match writing_mode {
+            RichTextWritingMode::HorizontalTb
+                if matches!(authored_position, RichTextRubyPosition::InterCharacter) => {}
             RichTextWritingMode::HorizontalTb => {
-                if matches!(ruby_position(annotation), RichTextRubyPosition::Under) {
+                if matches!(position, RichTextRubyPosition::Under) {
                     insets.bottom = insets.bottom.max(reserve);
                 } else {
                     insets.top = insets.top.max(reserve);
                 }
             }
-            RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr
-                if !matches!(
-                    ruby_position(annotation),
-                    RichTextRubyPosition::InterCharacter
-                ) =>
-            {
-                if ruby_track_is_right(writing_mode, ruby_position(annotation)) {
+            RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
+                if ruby_track_is_right(writing_mode, position) {
                     insets.right = insets.right.max(reserve);
                 } else {
                     insets.left = insets.left.max(reserve);
                 }
             }
-            RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {}
         }
     }
     let width = request.size.width - insets.left - insets.right;
@@ -126,24 +116,10 @@ pub(crate) fn layout_ruby<S: TextShaper>(
                     .iter()
                     .map(|glyph| glyph.layout_bounds.union(glyph.ink_bounds)),
             )?;
-            let inter_character_y = base_glyphs
-                .iter()
-                .min_by_key(|glyph| (glyph.source_range.start, glyph.cluster_index))
-                .map(|first| first.cluster_index)
-                .and_then(|first_cluster| {
-                    union_rects(
-                        base_glyphs
-                            .iter()
-                            .filter(|glyph| glyph.cluster_index == first_cluster)
-                            .map(|glyph| glyph.layout_bounds.union(glyph.ink_bounds)),
-                    )
-                })
-                .map(LayoutRect::bottom);
             Some(layout_one_ruby(
                 ruby_index,
                 annotation,
                 base_bounds,
-                inter_character_y,
                 request,
                 shaper,
                 runs,
@@ -156,7 +132,6 @@ fn layout_one_ruby<S: TextShaper>(
     ruby_index: usize,
     annotation: &ResolvedTextRuby,
     base_bounds: LayoutRect,
-    inter_character_y: Option<f32>,
     request: TextLayoutRequest,
     shaper: &mut S,
     runs: &[TextLayoutRun],
@@ -166,6 +141,8 @@ fn layout_one_ruby<S: TextShaper>(
         .find(|run| ranges_overlap(run.source_range, annotation.source_base_range()))
         .map_or(annotation.style().writing_mode(), |run| run.writing_mode);
     let metrics = ruby_metrics(annotation);
+    let authored_position = ruby_position(annotation);
+    let position = effective_ruby_position(writing_mode, authored_position);
     let font_size_milli = pixels_to_milli(metrics.font_size)
         .ok_or(TextLayoutError::InvalidRubyStyle { ruby_index })?;
     let style = annotation
@@ -180,21 +157,35 @@ fn layout_one_ruby<S: TextShaper>(
             style: &style,
             locale: style.language(),
             direction: RichTextInlineDirection::Auto,
-            writing_mode,
+            writing_mode: if matches!(
+                (writing_mode, authored_position),
+                (
+                    RichTextWritingMode::HorizontalTb,
+                    RichTextRubyPosition::InterCharacter
+                )
+            ) {
+                RichTextWritingMode::VerticalRl
+            } else {
+                writing_mode
+            },
         })
         .map_err(|source| TextLayoutError::ShapeRuby { ruby_index, source })?;
     validate_ruby_shape(ruby_index, annotation.text(), &ruby_run)?;
     let glyphs = match writing_mode {
+        RichTextWritingMode::HorizontalTb
+            if matches!(authored_position, RichTextRubyPosition::InterCharacter) =>
+        {
+            place_inter_character(base_bounds, request, metrics, &ruby_run)
+        }
         RichTextWritingMode::HorizontalTb => {
-            place_horizontal(annotation, base_bounds, request, metrics, &ruby_run)
+            place_horizontal(position, base_bounds, request, metrics, &ruby_run)
         }
         RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => place_vertical(
-            annotation,
             base_bounds,
             request,
             metrics,
             writing_mode,
-            inter_character_y,
+            position,
             &ruby_run,
         ),
     };
@@ -218,7 +209,7 @@ fn layout_one_ruby<S: TextShaper>(
 }
 
 fn place_horizontal(
-    annotation: &ResolvedTextRuby,
+    position: RichTextRubyPosition,
     base_bounds: LayoutRect,
     request: TextLayoutRequest,
     metrics: RubyMetrics,
@@ -239,14 +230,11 @@ fn place_horizontal(
     }
     .max(request.origin.x)
     .min((request.origin.x + request.size.width - width).max(request.origin.x));
-    let overlap = metrics.font_size * HORIZONTAL_OVERLAP_EM;
-    let y = match ruby_position(annotation) {
-        RichTextRubyPosition::Under => base_bounds.bottom() + metrics.gap - overlap,
+    let y = match position {
+        RichTextRubyPosition::Under => base_bounds.bottom() + metrics.gap,
         RichTextRubyPosition::Auto
         | RichTextRubyPosition::Over
-        | RichTextRubyPosition::InterCharacter => {
-            base_bounds.y - metrics.font_size - metrics.gap + overlap
-        }
+        | RichTextRubyPosition::InterCharacter => base_bounds.y - metrics.font_size - metrics.gap,
     };
     local
         .into_iter()
@@ -274,43 +262,61 @@ fn place_horizontal(
         .collect()
 }
 
-fn place_vertical(
-    annotation: &ResolvedTextRuby,
+fn place_inter_character(
     base_bounds: LayoutRect,
     request: TextLayoutRequest,
     metrics: RubyMetrics,
-    writing_mode: RichTextWritingMode,
-    inter_character_y: Option<f32>,
     shaped: &ShapedTextRun,
 ) -> Vec<TextLayoutRubyGlyph> {
     let local = local_glyphs(shaped);
     let clusters = cluster_slices(&local).collect::<Vec<_>>();
     let extent = usize_to_f32(clusters.len().max(1)) * metrics.font_size;
-    let position = ruby_position(annotation);
-    let ideal_y = if matches!(position, RichTextRubyPosition::InterCharacter) {
-        inter_character_y.unwrap_or(base_bounds.y + (base_bounds.height - extent) * 0.5)
-    } else {
-        base_bounds.y + (base_bounds.height - extent) * 0.5
-    };
+    let x = (base_bounds.right() + metrics.gap)
+        .max(request.origin.x)
+        .min((request.origin.x + request.size.width - metrics.font_size).max(request.origin.x));
+    let y = (base_bounds.y + (base_bounds.height - extent) * 0.5)
+        .max(request.origin.y)
+        .min((request.origin.y + request.size.height - extent).max(request.origin.y));
+    place_vertical_cells(&clusters, x, y, metrics)
+}
+
+fn place_vertical(
+    base_bounds: LayoutRect,
+    request: TextLayoutRequest,
+    metrics: RubyMetrics,
+    writing_mode: RichTextWritingMode,
+    position: RichTextRubyPosition,
+    shaped: &ShapedTextRun,
+) -> Vec<TextLayoutRubyGlyph> {
+    let local = local_glyphs(shaped);
+    let clusters = cluster_slices(&local).collect::<Vec<_>>();
+    let extent = usize_to_f32(clusters.len().max(1)) * metrics.font_size;
+    let ideal_y = base_bounds.y + (base_bounds.height - extent) * 0.5;
     let y = ideal_y
         .max(base_bounds.y - metrics.overhang)
         .min(base_bounds.bottom() + metrics.overhang - extent)
         .max(request.origin.y)
         .min((request.origin.y + request.size.height - extent).max(request.origin.y));
-    let overlap = metrics.font_size * VERTICAL_OVERLAP_EM;
     let side_right = ruby_track_is_right(writing_mode, position);
-    let x = if matches!(position, RichTextRubyPosition::InterCharacter) {
-        base_bounds.x + (base_bounds.width - metrics.font_size) * 0.5
-    } else if side_right {
-        base_bounds.right() + metrics.gap - overlap
+    let x = if side_right {
+        base_bounds.right() + metrics.gap
     } else {
-        base_bounds.x - metrics.font_size - metrics.gap + overlap
+        base_bounds.x - metrics.font_size - metrics.gap
     }
     .max(request.origin.x)
     .min((request.origin.x + request.size.width - metrics.font_size).max(request.origin.x));
 
+    place_vertical_cells(&clusters, x, y, metrics)
+}
+
+fn place_vertical_cells(
+    clusters: &[&[LocalRubyGlyph]],
+    x: f32,
+    y: f32,
+    metrics: RubyMetrics,
+) -> Vec<TextLayoutRubyGlyph> {
     let mut out = Vec::new();
-    for (cluster_index, cluster) in clusters.into_iter().enumerate() {
+    for (cluster_index, cluster) in clusters.iter().enumerate() {
         let cell = LayoutRect::new(
             x,
             y + usize_to_f32(cluster_index) * metrics.font_size,
@@ -353,12 +359,6 @@ fn place_vertical(
 pub(crate) fn resolve_collisions(ruby: &mut [TextLayoutRuby]) {
     let mut placed = Vec::<LayoutRect>::new();
     for annotation in ruby {
-        if matches!(
-            ruby_position_from_presentation(annotation),
-            RichTextRubyPosition::InterCharacter
-        ) {
-            continue;
-        }
         let gap = collision_gap(annotation);
         while let Some(collision) = placed
             .iter()
@@ -372,24 +372,30 @@ pub(crate) fn resolve_collisions(ruby: &mut [TextLayoutRuby]) {
     }
 }
 
-pub(crate) fn inter_character_extent_after(
+pub(crate) fn inter_character_inline_advance_after(
     document: &ResolvedTextDocument<'_>,
     source_range: RichTextRange,
 ) -> f32 {
     document
         .ruby()
         .iter()
-        .filter(|annotation| annotation.source_base_range().start == source_range.start)
+        .filter(|annotation| annotation.source_base_range().end == source_range.end)
         .filter(|annotation| ranges_overlap(annotation.source_base_range(), source_range))
         .filter(|annotation| {
             matches!(
                 ruby_position(annotation),
                 RichTextRubyPosition::InterCharacter
-            )
+            ) && document.runs().iter().any(|run| {
+                ranges_overlap(run.source_range(), annotation.source_base_range())
+                    && matches!(
+                        run.style().writing_mode(),
+                        RichTextWritingMode::HorizontalTb
+                    )
+            })
         })
         .map(|annotation| {
-            usize_to_f32(annotation.text().chars().count().max(1))
-                * ruby_metrics(annotation).font_size
+            let metrics = ruby_metrics(annotation);
+            metrics.font_size + metrics.gap
         })
         .sum()
 }
@@ -397,10 +403,10 @@ pub(crate) fn inter_character_extent_after(
 fn collision_shift(annotation: &TextLayoutRuby, collision: LayoutRect, gap: f32) -> (f32, f32) {
     match annotation.writing_mode {
         RichTextWritingMode::HorizontalTb => {
-            if matches!(
-                ruby_position_from_presentation(annotation),
-                RichTextRubyPosition::Under
-            ) {
+            let position = ruby_position_from_presentation(annotation);
+            if matches!(position, RichTextRubyPosition::InterCharacter) {
+                (collision.right() + gap - annotation.ruby_bounds.x, 0.0)
+            } else if matches!(position, RichTextRubyPosition::Under) {
                 (0.0, collision.bottom() + gap - annotation.ruby_bounds.y)
             } else {
                 (0.0, collision.y - gap - annotation.ruby_bounds.bottom())
@@ -522,7 +528,7 @@ fn ruby_metrics(annotation: &ResolvedTextRuby) -> RubyMetrics {
             .and_then(|layout| nonnegative_milli(layout.ruby_gap))
             .unwrap_or(DEFAULT_RUBY_GAP),
         overhang: layout
-            .and_then(|layout| positive_milli(layout.ruby_overhang))
+            .and_then(|layout| nonnegative_milli(layout.ruby_overhang))
             .unwrap_or(font_size * 0.5),
     }
 }
@@ -555,6 +561,21 @@ fn ruby_position_from_presentation(annotation: &TextLayoutRuby) -> RichTextRubyP
         .map_or(RichTextRubyPosition::Auto, |layout| layout.ruby_position)
 }
 
+fn effective_ruby_position(
+    writing_mode: RichTextWritingMode,
+    position: RichTextRubyPosition,
+) -> RichTextRubyPosition {
+    if matches!(
+        writing_mode,
+        RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr
+    ) && matches!(position, RichTextRubyPosition::InterCharacter)
+    {
+        RichTextRubyPosition::Over
+    } else {
+        position
+    }
+}
+
 fn ruby_track_is_right(writing_mode: RichTextWritingMode, position: RichTextRubyPosition) -> bool {
     match writing_mode {
         RichTextWritingMode::VerticalRl => !matches!(position, RichTextRubyPosition::Under),
@@ -568,7 +589,7 @@ fn collision_gap(annotation: &TextLayoutRuby) -> f32 {
         .presentation
         .layout
         .as_ref()
-        .and_then(|layout| positive_milli(layout.ruby_collision_gap))
+        .and_then(|layout| nonnegative_milli(layout.ruby_collision_gap))
         .unwrap_or(DEFAULT_COLLISION_GAP)
 }
 

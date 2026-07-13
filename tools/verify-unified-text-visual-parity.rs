@@ -249,8 +249,8 @@ fn verify_vertical_lr(body: &Value) -> Result<(), Box<dyn Error>> {
     let inter_base = rect_center_x(&ruby[1]["base_bounds"])?;
     let inter_ruby = rect_center_x(&ruby[1]["ruby_bounds"])?;
     require(
-        inter_ruby == inter_base,
-        "vertical-lr: inter-character ruby must be centered on its base",
+        inter_ruby < inter_base,
+        "vertical-lr: inter-character ruby must use the physical left over-track",
     )?;
     Ok(())
 }

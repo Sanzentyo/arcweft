@@ -82,17 +82,23 @@ Ruby-specific fields mean:
 
 | Field | Meaning |
 |---|---|
-| `position` | Default ruby track: `over`, `under`, `inter_character`, or `auto` |
+| `position` | Default ruby track: `over`, `under`, `inter_character`, or `auto`. As in CSS Ruby, `inter_character` is a right-side `vertical-rl` inline annotation in horizontal text and has the same layout effect as `over` in vertical text. |
 | `size` | Annotation font size |
-| `gap` | Extra separation from the default ruby track; for horizontal over-ruby, `0px` keeps the CSS/HTML-like natural overlap between the annotation bbox and base bbox instead of forcing the boxes to merely touch |
-| `overhang` | Maximum annotation overhang allowed beyond the base allocation |
-| `collision_gap` | Separation between adjacent ruby annotations or continuation tracks |
+| `gap` | Extra block-axis separation between the base and annotation containers. The default is `0px`, matching CSS Ruby's no-intervening-space stacking. |
+| `overhang` | Maximum inline-axis annotation overhang allowed beyond the base allocation. `0px` disables overhang; the default deterministic `auto` policy is half an annotation cell. |
+| `collision_gap` | Extra separation between adjacent ruby annotations or continuation tracks. The default is `0px`. |
 
-Horizontal over-ruby is compared against browser `<ruby><rb><rt>` behavior.
-With a 30px base font, 13px ruby font, and `line-height: 1`, Chromium places the
-`rt` bbox about 4.67px into the `rb` bbox. Arcweft models this as a
-`0.36em` annotation overlap before applying the explicit ruby `gap`, so
-authoring `gap = 0px` remains close to standard HTML ruby placement.
+Arcweft follows the CSS Ruby box model rather than copying a browser's CSSOM
+element rectangles as layout offsets. Interlinear annotation containers stack
+outward from the base container without intervening space; an authored `gap`
+adds space to that boundary. Browser `ruby` and `rt` rectangles can overlap
+because they expose font metrics inside those abstract containers, even when
+the rendered glyph ink does not collide. Applying that measured rectangle
+overlap directly to Arcweft's glyph cells caused the annotation ink to enter
+the base glyph, especially in vertical text, so it is intentionally not part of
+the canonical layout formula. `ruby-overhang` remains an inline-axis edge
+effect: it can share space with adjacent content but never authorizes annotation
+ink to collide with the contents of its own base.
 
 ### Horizontal wrapping
 

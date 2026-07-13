@@ -215,14 +215,16 @@ their inline x positions still come from glyphon shaping, while y placement uses
 the Arcweft ruby annotation track plus glyphon baseline offset and the layout
 ruby line height. This keeps horizontal ruby pixels close to the body text and
 aligned with observed ruby bboxes instead of drifting through an independent
-TextArea baseline. The horizontal ruby track is calibrated against a Chromium
-`<ruby><rb><rt>` reference: a 30px base with 13px ruby text produces about
-4.67px of annotation/base bbox overlap, so Arcweft applies a 0.36em natural
-overlap before adding any explicit ruby gap. The same model applies to
-horizontal `ruby_under` and vertical side-track ruby: `ruby_gap` remains an
-author-controlled extra gap, while the default zero-gap placement allows the
-small natural annotation/base bbox overlap observed in Chromium ruby rendering
-instead of forcing a hard separated rectangle.
+TextArea baseline. Ruby track placement follows CSS Ruby's abstract container
+stacking rather than copying Chromium CSSOM element-rectangle overlap into
+glyph-cell coordinates. At zero gap the annotation container touches the base
+container; `ruby_gap` adds author-controlled separation. Chromium can report
+overlapping `ruby`/`rt` element rectangles because of their internal font
+metrics while rendering non-colliding glyph ink. Applying those rectangle
+ratios as Arcweft cell offsets caused real glyph collisions and was removed in
+the 2026-07-13 parity review. Horizontal `ruby_under` and vertical left/right
+tracks share this model, while inline-axis `ruby_overhang` remains independent
+from block-axis separation.
 Builtin wave effects use the descriptor target when choosing their phase index:
 `target=glyph` evaluates per glyph, while `target=run` and broader targets move
 the target as one placement group. Shake and jitter continue to use

@@ -324,43 +324,109 @@ fn vertical_lr_reserves_the_left_ruby_track_before_body_layout() {
     let ruby = &layout.ruby[0];
 
     assert!(ruby.ruby_bounds.x < ruby.base_bounds.x);
+    assert!(ruby.ruby_bounds.right() <= ruby.base_bounds.x + f32::EPSILON);
     assert!(ruby.ruby_bounds.x >= request().origin.x);
     assert!(ruby.ruby_bounds.right() <= request().origin.x + request().size.width);
 }
 
 #[test]
-fn vertical_inter_character_ruby_participates_in_inline_flow() {
-    let text = "夢星";
+fn horizontal_over_ruby_stacks_outside_the_base_cell() {
+    let text = "夢";
+    let range = RichTextRange::new(0, text.len());
+    let ruby = ResolvedTextRuby::new(
+        range,
+        range,
+        "ゆめ",
+        style(),
+        RichTextPresentation::default(),
+    )
+    .expect("ruby is valid");
+    let document = document_with_presentation(
+        text,
+        style(),
+        RichTextPresentation::default(),
+        vec![ruby],
+        10,
+    );
+    let layout = layout_document(&document, request(), &mut MockShaper::new(b"font"))
+        .expect("horizontal ruby lays out");
+    let ruby = &layout.ruby[0];
+
+    assert!(ruby.ruby_bounds.bottom() <= ruby.base_bounds.y + f32::EPSILON);
+}
+
+#[test]
+fn vertical_inter_character_has_the_same_effect_as_over() {
+    let text = "夢星人";
     let style = style().with_flow(
         RichTextWritingMode::VerticalRl,
         RichTextInlineDirection::Auto,
     );
+    let base_range = RichTextRange::new(0, "夢星".len());
+    let layout_with = |position, revision| {
+        let presentation = RichTextPresentation {
+            layout: Some(RichTextLayout {
+                writing_mode: RichTextWritingMode::VerticalRl,
+                ruby_position: position,
+                ..RichTextLayout::default()
+            }),
+            ..RichTextPresentation::default()
+        };
+        let ruby = ResolvedTextRuby::new(
+            base_range,
+            base_range,
+            "ゆめ",
+            style.clone(),
+            presentation.clone(),
+        )
+        .expect("ruby is valid");
+        let document =
+            document_with_presentation(text, style.clone(), presentation, vec![ruby], revision);
+        layout_document(&document, request(), &mut MockShaper::new(b"font"))
+            .expect("vertical ruby lays out")
+    };
+    let inter_character = layout_with(RichTextRubyPosition::InterCharacter, 11);
+    let over = layout_with(RichTextRubyPosition::Over, 12);
+    let ruby = &inter_character.ruby[0];
+
+    assert_eq!(ruby.base_bounds, over.ruby[0].base_bounds);
+    assert_eq!(ruby.ruby_bounds, over.ruby[0].ruby_bounds);
+    assert!(ruby.ruby_bounds.x >= ruby.base_bounds.right());
+    assert!(
+        (inter_character.glyphs[2].layout_bounds.y
+            - inter_character.glyphs[1].layout_bounds.bottom())
+        .abs()
+            < f32::EPSILON
+    );
+}
+
+#[test]
+fn horizontal_inter_character_is_inserted_to_the_right_of_its_base() {
+    let text = "夢人";
+    let base_range = RichTextRange::new(0, "夢".len());
     let presentation = RichTextPresentation {
         layout: Some(RichTextLayout {
-            writing_mode: RichTextWritingMode::VerticalRl,
             ruby_position: RichTextRubyPosition::InterCharacter,
             ..RichTextLayout::default()
         }),
         ..RichTextPresentation::default()
     };
-    let range = RichTextRange::new(0, text.len());
-    let ruby = ResolvedTextRuby::new(range, range, "ゆめ", style.clone(), presentation.clone())
-        .expect("inter-character ruby is valid");
-    let document = document_with_presentation(text, style, presentation, vec![ruby], 10);
+    let ruby = ResolvedTextRuby::new(
+        base_range,
+        base_range,
+        "ゆめ",
+        style(),
+        presentation.clone(),
+    )
+    .expect("inter-character ruby is valid");
+    let document = document_with_presentation(text, style(), presentation, vec![ruby], 13);
     let layout = layout_document(&document, request(), &mut MockShaper::new(b"font"))
-        .expect("vertical inter-character ruby lays out");
-    let first = &layout.glyphs[0];
-    let second = &layout.glyphs[1];
+        .expect("horizontal inter-character ruby lays out");
     let ruby = &layout.ruby[0];
 
-    assert!(ruby.ruby_bounds.y >= first.layout_bounds.bottom());
-    assert!(second.layout_bounds.y >= ruby.ruby_bounds.bottom());
-    assert!(
-        (ruby.ruby_bounds.x + ruby.ruby_bounds.width * 0.5
-            - (ruby.base_bounds.x + ruby.base_bounds.width * 0.5))
-            .abs()
-            < f32::EPSILON
-    );
+    assert_eq!(ruby.writing_mode, RichTextWritingMode::HorizontalTb);
+    assert!(ruby.ruby_bounds.x >= ruby.base_bounds.right());
+    assert!(layout.glyphs[1].layout_bounds.x >= ruby.ruby_bounds.right());
 }
 
 #[test]

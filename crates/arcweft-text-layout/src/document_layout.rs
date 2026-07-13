@@ -187,7 +187,6 @@ struct VerticalPlacement {
     local: Vec<LocalGlyph>,
     local_bounds: LayoutRect,
     inline_advance: f32,
-    post_inline_advance: f32,
     hard_line: usize,
     break_allowed_before: bool,
 }
@@ -289,7 +288,22 @@ impl DocumentLayoutState {
         for cluster in cluster_slices(shaped.glyphs()) {
             let hard_line = source_hard_line(document, cluster[0].source_range.start);
             self.sync_horizontal_hard_line(hard_line, line_height);
-            let cluster_width = cluster.iter().map(|glyph| glyph.advance.width).sum::<f32>();
+            let source_range = RichTextRange::new(
+                cluster
+                    .iter()
+                    .map(|glyph| glyph.source_range.start)
+                    .min()
+                    .unwrap_or_default(),
+                cluster
+                    .iter()
+                    .map(|glyph| glyph.source_range.end)
+                    .max()
+                    .unwrap_or_default(),
+            );
+            let post_inline_advance =
+                crate::document_ruby::inter_character_inline_advance_after(document, source_range);
+            let cluster_width =
+                cluster.iter().map(|glyph| glyph.advance.width).sum::<f32>() + post_inline_advance;
             let right = self.request.origin.x + self.request.size.width;
             if self.request.horizontal_wrap == crate::HorizontalWrap::Wrap
                 && self.horizontal.x > self.request.origin.x
@@ -331,6 +345,7 @@ impl DocumentLayoutState {
                 });
                 self.horizontal.x += glyph.advance.width;
             }
+            self.horizontal.x += post_inline_advance;
         }
     }
 
@@ -384,7 +399,7 @@ impl DocumentLayoutState {
                 .iter()
                 .map(|cluster| VerticalPlanCluster {
                     text: &cluster.text,
-                    advance: cluster.inline_advance + cluster.post_inline_advance,
+                    advance: cluster.inline_advance,
                     break_allowed_before: cluster.break_allowed_before,
                 })
                 .collect::<Vec<_>>();
@@ -451,7 +466,7 @@ impl DocumentLayoutState {
             cluster.local_bounds,
         ));
         let cursor = self.vertical_cursor_mut(writing_mode);
-        cursor.y += cluster.inline_advance + cluster.post_inline_advance;
+        cursor.y += cluster.inline_advance;
         cursor.previous_cluster = Some(cluster.text.clone());
     }
 
@@ -620,8 +635,6 @@ fn vertical_placements(
                     GlyphOrientation::Upright | GlyphOrientation::TextCombineUpright => font_size,
                 }
             };
-            let post_inline_advance =
-                crate::document_ruby::inter_character_extent_after(document, source_range);
             Some(VerticalPlacement {
                 run_index,
                 font_size,
@@ -633,7 +646,6 @@ fn vertical_placements(
                 local,
                 local_bounds: bounds,
                 inline_advance,
-                post_inline_advance,
                 hard_line: source_hard_line(document, source_range.start),
                 break_allowed_before: cluster.break_allowed_before,
             })

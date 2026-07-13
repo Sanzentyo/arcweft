@@ -1,5 +1,11 @@
 # Visual Sample Review - 2026-06-16
 
+> Status: historical evidence. The 2026-07-13 CSS Ruby parity review superseded
+> the fixed `0.36em` cell-overlap conclusion below. Chromium's measured CSSOM
+> rectangles overlap because of internal font metrics; Arcweft now stacks its
+> canonical base and annotation cells without overlap so visible glyph ink does
+> not collide.
+
 This folder keeps the browser and native PNG captures used to review horizontal
 ruby placement after aligning horizontal ruby GlyphAreas and Arcweft layout
 geometry with an HTML `<ruby><rb><rt>` reference.
