@@ -1,5 +1,10 @@
 # seq06.13e CSS Inset Box-Shadow Rendering Implementation Note — 2026-07-03
 
+> **Superseded Style-path premise (2026-07-13):** The CSS/Takumi input path
+> below was removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). The
+> generic inset-shadow renderer remains native Style substrate.
+
 ## Source assumptions
 
 This overlay was authored against `Sanzentyo/arcweft` main as inspected through

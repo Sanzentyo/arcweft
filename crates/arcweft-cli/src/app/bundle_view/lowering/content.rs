@@ -5,14 +5,13 @@ use super::{
     ViewAction, ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayload,
     ViewActionPayloadResource, ViewButton, ViewButtonLabel, ViewElementKind, ViewImage,
     ViewLayoutCursor, ViewLayoutFrame, ViewLoweringState, ViewModifier, ViewProgramInstruction,
-    ViewRuntimeButtonBounds, ViewSemanticTarget, ViewSidecarError, ViewStyleModifier, ViewText,
-    ViewTextBlockBounds, ViewTextBlockResource, ViewTextSelectionPolicy, ViewTextSourceKind,
-    ViewTextSourceRecord, ViewTextSurface, button_bounds, expr_source, first_part,
-    lower_button_modifiers, lower_modifiers, lower_navigation_target,
-    lower_text_control_payload_field, lower_text_modifiers, modifier_label,
-    modifier_layout_length_i32, modifier_layout_length_u32, normalize_entity_ref,
-    normalize_input_payload_ref, normalize_style_ref, symbol_expr_name, text_block_frame,
-    text_control_selection_policy, validate_interactive_overflow_modifiers, view_resource_id,
+    ViewRuntimeButtonBounds, ViewSemanticTarget, ViewSidecarError, ViewText, ViewTextBlockBounds,
+    ViewTextBlockResource, ViewTextSelectionPolicy, ViewTextSourceKind, ViewTextSourceRecord,
+    ViewTextSurface, button_bounds, expr_source, first_part, lower_button_modifiers,
+    lower_modifiers, lower_navigation_target, lower_text_control_payload_field,
+    lower_text_modifiers, modifier_label, modifier_layout_length_i32, modifier_layout_length_u32,
+    normalize_entity_ref, normalize_input_payload_ref, symbol_expr_name, text_block_frame,
+    text_control_selection_policy, view_resource_id,
 };
 
 pub(super) fn lower_text(
@@ -21,7 +20,6 @@ pub(super) fn lower_text(
     state: &mut ViewLoweringState,
     layout: ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
-    validate_interactive_overflow_modifiers("Text", text.modifiers(), false)?;
     let id = next_text_source_id(view_id, state);
     let (kind, text_value) = lower_text_source(text, state)?;
     state.text_sources.push(ViewTextSourceRecord {
@@ -29,20 +27,17 @@ pub(super) fn lower_text(
         kind,
         source: None,
     });
+    let text_block_id = next_text_block_id(view_id, state);
+    let styles = state.producer_styles(text.range());
     state.instructions.push(ViewProgramInstruction::EmitText {
         text_source: id.clone(),
-        style: text.modifiers().iter().find_map(|modifier| match modifier {
-            ViewModifier::Style(ViewStyleModifier::Named(reference)) => {
-                Some(normalize_style_ref(reference))
-            }
-            _ => None,
-        }),
+        text_block: text_block_id.clone(),
+        styles,
         part: first_part(text.modifiers()),
         source: None,
     });
     lower_text_modifiers(view_id, text.modifiers(), state)?;
     let frame = text_block_frame(&text_value, text.modifiers());
-    let text_block_id = next_text_block_id(view_id, state);
     let view = Some(view_resource_id(view_id));
     let scroll_region = state.scroll_stack.last().cloned();
     let origin_x = modifier_layout_length_i32(text.modifiers(), &["x"]).unwrap_or(layout.x_milli);
@@ -166,7 +161,6 @@ pub(super) fn lower_button(
     state: &mut ViewLoweringState,
     layout: ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
-    validate_interactive_overflow_modifiers("Button", button.modifiers(), false)?;
     let button_id = button
         .id()
         .map_or_else(|| next_button_id(view_id, state), normalize_entity_ref);
@@ -179,12 +173,13 @@ pub(super) fn lower_button(
         },
         source: None,
     });
+    let styles = state.producer_styles(button.range());
     state
         .instructions
         .push(ViewProgramInstruction::OpenElement {
             element: ViewElementKind::Button,
             target: Some(button_id.clone()),
-            style: None,
+            styles,
             part: first_part(button.modifiers()),
             key: None,
             source: None,
@@ -235,7 +230,6 @@ pub(super) fn lower_button(
         enabled: button_enabled(button.enabled()),
         action,
         bounds: button_bounds(button, layout),
-        style: None,
         source: None,
     });
     state.semantic_targets.push(ViewSemanticTarget {
@@ -254,7 +248,6 @@ pub(super) fn lower_image(
     state: &mut ViewLoweringState,
     layout: ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
-    validate_interactive_overflow_modifiers("Image", image.modifiers(), false)?;
     let image_source = expr_source(image.source());
     let materialized = image_source_object_id(image.source())
         .and_then(|source_id| {
@@ -285,10 +278,11 @@ pub(super) fn lower_image(
             Some(object)
         });
     let target = materialized.as_ref().map(|object| object.id.clone());
+    let styles = state.producer_styles(image.range());
     state.instructions.push(ViewProgramInstruction::EmitImage {
         image: image_source,
         target,
-        style: None,
+        styles,
         part: first_part(image.modifiers()),
         source: None,
     });

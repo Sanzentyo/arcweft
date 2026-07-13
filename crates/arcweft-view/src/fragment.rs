@@ -1,6 +1,6 @@
 //! Flat retained View fragments emitted by Rust and Arcweft views.
 
-use crate::{NodeKey, RawEntity, ViewError};
+use crate::{NodeKey, RawEntity, ViewError, ViewStyleApplicationTarget};
 use arcweft_presentation::input::{InputEventKind, PointerPhase};
 use std::collections::BTreeSet;
 
@@ -14,10 +14,6 @@ pub struct Span32 {
     pub start: u32,
     pub len: u32,
 }
-
-/// Stable identifier for resolved View style data.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct StyleId(pub u32);
 
 /// Stable identifier for plain text content owned outside the fragment.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -85,16 +81,17 @@ pub struct EventBinding {
 pub struct FragmentNode {
     key: NodeKey,
     kind: FragmentKind,
-    style: StyleId,
+    style_applications: Span32,
     children: Span32,
     events: Span32,
     semantics: Option<SemanticSpecId>,
 }
 
-/// Flat retained fragment plus sidecar child/event vectors.
+/// Flat retained fragment plus ordered sidecar vectors.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ViewFragment {
     nodes: Vec<FragmentNode>,
+    style_applications: Vec<ViewStyleApplicationTarget>,
     child_indices: Vec<NodeId>,
     events: Vec<EventBinding>,
 }
@@ -103,6 +100,7 @@ pub struct ViewFragment {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ViewFragmentBuilder {
     nodes: Vec<FragmentNode>,
+    style_applications: Vec<ViewStyleApplicationTarget>,
     child_indices: Vec<NodeId>,
     events: Vec<EventBinding>,
     keys: BTreeSet<NodeKey>,
@@ -165,8 +163,8 @@ impl FragmentNode {
         self.kind
     }
 
-    pub const fn style(&self) -> StyleId {
-        self.style
+    pub const fn style_applications(&self) -> Span32 {
+        self.style_applications
     }
 
     pub const fn children(&self) -> Span32 {
@@ -191,6 +189,16 @@ impl ViewFragment {
         &self.child_indices
     }
 
+    pub fn style_application_targets(&self) -> &[ViewStyleApplicationTarget] {
+        &self.style_applications
+    }
+
+    pub fn node_style_applications(&self, node: NodeId) -> Option<&[ViewStyleApplicationTarget]> {
+        let span = self.nodes.get(node.0 as usize)?.style_applications;
+        self.style_applications
+            .get(span.start as usize..span.end()? as usize)
+    }
+
     pub fn events(&self) -> &[EventBinding] {
         &self.events
     }
@@ -212,7 +220,7 @@ impl ViewFragmentBuilder {
         &mut self,
         key: NodeKey,
         kind: FragmentKind,
-        style: StyleId,
+        style_applications: &[ViewStyleApplicationTarget],
         children: &[NodeId],
         events: &[EventBinding],
         semantics: Option<SemanticSpecId>,
@@ -228,9 +236,12 @@ impl ViewFragmentBuilder {
             return Err(ViewError::InvalidFragmentNode(invalid));
         }
 
+        let style_span = Span32::from_len(self.style_applications.len(), style_applications.len())?;
         let child_span = Span32::from_len(self.child_indices.len(), children.len())?;
-        self.child_indices.extend_from_slice(children);
         let event_span = Span32::from_len(self.events.len(), events.len())?;
+        self.style_applications
+            .extend_from_slice(style_applications);
+        self.child_indices.extend_from_slice(children);
         self.events.extend_from_slice(events);
 
         let node_id =
@@ -238,7 +249,7 @@ impl ViewFragmentBuilder {
         self.nodes.push(FragmentNode {
             key,
             kind,
-            style,
+            style_applications: style_span,
             children: child_span,
             events: event_span,
             semantics,
@@ -253,6 +264,7 @@ impl ViewFragmentBuilder {
     pub fn finish(self) -> ViewFragment {
         ViewFragment {
             nodes: self.nodes,
+            style_applications: self.style_applications,
             child_indices: self.child_indices,
             events: self.events,
         }

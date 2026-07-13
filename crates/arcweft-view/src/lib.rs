@@ -34,7 +34,7 @@ pub use display::{
 pub use entity::{DirtyFlags, Entity, EntityStore, RawEntity};
 pub use fragment::{
     ContainerKind, CustomElementId, EventBinding, EventKind, FragmentKind, FragmentNode, HandlerId,
-    ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, StyleId, TextSourceId, ViewFragment,
+    ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, TextSourceId, ViewFragment,
     ViewFragmentBuilder,
 };
 pub use frame::ViewLayerOutput;
@@ -68,19 +68,25 @@ pub use semantics::{
     ViewNodeId, ViewSemanticFragment, ViewSemanticFragmentBuilder, ViewSemanticNode,
 };
 pub use style::{
-    Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder,
-    ResolvedViewProperty, ResolvedViewStyle, Rgba8, ValueSourceId, ViewAlignment,
-    ViewAngleMilliDegrees, ViewBlendMode, ViewBorderRadii, ViewClip, ViewColorValue,
-    ViewContainerAxis, ViewContainerPredicate, ViewDisplay, ViewElementState,
+    ComputedViewProperty, ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
+    PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder, ValueSourceId,
+    ViewAlignment, ViewAngleMilliDegrees, ViewBlendMode, ViewBorderRadii, ViewClip, ViewColorValue,
+    ViewContainerAxis, ViewContainerPredicate, ViewDisplay, ViewElementState, ViewElementStateSet,
     ViewEnvironmentPredicate, ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily,
-    ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewInteractionSelector, ViewLengthMilli,
-    ViewMask, ViewOverflow, ViewPartName, ViewPosition, ViewPropertyId, ViewPropertyKind,
-    ViewPropertyValue, ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue, ViewStyle,
-    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleCombinator,
-    ViewStyleComparison, ViewStyleInvalidationSet, ViewStylePatchId, ViewStylePredicate,
-    ViewStyleRule, ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence,
-    ViewStyleSheetId, ViewStyleSourceId, ViewStyleSpecificity, ViewStyleTable, ViewStyleTokenId,
-    ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
+    ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewInteractionSelector,
+    ViewInteractionStateSet, ViewLengthMilli, ViewMask, ViewOverflow, ViewPartName, ViewPosition,
+    ViewPropertyId, ViewPropertyKind, ViewRatioMilli, ViewScalarMilli, ViewShadow,
+    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleBoundaryFacts, ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution,
+    ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleInvalidationSet,
+    ViewStyleModelError, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId,
+    ViewStylePredicate, ViewStylePriority, ViewStyleProgram, ViewStyleResolution,
+    ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver, ViewStyleResolverLimits,
+    ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewStyleSpecificity, ViewStyleToken, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry,
+    ViewStyleTraceMode, ViewStyleTraceRejection, ViewStyleTransition, ViewStyleValueKind,
+    ViewSystemFontFamily,
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,
@@ -116,6 +122,8 @@ pub enum ViewError {
     EntityTypeMismatch(RawEntity),
     #[error("invalid View fragment node {0:?}")]
     InvalidFragmentNode(NodeId),
+    #[error("View fragment node {0:?} has multiple parents")]
+    MultipleFragmentParents(NodeId),
     #[error("missing layout for View fragment node {0:?}")]
     MissingLayout(NodeId),
     #[error("duplicate View property binding {0:?}")]
@@ -136,22 +144,8 @@ pub enum ViewError {
         node: NodeId,
         semantic: SemanticSpecId,
     },
-    #[error("duplicate View style {0:?}")]
-    DuplicateStyle(StyleId),
-    #[error("unknown View style {0:?}")]
-    UnknownStyle(StyleId),
-    #[error("duplicate base View style property {0:?}")]
-    DuplicateStyleProperty(ViewPropertyKind),
-    #[error("duplicate View style rule {selector:?} for {kind:?}")]
-    DuplicateStyleRule {
-        selector: ViewInteractionSelector,
-        kind: ViewPropertyKind,
-    },
-    #[error("View property {kind:?} rejects value {value:?}")]
-    InvalidViewPropertyValue {
-        kind: ViewPropertyKind,
-        value: ViewPropertyValue,
-    },
+    #[error(transparent)]
+    StyleResolution(#[from] ViewStyleResolveError),
     #[error("too many View items")]
     CapacityExceeded,
 }

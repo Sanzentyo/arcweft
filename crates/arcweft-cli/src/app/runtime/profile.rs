@@ -4,7 +4,11 @@ use crate::app::project::{
     SourceSelection, print_project_compile_error, runtime_plan_options_for_selection,
 };
 use crate::output::RuntimeProfilePhase;
-use arcweft_compiler::{hir, lower, parse, project::compile_project_with_env};
+use arcweft_compiler::{
+    hir, lower, parse,
+    project::compile_project_with_env,
+    style::{CompiledViewStyleArtifact, lower_source_view_styles},
+};
 use arcweft_core::{
     aot::{AotProgram, AotProgramStats},
     awbc::schema::AwbcProgram,
@@ -29,6 +33,7 @@ use std::time::Instant;
 
 pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) hir: arcweft_lang_hir::model::HirModule,
+    pub(in crate::app) style: CompiledViewStyleArtifact,
     pub(in crate::app) plan: RuntimePlan,
     pub(in crate::app) syntax_warnings: usize,
     pub(in crate::app) syntax_stats: arcweft_lang_syntax::cst::SyntaxParseStats,
@@ -43,6 +48,20 @@ pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) aot_stats: AotProgramStats,
 }
 
+struct ProfileParsedSource {
+    source_text: String,
+    tree: arcweft_lang_syntax::ast::items::TypedSyntaxTree,
+    syntax_warnings: usize,
+    syntax_stats: SyntaxParseStats,
+}
+
+struct ProfileCheckedSource {
+    hir: arcweft_lang_hir::model::HirModule,
+    style: CompiledViewStyleArtifact,
+    line_task_groups: usize,
+    typecheck_report: TypeCheckReport,
+}
+
 pub(in crate::app) fn compile_profile_runtime_plan(
     selection: &SourceSelection,
     env: &TypeCheckEnv,
@@ -51,6 +70,60 @@ pub(in crate::app) fn compile_profile_runtime_plan(
     if let Some(manifest) = selection.manifest() {
         return compile_project_runtime_plan(manifest, selection, env, phases);
     }
+    let parsed = profile_parse_single_source(selection, phases)?;
+    let checked = profile_lower_checked_source(&parsed, env, phases)?;
+    let runtime_plan_report =
+        profile_lower_runtime_plan(selection, &checked.hir, &checked.typecheck_report, phases)?;
+    let mut plan = runtime_plan_report.plan;
+    apply_script_manifest_entry_fallback(&mut plan, &checked.hir);
+    let line_display_catalog = runtime_plan_report.line_display_catalog;
+    let runtime_plan_stats = runtime_plan_report.stats;
+    let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
+        let report = validate_runtime_plan_types(&plan, &checked.typecheck_report);
+        if report.has_errors() {
+            for diagnostic in report.diagnostics {
+                eprintln!("error: {}: {}", diagnostic.path, diagnostic.message);
+            }
+            Err(ExitCode::FAILURE)
+        } else {
+            Ok(report.stats)
+        }
+    })?;
+    let product_awbc = profile_lower_product_awbc(selection, &plan, &line_display_catalog, phases)?;
+    let aot = run_profile_phase(phases, "aot_lower", || {
+        Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
+    })?;
+    let aot_stats = aot.stats().clone();
+    let bytecode = run_profile_phase(phases, "bytecode_lower", || {
+        Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
+    })?;
+    let bytecode_stats = bytecode.stats();
+    let plan = bytecode.clone().into_runtime_plan().map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })?;
+    Ok(ProfileCompiledRuntimePlan {
+        hir: checked.hir,
+        style: checked.style,
+        plan,
+        syntax_warnings: parsed.syntax_warnings,
+        syntax_stats: parsed.syntax_stats,
+        line_task_groups: checked.line_task_groups,
+        typecheck_report: checked.typecheck_report,
+        runtime_plan_stats,
+        line_display_catalog,
+        runtime_type_validation_stats,
+        product_awbc,
+        bytecode,
+        bytecode_stats,
+        aot_stats,
+    })
+}
+
+fn profile_parse_single_source(
+    selection: &SourceSelection,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<ProfileParsedSource, ExitCode> {
     let source = run_profile_phase(phases, "read_source", || {
         fs::read_to_string(selection.path()).map_err(|error| {
             eprintln!(
@@ -75,6 +148,7 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         }
         return Err(ExitCode::FAILURE);
     }
+
     let source_text = parsed.source().to_owned();
     let source_name = SourceName::path(selection.path().display().to_string());
     let diagnostic_source = DiagnosticSource::new(selection.path(), &source_text);
@@ -91,8 +165,29 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         }
         Ok::<usize, ExitCode>(parse::count_warning_lints(&lints))
     })?;
-    let hir = profile_lower_hir(&tree, phases)?;
+
+    Ok(ProfileParsedSource {
+        source_text,
+        tree,
+        syntax_warnings,
+        syntax_stats,
+    })
+}
+
+fn profile_lower_checked_source(
+    parsed: &ProfileParsedSource,
+    env: &TypeCheckEnv,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<ProfileCheckedSource, ExitCode> {
+    let hir = profile_lower_hir(&parsed.tree, phases)?;
     let typecheck_report = profile_validate_hir(&hir, env, phases)?;
+    let style = run_profile_phase(phases, "style_lower", || {
+        lower_source_view_styles(&hir, &typecheck_report.style_catalog, &parsed.source_text)
+            .map_err(|error| {
+                eprintln!("error: failed to lower checked View Style: {error}");
+                ExitCode::FAILURE
+            })
+    })?;
     let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
         lower::lower_source_line_tasks(&hir).map_err(|errors| {
             for error in errors {
@@ -101,50 +196,12 @@ pub(in crate::app) fn compile_profile_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
-    let runtime_plan_report =
-        profile_lower_runtime_plan(selection, &hir, &typecheck_report, phases)?;
-    let mut plan = runtime_plan_report.plan;
-    apply_script_manifest_entry_fallback(&mut plan, &hir);
-    let line_display_catalog = runtime_plan_report.line_display_catalog;
-    let runtime_plan_stats = runtime_plan_report.stats;
-    let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
-        let report = validate_runtime_plan_types(&plan, &typecheck_report);
-        if report.has_errors() {
-            for diagnostic in report.diagnostics {
-                eprintln!("error: {}: {}", diagnostic.path, diagnostic.message);
-            }
-            Err(ExitCode::FAILURE)
-        } else {
-            Ok(report.stats)
-        }
-    })?;
-    let product_awbc = profile_lower_product_awbc(selection, &plan, &line_display_catalog, phases)?;
-    let aot = run_profile_phase(phases, "aot_lower", || {
-        Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
-    })?;
-    let aot_stats = aot.stats().clone();
-    let bytecode = run_profile_phase(phases, "bytecode_lower", || {
-        Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
-    })?;
-    let bytecode_stats = bytecode.stats();
-    let plan = bytecode.clone().into_runtime_plan().map_err(|error| {
-        eprintln!("error: {error}");
-        ExitCode::FAILURE
-    })?;
-    Ok(ProfileCompiledRuntimePlan {
+
+    Ok(ProfileCheckedSource {
         hir,
-        plan,
-        syntax_warnings,
-        syntax_stats,
+        style,
         line_task_groups: line_task_groups.len(),
         typecheck_report,
-        runtime_plan_stats,
-        line_display_catalog,
-        runtime_type_validation_stats,
-        product_awbc,
-        bytecode,
-        bytecode_stats,
-        aot_stats,
     })
 }
 
@@ -277,6 +334,7 @@ fn compile_project_runtime_plan(
     })?;
     Ok(ProfileCompiledRuntimePlan {
         hir: compiled.linked_hir().clone(),
+        style: compiled.style().clone(),
         plan,
         syntax_warnings: compiled.syntax_warnings(),
         syntax_stats,

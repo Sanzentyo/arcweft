@@ -8,6 +8,11 @@ use support::{
     instruction_ordinal, resolve_path,
 };
 
+use super::style_scope::{
+    BundleViewStyleNodeKind, ViewStyleNodeInput, ViewStyleScopeAllocator, ViewStyleScopeError,
+    ViewStyleScopeRuntime, ViewStyleScopeStack,
+};
+
 use super::value::{fx_placeholder, fx_to_runtime, runtime_to_fx};
 use super::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewFrame, BundleViewFxApplication,
@@ -22,8 +27,8 @@ use crate::presentation_handles::{
 };
 use arcweft_bundle::resource_codec::view::{ViewParameterRole, ViewProgramInstruction};
 use arcweft_bundle::resource_codec::{
-    ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlStyle, ViewTextResource,
-    ViewValueInputNamespace, ViewValueInputSource,
+    ViewDefinitionResource, ViewProgramResource, ViewTextResource, ViewValueInputNamespace,
+    ViewValueInputSource,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_presentation::fx::{
@@ -75,6 +80,14 @@ impl EvaluationFailure {
         };
         Self::new(code, instruction, error.to_string())
     }
+
+    fn style_scope(instruction: Option<usize>, error: ViewStyleScopeError) -> Self {
+        Self::new(
+            BundleViewDiagnosticCode::InvalidControlFlow,
+            instruction,
+            error.to_string(),
+        )
+    }
 }
 
 struct MountRenderBuilder {
@@ -83,21 +96,27 @@ struct MountRenderBuilder {
     text: Vec<BundleViewTextOutput>,
     paint: Vec<BundleViewPaintItem>,
     fx: Vec<BundleViewFxApplication>,
+    style_scopes: ViewStyleScopeRuntime,
     element_targets: Vec<Option<String>>,
     last_target: Option<String>,
 }
 
 impl MountRenderBuilder {
-    fn new() -> Self {
+    fn new(style_scopes: ViewStyleScopeStack) -> Self {
         Self {
             targets: BTreeSet::new(),
             images: BTreeSet::new(),
             text: Vec::new(),
             paint: Vec::new(),
             fx: Vec::new(),
+            style_scopes: ViewStyleScopeRuntime::new(style_scopes),
             element_targets: Vec::new(),
             last_target: None,
         }
+    }
+
+    fn is_root_node(&self) -> bool {
+        self.element_targets.is_empty()
     }
 
     fn retain_target(&mut self, target: &str) {
@@ -120,7 +139,6 @@ impl MountRenderBuilder {
 struct ViewEvaluator<'a> {
     program: &'a ViewProgramResource,
     text: Option<&'a ViewTextResource>,
-    text_styles: &'a BTreeMap<String, ViewRuntimeControlStyle>,
     definitions: &'a BTreeMap<String, usize>,
     inventory: &'a ViewValueProgramInventory,
     logical_time: arcweft_presentation::fx::FxLogicalTime,
@@ -132,6 +150,7 @@ struct ViewEvaluator<'a> {
     reduce_motion: bool,
     instruction_budget: u32,
     value_budget: FxEvaluationBudget,
+    style_scope_allocator: ViewStyleScopeAllocator,
     visited: BTreeSet<ViewOccurrenceKey>,
     diagnostics: Vec<BundleViewDiagnostic>,
 }
@@ -250,7 +269,6 @@ impl BundleViewRuntime {
         let mut evaluator = ViewEvaluator {
             program,
             text: self.text.as_ref(),
-            text_styles: &self.text_styles,
             definitions: &self.definitions,
             inventory: &self.inventory,
             logical_time: self.logical_time,
@@ -261,6 +279,7 @@ impl BundleViewRuntime {
             reduce_motion,
             instruction_budget: VIEW_FRAME_OPERATION_BUDGET,
             value_budget: FxEvaluationBudget::new(VIEW_VALUE_OPERATION_BUDGET),
+            style_scope_allocator: ViewStyleScopeAllocator::default(),
             visited: BTreeSet::new(),
             diagnostics: collisions,
         };
@@ -305,7 +324,12 @@ impl BundleViewRuntime {
             }
             if handle.is_render_visible() {
                 evaluated_handles.insert(handle.id.clone());
-                output.extend(evaluator.evaluate_occurrence(key, definition_index, 0));
+                output.extend(evaluator.evaluate_occurrence(
+                    key,
+                    definition_index,
+                    0,
+                    ViewStyleScopeStack::default(),
+                ));
             }
         }
 
@@ -585,6 +609,7 @@ impl ViewEvaluator<'_> {
         key: ViewOccurrenceKey,
         definition_index: usize,
         depth: usize,
+        style_scopes: ViewStyleScopeStack,
     ) -> Vec<BundleViewMountOutput> {
         let definition = self.definition(definition_index).clone();
         if depth >= VIEW_RECURSION_LIMIT {
@@ -606,21 +631,27 @@ impl ViewEvaluator<'_> {
             .remove(&key)
             .expect("visible occurrence was prepared before evaluation");
         let rollback = mounted.clone();
-        let mut builder = MountRenderBuilder::new();
+        let mut style_scopes = style_scopes;
+        let root_style_result = style_scopes
+            .enter_definition(&definition.styles, &mut self.style_scope_allocator)
+            .map_err(|error| EvaluationFailure::style_scope(None, error));
+        let mut builder = MountRenderBuilder::new(style_scopes);
         let mut descendants = Vec::new();
         let start = definition.body.start_instruction as usize;
         let end = definition.body.end_instruction as usize;
-        let result = self.execute_span(
-            &key,
-            &definition,
-            &mut mounted,
-            &key.path,
-            start,
-            end,
-            depth,
-            &mut builder,
-            &mut descendants,
-        );
+        let result = root_style_result.and_then(|()| {
+            self.execute_span(
+                &key,
+                &definition,
+                &mut mounted,
+                &key.path,
+                start,
+                end,
+                depth,
+                &mut builder,
+                &mut descendants,
+            )
+        });
         match result {
             Ok(()) => {
                 let mount_id = mounted.state.mount();
@@ -640,6 +671,7 @@ impl ViewEvaluator<'_> {
                     paint: builder.paint,
                     text: builder.text,
                     fx: builder.fx,
+                    style_nodes: builder.style_scopes.into_nodes(),
                 }];
                 output.extend(descendants);
                 output
@@ -902,9 +934,32 @@ impl ViewEvaluator<'_> {
                 ViewProgramInstruction::CallView {
                     view,
                     arguments,
+                    styles,
+                    part,
                     key: authored_key,
                     ..
                 } => {
+                    let root = builder.is_root_node();
+                    let local_styles = builder
+                        .style_scopes
+                        .retain_node(
+                            ViewStyleNodeInput {
+                                program: self.program,
+                                view: &definition.public_id,
+                                path: structural_path,
+                                instruction: instruction_ordinal(cursor)?,
+                                kind: BundleViewStyleNodeKind::CallView { view: view.clone() },
+                                part: part.as_deref(),
+                                local: styles,
+                                root,
+                            },
+                            &mut self.style_scope_allocator,
+                        )
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
+                    let child_style_scopes = builder
+                        .style_scopes
+                        .for_nested_view(&local_styles)
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
                     let Some(child_index) = self.definitions.get(view).copied() else {
                         return Err(EvaluationFailure::new(
                             BundleViewDiagnosticCode::MissingDefinition,
@@ -960,8 +1015,12 @@ impl ViewEvaluator<'_> {
                     ) {
                         Ok(()) => {
                             self.visited.insert(child_key.clone());
-                            let child_output =
-                                self.evaluate_occurrence(child_key, child_index, depth + 1);
+                            let child_output = self.evaluate_occurrence(
+                                child_key,
+                                child_index,
+                                depth + 1,
+                                child_style_scopes,
+                            );
                             if let Some(child) = child_output.first() {
                                 builder
                                     .paint
@@ -1079,7 +1138,34 @@ impl ViewEvaluator<'_> {
                     });
                     cursor += 1;
                 }
-                ViewProgramInstruction::OpenElement { target, .. } => {
+                ViewProgramInstruction::OpenElement {
+                    element,
+                    target,
+                    styles,
+                    part,
+                    ..
+                } => {
+                    let root = builder.is_root_node();
+                    let mut local_styles = builder
+                        .style_scopes
+                        .retain_node(
+                            ViewStyleNodeInput {
+                                program: self.program,
+                                view: &definition.public_id,
+                                path: structural_path,
+                                instruction: instruction_ordinal(cursor)?,
+                                kind: BundleViewStyleNodeKind::Element {
+                                    element: *element,
+                                    target: target.clone(),
+                                },
+                                part: part.as_deref(),
+                                local: styles,
+                                root,
+                            },
+                            &mut self.style_scope_allocator,
+                        )
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
+                    builder.style_scopes.enter_element(&mut local_styles);
                     if let Some(target) = target {
                         builder.retain_target(target);
                         builder.paint.push(BundleViewPaintItem::Element {
@@ -1097,9 +1183,37 @@ impl ViewEvaluator<'_> {
                             "CloseElement has no matching OpenElement",
                         ));
                     }
+                    builder
+                        .style_scopes
+                        .leave_element()
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
                     cursor += 1;
                 }
-                ViewProgramInstruction::EmitText { text_source, .. } => {
+                ViewProgramInstruction::EmitText {
+                    text_source,
+                    styles,
+                    part,
+                    ..
+                } => {
+                    let root = builder.is_root_node();
+                    let _local_styles = builder
+                        .style_scopes
+                        .retain_node(
+                            ViewStyleNodeInput {
+                                program: self.program,
+                                view: &definition.public_id,
+                                path: structural_path,
+                                instruction: instruction_ordinal(cursor)?,
+                                kind: BundleViewStyleNodeKind::Text {
+                                    text_source: text_source.clone(),
+                                },
+                                part: part.as_deref(),
+                                local: styles,
+                                root,
+                            },
+                            &mut self.style_scope_allocator,
+                        )
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
                     let text =
                         self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?;
                     for target in &text.targets {
@@ -1113,7 +1227,33 @@ impl ViewEvaluator<'_> {
                     builder.last_target = Some(text_source.clone());
                     cursor += 1;
                 }
-                ViewProgramInstruction::EmitImage { target, .. } => {
+                ViewProgramInstruction::EmitImage {
+                    image,
+                    target,
+                    styles,
+                    part,
+                    ..
+                } => {
+                    let root = builder.is_root_node();
+                    let _local_styles = builder
+                        .style_scopes
+                        .retain_node(
+                            ViewStyleNodeInput {
+                                program: self.program,
+                                view: &definition.public_id,
+                                path: structural_path,
+                                instruction: instruction_ordinal(cursor)?,
+                                kind: BundleViewStyleNodeKind::Image {
+                                    image: image.clone(),
+                                    target: target.clone(),
+                                },
+                                part: part.as_deref(),
+                                local: styles,
+                                root,
+                            },
+                            &mut self.style_scope_allocator,
+                        )
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
                     if let Some(target) = target {
                         builder.images.insert(target.clone());
                         builder.retain_target(target);
@@ -1141,12 +1281,35 @@ impl ViewEvaluator<'_> {
                     }
                     cursor += 1;
                 }
-                ViewProgramInstruction::EmitCustom { element, .. } => {
+                ViewProgramInstruction::EmitCustom {
+                    element,
+                    styles,
+                    part,
+                    ..
+                } => {
+                    let root = builder.is_root_node();
+                    let _local_styles = builder
+                        .style_scopes
+                        .retain_node(
+                            ViewStyleNodeInput {
+                                program: self.program,
+                                view: &definition.public_id,
+                                path: structural_path,
+                                instruction: instruction_ordinal(cursor)?,
+                                kind: BundleViewStyleNodeKind::Custom {
+                                    element: element.clone(),
+                                },
+                                part: part.as_deref(),
+                                local: styles,
+                                root,
+                            },
+                            &mut self.style_scope_allocator,
+                        )
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
                     builder.last_target = Some(element.clone());
                     cursor += 1;
                 }
-                ViewProgramInstruction::ApplyStyle { .. }
-                | ViewProgramInstruction::BindHandler { .. } => {
+                ViewProgramInstruction::BindHandler { .. } => {
                     cursor += 1;
                 }
             }

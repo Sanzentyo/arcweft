@@ -11,9 +11,10 @@ cargo run -p arcweft-cli --all-features -- run \
 ```
 
 The window should show Arcweft-rendered controls declared directly in the
-`NativeTextInputPanel` view in `src/main.arcw`. The remaining
-`view.style.json` sidecar provides font/style cases for Japanese sans, Japanese
-serif, focus ring, and secure masking:
+`NativeTextInputPanel` view in `src/main.arcw`. The typed
+`style native_text_input_sample` sheet in that same source owns the Japanese
+sans/serif stacks, focus-ring rules, and secure-field styling; there is no
+legacy flat `view.style.json` sidecar:
 
 - `jp_text_field` — single-line `TextField`;
 - `jp_text_area` — multiline `TextArea`;

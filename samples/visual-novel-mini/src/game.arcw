@@ -10,10 +10,10 @@ pub character narrator {
 
 pub style side_dialogue {
     .dialogue_panel {
-        background = rgba(17, 18, 16, 242)
+        background-color = rgba(17, 18, 16, 242)
     }
     .dialogue_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
 }
 

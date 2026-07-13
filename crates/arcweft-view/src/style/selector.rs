@@ -8,6 +8,8 @@ use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::interaction::InteractionState;
 use serde::{Deserialize, Serialize};
 
+mod codec;
+
 /// Pseudo-state selector evaluated from the shared presentation interaction state.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -39,7 +41,8 @@ pub enum ViewStyleCombinator {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewPartName(PublicId);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewStyleComparison {
     Equal,
     NotEqual,
@@ -49,7 +52,8 @@ pub enum ViewStyleComparison {
     GreaterOrEqual,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewEnvironmentPredicate {
     ReduceMotion(bool),
     ColorScheme(ViewStyleComparison, ColorScheme),
@@ -57,20 +61,23 @@ pub enum ViewEnvironmentPredicate {
     TextScale(ViewStyleComparison, ViewRatioMilli),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewContainerAxis {
     InlineSize,
     BlockSize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewContainerPredicate {
     axis: ViewContainerAxis,
     comparison: ViewStyleComparison,
     threshold: ViewLengthMilli,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewStylePredicate {
     Interaction(ViewInteractionSelector),
     ElementState(ViewElementState),
@@ -78,7 +85,7 @@ pub enum ViewStylePredicate {
     Container(ViewContainerPredicate),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ViewStyleSelectorSequence {
     relation_to_previous: Option<ViewStyleCombinator>,
     element: Option<ViewElementKind>,
@@ -86,7 +93,7 @@ pub struct ViewStyleSelectorSequence {
     predicates: Vec<ViewStylePredicate>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ViewStyleSelector {
     sequences: Vec<ViewStyleSelectorSequence>,
 }
@@ -250,21 +257,36 @@ impl ViewStyleSelector {
         &self.sequences
     }
 
-    pub fn specificity(&self) -> ViewStyleSpecificity {
+    /// Returns the exact cascade specificity when both typed counters fit.
+    ///
+    /// Callers must reject an unrepresentable selector instead of allowing
+    /// saturation to collapse two distinct priorities.
+    pub fn specificity(&self) -> Option<ViewStyleSpecificity> {
         self.sequences
             .iter()
-            .fold(ViewStyleSpecificity::default(), |specificity, sequence| {
-                ViewStyleSpecificity {
-                    predicates: specificity.predicates.saturating_add(
-                        u16::try_from(sequence.predicates.len())
-                            .unwrap_or(u16::MAX)
-                            .saturating_add(u16::from(sequence.part.is_some())),
-                    ),
+            .try_fold(ViewStyleSpecificity::default(), |specificity, sequence| {
+                let sequence_predicates = u16::try_from(sequence.predicates.len())
+                    .ok()?
+                    .checked_add(u16::from(sequence.part.is_some()))?;
+                Some(ViewStyleSpecificity {
+                    predicates: specificity.predicates.checked_add(sequence_predicates)?,
                     elements: specificity
                         .elements
-                        .saturating_add(u16::from(sequence.element.is_some())),
-                }
+                        .checked_add(u16::from(sequence.element.is_some()))?,
+                })
             })
+    }
+
+    /// Number of selector sequences crossed from the scoped root to the target.
+    pub const fn max_depth(&self) -> usize {
+        self.sequences.len()
+    }
+
+    /// Element constrained by the final selector sequence, when explicit.
+    pub fn target_element(&self) -> Option<ViewElementKind> {
+        self.sequences
+            .last()
+            .and_then(ViewStyleSelectorSequence::element)
     }
 }
 

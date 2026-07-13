@@ -14,8 +14,7 @@ use crate::resource_codec::{
     CompactDisplayCatalogSection, CompactSourceMapSection,
 };
 use crate::resource_codec::{
-    CompactViewInputResource, CompactViewProgramResource, CompactViewStyleResource,
-    CompactViewTextResource, CompactViewThemeResource,
+    ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
 };
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
@@ -24,6 +23,9 @@ use crate::{
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
 use serde::{Deserialize, Deserializer, Serialize};
+
+mod style_cross_section;
+use style_cross_section::{validate_style_bundle_view, validate_style_section_inputs};
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
 const LEGACY_BYTECODE_SECTION_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
@@ -127,6 +129,11 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     .chain(optional_view_theme_section(bundle)?)
     .chain(optional_fx_definitions_section(bundle)?)
     .collect::<Vec<_>>();
+    validate_style_section_inputs(bundle.view_style.as_ref(), &sections).map_err(|error| {
+        BundleCodecError::EncodeAwfb {
+            message: error.to_string(),
+        }
+    })?;
     encode_bundle(container_kind(bundle.bundle_kind), &manifest, sections).map_err(|error| {
         BundleCodecError::EncodeAwfb {
             message: error.to_string(),
@@ -188,6 +195,11 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     let view_input = optional_view_input(&view, external_sections)?;
     let view_theme = optional_view_theme(&view, external_sections)?;
     let fx_definitions = optional_fx_definitions(&view, external_sections)?.unwrap_or_default();
+    validate_style_bundle_view(view_style.as_ref(), &view, external_sections).map_err(|error| {
+        BundleCodecError::DecodeAwfb {
+            message: error.to_string(),
+        }
+    })?;
 
     let bundle = ArcweftBundle {
         schema_version: product_manifest.schema_version,
@@ -294,7 +306,7 @@ fn optional_view_program_section(
         bundle
             .view_program
             .as_ref()
-            .map(CompactViewProgramResource::encode_canonical_section),
+            .map(ViewProgramResource::encode_canonical_section),
     )
 }
 
@@ -306,7 +318,7 @@ fn optional_view_style_section(
         bundle
             .view_style
             .as_ref()
-            .map(CompactViewStyleResource::encode_canonical_section),
+            .map(ViewStyleResource::encode_canonical_section),
     )
 }
 
@@ -318,7 +330,7 @@ fn optional_view_text_section(
         bundle
             .view_text
             .as_ref()
-            .map(CompactViewTextResource::encode_canonical_section),
+            .map(ViewTextResource::encode_canonical_section),
     )
 }
 
@@ -330,7 +342,7 @@ fn optional_view_input_section(
         bundle
             .view_input
             .as_ref()
-            .map(CompactViewInputResource::encode_canonical_section),
+            .map(ViewInputResource::encode_canonical_section),
     )
 }
 
@@ -342,7 +354,7 @@ fn optional_view_theme_section(
         bundle
             .view_theme
             .as_ref()
-            .map(CompactViewThemeResource::encode_canonical_section),
+            .map(ViewThemeResource::encode_canonical_section),
     )
 }
 
@@ -435,60 +447,60 @@ fn optional_audio_graph(
 fn optional_view_program(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactViewProgramResource>, BundleCodecError> {
+) -> Result<Option<ViewProgramResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::ViewProgram,
-        CompactViewProgramResource::decode_canonical_section,
+        ViewProgramResource::decode_canonical_section,
     )
 }
 
 fn optional_view_style(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactViewStyleResource>, BundleCodecError> {
+) -> Result<Option<ViewStyleResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::ViewStyle,
-        CompactViewStyleResource::decode_canonical_section,
+        ViewStyleResource::decode_canonical_section,
     )
 }
 
 fn optional_view_text(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactViewTextResource>, BundleCodecError> {
+) -> Result<Option<ViewTextResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::ViewText,
-        CompactViewTextResource::decode_canonical_section,
+        ViewTextResource::decode_canonical_section,
     )
 }
 
 fn optional_view_input(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactViewInputResource>, BundleCodecError> {
+) -> Result<Option<ViewInputResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::ViewInput,
-        CompactViewInputResource::decode_canonical_section,
+        ViewInputResource::decode_canonical_section,
     )
 }
 
 fn optional_view_theme(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactViewThemeResource>, BundleCodecError> {
+) -> Result<Option<ViewThemeResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::ViewTheme,
-        CompactViewThemeResource::decode_canonical_section,
+        ViewThemeResource::decode_canonical_section,
     )
 }
 

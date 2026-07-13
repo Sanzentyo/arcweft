@@ -11,6 +11,8 @@ It demonstrates:
 - `pub style modern_feedback_panel` with tokens, element selectors, hover,
   active, disabled, focus-visible states, translucent fills, `box-shadow`, and
   style-authored control depth;
+- one ordered named-sheet application on each View root, with inline title and
+  description patches layered at their exact producer nodes;
 - `pub view ModernFeedbackPanel()` with `Panel`, `Column`, `Row`, `Text`,
   `TextField`, `TextArea`, and player-rendered `Button` actions;
 - view-owned `TextField` and `TextArea` resources referenced by typed
@@ -44,6 +46,9 @@ cargo run -p arcweft-cli --all-features -- run --runner native --manifest-path s
 
 The visible buttons are Arcweft player-rendered action buttons. They should not
 be replaced by DOM or native platform widgets.
+
+The profile manifest owns the 1280 x 720 viewport. The flow does not repeat
+that profile setting as an untyped runtime effect.
 
 ## Assets
 

@@ -11,11 +11,11 @@ fn gpu_smoke_clip_mask_and_motion_timestamps() {
     //      with even-odd polygon clip;
     //    - one alpha mask and one luminance mask with differing mask-size,
     //      mask-position, and mask-repeat settings;
-    //    - one CSS color-family blend mode fixture.
+    //    - one nonseparable color-family blend mode fixture.
     // 3. Render through ViewCompositor::render_scene into an offscreen texture on
     //    the shared wgpu path for both native and web.
-    // 4. Compare perceptual hashes and per-channel drift against the thresholds
-    //    documented in docs/implementation/seq-06.13-css-motion-effects-coverage-2026-07-03.md.
+    // 4. Compare perceptual hashes and per-channel drift against the pinned
+    //    milestone thresholds.
     //
     // Deterministic pass planning and motion samples are covered by non-ignored
     // tests. This exact-pixel test remains ignored until the repository's

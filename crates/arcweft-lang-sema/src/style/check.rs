@@ -4,10 +4,7 @@ use std::collections::{BTreeSet, btree_map::Entry};
 
 use arcweft_lang_hir::{
     model::{HirModule, HirTopLevelDecl},
-    style::{
-        HirStyleAssignOp, HirStyleBody, HirStyleDecl, HirStylePatch, HirStyleSelector,
-        HirStyleSyntax,
-    },
+    style::{HirStyleAssignOp, HirStyleDecl, HirStylePatch, HirStyleSelector},
 };
 use arcweft_view::{
     ViewElementKind,
@@ -22,7 +19,7 @@ use arcweft_view::{
 use super::{
     catalog::{
         CheckedViewStyleCatalog, CheckedViewStyleDeclaration, CheckedViewStylePatch,
-        CheckedViewStyleRule, CheckedViewStyleSheet, CheckedViewStyleSyntax, CheckedViewStyleToken,
+        CheckedViewStyleRule, CheckedViewStyleSheet, CheckedViewStyleToken,
     },
     diagnostic::{StyleDiagnostic, StyleDiagnosticCode},
     token_graph::token_dependency_order,
@@ -90,62 +87,43 @@ fn check_sheet(
     let Ok(id) = id else {
         return None;
     };
-    match style.body() {
-        HirStyleBody::Css(source) => Some(CheckedViewStyleSheet::new(
-            id,
-            CheckedViewStyleSyntax::Css,
-            Vec::new(),
-            Vec::new(),
-            Some((source.source().to_owned(), source.range())),
-            style.range(),
-        )),
-        HirStyleBody::Arcweft(sheet) => {
-            let (tokens, token_kinds) =
-                check_tokens(id.public_id().as_str(), sheet.tokens(), diagnostics);
-            let rules = sheet
-                .rules()
+    let sheet = style.sheet();
+    let (tokens, token_kinds) = check_tokens(id.public_id().as_str(), sheet.tokens(), diagnostics);
+    let rules = sheet
+        .rules()
+        .iter()
+        .enumerate()
+        .filter_map(|(source_order, rule)| {
+            let selector = check_selector(rule.selector(), diagnostics);
+            let target = selector.as_ref().and_then(|selector| {
+                selector
+                    .sequences()
+                    .last()
+                    .and_then(ViewStyleSelectorSequence::element)
+            });
+            let declarations = rule
+                .declarations()
                 .iter()
-                .enumerate()
-                .filter_map(|(source_order, rule)| {
-                    let selector = check_selector(rule.selector(), diagnostics);
-                    let target = selector.as_ref().and_then(|selector| {
-                        selector
-                            .sequences()
-                            .last()
-                            .and_then(ViewStyleSelectorSequence::element)
-                    });
-                    let declarations = rule
-                        .declarations()
-                        .iter()
-                        .filter_map(|declaration| {
-                            check_declaration(
-                                declaration,
-                                &token_kinds,
-                                target,
-                                Some(id.public_id().as_str()),
-                                diagnostics,
-                            )
-                        })
-                        .collect();
-                    let selector = selector?;
-                    Some(CheckedViewStyleRule::new(
-                        selector,
-                        declarations,
-                        u32::try_from(source_order).unwrap_or(u32::MAX),
-                        rule.range(),
-                    ))
+                .filter_map(|declaration| {
+                    check_declaration(
+                        declaration,
+                        &token_kinds,
+                        target,
+                        Some(id.public_id().as_str()),
+                        diagnostics,
+                    )
                 })
                 .collect();
-            Some(CheckedViewStyleSheet::new(
-                id,
-                CheckedViewStyleSyntax::Arcweft,
-                tokens,
-                rules,
-                None,
-                style.range(),
+            let selector = selector?;
+            Some(CheckedViewStyleRule::new(
+                selector,
+                declarations,
+                u32::try_from(source_order).unwrap_or(u32::MAX),
+                rule.range(),
             ))
-        }
-    }
+        })
+        .collect();
+    Some(CheckedViewStyleSheet::new(id, tokens, rules, style.range()))
 }
 
 fn check_tokens(
@@ -506,29 +484,10 @@ fn check_patch(
     diagnostics: &mut Vec<StyleDiagnostic>,
 ) -> CheckedViewStylePatch {
     let id = ViewStylePatchId::new(patch.ordinal());
-    match patch.syntax() {
-        HirStyleSyntax::Css => CheckedViewStylePatch::new(
-            id,
-            CheckedViewStyleSyntax::Css,
-            Vec::new(),
-            patch.css_source().map(|source| source.source().to_owned()),
-            patch.range(),
-        ),
-        HirStyleSyntax::Arcweft => {
-            let declarations = patch
-                .declarations()
-                .iter()
-                .filter_map(|declaration| {
-                    check_declaration(declaration, tokens, None, None, diagnostics)
-                })
-                .collect();
-            CheckedViewStylePatch::new(
-                id,
-                CheckedViewStyleSyntax::Arcweft,
-                declarations,
-                None,
-                patch.range(),
-            )
-        }
-    }
+    let declarations = patch
+        .declarations()
+        .iter()
+        .filter_map(|declaration| check_declaration(declaration, tokens, None, None, diagnostics))
+        .collect();
+    CheckedViewStylePatch::new(id, declarations, patch.range())
 }

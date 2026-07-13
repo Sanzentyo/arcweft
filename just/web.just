@@ -10,16 +10,16 @@ webgpu-parity:
     @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\webgpu-parity\native-hidpi-focus-first-choice.png --web target\webgpu-parity\web-hidpi-focus-first-choice.png --report target\webgpu-parity\parity-hidpi-focus-first-choice.json --min-psnr 20.0 --max-mse 0.0101 --max-mae 0.0168 --max-changed-pixel-ratio 0.04
     @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice")) { imq compare "target\webgpu-parity\native-$checkpoint.png" "target\webgpu-parity\web-$checkpoint.png" --format json --output "target\webgpu-parity\imq-$checkpoint.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 
-css-style-parity:
-    @New-Item -ItemType Directory -Force -Path web\local,target\css-style-parity | Out-Null
-    @cargo run -p arcweft-cli -- bundle samples/css-style-parity/main.arcw --output web/local/css-style-parity.awfb
+native-style-parity:
+    @New-Item -ItemType Directory -Force -Path web\local,target\native-style-parity | Out-Null
+    @cargo run -p arcweft-cli -- bundle samples/native-style-parity/main.arcw --output web/local/native-style-parity.awfb
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
     @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
-    @cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle web/local/css-style-parity.awfb --checkpoint default --font web\assets\arcweft-demo.ttf --output target\css-style-parity\native-default.png --frame-report target\css-style-parity\native-default.frame.json --viewport default --visual-time-millis 9000 --target-format rgba8unorm
-    @cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle web/local/css-style-parity.awfb --checkpoint compact --font web\assets\arcweft-demo.ttf --output target\css-style-parity\native-compact.png --frame-report target\css-style-parity\native-compact.frame.json --viewport compact --visual-time-millis 9000 --target-format rgba8unorm
-    @cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle web/local/css-style-parity.awfb --checkpoint hidpi --font web\assets\arcweft-demo.ttf --output target\css-style-parity\native-hidpi.png --frame-report target\css-style-parity\native-hidpi.frame.json --viewport hidpi --visual-time-millis 9000 --target-format rgba8unorm
-    @$env:ARW_TEXT_PARITY_DIR = (Resolve-Path target\css-style-parity).Path; $env:ARW_TEXT_PARITY_CHECKPOINTS = "default,compact,hidpi"; $env:ARW_TEXT_PARITY_VISUAL_TIME_MILLIS = "9000"; $env:ARW_TEXT_PARITY_FONT_URL = "./assets/arcweft-demo.ttf"; $env:ARW_TEXT_PARITY_REQUIRED_TEXT = "DSL-styled text|wave motion"; node web\tests\text-parity-smoke.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    @cargo +nightly -Zscript tools\run-text-parity-gates.rs --dir target\css-style-parity --font web\assets\arcweft-demo.ttf --checkpoints default,compact,hidpi
+    @cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle web/local/native-style-parity.awfb --checkpoint default --font web\assets\arcweft-demo.ttf --output target\native-style-parity\native-default.png --frame-report target\native-style-parity\native-default.frame.json --viewport default --visual-time-millis 9000 --target-format rgba8unorm
+    @cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle web/local/native-style-parity.awfb --checkpoint compact --font web\assets\arcweft-demo.ttf --output target\native-style-parity\native-compact.png --frame-report target\native-style-parity\native-compact.frame.json --viewport compact --visual-time-millis 9000 --target-format rgba8unorm
+    @cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle web/local/native-style-parity.awfb --checkpoint hidpi --font web\assets\arcweft-demo.ttf --output target\native-style-parity\native-hidpi.png --frame-report target\native-style-parity\native-hidpi.frame.json --viewport hidpi --visual-time-millis 9000 --target-format rgba8unorm
+    @$env:ARW_TEXT_PARITY_DIR = (Resolve-Path target\native-style-parity).Path; $env:ARW_TEXT_PARITY_CHECKPOINTS = "default,compact,hidpi"; $env:ARW_TEXT_PARITY_VISUAL_TIME_MILLIS = "9000"; $env:ARW_TEXT_PARITY_FONT_URL = "./assets/arcweft-demo.ttf"; $env:ARW_TEXT_PARITY_REQUIRED_TEXT = "DSL-styled text|wave motion"; node web\tests\text-parity-smoke.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo +nightly -Zscript tools\run-text-parity-gates.rs --dir target\native-style-parity --font web\assets\arcweft-demo.ttf --checkpoints default,compact,hidpi
 
 unified-text-visual-parity:
     @New-Item -ItemType Directory -Force -Path web\local,target\unified-text-visual-parity | Out-Null
@@ -43,11 +43,13 @@ vertical-writing-style-sample:
     @$hash = { param($path) $sha = [System.Security.Cryptography.SHA256]::Create(); try { [System.BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes($path))).Replace("-", "") } finally { $sha.Dispose() } }; $first = & $hash target\vertical-writing-style\native-vertical-rl.png; $repeat = & $hash target\vertical-writing-style\native-vertical-rl-repeat.png; if ($first -ne $repeat) { throw "vertical-writing-style repeated capture was not pixel deterministic" }; Write-Host "vertical-writing-style repeated capture SHA-256: $first"
     @$hash = { param($path) $sha = [System.Security.Cryptography.SHA256]::Create(); try { [System.BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes($path))).Replace("-", "") } finally { $sha.Dispose() } }; $loose = & $hash target\vertical-writing-style\native-jlreq-loose.png; $strict = & $hash target\vertical-writing-style\native-jlreq-strict.png; if ($loose -eq $strict) { throw "vertical-writing-style loose and strict JLREQ captures were identical" }; Write-Host "vertical-writing-style observed styled parts, vertical writing modes, and distinct JLREQ frames"
 
-css-style-parity-profile:
-    @cargo +nightly -Zscript tools\profile-css-style-parity-startup.rs --output target\css-style-parity\startup-profile.json
+native-style-parity-profile:
+    @cargo +nightly -Zscript tools\profile-native-style-parity-startup.rs --output target\native-style-parity\startup-profile.json
 
-css-layout-cascade-coverage:
-    @cargo test -p arcweft-takumi-adapter css_layout_cascade --quiet
+native-style-layout-coverage:
+    @New-Item -ItemType Directory -Force -Path target\native-style-layout-coverage | Out-Null
+    @cargo run -p arcweft-cli -- check samples\native-style-layout-coverage\main.arcw
+    @cargo run -p arcweft-cli -- bundle samples\native-style-layout-coverage\main.arcw --output target\native-style-layout-coverage\native-style-layout-coverage.awfb
 
 reactive-view-style-sample:
     @New-Item -ItemType Directory -Force -Path web\local,target\reactive-view-style,target\reactive-view-style\interaction-states | Out-Null

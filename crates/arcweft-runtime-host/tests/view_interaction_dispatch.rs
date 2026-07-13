@@ -1,4 +1,5 @@
 use arcweft_id::PublicId;
+use arcweft_presentation::appearance::{PresentationColor, PresentationEnvironment};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::hover::HoverPath;
 use arcweft_presentation::input::{InputEpoch, InputEvent, InteractionTarget, PointerId};
@@ -10,9 +11,12 @@ use arcweft_presentation::semantic::SemanticRole;
 use arcweft_runtime_host::ViewFrameCommitBuilder;
 use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
-    LayoutResults, LayoutSize, LayoutTree, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
-    StyleId, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput, ViewPropertyKind,
-    ViewPropertyValue, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewStyle, ViewStyleTable,
+    LayoutResults, LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId,
+    ViewColorValue, ViewElementKind, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput,
+    ViewPropertyKind, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewSpecifiedValue,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStylePredicate,
+    ViewStyleProgram, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -25,6 +29,71 @@ fn layer(value: &str) -> LayerId {
 
 fn target(value: &str) -> InteractionTarget {
     InteractionTarget::new(public_id(&format!("target.{value}")))
+}
+
+fn color(red: u8, green: u8, blue: u8) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Color {
+        value: ViewColorValue::Literal {
+            color: PresentationColor::rgb(red, green, blue),
+        },
+    }
+}
+
+fn style_rule(
+    source_order: u32,
+    state: Option<ViewInteractionSelector>,
+    value: ViewSpecifiedValue,
+) -> ViewStyleRule {
+    let selector = ViewStyleSelector::new(vec![
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(ViewElementKind::Button),
+            None,
+            state
+                .map(ViewStylePredicate::Interaction)
+                .into_iter()
+                .collect(),
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    ViewStyleRule::new(
+        selector,
+        vec![
+            ViewStyleDeclaration::new(
+                ViewPropertyKind::BackgroundColor,
+                value,
+                ViewStyleAssignOp::Replace,
+                ViewStyleSourceId::new(source_order),
+            )
+            .unwrap(),
+        ],
+        source_order,
+        ViewStyleSourceId::new(source_order + 10),
+    )
+    .unwrap()
+}
+
+fn interaction_style_program(sheet_id: ViewStyleSheetId) -> ViewStyleProgram {
+    ViewStyleProgram::try_new(
+        vec![
+            ViewStyleSheet::new(
+                sheet_id,
+                Vec::new(),
+                vec![
+                    style_rule(0, None, color(10, 20, 30)),
+                    style_rule(
+                        1,
+                        Some(ViewInteractionSelector::Hovered),
+                        color(40, 80, 120),
+                    ),
+                ],
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -58,11 +127,13 @@ fn frame_commit_preserves_handler_dispatch_and_resolved_interaction_style() {
         .unwrap();
 
     let mut fragment = ViewFragmentBuilder::default();
+    let sheet_id = ViewStyleSheetId::try_new("style.runtime_host").unwrap();
+    let styles = [ViewStyleApplicationTarget::named(sheet_id.clone())];
     let node = fragment
         .push_node(
             NodeKey(1),
             FragmentKind::RichText(RichTextSourceId(1)),
-            StyleId(1),
+            &styles,
             &[],
             &[EventBinding::new(EventKind::Activate, HandlerId(5))],
             Some(SemanticSpecId(0)),
@@ -93,25 +164,13 @@ fn frame_commit_preserves_handler_dispatch_and_resolved_interaction_style() {
             .with_action(public_id("action.confirm")),
         )
         .unwrap();
-    let mut style = ViewStyle::default();
-    style
-        .set_base(
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(Rgba8::new(10, 20, 30, 255)),
-        )
-        .unwrap();
-    style
-        .set_rule(
-            ViewInteractionSelector::Hovered,
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(Rgba8::new(40, 80, 120, 255)),
-        )
-        .unwrap();
-    let mut styles = ViewStyleTable::default();
-    styles.insert(StyleId(1), style).unwrap();
-    let output =
-        ViewLayerOutput::from_fragment_with_styles(&fragment, &layouts, semantics.finish(), styles)
-            .unwrap();
+    let output = ViewLayerOutput::from_fragment_with_style_program(
+        &fragment,
+        &layouts,
+        semantics.finish(),
+        interaction_style_program(sheet_id),
+    )
+    .unwrap();
 
     let mut builder = ViewFrameCommitBuilder::new(&layers);
     builder.push_layer(view.clone(), output).unwrap();
@@ -121,12 +180,19 @@ fn frame_commit_preserves_handler_dispatch_and_resolved_interaction_style() {
 
     let mut interaction = InteractionState::default();
     let _ = interaction.set_hover_path(HoverPath::new(PointerId(0), vec![button]));
-    let resolved = commit.resolve_interaction_styles(&interaction).unwrap();
+    let resolved = commit
+        .resolve_styles(
+            &interaction,
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            ViewStyleRevisionSet::default(),
+            &mut ViewStyleResolver::default(),
+        )
+        .unwrap();
     assert_eq!(resolved[0].layer(), &view);
     assert_eq!(
         resolved[0].display().as_slice()[0]
             .style()
-            .color(ViewPropertyKind::BackgroundColor),
-        Some(Rgba8::new(40, 80, 120, 255))
+            .value(ViewPropertyKind::BackgroundColor),
+        Some(&color(40, 80, 120))
     );
 }

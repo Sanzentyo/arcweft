@@ -1,5 +1,10 @@
 # seq06.13b Box Shadow and Blend Render Closure Implementation
 
+> **Superseded Style-path premise (2026-07-13):** The Takumi/CSS follow-up path
+> in this note was removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). The
+> generic compositor implementation remains valid native renderer substrate.
+
 ## Acceptance Mapping
 
 | Request item | Current implementation |

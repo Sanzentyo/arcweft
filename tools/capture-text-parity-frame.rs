@@ -173,6 +173,9 @@ fn prepare_text_parity_frame(
             &mut input,
             PlayerFrameRequest {
                 presentation: &presentation,
+                style_program: session.view_style_program(),
+                style_environment: session.view_style_environment(),
+                style_palettes: session.view_style_palettes(),
                 fx_definitions: &bundle.fx_definitions,
                 images: &images,
                 viewport,
@@ -221,15 +224,15 @@ struct Args {
 impl Args {
     fn parse(args: Vec<String>) -> Result<Self, String> {
         let mut parsed = Self {
-            bundle: PathBuf::from("web/local/css-style-parity.awfb"),
+            bundle: PathBuf::from("web/local/native-style-parity.awfb"),
             checkpoint: "default".to_owned(),
             font: PathBuf::from("web/assets/arcweft-demo.ttf"),
             additional_fonts: vec![PathBuf::from(
-                "web/assets/noto-sans-jp-css-style-parity.ttf",
+                "web/assets/noto-sans-jp-native-style-parity.ttf",
             )],
-            output: PathBuf::from("target/css-style-parity/native-default.png"),
+            output: PathBuf::from("target/native-style-parity/native-default.png"),
             frame_report: Some(PathBuf::from(
-                "target/css-style-parity/native-default.frame.json",
+                "target/native-style-parity/native-default.frame.json",
             )),
             scope_capture_prefix: None,
             viewport: TextParityViewport::Default,
@@ -344,11 +347,11 @@ impl Args {
 
     fn usage() -> String {
         "usage: cargo +nightly -Zscript tools/capture-text-parity-frame.rs \
-         [--bundle web/local/css-style-parity.awfb] [--font web/assets/arcweft-demo.ttf] \
+         [--bundle web/local/native-style-parity.awfb] [--font web/assets/arcweft-demo.ttf] \
          [--additional-font PATH] [--no-additional-fonts] \
          [--checkpoint default] [--advance-count 0] \
-         [--output target/css-style-parity/native-default.png] \
-         [--frame-report target/css-style-parity/native-default.frame.json] \
+         [--output target/native-style-parity/native-default.png] \
+         [--frame-report target/native-style-parity/native-default.frame.json] \
          [--scope-capture-prefix PATH] [--viewport default|compact|hidpi] \
          [--visual-time-millis 9000] [--max-ticks 16] \
          [--target-format rgba8unorm|rgba8unorm-srgb]"

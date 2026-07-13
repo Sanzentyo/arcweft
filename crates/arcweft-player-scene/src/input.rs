@@ -353,6 +353,7 @@ impl InputOutcome {
 pub struct InputController {
     next_epoch: u64,
     interaction: InteractionState,
+    focus_visible: bool,
     pointer_positions: BTreeMap<u64, ViewportPoint>,
     pressed: BTreeMap<u64, arcweft_presentation::input::InteractionTarget>,
     drags: BTreeMap<u64, DragState>,
@@ -406,6 +407,7 @@ impl InputController {
                 }
             }
             self.interaction.clear_focus();
+            self.focus_visible = false;
             self.pointer_positions.clear();
             self.pressed.clear();
             self.drags.clear();
@@ -429,6 +431,7 @@ impl InputController {
         &mut self,
         frame: &PreparedFrame,
         target: arcweft_presentation::input::InteractionTarget,
+        focus_visible: bool,
     ) {
         let auto_scroll_target = target.clone();
         if !frame_target_is_text_input(frame, &target) {
@@ -437,6 +440,7 @@ impl InputController {
         if let Some(node) = frame.semantics.find(&target) {
             self.interaction
                 .set_focus(FocusState::new(node.layer().clone(), target));
+            self.focus_visible = focus_visible;
             self.ensure_focused_target_visible(frame, &auto_scroll_target);
         }
     }
@@ -760,6 +764,7 @@ impl InputController {
             && self.interaction.focus().target() == Some(editor.target())
         {
             self.interaction.clear_focus();
+            self.focus_visible = false;
         }
         self.focused_text_editor = None;
         self.pending_text_pointer_selection = None;

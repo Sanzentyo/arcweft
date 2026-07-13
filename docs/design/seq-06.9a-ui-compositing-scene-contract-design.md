@@ -1,5 +1,7 @@
 # seq-06.9a UI Compositing Scene Contract Design
 
+> **Superseded Style-path premise (2026-07-13):** The Arcweft CSS/Takumi authoring, lowering, and evidence path assumed below was removed by the [native-only typed Style path](../implementation/native-only-style-path-2026-07-13.md). Renderer-only scene concepts may remain useful, but the body is not a current Style product contract.
+
 ## Purpose
 
 seq06.2 established Takumi as the CSS cascade/layout/stacking source and kept

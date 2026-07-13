@@ -1,5 +1,10 @@
 # View Resource Rename - 2026-07-08
 
+> **Style contract superseded (2026-07-13):** The resource rename remains
+> historical evidence, but its `ViewStyleTable`, CSS selector, and Takumi
+> boundaries were subsequently removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md).
+
 ## Summary
 
 This cut completes the public/internal rename from the retained presentation

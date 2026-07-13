@@ -1,4 +1,7 @@
 use arcweft_id::PublicId;
+use arcweft_presentation::appearance::{
+    PresentationColor, PresentationEnvironment, SystemPaletteSet,
+};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::{
     InputEpoch, InputEvent, InteractionTarget, PointerId, PointerInput, PointerPhase,
@@ -13,9 +16,13 @@ use arcweft_presentation::semantic::{SemanticRole, SemanticTree};
 use arcweft_render_wgpu::view::ViewPaintPlan;
 use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
-    LayoutResults, LayoutSize, LayoutTree, Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
-    StyleId, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput, ViewPropertyKind,
-    ViewPropertyValue, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewStyle, ViewStyleTable,
+    LayoutResults, LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId,
+    ViewColorValue, ViewElementKind, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput,
+    ViewLengthMilli, ViewPropertyKind, ViewScalarMilli, ViewSemanticFragmentBuilder,
+    ViewSemanticNode, ViewSpecifiedValue, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleDeclaration, ViewStylePredicate, ViewStyleProgram, ViewStyleResolver,
+    ViewStyleRevisionSet, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence,
+    ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
 use num_traits::ToPrimitive;
 use std::env;
@@ -48,13 +55,23 @@ fn run() -> Result<(), String> {
     fs::create_dir_all(&out).map_err(|error| error.to_string())?;
     let (output, layer, targets) = showcase_output()?;
     let (states, activation) = routed_states(&output, &layer, &targets)?;
+    let environment = PresentationEnvironment::ENGINE_DEFAULT;
+    let palettes = SystemPaletteSet::ENGINE_DEFAULT;
+    let mut resolver = ViewStyleResolver::default();
 
     for (name, interaction) in states {
         let display = output
             .display()
-            .resolve_interaction_styles(output.semantics(), output.styles(), &interaction)
+            .resolve_styles(
+                output.semantics(),
+                output.style_program(),
+                &interaction,
+                &environment,
+                ViewStyleRevisionSet::default(),
+                &mut resolver,
+            )
             .map_err(|error| error.to_string())?;
-        let plan = ViewPaintPlan::from_resolved_display(&display);
+        let plan = ViewPaintPlan::from_resolved_display(&display, &environment, &palettes);
         let svg = svg_document(name, plan.rectangles(), output.semantics().as_slice());
         let path = out.join(format!("{name}.svg"));
         fs::write(&path, svg).map_err(|error| error.to_string())?;
@@ -97,7 +114,7 @@ fn showcase_output() -> Result<(ViewLayerOutput, LayerId, Vec<InteractionTarget>
     let (fragment, layouts, semantics, targets) = showcase_fragment(&layer)?;
     let styles = showcase_styles()?;
 
-    ViewLayerOutput::from_fragment_with_styles(&fragment, &layouts, semantics, styles)
+    ViewLayerOutput::from_fragment_with_style_program(&fragment, &layouts, semantics, styles)
         .map(|output| (output, layer, targets))
         .map_err(|error| error.to_string())
 }
@@ -108,6 +125,9 @@ fn showcase_fragment(layer: &LayerId) -> Result<ShowcaseFragment, String> {
     let mut nodes = Vec::new();
     let mut targets = Vec::new();
     let mut semantics = ViewSemanticFragmentBuilder::default();
+    let style_applications = [ViewStyleApplicationTarget::named(
+        ViewStyleSheetId::try_new("style.showcase").map_err(|error| error.to_string())?,
+    )];
 
     for (index, label) in labels.iter().enumerate() {
         let index_u32 = u32::try_from(index).map_err(|error| error.to_string())?;
@@ -118,7 +138,7 @@ fn showcase_fragment(layer: &LayerId) -> Result<ShowcaseFragment, String> {
             .push_node(
                 key,
                 FragmentKind::RichText(RichTextSourceId(index_u32)),
-                StyleId(1),
+                &style_applications,
                 &[],
                 &[EventBinding::new(EventKind::Activate, HandlerId(index_u32))],
                 Some(semantic),
@@ -159,54 +179,104 @@ fn showcase_fragment(layer: &LayerId) -> Result<ShowcaseFragment, String> {
     Ok((fragment, layouts, semantics.finish(), targets))
 }
 
-fn showcase_styles() -> Result<ViewStyleTable, String> {
-    let mut style = ViewStyle::default();
-    style
-        .set_base(
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(Rgba8::new(30, 48, 78, 255)),
-        )
-        .map_err(|error| error.to_string())?;
-    style
-        .set_rule(
-            ViewInteractionSelector::Hovered,
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(Rgba8::new(50, 88, 142, 255)),
-        )
-        .map_err(|error| error.to_string())?;
-    style
-        .set_rule(
-            ViewInteractionSelector::Focused,
-            ViewPropertyKind::OutlineColor,
-            ViewPropertyValue::Color(Rgba8::new(118, 205, 255, 255)),
-        )
-        .map_err(|error| error.to_string())?;
-    style
-        .set_rule(
-            ViewInteractionSelector::Focused,
-            ViewPropertyKind::OutlineWidth,
-            ViewPropertyValue::Milli(Milli::new(3_000)),
-        )
-        .map_err(|error| error.to_string())?;
-    style
-        .set_rule(
-            ViewInteractionSelector::Pressed,
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(Rgba8::new(24, 68, 112, 255)),
-        )
-        .map_err(|error| error.to_string())?;
-    style
-        .set_rule(
-            ViewInteractionSelector::Pressed,
-            ViewPropertyKind::Scale,
-            ViewPropertyValue::Milli(Milli::new(970)),
-        )
-        .map_err(|error| error.to_string())?;
-    let mut styles = ViewStyleTable::default();
-    styles
-        .insert(StyleId(1), style)
-        .map_err(|error| error.to_string())?;
-    Ok(styles)
+fn color(red: u8, green: u8, blue: u8, alpha: u8) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Color {
+        value: ViewColorValue::Literal {
+            color: PresentationColor::rgba(red, green, blue, alpha),
+        },
+    }
+}
+
+fn style_rule(
+    source_order: u32,
+    state: Option<ViewInteractionSelector>,
+    declarations: Vec<(ViewPropertyKind, ViewSpecifiedValue)>,
+) -> Result<ViewStyleRule, String> {
+    let sequence = ViewStyleSelectorSequence::new(
+        None,
+        Some(ViewElementKind::Button),
+        None,
+        state
+            .map(ViewStylePredicate::Interaction)
+            .into_iter()
+            .collect(),
+    )
+    .ok_or("showcase button selector sequence is invalid")?;
+    let selector =
+        ViewStyleSelector::new(vec![sequence]).ok_or("showcase button selector is invalid")?;
+    let declarations = declarations
+        .into_iter()
+        .enumerate()
+        .map(|(index, (property, value))| {
+            let index = u32::try_from(index).map_err(|error| error.to_string())?;
+            let source = source_order
+                .checked_mul(10)
+                .and_then(|source| source.checked_add(index))
+                .ok_or("style source id exceeds u32")?;
+            ViewStyleDeclaration::new(
+                property,
+                value,
+                ViewStyleAssignOp::Replace,
+                ViewStyleSourceId::new(source),
+            )
+            .map_err(|error| error.to_string())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    ViewStyleRule::new(
+        selector,
+        declarations,
+        source_order,
+        ViewStyleSourceId::new(source_order),
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn showcase_styles() -> Result<ViewStyleProgram, String> {
+    let rules = vec![
+        style_rule(
+            0,
+            None,
+            vec![(ViewPropertyKind::BackgroundColor, color(30, 48, 78, 255))],
+        )?,
+        style_rule(
+            10,
+            Some(ViewInteractionSelector::Hovered),
+            vec![(ViewPropertyKind::BackgroundColor, color(50, 88, 142, 255))],
+        )?,
+        style_rule(
+            20,
+            Some(ViewInteractionSelector::Focused),
+            vec![
+                (ViewPropertyKind::OutlineColor, color(118, 205, 255, 255)),
+                (
+                    ViewPropertyKind::OutlineWidth,
+                    ViewSpecifiedValue::Length {
+                        value: ViewLengthMilli::new(3_000),
+                    },
+                ),
+            ],
+        )?,
+        style_rule(
+            30,
+            Some(ViewInteractionSelector::Pressed),
+            vec![
+                (ViewPropertyKind::BackgroundColor, color(24, 68, 112, 255)),
+                (
+                    ViewPropertyKind::Scale,
+                    ViewSpecifiedValue::Scalar {
+                        value: ViewScalarMilli::new(970),
+                    },
+                ),
+            ],
+        )?,
+    ];
+    let sheet = ViewStyleSheet::new(
+        ViewStyleSheetId::try_new("style.showcase").map_err(|error| error.to_string())?,
+        Vec::new(),
+        rules,
+    )
+    .map_err(|error| error.to_string())?;
+    ViewStyleProgram::try_new(vec![sheet], Vec::new()).map_err(|error| error.to_string())
 }
 
 fn routed_states(

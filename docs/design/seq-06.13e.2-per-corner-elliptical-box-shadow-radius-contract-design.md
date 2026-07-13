@@ -1,5 +1,7 @@
 # seq06.13e.2 Per-Corner / Elliptical Box-Shadow Radius Contract Design
 
+> **Superseded Style-path premise (2026-07-13):** The Arcweft CSS/Takumi input provenance assumed below was removed by the [native-only typed Style path](../implementation/native-only-style-path-2026-07-13.md). Renderer-only details remain historical rationale; they do not re-establish a CSS Style input path.
+
 Date: 2026-07-04
 
 ## Goal

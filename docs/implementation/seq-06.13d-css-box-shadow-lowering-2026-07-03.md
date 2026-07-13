@@ -1,5 +1,10 @@
 # seq06.13d CSS Box-Shadow Lowering Implementation Note — 2026-07-03
 
+> **Superseded Style-path premise (2026-07-13):** The CSS/Takumi lowering path
+> below was removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). The
+> Arcweft-owned shadow renderer remains valid native substrate.
+
 ## Current implementation evidence inspected
 
 The current Arcweft line already has the seq06.13b renderer substrate:

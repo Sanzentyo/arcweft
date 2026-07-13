@@ -5,12 +5,12 @@ use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
-use arcweft_render_text::TextFontFamily;
+use arcweft_render_text::{TextFontFamily, TextWeight};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PaintRectCornerRadius, PaintRectRadii,
     RenderActionButton, RenderActionButtonAction, RenderControlBorderStyle,
     RenderControlCornerFrameStyle, RenderControlFilter, RenderControlFilterList,
-    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
+    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind,
     RenderControlVisualStyle, RenderPreferences, RenderScene, RenderTextInputControl,
     RenderViewport, RuntimeControlBackdropSamplePolicy,
 };
@@ -27,7 +27,7 @@ fn prepare(scene: &RenderScene) -> arcweft_render_wgpu::geometry::PreparedFrame 
 }
 
 #[test]
-fn action_button_hover_uses_authored_fill_and_text_color() {
+fn action_button_uses_current_authored_fill_and_text_color() {
     let button_target = target("button.submit_feedback");
     let scene = scene_with_button(
         button_target.clone(),
@@ -60,20 +60,17 @@ fn action_button_hover_uses_authored_fill_and_text_color() {
 fn focused_text_control_uses_authored_focus_ring() {
     let input_target = target("input.feedback");
     let mut control = text_control(input_target.clone());
-    control = control.with_style(RenderControlStyle {
-        focus_visible: Some(RenderControlVisualStyle {
-            focus_ring: Some(RenderControlFocusRingStyle {
-                color: [1.0, 0.9, 0.1, 1.0],
-                width_px: 3.0,
-                offset_px: 2.0,
-            }),
-            border: Some(RenderControlBorderStyle {
-                color: [0.5, 0.8, 0.5, 1.0],
-                width_px: 2.0,
-            }),
-            ..RenderControlVisualStyle::default()
+    control = control.with_style(RenderControlVisualStyle {
+        focus_ring: Some(RenderControlFocusRingStyle {
+            color: [1.0, 0.9, 0.1, 1.0],
+            width_px: 3.0,
+            offset_px: 2.0,
         }),
-        ..RenderControlStyle::default()
+        border: Some(RenderControlBorderStyle {
+            color: [0.5, 0.8, 0.5, 1.0],
+            width_px: 2.0,
+        }),
+        ..RenderControlVisualStyle::default()
     });
     let scene = scene(
         vec![control],
@@ -119,13 +116,10 @@ fn focused_text_control_uses_authored_selection_and_caret_colors() {
     let input_target = target("input.feedback");
     let control = text_control(input_target.clone())
         .with_selection(TextRange::new(TextByteOffset(0), TextByteOffset(2)))
-        .with_style(RenderControlStyle {
-            normal: RenderControlVisualStyle {
-                selection: Some([0.2, 0.5, 0.8, 0.6]),
-                caret: Some([0.9, 0.8, 0.1, 1.0]),
-                ..RenderControlVisualStyle::default()
-            },
-            ..RenderControlStyle::default()
+        .with_style(RenderControlVisualStyle {
+            selection: Some([0.2, 0.5, 0.8, 0.6]),
+            caret: Some([0.9, 0.8, 0.1, 1.0]),
+            ..RenderControlVisualStyle::default()
         });
     let scene = scene(
         vec![control],
@@ -163,15 +157,12 @@ fn text_control_fill_and_inner_marks_use_authored_corner_radii() {
     );
     let control = text_control(input_target.clone())
         .with_selection(TextRange::new(TextByteOffset(0), TextByteOffset(2)))
-        .with_style(RenderControlStyle {
-            normal: RenderControlVisualStyle {
-                fill: Some([0.1, 0.2, 0.3, 0.4]),
-                selection: Some([0.2, 0.5, 0.8, 0.6]),
-                caret: Some([0.9, 0.8, 0.1, 1.0]),
-                radii_px: Some(radii),
-                ..RenderControlVisualStyle::default()
-            },
-            ..RenderControlStyle::default()
+        .with_style(RenderControlVisualStyle {
+            fill: Some([0.1, 0.2, 0.3, 0.4]),
+            selection: Some([0.2, 0.5, 0.8, 0.6]),
+            caret: Some([0.9, 0.8, 0.1, 1.0]),
+            radii_px: Some(radii),
+            ..RenderControlVisualStyle::default()
         });
     let scene = scene(
         vec![control],
@@ -204,17 +195,14 @@ fn text_control_fill_and_inner_marks_use_authored_corner_radii() {
 #[test]
 fn text_control_corner_frame_draws_independent_corner_segments() {
     let input_target = target("input.feedback");
-    let control = text_control(input_target).with_style(RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            corner_frame: Some(RenderControlCornerFrameStyle {
-                color: [0.1, 0.9, 0.8, 1.0],
-                width_px: 3.0,
-                length_px: 24.0,
-                offset_px: 2.0,
-            }),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let control = text_control(input_target).with_style(RenderControlVisualStyle {
+        corner_frame: Some(RenderControlCornerFrameStyle {
+            color: [0.1, 0.9, 0.8, 1.0],
+            width_px: 3.0,
+            length_px: 24.0,
+            offset_px: 2.0,
+        }),
+        ..RenderControlVisualStyle::default()
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
@@ -259,16 +247,13 @@ fn supported_box_shadow_reaches_existing_shadow_pass_plan() {
 #[test]
 fn backdrop_filter_reaches_runtime_control_backdrop_plan() {
     let input_target = target("input.feedback");
-    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            backdrop_filters: Some(RenderControlFilterList {
-                filters: vec![RenderControlFilter::Blur { radius_px: 12.0 }],
-            }),
-            fill: Some([0.8, 0.8, 0.9, 0.42]),
-            depth_milli: Some(2_000),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let control = text_control(input_target.clone()).with_style(RenderControlVisualStyle {
+        backdrop_filters: Some(RenderControlFilterList {
+            filters: vec![RenderControlFilter::Blur { radius_px: 12.0 }],
+        }),
+        fill: Some([0.8, 0.8, 0.9, 0.42]),
+        depth_milli: Some(2_000),
+        ..RenderControlVisualStyle::default()
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
@@ -293,15 +278,12 @@ fn backdrop_filter_reaches_runtime_control_backdrop_plan() {
 #[test]
 fn runtime_control_paint_span_carries_inline_backdrop_order() {
     let input_target = target("input.feedback");
-    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            backdrop_filters: Some(RenderControlFilterList {
-                filters: vec![RenderControlFilter::Blur { radius_px: 8.0 }],
-            }),
-            fill: Some([0.2, 0.4, 0.6, 0.5]),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let control = text_control(input_target.clone()).with_style(RenderControlVisualStyle {
+        backdrop_filters: Some(RenderControlFilterList {
+            filters: vec![RenderControlFilter::Blur { radius_px: 8.0 }],
+        }),
+        fill: Some([0.2, 0.4, 0.6, 0.5]),
+        ..RenderControlVisualStyle::default()
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
@@ -330,12 +312,9 @@ fn text_controls_and_buttons_use_authored_font_family() {
     let input_target = target("input.feedback");
     let button_target = target("button.submit_feedback");
     let font_family = "Arcweft Demo, Yu Gothic, system-view".to_owned();
-    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            font_family: Some(font_family.clone()),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let control = text_control(input_target.clone()).with_style(RenderControlVisualStyle {
+        font_family: Some(font_family.clone()),
+        ..RenderControlVisualStyle::default()
     });
     let button = RenderActionButton {
         target: button_target,
@@ -344,12 +323,9 @@ fn text_controls_and_buttons_use_authored_font_family() {
         containing_scroll_region: None,
         bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
         viewport_clip: None,
-        style: RenderControlStyle {
-            normal: RenderControlVisualStyle {
-                font_family: Some(font_family.clone()),
-                ..RenderControlVisualStyle::default()
-            },
-            ..RenderControlStyle::default()
+        style: RenderControlVisualStyle {
+            font_family: Some(font_family.clone()),
+            ..RenderControlVisualStyle::default()
         },
         action: RenderActionButtonAction::Noop,
     };
@@ -393,13 +369,12 @@ fn text_controls_and_buttons_use_authored_font_family() {
 
 #[test]
 fn text_control_uses_authored_font_metrics() {
-    let control = text_control(target("input.metrics")).with_style(RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            font_size_px: Some(18.0),
-            line_height_px: Some(24.0),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let control = text_control(target("input.metrics")).with_style(RenderControlVisualStyle {
+        font_size_px: Some(18.0),
+        line_height_px: Some(24.0),
+        letter_spacing_milli: Some(750),
+        font_weight: Some(650),
+        ..RenderControlVisualStyle::default()
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
@@ -413,6 +388,45 @@ fn text_control_uses_authored_font_metrics() {
 
     assert_eq!(input_text.layout.runs[0].style.font_size_milli(), 18_000);
     assert_eq!(input_text.layout.runs[0].style.line_height_milli(), 24_000);
+    assert_eq!(input_text.layout.runs[0].style.letter_spacing_milli(), 750);
+    assert_eq!(input_text.layout.runs[0].style.weight(), TextWeight::Bold);
+}
+
+#[test]
+fn empty_text_control_paints_current_placeholder_style() {
+    let control = RenderTextInputControl::new(
+        target("input.placeholder"),
+        TextInputSessionId(42),
+        "",
+        TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+        TextInputOptions::default(),
+        SemanticRole::TextField,
+        HitRect::new(48.0, 48.0, 420.0, 48.0),
+    )
+    .with_label("Your name")
+    .with_style(RenderControlVisualStyle {
+        placeholder: Some([148, 163, 184, 255]),
+        letter_spacing_milli: Some(500),
+        ..RenderControlVisualStyle::default()
+    });
+    let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
+
+    let frame = prepare(&scene);
+    let placeholder = frame
+        .text
+        .items()
+        .iter()
+        .find(|text| text.interaction.text == "Your name")
+        .expect("placeholder text block exists");
+
+    assert!(
+        placeholder
+            .paint
+            .glyphs
+            .iter()
+            .all(|glyph| glyph.color.channels() == [148, 163, 184, 255])
+    );
+    assert_eq!(placeholder.layout.runs[0].style.letter_spacing_milli(), 500);
 }
 
 #[test]
@@ -426,14 +440,11 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
         containing_scroll_region: None,
         bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
         viewport_clip: None,
-        style: RenderControlStyle {
-            normal: RenderControlVisualStyle {
-                filters: Some(RenderControlFilterList {
-                    filters: vec![RenderControlFilter::Blur { radius_px: 2.5 }],
-                }),
-                ..RenderControlVisualStyle::default()
-            },
-            ..RenderControlStyle::default()
+        style: RenderControlVisualStyle {
+            filters: Some(RenderControlFilterList {
+                filters: vec![RenderControlFilter::Blur { radius_px: 2.5 }],
+            }),
+            ..RenderControlVisualStyle::default()
         },
         action: RenderActionButtonAction::Noop,
     };
@@ -465,20 +476,17 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
 #[test]
 fn runtime_control_color_matrix_filters_reach_view_filter_plan() {
     let input_target = target("input.feedback");
-    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            backdrop_filters: Some(RenderControlFilterList {
-                filters: vec![
-                    RenderControlFilter::Brightness { factor: 1.2 },
-                    RenderControlFilter::Contrast { factor: 0.9 },
-                    RenderControlFilter::Saturate { factor: 1.4 },
-                    RenderControlFilter::HueRotateDegrees { degrees: 12.0 },
-                    RenderControlFilter::Opacity { amount: 0.85 },
-                ],
-            }),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let control = text_control(input_target.clone()).with_style(RenderControlVisualStyle {
+        backdrop_filters: Some(RenderControlFilterList {
+            filters: vec![
+                RenderControlFilter::Brightness { factor: 1.2 },
+                RenderControlFilter::Contrast { factor: 0.9 },
+                RenderControlFilter::Saturate { factor: 1.4 },
+                RenderControlFilter::HueRotateDegrees { degrees: 12.0 },
+                RenderControlFilter::Opacity { amount: 0.85 },
+            ],
+        }),
+        ..RenderControlVisualStyle::default()
     });
     let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
 
@@ -505,13 +513,10 @@ fn runtime_control_color_matrix_filters_reach_view_filter_plan() {
 fn authored_control_depth_orders_text_inputs_and_buttons_together() {
     let input_target = target("input.feedback");
     let button_target = target("button.submit_feedback");
-    let input = text_control(input_target.clone()).with_style(RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            fill: Some([0.8, 0.1, 0.1, 0.75]),
-            depth_milli: Some(3_000),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let input = text_control(input_target.clone()).with_style(RenderControlVisualStyle {
+        fill: Some([0.8, 0.1, 0.1, 0.75]),
+        depth_milli: Some(3_000),
+        ..RenderControlVisualStyle::default()
     });
     let button = RenderActionButton {
         target: button_target,
@@ -520,13 +525,10 @@ fn authored_control_depth_orders_text_inputs_and_buttons_together() {
         containing_scroll_region: None,
         bounds: HitRect::new(72.0, 52.0, 128.0, 48.0),
         viewport_clip: None,
-        style: RenderControlStyle {
-            normal: RenderControlVisualStyle {
-                fill: Some([0.1, 0.2, 0.8, 0.75]),
-                depth_milli: Some(1_000),
-                ..RenderControlVisualStyle::default()
-            },
-            ..RenderControlStyle::default()
+        style: RenderControlVisualStyle {
+            fill: Some([0.1, 0.2, 0.8, 0.75]),
+            depth_milli: Some(1_000),
+            ..RenderControlVisualStyle::default()
         },
         action: RenderActionButtonAction::Noop,
     };
@@ -564,26 +566,19 @@ fn scene_with_button(
             containing_scroll_region: None,
             bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
             viewport_clip: None,
-            style: RenderControlStyle {
-                normal: RenderControlVisualStyle {
-                    fill: Some([0.07, 0.12, 0.09, 0.72]),
-                    text: Some([240, 248, 255, 255]),
-                    shadows: vec![RenderControlShadow {
-                        offset_x_px: 0.0,
-                        offset_y_px: 8.0,
-                        blur_radius_px: 18.0,
-                        spread_radius_px: 0.0,
-                        border_radius_px: 12.0,
-                        color: [0, 0, 0, 128],
-                        kind: RenderControlShadowKind::Outer,
-                    }],
-                    ..RenderControlVisualStyle::default()
-                },
-                hover: Some(RenderControlVisualStyle {
-                    fill: Some([0.1, 0.2, 0.3, 0.8]),
-                    ..RenderControlVisualStyle::default()
-                }),
-                ..RenderControlStyle::default()
+            style: RenderControlVisualStyle {
+                fill: Some([0.1, 0.2, 0.3, 0.8]),
+                text: Some([240, 248, 255, 255]),
+                shadows: vec![RenderControlShadow {
+                    offset_x_px: 0.0,
+                    offset_y_px: 8.0,
+                    blur_radius_px: 18.0,
+                    spread_radius_px: 0.0,
+                    border_radius_px: 12.0,
+                    color: [0, 0, 0, 128],
+                    kind: RenderControlShadowKind::Outer,
+                }],
+                ..RenderControlVisualStyle::default()
             },
             action: RenderActionButtonAction::Noop,
         }],

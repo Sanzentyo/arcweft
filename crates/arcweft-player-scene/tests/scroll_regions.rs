@@ -1,6 +1,6 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
-    RgbaColor, ViewElementKind, ViewObserveClassification, ViewRuntimeControlCornerRadius,
+    ViewElementKind, ViewObserveClassification, ViewRuntimeControlCornerRadius,
     ViewRuntimeControlRadii, ViewTextSelectionPolicy,
 };
 use arcweft_bundle::resource_codec::{
@@ -8,9 +8,9 @@ use arcweft_bundle::resource_codec::{
     ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
 };
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion,
-    ViewRuntimeScrollRegionBounds, ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
-    ViewRuntimeSurfaceBounds, ViewTextBlockBounds,
+    ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds,
+    ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
+    ViewTextBlockBounds,
 };
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_player_scene::{
@@ -22,6 +22,7 @@ use arcweft_player_scene::{
         InputPointerModifiers, InputScrollOffsetSnapshot,
     },
 };
+use arcweft_presentation::appearance::PresentationColor;
 use arcweft_presentation::input::{PointerId, ViewportPoint};
 use arcweft_render_text::{
     LineDisplaySpec, RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayout,
@@ -63,7 +64,7 @@ fn push_view_text(
     text: &str,
     bounds: ViewTextBlockBounds,
     selection_policy: ViewTextSelectionPolicy,
-    style: ViewRuntimeControlStyle,
+    style: ViewRuntimeControlVisualStyle,
 ) {
     let source_id = format!("source.{target}");
     presentation.view.mounts.push(BundleViewMountOutput {
@@ -94,6 +95,7 @@ fn push_view_text(
             replacement: None,
         }],
         fx: Vec::new(),
+        style_nodes: Vec::new(),
     });
 }
 
@@ -107,27 +109,24 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
         containing_scroll_region: None,
         element: ViewElementKind::Panel,
         bounds: ViewRuntimeSurfaceBounds::from_px(24, 32, 112, 72),
-        style: ViewRuntimeControlStyle {
-            normal: ViewRuntimeControlVisualStyle {
-                fill: Some(RgbaColor::rgb(36, 42, 54)),
-                radii_milli: Some(ViewRuntimeControlRadii::new(
-                    ViewRuntimeControlCornerRadius::new(18_000, 12_000),
-                    ViewRuntimeControlCornerRadius::new(10_000, 6_000),
-                    ViewRuntimeControlCornerRadius::new(14_000, 8_000),
-                    ViewRuntimeControlCornerRadius::new(6_000, 4_000),
-                )),
-                shadows: vec![ViewRuntimeShadow {
-                    offset_x_milli: 0,
-                    offset_y_milli: 3_000,
-                    blur_milli: 12_000,
-                    spread_milli: 2_000,
-                    radius_milli: 14_000,
-                    color: RgbaColor::rgba(0, 0, 0, 143),
-                    kind: ViewRuntimeShadowKind::Inset,
-                }],
-                ..ViewRuntimeControlVisualStyle::default()
-            },
-            ..ViewRuntimeControlStyle::default()
+        style: ViewRuntimeControlVisualStyle {
+            fill: Some(PresentationColor::rgba(36, 42, 54, 255)),
+            radii_milli: Some(ViewRuntimeControlRadii::new(
+                ViewRuntimeControlCornerRadius::new(18_000, 12_000),
+                ViewRuntimeControlCornerRadius::new(10_000, 6_000),
+                ViewRuntimeControlCornerRadius::new(14_000, 8_000),
+                ViewRuntimeControlCornerRadius::new(6_000, 4_000),
+            )),
+            shadows: vec![ViewRuntimeShadow {
+                offset_x_milli: 0,
+                offset_y_milli: 3_000,
+                blur_milli: 12_000,
+                spread_milli: 2_000,
+                radius_milli: 14_000,
+                color: PresentationColor::rgba(0, 0, 0, 143),
+                kind: ViewRuntimeShadowKind::Inset,
+            }],
+            ..ViewRuntimeControlVisualStyle::default()
         },
     });
     let images = BundleImageCatalog::empty();
@@ -139,6 +138,10 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
             presentation: &presentation,
             fx_definitions: empty_fx_definitions(),
             images: &images,
+            style_program: None,
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
             viewport: RenderViewport {
                 logical_width: 320.0,
                 logical_height: 180.0,
@@ -208,6 +211,10 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
         presentation: &presentation,
         fx_definitions: empty_fx_definitions(),
         images: &images,
+        style_program: None,
+        style_environment:
+            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
         viewport: RenderViewport {
             logical_width: 1280.0,
             logical_height: 720.0,
@@ -296,7 +303,7 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
         "Alpha Beta",
         ViewTextBlockBounds::from_px(40, 48, 260, 40),
         ViewTextSelectionPolicy::Enabled,
-        ViewRuntimeControlStyle::default(),
+        ViewRuntimeControlVisualStyle::default(),
     );
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -304,6 +311,10 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
         presentation: &presentation,
         fx_definitions: empty_fx_definitions(),
         images: &images,
+        style_program: None,
+        style_environment:
+            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
         viewport: RenderViewport {
             logical_width: 320.0,
             logical_height: 180.0,
@@ -389,6 +400,10 @@ fn hidden_overflow_scroll_region_keeps_offset_at_zero() {
         presentation: &presentation,
         fx_definitions: empty_fx_definitions(),
         images: &images,
+        style_program: None,
+        style_environment:
+            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
         viewport: RenderViewport {
             logical_width: 1280.0,
             logical_height: 720.0,
@@ -443,6 +458,10 @@ fn horizontal_scroll_region_tracks_x_offset_and_snapshot() {
         presentation: &presentation,
         fx_definitions: empty_fx_definitions(),
         images: &images,
+        style_program: None,
+        style_environment:
+            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
         viewport: RenderViewport {
             logical_width: 1280.0,
             logical_height: 720.0,
@@ -510,7 +529,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         "Arcweft Concierge",
         ViewTextBlockBounds::from_px(56, 112, 220, 24),
         ViewTextSelectionPolicy::Disabled,
-        ViewRuntimeControlStyle::default(),
+        ViewRuntimeControlVisualStyle::default(),
     );
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -518,6 +537,10 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         presentation: &presentation,
         fx_definitions: empty_fx_definitions(),
         images: &images,
+        style_program: None,
+        style_environment:
+            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
         viewport: RenderViewport {
             logical_width: 1280.0,
             logical_height: 720.0,
@@ -562,7 +585,7 @@ fn registered_player_planner_prepares_runtime_text_in_canonical_batch() {
         "Prepared text",
         ViewTextBlockBounds::from_px(24, 32, 240, 48),
         ViewTextSelectionPolicy::Enabled,
-        ViewRuntimeControlStyle::default(),
+        ViewRuntimeControlVisualStyle::default(),
     );
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -578,6 +601,10 @@ fn registered_player_planner_prepares_runtime_text_in_canonical_batch() {
                 presentation: &presentation,
                 fx_definitions: empty_fx_definitions(),
                 images: &images,
+                style_program: None,
+                style_environment:
+                    &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+                style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
                 viewport: RenderViewport {
                     logical_width: 640.0,
                     logical_height: 360.0,
@@ -613,7 +640,7 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
         "漢字",
         ViewTextBlockBounds::from_px(24, 20, 180, 220),
         ViewTextSelectionPolicy::Disabled,
-        ViewRuntimeControlStyle::default(),
+        ViewRuntimeControlVisualStyle::default(),
     );
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![
@@ -640,6 +667,10 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
             presentation: &presentation,
             fx_definitions: empty_fx_definitions(),
             images: &images,
+            style_program: None,
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
             viewport: RenderViewport {
                 logical_width: 320.0,
                 logical_height: 260.0,
@@ -681,7 +712,7 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         "placeholder",
         ViewTextBlockBounds::from_px(20, 20, 260, 48),
         ViewTextSelectionPolicy::Disabled,
-        ViewRuntimeControlStyle::default(),
+        ViewRuntimeControlVisualStyle::default(),
     );
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::Localized {
         key: "text.greeting".to_owned(),
@@ -698,7 +729,7 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         "placeholder",
         ViewTextBlockBounds::from_px(20, 80, 260, 48),
         ViewTextSelectionPolicy::Disabled,
-        ViewRuntimeControlStyle::default(),
+        ViewRuntimeControlVisualStyle::default(),
     );
     let display = LineDisplaySpec {
         line: RuntimeLineId::from_runtime_line_value("say.typed_sources.display").unwrap(),
@@ -739,6 +770,10 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
             presentation: &presentation,
             fx_definitions: empty_fx_definitions(),
             images: &images,
+            style_program: None,
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
             viewport: RenderViewport {
                 logical_width: 320.0,
                 logical_height: 180.0,

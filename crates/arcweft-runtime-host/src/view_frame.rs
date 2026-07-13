@@ -1,3 +1,4 @@
+use arcweft_presentation::appearance::PresentationEnvironment;
 use arcweft_presentation::input::InputEvent;
 use arcweft_presentation::interaction::InteractionState;
 use arcweft_presentation::layer::{LayerId, LayerTree};
@@ -5,7 +6,8 @@ use arcweft_presentation::semantic::SemanticTree;
 use arcweft_view::{
     DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, ResolvedDisplayList,
     RetainedViewFxTable, ViewError, ViewHandlerInvocation, ViewHandlerRouteTable, ViewLayerOutput,
-    ViewSemanticFragment, ViewSemanticNode, ViewStyleTable,
+    ViewSemanticFragment, ViewSemanticNode, ViewStyleProgram, ViewStyleResolver,
+    ViewStyleRevisionSet,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -18,7 +20,7 @@ pub struct ViewFrameLayer {
     semantic_fragment: ViewSemanticFragment,
     semantics: SemanticTree,
     handlers: ViewHandlerRouteTable,
-    styles: ViewStyleTable,
+    style_program: ViewStyleProgram,
     fx: RetainedViewFxTable,
 }
 
@@ -75,13 +77,13 @@ impl ViewFrameLayer {
             semantic_fragment,
             semantics,
             handlers: ViewHandlerRouteTable::default(),
-            styles: ViewStyleTable::default(),
+            style_program: ViewStyleProgram::default(),
             fx: RetainedViewFxTable::default(),
         }
     }
 
     pub fn from_output(layer: LayerId, output: ViewLayerOutput) -> Self {
-        let (display, semantic_fragment, handlers, styles, fx) = output.into_frame_parts();
+        let (display, semantic_fragment, handlers, style_program, fx) = output.into_frame_parts();
         let semantics = semantic_fragment.to_semantic_tree();
         Self {
             layer,
@@ -89,7 +91,7 @@ impl ViewFrameLayer {
             semantic_fragment,
             semantics,
             handlers,
-            styles,
+            style_program,
             fx,
         }
     }
@@ -114,8 +116,8 @@ impl ViewFrameLayer {
         &self.handlers
     }
 
-    pub const fn styles(&self) -> &ViewStyleTable {
-        &self.styles
+    pub const fn style_program(&self) -> &ViewStyleProgram {
+        &self.style_program
     }
 
     pub const fn fx(&self) -> &RetainedViewFxTable {
@@ -126,12 +128,22 @@ impl ViewFrameLayer {
         self.handlers.dispatch_input(input)
     }
 
-    pub fn resolve_interaction_styles(
+    pub fn resolve_styles(
         &self,
         interaction: &InteractionState,
+        environment: &PresentationEnvironment,
+        revisions: ViewStyleRevisionSet,
+        resolver: &mut ViewStyleResolver,
     ) -> Result<ViewFrameResolvedLayer, ViewError> {
         self.display
-            .resolve_interaction_styles(&self.semantic_fragment, &self.styles, interaction)
+            .resolve_styles(
+                &self.semantic_fragment,
+                &self.style_program,
+                interaction,
+                environment,
+                revisions,
+                resolver,
+            )
             .map(|display| ViewFrameResolvedLayer {
                 layer: self.layer.clone(),
                 display,
@@ -236,13 +248,16 @@ impl ViewFrameCommit {
             .collect()
     }
 
-    pub fn resolve_interaction_styles(
+    pub fn resolve_styles(
         &self,
         interaction: &InteractionState,
+        environment: &PresentationEnvironment,
+        revisions: ViewStyleRevisionSet,
+        resolver: &mut ViewStyleResolver,
     ) -> Result<Vec<ViewFrameResolvedLayer>, ViewError> {
         self.layers
             .iter()
-            .map(|layer| layer.resolve_interaction_styles(interaction))
+            .map(|layer| layer.resolve_styles(interaction, environment, revisions, resolver))
             .collect()
     }
 
@@ -305,7 +320,7 @@ mod tests {
     use arcweft_presentation::semantic::SemanticRole;
     use arcweft_view::{
         FragmentKind, ImageId, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
-        NodeKey, RetainedViewFxApplication, RetainedViewFxTable, StyleId, ValueSourceId,
+        NodeKey, RetainedViewFxApplication, RetainedViewFxTable, ValueSourceId,
         ViewFragmentBuilder, ViewFxArgumentBinding, ViewFxIdentity, ViewFxOrdinal,
         ViewSemanticFragment, ViewSemanticFragmentBuilder, ViewSemanticNode,
     };
@@ -370,7 +385,7 @@ mod tests {
             .push_node(
                 NodeKey(key),
                 FragmentKind::Image(image),
-                StyleId(0),
+                &[],
                 &[],
                 &[],
                 None,

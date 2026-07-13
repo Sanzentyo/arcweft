@@ -1,6 +1,7 @@
 use arcweft_bundle::resource_codec::view::{
-    DialogueTextProjection, ViewObserveClassification, ViewProgramInstruction,
-    ViewSecureRedactionMetadata, ViewTextSourceKind, ViewTextSourceRecord,
+    DialogueTextProjection, ViewElementKind, ViewExportedPart, ViewObserveClassification,
+    ViewProgramInstruction, ViewSecureRedactionMetadata, ViewStyleApplicationTarget,
+    ViewStylePatchId, ViewStyleSheetId, ViewTextSourceKind, ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
     ViewCallArgumentBindingRef, ViewDefinitionResource, ViewDisplayFrameResource,
@@ -24,7 +25,9 @@ use arcweft_runtime_driver::presentation_handles::{
     PresentationResourceState,
 };
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewDiagnosticCode, BundleViewPaintItem, BundleViewRuntime, BundleViewTextValue,
+    BundleViewDiagnosticCode, BundleViewInstancePathSegment, BundleViewMountOutput,
+    BundleViewPaintItem, BundleViewRuntime, BundleViewStyleNode, BundleViewStyleNodeKind,
+    BundleViewTextValue,
 };
 use arcweft_view::{
     DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex,
@@ -82,16 +85,428 @@ fn plain_text(frame: &arcweft_runtime_driver::view_runtime::BundleViewFrame) -> 
 }
 
 #[test]
+fn style_scope_follows_subtrees_without_leaking_to_siblings() {
+    let root_sheet = ViewStyleSheetId::try_new("style.root").unwrap();
+    let first_sheet = ViewStyleSheetId::try_new("style.first").unwrap();
+    let second_sheet = ViewStyleSheetId::try_new("style.second").unwrap();
+    let inline_patch = ViewStylePatchId::new(7);
+    let program = ViewProgramResource {
+        program_id: "view.program.style-subtrees".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.Root".to_owned(),
+            body: ViewInstructionSpan::new(0, 7),
+            styles: vec![ViewStyleApplicationTarget::named(root_sheet.clone())],
+            parameters: Vec::new(),
+            state_schema_hash: 1,
+        }],
+        instructions: vec![
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::Panel,
+                target: None,
+                styles: vec![ViewStyleApplicationTarget::named(first_sheet.clone())],
+                part: Some("part.first-root".to_owned()),
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "FirstChild".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.first-child".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::Panel,
+                target: None,
+                styles: vec![
+                    ViewStyleApplicationTarget::named(second_sheet.clone()),
+                    ViewStyleApplicationTarget::inline(inline_patch),
+                ],
+                part: Some("part.second-root".to_owned()),
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "SecondChild".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.second-child".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+            ViewProgramInstruction::EmitCustom {
+                element: "UnaffectedSibling".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.sibling".to_owned()),
+                source: None,
+            },
+        ],
+        ..ViewProgramResource::default()
+    };
+    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+    let frame = runtime.evaluate(&[handle("handle.styles", "view.Root")], &[], false);
+    assert!(frame.diagnostics.is_empty());
+
+    let nodes = &frame.mounts[0].style_nodes;
+    assert_eq!(
+        nodes
+            .iter()
+            .map(|node| node.instruction)
+            .collect::<Vec<_>>(),
+        [0, 1, 3, 4, 6]
+    );
+    assert!(nodes.iter().all(|node| matches!(
+        node.applications[0].target(),
+        ViewStyleApplicationTarget::Named { sheet } if sheet == &root_sheet
+    )));
+    assert!(matches!(
+        nodes[0].applications[1].target(),
+        ViewStyleApplicationTarget::Named { sheet } if sheet == &first_sheet
+    ));
+    assert_eq!(
+        nodes[0].applications[1].scope(),
+        nodes[1].applications[1].scope()
+    );
+    assert!(matches!(
+        nodes[2].applications[1].target(),
+        ViewStyleApplicationTarget::Named { sheet } if sheet == &second_sheet
+    ));
+    assert!(matches!(
+        nodes[2].applications[2].target(),
+        ViewStyleApplicationTarget::Inline { patch } if *patch == inline_patch
+    ));
+    assert_eq!(
+        nodes[2].applications[1].scope(),
+        nodes[3].applications[1].scope()
+    );
+    assert_eq!(nodes[0].applications[0].application_order(), 0);
+    assert_eq!(nodes[0].applications[1].application_order(), 1);
+    assert_eq!(nodes[2].applications[1].application_order(), 2);
+    assert_eq!(nodes[2].applications[2].application_order(), 3);
+    assert_eq!(nodes[3].applications.len(), 2);
+    assert_eq!(nodes[4].applications.len(), 1);
+}
+
+fn call_boundary_style_program(
+    external_sheet: &ViewStyleSheetId,
+    child_sheet: &ViewStyleSheetId,
+    inline_patch: ViewStylePatchId,
+) -> ViewProgramResource {
+    ViewProgramResource {
+        program_id: "view.program.style-call-boundary".to_owned(),
+        definitions: vec![
+            ViewDefinitionResource {
+                public_id: "view.Parent".to_owned(),
+                body: ViewInstructionSpan::new(0, 2),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 1,
+            },
+            ViewDefinitionResource {
+                public_id: "view.Child".to_owned(),
+                body: ViewInstructionSpan::new(2, 6),
+                styles: vec![ViewStyleApplicationTarget::named(child_sheet.clone())],
+                parameters: Vec::new(),
+                state_schema_hash: 2,
+            },
+        ],
+        instructions: vec![
+            ViewProgramInstruction::CallView {
+                view: "view.Child".to_owned(),
+                arguments: Vec::new(),
+                styles: vec![
+                    ViewStyleApplicationTarget::named(external_sheet.clone()),
+                    ViewStyleApplicationTarget::inline(inline_patch),
+                ],
+                part: Some("part.call".to_owned()),
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "ParentSibling".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.parent-sibling".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::Panel,
+                target: None,
+                styles: Vec::new(),
+                part: Some("part.child-root".to_owned()),
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "PrivateChild".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.child-private".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "ExportedChild".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.child-exported".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+        ],
+        exported_parts: vec![ViewExportedPart {
+            view: "view.Child".to_owned(),
+            part_id: "part.child-exported".to_owned(),
+            public_name: "part.public-child".to_owned(),
+        }],
+        ..ViewProgramResource::default()
+    }
+}
+
+fn call_boundary_parent_node(parent: &BundleViewMountOutput) -> &BundleViewStyleNode {
+    assert_eq!(parent.style_nodes.len(), 2);
+    let call = parent
+        .style_nodes
+        .iter()
+        .find(|node| {
+            node.instruction == 0 && matches!(node.kind, BundleViewStyleNodeKind::CallView { .. })
+        })
+        .unwrap();
+    let sibling = parent
+        .style_nodes
+        .iter()
+        .find(|node| node.instruction == 1)
+        .unwrap();
+    assert!(matches!(
+        &sibling.kind,
+        BundleViewStyleNodeKind::Custom { element } if element == "ParentSibling"
+    ));
+    assert!(sibling.applications.is_empty());
+    call
+}
+
+#[test]
+fn style_scope_enters_call_view_before_recursion_and_protects_private_parts() {
+    let external_sheet = ViewStyleSheetId::try_new("style.external").unwrap();
+    let child_sheet = ViewStyleSheetId::try_new("style.child").unwrap();
+    let inline_patch = ViewStylePatchId::new(11);
+    let program = call_boundary_style_program(&external_sheet, &child_sheet, inline_patch);
+    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+    let frame = runtime.evaluate(&[handle("handle.parent", "view.Parent")], &[], false);
+    assert!(frame.diagnostics.is_empty());
+
+    let parent = frame
+        .mounts
+        .iter()
+        .find(|mount| mount.view == "view.Parent")
+        .unwrap();
+    let call = call_boundary_parent_node(parent);
+    assert_eq!(call.applications.len(), 2);
+    assert!(matches!(
+        call.applications[0].target(),
+        ViewStyleApplicationTarget::Named { sheet } if sheet == &external_sheet
+    ));
+    assert!(matches!(
+        call.applications[1].target(),
+        ViewStyleApplicationTarget::Inline { patch } if *patch == inline_patch
+    ));
+
+    let child = frame
+        .mounts
+        .iter()
+        .find(|mount| mount.view == "view.Child")
+        .unwrap();
+    assert_eq!(
+        child
+            .style_nodes
+            .iter()
+            .map(|node| node.instruction)
+            .collect::<Vec<_>>(),
+        [2, 3, 4]
+    );
+    assert!(
+        child
+            .style_nodes
+            .iter()
+            .all(|node| node.applications.len() == 2)
+    );
+    assert!(child.style_nodes.iter().all(|node| matches!(
+        node.applications[0].target(),
+        ViewStyleApplicationTarget::Named { sheet } if sheet == &external_sheet
+    )));
+    assert!(child.style_nodes.iter().all(|node| matches!(
+        node.applications[1].target(),
+        ViewStyleApplicationTarget::Named { sheet } if sheet == &child_sheet
+    )));
+    assert!(
+        child
+            .style_nodes
+            .iter()
+            .all(|node| !node.applications[1].boundary().is_nested_view_boundary())
+    );
+    assert_eq!(
+        child.style_nodes[0].applications[0].scope(),
+        call.applications[0].scope()
+    );
+
+    let root_boundary = child.style_nodes[0].applications[0].boundary();
+    assert!(root_boundary.is_nested_view_boundary());
+    assert!(root_boundary.allows_inherited_root());
+    assert!(!root_boundary.allows_selector_traversal());
+
+    let private_boundary = child.style_nodes[1].applications[0].boundary();
+    assert_eq!(child.style_nodes[1].exported_part, None);
+    assert!(private_boundary.is_nested_view_boundary());
+    assert!(!private_boundary.allows_inherited_root());
+    assert!(!private_boundary.allows_selector_traversal());
+    assert_eq!(
+        private_boundary.selector_part(
+            child.style_nodes[1].part.as_deref(),
+            child.style_nodes[1].exported_part.as_deref(),
+        ),
+        None
+    );
+
+    let exported_boundary = child.style_nodes[2].applications[0].boundary();
+    assert_eq!(
+        child.style_nodes[2].exported_part.as_deref(),
+        Some("part.public-child")
+    );
+    assert!(exported_boundary.is_nested_view_boundary());
+    assert!(exported_boundary.is_exported_part());
+    assert!(!exported_boundary.allows_inherited_root());
+    assert!(exported_boundary.allows_selector_traversal());
+    assert_eq!(
+        exported_boundary.selector_part(
+            child.style_nodes[2].part.as_deref(),
+            child.style_nodes[2].exported_part.as_deref(),
+        ),
+        Some("part.public-child")
+    );
+}
+
+#[test]
+fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
+    let external_sheet = ViewStyleSheetId::try_new("style.external.owner").unwrap();
+    let program = ViewProgramResource {
+        program_id: "view.program.non-transitive-export".to_owned(),
+        definitions: vec![
+            ViewDefinitionResource {
+                public_id: "view.A".to_owned(),
+                body: ViewInstructionSpan::new(0, 1),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 1,
+            },
+            ViewDefinitionResource {
+                public_id: "view.B".to_owned(),
+                body: ViewInstructionSpan::new(1, 2),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 2,
+            },
+            ViewDefinitionResource {
+                public_id: "view.C".to_owned(),
+                body: ViewInstructionSpan::new(2, 3),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 3,
+            },
+        ],
+        instructions: vec![
+            ViewProgramInstruction::CallView {
+                view: "view.B".to_owned(),
+                arguments: Vec::new(),
+                styles: vec![ViewStyleApplicationTarget::named(external_sheet.clone())],
+                part: None,
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::CallView {
+                view: "view.C".to_owned(),
+                arguments: Vec::new(),
+                styles: Vec::new(),
+                part: None,
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "DeepExport".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.c.exported".to_owned()),
+                source: None,
+            },
+        ],
+        exported_parts: vec![ViewExportedPart {
+            view: "view.C".to_owned(),
+            part_id: "part.c.exported".to_owned(),
+            public_name: "part.public-c".to_owned(),
+        }],
+        ..ViewProgramResource::default()
+    };
+    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+    let frame = runtime.evaluate(&[handle("handle.a", "view.A")], &[], false);
+    assert!(frame.diagnostics.is_empty());
+
+    let deep = frame
+        .mounts
+        .iter()
+        .find(|mount| mount.view == "view.C")
+        .and_then(|mount| mount.style_nodes.first())
+        .expect("the deep exported node retains the ancestor application");
+    let boundary = deep.applications[0].boundary();
+    assert_eq!(deep.exported_part.as_deref(), Some("part.public-c"));
+    assert!(matches!(
+        deep.applications[0].target(),
+        ViewStyleApplicationTarget::Named { sheet } if sheet == &external_sheet
+    ));
+    assert_eq!(boundary.crossed_view_boundaries(), 2);
+    assert!(boundary.is_exported_part());
+    assert!(!boundary.allows_selector_traversal());
+    assert_eq!(
+        boundary.selector_part(deep.part.as_deref(), deep.exported_part.as_deref()),
+        None
+    );
+}
+
+#[test]
+fn style_scope_rejects_inline_patch_on_non_rendered_definition_root() {
+    let program = ViewProgramResource {
+        program_id: "view.program.invalid-root-inline".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.Root".to_owned(),
+            body: ViewInstructionSpan::new(0, 0),
+            styles: vec![ViewStyleApplicationTarget::inline(ViewStylePatchId::new(
+                17,
+            ))],
+            parameters: Vec::new(),
+            state_schema_hash: 1,
+        }],
+        ..ViewProgramResource::default()
+    };
+    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+    let frame = runtime.evaluate(&[handle("handle.invalid-style", "view.Root")], &[], false);
+    assert!(frame.mounts.is_empty());
+    assert_eq!(
+        frame.diagnostics[0].code,
+        BundleViewDiagnosticCode::InvalidControlFlow
+    );
+    assert_eq!(frame.diagnostics[0].instruction, None);
+    assert!(
+        frame.diagnostics[0]
+            .message
+            .contains("only establish named Style sheets")
+    );
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "the complete typed IR fixture is kept beside all three frame assertions"
 )]
 fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
+    let branch_style = ViewStyleSheetId::try_new("style.branch.inventory").unwrap();
     let program = ViewProgramResource {
         program_id: "view.program.branch".to_owned(),
         definitions: vec![ViewDefinitionResource {
             public_id: "view.Root".to_owned(),
             body: ViewInstructionSpan::new(0, 3),
+            styles: vec![ViewStyleApplicationTarget::named(branch_style)],
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "active".to_owned(),
@@ -133,13 +548,15 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.yes".to_owned(),
-                style: None,
+                text_block: "text.block.yes".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.no".to_owned(),
-                style: None,
+                text_block: "text.block.no".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
@@ -187,6 +604,8 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     );
     assert!(active.diagnostics.is_empty());
     assert_eq!(plain_text(&active), "yes");
+    assert_eq!(active.mounts[0].style_nodes.len(), 1);
+    assert_eq!(active.mounts[0].style_nodes[0].instruction, 1);
     assert_eq!(plain_text(&active.redacted_for_observation()), "masked");
     let mount_id = active.mounts[0].mount;
 
@@ -200,6 +619,8 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     );
     assert!(inactive.diagnostics.is_empty());
     assert_eq!(plain_text(&inactive), "no");
+    assert_eq!(inactive.mounts[0].style_nodes.len(), 1);
+    assert_eq!(inactive.mounts[0].style_nodes[0].instruction, 2);
     assert_eq!(inactive.mounts[0].mount, mount_id);
 
     let retained = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
@@ -231,12 +652,14 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
             ViewDefinitionResource {
                 public_id: "view.Parent".to_owned(),
                 body: ViewInstructionSpan::new(0, 3),
+                styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 21,
             },
             ViewDefinitionResource {
                 public_id: "view.Child".to_owned(),
                 body: ViewInstructionSpan::new(3, 4),
+                styles: Vec::new(),
                 parameters: vec![ViewParameterResource {
                     ordinal: 0,
                     name: "count".to_owned(),
@@ -261,7 +684,8 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
         instructions: vec![
             ViewProgramInstruction::EmitText {
                 text_source: "text.parent.before".to_owned(),
-                style: None,
+                text_block: "text.parent.before.target".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
@@ -272,20 +696,22 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
                     name: Some("count".to_owned()),
                     value_program: ViewValueProgramId(0),
                 }],
-                style: None,
+                styles: Vec::new(),
                 part: None,
                 key: None,
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.parent.after".to_owned(),
-                style: None,
+                text_block: "text.parent.after.target".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.child.count".to_owned(),
-                style: None,
+                text_block: "text.child.count.target".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
@@ -435,6 +861,7 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
         definitions: vec![ViewDefinitionResource {
             public_id: "view.Repeat".to_owned(),
             body: ViewInstructionSpan::new(0, 2),
+            styles: Vec::new(),
             parameters: Vec::new(),
             state_schema_hash: 31,
         }],
@@ -448,7 +875,8 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.item".to_owned(),
-                style: None,
+                text_block: "text.block.item".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
@@ -471,12 +899,106 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
 }
 
 #[test]
+fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
+    let source = value_program(
+        0,
+        Vec::new(),
+        vec![FxRuntimeType::I32],
+        FxRuntimeType::I32,
+        vec![
+            ValueInstruction::Constant {
+                value: FxRuntimeValue::I32(2),
+            },
+            ValueInstruction::Return,
+        ],
+    );
+    let key = value_program(
+        1,
+        Vec::new(),
+        vec![FxRuntimeType::I32],
+        FxRuntimeType::I32,
+        vec![
+            ValueInstruction::LoadState {
+                slot: 0,
+                ty: FxRuntimeType::I32,
+            },
+            ValueInstruction::Return,
+        ],
+    );
+    let sheet = ViewStyleSheetId::try_new("style.repeat.inventory").unwrap();
+    let program = ViewProgramResource {
+        program_id: "view.program.repeat-style-inventory".to_owned(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: "view.RepeatStyle".to_owned(),
+            body: ViewInstructionSpan::new(0, 2),
+            styles: vec![ViewStyleApplicationTarget::named(sheet)],
+            parameters: Vec::new(),
+            state_schema_hash: 32,
+        }],
+        value_programs: vec![source, key],
+        value_inputs: vec![ViewValueInputResource {
+            namespace: ViewValueInputNamespace::State,
+            slot: 0,
+            value_type: FxRuntimeType::I32,
+            source: ViewValueInputSource::RepeatOrdinal {
+                view: "view.RepeatStyle".to_owned(),
+                binding: "item".to_owned(),
+            },
+        }],
+        instructions: vec![
+            ViewProgramInstruction::RepeatKeyed {
+                source_program: ViewValueProgramId(0),
+                key_program: ViewValueProgramId(1),
+                body_span: 1,
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "RepeatedItem".to_owned(),
+                styles: Vec::new(),
+                part: None,
+                source: None,
+            },
+        ],
+        ..ViewProgramResource::default()
+    };
+    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+
+    let frame = runtime.evaluate(
+        &[handle("handle.repeat-style", "view.RepeatStyle")],
+        &[],
+        false,
+    );
+
+    assert!(frame.diagnostics.is_empty());
+    let nodes = &frame.mounts[0].style_nodes;
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].instruction, 1);
+    assert_eq!(nodes[1].instruction, 1);
+    assert_ne!(nodes[0].path, nodes[1].path);
+    assert!(matches!(
+        nodes[0].path.segments(),
+        [BundleViewInstancePathSegment::Repeat {
+            instruction: 0,
+            key: 0
+        }]
+    ));
+    assert!(matches!(
+        nodes[1].path.segments(),
+        [BundleViewInstancePathSegment::Repeat {
+            instruction: 0,
+            key: 1
+        }]
+    ));
+}
+
+#[test]
 fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
     let program = ViewProgramResource {
         program_id: "view.program.time".to_owned(),
         definitions: vec![ViewDefinitionResource {
             public_id: "view.Time".to_owned(),
             body: ViewInstructionSpan::new(0, 2),
+            styles: Vec::new(),
             parameters: Vec::new(),
             state_schema_hash: 41,
         }],
@@ -509,7 +1031,8 @@ fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.elapsed".to_owned(),
-                style: None,
+                text_block: "text.block.elapsed".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
@@ -540,6 +1063,7 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
         definitions: vec![ViewDefinitionResource {
             public_id: "view.Exact".to_owned(),
             body: ViewInstructionSpan::new(0, 0),
+            styles: Vec::new(),
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "count".to_owned(),
@@ -601,6 +1125,7 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
         definitions: vec![ViewDefinitionResource {
             public_id: "view.TypedText".to_owned(),
             body: ViewInstructionSpan::new(0, 3),
+            styles: Vec::new(),
             parameters: Vec::new(),
             state_schema_hash: 61,
         }],
@@ -608,7 +1133,8 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
             .into_iter()
             .map(|suffix| ViewProgramInstruction::EmitText {
                 text_source: format!("text.{suffix}"),
-                style: None,
+                text_block: format!("text.block.{suffix}"),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             })
@@ -819,6 +1345,7 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
         definitions: vec![ViewDefinitionResource {
             public_id: "view.Dialogue".to_owned(),
             body: ViewInstructionSpan::new(0, 2),
+            styles: Vec::new(),
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "dialogue".to_owned(),
@@ -833,7 +1360,8 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
             .into_iter()
             .map(|suffix| ViewProgramInstruction::EmitText {
                 text_source: format!("text.dialogue.{suffix}"),
-                style: None,
+                text_block: format!("text.block.{suffix}"),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             })

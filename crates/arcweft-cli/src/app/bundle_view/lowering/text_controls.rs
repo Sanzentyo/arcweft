@@ -9,8 +9,7 @@ use super::{
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode, ViewTextSelectionPolicy,
     ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
     ViewTextVerticalNavigationPolicy, expr_source, first_part, lower_modifiers,
-    lower_navigation_target, normalize_entity_ref, validate_interactive_overflow_modifiers,
-    view_resource_id,
+    lower_navigation_target, normalize_entity_ref, view_resource_id,
 };
 
 struct AuthoredTextControl {
@@ -43,11 +42,6 @@ pub(super) fn lower_text_field(
     state: &mut ViewLoweringState,
     layout: &mut ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
-    validate_interactive_overflow_modifiers(
-        text_field_mode_callee(field.mode()),
-        field.modifiers(),
-        false,
-    )?;
     let control = AuthoredTextControl::from_field(view_id, field, state);
     let public_id = control.public_id.clone();
     let kind = view_input_kind(field.mode());
@@ -127,12 +121,13 @@ pub(super) fn lower_text_field(
     if let Some(target) = target {
         lower_navigation_target(view_id, &target, field.modifiers(), state);
     }
+    let styles = state.producer_styles(field.range());
     state
         .instructions
         .push(ViewProgramInstruction::OpenElement {
             element: view_element_kind_for_text_field(field.mode()),
             target: Some(public_id.clone()),
-            style: None,
+            styles,
             part: first_part(field.modifiers()),
             key: None,
             source: None,
@@ -179,10 +174,6 @@ fn view_element_kind_for_text_field(mode: ViewTextFieldMode) -> ViewElementKind 
         ViewTextFieldMode::TextArea => ViewElementKind::TextArea,
         ViewTextFieldMode::SecureField => ViewElementKind::SecureField,
     }
-}
-
-fn text_field_mode_callee(mode: ViewTextFieldMode) -> &'static str {
-    view_element_kind_for_text_field(mode).source_name()
 }
 
 fn view_input_kind(mode: ViewTextFieldMode) -> ViewInputKind {

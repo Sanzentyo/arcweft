@@ -1,16 +1,16 @@
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, TextAssistPolicy, TextCapitalization,
-    ViewInputKind, ViewInputPurpose, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewInputPurpose, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
     ViewRuntimeButtonBounds, ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlFilter,
-    ViewRuntimeControlFilterList, ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle,
-    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
-    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection, ViewSecureInputPolicy,
-    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
-    ViewTextVerticalNavigationPolicy,
+    ViewRuntimeControlFilterList, ViewRuntimeControlVisualStyle, ViewRuntimeTextControl,
+    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
+    ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
+    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
+use arcweft_presentation::appearance::PresentationColor;
 use arcweft_render_wgpu::geometry::{RenderControlFilter, RenderControlFilterList};
 
 #[test]
@@ -23,17 +23,17 @@ fn runtime_text_control_style_reaches_render_text_input_control() {
         .expect("text control lowers");
 
     assert_eq!(
-        render[0].style.normal.fill,
+        render[0].style.fill,
         Some([12.0 / 255.0, 24.0 / 255.0, 48.0 / 255.0, 192.0 / 255.0])
     );
-    assert_eq!(render[0].style.normal.depth_milli, Some(1_700));
+    assert_eq!(render[0].style.depth_milli, Some(1_700));
 }
 
 #[test]
 fn runtime_action_button_style_reaches_render_action_button() {
     let input = RuntimeTextControlLowerer::lower_controls(&[text_control_with_style(
         "input.feedback",
-        ViewRuntimeControlStyle::default(),
+        ViewRuntimeControlVisualStyle::default(),
     )])
     .expect("text input lowers");
     let button = ViewRuntimeActionButton {
@@ -52,10 +52,10 @@ fn runtime_action_button_style_reaches_render_action_button() {
         RuntimeActionButtonLowerer::lower_buttons(&[button], &input).expect("action button lowers");
 
     assert_eq!(
-        render[0].style.normal.fill,
+        render[0].style.fill,
         Some([64.0 / 255.0, 96.0 / 255.0, 64.0 / 255.0, 1.0])
     );
-    assert_eq!(render[0].style.normal.depth_milli, Some(2_100));
+    assert_eq!(render[0].style.depth_milli, Some(2_100));
 }
 
 #[test]
@@ -63,16 +63,13 @@ fn runtime_control_backdrop_filter_reaches_render_style() {
     let mut input = InputController::default();
     let runtime = text_control_with_style(
         "input.feedback",
-        ViewRuntimeControlStyle {
-            normal: ViewRuntimeControlVisualStyle {
-                backdrop_filters: Some(ViewRuntimeControlFilterList {
-                    filters: vec![ViewRuntimeControlFilter::Blur {
-                        radius_milli: 12_000,
-                    }],
-                }),
-                ..ViewRuntimeControlVisualStyle::default()
-            },
-            ..ViewRuntimeControlStyle::default()
+        ViewRuntimeControlVisualStyle {
+            backdrop_filters: Some(ViewRuntimeControlFilterList {
+                filters: vec![ViewRuntimeControlFilter::Blur {
+                    radius_milli: 12_000,
+                }],
+            }),
+            ..ViewRuntimeControlVisualStyle::default()
         },
     );
 
@@ -80,7 +77,7 @@ fn runtime_control_backdrop_filter_reaches_render_style() {
         .expect("text control lowers");
 
     assert_eq!(
-        render[0].style.normal.backdrop_filters,
+        render[0].style.backdrop_filters,
         Some(RenderControlFilterList {
             filters: vec![RenderControlFilter::Blur { radius_px: 12.0 }]
         })
@@ -92,12 +89,9 @@ fn runtime_control_font_family_reaches_render_style() {
     let mut input = InputController::default();
     let runtime = text_control_with_style(
         "input.feedback",
-        ViewRuntimeControlStyle {
-            normal: ViewRuntimeControlVisualStyle {
-                font_family: Some("Arcweft Demo, Yu Gothic, system-view".to_owned()),
-                ..ViewRuntimeControlVisualStyle::default()
-            },
-            ..ViewRuntimeControlStyle::default()
+        ViewRuntimeControlVisualStyle {
+            font_family: Some("Arcweft Demo, Yu Gothic, system-view".to_owned()),
+            ..ViewRuntimeControlVisualStyle::default()
         },
     );
 
@@ -105,40 +99,37 @@ fn runtime_control_font_family_reaches_render_style() {
         .expect("text control lowers");
 
     assert_eq!(
-        render[0].style.normal.font_family.as_deref(),
+        render[0].style.font_family.as_deref(),
         Some("Arcweft Demo, Yu Gothic, system-view")
     );
 }
 
 #[test]
-fn runtime_text_area_preserves_modern_visual_style_while_focused() {
+fn runtime_text_area_preserves_current_visual_style() {
     let mut input = InputController::default();
     let target = "input.product_brief";
     let runtime = text_control_with_kind_and_style(
         target,
         ViewInputKind::TextArea,
-        ViewRuntimeControlStyle {
-            normal: ViewRuntimeControlVisualStyle {
-                fill: Some(RgbaColor::rgba(8, 14, 24, 164)),
-                text: Some(RgbaColor::rgb(244, 247, 251)),
-                selection: Some(RgbaColor::rgba(94, 234, 212, 116)),
-                caret: Some(RgbaColor::rgb(94, 234, 212)),
-                font_family: Some(
-                    "Arcweft Demo, Yu Gothic View, Yu Gothic, Meiryo, system-view".to_owned(),
-                ),
-                ..ViewRuntimeControlVisualStyle::default()
-            },
-            focus_visible: Some(ViewRuntimeControlVisualStyle {
-                focus_ring: Some(
-                    arcweft_bundle::resource_codec::view::ViewRuntimeControlFocusRingStyle {
-                        color: RgbaColor::rgb(94, 234, 212),
-                        width_milli: 2_000,
-                        offset_milli: 0,
-                    },
-                ),
-                ..ViewRuntimeControlVisualStyle::default()
-            }),
-            ..ViewRuntimeControlStyle::default()
+        ViewRuntimeControlVisualStyle {
+            fill: Some(PresentationColor::rgba(8, 14, 24, 164)),
+            text: Some(PresentationColor::rgba(244, 247, 251, 255)),
+            placeholder: Some(PresentationColor::rgba(148, 163, 184, 255)),
+            selection: Some(PresentationColor::rgba(94, 234, 212, 116)),
+            caret: Some(PresentationColor::rgba(94, 234, 212, 255)),
+            composition_underline: Some(PresentationColor::rgba(251, 191, 36, 255)),
+            font_family: Some(
+                "Arcweft Demo, Yu Gothic View, Yu Gothic, Meiryo, system-view".to_owned(),
+            ),
+            letter_spacing_milli: Some(750),
+            focus_ring: Some(
+                arcweft_bundle::resource_codec::view::ViewRuntimeControlFocusRingStyle {
+                    color: PresentationColor::rgba(94, 234, 212, 255),
+                    width_milli: 2_000,
+                    offset_milli: 0,
+                },
+            ),
+            ..ViewRuntimeControlVisualStyle::default()
         },
     );
 
@@ -150,14 +141,20 @@ fn runtime_text_area_preserves_modern_visual_style_while_focused() {
         arcweft_presentation::semantic::SemanticRole::TextArea
     );
     assert_eq!(
-        render[0].style.normal.fill,
+        render[0].style.fill,
         Some([8.0 / 255.0, 14.0 / 255.0, 24.0 / 255.0, 164.0 / 255.0])
     );
     assert_eq!(
-        render[0].style.normal.font_family.as_deref(),
+        render[0].style.font_family.as_deref(),
         Some("Arcweft Demo, Yu Gothic View, Yu Gothic, Meiryo, system-view")
     );
-    assert!(render[0].style.focus_visible.is_some());
+    assert!(render[0].style.focus_ring.is_some());
+    assert_eq!(render[0].style.placeholder, Some([148, 163, 184, 255]));
+    assert_eq!(render[0].style.letter_spacing_milli, Some(750));
+    assert_eq!(
+        render[0].style.composition_underline,
+        Some([251.0 / 255.0, 191.0 / 255.0, 36.0 / 255.0, 1.0])
+    );
 }
 
 #[test]
@@ -165,27 +162,20 @@ fn runtime_control_corner_frame_reaches_render_style() {
     let mut input = InputController::default();
     let runtime = text_control_with_style(
         "input.feedback",
-        ViewRuntimeControlStyle {
-            normal: ViewRuntimeControlVisualStyle {
-                corner_frame: Some(ViewRuntimeControlCornerFrameStyle {
-                    color: RgbaColor::rgba(94, 234, 212, 220),
-                    width_milli: 3_000,
-                    length_milli: 24_000,
-                    offset_milli: 2_000,
-                }),
-                ..ViewRuntimeControlVisualStyle::default()
-            },
-            ..ViewRuntimeControlStyle::default()
+        ViewRuntimeControlVisualStyle {
+            corner_frame: Some(ViewRuntimeControlCornerFrameStyle {
+                color: PresentationColor::rgba(94, 234, 212, 220),
+                width_milli: 3_000,
+                length_milli: 24_000,
+                offset_milli: 2_000,
+            }),
+            ..ViewRuntimeControlVisualStyle::default()
         },
     );
 
     let render = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("text control lowers");
-    let corner_frame = render[0]
-        .style
-        .normal
-        .corner_frame
-        .expect("corner frame lowers");
+    let corner_frame = render[0].style.corner_frame.expect("corner frame lowers");
 
     assert_rgba_near(
         corner_frame.color,
@@ -216,20 +206,17 @@ fn styled_fill_depth(
     blue: u8,
     alpha: u8,
     depth_milli: i32,
-) -> ViewRuntimeControlStyle {
-    ViewRuntimeControlStyle {
-        normal: ViewRuntimeControlVisualStyle {
-            fill: Some(RgbaColor::rgba(red, green, blue, alpha)),
-            depth_milli: Some(depth_milli),
-            ..ViewRuntimeControlVisualStyle::default()
-        },
-        ..ViewRuntimeControlStyle::default()
+) -> ViewRuntimeControlVisualStyle {
+    ViewRuntimeControlVisualStyle {
+        fill: Some(PresentationColor::rgba(red, green, blue, alpha)),
+        depth_milli: Some(depth_milli),
+        ..ViewRuntimeControlVisualStyle::default()
     }
 }
 
 fn text_control_with_style(
     public_id: &str,
-    style: ViewRuntimeControlStyle,
+    style: ViewRuntimeControlVisualStyle,
 ) -> ViewRuntimeTextControl {
     text_control_with_kind_and_style(public_id, ViewInputKind::TextField, style)
 }
@@ -237,7 +224,7 @@ fn text_control_with_style(
 fn text_control_with_kind_and_style(
     public_id: &str,
     kind: ViewInputKind,
-    style: ViewRuntimeControlStyle,
+    style: ViewRuntimeControlVisualStyle,
 ) -> ViewRuntimeTextControl {
     ViewRuntimeTextControl {
         public_id: public_id.to_owned(),

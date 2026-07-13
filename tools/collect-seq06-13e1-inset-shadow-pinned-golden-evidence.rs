@@ -961,7 +961,7 @@ fn write_packet_review_decision(
         "source_hashes": {
             "policy_git": git_hash_object_path(root, &root.join("fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow-exact-png-policy.json")),
             "fixture_doc_git": git_hash_object_path(root, &fixture_doc_path(root, target)),
-            "source_css_git": git_hash_object_path(root, &root.join("docs/fixtures/css/seq06.13e-inset-box-shadow-card.css")),
+            "source_style_git": git_hash_object_path(root, &root.join("docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw")),
         },
         "artifacts": {
             "candidate": artifact_review_json(root, paths.candidate),

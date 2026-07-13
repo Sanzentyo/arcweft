@@ -2,7 +2,7 @@
 
 use crate::{
     DisplayList, FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize,
-    LayoutTree, NodeKey, SemanticSpecId, StyleId, ViewError, ViewFragmentBuilder,
+    LayoutTree, NodeKey, SemanticSpecId, ViewError, ViewFragmentBuilder,
     ViewImagePresentationMetadata, ViewImageSource, ViewImageSourceTable, ViewLayerOutput,
     ViewSemanticFragmentBuilder, ViewSemanticNode,
 };
@@ -81,7 +81,7 @@ impl ViewImagePresentationFrame {
             let node = assembly.fragment.push_node(
                 key,
                 FragmentKind::Image(image_id),
-                StyleId(0),
+                &[],
                 &[],
                 &[],
                 Some(semantic_id),

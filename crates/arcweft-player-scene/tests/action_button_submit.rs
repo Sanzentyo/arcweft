@@ -1,6 +1,6 @@
 use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewActionTextControlPayloadField, ViewRuntimeActionButton,
-    ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlStyle,
+    ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle,
 };
 use arcweft_id::PublicId;
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
@@ -16,7 +16,7 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedDialogueViewState, PreparedFrame,
-    RenderActionButton, RenderActionButtonAction, RenderControlStyle, RenderPreferences,
+    RenderActionButton, RenderActionButtonAction, RenderControlVisualStyle, RenderPreferences,
     RenderScene, RenderTextInputControl, RenderViewport, SharedFramePlanContext,
 };
 
@@ -57,7 +57,7 @@ fn scene_with_text_input_and_action_button() -> RenderScene {
             containing_scroll_region: None,
             bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
             viewport_clip: None,
-            style: RenderControlStyle::default(),
+            style: RenderControlVisualStyle::default(),
             action: RenderActionButtonAction::ActionInvoke {
                 action: PublicId::try_new("action.feedback.submit_name").unwrap(),
                 payload: Some("hello".to_owned()),
@@ -93,7 +93,7 @@ fn action_invoke_scene() -> RenderScene {
             containing_scroll_region: None,
             bounds: HitRect::new(48.0, 48.0, 180.0, 48.0),
             viewport_clip: None,
-            style: RenderControlStyle::default(),
+            style: RenderControlVisualStyle::default(),
             action: RenderActionButtonAction::ActionInvoke {
                 action: PublicId::try_new("action.feedback.submit_name").unwrap(),
                 payload: Some("Ada".to_owned()),
@@ -289,7 +289,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
                     field: ViewActionTextControlPayloadField::Text,
                 }),
             },
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }],
         &text_inputs,
     )
@@ -315,7 +315,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
                     value: "input.visitor_name.text".to_owned(),
                 }),
             },
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }],
         &text_inputs,
     )
@@ -341,7 +341,7 @@ fn unavailable_dialogue_primary_action_lowers_as_a_disabled_noop() {
                 parameter: "dialogue".to_owned(),
                 target: None,
             },
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }],
         &[],
     )

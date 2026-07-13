@@ -36,7 +36,7 @@ pub enum ViewBlurDirection {
     Vertical,
 }
 
-/// CSS/SVG-compatible 4x4 color matrix plus additive offset.
+/// Renderer-facing 4x4 color matrix plus additive offset.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewColorMatrix {
     pub matrix: [[f32; 4]; 4],

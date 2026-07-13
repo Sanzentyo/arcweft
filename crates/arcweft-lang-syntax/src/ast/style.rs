@@ -1,8 +1,8 @@
 //! Syntax tree for Arcweft `style` declarations and inline style patches.
 //!
-//! Native values use the ordinary expression AST. CSS bodies remain opaque so
-//! later layers can hand them to the CSS adapter without interpreting them as
-//! Arcweft expressions.
+//! Style values use the ordinary expression AST. Arcweft has one native Style
+//! language, so the syntax tree does not carry a language discriminator or raw
+//! foreign source.
 
 use crate::{expr::Expr, types::TypeRef};
 
@@ -12,33 +12,14 @@ use super::{
     items::Attribute,
 };
 
-/// Language used by one style declaration or inline patch.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum StyleSyntax {
-    /// Arcweft's typed native style language.
-    #[default]
-    Arcweft,
-    /// CSS preserved for the Takumi adapter.
-    Css,
-}
-
 /// One top-level `style` declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StyleDecl {
     attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     id: EntityRef,
-    body: StyleDeclBody,
+    sheet: StyleSheet,
     range: TextRange,
-}
-
-/// Parsed body of a top-level style declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StyleDeclBody {
-    /// Typed native tokens and selector rules.
-    Arcweft(StyleSheet),
-    /// Opaque CSS source.
-    Css(StyleCssSource),
 }
 
 /// Native declarations owned by one named style sheet.
@@ -129,21 +110,11 @@ pub struct StyleExpr {
     range: TextRange,
 }
 
-/// Opaque CSS source and its authored range.
+/// Inline `.style {}` patch.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StyleCssSource {
-    source: String,
+pub struct StylePatch {
+    declarations: Vec<StyleDeclarationDecl>,
     range: TextRange,
-}
-
-/// Inline `.style {}` or `.style(.Css) {}` patch.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StylePatch {
-    Arcweft {
-        declarations: Vec<StyleDeclarationDecl>,
-        range: TextRange,
-    },
-    Css(StyleCssSource),
 }
 
 impl StyleDecl {
@@ -151,14 +122,14 @@ impl StyleDecl {
         attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         id: EntityRef,
-        body: StyleDeclBody,
+        sheet: StyleSheet,
         range: TextRange,
     ) -> Self {
         Self {
             attrs,
             visibility,
             id,
-            body,
+            sheet,
             range,
         }
     }
@@ -175,35 +146,12 @@ impl StyleDecl {
         &self.id
     }
 
-    pub const fn syntax(&self) -> StyleSyntax {
-        match self.body {
-            StyleDeclBody::Arcweft(_) => StyleSyntax::Arcweft,
-            StyleDeclBody::Css(_) => StyleSyntax::Css,
-        }
-    }
-
-    pub const fn body(&self) -> &StyleDeclBody {
-        &self.body
+    pub const fn sheet(&self) -> &StyleSheet {
+        &self.sheet
     }
 
     pub const fn range(&self) -> &TextRange {
         &self.range
-    }
-}
-
-impl StyleDeclBody {
-    pub const fn arcweft(&self) -> Option<&StyleSheet> {
-        match self {
-            Self::Arcweft(sheet) => Some(sheet),
-            Self::Css(_) => None,
-        }
-    }
-
-    pub const fn css(&self) -> Option<&StyleCssSource> {
-        match self {
-            Self::Arcweft(_) => None,
-            Self::Css(source) => Some(source),
-        }
     }
 }
 
@@ -431,60 +379,19 @@ impl StyleExpr {
     }
 }
 
-impl StyleCssSource {
-    pub(crate) fn new(source: impl Into<String>, range: TextRange) -> Self {
-        Self {
-            source: source.into(),
-            range,
-        }
-    }
-
-    pub fn source(&self) -> &str {
-        &self.source
-    }
-
-    pub const fn range(&self) -> TextRange {
-        self.range
-    }
-}
-
 impl StylePatch {
-    pub(crate) const fn arcweft(declarations: Vec<StyleDeclarationDecl>, range: TextRange) -> Self {
-        Self::Arcweft {
+    pub(crate) const fn new(declarations: Vec<StyleDeclarationDecl>, range: TextRange) -> Self {
+        Self {
             declarations,
             range,
         }
     }
 
-    pub(crate) fn css(source: impl Into<String>, range: TextRange) -> Self {
-        Self::Css(StyleCssSource::new(source, range))
-    }
-
-    pub const fn syntax(&self) -> StyleSyntax {
-        match self {
-            Self::Arcweft { .. } => StyleSyntax::Arcweft,
-            Self::Css(_) => StyleSyntax::Css,
-        }
-    }
-
     pub fn declarations(&self) -> &[StyleDeclarationDecl] {
-        match self {
-            Self::Arcweft { declarations, .. } => declarations,
-            Self::Css(_) => &[],
-        }
-    }
-
-    pub const fn css_source(&self) -> Option<&StyleCssSource> {
-        match self {
-            Self::Arcweft { .. } => None,
-            Self::Css(source) => Some(source),
-        }
+        &self.declarations
     }
 
     pub const fn range(&self) -> TextRange {
-        match self {
-            Self::Arcweft { range, .. } => *range,
-            Self::Css(source) => source.range(),
-        }
+        self.range
     }
 }

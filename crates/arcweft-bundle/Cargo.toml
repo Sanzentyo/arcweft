@@ -12,6 +12,7 @@ arcweft-audio-core = { workspace = true }
 arcweft-character = { path = "../arcweft-character" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { workspace = true }
+arcweft-id = { path = "../arcweft-id" }
 arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }

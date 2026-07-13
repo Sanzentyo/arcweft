@@ -11,6 +11,7 @@ pub struct CompiledSource {
     pub display: LineDisplayCatalog,
     pub hir: arcweft_lang_hir::model::HirModule,
     pub typecheck_report: TypeCheckReport,
+    pub style: crate::style::CompiledViewStyleArtifact,
     pub runtime_plan_stats: RuntimePlanLowerStats,
 }
 

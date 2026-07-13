@@ -14,23 +14,23 @@ pub character parity {
 
 pub style unified_text_panel {
     .unified_text_panel {
-        background = rgba(17, 18, 16, 242)
+        background-color = rgba(17, 18, 16, 242)
     }
     .unified_text_speaker {
-        font-family = text("Noto Sans JP")
+        font-family = ["Noto Sans JP"]
         color = rgba(174, 226, 142, 255)
-        font-size = 18000milli
-        line-height = 28000milli
-        font-weight = text("700")
+        font-size = 18px
+        line-height = 28px
+        font-weight = 700
     }
     .unified_text_content {
-        font-family = text("Noto Sans JP")
+        font-family = ["Noto Sans JP"]
         color = rgba(238, 247, 255, 255)
-        font-size = 30000milli
-        line-height = 40000milli
+        font-size = 30px
+        line-height = 40px
     }
     .unified_text_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
 }
 

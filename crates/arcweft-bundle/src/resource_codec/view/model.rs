@@ -1,7 +1,11 @@
-use super::runtime_control_style::ViewRuntimeControlStyle;
-use crate::BundleVirtualFileRef;
+use super::runtime_control_style::ViewRuntimeControlVisualStyle;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
+use arcweft_id::PublicId;
+use arcweft_presentation::appearance::{
+    ColorScheme, ColorSchemePreference, ContrastPreference, EnvironmentRevision, PresentationColor,
+    PresentationEnvironment, SystemColor, SystemPalette, SystemPaletteSet, TextScaleMilli,
+};
 use arcweft_presentation::fx::{FxId, FxRuntimeType};
 use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::program::ViewElementKind;
@@ -9,9 +13,14 @@ use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{DialogueAdvanceTarget, ViewValueProgram, ViewValueProgramId};
 use core::fmt;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+mod style;
+pub use style::*;
 
 /// Product View program section decoded from `ViewProgram`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewProgramResource {
     pub program_id: String,
     pub definitions: Vec<ViewDefinitionResource>,
@@ -39,13 +48,14 @@ pub struct ViewProgramResource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ViewProgramInstruction {
     OpenElement {
         element: ViewElementKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target: Option<String>,
-        style: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        styles: Vec<ViewStyleApplicationTarget>,
         part: Option<String>,
         key: Option<u64>,
         source: Option<SourceRangeRef>,
@@ -53,7 +63,9 @@ pub enum ViewProgramInstruction {
     CloseElement,
     EmitText {
         text_source: String,
-        style: Option<String>,
+        text_block: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        styles: Vec<ViewStyleApplicationTarget>,
         part: Option<String>,
         source: Option<SourceRangeRef>,
     },
@@ -61,20 +73,23 @@ pub enum ViewProgramInstruction {
         image: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target: Option<String>,
-        style: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        styles: Vec<ViewStyleApplicationTarget>,
         part: Option<String>,
         source: Option<SourceRangeRef>,
     },
     EmitCustom {
         element: String,
-        style: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        styles: Vec<ViewStyleApplicationTarget>,
         part: Option<String>,
         source: Option<SourceRangeRef>,
     },
     CallView {
         view: String,
         arguments: Vec<ViewCallArgumentBindingRef>,
-        style: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        styles: Vec<ViewStyleApplicationTarget>,
         part: Option<String>,
         key: Option<u64>,
         source: Option<SourceRangeRef>,
@@ -104,10 +119,6 @@ pub enum ViewProgramInstruction {
         value_program: ViewValueProgramId,
         source: Option<SourceRangeRef>,
     },
-    ApplyStyle {
-        style: ViewStyleApplyRef,
-        source: Option<SourceRangeRef>,
-    },
     /// Applies a resolved `#[fx] fn -> Fx` graph to the current retained node.
     ApplyFx {
         /// Package-qualified identity of the original Fx declaration.
@@ -129,6 +140,100 @@ pub enum ViewProgramInstruction {
     },
 }
 
+impl ViewProgramInstruction {
+    /// Ordered Style applications attached to a node-producing instruction.
+    pub fn styles(&self) -> &[ViewStyleApplicationTarget] {
+        match self {
+            Self::OpenElement { styles, .. }
+            | Self::EmitText { styles, .. }
+            | Self::EmitImage { styles, .. }
+            | Self::EmitCustom { styles, .. }
+            | Self::CallView { styles, .. } => styles,
+            Self::CloseElement
+            | Self::Branch { .. }
+            | Self::RepeatKeyed { .. }
+            | Self::Await { .. }
+            | Self::BindLocal { .. }
+            | Self::ApplyFx { .. }
+            | Self::BindHandler { .. }
+            | Self::AttachSemantic { .. } => &[],
+        }
+    }
+
+    pub(crate) fn styles_mut(&mut self) -> Option<&mut Vec<ViewStyleApplicationTarget>> {
+        match self {
+            Self::OpenElement { styles, .. }
+            | Self::EmitText { styles, .. }
+            | Self::EmitImage { styles, .. }
+            | Self::EmitCustom { styles, .. }
+            | Self::CallView { styles, .. } => Some(styles),
+            Self::CloseElement
+            | Self::Branch { .. }
+            | Self::RepeatKeyed { .. }
+            | Self::Await { .. }
+            | Self::BindLocal { .. }
+            | Self::ApplyFx { .. }
+            | Self::BindHandler { .. }
+            | Self::AttachSemantic { .. } => None,
+        }
+    }
+
+    /// Authored part attached to a node-producing instruction, if present.
+    pub fn part(&self) -> Option<&str> {
+        match self {
+            Self::OpenElement { part, .. }
+            | Self::EmitText { part, .. }
+            | Self::EmitImage { part, .. }
+            | Self::EmitCustom { part, .. }
+            | Self::CallView { part, .. } => part.as_deref(),
+            Self::CloseElement
+            | Self::Branch { .. }
+            | Self::RepeatKeyed { .. }
+            | Self::Await { .. }
+            | Self::BindLocal { .. }
+            | Self::ApplyFx { .. }
+            | Self::BindHandler { .. }
+            | Self::AttachSemantic { .. } => None,
+        }
+    }
+
+    pub(crate) fn source(&self) -> Option<&SourceRangeRef> {
+        match self {
+            Self::OpenElement { source, .. }
+            | Self::EmitText { source, .. }
+            | Self::EmitImage { source, .. }
+            | Self::EmitCustom { source, .. }
+            | Self::CallView { source, .. }
+            | Self::Branch { source, .. }
+            | Self::RepeatKeyed { source, .. }
+            | Self::Await { source, .. }
+            | Self::BindLocal { source, .. }
+            | Self::ApplyFx { source, .. }
+            | Self::BindHandler { source, .. }
+            | Self::AttachSemantic { source, .. } => source.as_ref(),
+            Self::CloseElement => None,
+        }
+    }
+
+    pub(crate) fn source_mut(&mut self) -> Option<&mut SourceRangeRef> {
+        match self {
+            Self::OpenElement { source, .. }
+            | Self::EmitText { source, .. }
+            | Self::EmitImage { source, .. }
+            | Self::EmitCustom { source, .. }
+            | Self::CallView { source, .. }
+            | Self::Branch { source, .. }
+            | Self::RepeatKeyed { source, .. }
+            | Self::Await { source, .. }
+            | Self::BindLocal { source, .. }
+            | Self::ApplyFx { source, .. }
+            | Self::BindHandler { source, .. }
+            | Self::AttachSemantic { source, .. } => source.as_mut(),
+            Self::CloseElement => None,
+        }
+    }
+}
+
 /// Typed reactive argument retained for one View-side Fx application.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewFxArgumentBindingRef {
@@ -147,9 +252,12 @@ pub struct ViewCallArgumentBindingRef {
 
 /// One independently mountable Arcweft View definition in the program.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewDefinitionResource {
     pub public_id: String,
     pub body: ViewInstructionSpan,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<ViewStyleApplicationTarget>,
     pub parameters: Vec<ViewParameterResource>,
     pub state_schema_hash: u64,
 }
@@ -213,29 +321,6 @@ pub struct ViewAwaitBranchSpan {
     pub body_span: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewStyleApplyRef {
-    Named(String),
-    InlineArcweft { patch_id: u32 },
-    InlineCss { patch_id: u32 },
-}
-
-impl ViewStyleApplyRef {
-    pub fn runtime_style_part(&self) -> String {
-        match self {
-            Self::Named(style) => style.clone(),
-            Self::InlineArcweft { patch_id } | Self::InlineCss { patch_id } => {
-                Self::inline_patch_part(*patch_id)
-            }
-        }
-    }
-
-    pub fn inline_patch_part(patch_id: u32) -> String {
-        format!("style.inline.patch.{patch_id}")
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewInstructionSpan {
     pub start_instruction: u32,
@@ -252,7 +337,9 @@ pub struct ViewHandlerRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewExportedPart {
+    pub view: String,
     pub part_id: String,
     pub public_name: String,
 }
@@ -297,6 +384,7 @@ pub struct ViewLogicalRect {
 
 /// Product-authored player-rendered action button metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewActionButtonResource {
     pub public_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -309,13 +397,12 @@ pub struct ViewActionButtonResource {
     pub action: ViewActionButtonActionResource,
     pub bounds: ViewRuntimeButtonBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub style: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
 /// Product-authored player-rendered text metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewTextBlockResource {
     pub public_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -331,8 +418,6 @@ pub struct ViewTextBlockResource {
     )]
     pub selection_policy: ViewTextSelectionPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub style: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
@@ -346,6 +431,7 @@ pub enum ViewTextSurface {
 
 /// Product-authored player-rendered surface metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewSurfaceResource {
     pub public_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -356,8 +442,6 @@ pub struct ViewSurfaceResource {
     pub element: ViewElementKind,
     pub bounds: ViewRuntimeSurfaceBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub style: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
@@ -365,8 +449,11 @@ pub struct ViewSurfaceResource {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewTextStyleBinding {
     pub public_id: String,
-    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
-    pub style: ViewRuntimeControlStyle,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewRuntimeControlVisualStyle::is_default"
+    )]
+    pub style: ViewRuntimeControlVisualStyle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -388,8 +475,11 @@ pub struct ViewRuntimeSurface {
     pub containing_scroll_region: Option<String>,
     pub element: ViewElementKind,
     pub bounds: ViewRuntimeSurfaceBounds,
-    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
-    pub style: ViewRuntimeControlStyle,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewRuntimeControlVisualStyle::is_default"
+    )]
+    pub style: ViewRuntimeControlVisualStyle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -598,8 +688,11 @@ pub struct ViewRuntimeActionButton {
     pub enabled: bool,
     pub bounds: ViewRuntimeButtonBounds,
     pub action: ViewRuntimeActionButtonAction,
-    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
-    pub style: ViewRuntimeControlStyle,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewRuntimeControlVisualStyle::is_default"
+    )]
+    pub style: ViewRuntimeControlVisualStyle,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -768,199 +861,6 @@ pub enum ViewFocusSkipPolicy {
     #[default]
     Skip,
     Stop,
-}
-
-/// Product style section decoded from `ViewStyle`.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewStyleResource {
-    pub style_program_id: String,
-    pub arcweft_sources: Vec<StyleSourceIdentity>,
-    pub css_sources: Vec<StyleSourceIdentity>,
-    pub tokens: Vec<ViewStyleToken>,
-    pub rules: Vec<ViewStyleRule>,
-    pub part_rules: Vec<ViewPartStyleRule>,
-    pub environment_predicates: Vec<ViewEnvironmentPredicate>,
-    pub source_map_refs: Vec<SourceRangeRef>,
-    pub external_css_descriptors: Vec<ExternalCssDescriptorRef>,
-    pub adapter_requirements: Vec<CrossSectionRef>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StyleSourceIdentity {
-    pub public_id: String,
-    pub syntax: StyleSyntax,
-    pub identity: StyleSourceRef,
-    pub content_digest: Option<BundleDigest>,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StyleSyntax {
-    #[default]
-    Arcweft,
-    Css,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StyleSourceRef {
-    Inline { source_digest: BundleDigest },
-    File { path: String },
-    EmbeddedFile { file: BundleVirtualFileRef },
-    Section { reference: CrossSectionRef },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewStyleToken {
-    pub public_id: String,
-    pub value: ViewStyleValue,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewStyleRule {
-    pub selector: ViewStyleSelector,
-    pub declarations: Vec<ViewStyleDeclaration>,
-    pub source: Option<SourceRangeRef>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewPartStyleRule {
-    pub part: String,
-    pub selector: ViewStyleSelector,
-    pub declarations: Vec<ViewStyleDeclaration>,
-    pub source: Option<SourceRangeRef>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewStyleSelector {
-    pub parts: Vec<ViewStyleSelectorPart>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewStyleSelectorPart {
-    Element(ViewElementKind),
-    Part(String),
-    State(ViewElementState),
-    Interaction(ViewInteractionState),
-    Environment(ViewEnvironmentPredicate),
-    Descendant,
-    Child,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewElementState {
-    FocusVisible,
-    ReadOnly,
-    Invalid,
-    Composing,
-    PlaceholderShown,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewInteractionState {
-    Hover,
-    Active,
-    Disabled,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewStyleDeclaration {
-    pub property: String,
-    pub value: ViewStyleValue,
-    pub op: StyleAssignOp,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StyleAssignOp {
-    #[default]
-    Replace,
-    Append,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewStyleValue {
-    Token(String),
-    SystemColor(SystemColor),
-    Rgba(RgbaColor),
-    Milli(i32),
-    Text(String),
-    List(Vec<ViewStyleValue>),
-    Resource(String),
-    Digest(BundleDigest),
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SystemColor {
-    Canvas,
-    CanvasText,
-    Panel,
-    PanelText,
-    RaisedPanel,
-    MutedText,
-    Border,
-    Accent,
-    AccentText,
-    FocusRing,
-    Selection,
-    SelectionText,
-    Danger,
-    Warning,
-    Success,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RgbaColor {
-    pub red: u8,
-    pub green: u8,
-    pub blue: u8,
-    pub alpha: u8,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewEnvironmentPredicate {
-    ColorScheme(ColorSchemeDefault),
-    Contrast(ContrastPreference),
-    ReduceMotion(bool),
-    TextScaleAtLeastMilli(u32),
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ColorSchemeDefault {
-    #[default]
-    System,
-    Light,
-    Dark,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ContrastPreference {
-    #[default]
-    Standard,
-    More,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ExternalCssDescriptorRef {
-    pub public_id: String,
-    pub identity: ExternalCssIdentity,
-    pub source_map: Option<SourceRangeRef>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExternalCssIdentity {
-    File { path: String },
-    EmbeddedFile { file: BundleVirtualFileRef },
-    Section { reference: CrossSectionRef },
 }
 
 /// Product View text-source section decoded from `ViewText`.
@@ -1265,8 +1165,11 @@ pub struct ViewRuntimeTextControl {
         skip_serializing_if = "ViewRuntimeTextControlHandlers::is_empty"
     )]
     pub handlers: ViewRuntimeTextControlHandlers,
-    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
-    pub style: ViewRuntimeControlStyle,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewRuntimeControlVisualStyle::is_default"
+    )]
+    pub style: ViewRuntimeControlVisualStyle,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -1337,17 +1240,99 @@ pub struct ViewThemeResource {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SystemColorOverride {
     pub color: SystemColor,
-    pub light: Option<RgbaColor>,
-    pub dark: Option<RgbaColor>,
+    pub light: Option<PresentationColor>,
+    pub dark: Option<PresentationColor>,
     pub source: Option<SourceRangeRef>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewThemeEnvironmentDefaults {
-    pub color_scheme: ColorSchemeDefault,
+    pub color_scheme: ColorSchemePreference,
     pub contrast: ContrastPreference,
     pub reduce_motion: bool,
     pub text_scale_milli: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum ViewThemeEnvironmentError {
+    #[error("View theme text scale {value} exceeds the u16 presentation range")]
+    TextScaleOutOfRange { value: u32 },
+}
+
+impl Default for ViewThemeEnvironmentDefaults {
+    fn default() -> Self {
+        Self {
+            color_scheme: ColorSchemePreference::System,
+            contrast: ContrastPreference::Standard,
+            reduce_motion: false,
+            text_scale_milli: u32::from(TextScaleMilli::ONE.value()),
+        }
+    }
+}
+
+impl ViewThemeResource {
+    /// Resolves product defaults after the host has supplied its system scheme.
+    pub fn presentation_environment(
+        &self,
+        system_scheme: ColorScheme,
+        locale: Option<PublicId>,
+        revision: EnvironmentRevision,
+    ) -> Result<PresentationEnvironment, ViewThemeEnvironmentError> {
+        let color_scheme = match self.defaults.color_scheme {
+            ColorSchemePreference::System => system_scheme,
+            ColorSchemePreference::Light => ColorScheme::Light,
+            ColorSchemePreference::Dark => ColorScheme::Dark,
+        };
+        let text_scale = u16::try_from(self.defaults.text_scale_milli).map_err(|_| {
+            ViewThemeEnvironmentError::TextScaleOutOfRange {
+                value: self.defaults.text_scale_milli,
+            }
+        })?;
+        let environment = PresentationEnvironment::new(color_scheme)
+            .with_contrast(self.defaults.contrast)
+            .with_reduce_motion(self.defaults.reduce_motion)
+            .with_text_scale(TextScaleMilli::new(text_scale))
+            .with_revision(revision);
+        Ok(locale.map_or(environment.clone(), |locale| {
+            environment.with_locale(locale)
+        }))
+    }
+
+    /// Applies typed light/dark overrides to the engine palette inventory.
+    pub fn system_palette_set(&self) -> SystemPaletteSet {
+        self.palette_overrides.iter().fold(
+            SystemPaletteSet::ENGINE_DEFAULT,
+            |mut palettes, entry| {
+                if let Some(color) = entry.light {
+                    set_system_color(&mut palettes.light, entry.color, color);
+                }
+                if let Some(color) = entry.dark {
+                    set_system_color(&mut palettes.dark, entry.color, color);
+                }
+                palettes
+            },
+        )
+    }
+}
+
+fn set_system_color(palette: &mut SystemPalette, role: SystemColor, color: PresentationColor) {
+    match role {
+        SystemColor::Canvas => palette.canvas = color,
+        SystemColor::CanvasText => palette.canvas_text = color,
+        SystemColor::Surface => palette.surface = color,
+        SystemColor::SurfaceText => palette.surface_text = color,
+        SystemColor::RaisedSurface => palette.raised_surface = color,
+        SystemColor::MutedText => palette.muted_text = color,
+        SystemColor::Border => palette.border = color,
+        SystemColor::Accent => palette.accent = color,
+        SystemColor::AccentText => palette.accent_text = color,
+        SystemColor::FocusRing => palette.focus_ring = color,
+        SystemColor::Selection => palette.selection = color,
+        SystemColor::SelectionText => palette.selection_text = color,
+        SystemColor::Danger => palette.danger = color,
+        SystemColor::Warning => palette.warning = color,
+        SystemColor::Success => palette.success = color,
+    }
 }
 
 impl ViewInstructionSpan {
@@ -1356,30 +1341,6 @@ impl ViewInstructionSpan {
             start_instruction,
             end_instruction,
         }
-    }
-}
-
-impl RgbaColor {
-    pub const fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
-        Self {
-            red,
-            green,
-            blue,
-            alpha,
-        }
-    }
-
-    pub const fn rgb(red: u8, green: u8, blue: u8) -> Self {
-        Self::rgba(red, green, blue, 255)
-    }
-}
-
-impl ViewStyleSelector {
-    pub fn max_depth(&self) -> usize {
-        self.parts.iter().fold(0_usize, |depth, part| match part {
-            ViewStyleSelectorPart::Descendant | ViewStyleSelectorPart::Child => depth + 1,
-            _ => depth.max(1),
-        })
     }
 }
 
@@ -1485,7 +1446,7 @@ impl ViewInputOptions {
             value,
             label,
             handlers: ViewRuntimeTextControlHandlers::from_input(self, program),
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }
     }
 
@@ -1598,7 +1559,7 @@ impl ViewProgramResource {
                         }
                     }
                 },
-                style: ViewRuntimeControlStyle::default(),
+                style: ViewRuntimeControlVisualStyle::default(),
             })
             .collect()
     }
@@ -1742,7 +1703,6 @@ impl ViewTextBlockResource {
             surface: ViewTextSurface::Text,
             bounds,
             selection_policy: ViewTextSelectionPolicy::Disabled,
-            style: None,
             source: None,
         }
     }
@@ -1781,15 +1741,8 @@ impl ViewSurfaceResource {
             containing_scroll_region,
             element,
             bounds,
-            style: None,
             source: None,
         }
-    }
-
-    #[must_use]
-    pub fn with_style(mut self, style: impl Into<String>) -> Self {
-        self.style = Some(style.into());
-        self
     }
 
     pub fn runtime_surface(&self) -> ViewRuntimeSurface {
@@ -1800,7 +1753,7 @@ impl ViewSurfaceResource {
             containing_scroll_region: self.containing_scroll_region.clone(),
             element: self.element,
             bounds: self.bounds,
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }
     }
 
@@ -2384,12 +2337,6 @@ fn stable_text_session(public_id: &str) -> u64 {
     });
     if hash == 0 { 1 } else { hash }
 }
-
-pub type CompactViewProgramResource = ViewProgramResource;
-pub type CompactViewStyleResource = ViewStyleResource;
-pub type CompactViewTextResource = ViewTextResource;
-pub type CompactViewInputResource = ViewInputResource;
-pub type CompactViewThemeResource = ViewThemeResource;
 
 fn clamp_text_byte_offset(value: &str, offset: u32) -> u32 {
     let mut index = usize::try_from(offset)

@@ -1,5 +1,7 @@
 # Unsupported CSS diagnostics
 
+> **Superseded Style-path premise (2026-07-13):** The Arcweft CSS/Takumi authoring, lowering, and evidence path assumed below was removed by the [native-only typed Style path](../implementation/native-only-style-path-2026-07-13.md). The body is retained as historical rationale and is not a current Style contract.
+
 ## Supported values in this cut
 
 - `background-color` with resolved RGBA color.

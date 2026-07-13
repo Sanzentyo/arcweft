@@ -6,25 +6,20 @@ use crate::view_scene::{
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
-use arcweft_render_text::TextFontFamily;
+use arcweft_render_text::{TextFontFamily, TextWeight};
 use std::ops::Range;
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct RenderControlStyle {
-    pub normal: RenderControlVisualStyle,
-    pub hover: Option<RenderControlVisualStyle>,
-    pub pressed: Option<RenderControlVisualStyle>,
-    pub focus_visible: Option<RenderControlVisualStyle>,
-    pub disabled: Option<RenderControlVisualStyle>,
-}
-
+/// Renderer packet for one control's already-resolved current-frame appearance.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RenderControlVisualStyle {
     pub fill: Option<[f32; 4]>,
     pub text: Option<[u8; 4]>,
+    pub placeholder: Option<[u8; 4]>,
+    pub composition_underline: Option<[f32; 4]>,
     pub font_family: Option<String>,
     pub font_size_px: Option<f32>,
     pub line_height_px: Option<f32>,
+    pub letter_spacing_milli: Option<i32>,
     pub font_weight: Option<u16>,
     pub selection: Option<[f32; 4]>,
     pub caret: Option<[f32; 4]>,
@@ -97,15 +92,6 @@ pub enum RenderControlFilter {
     Blur { radius_px: f32 },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RenderControlVisualState {
-    Normal,
-    Hover,
-    Pressed,
-    FocusVisible,
-    Disabled,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedControlShadow {
     pub target: InteractionTarget,
@@ -144,113 +130,10 @@ pub enum RuntimeControlBackdropSamplePolicy {
     PriorFrameContentAndEarlierRuntimeControls,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct ControlInteractionStyleState {
-    pub enabled: bool,
-    pub focused: bool,
-    pub pointer: ControlPointerStyleState,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) enum ControlPointerStyleState {
-    #[default]
-    Idle,
-    Hovered,
-    Pressed,
-}
-
-impl ControlPointerStyleState {
-    pub(super) const fn from_interaction(hovered: bool, pressed: bool) -> Self {
-        if pressed {
-            Self::Pressed
-        } else if hovered {
-            Self::Hovered
-        } else {
-            Self::Idle
-        }
-    }
-}
-
-impl RenderControlStyle {
-    #[must_use]
-    pub fn visual_for_state(&self, state: RenderControlVisualState) -> RenderControlVisualStyle {
-        let mut visual = self.normal.clone();
-        match state {
-            RenderControlVisualState::Normal => None,
-            RenderControlVisualState::Hover => self.hover.as_ref(),
-            RenderControlVisualState::Pressed => self.pressed.as_ref(),
-            RenderControlVisualState::FocusVisible => self.focus_visible.as_ref(),
-            RenderControlVisualState::Disabled => self.disabled.as_ref(),
-        }
-        .into_iter()
-        .for_each(|patch| visual.overlay(patch));
-        visual
-    }
-}
-
 impl RenderControlVisualStyle {
     pub fn radii(&self) -> PaintRectRadii {
         self.radii_px
             .unwrap_or_else(|| PaintRectRadii::uniform(self.radius_px.unwrap_or_default()))
-    }
-
-    fn overlay(&mut self, patch: &Self) {
-        if patch.fill.is_some() {
-            self.fill = patch.fill;
-        }
-        if patch.text.is_some() {
-            self.text = patch.text;
-        }
-        if patch.font_family.is_some() {
-            self.font_family.clone_from(&patch.font_family);
-        }
-        if patch.font_size_px.is_some() {
-            self.font_size_px = patch.font_size_px;
-        }
-        if patch.line_height_px.is_some() {
-            self.line_height_px = patch.line_height_px;
-        }
-        if patch.font_weight.is_some() {
-            self.font_weight = patch.font_weight;
-        }
-        if patch.selection.is_some() {
-            self.selection = patch.selection;
-        }
-        if patch.caret.is_some() {
-            self.caret = patch.caret;
-        }
-        if patch.border.is_some() {
-            self.border = patch.border;
-        }
-        if patch.corner_frame.is_some() {
-            self.corner_frame = patch.corner_frame;
-        }
-        if patch.focus_ring.is_some() {
-            self.focus_ring = patch.focus_ring;
-        }
-        if patch.opacity.is_some() {
-            self.opacity = patch.opacity;
-        }
-        if patch.radius_px.is_some() {
-            self.radius_px = patch.radius_px;
-            self.radii_px = None;
-        }
-        if patch.radii_px.is_some() {
-            self.radii_px = patch.radii_px;
-            self.radius_px = None;
-        }
-        if patch.depth_milli.is_some() {
-            self.depth_milli = patch.depth_milli;
-        }
-        if patch.filters.is_some() {
-            self.filters.clone_from(&patch.filters);
-        }
-        if patch.backdrop_filters.is_some() {
-            self.backdrop_filters.clone_from(&patch.backdrop_filters);
-        }
-        if !patch.shadows.is_empty() {
-            self.shadows.clone_from(&patch.shadows);
-        }
     }
 }
 
@@ -318,7 +201,25 @@ pub(super) fn fill_with_opacity(fill: [f32; 4], opacity: Option<f32>) -> [f32; 4
 }
 
 pub(super) fn control_font_families(visual: &RenderControlVisualStyle) -> Vec<TextFontFamily> {
-    super::prepared_text::css_font_families(visual.font_family.as_deref())
+    super::prepared_text::font_families_from_stack(visual.font_family.as_deref())
+}
+
+pub(super) fn control_text_weight(
+    visual: &RenderControlVisualStyle,
+    fallback: TextWeight,
+) -> TextWeight {
+    match visual.font_weight {
+        Some(1..=149) => TextWeight::Thin,
+        Some(150..=249) => TextWeight::ExtraLight,
+        Some(250..=349) => TextWeight::Light,
+        Some(350..=449) => TextWeight::Normal,
+        Some(450..=549) => TextWeight::Medium,
+        Some(550..=649) => TextWeight::SemiBold,
+        Some(650..=749) => TextWeight::Bold,
+        Some(750..=849) => TextWeight::ExtraBold,
+        Some(850..=1_000) => TextWeight::Black,
+        Some(_) | None => fallback,
+    }
 }
 
 pub(super) fn push_control_border(
@@ -481,20 +382,4 @@ fn paint_corner_radius_to_box_shadow(
     radius: super::PaintRectCornerRadius,
 ) -> ViewBoxShadowCornerRadius {
     ViewBoxShadowCornerRadius::new(radius.x_px, radius.y_px)
-}
-
-pub(super) fn state_from_interaction(
-    interaction: ControlInteractionStyleState,
-) -> RenderControlVisualState {
-    if !interaction.enabled {
-        RenderControlVisualState::Disabled
-    } else if interaction.pointer == ControlPointerStyleState::Pressed {
-        RenderControlVisualState::Pressed
-    } else if interaction.focused {
-        RenderControlVisualState::FocusVisible
-    } else if interaction.pointer == ControlPointerStyleState::Hovered {
-        RenderControlVisualState::Hover
-    } else {
-        RenderControlVisualState::Normal
-    }
 }

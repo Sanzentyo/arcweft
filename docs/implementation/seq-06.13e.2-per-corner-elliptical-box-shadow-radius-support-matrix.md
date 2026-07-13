@@ -1,5 +1,10 @@
 # seq06.13e.2 Per-Corner / Elliptical Box-Shadow Radius Support Matrix
 
+> **Superseded Style-path premise (2026-07-13):** Takumi/CSS support claims in
+> this matrix were removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). Generic
+> radius/shadow renderer entries are retained as historical evidence.
+
 | Area | Status | Evidence in package | Notes |
 | --- | --- | --- | --- |
 | Public renderer radius model | Implemented | `ViewBoxShadowRadii`, `ViewBoxShadowCornerRadius` | Owned by `arcweft-render-wgpu::view_scene`. |

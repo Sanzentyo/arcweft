@@ -8,9 +8,8 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderControlBorderStyle, RenderControlFilter,
-    RenderControlFilterList, RenderControlStyle, RenderControlVisualStyle, RenderImage,
-    RenderImageFrame, RenderPreferences, RenderScene, RenderTextInputControl, RenderViewport,
-    SharedFramePlanContext,
+    RenderControlFilterList, RenderControlVisualStyle, RenderImage, RenderImageFrame,
+    RenderPreferences, RenderScene, RenderTextInputControl, RenderViewport, SharedFramePlanContext,
 };
 
 const TEST_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
@@ -200,17 +199,14 @@ fn foreground_scene(filter: bool) -> RenderScene {
 }
 
 fn stroke_control(stroke: bool) -> RenderTextInputControl {
-    let style = RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            fill: Some([0.0, 0.0, 0.0, 0.0]),
-            radius_px: Some(14.0),
-            border: stroke.then_some(RenderControlBorderStyle {
-                color: [0.0, 1.0, 0.65, 1.0],
-                width_px: 4.0,
-            }),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let style = RenderControlVisualStyle {
+        fill: Some([0.0, 0.0, 0.0, 0.0]),
+        radius_px: Some(14.0),
+        border: stroke.then_some(RenderControlBorderStyle {
+            color: [0.0, 1.0, 0.65, 1.0],
+            width_px: 4.0,
+        }),
+        ..RenderControlVisualStyle::default()
     };
     RenderTextInputControl::new(
         target("input.stroke"),
@@ -225,15 +221,12 @@ fn stroke_control(stroke: bool) -> RenderTextInputControl {
 }
 
 fn control(backdrop: bool) -> RenderTextInputControl {
-    let style = RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            fill: Some([0.0, 0.0, 0.0, 0.0]),
-            backdrop_filters: backdrop.then_some(RenderControlFilterList {
-                filters: vec![RenderControlFilter::Blur { radius_px: 6.0 }],
-            }),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let style = RenderControlVisualStyle {
+        fill: Some([0.0, 0.0, 0.0, 0.0]),
+        backdrop_filters: backdrop.then_some(RenderControlFilterList {
+            filters: vec![RenderControlFilter::Blur { radius_px: 6.0 }],
+        }),
+        ..RenderControlVisualStyle::default()
     };
     RenderTextInputControl::new(
         target("input.backdrop"),
@@ -248,15 +241,12 @@ fn control(backdrop: bool) -> RenderTextInputControl {
 }
 
 fn foreground_control(filter: bool) -> RenderTextInputControl {
-    let style = RenderControlStyle {
-        normal: RenderControlVisualStyle {
-            fill: Some([1.0, 1.0, 1.0, 1.0]),
-            filters: filter.then_some(RenderControlFilterList {
-                filters: vec![RenderControlFilter::Blur { radius_px: 6.0 }],
-            }),
-            ..RenderControlVisualStyle::default()
-        },
-        ..RenderControlStyle::default()
+    let style = RenderControlVisualStyle {
+        fill: Some([1.0, 1.0, 1.0, 1.0]),
+        filters: filter.then_some(RenderControlFilterList {
+            filters: vec![RenderControlFilter::Blur { radius_px: 6.0 }],
+        }),
+        ..RenderControlVisualStyle::default()
     };
     RenderTextInputControl::new(
         target("input.foreground_filter"),

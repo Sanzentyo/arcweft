@@ -1,5 +1,7 @@
 # seq06.11a CSS computed style direct paint extractor
 
+> **Superseded (2026-07-13):** Arcweft now has a native-only typed Style path. The CSS authoring, Takumi adapter, and CSS-named sample/tooling paths described below were removed; the remaining text is retained only as historical implementation evidence.
+
 ## Summary
 
 Applied `arcweft-seq06.11a-css-computed-style-direct-paint-extractor-2026-06-29.zip` to the current checkout.

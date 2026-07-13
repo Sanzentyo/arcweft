@@ -2,11 +2,9 @@ use arcweft_bundle::resource_codec::{
     ViewLogicalRect, ViewRuntimeButtonBounds, view::ViewInputKind,
 };
 use arcweft_lang_syntax::{
-    ast::view::{ViewArg, ViewButton, ViewModifier, ViewStyleModifier},
+    ast::view::{ViewArg, ViewButton, ViewModifier},
     expr::{Expr, Literal, UnitNumberSuffix},
 };
-
-use super::bundle_view::normalize_property_name;
 
 pub(in crate::app) const VIEW_LAYOUT_GAP_MILLI: i32 = 16_000;
 pub(in crate::app) const VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI: u32 = 420_000;
@@ -129,16 +127,13 @@ pub(in crate::app) fn modifier_layout_length_i32(
 }
 
 pub(in crate::app) fn text_block_frame(text: &str, modifiers: &[ViewModifier]) -> ViewLayoutFrame {
-    let width_milli = modifier_style_or_property_length_u32(
-        modifiers,
-        &["width", "w", "inline-size", "inline_size"],
-    )
-    .unwrap_or(VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI)
-    .max(1);
-    let font_size_milli =
-        modifier_style_or_property_length_u32(modifiers, &["font-size"]).unwrap_or(20_000);
+    let width_milli =
+        modifier_layout_length_u32(modifiers, &["width", "w", "inline-size", "inline_size"])
+            .unwrap_or(VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI)
+            .max(1);
+    let font_size_milli = modifier_layout_length_u32(modifiers, &["font-size"]).unwrap_or(20_000);
     let fallback_line_height = font_size_milli.saturating_mul(6).saturating_add(4) / 5;
-    let line_height_milli = modifier_style_or_property_length_u32(
+    let line_height_milli = modifier_layout_length_u32(
         modifiers,
         &["line-height", "line-height-milli", "line_height_milli"],
     )
@@ -146,12 +141,10 @@ pub(in crate::app) fn text_block_frame(text: &str, modifiers: &[ViewModifier]) -
     .max(VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI);
     let line_count = estimated_wrapped_text_lines(text, width_milli, font_size_milli);
     let inferred_height_milli = line_height_milli.saturating_mul(line_count);
-    let height_milli = modifier_style_or_property_length_u32(
-        modifiers,
-        &["height", "h", "block-size", "block_size"],
-    )
-    .unwrap_or(inferred_height_milli)
-    .max(1);
+    let height_milli =
+        modifier_layout_length_u32(modifiers, &["height", "h", "block-size", "block_size"])
+            .unwrap_or(inferred_height_milli)
+            .max(1);
     ViewLayoutFrame::new(width_milli, height_milli)
 }
 
@@ -174,14 +167,6 @@ pub(in crate::app) fn named_arg<'a>(args: &'a [ViewArg], name: &str) -> Option<&
         } if actual == name => Some(value),
         _ => None,
     })
-}
-
-fn modifier_style_or_property_length_u32(
-    modifiers: &[ViewModifier],
-    names: &[&str],
-) -> Option<u32> {
-    modifier_layout_length_u32(modifiers, names)
-        .or_else(|| modifier_inline_style_length_u32(modifiers, names))
 }
 
 fn estimated_wrapped_text_lines(text: &str, width_milli: u32, font_size_milli: u32) -> u32 {
@@ -222,25 +207,6 @@ fn estimated_text_advance_milli(ch: char, font_size_milli: u32) -> u32 {
         .saturating_mul(ratio_milli)
         .saturating_add(999)
         / 1_000
-}
-
-fn modifier_inline_style_length_u32(modifiers: &[ViewModifier], names: &[&str]) -> Option<u32> {
-    modifiers.iter().find_map(|modifier| {
-        let ViewModifier::Style(ViewStyleModifier::Inline(patch)) = modifier else {
-            return None;
-        };
-        patch.declarations().iter().find_map(|declaration| {
-            let name = normalize_property_name(declaration.property().text());
-            names
-                .iter()
-                .any(|candidate| name == normalize_property_name(candidate))
-                .then(|| {
-                    expr_px_milli(declaration.value().expr())
-                        .and_then(|value| u32::try_from(value.max(1)).ok())
-                })
-                .flatten()
-        })
-    })
 }
 
 fn expr_px_milli(expr: &Expr) -> Option<i32> {

@@ -1,8 +1,8 @@
 use crate::{
     ContainerKind, CustomElementId, EntityStore, EventBinding, EventKind, FragmentKind, HandlerId,
     ImageId, LayoutBox, LayoutKind, LayoutLength, LayoutPoint, LayoutResults, LayoutSize,
-    LayoutTree, NodeId, NodeKey, RichTextSourceId, SemanticSpecId, StyleId, TextSourceId,
-    ViewError, ViewFragmentBuilder, ViewId,
+    LayoutTree, NodeId, NodeKey, RichTextSourceId, SemanticSpecId, TextSourceId, ViewError,
+    ViewFragmentBuilder, ViewId, ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -23,11 +23,15 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
         .unwrap();
 
     let mut builder = ViewFragmentBuilder::default();
+    let styles = [
+        ViewStyleApplicationTarget::named(ViewStyleSheetId::try_new("style.dialogue").unwrap()),
+        ViewStyleApplicationTarget::inline(ViewStylePatchId::new(3)),
+    ];
     let rich_text = builder
         .push_node(
             NodeKey(10),
             FragmentKind::RichText(RichTextSourceId(1)),
-            StyleId(1),
+            &styles,
             &[],
             &[EventBinding::new(EventKind::Activate, HandlerId(9))],
             Some(SemanticSpecId(1)),
@@ -37,7 +41,7 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
         .push_node(
             NodeKey(11),
             FragmentKind::Image(ImageId(2)),
-            StyleId(2),
+            &[],
             &[],
             &[],
             None,
@@ -47,7 +51,7 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
         .push_node(
             NodeKey(12),
             FragmentKind::View(view_state.raw()),
-            StyleId(3),
+            &[],
             &[],
             &[],
             None,
@@ -57,7 +61,7 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
         .push_node(
             NodeKey(13),
             FragmentKind::Custom(CustomElementId(7)),
-            StyleId(4),
+            &[],
             &[],
             &[],
             None,
@@ -67,7 +71,7 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
         .push_node(
             NodeKey(14),
             FragmentKind::Container(ContainerKind::Stack),
-            StyleId(5),
+            &[],
             &[rich_text, image, nested_view, custom],
             &[],
             None,
@@ -84,7 +88,10 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
         fragment.node_events(rich_text),
         Some([EventBinding::new(EventKind::Activate, HandlerId(9))].as_slice())
     );
-    assert_eq!(fragment.nodes()[rich_text.0 as usize].style(), StyleId(1));
+    assert_eq!(
+        fragment.node_style_applications(rich_text),
+        Some(styles.as_slice())
+    );
 }
 
 #[test]
@@ -94,7 +101,7 @@ fn view_fragment_rejects_duplicate_keys_and_missing_children() {
         .push_node(
             NodeKey(1),
             FragmentKind::Text(TextSourceId(1)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -105,7 +112,7 @@ fn view_fragment_rejects_duplicate_keys_and_missing_children() {
         builder.push_node(
             NodeKey(1),
             FragmentKind::Text(TextSourceId(2)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None
@@ -116,7 +123,7 @@ fn view_fragment_rejects_duplicate_keys_and_missing_children() {
         builder.push_node(
             NodeKey(2),
             FragmentKind::Container(ContainerKind::Block),
-            StyleId(1),
+            &[],
             &[NodeId(99)],
             &[],
             None
@@ -132,7 +139,7 @@ fn layout_tree_preserves_fragment_node_order_and_child_counts() {
         .push_node(
             NodeKey(1),
             FragmentKind::Text(TextSourceId(1)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -142,7 +149,7 @@ fn layout_tree_preserves_fragment_node_order_and_child_counts() {
         .push_node(
             NodeKey(2),
             FragmentKind::Image(ImageId(1)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -152,7 +159,7 @@ fn layout_tree_preserves_fragment_node_order_and_child_counts() {
         .push_node(
             NodeKey(3),
             FragmentKind::Container(ContainerKind::Block),
-            StyleId(1),
+            &[],
             &[text, image],
             &[],
             None,
@@ -177,7 +184,7 @@ fn layout_results_report_missing_and_invalid_nodes() {
         .push_node(
             NodeKey(1),
             FragmentKind::Text(TextSourceId(1)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,

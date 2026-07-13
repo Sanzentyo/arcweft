@@ -1,8 +1,8 @@
 use crate::{
     ContainerKind, CustomElementId, DisplayItemKind, DisplayList, EntityStore, FragmentKind,
     ImageId, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeKey,
-    RichTextSourceId, SemanticSpecId, StyleId, TextSourceId, ViewError, ViewFragmentBuilder,
-    ViewId, ViewLayerOutput, ViewSemanticFragmentBuilder, ViewSemanticNode,
+    RichTextSourceId, SemanticSpecId, TextSourceId, ViewError, ViewFragmentBuilder, ViewId,
+    ViewLayerOutput, ViewSemanticFragmentBuilder, ViewSemanticNode,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -35,7 +35,7 @@ fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
         .push_node(
             NodeKey(1),
             FragmentKind::Text(TextSourceId(1)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -45,7 +45,7 @@ fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
         .push_node(
             NodeKey(2),
             FragmentKind::RichText(RichTextSourceId(2)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -55,7 +55,7 @@ fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
         .push_node(
             NodeKey(3),
             FragmentKind::Image(ImageId(3)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -65,7 +65,7 @@ fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
         .push_node(
             NodeKey(4),
             FragmentKind::View(view.raw()),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -75,7 +75,7 @@ fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
         .push_node(
             NodeKey(5),
             FragmentKind::Custom(CustomElementId(4)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -85,7 +85,7 @@ fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
         .push_node(
             NodeKey(6),
             FragmentKind::Container(ContainerKind::Stack),
-            StyleId(1),
+            &[],
             &[text, rich_text, image, mounted, custom],
             &[],
             None,
@@ -130,7 +130,7 @@ fn display_list_requires_layout_for_paint_nodes_only() {
         .push_node(
             NodeKey(1),
             FragmentKind::Text(TextSourceId(1)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             None,
@@ -140,7 +140,7 @@ fn display_list_requires_layout_for_paint_nodes_only() {
         .push_node(
             NodeKey(2),
             FragmentKind::Container(ContainerKind::Block),
-            StyleId(1),
+            &[],
             &[text],
             &[],
             None,
@@ -175,7 +175,7 @@ fn view_layer_output_pairs_display_list_and_semantics_for_frame_commit() {
         .push_node(
             NodeKey(1),
             FragmentKind::RichText(RichTextSourceId(1)),
-            StyleId(1),
+            &[],
             &[],
             &[],
             Some(SemanticSpecId(1)),
@@ -185,7 +185,7 @@ fn view_layer_output_pairs_display_list_and_semantics_for_frame_commit() {
         .push_node(
             NodeKey(2),
             FragmentKind::Container(ContainerKind::Block),
-            StyleId(1),
+            &[],
             &[rich_text],
             &[],
             None,

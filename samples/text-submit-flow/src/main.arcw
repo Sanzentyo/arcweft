@@ -11,11 +11,11 @@ entry game @entry.text_submit_flow {
 
 pub style primary_button {
   Button:hover {
-    background = rgba(54, 190, 170, 255)
+    background-color = rgba(54, 190, 170, 255)
   }
 
   Button:active {
-    background = rgba(42, 156, 140, 255)
+    background-color = rgba(42, 156, 140, 255)
   }
 }
 

@@ -2,7 +2,7 @@
 
 use crate::{
     DisplayList, LayoutResults, RetainedViewFxTable, ViewError, ViewFragment,
-    ViewHandlerRouteTable, ViewSemanticFragment, ViewStyleTable,
+    ViewHandlerRouteTable, ViewSemanticFragment, ViewStyleProgram,
 };
 
 /// Per-layer View output ready for host-side frame commit validation.
@@ -11,7 +11,7 @@ pub struct ViewLayerOutput {
     display: DisplayList,
     semantics: ViewSemanticFragment,
     handlers: ViewHandlerRouteTable,
-    styles: ViewStyleTable,
+    style_program: ViewStyleProgram,
     fx: RetainedViewFxTable,
 }
 
@@ -21,7 +21,7 @@ impl ViewLayerOutput {
             display,
             semantics,
             handlers: ViewHandlerRouteTable::default(),
-            styles: ViewStyleTable::default(),
+            style_program: ViewStyleProgram::default(),
             fx: RetainedViewFxTable::default(),
         }
     }
@@ -31,14 +31,19 @@ impl ViewLayerOutput {
         layouts: &LayoutResults,
         semantics: ViewSemanticFragment,
     ) -> Result<Self, ViewError> {
-        Self::from_fragment_with_styles(fragment, layouts, semantics, ViewStyleTable::default())
+        Self::from_fragment_with_style_program(
+            fragment,
+            layouts,
+            semantics,
+            ViewStyleProgram::default(),
+        )
     }
 
-    pub fn from_fragment_with_styles(
+    pub fn from_fragment_with_style_program(
         fragment: &ViewFragment,
         layouts: &LayoutResults,
         semantics: ViewSemanticFragment,
-        styles: ViewStyleTable,
+        style_program: ViewStyleProgram,
     ) -> Result<Self, ViewError> {
         let display = DisplayList::from_fragment(fragment, layouts)?;
         let handlers = ViewHandlerRouteTable::from_fragment(fragment, &semantics)?;
@@ -46,7 +51,7 @@ impl ViewLayerOutput {
             display,
             semantics,
             handlers,
-            styles,
+            style_program,
             fx: RetainedViewFxTable::default(),
         })
     }
@@ -70,8 +75,8 @@ impl ViewLayerOutput {
         &self.handlers
     }
 
-    pub const fn styles(&self) -> &ViewStyleTable {
-        &self.styles
+    pub const fn style_program(&self) -> &ViewStyleProgram {
+        &self.style_program
     }
 
     pub const fn fx(&self) -> &RetainedViewFxTable {
@@ -88,14 +93,14 @@ impl ViewLayerOutput {
         DisplayList,
         ViewSemanticFragment,
         ViewHandlerRouteTable,
-        ViewStyleTable,
+        ViewStyleProgram,
         RetainedViewFxTable,
     ) {
         (
             self.display,
             self.semantics,
             self.handlers,
-            self.styles,
+            self.style_program,
             self.fx,
         )
     }

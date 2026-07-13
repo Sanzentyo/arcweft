@@ -39,9 +39,9 @@ use arcweft_bundle::patch::{
     PatchValidationError, apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::{
-    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeControlStyleDiagnostics,
-    ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
-    ViewRuntimeTextControl, ViewRuntimeTextSelection,
+    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
+    ViewRuntimeTextControl, ViewRuntimeTextSelection, ViewThemeEnvironmentError,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
@@ -71,10 +71,13 @@ use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
 use arcweft_interaction_model::payload::InteractionPayload;
+use arcweft_presentation::appearance::{
+    ColorScheme, EnvironmentRevision, PresentationEnvironment, SystemPaletteSet,
+};
 use arcweft_presentation::input::Action;
 use arcweft_presentation::text_input::TextControlWriteBack;
 use arcweft_render_text::LineDisplayCatalog;
-use arcweft_view::virtualization::ViewVirtualizationRuntime;
+use arcweft_view::{ViewStyleProgram, virtualization::ViewVirtualizationRuntime};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -92,6 +95,8 @@ pub struct BundleSessionOptions {
     pub mode: RuntimeStepMode,
     pub max_ops: usize,
     pub root_bindings: Vec<RuntimeBinding>,
+    /// Host-resolved system color scheme used when the View theme selects `System`.
+    pub system_color_scheme: ColorScheme,
 }
 
 impl Default for BundleSessionOptions {
@@ -102,6 +107,7 @@ impl Default for BundleSessionOptions {
             mode: RuntimeStepMode::Game,
             max_ops: 64,
             root_bindings: Vec::new(),
+            system_color_scheme: ColorScheme::Dark,
         }
     }
 }
@@ -214,11 +220,12 @@ pub struct BundleSession {
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
-    runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     fx_definitions: FxDefinitions,
     view_runtime: BundleViewRuntime,
+    view_style_environment: PresentationEnvironment,
+    view_style_palettes: SystemPaletteSet,
     view_reduce_motion: bool,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
@@ -261,6 +268,8 @@ pub enum BundleSessionError {
     DecodeBytecode(#[from] RuntimePlanError),
     #[error("failed to verify bundle bytecode: {0}")]
     VerifyBytecode(#[from] BytecodeVerificationError),
+    #[error(transparent)]
+    ViewThemeEnvironment(#[from] ViewThemeEnvironmentError),
     #[error("product bundle is missing canonical AWBC executable payload")]
     MissingProductAwbc,
     #[error("failed to verify product AWBC generation: {message}")]
@@ -503,11 +512,12 @@ impl BundleSession {
         let action_buttons = runtime.action_buttons.clone();
         let scroll_regions = runtime.scroll_regions.clone();
         let surfaces = runtime.surfaces.clone();
-        let runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics.clone();
         let focus_groups = runtime.focus_groups.clone();
         let focus_navigation = runtime.focus_navigation.clone();
         let fx_definitions = runtime.fx_definitions.clone();
         let view_runtime = runtime.view_runtime.clone();
+        let view_style_environment = runtime.view_style_environment.clone();
+        let view_style_palettes = runtime.view_style_palettes;
         let view_reduce_motion = runtime.view_reduce_motion;
         let source_label = runtime.source_label.clone();
 
@@ -524,11 +534,12 @@ impl BundleSession {
             action_buttons,
             scroll_regions,
             surfaces,
-            runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
             fx_definitions,
             view_runtime,
+            view_style_environment,
+            view_style_palettes,
             view_reduce_motion,
             options,
             pending_input_events: Vec::new(),
@@ -618,6 +629,24 @@ impl BundleSession {
 
     pub const fn presentation(&self) -> &BundlePresentationSnapshot {
         &self.presentation
+    }
+
+    /// Canonical native Style program for the currently active View runtime.
+    #[must_use]
+    pub const fn view_style_program(&self) -> Option<&ViewStyleProgram> {
+        self.view_runtime.style_program()
+    }
+
+    /// Theme defaults resolved into the pure environment consumed by Style.
+    #[must_use]
+    pub const fn view_style_environment(&self) -> &PresentationEnvironment {
+        &self.view_style_environment
+    }
+
+    /// Engine palette plus typed `ViewTheme` role overrides.
+    #[must_use]
+    pub const fn view_style_palettes(&self) -> &SystemPaletteSet {
+        &self.view_style_palettes
     }
 
     /// Queues a core input event produced by a platform/presentation adapter.
@@ -857,13 +886,14 @@ impl BundleSession {
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
                 self.scroll_regions.clone_from(&next_runtime.scroll_regions);
                 self.surfaces.clone_from(&next_runtime.surfaces);
-                self.runtime_control_style_diagnostics
-                    .clone_from(&next_runtime.runtime_control_style_diagnostics);
                 self.focus_groups.clone_from(&next_runtime.focus_groups);
                 self.focus_navigation
                     .clone_from(&next_runtime.focus_navigation);
                 self.fx_definitions.clone_from(&next_runtime.fx_definitions);
                 self.view_runtime = next_runtime.view_runtime.clone();
+                self.view_style_environment
+                    .clone_from(&next_runtime.view_style_environment);
+                self.view_style_palettes = next_runtime.view_style_palettes;
                 self.view_reduce_motion = next_runtime.view_reduce_motion;
             }
             SwapCompatibility::CodeCompatible => {
@@ -1015,10 +1045,6 @@ impl BundleSession {
     }
 
     /// Executes exactly one VM step using explicit, non-zero logical time.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one step atomically drains VM output, reconciles presentation state, and returns its complete boundary record"
-    )]
     pub fn step_with_clock(
         &mut self,
         clock: RuntimeClockStep,
@@ -1064,12 +1090,6 @@ impl BundleSession {
                 .filter_map(presentation_transition_diagnostic),
         );
         diagnostics.extend(display.diagnostics.iter().cloned());
-        diagnostics.extend(
-            self.runtime_control_style_diagnostics
-                .diagnostics
-                .iter()
-                .map(ToString::to_string),
-        );
         let previous_text_inputs = self.presentation.text_inputs.clone();
         self.update_presentation_snapshot(
             &display,
@@ -1793,11 +1813,12 @@ impl BundleSession {
         self.action_buttons = runtime.action_buttons;
         self.scroll_regions = runtime.scroll_regions;
         self.surfaces = runtime.surfaces;
-        self.runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics;
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;
         self.fx_definitions = runtime.fx_definitions;
         self.view_runtime = runtime.view_runtime;
+        self.view_style_environment = runtime.view_style_environment;
+        self.view_style_palettes = runtime.view_style_palettes;
         self.view_reduce_motion = runtime.view_reduce_motion;
     }
 
@@ -1886,7 +1907,7 @@ mod text_control_writeback_tests {
     use super::*;
     use arcweft_bundle::resource_codec::view::{
         CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-        ViewInputPurpose, ViewRuntimeControlStyle, ViewRuntimeTextControlBounds,
+        ViewInputPurpose, ViewRuntimeControlVisualStyle, ViewRuntimeTextControlBounds,
         ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewSecureInputPolicy,
         ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
         ViewTextVerticalNavigationPolicy,
@@ -1924,7 +1945,7 @@ mod text_control_writeback_tests {
             bounds: ViewRuntimeTextControlBounds::from_px(0, 0, 100, 24),
             label: None,
             handlers: ViewRuntimeTextControlHandlers::default(),
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }
     }
 
@@ -1972,11 +1993,12 @@ struct SessionRuntime {
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
-    runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     fx_definitions: FxDefinitions,
     view_runtime: BundleViewRuntime,
+    view_style_environment: PresentationEnvironment,
+    view_style_palettes: SystemPaletteSet,
     view_reduce_motion: bool,
 }
 
@@ -2005,11 +2027,12 @@ struct SessionRuntimeResources {
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
-    runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     fx_definitions: FxDefinitions,
     view_runtime: BundleViewRuntime,
+    view_style_environment: PresentationEnvironment,
+    view_style_palettes: SystemPaletteSet,
     view_reduce_motion: bool,
 }
 
@@ -2065,11 +2088,12 @@ impl SessionRuntime {
             action_buttons: resources.action_buttons,
             scroll_regions: resources.scroll_regions,
             surfaces: resources.surfaces,
-            runtime_control_style_diagnostics: resources.runtime_control_style_diagnostics,
             focus_groups: resources.focus_groups,
             focus_navigation: resources.focus_navigation,
             fx_definitions: resources.fx_definitions,
             view_runtime: resources.view_runtime,
+            view_style_environment: resources.view_style_environment,
+            view_style_palettes: resources.view_style_palettes,
             view_reduce_motion: resources.view_reduce_motion,
         })
     }
@@ -2093,11 +2117,12 @@ impl SessionRuntime {
                 action_buttons: self.action_buttons.clone(),
                 scroll_regions: self.scroll_regions.clone(),
                 surfaces: self.surfaces.clone(),
-                runtime_control_style_diagnostics: self.runtime_control_style_diagnostics.clone(),
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
                 fx_definitions: self.fx_definitions.clone(),
                 view_runtime: self.view_runtime.clone(),
+                view_style_environment: self.view_style_environment.clone(),
+                view_style_palettes: self.view_style_palettes,
                 view_reduce_motion: self.view_reduce_motion,
             },
         )
@@ -2123,10 +2148,10 @@ fn build_session_runtime(
     if let SessionLaunchTarget::Entry(entry) = launch_target {
         ensure_session_awbc_entry_selects_flow(&program, entry)?;
     }
-    let mut text_inputs = bundle.view_input.as_ref().map_or_else(Vec::new, |input| {
+    let text_inputs = bundle.view_input.as_ref().map_or_else(Vec::new, |input| {
         input.runtime_text_controls(bundle.view_text.as_ref(), bundle.view_program.as_ref())
     });
-    let mut action_buttons = bundle
+    let action_buttons = bundle
         .view_program
         .as_ref()
         .map_or_else(Vec::new, |program| {
@@ -2136,23 +2161,10 @@ fn build_session_runtime(
         .view_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_scroll_regions);
-    let styled_surfaces = bundle
+    let surfaces = bundle
         .view_program
         .as_ref()
-        .map_or_else(Default::default, |program| {
-            program.runtime_surfaces_with_style(bundle.view_style.as_ref())
-        });
-    let surfaces = styled_surfaces.controls;
-    let mut runtime_control_style_diagnostics = styled_surfaces.diagnostics;
-    runtime_control_style_diagnostics.extend(
-        bundle
-            .view_program
-            .as_ref()
-            .zip(bundle.view_style.as_ref())
-            .map_or_else(Default::default, |(program, style)| {
-                program.apply_runtime_styles(style, &mut text_inputs, &mut action_buttons, &mut [])
-            }),
-    );
+        .map_or_else(Vec::new, ViewProgramResource::runtime_surfaces);
     let focus_groups = bundle
         .view_program
         .as_ref()
@@ -2166,8 +2178,14 @@ fn build_session_runtime(
         bundle.view_text.clone(),
         bundle.view_style.as_ref(),
     )?;
-    runtime_control_style_diagnostics.extend(view_runtime.text_style_diagnostics().clone());
-
+    let view_theme = bundle.view_theme.clone().unwrap_or_default();
+    let view_style_environment = view_theme.presentation_environment(
+        options.system_color_scheme,
+        None,
+        EnvironmentRevision::default(),
+    )?;
+    let view_style_palettes = view_theme.system_palette_set();
+    let view_reduce_motion = view_style_environment.reduce_motion();
     SessionRuntime::new(
         bundle.manifest.source_label.clone(),
         program,
@@ -2179,15 +2197,13 @@ fn build_session_runtime(
             action_buttons,
             scroll_regions,
             surfaces,
-            runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
             fx_definitions: bundle.fx_definitions.clone(),
             view_runtime,
-            view_reduce_motion: bundle
-                .view_theme
-                .as_ref()
-                .is_some_and(|theme| theme.defaults.reduce_motion),
+            view_style_environment,
+            view_style_palettes,
+            view_reduce_motion,
         },
     )
     .map_err(BundleSessionError::from)

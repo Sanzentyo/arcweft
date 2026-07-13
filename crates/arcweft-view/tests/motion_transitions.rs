@@ -1,13 +1,44 @@
+use arcweft_presentation::appearance::PresentationColor;
 use arcweft_view::{
-    Milli, Rgba8, ViewEasingFunction, ViewKeyframe, ViewKeyframeTrack, ViewPropertyKind,
-    ViewPropertyValue, ViewReducedMotionPolicy, ViewTimelineMillis, ViewTransition,
-    ViewTransitionSpec,
+    ViewColorValue, ViewEasingFunction, ViewKeyframe, ViewKeyframeTrack, ViewLengthMilli,
+    ViewPropertyKind, ViewRatioMilli, ViewReducedMotionPolicy, ViewScalarMilli, ViewSpecifiedValue,
+    ViewTimelineMillis, ViewTransition, ViewTransitionSpec,
 };
+
+fn ratio(value: u16) -> ViewRatioMilli {
+    ViewRatioMilli::new(value).unwrap()
+}
+
+fn ratio_value(value: u16) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Ratio {
+        value: ratio(value),
+    }
+}
+
+fn scalar_value(value: u32) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Scalar {
+        value: ViewScalarMilli::new(value),
+    }
+}
+
+fn length_value(value: i32) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Length {
+        value: ViewLengthMilli::new(value),
+    }
+}
+
+fn color(red: u8, green: u8, blue: u8, alpha: u8) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Color {
+        value: ViewColorValue::Literal {
+            color: PresentationColor::rgba(red, green, blue, alpha),
+        },
+    }
+}
 
 fn transition(
     property: ViewPropertyKind,
-    from: ViewPropertyValue,
-    to: ViewPropertyValue,
+    from: ViewSpecifiedValue,
+    to: ViewSpecifiedValue,
 ) -> ViewTransition {
     ViewTransition::new(
         ViewTransitionSpec::new(property, 1_000, ViewEasingFunction::Linear),
@@ -22,58 +53,52 @@ fn transition(
 fn background_color_transition_interpolates_rgba_channels() {
     let sample = transition(
         ViewPropertyKind::BackgroundColor,
-        ViewPropertyValue::Color(Rgba8::new(0, 0, 0, 255)),
-        ViewPropertyValue::Color(Rgba8::new(255, 128, 64, 127)),
+        color(0, 0, 0, 255),
+        color(255, 128, 64, 127),
     )
     .sample(ViewTimelineMillis::new(500), ViewReducedMotionPolicy::Full)
     .expect("sample succeeds");
 
-    assert_eq!(sample.linear_progress, Milli(500));
-    assert_eq!(
-        sample.sampled_value,
-        ViewPropertyValue::Color(Rgba8::new(128, 64, 32, 192))
-    );
+    assert_eq!(sample.linear_progress, ratio(500));
+    assert_eq!(sample.sampled_value, color(128, 64, 32, 192));
 }
 
 #[test]
-fn opacity_scale_and_outline_width_are_transitionable_paint_values() {
+fn opacity_scale_and_outline_width_are_transitionable_typed_values() {
     let opacity = transition(
         ViewPropertyKind::Opacity,
-        ViewPropertyValue::Milli(Milli(1_000)),
-        ViewPropertyValue::Milli(Milli(0)),
+        ratio_value(1_000),
+        ratio_value(0),
     )
     .sample(ViewTimelineMillis::new(250), ViewReducedMotionPolicy::Full)
     .expect("opacity samples");
-    assert_eq!(opacity.sampled_value, ViewPropertyValue::Milli(Milli(751)));
+    assert_eq!(opacity.sampled_value, ratio_value(751));
 
     let scale = transition(
         ViewPropertyKind::Scale,
-        ViewPropertyValue::Milli(Milli(1_000)),
-        ViewPropertyValue::Milli(Milli(2_000)),
+        scalar_value(1_000),
+        scalar_value(2_000),
     )
     .sample(ViewTimelineMillis::new(500), ViewReducedMotionPolicy::Full)
     .expect("scale samples");
-    assert_eq!(scale.sampled_value, ViewPropertyValue::Milli(Milli(1_500)));
+    assert_eq!(scale.sampled_value, scalar_value(1_500));
 
     let outline = transition(
         ViewPropertyKind::OutlineWidth,
-        ViewPropertyValue::Milli(Milli(0)),
-        ViewPropertyValue::Milli(Milli(4_000)),
+        length_value(0),
+        length_value(4_000),
     )
     .sample(ViewTimelineMillis::new(250), ViewReducedMotionPolicy::Full)
     .expect("outline samples");
-    assert_eq!(
-        outline.sampled_value,
-        ViewPropertyValue::Milli(Milli(1_000))
-    );
+    assert_eq!(outline.sampled_value, length_value(1_000));
 }
 
 #[test]
 fn reduced_motion_policy_can_shorten_or_disable_motion() {
     let transition = transition(
         ViewPropertyKind::TranslateX,
-        ViewPropertyValue::Milli(Milli(0)),
-        ViewPropertyValue::Milli(Milli(1_000)),
+        length_value(0),
+        length_value(1_000),
     );
 
     let shortened = transition
@@ -84,20 +109,14 @@ fn reduced_motion_policy_can_shorten_or_disable_motion() {
             },
         )
         .expect("shortened sample succeeds");
-    assert_eq!(shortened.linear_progress, Milli(500));
-    assert_eq!(
-        shortened.sampled_value,
-        ViewPropertyValue::Milli(Milli(500))
-    );
+    assert_eq!(shortened.linear_progress, ratio(500));
+    assert_eq!(shortened.sampled_value, length_value(500));
 
     let disabled = transition
         .sample(ViewTimelineMillis::new(1), ViewReducedMotionPolicy::Disable)
         .expect("disabled sample succeeds");
-    assert_eq!(disabled.linear_progress, Milli::ONE);
-    assert_eq!(
-        disabled.sampled_value,
-        ViewPropertyValue::Milli(Milli(1_000))
-    );
+    assert_eq!(disabled.linear_progress, ViewRatioMilli::ONE);
+    assert_eq!(disabled.sampled_value, length_value(1_000));
     assert!(disabled.finished);
 }
 
@@ -105,26 +124,23 @@ fn reduced_motion_policy_can_shorten_or_disable_motion() {
 fn interruption_starts_next_transition_from_sampled_value() {
     let first = transition(
         ViewPropertyKind::Opacity,
-        ViewPropertyValue::Milli(Milli(0)),
-        ViewPropertyValue::Milli(Milli(1_000)),
+        ratio_value(0),
+        ratio_value(1_000),
     );
     let reversed = first
         .interrupt(
             ViewTimelineMillis::new(500),
-            ViewPropertyValue::Milli(Milli(0)),
+            ratio_value(0),
             ViewTransitionSpec::new(ViewPropertyKind::Opacity, 1_000, ViewEasingFunction::Linear),
             ViewReducedMotionPolicy::Full,
         )
         .expect("interruption succeeds");
 
-    assert_eq!(
-        reversed.source_value(),
-        ViewPropertyValue::Milli(Milli(500))
-    );
+    assert_eq!(reversed.source_value(), &ratio_value(500));
     let sample = reversed
         .sample(ViewTimelineMillis::new(750), ViewReducedMotionPolicy::Full)
         .expect("reversed sample succeeds");
-    assert_eq!(sample.sampled_value, ViewPropertyValue::Milli(Milli(376)));
+    assert_eq!(sample.sampled_value, ratio_value(376));
 }
 
 #[test]
@@ -133,9 +149,9 @@ fn keyframe_track_samples_ordered_offsets() {
         ViewPropertyKind::Opacity,
         1_000,
         [
-            ViewKeyframe::new(Milli(0), ViewPropertyValue::Milli(Milli(0))),
-            ViewKeyframe::new(Milli(500), ViewPropertyValue::Milli(Milli(1_000))),
-            ViewKeyframe::new(Milli(1_000), ViewPropertyValue::Milli(Milli(0))),
+            ViewKeyframe::new(ratio(0), ratio_value(0)),
+            ViewKeyframe::new(ratio(500), ratio_value(1_000)),
+            ViewKeyframe::new(ratio(1_000), ratio_value(0)),
         ],
     )
     .expect("keyframe track is valid");
@@ -148,7 +164,7 @@ fn keyframe_track_samples_ordered_offsets() {
         )
         .expect("keyframe sample succeeds");
 
-    assert_eq!(sample.source_value, ViewPropertyValue::Milli(Milli(0)));
-    assert_eq!(sample.target_value, ViewPropertyValue::Milli(Milli(1_000)));
-    assert_eq!(sample.sampled_value, ViewPropertyValue::Milli(Milli(500)));
+    assert_eq!(sample.source_value, ratio_value(0));
+    assert_eq!(sample.target_value, ratio_value(1_000));
+    assert_eq!(sample.sampled_value, ratio_value(500));
 }

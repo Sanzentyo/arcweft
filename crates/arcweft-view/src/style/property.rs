@@ -610,6 +610,9 @@ impl ViewPropertyKind {
                 | Self::LineHeight
                 | Self::LetterSpacing
                 | Self::TextAlign
+                | Self::SelectionColor
+                | Self::CaretColor
+                | Self::CompositionUnderlineColor
         )
     }
 

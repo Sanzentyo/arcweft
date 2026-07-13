@@ -1,28 +1,34 @@
 use crate::container::BundleDigest;
 use arcweft_presentation::fx::FxRuntimeType;
-use arcweft_view::{ViewValueProgramId, ViewValueProgramInventory};
+use arcweft_view::{
+    ViewValueProgramId, ViewValueProgramInventory,
+    style::{
+        ViewSpecifiedValue, ViewStyleDeclaration, ViewStylePatch, ViewStylePredicate,
+        ViewStyleProgram, ViewStyleRule, ViewStyleSelector, ViewStyleSheet, ViewStyleSourceId,
+        ViewStyleToken,
+    },
+};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::resource_codec::budget::{SectionCodecBudget, check_budget};
 use crate::resource_codec::error::SectionCodecError;
-use crate::resource_codec::field::{
-    FieldId, FieldRegistry, FieldRequirement, FieldSpec, ResourceField, ResourceWireType,
-};
-use crate::resource_codec::header::PRODUCT_SECTION_SCHEMA_VERSION;
 use crate::resource_codec::kind::ProductSectionCodecKind;
-use crate::resource_codec::table::{EnumRegistry, EnumSymbol, PublicIdTable, StringTable};
-use crate::resource_codec::wire::ProductResourceEnvelope;
+use crate::resource_codec::table::PublicIdTable;
+use crate::resource_codec::types::SourceRangeRef;
 
 use super::compat::ViewResourceCompatibility;
 use super::model::{
     ViewInputOptions, ViewInputResource, ViewProgramInstruction, ViewProgramResource,
-    ViewStyleApplyRef, ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart,
-    ViewStyleValue, ViewTextResource, ViewTextSourceKind, ViewThemeResource,
-    ViewValueInputNamespace, ViewValueInputSource,
+    ViewStyleApplicationTarget, ViewStyleResource, ViewTextResource, ViewTextSourceKind,
+    ViewThemeResource, ViewValueInputNamespace, ViewValueInputSource,
 };
 
-const FIELD_VIEW_TRANSCRIPT: FieldId = FieldId(1);
+mod transcript;
+
+use self::transcript::{
+    decode_view_section, encode_view_section, export_json_bytes, validate_canonical_view_transcript,
+};
 
 /// Decode limits for migrated View resource families.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,11 +54,14 @@ pub struct ViewResourceBudget {
     pub focus_edges: usize,
     pub style_rules: usize,
     pub style_tokens: usize,
+    pub style_sheets: usize,
+    pub style_patches: usize,
+    pub style_declarations: usize,
+    pub style_token_depth: usize,
     pub selector_depth: usize,
     pub part_count: usize,
     pub environment_predicates: usize,
     pub source_map_refs: usize,
-    pub external_css_descriptors: usize,
     pub text_sources: usize,
     pub input_options: usize,
     pub palette_entries: usize,
@@ -103,11 +112,14 @@ impl Default for ViewResourceBudget {
             focus_edges: 1_000_000,
             style_rules: 262_144,
             style_tokens: 65_536,
+            style_sheets: 65_536,
+            style_patches: 262_144,
+            style_declarations: 1_000_000,
+            style_token_depth: 64,
             selector_depth: 32,
             part_count: 65_536,
             environment_predicates: 65_536,
             source_map_refs: 262_144,
-            external_css_descriptors: 65_536,
             text_sources: 262_144,
             input_options: 65_536,
             palette_entries: 4_096,
@@ -139,14 +151,17 @@ impl ViewProgramResource {
         bytes: &[u8],
         budget: ViewResourceBudget,
     ) -> Result<Self, SectionCodecError> {
-        let mut section: Self = decode_view_section(
+        let (mut section, transcript): (Self, _) = decode_view_section(
             bytes,
             ProductSectionCodecKind::ViewProgram,
             "view_program",
             &budget,
+            Self::public_ids,
+            Self::record_count,
         )?;
         section.canonicalize();
         section.validate(&budget)?;
+        validate_canonical_view_transcript(&transcript, &section)?;
         Ok(section)
     }
 
@@ -175,6 +190,12 @@ impl ViewProgramResource {
         ViewResourceCompatibility::ContentOnly
     }
 
+    /// Canonical public-ID table used when independently lowered View programs
+    /// are composed and their source references are rebased.
+    pub fn public_id_table(&self) -> Result<PublicIdTable, SectionCodecError> {
+        PublicIdTable::new(self.public_ids())
+    }
+
     fn canonicalize(&mut self) {
         self.value_programs
             .sort_by_key(arcweft_view::ViewValueProgram::id);
@@ -195,8 +216,12 @@ impl ViewProgramResource {
         }
         self.handlers
             .sort_by(|left, right| left.handler_id.cmp(&right.handler_id));
-        self.exported_parts
-            .sort_by(|left, right| left.part_id.cmp(&right.part_id));
+        self.exported_parts.sort_by(|left, right| {
+            left.view
+                .cmp(&right.view)
+                .then(left.public_name.cmp(&right.public_name))
+                .then(left.part_id.cmp(&right.part_id))
+        });
         self.semantic_targets
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.layout_bounds.sort_by(|left, right| {
@@ -220,8 +245,10 @@ impl ViewProgramResource {
 
     fn validate(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
         self.validate_budgets(budget)?;
+        self.validate_identity_contracts()?;
         self.validate_value_programs()?;
         self.validate_definitions()?;
+        self.validate_exported_parts()?;
         self.validate_control_flow_spans()?;
         self.validate_unique_ids()?;
         self.validate_layout_bounds()?;
@@ -230,10 +257,52 @@ impl ViewProgramResource {
         self.validate_text_blocks()?;
         self.validate_action_buttons()?;
         self.validate_focus_targets()?;
-        self.validate_fx_applications()
+        self.validate_fx_applications()?;
+        self.validate_source_refs()
+    }
+
+    fn validate_identity_contracts(&self) -> Result<(), SectionCodecError> {
+        if !valid_resource_identity(&self.program_id)
+            || self
+                .definitions
+                .iter()
+                .any(|definition| !valid_resource_identity(&definition.public_id))
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_program_identities",
+            ));
+        }
+        if self.exported_parts.iter().any(|exported| {
+            [&exported.view, &exported.part_id, &exported.public_name]
+                .into_iter()
+                .any(|identity| !valid_resource_identity(identity))
+        }) {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_exported_part_identities",
+            ));
+        }
+        if self
+            .instructions
+            .iter()
+            .filter_map(ViewProgramInstruction::part)
+            .any(|part| !valid_resource_identity(part))
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_instruction_parts",
+            ));
+        }
+        Ok(())
     }
 
     fn validate_budgets(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
+        self.validate_execution_budgets(budget)?;
+        self.validate_metadata_budgets(budget)
+    }
+
+    fn validate_execution_budgets(
+        &self,
+        budget: &ViewResourceBudget,
+    ) -> Result<(), SectionCodecError> {
         check_budget(
             self.value_programs.len(),
             budget.value_programs,
@@ -281,6 +350,13 @@ impl ViewProgramResource {
             budget.definition_parameters,
             "view_definition_parameters",
         )?;
+        Ok(())
+    }
+
+    fn validate_metadata_budgets(
+        &self,
+        budget: &ViewResourceBudget,
+    ) -> Result<(), SectionCodecError> {
         check_budget(self.handlers.len(), budget.handlers, "view_handlers")?;
         check_budget(
             self.exported_parts.len(),
@@ -330,6 +406,11 @@ impl ViewProgramResource {
                 .sum::<usize>(),
             budget.focus_edges,
             "view_focus_edges",
+        )?;
+        check_budget(
+            self.source_refs().count(),
+            budget.source_map_refs,
+            "view_program_source_ranges",
         )?;
         Ok(())
     }
@@ -395,7 +476,6 @@ impl ViewProgramResource {
                 | ViewProgramInstruction::EmitText { .. }
                 | ViewProgramInstruction::EmitImage { .. }
                 | ViewProgramInstruction::EmitCustom { .. }
-                | ViewProgramInstruction::ApplyStyle { .. }
                 | ViewProgramInstruction::BindHandler { .. }
                 | ViewProgramInstruction::AttachSemantic { .. } => {}
             }
@@ -533,6 +613,36 @@ impl ViewProgramResource {
         Ok(())
     }
 
+    fn validate_exported_parts(&self) -> Result<(), SectionCodecError> {
+        for exported in &self.exported_parts {
+            let definition = self
+                .definitions
+                .iter()
+                .find(|definition| definition.public_id == exported.view)
+                .ok_or(SectionCodecError::NonCanonicalTable(
+                    "view_exported_part_views",
+                ))?;
+            let instructions = self
+                .instructions
+                .get(
+                    definition.body.start_instruction as usize
+                        ..definition.body.end_instruction as usize,
+                )
+                .ok_or(SectionCodecError::NonCanonicalTable(
+                    "view_exported_part_definition_spans",
+                ))?;
+            if !instructions
+                .iter()
+                .any(|instruction| instruction.part() == Some(exported.part_id.as_str()))
+            {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_exported_part_targets",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn validate_control_flow_spans(&self) -> Result<(), SectionCodecError> {
         for (index, instruction) in self.instructions.iter().enumerate() {
             let definition_end = self
@@ -596,9 +706,17 @@ impl ViewProgramResource {
                 .map(|handler| handler.handler_id.clone()),
             "view_handlers",
         )?;
-        reject_duplicates(
-            self.exported_parts.iter().map(|part| part.part_id.clone()),
-            "view_exported_parts",
+        reject_duplicate_keys(
+            self.exported_parts
+                .iter()
+                .map(|part| (&part.view, &part.part_id)),
+            "view_exported_part_targets",
+        )?;
+        reject_duplicate_keys(
+            self.exported_parts
+                .iter()
+                .map(|part| (&part.view, &part.public_name)),
+            "view_exported_part_public_names",
         )?;
         reject_duplicates(
             self.semantic_targets
@@ -673,15 +791,59 @@ impl ViewProgramResource {
     }
 
     fn validate_text_blocks(&self) -> Result<(), SectionCodecError> {
-        if self
+        if !self
             .text_blocks
             .iter()
             .all(super::model::ViewTextBlockResource::is_valid)
         {
-            Ok(())
-        } else {
-            Err(SectionCodecError::NonCanonicalTable("view_text_blocks"))
+            return Err(SectionCodecError::NonCanonicalTable("view_text_blocks"));
         }
+        let text_blocks = self
+            .text_blocks
+            .iter()
+            .map(|block| (block.public_id.as_str(), block))
+            .collect::<BTreeMap<_, _>>();
+        let mut referenced = BTreeSet::new();
+        for definition in &self.definitions {
+            let instructions = &self.instructions[definition.body.start_instruction as usize
+                ..definition.body.end_instruction as usize];
+            for instruction in instructions {
+                let ViewProgramInstruction::EmitText {
+                    text_source,
+                    text_block,
+                    ..
+                } = instruction
+                else {
+                    continue;
+                };
+                let Some(block) = text_blocks.get(text_block.as_str()) else {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_emit_text_block_refs",
+                    ));
+                };
+                if !referenced.insert(text_block.as_str()) {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_emit_text_block_duplicate_refs",
+                    ));
+                }
+                if block.text_source != *text_source {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_emit_text_block_sources",
+                    ));
+                }
+                if block.view.as_deref() != Some(definition.public_id.as_str()) {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_emit_text_block_owners",
+                    ));
+                }
+            }
+        }
+        if referenced.len() != text_blocks.len() {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_emit_text_block_coverage",
+            ));
+        }
+        Ok(())
     }
 
     fn validate_surfaces(&self) -> Result<(), SectionCodecError> {
@@ -829,17 +991,67 @@ impl ViewProgramResource {
         Ok(())
     }
 
+    fn source_refs(&self) -> impl Iterator<Item = &SourceRangeRef> {
+        self.instructions
+            .iter()
+            .filter_map(ViewProgramInstruction::source)
+            .chain(
+                self.semantic_targets
+                    .iter()
+                    .filter_map(|item| item.source.as_ref()),
+            )
+            .chain(
+                self.layout_bounds
+                    .iter()
+                    .filter_map(|item| item.source.as_ref()),
+            )
+            .chain(
+                self.scroll_regions
+                    .iter()
+                    .filter_map(|item| item.source.as_ref()),
+            )
+            .chain(self.surfaces.iter().filter_map(|item| item.source.as_ref()))
+            .chain(
+                self.text_blocks
+                    .iter()
+                    .filter_map(|item| item.source.as_ref()),
+            )
+            .chain(
+                self.action_buttons
+                    .iter()
+                    .filter_map(|item| item.source.as_ref()),
+            )
+            .chain(
+                self.focus_groups
+                    .iter()
+                    .filter_map(|item| item.source.as_ref()),
+            )
+            .chain(self.focus_navigation.iter().flat_map(|item| {
+                item.source
+                    .iter()
+                    .chain(item.edges.iter().filter_map(|edge| edge.source.as_ref()))
+            }))
+    }
+
+    fn validate_source_refs(&self) -> Result<(), SectionCodecError> {
+        let public_ids = self.public_id_table()?;
+        self.source_refs()
+            .try_for_each(|source| public_ids.get(source.source).map(|_| ()))
+    }
+
     fn public_ids(&self) -> Vec<String> {
         unique_strings(
             [self.program_id.clone()]
                 .into_iter()
                 .chain(self.definitions.iter().flat_map(|definition| {
-                    std::iter::once(definition.public_id.clone()).chain(
-                        definition
-                            .parameters
-                            .iter()
-                            .map(|parameter| parameter.name.clone()),
-                    )
+                    std::iter::once(definition.public_id.clone())
+                        .chain(
+                            definition
+                                .parameters
+                                .iter()
+                                .map(|parameter| parameter.name.clone()),
+                        )
+                        .chain(style_apply_public_ids(&definition.styles))
                 }))
                 .chain(self.instructions.iter().flat_map(instruction_public_ids))
                 .chain(
@@ -847,11 +1059,13 @@ impl ViewProgramResource {
                         .iter()
                         .flat_map(|handler| [handler.handler_id.clone(), handler.event.clone()]),
                 )
-                .chain(
-                    self.exported_parts
-                        .iter()
-                        .flat_map(|part| [part.part_id.clone(), part.public_name.clone()]),
-                )
+                .chain(self.exported_parts.iter().flat_map(|part| {
+                    [
+                        part.view.clone(),
+                        part.part_id.clone(),
+                        part.public_name.clone(),
+                    ]
+                }))
                 .chain(
                     self.semantic_targets
                         .iter()
@@ -950,7 +1164,6 @@ fn surface_public_ids(surface: &super::model::ViewSurfaceResource) -> Vec<String
         Some(surface.public_id.clone()),
         surface.view.clone(),
         surface.containing_scroll_region.clone(),
-        surface.style.clone(),
     ]
     .into_iter()
     .flatten()
@@ -1001,7 +1214,7 @@ fn focus_navigation_public_ids(target: &super::model::ViewFocusNavigationResourc
 impl ViewStyleResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
-        section.canonicalize();
+        section.canonicalize()?;
         section.validate(&ViewResourceBudget::default())?;
         encode_view_section(
             ProductSectionCodecKind::ViewStyle,
@@ -1021,14 +1234,21 @@ impl ViewStyleResource {
         bytes: &[u8],
         budget: ViewResourceBudget,
     ) -> Result<Self, SectionCodecError> {
-        let mut section: Self = decode_view_section(
+        let (section, transcript): (Self, _) = decode_view_section(
             bytes,
             ProductSectionCodecKind::ViewStyle,
             "view_style",
             &budget,
+            Self::public_ids,
+            Self::record_count,
         )?;
-        section.canonicalize();
+        if !section.is_canonical_order() {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_style_inventory_order",
+            ));
+        }
         section.validate(&budget)?;
+        validate_canonical_view_transcript(&transcript, &section)?;
         Ok(section)
     }
 
@@ -1039,7 +1259,7 @@ impl ViewStyleResource {
 
     pub fn export_json_bytes(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
-        section.canonicalize();
+        section.canonicalize()?;
         let digest = section.canonical_digest()?;
         export_json_bytes(ProductSectionCodecKind::ViewStyle, &section, digest)
     }
@@ -1054,46 +1274,229 @@ impl ViewStyleResource {
         ViewResourceCompatibility::ContentOnly
     }
 
-    fn canonicalize(&mut self) {
-        self.arcweft_sources
-            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
-        self.css_sources
-            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
-        self.tokens
-            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
-        self.external_css_descriptors
-            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
-        self.part_rules
-            .sort_by(|left, right| left.part.cmp(&right.part));
+    /// Canonical public-ID table used by compiler source-map lowering and
+    /// section encoding. Callers must not reproduce this inventory manually.
+    pub fn public_id_table(&self) -> Result<PublicIdTable, SectionCodecError> {
+        PublicIdTable::new(self.public_ids())
+    }
+
+    pub(super) fn canonicalize(&mut self) -> Result<(), SectionCodecError> {
+        let mut source_order = (0..self.source_map_refs.len()).collect::<Vec<_>>();
+        source_order.sort_by_key(|index| {
+            let range = self.source_map_refs[*index];
+            (range.source, range.start_byte, range.end_byte)
+        });
+
+        if source_order
+            .iter()
+            .enumerate()
+            .any(|(new_index, old_index)| new_index != *old_index)
+        {
+            let mut source_rebase = vec![ViewStyleSourceId::new(0); source_order.len()];
+            let mut canonical_ranges = Vec::with_capacity(source_order.len());
+            for (new_index, old_index) in source_order.into_iter().enumerate() {
+                let new_index =
+                    u32::try_from(new_index).map_err(|_| SectionCodecError::LengthOverflow)?;
+                source_rebase[old_index] = ViewStyleSourceId::new(new_index);
+                canonical_ranges.push(self.source_map_refs[old_index]);
+            }
+            self.rebase_source_ids(&source_rebase)?;
+            self.source_map_refs = canonical_ranges;
+        }
+
+        self.adapter_requirements.sort_by_key(|reference| {
+            (
+                reference.section_kind,
+                reference.section_id,
+                reference.content_digest,
+                reference.public_id,
+            )
+        });
+        Ok(())
+    }
+
+    fn rebase_source_ids(
+        &mut self,
+        source_rebase: &[ViewStyleSourceId],
+    ) -> Result<(), SectionCodecError> {
+        let source = |id: ViewStyleSourceId| {
+            source_rebase.get(id.value() as usize).copied().ok_or(
+                SectionCodecError::NonCanonicalTable("view_style_source_ids"),
+            )
+        };
+        let sheets = self
+            .program
+            .sheets()
+            .iter()
+            .map(|sheet| {
+                let tokens = sheet
+                    .tokens()
+                    .iter()
+                    .map(|token| {
+                        ViewStyleToken::new(
+                            token.id().clone(),
+                            token.value_kind(),
+                            token.value().clone(),
+                            source(token.source())?,
+                        )
+                        .map_err(|_| SectionCodecError::NonCanonicalTable("view_style_program"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let rules = sheet
+                    .rules()
+                    .iter()
+                    .map(|rule| {
+                        let declarations = rule
+                            .declarations()
+                            .iter()
+                            .map(|declaration| {
+                                ViewStyleDeclaration::new(
+                                    declaration.property(),
+                                    declaration.value().clone(),
+                                    declaration.op(),
+                                    source(declaration.source())?,
+                                )
+                                .map_err(|_| {
+                                    SectionCodecError::NonCanonicalTable("view_style_program")
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        ViewStyleRule::new(
+                            rule.selector().clone(),
+                            declarations,
+                            rule.source_order(),
+                            source(rule.source())?,
+                        )
+                        .map_err(|_| SectionCodecError::NonCanonicalTable("view_style_program"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                ViewStyleSheet::new(sheet.id().clone(), tokens, rules)
+                    .map_err(|_| SectionCodecError::NonCanonicalTable("view_style_program"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let patches = self
+            .program
+            .patches()
+            .iter()
+            .map(|patch| {
+                patch
+                    .declarations()
+                    .iter()
+                    .map(|declaration| {
+                        ViewStyleDeclaration::new(
+                            declaration.property(),
+                            declaration.value().clone(),
+                            declaration.op(),
+                            source(declaration.source())?,
+                        )
+                        .map_err(|_| SectionCodecError::NonCanonicalTable("view_style_program"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(|declarations| ViewStylePatch::new(patch.id(), declarations))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.program = ViewStyleProgram::try_new(sheets, patches)
+            .map_err(|_| SectionCodecError::NonCanonicalTable("view_style_program"))?;
+        Ok(())
+    }
+
+    fn is_canonical_order(&self) -> bool {
+        self.program
+            .sheets()
+            .windows(2)
+            .all(|pair| pair[0].id() < pair[1].id())
+            && self
+                .program
+                .patches()
+                .windows(2)
+                .all(|pair| pair[0].id() < pair[1].id())
+            && self.source_map_refs.windows(2).all(|pair| {
+                (pair[0].source, pair[0].start_byte, pair[0].end_byte)
+                    <= (pair[1].source, pair[1].start_byte, pair[1].end_byte)
+            })
+            && self.adapter_requirements.windows(2).all(|pair| {
+                (
+                    pair[0].section_kind,
+                    pair[0].section_id,
+                    pair[0].content_digest,
+                    pair[0].public_id,
+                ) <= (
+                    pair[1].section_kind,
+                    pair[1].section_id,
+                    pair[1].content_digest,
+                    pair[1].public_id,
+                )
+            })
     }
 
     fn validate(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
-        check_budget(self.rules.len(), budget.style_rules, "view_style_rules")?;
+        self.validate_budgets(budget)?;
+        self.validate_identity_contracts()?;
+        self.validate_source_maps()?;
+        self.program.sheets().iter().try_for_each(|sheet| {
+            sheet.tokens().iter().try_for_each(|token| {
+                check_budget(
+                    style_token_depth(sheet, token),
+                    budget.style_token_depth,
+                    "view_style_token_depth",
+                )
+            })
+        })
+    }
+
+    fn validate_budgets(&self, budget: &ViewResourceBudget) -> Result<(), SectionCodecError> {
         check_budget(
-            self.part_rules.len(),
-            budget.style_rules,
-            "view_style_part_rules",
+            self.program.sheets().len(),
+            budget.style_sheets,
+            "view_style_sheets",
         )?;
-        check_budget(self.tokens.len(), budget.style_tokens, "view_style_tokens")?;
         check_budget(
-            self.environment_predicates.len(),
-            budget.environment_predicates,
-            "view_style_environment_predicates",
+            self.program.patches().len(),
+            budget.style_patches,
+            "view_style_inline_patches",
+        )?;
+        let token_count = self
+            .program
+            .sheets()
+            .iter()
+            .map(|sheet| sheet.tokens().len())
+            .sum();
+        let rule_count = self
+            .program
+            .sheets()
+            .iter()
+            .map(|sheet| sheet.rules().len())
+            .sum();
+        let declaration_count = self
+            .program
+            .sheets()
+            .iter()
+            .flat_map(ViewStyleSheet::rules)
+            .map(|rule| rule.declarations().len())
+            .chain(
+                self.program
+                    .patches()
+                    .iter()
+                    .map(|patch| patch.declarations().len()),
+            )
+            .sum();
+        check_budget(token_count, budget.style_tokens, "view_style_tokens")?;
+        check_budget(rule_count, budget.style_rules, "view_style_rules")?;
+        check_budget(
+            declaration_count,
+            budget.style_declarations,
+            "view_style_declarations",
         )?;
         check_budget(
             self.source_map_refs.len(),
             budget.source_map_refs,
             "view_style_source_map_refs",
         )?;
-        check_budget(
-            self.external_css_descriptors.len(),
-            budget.external_css_descriptors,
-            "view_external_css_descriptors",
-        )?;
-        self.rules
+        self.program
+            .sheets()
             .iter()
-            .map(|rule| &rule.selector)
-            .chain(self.part_rules.iter().map(|rule| &rule.selector))
+            .flat_map(ViewStyleSheet::rules)
+            .map(arcweft_view::style::ViewStyleRule::selector)
             .try_for_each(|selector| {
                 check_budget(
                     selector.max_depth(),
@@ -1101,65 +1504,154 @@ impl ViewStyleResource {
                     "view_selector_depth",
                 )
             })?;
-        let part_count = self
-            .part_rules
+        let environment_predicate_count = self
+            .program
+            .sheets()
             .iter()
-            .map(|rule| rule.part.as_str())
+            .flat_map(ViewStyleSheet::rules)
+            .flat_map(|rule| rule.selector().sequences())
+            .flat_map(arcweft_view::style::ViewStyleSelectorSequence::predicates)
+            .filter(|predicate| matches!(predicate, ViewStylePredicate::Environment(_)))
+            .count();
+        check_budget(
+            environment_predicate_count,
+            budget.environment_predicates,
+            "view_style_environment_predicates",
+        )?;
+        let part_count = self
+            .program
+            .sheets()
+            .iter()
+            .flat_map(ViewStyleSheet::rules)
+            .flat_map(|rule| rule.selector().sequences())
+            .filter_map(|sequence| sequence.part())
             .collect::<BTreeSet<_>>()
             .len();
-        check_budget(part_count, budget.part_count, "view_style_part_count")?;
+        check_budget(part_count, budget.part_count, "view_style_part_count")
+    }
+
+    fn validate_identity_contracts(&self) -> Result<(), SectionCodecError> {
+        if !valid_resource_identity(&self.style_program_id) {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_style_program_identity",
+            ));
+        }
         reject_duplicates(
-            self.tokens.iter().map(|token| token.public_id.clone()),
-            "view_style_tokens",
-        )?;
-        reject_duplicates(
-            self.external_css_descriptors
-                .iter()
-                .map(|descriptor| descriptor.public_id.clone()),
-            "view_external_css_descriptors",
+            std::iter::once(self.style_program_id.clone()).chain(
+                self.program
+                    .sheets()
+                    .iter()
+                    .map(|sheet| sheet.id().public_id().as_str().to_owned()),
+            ),
+            "view_style_product_identities",
         )
     }
 
     fn public_ids(&self) -> Vec<String> {
         unique_strings(
-            [self.style_program_id.clone()]
-                .into_iter()
-                .chain(
-                    self.arcweft_sources
-                        .iter()
-                        .chain(self.css_sources.iter())
-                        .map(|source| source.public_id.clone()),
-                )
-                .chain(self.tokens.iter().flat_map(|token| {
-                    [Some(token.public_id.clone())]
-                        .into_iter()
-                        .chain(style_value_public_ids(&token.value).into_iter().map(Some))
-                        .flatten()
-                }))
-                .chain(self.rules.iter().flat_map(style_rule_public_ids))
-                .chain(self.part_rules.iter().flat_map(|rule| {
-                    [Some(rule.part.clone())]
-                        .into_iter()
-                        .chain(style_selector_public_ids(&rule.selector).map(Some))
-                        .chain(rule.declarations.iter().flat_map(|declaration| {
-                            [Some(declaration.property.clone())].into_iter().chain(
-                                style_value_public_ids(&declaration.value)
-                                    .into_iter()
-                                    .map(Some),
-                            )
+            std::iter::once(self.style_program_id.clone())
+                .chain(self.program.sheets().iter().flat_map(|sheet| {
+                    std::iter::once(sheet.id().public_id().as_str().to_owned())
+                        .chain(sheet.tokens().iter().flat_map(|token| {
+                            std::iter::once(token.id().public_id().as_str().to_owned())
+                                .chain(style_value_public_ids(token.value()))
                         }))
-                        .flatten()
+                        .chain(sheet.rules().iter().flat_map(style_rule_public_ids))
                 }))
-                .chain(
-                    self.external_css_descriptors
+                .chain(self.program.patches().iter().flat_map(|patch| {
+                    patch
+                        .declarations()
                         .iter()
-                        .map(|descriptor| descriptor.public_id.clone()),
-                ),
+                        .flat_map(|declaration| style_value_public_ids(declaration.value()))
+                })),
         )
     }
 
     fn record_count(&self) -> u32 {
-        saturating_u32(self.rules.len().saturating_add(self.part_rules.len()))
+        let records = self
+            .program
+            .sheets()
+            .len()
+            .saturating_add(self.program.patches().len())
+            .saturating_add(
+                self.program
+                    .sheets()
+                    .iter()
+                    .map(|sheet| sheet.rules().len())
+                    .sum(),
+            );
+        saturating_u32(records)
+    }
+
+    fn validate_source_maps(&self) -> Result<(), SectionCodecError> {
+        let public_ids = self.public_id_table()?;
+        let valid_owners = std::iter::once(self.style_program_id.as_str())
+            .chain(
+                self.program
+                    .sheets()
+                    .iter()
+                    .map(|sheet| sheet.id().public_id().as_str()),
+            )
+            .collect::<BTreeSet<_>>();
+
+        for range in &self.source_map_refs {
+            if range.start_byte > range.end_byte {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_style_source_range_order",
+                ));
+            }
+            if !valid_owners.contains(public_ids.get(range.source)?) {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_style_source_range_owners",
+                ));
+            }
+        }
+
+        for sheet in self.program.sheets() {
+            let owner = sheet.id().public_id().as_str();
+            let sources = sheet.tokens().iter().map(ViewStyleToken::source).chain(
+                sheet.rules().iter().flat_map(|rule| {
+                    std::iter::once(rule.source()).chain(
+                        rule.declarations()
+                            .iter()
+                            .map(arcweft_view::style::ViewStyleDeclaration::source),
+                    )
+                }),
+            );
+            for source in sources {
+                if self.source_owner(&public_ids, source)? != owner {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_style_sheet_source_map_owner",
+                    ));
+                }
+            }
+        }
+
+        for patch in self.program.patches() {
+            for source in patch
+                .declarations()
+                .iter()
+                .map(arcweft_view::style::ViewStyleDeclaration::source)
+            {
+                if self.source_owner(&public_ids, source)? != self.style_program_id {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_style_patch_source_map_owner",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn source_owner<'a>(
+        &self,
+        public_ids: &'a PublicIdTable,
+        source: ViewStyleSourceId,
+    ) -> Result<&'a str, SectionCodecError> {
+        let range = self.source_map_refs.get(source.value() as usize).ok_or(
+            SectionCodecError::NonCanonicalTable("view_style_source_ids"),
+        )?;
+        public_ids.get(range.source)
     }
 }
 
@@ -1186,14 +1678,17 @@ impl ViewTextResource {
         bytes: &[u8],
         budget: ViewResourceBudget,
     ) -> Result<Self, SectionCodecError> {
-        let mut section: Self = decode_view_section(
+        let (mut section, transcript): (Self, _) = decode_view_section(
             bytes,
             ProductSectionCodecKind::ViewText,
             "view_text",
             &budget,
+            Self::public_ids,
+            Self::record_count,
         )?;
         section.canonicalize();
         section.validate(&budget)?;
+        validate_canonical_view_transcript(&transcript, &section)?;
         Ok(section)
     }
 
@@ -1388,14 +1883,17 @@ impl ViewInputResource {
         bytes: &[u8],
         budget: ViewResourceBudget,
     ) -> Result<Self, SectionCodecError> {
-        let mut section: Self = decode_view_section(
+        let (mut section, transcript): (Self, _) = decode_view_section(
             bytes,
             ProductSectionCodecKind::ViewInput,
             "view_input",
             &budget,
+            Self::public_ids,
+            Self::record_count,
         )?;
         section.canonicalize();
         section.validate(&budget)?;
+        validate_canonical_view_transcript(&transcript, &section)?;
         Ok(section)
     }
 
@@ -1523,14 +2021,17 @@ impl ViewThemeResource {
         bytes: &[u8],
         budget: ViewResourceBudget,
     ) -> Result<Self, SectionCodecError> {
-        let mut section: Self = decode_view_section(
+        let (mut section, transcript): (Self, _) = decode_view_section(
             bytes,
             ProductSectionCodecKind::ViewTheme,
             "view_theme",
             &budget,
+            Self::public_ids,
+            Self::record_count,
         )?;
         section.canonicalize();
         section.validate(&budget)?;
+        validate_canonical_view_transcript(&transcript, &section)?;
         Ok(section)
     }
 
@@ -1552,7 +2053,7 @@ impl ViewThemeResource {
 
     fn canonicalize(&mut self) {
         self.palette_overrides
-            .sort_by_key(|override_| override_.color);
+            .sort_by(|left, right| left.color.source_name().cmp(right.color.source_name()));
         self.dark_mode_visual_golden_ids.sort();
     }
 
@@ -1577,120 +2078,6 @@ impl ViewThemeResource {
     fn record_count(&self) -> u32 {
         saturating_u32(self.palette_overrides.len())
     }
-}
-
-fn encode_view_section<T>(
-    codec: ProductSectionCodecKind,
-    family_label: &'static str,
-    value: &T,
-    public_ids: impl IntoIterator<Item = String>,
-    record_count: u32,
-    budget: &ViewResourceBudget,
-) -> Result<Vec<u8>, SectionCodecError>
-where
-    T: Serialize,
-{
-    let transcript = serde_json::to_vec(value)
-        .map_err(|_| SectionCodecError::NonCanonicalTable(family_label))?;
-    check_budget(
-        transcript.len(),
-        budget.transcript_bytes,
-        "view_transcript_bytes",
-    )?;
-    let strings = StringTable::with_budget(
-        [
-            family_label.to_owned(),
-            "canonical_view_resource_transcript_v1".to_owned(),
-        ],
-        budget.common,
-    )?;
-    let public_ids = PublicIdTable::with_budget(unique_strings(public_ids), budget.common)?;
-    let enums = EnumRegistry::with_budget(
-        [EnumSymbol {
-            code: 1,
-            name: strings
-                .id_for(family_label)
-                .ok_or(SectionCodecError::NonCanonicalTable(family_label))?,
-        }],
-        &strings,
-        budget.common,
-    )?;
-    let field = ResourceField::new(
-        FIELD_VIEW_TRANSCRIPT,
-        FieldRequirement::Required,
-        ResourceWireType::Bytes,
-        1,
-        u16::try_from(public_ids.len()).map_err(|_| SectionCodecError::LengthOverflow)?,
-        transcript,
-    );
-    ProductResourceEnvelope::with_budget(
-        codec,
-        strings,
-        public_ids,
-        enums,
-        [field],
-        record_count,
-        budget.common,
-    )?
-    .encode_canonical()
-}
-
-fn decode_view_section<T>(
-    bytes: &[u8],
-    codec: ProductSectionCodecKind,
-    family_label: &'static str,
-    budget: &ViewResourceBudget,
-) -> Result<T, SectionCodecError>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    let decoded = ProductResourceEnvelope::decode_with_registry(
-        bytes,
-        codec,
-        &view_registry()?,
-        budget.common,
-    )?;
-    let field = decoded
-        .envelope
-        .fields
-        .iter()
-        .find(|field| field.id == FIELD_VIEW_TRANSCRIPT)
-        .ok_or(SectionCodecError::MissingRequiredField(
-            FIELD_VIEW_TRANSCRIPT,
-        ))?;
-    check_budget(
-        field.payload.len(),
-        budget.transcript_bytes,
-        "view_transcript_bytes",
-    )?;
-    serde_json::from_slice(&field.payload)
-        .map_err(|_| SectionCodecError::NonCanonicalTable(family_label))
-}
-
-fn export_json_bytes<T>(
-    codec: ProductSectionCodecKind,
-    resource: &T,
-    canonical_digest: BundleDigest,
-) -> Result<Vec<u8>, SectionCodecError>
-where
-    T: Clone + Serialize,
-{
-    let export = ViewResourceExport {
-        schema_version: PRODUCT_SECTION_SCHEMA_VERSION,
-        codec,
-        codec_name: codec.as_str().to_owned(),
-        canonical_digest,
-        resource: resource.clone(),
-    };
-    serde_json::to_vec_pretty(&export)
-        .map_err(|_| SectionCodecError::NonCanonicalTable("view_export_json"))
-}
-
-fn view_registry() -> Result<FieldRegistry, SectionCodecError> {
-    FieldRegistry::new([FieldSpec::required(
-        FIELD_VIEW_TRANSCRIPT,
-        ResourceWireType::Bytes,
-    )])
 }
 
 fn validate_optional_program(
@@ -1734,12 +2121,32 @@ fn reject_duplicates(
     Ok(())
 }
 
+fn reject_duplicate_keys<T: Ord>(
+    values: impl IntoIterator<Item = T>,
+    table: &'static str,
+) -> Result<(), SectionCodecError> {
+    let mut seen = BTreeSet::new();
+    for value in values {
+        if !seen.insert(value) {
+            return Err(SectionCodecError::DuplicatePublicId(table.to_owned()));
+        }
+    }
+    Ok(())
+}
+
 fn valid_identifier(value: &str) -> bool {
     let mut characters = value.chars();
     characters
         .next()
         .is_some_and(|character| character == '_' || character.is_alphabetic())
         && characters.all(|character| character == '_' || character.is_alphanumeric())
+}
+
+fn valid_resource_identity(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('#')
+        && !value.chars().any(char::is_whitespace)
+        && !value.chars().any(char::is_control)
 }
 
 fn valid_value_input_source(source: &ViewValueInputSource) -> bool {
@@ -1779,10 +2186,13 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
     match instruction {
         ViewProgramInstruction::OpenElement {
             target,
-            style,
+            styles,
             part,
             ..
-        } => option_ids([target, style, part]),
+        } => option_ids([target, part])
+            .into_iter()
+            .chain(style_apply_public_ids(styles))
+            .collect(),
         ViewProgramInstruction::CloseElement
         | ViewProgramInstruction::Branch { .. }
         | ViewProgramInstruction::RepeatKeyed { .. }
@@ -1791,49 +2201,47 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         | ViewProgramInstruction::ApplyFx { .. } => Vec::new(),
         ViewProgramInstruction::EmitText {
             text_source,
-            style,
-            part,
-            ..
-        } => [Some(text_source.clone()), style.clone(), part.clone()]
-            .into_iter()
-            .flatten()
-            .collect(),
-        ViewProgramInstruction::EmitImage {
-            image,
-            target,
-            style,
+            text_block,
+            styles,
             part,
             ..
         } => [
-            Some(image.clone()),
-            target.clone(),
-            style.clone(),
+            Some(text_source.clone()),
+            Some(text_block.clone()),
             part.clone(),
         ]
         .into_iter()
         .flatten()
+        .chain(style_apply_public_ids(styles))
         .collect(),
-        ViewProgramInstruction::EmitCustom {
-            element,
-            style,
+        ViewProgramInstruction::EmitImage {
+            image,
+            target,
+            styles,
             part,
             ..
-        } => [Some(element.clone()), style.clone(), part.clone()]
+        } => [Some(image.clone()), target.clone(), part.clone()]
             .into_iter()
             .flatten()
+            .chain(style_apply_public_ids(styles))
+            .collect(),
+        ViewProgramInstruction::EmitCustom {
+            element,
+            styles,
+            part,
+            ..
+        } => [Some(element.clone()), part.clone()]
+            .into_iter()
+            .flatten()
+            .chain(style_apply_public_ids(styles))
             .collect(),
         ViewProgramInstruction::CallView {
-            view, style, part, ..
-        } => [Some(view.clone()), style.clone(), part.clone()]
+            view, styles, part, ..
+        } => [Some(view.clone()), part.clone()]
             .into_iter()
             .flatten()
+            .chain(style_apply_public_ids(styles))
             .collect(),
-        ViewProgramInstruction::ApplyStyle { style, .. } => match style {
-            ViewStyleApplyRef::Named(id) => vec![id.clone()],
-            ViewStyleApplyRef::InlineArcweft { .. } | ViewStyleApplyRef::InlineCss { .. } => {
-                Vec::new()
-            }
-        },
         ViewProgramInstruction::BindHandler { event, handler, .. } => {
             vec![event.clone(), handler.clone()]
         }
@@ -1846,6 +2254,15 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
             .flatten()
             .collect(),
     }
+}
+
+fn style_apply_public_ids(
+    styles: &[ViewStyleApplicationTarget],
+) -> impl Iterator<Item = String> + '_ {
+    styles.iter().filter_map(|style| match style {
+        ViewStyleApplicationTarget::Named { sheet } => Some(sheet.public_id().as_str().to_owned()),
+        ViewStyleApplicationTarget::Inline { .. } => None,
+    })
 }
 
 fn option_ids<const N: usize>(values: [&Option<String>; N]) -> Vec<String> {
@@ -1863,38 +2280,67 @@ fn action_payload_refs(
     })
 }
 
-fn style_rule_public_ids(rule: &ViewStyleRule) -> Vec<String> {
-    style_selector_public_ids(&rule.selector)
-        .chain(rule.declarations.iter().flat_map(|declaration| {
-            [Some(declaration.property.clone())]
-                .into_iter()
-                .chain(
-                    style_value_public_ids(&declaration.value)
-                        .into_iter()
-                        .map(Some),
-                )
-                .flatten()
-        }))
+fn style_rule_public_ids(rule: &arcweft_view::style::ViewStyleRule) -> Vec<String> {
+    style_selector_public_ids(rule.selector())
+        .chain(
+            rule.declarations()
+                .iter()
+                .flat_map(|declaration| style_value_public_ids(declaration.value())),
+        )
         .collect()
 }
 
 fn style_selector_public_ids(selector: &ViewStyleSelector) -> impl Iterator<Item = String> + '_ {
-    selector.parts.iter().filter_map(|part| match part {
-        ViewStyleSelectorPart::Part(id) => Some(id.clone()),
-        _ => None,
+    selector.sequences().iter().filter_map(|sequence| {
+        sequence
+            .part()
+            .map(|part| part.public_id().as_str().to_owned())
     })
 }
 
-fn style_value_public_ids(value: &ViewStyleValue) -> Vec<String> {
+fn style_value_public_ids(value: &ViewSpecifiedValue) -> Vec<String> {
     match value {
-        ViewStyleValue::Token(id) | ViewStyleValue::Resource(id) => vec![id.clone()],
-        ViewStyleValue::List(values) => values.iter().flat_map(style_value_public_ids).collect(),
-        ViewStyleValue::SystemColor(_)
-        | ViewStyleValue::Rgba(_)
-        | ViewStyleValue::Milli(_)
-        | ViewStyleValue::Text(_)
-        | ViewStyleValue::Digest(_) => Vec::new(),
+        ViewSpecifiedValue::Token { token, .. } => {
+            vec![token.public_id().as_str().to_owned()]
+        }
+        ViewSpecifiedValue::Resource { value } => vec![value.as_str().to_owned()],
+        ViewSpecifiedValue::Bool { .. }
+        | ViewSpecifiedValue::Integer { .. }
+        | ViewSpecifiedValue::Ratio { .. }
+        | ViewSpecifiedValue::Scalar { .. }
+        | ViewSpecifiedValue::Length { .. }
+        | ViewSpecifiedValue::Angle { .. }
+        | ViewSpecifiedValue::Color { .. }
+        | ViewSpecifiedValue::FontFamilyList { .. }
+        | ViewSpecifiedValue::FontWeight { .. }
+        | ViewSpecifiedValue::FontStyle { .. }
+        | ViewSpecifiedValue::Display { .. }
+        | ViewSpecifiedValue::Position { .. }
+        | ViewSpecifiedValue::Overflow { .. }
+        | ViewSpecifiedValue::FlexDirection { .. }
+        | ViewSpecifiedValue::FlexWrap { .. }
+        | ViewSpecifiedValue::Alignment { .. }
+        | ViewSpecifiedValue::BorderRadii { .. }
+        | ViewSpecifiedValue::ShadowList { .. }
+        | ViewSpecifiedValue::FilterList { .. }
+        | ViewSpecifiedValue::Clip { .. }
+        | ViewSpecifiedValue::Mask { .. }
+        | ViewSpecifiedValue::BlendMode { .. }
+        | ViewSpecifiedValue::Transition { .. } => Vec::new(),
     }
+}
+
+fn style_token_depth(sheet: &ViewStyleSheet, token: &ViewStyleToken) -> usize {
+    let mut depth = 1_usize;
+    let mut current = token;
+    while let Some((referenced, _)) = current.value().token_reference() {
+        let Some(next) = sheet.token(referenced) else {
+            break;
+        };
+        depth = depth.saturating_add(1);
+        current = next;
+    }
+    depth
 }
 
 fn text_source_kind_public_ids(kind: &ViewTextSourceKind) -> impl Iterator<Item = String> + '_ {

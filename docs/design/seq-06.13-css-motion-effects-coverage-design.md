@@ -1,5 +1,7 @@
 # seq06.13 CSS Motion and Advanced Effects Coverage Design
 
+> **Superseded Style-path premise (2026-07-13):** The Arcweft CSS/Takumi authoring, lowering, and evidence path assumed below was removed by the [native-only typed Style path](../implementation/native-only-style-path-2026-07-13.md). The body is retained as historical rationale and is not a current Style contract.
+
 ## Scope
 
 This design is the broad seq06.13 cut. The narrower seq06.13a clip/mask closure

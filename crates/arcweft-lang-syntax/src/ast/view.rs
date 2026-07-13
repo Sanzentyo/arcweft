@@ -8,7 +8,7 @@ use crate::ast::common::TextRange;
 use crate::ast::flow::Stmt;
 use crate::ast::ids::EntityRefSyntax;
 use crate::ast::pattern::Pattern;
-use crate::ast::style::{StylePatch, StyleSyntax};
+use crate::ast::style::StylePatch;
 use crate::expr::{CallArg, Expr, Literal, MatchExprArm};
 
 mod fx;
@@ -895,16 +895,6 @@ impl ViewStyleModifier {
     }
     pub const fn inline(patch: StylePatch) -> Self {
         Self::Inline(patch)
-    }
-
-    pub const fn syntax_name(&self) -> Option<&'static str> {
-        match self {
-            Self::Named(_) => None,
-            Self::Inline(patch) => match patch.syntax() {
-                StyleSyntax::Arcweft => Some("Arcweft"),
-                StyleSyntax::Css => Some("Css"),
-            },
-        }
     }
 }
 

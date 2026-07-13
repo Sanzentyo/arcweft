@@ -209,6 +209,9 @@ fn prepare_frame(
             &mut input,
             PlayerFrameRequest {
                 presentation: &presentation,
+                style_program: session.view_style_program(),
+                style_environment: session.view_style_environment(),
+                style_palettes: session.view_style_palettes(),
                 fx_definitions: &bundle.fx_definitions,
                 images: &images,
                 viewport,

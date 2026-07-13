@@ -15,6 +15,9 @@ use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument,
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use std::path::Path;
 
+mod scroll_style;
+mod view_sidecars;
+
 fn image_await(id: &str) -> FlowOp {
     FlowOp::Await {
         binding: None,
@@ -65,6 +68,9 @@ fn plan_with_line_task(effect: LineEffectRequest) -> RuntimePlan {
 
 #[test]
 fn view_dsl_lowers_to_view_sidecars() {
+    use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramInstruction};
+    use arcweft_view::style::{ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId};
+
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
 style primary_button {
@@ -76,8 +82,8 @@ style primary_button {
 view FeedbackForm() {
   TextField("Tokyo")
     .style(@style:.primary_button)
-    .style(.Css) {
-      color: white;
+    .style {
+      color = rgba(255, 255, 255, 255)
     }
 }
 
@@ -99,10 +105,34 @@ flow test {
     assert_eq!(input.options.len(), 1);
 
     let style = sidecars.style.expect("style sidecar");
-    assert_eq!(style.style_program_id, "style.primary_button");
-    assert!(!style.rules.is_empty());
-    assert!(!style.arcweft_sources.is_empty());
-    assert!(!style.css_sources.is_empty());
+    assert_eq!(style.program.sheets().len(), 1);
+    assert_eq!(
+        style.program.sheets()[0].id().public_id().as_str(),
+        "style.primary_button"
+    );
+    assert_eq!(style.program.patches().len(), 1);
+
+    let applications = program
+        .instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::TextField,
+                styles,
+                ..
+            } => Some(styles.as_slice()),
+            _ => None,
+        })
+        .expect("TextField producer owns its ordered Style applications");
+    assert_eq!(
+        applications,
+        &[
+            ViewStyleApplicationTarget::named(
+                ViewStyleSheetId::try_new("style.primary_button").expect("valid sheet ID")
+            ),
+            ViewStyleApplicationTarget::inline(ViewStylePatchId::new(0)),
+        ]
+    );
 }
 
 #[test]
@@ -391,9 +421,7 @@ flow test {
 
 #[test]
 fn view_box_and_scroll_lower_to_typed_view_resources() {
-    use arcweft_bundle::resource_codec::view::{
-        ViewElementKind, ViewProgramInstruction, ViewStyleSelectorPart,
-    };
+    use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramInstruction};
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
@@ -403,11 +431,10 @@ style glass_shell {
   }
 
   Scroll {
-    width = milli(512000)
-    height = milli(96000)
-    axis = text("vertical")
-    overflow = text("scroll")
-    opacity = milli(920)
+    width = 512px
+    height = 96px
+    overflow = .Scroll
+    opacity = 920milli
   }
 }
 
@@ -477,109 +504,22 @@ flow test {
     );
 
     let style = sidecars.style.expect("style sidecar");
-    assert!(style.rules.iter().any(|rule| {
-        rule.selector
-            .parts
-            .contains(&ViewStyleSelectorPart::Element(ViewElementKind::Box))
+    assert!(style.program.sheets().iter().any(|sheet| {
+        sheet.rules().iter().any(|rule| {
+            rule.selector()
+                .sequences()
+                .iter()
+                .any(|sequence| sequence.element() == Some(ViewElementKind::Box))
+        })
     }));
-    assert!(style.rules.iter().any(|rule| {
-        rule.selector
-            .parts
-            .contains(&ViewStyleSelectorPart::Element(ViewElementKind::Scroll))
+    assert!(style.program.sheets().iter().any(|sheet| {
+        sheet.rules().iter().any(|rule| {
+            rule.selector()
+                .sequences()
+                .iter()
+                .any(|sequence| sequence.element() == Some(ViewElementKind::Scroll))
+        })
     }));
-}
-
-#[test]
-fn view_scroll_uses_style_rules_for_viewport_and_overflow_defaults() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
-style scroll_defaults {
-  token layout.scroll_width = milli(512000)
-
-  Scroll {
-    width = token(layout.scroll_width)
-    height = milli(96000)
-    axis = text("vertical")
-    overflow = text("hidden")
-  }
-}
-
-view StyledScroll() {
-  Scroll {
-    Text("One")
-    Text("Two")
-  }
-}
-
-flow test {
-  view(@view:.StyledScroll)
-}
-"#,
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
-
-    let program = sidecars.program.expect("program sidecar");
-    assert_eq!(program.scroll_regions.len(), 1);
-    assert_eq!(
-        program.scroll_regions[0].public_id,
-        "scroll.view.StyledScroll.0"
-    );
-    assert_eq!(program.scroll_regions[0].bounds.width_milli, 512_000);
-    assert_eq!(program.scroll_regions[0].bounds.height_milli, 96_000);
-    assert_eq!(
-        program.scroll_regions[0].overflow,
-        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Hidden
-    );
-    assert_eq!(
-        program.scroll_regions[0].axis,
-        arcweft_bundle::resource_codec::ViewScrollAxis::Vertical
-    );
-}
-
-#[test]
-fn view_scroll_uses_overflow_x_style_as_horizontal_scroll() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
-style horizontal_scroll {
-  Scroll {
-    width = milli(128000)
-    height = milli(72000)
-    overflow-x = text("scroll")
-  }
-}
-
-view Gallery() {
-  Scroll {
-    Row {
-      Button(@button:.one, label = "One")
-      Button(@button:.two, label = "Two")
-    }
-  }
-}
-
-flow test {
-  view(@view:.Gallery)
-}
-"#,
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
-
-    let program = sidecars.program.expect("program sidecar");
-    assert_eq!(program.scroll_regions.len(), 1);
-    assert_eq!(program.scroll_regions[0].bounds.width_milli, 128_000);
-    assert_eq!(program.scroll_regions[0].bounds.height_milli, 72_000);
-    assert_eq!(
-        program.scroll_regions[0].axis,
-        arcweft_bundle::resource_codec::ViewScrollAxis::Horizontal
-    );
-    assert_eq!(
-        program.scroll_regions[0].overflow,
-        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Scroll
-    );
 }
 
 #[test]
@@ -680,7 +620,7 @@ fn view_style_rule_rejects_interactive_overflow_on_non_scroll_element() {
         r#"
 style invalid_button_scroll {
   Button {
-    overflow-x = text("auto")
+    overflow-x = .Auto
   }
 }
 
@@ -863,10 +803,7 @@ fn view_static_text_bounds_account_for_wrapped_lines() {
 view StatusPanel() {
   Column {
     Text("aaaaaaaaaaa")
-      .style {
-        width = 100px
-        font-size = 20000milli
-      }
+      .width(100px)
     Text("After")
   }
 }
@@ -1169,6 +1106,7 @@ fn dialogue_view_text_style_and_primary_action_lower_to_typed_resources() {
         DialogueTextProjection, ViewActionButtonActionResource, ViewProgramInstruction,
         ViewTextSourceKind,
     };
+    use arcweft_view::style::{ViewStyleApplicationTarget, ViewStyleSheetId};
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
@@ -1217,13 +1155,20 @@ pub dialogue defaults {
     }));
 
     let program = sidecars.program.expect("dialogue View program");
-    assert!(program.instructions.iter().any(|instruction| matches!(
-        instruction,
-        ViewProgramInstruction::EmitText {
-            style: Some(style),
-            ..
-        } if style == "style.dialogue_text"
-    )));
+    let dialogue_style = ViewStyleApplicationTarget::named(
+        ViewStyleSheetId::try_new("style.dialogue_text").expect("valid dialogue Style ID"),
+    );
+    assert!(
+        program
+            .instructions
+            .iter()
+            .any(|instruction| match instruction {
+                ViewProgramInstruction::EmitText { styles, .. } => {
+                    styles.as_slice() == std::slice::from_ref(&dialogue_style)
+                }
+                _ => false,
+            })
+    );
     assert!(program.action_buttons.iter().any(|button| matches!(
         &button.action,
         ViewActionButtonActionResource::DialoguePrimaryAction { parameter }
@@ -1256,6 +1201,147 @@ pub dialogue defaults {
     assert_eq!(program.text_blocks[1].bounds.x_milli, 85_600);
     assert_eq!(program.text_blocks[1].bounds.y_milli, 518_800);
     assert_eq!(program.text_blocks[1].bounds.height_milli, 125_600);
+}
+
+#[test]
+fn subtree_sheet_styles_survive_standard_resource_linking() {
+    use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
+    use arcweft_presentation::appearance::PresentationColor;
+    use arcweft_view::style::{
+        ViewColorValue, ViewLengthMilli, ViewPropertyKind, ViewSpecifiedValue,
+        ViewStyleApplicationTarget, ViewStyleSheetId,
+    };
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+style showcase {
+  .speaker {
+    color = rgba(139, 211, 255, 255)
+    font-size = 18px
+  }
+}
+
+view Showcase() {
+  Panel {
+    Text("Hello").part(speaker)
+  }
+    .style(@style.showcase)
+}
+
+flow test {
+  view(@view.Showcase)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let direct_style = sidecars.style.clone().expect("authored Style resource");
+    let bundle = return_bundle("style-link.arcw", "done")
+        .with_view_resources(sidecars.program, sidecars.style)
+        .expect("authored resources link with the standard View library");
+    let program = bundle.view_program.expect("linked View program");
+    let style = bundle.view_style.expect("linked Style resource");
+    let showcase_id =
+        ViewStyleSheetId::try_new("style.showcase").expect("valid authored Style sheet ID");
+    let standard_id = ViewStyleSheetId::try_new("style.dialogue.standard")
+        .expect("valid standard Style sheet ID");
+    let showcase_target = ViewStyleApplicationTarget::named(showcase_id.clone());
+
+    assert_eq!(style.style_program_id, direct_style.style_program_id);
+    let showcase_definition = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id == "view.Showcase")
+        .expect("authored View definition survives standard-resource linking");
+    let showcase_body = &program.instructions[showcase_definition.body.start_instruction as usize
+        ..showcase_definition.body.end_instruction as usize];
+    assert!(
+        showcase_body.iter().any(|instruction| matches!(
+            instruction,
+            ViewProgramInstruction::OpenElement { styles, .. }
+                if styles.as_slice() == std::slice::from_ref(&showcase_target)
+        )),
+        "the authored View must retain its named Style application"
+    );
+
+    let showcase = style
+        .program
+        .sheet(&showcase_id)
+        .expect("authored Style sheet survives standard-resource linking");
+    assert!(
+        style.program.sheet(&standard_id).is_some(),
+        "the standard dialogue Style sheet coexists with the authored sheet"
+    );
+    let [showcase_rule] = showcase.rules() else {
+        panic!("showcase sheet must retain exactly one rule");
+    };
+    let [speaker_selector] = showcase_rule.selector().sequences() else {
+        panic!("showcase rule must retain its single selector sequence");
+    };
+    assert_eq!(
+        speaker_selector
+            .part()
+            .map(|part| part.public_id().as_str()),
+        Some("speaker")
+    );
+    let [color, font_size] = showcase_rule.declarations() else {
+        panic!("showcase rule must retain both typed declarations");
+    };
+    assert_eq!(color.property(), ViewPropertyKind::Color);
+    assert_eq!(
+        color.value(),
+        &ViewSpecifiedValue::Color {
+            value: ViewColorValue::Literal {
+                color: PresentationColor::rgba(139, 211, 255, 255),
+            },
+        }
+    );
+    assert_eq!(font_size.property(), ViewPropertyKind::FontSize);
+    assert_eq!(
+        font_size.value(),
+        &ViewSpecifiedValue::Length {
+            value: ViewLengthMilli::new(18_000),
+        }
+    );
+
+    assert_linked_style_sources_are_valid(&style);
+    program
+        .validate_style_contract(Some(&style))
+        .expect("linked View program keeps valid typed Style references");
+}
+
+fn assert_linked_style_sources_are_valid(
+    style: &arcweft_bundle::resource_codec::view::ViewStyleResource,
+) {
+    let source_count = style.source_map_refs.len();
+    for sheet in style.program.sheets() {
+        for token in sheet.tokens() {
+            assert!((token.source().value() as usize) < source_count);
+        }
+        for rule in sheet.rules() {
+            assert!((rule.source().value() as usize) < source_count);
+            for declaration in rule.declarations() {
+                assert!((declaration.source().value() as usize) < source_count);
+            }
+        }
+    }
+    for patch in style.program.patches() {
+        for declaration in patch.declarations() {
+            assert!((declaration.source().value() as usize) < source_count);
+        }
+    }
+    let public_ids = style
+        .public_id_table()
+        .expect("linked Style public IDs remain canonical");
+    for range in &style.source_map_refs {
+        public_ids
+            .get(range.source)
+            .expect("every linked Style source range has a valid public ID");
+    }
+    style
+        .encode_canonical_section()
+        .expect("linked Style source references remain canonically encodable");
 }
 
 const CUSTOM_DIALOGUE_VIEW_SOURCE: &str = r#"

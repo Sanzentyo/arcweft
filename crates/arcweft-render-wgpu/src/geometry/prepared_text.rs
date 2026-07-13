@@ -89,7 +89,7 @@ pub(super) fn resolved_plain_style(
     .with_color(TextColor::rgba(rgba[0], rgba[1], rgba[2], rgba[3])))
 }
 
-pub(super) fn css_font_families(stack: Option<&str>) -> Vec<TextFontFamily> {
+pub(super) fn font_families_from_stack(stack: Option<&str>) -> Vec<TextFontFamily> {
     let Some(stack) = stack else {
         return vec![TextFontFamily::SansSerif];
     };

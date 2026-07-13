@@ -1,13 +1,12 @@
 use super::control_style::{
-    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
-    PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
-    RenderControlVisualStyle, control_font_families, fill_with_opacity, push_control_backdrop_plan,
-    push_control_border, push_control_corner_frame, push_control_filter_plan,
-    push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
+    PreparedControlBackdrop, PreparedControlFilter, PreparedControlPaint, PreparedControlShadow,
+    RenderControlVisualStyle, control_font_families, control_text_weight, fill_with_opacity,
+    push_control_backdrop_plan, push_control_border, push_control_corner_frame,
+    push_control_filter_plan, push_control_focus_ring, push_control_shadow_plan,
 };
 use super::{
     FramePlanError, PaintRect, Palette, PlannedFrameText, PlannedPlainText, PlannedTextOwner,
-    PreparedTextDocumentRequest, RenderScene,
+    PreparedTextDocumentRequest,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -26,7 +25,7 @@ pub struct RenderActionButton {
     pub containing_scroll_region: Option<String>,
     pub bounds: HitRect,
     pub viewport_clip: Option<HitRect>,
-    pub style: RenderControlStyle,
+    pub style: RenderControlVisualStyle,
     pub action: RenderActionButtonAction,
 }
 
@@ -61,17 +60,11 @@ pub(super) struct ActionButtonBuildOutput<'a> {
     pub(super) control_filters: &'a mut Vec<PreparedControlFilter>,
 }
 
-pub(super) fn action_button_depth_milli(scene: &RenderScene, button: &RenderActionButton) -> i32 {
-    let state = visual_state_for_button(scene, button);
-    button
-        .style
-        .visual_for_state(state)
-        .depth_milli
-        .unwrap_or_default()
+pub(super) fn action_button_depth_milli(button: &RenderActionButton) -> i32 {
+    button.style.depth_milli.unwrap_or_default()
 }
 
 pub(super) fn build_action_button(
-    scene: &RenderScene,
     layer: &LayerId,
     button: &RenderActionButton,
     output: ActionButtonBuildOutput<'_>,
@@ -87,51 +80,36 @@ pub(super) fn build_action_button(
         control_shadows,
         control_filters,
     } = output;
-    let is_focused = scene.interaction.focused.as_ref() == Some(&button.target);
-    let is_hovered = scene.interaction.hovered.as_ref() == Some(&button.target);
-    let is_pressed = scene.interaction.pressed.as_ref() == Some(&button.target);
-    let visual = button
-        .style
-        .visual_for_state(visual_state_for_button(scene, button));
+    let visual = &button.style;
     let radii = visual.radii();
     let visible_bounds = visible_button_bounds(button).unwrap_or(button.bounds);
     let backdrop_start = control_backdrops.len();
-    push_control_backdrop_plan(control_backdrops, &button.target, visible_bounds, &visual);
+    push_control_backdrop_plan(control_backdrops, &button.target, visible_bounds, visual);
     let shadow_start = control_shadows.len();
-    push_control_shadow_plan(control_shadows, &button.target, visible_bounds, &visual);
-    let fallback_fill = action_button_fill(
-        button.enabled,
-        is_focused || is_hovered,
-        is_pressed,
-        palette,
-    );
+    push_control_shadow_plan(control_shadows, &button.target, visible_bounds, visual);
     let rectangle_start = rectangles.len();
     rectangles.push(PaintRect::with_radii(
         button.bounds,
-        fill_with_opacity(visual.fill.unwrap_or(fallback_fill), visual.opacity),
+        fill_with_opacity(visual.fill.unwrap_or(palette.choice_idle), visual.opacity),
         radii,
     ));
     push_control_border(rectangles, button.bounds, visual.border, radii);
     push_control_corner_frame(rectangles, button.bounds, visual.corner_frame);
-    if is_focused {
-        if let Some(ring) = visual.focus_ring {
-            push_control_focus_ring(rectangles, button.bounds, ring, radii);
-        } else {
-            super::push_focus_ring(rectangles, button.bounds, palette.focus_ring);
-        }
+    if let Some(ring) = visual.focus_ring {
+        push_control_focus_ring(rectangles, button.bounds, ring, radii);
     }
     let text_start = text.len();
     push_action_button_text(
         text,
         button,
-        &visual,
+        visual,
         palette,
         font_size,
         line_height,
         visible_bounds,
     )?;
     let filter_start = control_filters.len();
-    push_control_filter_plan(control_filters, &button.target, visible_bounds, &visual);
+    push_control_filter_plan(control_filters, &button.target, visible_bounds, visual);
     apply_viewport_clip_to_rectangles(&mut rectangles[rectangle_start..], button.viewport_clip);
     let paint = PreparedControlPaint {
         target: button.target.clone(),
@@ -179,10 +157,11 @@ fn push_action_button_text(
         control_font_families(visual),
         font_size,
         line_height,
-        TextWeight::Bold,
+        control_text_weight(visual, TextWeight::Bold),
         TextSlant::Upright,
         visual.text.unwrap_or(palette.choice_text),
-    )?;
+    )?
+    .with_spacing(visual.letter_spacing_milli.unwrap_or_default(), 0);
     text.push(PlannedFrameText::Plain(Box::new(PlannedPlainText {
         text: button.label.clone(),
         style,
@@ -275,32 +254,6 @@ fn apply_viewport_clip_to_rectangles(rectangles: &mut [PaintRect], viewport_clip
             }
         }
     }
-}
-
-fn action_button_fill(enabled: bool, active: bool, pressed: bool, palette: &Palette) -> [f32; 4] {
-    if !enabled {
-        palette.choice_idle.map(|channel| channel * 0.72)
-    } else if pressed {
-        palette.choice_pressed
-    } else if active {
-        palette.choice_active
-    } else {
-        palette.choice_idle
-    }
-}
-
-fn visual_state_for_button(
-    scene: &RenderScene,
-    button: &RenderActionButton,
-) -> super::RenderControlVisualState {
-    let is_focused = scene.interaction.focused.as_ref() == Some(&button.target);
-    let is_hovered = scene.interaction.hovered.as_ref() == Some(&button.target);
-    let is_pressed = scene.interaction.pressed.as_ref() == Some(&button.target);
-    state_from_interaction(ControlInteractionStyleState {
-        enabled: button.enabled,
-        focused: is_focused,
-        pointer: ControlPointerStyleState::from_interaction(is_hovered, is_pressed),
-    })
 }
 
 impl RenderActionButtonAction {

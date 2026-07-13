@@ -1,17 +1,10 @@
-//! Checked native/CSS Style catalog consumed by compiler lowering.
+//! Checked native Style catalog consumed by compiler lowering.
 
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_view::style::{
     ViewPropertyKind, ViewSpecifiedValue, ViewStylePatchId, ViewStyleSelector, ViewStyleSheetId,
     ViewStyleTokenId, ViewStyleValueKind,
 };
-
-/// Checked style language variant.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CheckedViewStyleSyntax {
-    Arcweft,
-    Css,
-}
 
 /// Complete checked style output for one HIR module.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -20,15 +13,12 @@ pub struct CheckedViewStyleCatalog {
     inline_patches: Vec<CheckedViewStylePatch>,
 }
 
-/// One named checked sheet. CSS source is opaque and native inventories are typed.
+/// One named checked sheet with typed native inventories.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedViewStyleSheet {
     id: ViewStyleSheetId,
-    syntax: CheckedViewStyleSyntax,
     tokens: Vec<CheckedViewStyleToken>,
     rules: Vec<CheckedViewStyleRule>,
-    css_source: Option<String>,
-    css_source_range: Option<TextRange>,
     range: TextRange,
 }
 
@@ -63,9 +53,7 @@ pub struct CheckedViewStyleDeclaration {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedViewStylePatch {
     id: ViewStylePatchId,
-    syntax: CheckedViewStyleSyntax,
     declarations: Vec<CheckedViewStyleDeclaration>,
-    css_source: Option<String>,
     range: TextRange,
 }
 
@@ -96,23 +84,14 @@ impl CheckedViewStyleCatalog {
 impl CheckedViewStyleSheet {
     pub(crate) fn new(
         id: ViewStyleSheetId,
-        syntax: CheckedViewStyleSyntax,
         tokens: Vec<CheckedViewStyleToken>,
         rules: Vec<CheckedViewStyleRule>,
-        css_source: Option<(String, TextRange)>,
         range: TextRange,
     ) -> Self {
-        let (css_source, css_source_range) = match css_source {
-            Some((source, range)) => (Some(source), Some(range)),
-            None => (None, None),
-        };
         Self {
             id,
-            syntax,
             tokens,
             rules,
-            css_source,
-            css_source_range,
             range,
         }
     }
@@ -121,25 +100,12 @@ impl CheckedViewStyleSheet {
         &self.id
     }
 
-    pub const fn syntax(&self) -> CheckedViewStyleSyntax {
-        self.syntax
-    }
-
     pub fn tokens(&self) -> &[CheckedViewStyleToken] {
         &self.tokens
     }
 
     pub fn rules(&self) -> &[CheckedViewStyleRule] {
         &self.rules
-    }
-
-    pub fn css_source(&self) -> Option<&str> {
-        self.css_source.as_deref()
-    }
-
-    /// Exact authored body range for an opaque CSS sheet.
-    pub const fn css_source_range(&self) -> Option<TextRange> {
-        self.css_source_range
     }
 
     pub const fn range(&self) -> TextRange {
@@ -246,16 +212,12 @@ impl CheckedViewStyleDeclaration {
 impl CheckedViewStylePatch {
     pub(crate) const fn new(
         id: ViewStylePatchId,
-        syntax: CheckedViewStyleSyntax,
         declarations: Vec<CheckedViewStyleDeclaration>,
-        css_source: Option<String>,
         range: TextRange,
     ) -> Self {
         Self {
             id,
-            syntax,
             declarations,
-            css_source,
             range,
         }
     }
@@ -264,16 +226,8 @@ impl CheckedViewStylePatch {
         self.id
     }
 
-    pub const fn syntax(&self) -> CheckedViewStyleSyntax {
-        self.syntax
-    }
-
     pub fn declarations(&self) -> &[CheckedViewStyleDeclaration] {
         &self.declarations
-    }
-
-    pub fn css_source(&self) -> Option<&str> {
-        self.css_source.as_deref()
     }
 
     pub const fn range(&self) -> TextRange {

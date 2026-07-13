@@ -1,109 +1,184 @@
-# seq06.16.4 runtime-control style contract
+# seq06.16.4 native computed Style and runtime-control contract
 
 ## Decision
 
-This is implemented as a narrow, typed runtime-control visual style bridge that is intentionally replaceable by the broader seq06.11 retained View style resolver. It does not create a DOM overlay, browser-CSS path, sample-specific geometry path, or a duplicate shadow renderer.
+Every retained View consumer uses the single native computed-Style resolver
+owned by `arcweft-view`. `arcweft-bundle` owns deterministic resource codecs and
+runtime projection only; it does not implement a second cascade.
 
-The bridge resolves already-decoded `ViewStyleResource` data into player-owned runtime control payloads:
-
-- `ViewRuntimeTextControl.style`
-- `ViewRuntimeActionButton.style`
-
-`arcweft-bundle` remains Sans I/O and data-only. It performs deterministic value mapping and records structured diagnostics; it does not parse external CSS files, rasterize, allocate platform handles, or read assets.
-
-## Data path
+The canonical path is:
 
 ```text
-ViewStyleResource
-  -> ViewRuntimeControlStyle / ViewRuntimeControlStyleDiagnostic
-  -> ViewRuntimeTextControl / ViewRuntimeActionButton
-  -> RuntimeTextControlLowerer / RuntimeActionButtonLowerer
-  -> RenderControlStyle on RenderTextInputControl / RenderActionButton
-  -> SharedFramePlanner rectangles/text/focus ring/border/shadow plans
+Arcweft native Style
+  -> CheckedViewStyleCatalog
+  -> sheet-owned ViewStyleProgram
+  -> ordered ViewStyleApplicationTarget values on static node producers
+  -> runtime-materialized ViewStyleApplication values
+  -> arcweft-view::style::ViewStyleResolver
+  -> ComputedViewStyle
+  -> bundle/player runtime projection
+  -> shared native, web, and headless rendering paths
 ```
 
-Native, web, and Agent observation stay on the same `BundlePresentationSnapshot` / `PlayerFramePlanner` path.
+CSS source, CSS syntax discriminators, external stylesheet descriptors, and
+Takumi adapter data are not inputs to this contract.
 
-## Typed payload
+## Ownership
 
-`ViewRuntimeControlStyle` has five deterministic slots:
+| Contract | Owner | Responsibility |
+| --- | --- | --- |
+| `ViewStyleProgram` | `arcweft-view::style` | Canonical sheets, sheet-local tokens and rules, and inline patches |
+| `ViewStyleApplicationTarget` | `arcweft-view::style` | Static named-sheet or inline-patch identity |
+| `ViewStyleApplication` | `arcweft-view::style` | Runtime scope, depth, authored order, and View-boundary facts |
+| `ViewStyleResolver` | `arcweft-view::style` | Selector matching, token resolution, inheritance, cascade, tracing, and caching |
+| `ComputedViewStyle` | `arcweft-view::style` | Fully token-resolved typed properties and winning provenance |
+| `ViewStyleResource` | `arcweft-bundle` | Program serialization plus source-map and cross-section references |
+| Runtime-control projection | `arcweft-bundle` and player adapters | Mapping computed typed values to control and renderer payloads |
 
-- `normal`
-- `hover`
-- `pressed`
-- `focus_visible`
-- `disabled`
+Lower layers remain Sans I/O. Resource loading, platform handles, and renderer
+resource acquisition stay in player or platform adapters.
 
-Each slot is a `ViewRuntimeControlVisualStyle` carrying:
+## Static targets and runtime applications
 
-- optional fill color (`RgbaColor`), including alpha;
-- optional text color;
-- optional border color and width;
-- optional focus-ring color, width, and offset;
-- optional opacity in milli-units (`0..=1000`);
-- optional uniform radius in milli-pixels;
-- optional four-corner elliptical radii in milli-pixels;
-- a list of runtime shadows.
+A node-producing View instruction stores an authored-order
+`Vec<ViewStyleApplicationTarget>`. It does not store a partially known runtime
+scope and there is no trailing standalone `ApplyStyle` instruction.
 
-The renderer-facing mirror type is `RenderControlStyle`; conversion happens in `arcweft-player-scene`, so `arcweft-render-wgpu` does not depend on `arcweft-bundle`.
+The runtime driver materializes each target into `ViewStyleApplication` when the
+mounted path and nested-View relationship are known. It supplies:
 
-## State resolution
+- the named-sheet or inline-patch target;
+- a stable runtime scope identity;
+- scope depth;
+- global application order preserving authoring order;
+- `ViewStyleBoundaryFacts` for nested View crossings and exported parts.
 
-State precedence is:
+Named applications may enter descendant scopes. Inline patches are local to the
+node where they were authored. A synthetic part name is never used to represent
+an inline patch.
+
+## Resolver input and result
+
+`ViewStyleResolveContext` identifies one concrete node using:
+
+- `ViewStyleNodeKey` for mount, retained path, and instruction identity;
+- `ViewStyleNodeFacts` for element kind, implementation/exported part, and all
+  simultaneously active interaction and element states;
+- root-to-parent ancestry within the visible View boundary;
+- the ordered runtime applications;
+- the parent `ComputedViewStyle`, when present;
+- the complete `PresentationEnvironment` snapshot;
+- explicit sheet, patch, token, application, interaction, and container
+  revisions;
+- the requested trace mode.
+
+Resolution returns `ViewStyleResolution`, containing one `ComputedViewStyle`, an
+optional deterministic trace, and whether the bounded cache supplied the
+result. Each `ComputedViewProperty` retains its typed value, priority, and
+sheet/patch/inherited provenance.
+
+## Inheritance and cascade
+
+Inheritance is a separate first step. The resolver seeds the builder from only
+those parent properties for which `ViewPropertyKind::is_inherited()` is true.
+Layout, paint, transform, clip, and mask properties are not inherited merely
+because a parent has a value.
+
+The resolver then processes every application in order. Named applications
+match typed selectors, resolve tokens only from their owning sheet, and emit
+per-property contributions. Inline patches use the same contribution path. A
+later application is stronger than an earlier application, including when an
+inline patch appears between two named applications.
+
+The canonical winner tuple is:
 
 ```text
-disabled > pressed > focus_visible > hover > normal
+scope depth
+  -> application order
+  -> selector predicate specificity
+  -> selector element specificity
+  -> rule source order
+  -> declaration order
 ```
 
-The state slot overlays the normal slot field-by-field. Missing state fields inherit normal values. Shadow lists replace the inherited list only when the state slot contains at least one shadow, matching CSS state override behavior for this focused bridge.
+Later tuple values win. Selector traversal across a nested View is permitted
+only by the runtime-supplied boundary facts; a numeric scope depth does not by
+itself authorize cross-boundary matching.
 
-## Selector subset
+Interaction and element states are sets rather than one mutually exclusive
+slot, so selectors can match combinations such as focus-visible and hover in
+the same snapshot. Environment predicates use the typed presentation
+environment. A container predicate without runtime container facts does not
+match and is visible as a trace rejection; it is never guessed.
 
-For runtime controls, the bridge accepts:
+## Tokens and append assignment
 
-- element selectors for `Button`, `TextField`, `TextArea`, `SecureField`;
-- part/public-id selectors matching the control public id;
-- explicit action-button style ids stored on `ViewActionButtonResource.style`;
-- state selectors: `:hover`, `:active`, `:disabled`, `:focus-visible`.
+Named-sheet tokens are resolved from that sheet's token inventory. An inline
+patch may reference a token only when that identity has one unambiguous sheet
+owner. Missing, ambiguous, cyclic, or over-budget references fail through typed
+model or resolver errors; no string suffix matching is performed.
 
-Unsupported selector combinators (`Descendant`, `Child`) and environment predicates are not guessed. They produce structured diagnostics when they would otherwise apply to a runtime control.
+`Append` is a typed list operation. It is valid only for the list-valued
+properties accepted by the model, including font-family, shadow, filter,
+backdrop-filter, and transition lists. A later `Replace` discards the previously
+accumulated list.
 
-## Cascading
+## Budgets, cache, invalidation, and trace
 
-The bridge deliberately follows the compiled resource order instead of adding a CSS parser:
+The default resolver limits are:
 
-1. global `rules` are processed in stored order;
-2. `part_rules` matching the target public id or explicit style id are processed after global rules;
-3. state rules write into their specific state slot;
-4. later declarations replace earlier declarations, except `box-shadow` with `Append`, which appends to the shadow list.
+| Work | Limit |
+| --- | ---: |
+| Applications per resolution | 4,096 |
+| Rules visited | 65,536 |
+| Contributions retained | 262,144 |
+| Tokens inventoried | 65,536 |
+| Selector steps | 262,144 |
+| Token reference depth | 64 |
+| Cache entries | 1,024 |
 
-Inline Arcweft/CSS patches must be lowered into `ViewStyleResource.rules` / `part_rules` by the compiler. Because this bridge consumes only the typed resource section, it cannot recover text from `ViewStyleApplyRef::InlineCss { patch_id }` by itself. If a stored declaration cannot affect runtime controls yet, a diagnostic is emitted.
+The cache key includes stable node identity, node and ancestor facts, all style
+revision counters, the parent computed revision, and all presentation
+environment values and its revision. Eviction is deterministic FIFO. Full
+tracing bypasses the cache so rejection and contribution evidence is complete;
+the default `Off` mode allocates no trace buffer, while `Winners` retains only
+the final provenance.
 
-## Renderer behavior
+`ComputedViewStyle::invalidation_from` compares typed property values and unions
+the owning property's invalidation class. Consumers do not infer invalidation by
+normalizing property names.
 
-The renderer uses normal prepared-frame primitives for visible supported properties:
+## Runtime projection and renderer behavior
 
-- fill/background and opacity: retained `ViewRoundedRect` fill primitive;
-- text color: `RenderTextBlock.rgba`;
-- border: four deterministic `PaintRect` strips;
-- focus ring: configurable four-strip ring around the bounds;
-- box-shadow: converted into `ViewBoxShadowList` and planned by `ViewBoxShadowPassPlan` from the existing seq06.13e substrate.
+The bundle runtime-control layer accepts a computed result and projects supported
+properties into runtime surfaces, text controls, and action buttons. Player
+adapters then convert those payloads to renderer-owned control styles and
+existing View primitives. This keeps `arcweft-render-wgpu` independent of bundle
+types while native, web, and headless observation consume the same computed
+result.
 
-Uniform radius and four-corner elliptical radii are carried into both the retained fill primitive and the shadow border-radii input. `ViewRoundedRect` uses `ViewCornerRadii` and applies CSS border-radius overlap normalization before tessellating the fill, so player-owned surfaces no longer collapse fill radii to a single circular radius.
+Projection does not reopen source text, resolve selectors or tokens, normalize
+property strings, or interpret synthetic part identifiers. Unsupported target
+projection is reported at the typed projection boundary; there are no
+player-facing CSS diagnostic categories.
 
-## Diagnostics
+## Errors and diagnostics
 
-`ViewRuntimeControlStyleDiagnostic` contains:
+Resolver failures are typed native-Style errors for bounded work and broken
+references, including missing sheets, patches, or tokens and ambiguous inline
+token ownership. `ViewStyleTrace` explains winners and rejected typed selectors
+when requested.
 
-- target public id;
-- property or selector fragment;
-- reason (`unsupported_property`, `unsupported_value`, `token_not_found`, `unsupported_selector`).
-
-Runtime session construction preserves these as display diagnostics so unsupported stored properties are not silent no-ops.
+Removed authoring syntax has no dedicated CSS-removal diagnostic contract. It
+falls through the language parser's ordinary structured recovery, just like any
+other unsupported syntax.
 
 ## Non-goals
 
-- Adding a second declaration family beside View-owned text controls.
-- CSS parsing, external CSS loading, DOM overlays, canvas/image fallback, browser-native controls, or sample-specific geometry.
-- Duplicating Takumi or seq06.13e box-shadow rendering.
-- Full CSS specificity, cascade layers, inheritance, media queries, or pseudo-element support.
+- CSS parsing, external stylesheets, browser DOM controls, canvas/image
+  fallbacks, or Takumi-owned cascade/layout.
+- A compatibility reader, syntax alias, migration shim, or dual runtime path.
+- A second runtime-control-specific cascade or state-slot precedence model.
+- Guessing container-query results before typed runtime container facts exist.
+- Redesigning the renderer's existing typed paint, shadow, filter, clip, mask,
+  or compositing primitives.

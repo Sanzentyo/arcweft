@@ -1,6 +1,6 @@
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputPurpose, ViewRuntimeControlStyle, ViewRuntimeTextControl,
+    ViewInputPurpose, ViewRuntimeControlVisualStyle, ViewRuntimeTextControl,
     ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
     ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
     ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
@@ -17,7 +17,7 @@ use arcweft_presentation::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
-    RenderChoiceItem, RenderControlStyle, RenderFocusAutoScrollPolicy, RenderPreferences,
+    RenderChoiceItem, RenderControlVisualStyle, RenderFocusAutoScrollPolicy, RenderPreferences,
     RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
     RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl, RenderViewport,
 };
@@ -378,7 +378,7 @@ fn render_action_button(target: &str, action: &str) -> RenderActionButton {
         containing_scroll_region: None,
         bounds: HitRect::new(48.0, 48.0, 180.0, 48.0),
         viewport_clip: None,
-        style: RenderControlStyle::default(),
+        style: RenderControlVisualStyle::default(),
         action: RenderActionButtonAction::ActionInvoke {
             action: PublicId::try_new(action).expect("valid action id"),
             payload: Some("ready".to_owned()),
@@ -414,7 +414,7 @@ fn runtime_control(public_id: &str, kind: ViewInputKind, value: &str) -> ViewRun
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 260, 48),
         label: Some("Name".to_owned()),
         handlers: ViewRuntimeTextControlHandlers::default(),
-        style: ViewRuntimeControlStyle::default(),
+        style: ViewRuntimeControlVisualStyle::default(),
     }
 }
 

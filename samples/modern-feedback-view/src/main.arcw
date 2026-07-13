@@ -164,13 +164,11 @@ pub view ModernFeedbackNamePanel() {
           .placeholder("Your name")
           .purpose(.name)
           .enter_key(.send)
-          .style(@style:.modern_feedback_panel)
           .on_submit {
             action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
           }
 
         Button(@button:.submit_name, label = "Continue")
-          .style(@style:.modern_feedback_panel)
           .enabled(true)
           .focusable(true)
           .on_click {
@@ -179,6 +177,7 @@ pub view ModernFeedbackNamePanel() {
       }
     }
   }
+    .style(@style:.modern_feedback_panel)
 }
 
 pub view ModernFeedbackBriefPanel() {
@@ -203,14 +202,12 @@ pub view ModernFeedbackBriefPanel() {
         .label("Product brief")
         .placeholder("Write one sharp product idea")
         .purpose(.text)
-        .style(@style:.modern_feedback_panel)
         .on_submit {
           action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
         }
 
       Row {
         Button(@button:.send_brief, label = "Send brief")
-          .style(@style:.modern_feedback_panel)
           .enabled(true)
           .focusable(true)
           .on_click {
@@ -218,16 +215,15 @@ pub view ModernFeedbackBriefPanel() {
           }
 
         Button(@button:.draft_status, label = "Draft saved")
-          .style(@style:.modern_feedback_panel)
           .enabled(false)
           .focusable(false)
       }
     }
   }
+    .style(@style:.modern_feedback_panel)
 }
 
 flow modern_feedback_view {
-    player_viewport(width = 1280px, height = 720px, fit = contain)
     image(@image.glass_bg)
 
     concierge:

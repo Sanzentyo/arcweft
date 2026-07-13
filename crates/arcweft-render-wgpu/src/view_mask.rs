@@ -18,7 +18,7 @@ pub enum ViewMaskChannel {
     Luminance,
 }
 
-/// Per-axis mask tile distribution mode after CSS repeat normalization.
+/// Per-axis mask tile distribution mode after typed repeat normalization.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ViewMaskAxisRepeat {
     NoRepeat,
@@ -38,7 +38,7 @@ pub enum ViewMaskImagePlan {
     Unsupported(Box<str>),
 }
 
-/// One mask pass after CSS mask fields are normalized by lowering.
+/// One mask pass after native mask fields are normalized for rendering.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ViewMaskPassPlan {
     pub mask_index: usize,

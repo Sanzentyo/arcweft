@@ -143,8 +143,7 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     let mount = presentation.view.mounts[0].clone();
 
     presentation.surfaces = program
-        .runtime_surfaces_with_style(Some(&style))
-        .into_controls()
+        .runtime_surfaces()
         .into_iter()
         .map(|mut surface| {
             surface.public_id = mount.scoped_id(&surface.public_id);
@@ -154,8 +153,7 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         })
         .collect();
     presentation.action_buttons = program
-        .runtime_action_buttons_with_style(Some(&text), Some(&style))
-        .into_controls()
+        .runtime_action_buttons(Some(&text))
         .into_iter()
         .map(|mut button| {
             button.public_id = mount.scoped_id(&button.public_id);
@@ -178,12 +176,17 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
 fn prepare(presentation: &BundlePresentationSnapshot) -> PlayerPreparedFrame {
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
+    let style = dialogue_style();
     PlayerFramePlanner::prepare(
         &mut input,
         PlayerFrameRequest {
             presentation,
             fx_definitions: &FxDefinitions::default(),
             images: &images,
+            style_program: Some(&style.program),
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
             viewport: RenderViewport {
                 logical_width: 1_280.0,
                 logical_height: 720.0,

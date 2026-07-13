@@ -5,7 +5,7 @@
 //! through syntax/HIR, and retains a module-preserving `HirProject` alongside
 //! the transitional crate-global semantic-pass view.
 
-use crate::{hir, lower, parse};
+use crate::{hir, lower, parse, style};
 use arcweft_lang_hir::{
     model::HirModule,
     project::{HirProject, HirProjectModule},
@@ -37,6 +37,7 @@ pub enum ProjectCompileStage {
     Resolve,
     Readiness,
     TypeCheck,
+    StyleLower,
     LineTaskLower,
     RuntimePlanLower,
 }
@@ -98,6 +99,7 @@ pub struct CompiledProject {
     callable_symbols: CallableSymbolTable,
     linked_hir: HirModule,
     typecheck_report: TypeCheckReport,
+    style: style::CompiledViewStyleArtifact,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     runtime_plan: RuntimePlanLowerReport,
 }
@@ -148,6 +150,7 @@ impl ProjectCompileStage {
             Self::Resolve => "resolve",
             Self::Readiness => "readiness",
             Self::TypeCheck => "type-check",
+            Self::StyleLower => "style-lower",
             Self::LineTaskLower => "line-task-lower",
             Self::RuntimePlanLower => "runtime-plan-lower",
         }
@@ -287,6 +290,10 @@ impl CompiledProject {
         &self.typecheck_report
     }
 
+    pub const fn style(&self) -> &style::CompiledViewStyleArtifact {
+        &self.style
+    }
+
     pub fn line_task_groups(&self) -> &[LoweredLineTaskGroup] {
         &self.line_task_groups
     }
@@ -410,6 +417,21 @@ where
             errors.into_iter().map(|error| error.diagnostic()),
         )
     })?;
+    let style = style::lower_project_view_styles(
+        &hir_project,
+        &linked_hir,
+        &typecheck_report.style_catalog,
+        project,
+    )
+    .map_err(|error| {
+        linked_error(
+            ProjectCompileStage::StyleLower,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("style.lower"),
+            ],
+        )
+    })?;
     let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
         linked_error(
             ProjectCompileStage::LineTaskLower,
@@ -438,6 +460,7 @@ where
         callable_symbols,
         linked_hir,
         typecheck_report,
+        style,
         line_task_groups,
         runtime_plan,
     })

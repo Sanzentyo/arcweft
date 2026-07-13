@@ -265,7 +265,7 @@ style native_text_input_sample {
         panic!("expected a typed style item");
     };
     assert_eq!(style.id().body(), "style.native_text_input_sample");
-    let sheet = style.body().arcweft().expect("native style sheet");
+    let sheet = style.sheet();
     assert_eq!(sheet.tokens().len(), 1);
     assert_eq!(sheet.rules().len(), 2);
 }

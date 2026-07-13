@@ -3,10 +3,9 @@
   "fixture": "seq06.13e2-per-corner-elliptical-box-shadow-card",
   "date": "2026-07-04",
   "route": [
-    "author CSS",
-    "Takumi StyleSheet parse/cascade",
-    "ComputedStyle border_*_radius typed SpacePair<Length>",
-    "arcweft-takumi-adapter box_shadow_border_radii",
+    "author native Style",
+    "checked sheet-owned ViewStyleProgram",
+    "computed border radii typed value",
     "ViewBoxShadowRadii typed scene contract",
     "ViewBoxShadowPassPlan body_radii/shadow_radii",
     "ViewCompositorUniform box-shadow radius rows",
@@ -21,7 +20,7 @@
   },
   "forbidden_paths": [
     "DOM clipping",
-    "browser CSS shadow rendering",
+    "browser DOM shadow rendering",
     "canvas fallback",
     "SVG filter",
     "CPU raster",

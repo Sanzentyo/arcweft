@@ -14,6 +14,8 @@ pub enum CompileSourceError {
     Readiness(Vec<arcweft_lang_sema::diagnostics::TypeCheckReadinessError>),
     #[error("type errors: {0:?}")]
     Type(Vec<arcweft_lang_sema::diagnostics::TypeCheckError>),
+    #[error("View Style lowering error: {0}")]
+    Style(#[from] crate::style::ViewStyleLowerError),
     #[error("runtime-plan lowering errors: {0:?}")]
     RuntimePlan(Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>),
 }

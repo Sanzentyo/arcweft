@@ -8,13 +8,13 @@
   "source_request": "docs/reviews/requests/2026-07-04-seq-06.13e.1.1-web-exact-png-readback-harness.md",
   "renderer_contract": {
     "must_use": [
-      "Takumi typed CSS parse/cascade for authored CSS fixture",
+      "typed native Style sheet and selector resolution",
       "ViewStyleResource typed Panel part style rules",
       "ViewProgramResource::runtime_surfaces_with_style",
       "BundlePresentationSnapshot::surfaces",
       "ViewRuntimeControlVisualStyle fill/radius/shadows",
       "ViewRoundedRect primitive from player-owned surface resource",
-      "arcweft-takumi-adapter box_shadow_list_from_takumi",
+      "computed native Style box-shadow value",
       "ViewCompositingEffects::box_shadows",
       "PlayerFramePlanner::prepare",
       "SharedRenderer::render_to_view",
@@ -24,7 +24,7 @@
       "WebAssembly-exported renderer readback for the browser/WebGPU exact packet"
     ],
     "must_not_use": [
-      "browser DOM CSS box-shadow screenshots",
+      "browser DOM style-rendered screenshots",
       "SVG filters",
       "canvas 2D fallback",
       "CPU raster fallback",
@@ -32,7 +32,7 @@
       "renderer/lowering/shader redesign without pinned defect evidence"
     ],
     "smoke_fixture_decision": "keep the existing ignored GPU smoke as a compositor execution regression; exact PNG native and Web fixtures are separate because promotion requires fingerprints, candidate PNGs, imq JSON, command logs, and a review decision packet",
-    "web_capture_decision": "Playwright launches the pinned browser, but pixels come from the wasm-exported Arcweft player renderer reading back an Arcweft-owned rgba8unorm texture. The wasm fixture resolves typed Panel part style rules through ViewProgramResource::runtime_surfaces_with_style, attaches the fixture surfaces to BundlePresentationSnapshot::surfaces, and lets PlayerFramePlanner lower them into the normal player PreparedFrame before SharedRenderer::render_to_view. The browser test script only writes PNG/JSON artifacts. It does not call Playwright screenshot APIs or use DOM/CSS rendering as evidence."
+    "web_capture_decision": "Playwright launches the pinned browser, but pixels come from the wasm-exported Arcweft player renderer reading back an Arcweft-owned rgba8unorm texture. The wasm fixture resolves typed Panel part style rules through ViewProgramResource::runtime_surfaces_with_style, attaches the fixture surfaces to BundlePresentationSnapshot::surfaces, and lets PlayerFramePlanner lower them into the normal player PreparedFrame before SharedRenderer::render_to_view. The browser test script only writes PNG/JSON artifacts. It does not call Playwright screenshot APIs or use browser DOM styling as evidence."
   },
   "fixtures": [
     {
@@ -166,7 +166,7 @@
       "strict_hash": false
     },
     "web": {
-      "policy": "separate Web-specific baseline for this browser/WebGPU fixture; do not compare against DOM/CSS screenshots and do not promote from native without Web same-run evidence",
+      "policy": "separate Web-specific baseline for this browser/WebGPU fixture; do not compare against browser DOM-rendered screenshots and do not promote from native without Web same-run evidence",
       "dimensions_must_match": true,
       "max_mse": 0.002,
       "max_mae": 0.003,

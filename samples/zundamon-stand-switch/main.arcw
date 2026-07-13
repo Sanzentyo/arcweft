@@ -28,15 +28,15 @@ pub character narrator {
 
 pub style zundamon_panel {
     .dialogue_panel {
-        background = rgba(17, 18, 16, 242)
+        background-color = rgba(17, 18, 16, 242)
     }
     .dialogue_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
     .zundamon_panel {
-        font-family = text("Yu Gothic UI")
+        font-family = ["Yu Gothic UI"]
         color = rgba(247, 244, 232, 255)
-        font-size = 24000milli
+        font-size = 24px
     }
 }
 

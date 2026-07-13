@@ -8,7 +8,7 @@ pub mod value;
 
 pub use catalog::{
     CheckedViewStyleCatalog, CheckedViewStyleDeclaration, CheckedViewStylePatch,
-    CheckedViewStyleRule, CheckedViewStyleSheet, CheckedViewStyleSyntax, CheckedViewStyleToken,
+    CheckedViewStyleRule, CheckedViewStyleSheet, CheckedViewStyleToken,
 };
 pub use check::check_view_styles;
 pub use diagnostic::{StyleDiagnostic, StyleDiagnosticCode};

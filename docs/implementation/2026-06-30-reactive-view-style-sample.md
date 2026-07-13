@@ -1,5 +1,7 @@
 # Reactive View Style Sample
 
+> **Superseded (2026-07-13):** Arcweft now has a native-only typed Style path. The CSS authoring, Takumi adapter, and CSS-named sample/tooling paths described below were removed; the remaining text is retained only as historical implementation evidence.
+
 ## Summary
 
 Added `samples/reactive-view-style` as the current best runnable sample for

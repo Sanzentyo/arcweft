@@ -1,5 +1,10 @@
 # seq06.13e CSS Inset Box-Shadow Support Matrix
 
+> **Superseded (2026-07-13):** The CSS/Takumi source path described below was
+> removed by the [native-only typed Style path](native-only-style-path-2026-07-13.md).
+> Native typed Style still uses the generic inset-shadow renderer, while this
+> table remains only as historical implementation evidence.
+
 | Area | Status | Evidence in package | Notes |
 | --- | --- | --- | --- |
 | Typed source | Implemented by seq06.13d | `ViewBoxShadowKind::Inset` from Takumi adapter | Not redesigned in seq06.13e. |

@@ -74,7 +74,7 @@ pub enum ViewClipPathCommandPlan {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ViewClipPathPlanError {
-    #[error("CSS path() clip-path requires supported SVG path data commands")]
+    #[error("path clip shape requires supported SVG path data commands")]
     PathUnsupported,
     #[error("clip-path url resource `{resource}` requires reusable vector clip resources")]
     UrlClipResourceUnsupported { resource: Box<str> },

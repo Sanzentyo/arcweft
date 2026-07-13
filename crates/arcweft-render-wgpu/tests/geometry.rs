@@ -10,7 +10,7 @@ use arcweft_presentation::text_input::{
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, InteractionVisualState, RenderActionButton,
     RenderActionButtonAction, RenderChoiceItem, RenderControlFilter, RenderControlFilterList,
-    RenderControlShadow, RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
+    RenderControlShadow, RenderControlShadowKind, RenderControlVisualStyle,
     RenderFocusAutoScrollPolicy, RenderFocusGroup, RenderFocusGroupPolicy,
     RenderFocusInitialPolicy, RenderFocusNavigation, RenderFocusNavigationEdge,
     RenderFocusSkipPolicy, RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderImage,
@@ -793,7 +793,7 @@ fn scroll_region_offsets_and_clips_owned_action_buttons() {
         containing_scroll_region: Some("scroll.feedback".to_owned()),
         bounds: HitRect::new(100.0, 170.0, 180.0, 48.0),
         viewport_clip: None,
-        style: RenderControlStyle::default(),
+        style: RenderControlVisualStyle::default(),
         action: RenderActionButtonAction::Noop,
     }];
     scene.scroll_regions = vec![RenderScrollRegion {
@@ -844,26 +844,23 @@ fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
         containing_scroll_region: Some("scroll.feedback".to_owned()),
         bounds: HitRect::new(100.0, 170.0, 180.0, 48.0),
         viewport_clip: None,
-        style: RenderControlStyle {
-            normal: RenderControlVisualStyle {
-                filters: Some(RenderControlFilterList {
-                    filters: vec![RenderControlFilter::Blur { radius_px: 2.0 }],
-                }),
-                backdrop_filters: Some(RenderControlFilterList {
-                    filters: vec![RenderControlFilter::Brightness { factor: 1.1 }],
-                }),
-                shadows: vec![RenderControlShadow {
-                    offset_x_px: 0.0,
-                    offset_y_px: 8.0,
-                    blur_radius_px: 18.0,
-                    spread_radius_px: 0.0,
-                    border_radius_px: 12.0,
-                    color: [0, 0, 0, 128],
-                    kind: RenderControlShadowKind::Outer,
-                }],
-                ..RenderControlVisualStyle::default()
-            },
-            ..RenderControlStyle::default()
+        style: RenderControlVisualStyle {
+            filters: Some(RenderControlFilterList {
+                filters: vec![RenderControlFilter::Blur { radius_px: 2.0 }],
+            }),
+            backdrop_filters: Some(RenderControlFilterList {
+                filters: vec![RenderControlFilter::Brightness { factor: 1.1 }],
+            }),
+            shadows: vec![RenderControlShadow {
+                offset_x_px: 0.0,
+                offset_y_px: 8.0,
+                blur_radius_px: 18.0,
+                spread_radius_px: 0.0,
+                border_radius_px: 12.0,
+                color: [0, 0, 0, 128],
+                kind: RenderControlShadowKind::Outer,
+            }],
+            ..RenderControlVisualStyle::default()
         },
         action: RenderActionButtonAction::Noop,
     }];

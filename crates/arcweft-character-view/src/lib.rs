@@ -14,8 +14,8 @@ use arcweft_image::{
 use arcweft_presentation::character::{CharacterRenderLayer, CharacterRenderSpec};
 use arcweft_view::{
     ContainerKind, FragmentKind, ImageAlignment, ImageFit, ImageId, LayoutBox, LayoutLength,
-    LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeId, NodeKey, StyleId, ViewError,
-    ViewFragment, ViewFragmentBuilder, ViewImageSource, ViewImageSourceTable, ViewLayerOutput,
+    LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeId, NodeKey, ViewError, ViewFragment,
+    ViewFragmentBuilder, ViewImageSource, ViewImageSourceTable, ViewLayerOutput,
     ViewResolvedImageFrame, ViewSemanticFragment,
 };
 use std::collections::BTreeMap;
@@ -179,7 +179,7 @@ impl CharacterView {
             let node = fragment_builder.push_node(
                 stable_layer_key(render, layer),
                 FragmentKind::Image(image_id),
-                StyleId(0),
+                &[],
                 &[],
                 &[],
                 None,
@@ -201,7 +201,7 @@ impl CharacterView {
         let root = fragment_builder.push_node(
             stable_root_key(render),
             FragmentKind::Container(ContainerKind::Stack),
-            StyleId(0),
+            &[],
             &image_nodes,
             &[],
             None,

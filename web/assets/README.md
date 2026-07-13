@@ -9,8 +9,8 @@ authoring inputs for `web/demo.arcw` live separately under `web/bundle-assets/`.
   Open Font License. The default Web player registers this SFNT font with the
   shared renderer so browser canvas text uses Japanese glyphs without relying
   on host system fonts.
-- `noto-sans-jp-css-style-parity.ttf`: deterministic SFNT subset of the same
-  Noto Sans JP variable font containing `星影ほしかげ`. The CSS-style native/Web
+- `noto-sans-jp-native-style-parity.ttf`: deterministic SFNT subset of the same
+  Noto Sans JP variable font containing `星影ほしかげ`. The native Style/Web
   visual fixture registers this 13 KiB subset instead of paying the debug-Wasm
   startup cost of the 9 MiB product font. It is generated with FontTools using
   `--layout-features=* --name-IDs=* --name-legacy --name-languages=*`

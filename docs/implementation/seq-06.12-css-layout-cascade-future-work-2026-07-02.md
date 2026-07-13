@@ -1,5 +1,10 @@
 # Seq06.12 future work
 
+> **Superseded (2026-07-13):** The CSS/Takumi Style path and the future work
+> listed below were removed by the [native-only typed Style path](native-only-style-path-2026-07-13.md).
+> This list is retained only as historical planning evidence and is not active
+> implementation work.
+
 1. Bind seq06.11 retained interaction state into CSS pseudo-state evaluation for
    `:hover`, `:focus`, `:active`, and `:disabled` in normal player frames.
 2. Lower CSS custom properties into `StyleTokenBinding` only after defining the

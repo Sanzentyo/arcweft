@@ -69,6 +69,7 @@ pub enum SystemColor {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PresentationColor {
     pub red: u8,
     pub green: u8,
@@ -120,6 +121,15 @@ impl TextScaleMilli {
 }
 
 impl PresentationEnvironment {
+    pub const ENGINE_DEFAULT: Self = Self {
+        color_scheme: ColorScheme::Dark,
+        contrast: ContrastPreference::Standard,
+        reduce_motion: false,
+        text_scale: TextScaleMilli::ONE,
+        locale: None,
+        revision: EnvironmentRevision(0),
+    };
+
     pub fn new(color_scheme: ColorScheme) -> Self {
         Self {
             color_scheme,
@@ -269,6 +279,29 @@ fn lerp_channel(source: u8, target: u8, progress_milli: i32) -> u8 {
 }
 
 impl SystemPalette {
+    /// Returns this palette with one semantic role replaced.
+    #[must_use]
+    pub const fn with_color(mut self, role: SystemColor, color: PresentationColor) -> Self {
+        match role {
+            SystemColor::Canvas => self.canvas = color,
+            SystemColor::CanvasText => self.canvas_text = color,
+            SystemColor::Surface => self.surface = color,
+            SystemColor::SurfaceText => self.surface_text = color,
+            SystemColor::RaisedSurface => self.raised_surface = color,
+            SystemColor::MutedText => self.muted_text = color,
+            SystemColor::Border => self.border = color,
+            SystemColor::Accent => self.accent = color,
+            SystemColor::AccentText => self.accent_text = color,
+            SystemColor::FocusRing => self.focus_ring = color,
+            SystemColor::Selection => self.selection = color,
+            SystemColor::SelectionText => self.selection_text = color,
+            SystemColor::Danger => self.danger = color,
+            SystemColor::Warning => self.warning = color,
+            SystemColor::Success => self.success = color,
+        }
+        self
+    }
+
     pub const fn color(self, role: SystemColor) -> PresentationColor {
         match role {
             SystemColor::Canvas => self.canvas,

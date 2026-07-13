@@ -1,5 +1,11 @@
 # Scoped Presentation Handles And Final View Syntax - 2026-07-06
 
+> **Style contract superseded again (2026-07-13):** The `ViewStyleTable`,
+> `ViewStyleApplyRef`, CSS/Takumi, and related Style contracts still named in
+> this historical note were removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). Scoped
+> presentation-handle evidence remains applicable where independent of Style.
+
 ## 2026-07-08 View Resource Rename Supersession
 
 The 2026-07-08 View resource rename supersedes earlier notes in this file that
@@ -623,6 +629,11 @@ Validation for this slice:
 The structure audit reported 0 errors and 146 warnings after this slice.
 
 ## 2026-07-07 Scroll Style Rule Layout Defaults
+
+> Superseded by [seq06.11d.2 Style resource sheet ownership](seq06-11d-2-style-resource-sheet-ownership-2026-07-13.md).
+> D.2 retains these properties and their applications as typed Style data but
+> removes the CLI's partial eager cascade. D.3 owns their effective runtime
+> projection through the single computed-style resolver.
 
 Authored `Scroll` viewport bounds and overflow policy can now be supplied
 through the retained View style resource as deterministic layout defaults.

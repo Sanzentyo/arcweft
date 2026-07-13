@@ -78,11 +78,11 @@ impl Args {
     fn parse(args: Vec<String>) -> Result<Self, String> {
         let mut parsed = Self {
             checkpoint: "default".to_owned(),
-            native: PathBuf::from("target/css-style-parity/native-default.png"),
-            web: PathBuf::from("target/css-style-parity/web-default.png"),
-            native_frame: PathBuf::from("target/css-style-parity/native-default.frame.json"),
-            web_frame: PathBuf::from("target/css-style-parity/web-default.frame.json"),
-            report: PathBuf::from("target/css-style-parity/text-raster-default.json"),
+            native: PathBuf::from("target/native-style-parity/native-default.png"),
+            web: PathBuf::from("target/native-style-parity/web-default.png"),
+            native_frame: PathBuf::from("target/native-style-parity/native-default.frame.json"),
+            web_frame: PathBuf::from("target/native-style-parity/web-default.frame.json"),
+            report: PathBuf::from("target/native-style-parity/text-raster-default.json"),
             font: Some(PathBuf::from("web/assets/arcweft-demo.ttf")),
             ink_affinity_threshold: 0.35,
             thresholds: TextRasterThresholds::default(),
@@ -168,11 +168,11 @@ impl Args {
     fn usage() -> String {
         "usage: cargo +nightly -Zscript tools/verify-text-raster-parity.rs \
          [--checkpoint default] \
-         [--native target/css-style-parity/native-default.png] \
-         [--web target/css-style-parity/web-default.png] \
-         [--native-frame target/css-style-parity/native-default.frame.json] \
-         [--web-frame target/css-style-parity/web-default.frame.json] \
-         [--report target/css-style-parity/text-raster-default.json] \
+         [--native target/native-style-parity/native-default.png] \
+         [--web target/native-style-parity/web-default.png] \
+         [--native-frame target/native-style-parity/native-default.frame.json] \
+         [--web-frame target/native-style-parity/web-default.frame.json] \
+         [--report target/native-style-parity/text-raster-default.json] \
          [--font web/assets/arcweft-demo.ttf] \
          [--ink-affinity-threshold 0.35] \
          [--max-bbox-delta-px 2.0] [--max-centroid-delta-px 1.25] \
@@ -595,7 +595,11 @@ impl FramePreparedText {
         }
         let style = self.style_for_glyph(glyph_index)?;
         let text = self.text.get(start..end).unwrap_or("").to_owned();
-        let visible = glyph.visible && glyph.opacity_milli > 0;
+        let visible = glyph.visible
+            && glyph.opacity_milli > 0
+            && self.bounds.is_none_or(|container| {
+                container.has_positive_intersection(glyph.ink_bounds)
+            });
         Some(FrameText {
             text,
             bounds: glyph.ink_bounds,
@@ -758,6 +762,17 @@ struct FrameBounds {
 impl FrameBounds {
     const fn has_negative_extent(self) -> bool {
         self.width_milli < 0 || self.height_milli < 0
+    }
+
+    const fn has_positive_intersection(self, other: Self) -> bool {
+        self.width_milli > 0
+            && self.height_milli > 0
+            && other.width_milli > 0
+            && other.height_milli > 0
+            && self.x_milli < other.x_milli.saturating_add(other.width_milli)
+            && other.x_milli < self.x_milli.saturating_add(self.width_milli)
+            && self.y_milli < other.y_milli.saturating_add(other.height_milli)
+            && other.y_milli < self.y_milli.saturating_add(self.height_milli)
     }
 }
 
@@ -1576,6 +1591,7 @@ fn run_self_test() -> Result<(), Box<dyn Error>> {
         return Err(format!("self-test should pass: {:?}", report.failure_reasons).into());
     }
     run_prepared_text_self_test()?;
+    run_fully_clipped_prepared_text_self_test()?;
     run_missing_prepared_text_evidence_self_test()?;
     Ok(())
 }
@@ -1610,6 +1626,40 @@ fn run_prepared_text_self_test() -> Result<(), Box<dyn Error>> {
             report.failure_reasons
         )
         .into());
+    }
+    Ok(())
+}
+
+fn run_fully_clipped_prepared_text_self_test() -> Result<(), Box<dyn Error>> {
+    let image = RgbaImage::blank(18, 8, [0, 0, 0, 255]);
+    let mut frame = prepared_self_test_frame(true);
+    frame.text[0].bounds = Some(FrameBounds {
+        x_milli: 8_000,
+        y_milli: 2_000,
+        width_milli: 5_000,
+        height_milli: 4_000,
+    });
+    let args = Args {
+        checkpoint: "fully-clipped-prepared-text-self-test".to_owned(),
+        native: PathBuf::from("native.png"),
+        web: PathBuf::from("web.png"),
+        native_frame: PathBuf::from("native.frame.json"),
+        web_frame: PathBuf::from("web.frame.json"),
+        report: PathBuf::from("text-raster.json"),
+        font: None,
+        ink_affinity_threshold: 0.35,
+        thresholds: TextRasterThresholds::default(),
+    };
+    let report = compare_text_raster(&image, &image, &frame, &frame, &args, None);
+    if !report.passed {
+        return Err(format!(
+            "fully clipped prepared text self-test should pass: {:?}",
+            report.failure_reasons
+        )
+        .into());
+    }
+    if report.runs.first().is_none_or(|run| run.source.visible) {
+        return Err("fully clipped prepared glyph should not require raster ink".into());
     }
     Ok(())
 }

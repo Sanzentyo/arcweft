@@ -6,8 +6,8 @@ use arcweft_lang_syntax::{
         ids::EntityRef,
         items::Attribute,
         style::{
-            StyleAssignOp, StyleCombinator, StyleDecl, StyleDeclBody, StyleDeclarationDecl,
-            StylePatch, StyleSelector, StyleSelectorSequence,
+            StyleAssignOp, StyleCombinator, StyleDecl, StyleDeclarationDecl, StylePatch,
+            StyleSelector, StyleSelectorSequence,
         },
     },
     expr::Expr,
@@ -20,23 +20,8 @@ pub struct HirStyleDecl {
     attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     id: EntityRef,
-    syntax: HirStyleSyntax,
-    body: HirStyleBody,
+    sheet: HirStyleSheet,
     range: TextRange,
-}
-
-/// Style language recorded in HIR.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HirStyleSyntax {
-    Arcweft,
-    Css,
-}
-
-/// Lowered style declaration body.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HirStyleBody {
-    Arcweft(HirStyleSheet),
-    Css(HirCssStyleSource),
 }
 
 /// One lowered named native sheet.
@@ -119,48 +104,26 @@ pub struct HirStyleExpr {
     range: TextRange,
 }
 
-/// Raw CSS retained for its owning adapter.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HirCssStyleSource {
-    source: String,
-    range: TextRange,
-}
-
 /// One stable inline patch extracted while lowering a View declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirStylePatch {
     ordinal: u32,
-    syntax: HirStyleSyntax,
     declarations: Vec<HirStyleDeclaration>,
-    css_source: Option<HirCssStyleSource>,
     range: TextRange,
 }
 
 impl From<&StyleDecl> for HirStyleDecl {
     fn from(value: &StyleDecl) -> Self {
-        let (syntax, body) = match value.body() {
-            StyleDeclBody::Arcweft(sheet) => (
-                HirStyleSyntax::Arcweft,
-                HirStyleBody::Arcweft(HirStyleSheet {
-                    tokens: sheet.tokens().iter().map(HirStyleTokenDecl::from).collect(),
-                    rules: sheet.rules().iter().map(HirStyleRuleDecl::from).collect(),
-                    range: sheet.range(),
-                }),
-            ),
-            StyleDeclBody::Css(source) => (
-                HirStyleSyntax::Css,
-                HirStyleBody::Css(HirCssStyleSource {
-                    source: source.source().to_owned(),
-                    range: source.range(),
-                }),
-            ),
-        };
+        let sheet = value.sheet();
         Self {
             attrs: value.attrs().to_vec(),
             visibility: value.visibility(),
             id: value.id().clone(),
-            syntax,
-            body,
+            sheet: HirStyleSheet {
+                tokens: sheet.tokens().iter().map(HirStyleTokenDecl::from).collect(),
+                rules: sheet.rules().iter().map(HirStyleRuleDecl::from).collect(),
+                range: sheet.range(),
+            },
             range: *value.range(),
         }
     }
@@ -274,27 +237,14 @@ impl From<&arcweft_lang_syntax::ast::style::StyleExpr> for HirStyleExpr {
 impl HirStylePatch {
     /// Lowers an inline patch with its stable source-order ordinal.
     pub fn from_syntax(ordinal: u32, patch: &StylePatch) -> Self {
-        match patch {
-            StylePatch::Arcweft {
-                declarations,
-                range,
-            } => Self {
-                ordinal,
-                syntax: HirStyleSyntax::Arcweft,
-                declarations: declarations.iter().map(HirStyleDeclaration::from).collect(),
-                css_source: None,
-                range: *range,
-            },
-            StylePatch::Css(source) => Self {
-                ordinal,
-                syntax: HirStyleSyntax::Css,
-                declarations: Vec::new(),
-                css_source: Some(HirCssStyleSource {
-                    source: source.source().to_owned(),
-                    range: source.range(),
-                }),
-                range: source.range(),
-            },
+        Self {
+            ordinal,
+            declarations: patch
+                .declarations()
+                .iter()
+                .map(HirStyleDeclaration::from)
+                .collect(),
+            range: patch.range(),
         }
     }
 
@@ -302,16 +252,20 @@ impl HirStylePatch {
         self.ordinal
     }
 
-    pub const fn syntax(&self) -> HirStyleSyntax {
-        self.syntax
+    /// Rebases this module-local ordinal into a linked-module ordinal space.
+    ///
+    /// Inline patch ordinals are the deterministic identity seed consumed by
+    /// later semantic and compiler layers. Rebasing changes only that identity;
+    /// authored declarations and source ranges remain untouched.
+    pub(crate) fn rebase_ordinal(&mut self, base: u32) {
+        self.ordinal = self
+            .ordinal
+            .checked_add(base)
+            .expect("linked HIR contains more inline style patches than u32 can identify");
     }
 
     pub fn declarations(&self) -> &[HirStyleDeclaration] {
         &self.declarations
-    }
-
-    pub const fn css_source(&self) -> Option<&HirCssStyleSource> {
-        self.css_source.as_ref()
     }
 
     pub const fn range(&self) -> TextRange {
@@ -332,12 +286,8 @@ impl HirStyleDecl {
         &self.id
     }
 
-    pub const fn syntax(&self) -> HirStyleSyntax {
-        self.syntax
-    }
-
-    pub const fn body(&self) -> &HirStyleBody {
-        &self.body
+    pub const fn sheet(&self) -> &HirStyleSheet {
+        &self.sheet
     }
 
     pub const fn range(&self) -> TextRange {
@@ -465,12 +415,31 @@ impl HirStyleExpr {
     }
 }
 
-impl HirCssStyleSource {
-    pub fn source(&self) -> &str {
-        &self.source
-    }
+#[cfg(test)]
+mod tests {
+    use crate::lower::lower_to_hir;
+    use arcweft_lang_syntax::parser::parse_source;
 
-    pub const fn range(&self) -> TextRange {
-        self.range
+    #[test]
+    fn patch_rebase_changes_only_ordinal_identity() {
+        let hir = lower_to_hir(
+            &parse_source(
+                r#"pub view Example() {
+    Button("OK").style { outline-width = 2px }
+}
+"#,
+            )
+            .into_typed_tree(),
+        )
+        .unwrap();
+        let mut patch = hir.style_patches()[0].clone();
+        let original_declarations = patch.declarations().to_vec();
+        let original_range = patch.range();
+
+        patch.rebase_ordinal(7);
+
+        assert_eq!(patch.ordinal(), 7);
+        assert_eq!(patch.declarations(), original_declarations);
+        assert_eq!(patch.range(), original_range);
     }
 }

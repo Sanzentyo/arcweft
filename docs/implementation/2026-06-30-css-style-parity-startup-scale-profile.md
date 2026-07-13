@@ -1,5 +1,7 @@
 # css-style-parity startup and scale profile
 
+> **Superseded (2026-07-13):** Arcweft now has a native-only typed Style path. The CSS authoring, Takumi adapter, and CSS-named sample/tooling paths described below were removed; the remaining text is retained only as historical implementation evidence.
+
 Date: 2026-06-30
 
 ## Scope

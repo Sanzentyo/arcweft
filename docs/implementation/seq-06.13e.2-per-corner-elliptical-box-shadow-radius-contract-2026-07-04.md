@@ -1,5 +1,10 @@
 # seq06.13e.2 Per-Corner / Elliptical Box-Shadow Radius Contract Implementation Note — 2026-07-04
 
+> **Superseded Style-path premise (2026-07-13):** The CSS/Takumi integration
+> described below was removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). The
+> renderer-owned per-corner radius model remains valid native substrate.
+
 ## Source assumptions
 
 This package was authored against the GitHub-connector-inspected `Sanzentyo/arcweft`

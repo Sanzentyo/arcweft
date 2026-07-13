@@ -28,23 +28,23 @@ pub character narrator {
 
 pub style web_panel {
     .web_panel {
-        background = rgba(17, 18, 16, 242)
+        background-color = rgba(17, 18, 16, 242)
     }
     .web_speaker {
-        font-family = text("Yu Gothic UI")
+        font-family = ["Yu Gothic UI"]
         color = rgba(174, 226, 142, 255)
-        font-size = 18000milli
-        line-height = 28000milli
-        font-weight = text("700")
+        font-size = 18px
+        line-height = 28px
+        font-weight = 700
     }
     .web_content {
-        font-family = text("Yu Gothic UI")
+        font-family = ["Yu Gothic UI"]
         color = rgba(247, 244, 232, 255)
-        font-size = 24000milli
-        line-height = 34000milli
+        font-size = 24px
+        line-height = 34px
     }
     .web_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
 }
 
@@ -67,6 +67,7 @@ pub view WebPanel(dialogue: DialogueView) {
             .on_click { dialogue.primary_action }
     }
         .part(web_panel)
+        .style(@style.web_panel)
 }
 
 pub dialogue defaults {

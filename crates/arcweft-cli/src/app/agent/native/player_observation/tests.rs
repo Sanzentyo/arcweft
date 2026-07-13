@@ -7,7 +7,7 @@ use arcweft_bundle::resource_codec::view::{
 };
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
-    ViewRuntimeControlStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
+    ViewRuntimeControlVisualStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
     ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
 };
 use arcweft_bundle::{
@@ -269,7 +269,7 @@ fn runtime_text_control(public_id: &str) -> ViewRuntimeTextControl {
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
         label: None,
         handlers: ViewRuntimeTextControlHandlers::default(),
-        style: ViewRuntimeControlStyle::default(),
+        style: ViewRuntimeControlVisualStyle::default(),
     }
 }
 
@@ -283,7 +283,7 @@ fn runtime_action_button(public_id: &str) -> ViewRuntimeActionButton {
         enabled: true,
         bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
         action: ViewRuntimeActionButtonAction::Noop,
-        style: ViewRuntimeControlStyle::default(),
+        style: ViewRuntimeControlVisualStyle::default(),
     }
 }
 

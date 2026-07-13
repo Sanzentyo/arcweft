@@ -1,25 +1,34 @@
 //! Linked standard authored View resources supplied to every product bundle.
 
 use crate::resource_codec::view::{
-    DialogueTextProjection, RgbaColor, StyleAssignOp, ViewActionButtonActionResource,
-    ViewActionButtonResource, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
-    ViewParameterResource, ViewParameterRole, ViewProgramInstruction, ViewProgramResource,
-    ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds, ViewStyleDeclaration, ViewStyleResource,
-    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue, ViewSurfaceResource,
-    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewTextSourceKind,
-    ViewTextSourceRecord, ViewTextSurface,
+    DialogueTextProjection, ViewActionButtonActionResource, ViewActionButtonResource,
+    ViewDefinitionResource, ViewElementKind, ViewInstructionSpan, ViewParameterResource,
+    ViewParameterRole, ViewProgramInstruction, ViewProgramResource, ViewRuntimeButtonBounds,
+    ViewRuntimeSurfaceBounds, ViewStyleResource, ViewSurfaceResource, ViewTextBlockBounds,
+    ViewTextBlockResource, ViewTextResource, ViewTextSourceKind, ViewTextSourceRecord,
+    ViewTextSurface,
+};
+use crate::resource_codec::{SourceRangeRef, table::PublicIdRef};
+use arcweft_presentation::appearance::PresentationColor;
+use arcweft_view::style::{
+    ViewColorValue, ViewLengthMilli, ViewPartName, ViewPropertyKind, ViewSpecifiedValue,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleProgram,
+    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
+    ViewStyleSourceId,
 };
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
 pub const DIALOGUE_PARAMETER: &str = "dialogue";
+pub const DIALOGUE_STYLE_ID: &str = "style.dialogue.standard";
 
-const PANEL_PART: &str = "std.dialogue.panel";
-const SPEAKER_PART: &str = "std.dialogue.speaker";
-const CONTENT_PART: &str = "std.dialogue.content";
-const ACTION_PART: &str = "std.dialogue.primary_action";
+const PANEL_PART: &str = "part.dialogue.panel";
+const SPEAKER_PART: &str = "part.dialogue.speaker";
+const CONTENT_PART: &str = "part.dialogue.content";
+const ACTION_PART: &str = "part.dialogue.primary_action";
 const SPEAKER_SOURCE: &str = "std.dialogue.text.speaker";
 const CONTENT_SOURCE: &str = "std.dialogue.text.content";
 const ACTION_LABEL_SOURCE: &str = "std.dialogue.text.primary_action";
+const DIALOGUE_STYLE_SOURCE: &str = "standard dialogue style";
 
 /// Minimal default dialogue View program linked through the normal View runtime.
 #[must_use]
@@ -29,6 +38,7 @@ pub fn dialogue_program() -> ViewProgramResource {
         definitions: vec![ViewDefinitionResource {
             public_id: DIALOGUE_VIEW_ID.to_owned(),
             body: ViewInstructionSpan::new(0, 6),
+            styles: vec![dialogue_style_ref()],
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: DIALOGUE_PARAMETER.to_owned(),
@@ -43,27 +53,29 @@ pub fn dialogue_program() -> ViewProgramResource {
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::Panel,
                 target: Some(PANEL_PART.to_owned()),
-                style: Some(PANEL_PART.to_owned()),
+                styles: Vec::new(),
                 part: Some(PANEL_PART.to_owned()),
                 key: Some(0),
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: SPEAKER_SOURCE.to_owned(),
-                style: Some(SPEAKER_PART.to_owned()),
+                text_block: SPEAKER_PART.to_owned(),
+                styles: Vec::new(),
                 part: Some(SPEAKER_PART.to_owned()),
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: CONTENT_SOURCE.to_owned(),
-                style: Some(CONTENT_PART.to_owned()),
+                text_block: CONTENT_PART.to_owned(),
+                styles: Vec::new(),
                 part: Some(CONTENT_PART.to_owned()),
                 source: None,
             },
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::Button,
                 target: Some(ACTION_PART.to_owned()),
-                style: Some(ACTION_PART.to_owned()),
+                styles: Vec::new(),
                 part: Some(ACTION_PART.to_owned()),
                 key: Some(1),
                 source: None,
@@ -97,7 +109,6 @@ pub fn dialogue_program() -> ViewProgramResource {
             containing_scroll_region: None,
             element: ViewElementKind::Panel,
             bounds: ViewRuntimeSurfaceBounds::new(57_600, 460_800, 1_164_800, 201_600),
-            style: Some(PANEL_PART.to_owned()),
             source: None,
         }],
         action_buttons: vec![ViewActionButtonResource {
@@ -110,7 +121,6 @@ pub fn dialogue_program() -> ViewProgramResource {
                 parameter: DIALOGUE_PARAMETER.to_owned(),
             },
             bounds: ViewRuntimeButtonBounds::new(57_600, 460_800, 1_164_800, 201_600),
-            style: Some(ACTION_PART.to_owned()),
             source: None,
         }],
         ..ViewProgramResource::default()
@@ -151,100 +161,95 @@ pub fn dialogue_text() -> ViewTextResource {
 }
 
 /// Explicit, renderer-neutral visual defaults for the 1280x720 standard View.
+///
+/// # Panics
+///
+/// Panics only if the checked-in standard Style identifiers, source range, or
+/// typed declarations violate their compile-time invariants.
 #[must_use]
 pub fn dialogue_style() -> ViewStyleResource {
-    ViewStyleResource {
-        style_program_id: "std.view.style".to_owned(),
-        rules: vec![
+    let source = ViewStyleSourceId::new(0);
+    let sheet = ViewStyleSheet::new(
+        style_sheet_id(),
+        Vec::new(),
+        vec![
             rule(
                 PANEL_PART,
-                vec![declaration("background", rgba(17, 18, 16, 242))],
+                vec![declaration(
+                    ViewPropertyKind::BackgroundColor,
+                    rgba(17, 18, 16, 242),
+                    source,
+                )],
+                0,
+                source,
             ),
             rule(
                 SPEAKER_PART,
                 vec![
-                    declaration("color", rgba(174, 226, 142, 255)),
-                    declaration("font-size", ViewStyleValue::Milli(25_000)),
-                    declaration("line-height", ViewStyleValue::Milli(34_000)),
+                    declaration(ViewPropertyKind::Color, rgba(174, 226, 142, 255), source),
+                    declaration(ViewPropertyKind::FontSize, length(25_000), source),
+                    declaration(ViewPropertyKind::LineHeight, length(34_000), source),
                 ],
+                1,
+                source,
             ),
             rule(
                 CONTENT_PART,
                 vec![
-                    declaration("color", rgba(248, 246, 234, 255)),
-                    declaration("font-size", ViewStyleValue::Milli(25_000)),
-                    declaration("line-height", ViewStyleValue::Milli(34_000)),
+                    declaration(ViewPropertyKind::Color, rgba(248, 246, 234, 255), source),
+                    declaration(ViewPropertyKind::FontSize, length(25_000), source),
+                    declaration(ViewPropertyKind::LineHeight, length(34_000), source),
                 ],
+                2,
+                source,
             ),
             rule(
                 ACTION_PART,
-                vec![declaration("background", rgba(0, 0, 0, 0))],
+                vec![declaration(
+                    ViewPropertyKind::BackgroundColor,
+                    rgba(0, 0, 0, 0),
+                    source,
+                )],
+                3,
+                source,
             ),
         ],
-        ..ViewStyleResource::default()
-    }
+    )
+    .expect("standard dialogue Style sheet is statically valid");
+    let mut resource = ViewStyleResource {
+        style_program_id: "std.view.style.program".to_owned(),
+        program: ViewStyleProgram::try_new(vec![sheet], Vec::new())
+            .expect("standard dialogue Style program is statically valid"),
+        source_map_refs: vec![SourceRangeRef {
+            source: PublicIdRef::default(),
+            start_byte: 0,
+            end_byte: u32::try_from(DIALOGUE_STYLE_SOURCE.len())
+                .expect("standard dialogue Style source length fits u32"),
+        }],
+        adapter_requirements: Vec::new(),
+    };
+    let source_ref = resource
+        .public_id_table()
+        .expect("standard dialogue Style public IDs are valid")
+        .id_for(DIALOGUE_STYLE_ID)
+        .expect("standard dialogue Style sheet is in its public-ID table");
+    resource.source_map_refs[0].source = source_ref;
+    resource
 }
 
-pub(crate) fn merge_program(
-    mut standard: ViewProgramResource,
-    mut authored: ViewProgramResource,
-) -> ViewProgramResource {
-    let offset = u32::try_from(standard.instructions.len())
-        .expect("standard View instruction inventory fits the u32 bundle contract");
-    for definition in &mut authored.definitions {
-        definition.body.start_instruction = definition
-            .body
-            .start_instruction
-            .checked_add(offset)
-            .expect("merged View definition start fits the u32 bundle contract");
-        definition.body.end_instruction = definition
-            .body
-            .end_instruction
-            .checked_add(offset)
-            .expect("merged View definition end fits the u32 bundle contract");
-    }
-    standard.program_id = authored.program_id;
-    standard.definitions.extend(authored.definitions);
-    standard.value_programs.extend(authored.value_programs);
-    standard.value_inputs.extend(authored.value_inputs);
-    standard.instructions.extend(authored.instructions);
-    standard.handlers.extend(authored.handlers);
-    standard.exported_parts.extend(authored.exported_parts);
-    standard.semantic_targets.extend(authored.semantic_targets);
-    standard.layout_bounds.extend(authored.layout_bounds);
-    standard.action_buttons.extend(authored.action_buttons);
-    standard.text_blocks.extend(authored.text_blocks);
-    standard.surfaces.extend(authored.surfaces);
-    standard.scroll_regions.extend(authored.scroll_regions);
-    standard.focus_groups.extend(authored.focus_groups);
-    standard.focus_navigation.extend(authored.focus_navigation);
-    standard
-        .adapter_requirements
-        .extend(authored.adapter_requirements);
-    standard
+fn dialogue_style_ref() -> ViewStyleApplicationTarget {
+    ViewStyleApplicationTarget::named(style_sheet_id())
 }
 
-pub(crate) fn merge_style(
-    mut standard: ViewStyleResource,
-    authored: ViewStyleResource,
-) -> ViewStyleResource {
-    standard.style_program_id = authored.style_program_id;
-    standard.arcweft_sources.extend(authored.arcweft_sources);
-    standard.css_sources.extend(authored.css_sources);
-    standard.tokens.extend(authored.tokens);
-    standard.rules.extend(authored.rules);
-    standard.part_rules.extend(authored.part_rules);
-    standard
-        .environment_predicates
-        .extend(authored.environment_predicates);
-    standard.source_map_refs.extend(authored.source_map_refs);
-    standard
-        .external_css_descriptors
-        .extend(authored.external_css_descriptors);
-    standard
-        .adapter_requirements
-        .extend(authored.adapter_requirements);
-    standard
+fn style_sheet_id() -> ViewStyleSheetId {
+    ViewStyleSheetId::try_new(DIALOGUE_STYLE_ID)
+        .expect("standard dialogue Style ID is statically valid")
+}
+
+fn length(value: i32) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Length {
+        value: ViewLengthMilli::new(value),
+    }
 }
 
 pub(crate) fn merge_text(
@@ -273,41 +278,44 @@ fn text_block_milli(
     height_milli: u32,
     surface: ViewTextSurface,
 ) -> ViewTextBlockResource {
-    let mut block = ViewTextBlockResource::new(
+    ViewTextBlockResource::new(
         public_id,
         Some(DIALOGUE_VIEW_ID.to_owned()),
         None,
         source,
         ViewTextBlockBounds::new(x_milli, y_milli, width_milli, height_milli),
     )
-    .with_surface(surface);
-    block.style = Some(public_id.to_owned());
-    block
+    .with_surface(surface)
 }
 
-fn rule(part: &str, declarations: Vec<ViewStyleDeclaration>) -> ViewStyleRule {
-    ViewStyleRule {
-        selector: ViewStyleSelector {
-            parts: vec![ViewStyleSelectorPart::Part(part.to_owned())],
+fn rule(
+    part: &str,
+    declarations: Vec<ViewStyleDeclaration>,
+    source_order: u32,
+    source: ViewStyleSourceId,
+) -> ViewStyleRule {
+    let part = ViewPartName::try_new(part).expect("standard dialogue part ID is valid");
+    let sequence = ViewStyleSelectorSequence::new(None, None, Some(part), Vec::new())
+        .expect("standard dialogue selector sequence is non-empty");
+    let selector = ViewStyleSelector::new(vec![sequence])
+        .expect("standard dialogue selector has a valid relation shape");
+    ViewStyleRule::new(selector, declarations, source_order, source)
+        .expect("standard dialogue rule is statically valid")
+}
+
+fn declaration(
+    property: ViewPropertyKind,
+    value: ViewSpecifiedValue,
+    source: ViewStyleSourceId,
+) -> ViewStyleDeclaration {
+    ViewStyleDeclaration::new(property, value, ViewStyleAssignOp::Replace, source)
+        .expect("standard dialogue declaration matches its property kind")
+}
+
+const fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Color {
+        value: ViewColorValue::Literal {
+            color: PresentationColor::rgba(red, green, blue, alpha),
         },
-        declarations,
-        source: None,
     }
-}
-
-fn declaration(property: &str, value: ViewStyleValue) -> ViewStyleDeclaration {
-    ViewStyleDeclaration {
-        property: property.to_owned(),
-        value,
-        op: StyleAssignOp::Replace,
-    }
-}
-
-const fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewStyleValue {
-    ViewStyleValue::Rgba(RgbaColor {
-        red,
-        green,
-        blue,
-        alpha,
-    })
 }

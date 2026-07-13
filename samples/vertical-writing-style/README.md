@@ -10,8 +10,9 @@ surface:
   presentation geometry; and
 - `pub dialogue defaults` selects that View and supplies ruby defaults.
 
-The responsibilities are deliberately separate. `pub style` and the View
-`.style(...)` applications control the authored View's visual presentation;
+The responsibilities are deliberately separate. `pub style` and the single
+View-root `.style(...)` application control the authored View's visual
+presentation through typed descendant `.part(...)` identities;
 the typed rich-text layout selectors `[.vertical_rl]` and `[.vertical_lr]`
 select writing direction and JLREQ policy for their content runs. View style
 does not currently define a second `writing-mode` property, so this sample does

@@ -7,6 +7,7 @@ use crate::view_runtime::{
     MountedView,
 };
 use arcweft_bundle::resource_codec::ViewDefinitionResource;
+use arcweft_bundle::resource_codec::ViewRuntimeControlVisualStyle;
 use arcweft_bundle::resource_codec::view::{
     DialogueTextProjection, ViewParameterRole, ViewTextSourceKind,
 };
@@ -49,11 +50,7 @@ impl ViewEvaluator<'_> {
                 containing_scroll_region: block.containing_scroll_region.clone(),
                 bounds: block.bounds,
                 selection_policy: block.selection_policy,
-                style: self
-                    .text_styles
-                    .get(&block.public_id)
-                    .cloned()
-                    .unwrap_or_default(),
+                style: ViewRuntimeControlVisualStyle::default(),
             })
             .collect();
         let redaction = self.text.and_then(|text| {

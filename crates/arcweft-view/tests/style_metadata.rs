@@ -163,7 +163,7 @@ fn typed_ids_and_applications_preserve_scope_order_and_boundaries() {
     );
     assert!(serde_json::from_str::<ViewStyleSheetId>("\"#style.bad\"").is_err());
 
-    let boundary = ViewStyleBoundaryFacts::nested_view(true, false);
+    let boundary = ViewStyleBoundaryFacts::nested_view(1, true, false);
     let application = ViewStyleApplication::new(
         ViewStyleApplicationTarget::named(sheet),
         ViewStyleScopeId::new(7),
@@ -176,6 +176,20 @@ fn typed_ids_and_applications_preserve_scope_order_and_boundaries() {
     assert_eq!(application.application_order(), 11);
     assert!(application.boundary().allows_selector_traversal());
     assert!(!application.boundary().allows_inherited_root());
+    assert_eq!(
+        application
+            .boundary()
+            .selector_part(Some("part.private"), Some("part.public")),
+        Some("part.public")
+    );
+
+    let transitive_export = ViewStyleBoundaryFacts::nested_view(2, true, false);
+    assert_eq!(transitive_export.crossed_view_boundaries(), 2);
+    assert!(!transitive_export.allows_selector_traversal());
+    assert_eq!(
+        transitive_export.selector_part(Some("part.private"), Some("part.public")),
+        None
+    );
 
     let inline = ViewStyleApplicationTarget::inline(ViewStylePatchId::new(9));
     assert!(matches!(
@@ -199,8 +213,10 @@ fn selector_sequences_validate_relations_and_compute_specificity() {
     )
     .expect("child sequence");
     let selector = ViewStyleSelector::new(vec![first, second]).expect("valid selector");
-    assert_eq!(selector.specificity().predicates(), 2);
-    assert_eq!(selector.specificity().elements(), 2);
+    let specificity = selector.specificity().unwrap();
+    assert_eq!(specificity.predicates(), 2);
+    assert_eq!(specificity.elements(), 2);
+    assert_eq!(selector.max_depth(), 2);
 
     let leading_combinator = ViewStyleSelectorSequence::new(
         Some(ViewStyleCombinator::Descendant),

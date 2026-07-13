@@ -5,43 +5,40 @@ pub character vertical_guide {
 
 pub style vertical_writing_showcase {
     .vertical_writing_panel {
-        background = rgba(16, 22, 35, 246)
+        background-color = rgba(16, 22, 35, 246)
     }
     .vertical_writing_speaker {
-        font-family = text("Noto Sans JP")
+        font-family = ["Noto Sans JP"]
         color = rgba(139, 211, 255, 255)
-        font-size = 18000milli
-        line-height = 26000milli
-        font-weight = text("700")
+        font-size = 18px
+        line-height = 26px
+        font-weight = 700
     }
     .vertical_writing_content {
-        font-family = text("Noto Sans JP")
+        font-family = ["Noto Sans JP"]
         color = rgba(244, 248, 255, 255)
     }
     .vertical_writing_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
 }
 
 pub view VerticalWritingShowcase(dialogue: DialogueView) {
-    Panel(x = 140px, y = 168px, width = 1000px, height = 384px, part = vertical_writing_panel) {
+    Panel(x = 140px, y = 168px, width = 1000px, height = 384px) {
         Text(dialogue.speaker)
             .x(176px)
             .y(192px)
             .width(928px)
             .height(28px)
             .part(vertical_writing_speaker)
-            .style(@style.vertical_writing_showcase)
         RichText(dialogue.content)
             .x(176px)
             .y(244px)
             .width(928px)
             .height(164px)
             .part(vertical_writing_content)
-            .style(@style.vertical_writing_showcase)
         Button("", x = 140px, y = 168px, width = 1000px, height = 384px)
             .part(vertical_writing_action)
-            .style(@style.vertical_writing_showcase)
             .on_click { dialogue.primary_action }
     }
         .part(vertical_writing_panel)

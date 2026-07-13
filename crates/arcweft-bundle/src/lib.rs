@@ -13,9 +13,12 @@ pub mod standard_view;
 
 use crate::character_package::BundleCharacterPackage;
 use crate::fx_definitions::FxDefinitions;
-use crate::resource_codec::view::{DialogueViewContractError, ViewTextSourceKind};
+use crate::resource_codec::view::{
+    DialogueViewContractError, ViewStyleContractError, ViewTextSourceKind,
+};
 use crate::resource_codec::{
-    ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
+    ViewInputResource, ViewProgramResource, ViewProgramStyleResources, ViewResourceMergeError,
+    ViewStyleResource, ViewTextResource, ViewThemeResource,
 };
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
@@ -185,6 +188,7 @@ pub struct BundleVirtualFile {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BundleVirtualFileRef {
     pub space: BundleVirtualFileSpace,
     pub path: String,
@@ -435,6 +439,8 @@ pub enum BundleCodecError {
     },
     #[error(transparent)]
     InvalidDialogueViewContract(#[from] DialogueViewContractError),
+    #[error(transparent)]
+    InvalidViewStyleContract(#[from] ViewStyleContractError),
 }
 
 #[cfg(feature = "format-yaml")]
@@ -635,26 +641,21 @@ impl ArcweftBundle {
         self
     }
 
-    #[must_use]
-    pub fn with_view_program(mut self, resource: ViewProgramResource) -> Self {
-        self.view_program = Some(standard_view::merge_program(
-            self.view_program
-                .take()
-                .unwrap_or_else(standard_view::dialogue_program),
-            resource,
-        ));
-        self
-    }
-
-    #[must_use]
-    pub fn with_view_style(mut self, resource: ViewStyleResource) -> Self {
-        self.view_style = Some(standard_view::merge_style(
-            self.view_style
-                .take()
-                .unwrap_or_else(standard_view::dialogue_style),
-            resource,
-        ));
-        self
+    pub fn with_view_resources(
+        mut self,
+        program: Option<ViewProgramResource>,
+        style: Option<ViewStyleResource>,
+    ) -> Result<Self, ViewResourceMergeError> {
+        // The authored resource is the product program; the built-in dialogue
+        // resource is linked into it as a library. Keeping the authored side
+        // as the merge owner preserves its program identity while still
+        // validating reserved standard IDs in the same atomic transaction.
+        let merged = ViewProgramStyleResources::new(program, style).merge(
+            ViewProgramStyleResources::new(self.view_program.take(), self.view_style.take()),
+        )?;
+        self.view_program = merged.program;
+        self.view_style = merged.style;
+        Ok(self)
     }
 
     #[must_use]
@@ -1048,7 +1049,7 @@ impl ArcweftBundle {
                 });
             }
         }
-        match &self.view_program {
+        let dialogue_contract = match &self.view_program {
             Some(program) => program
                 .validate_dialogue_contract(self.view_text.as_ref())
                 .map_err(BundleCodecError::from),
@@ -1067,7 +1068,16 @@ impl ArcweftBundle {
                         },
                     ))
                 }),
+        };
+        dialogue_contract?;
+        if let Some(program) = &self.view_program {
+            program.validate_style_contract(self.view_style.as_ref())?;
+        } else if let Some(style) = &self.view_style {
+            style
+                .encode_canonical_section()
+                .map_err(ViewStyleContractError::InvalidResource)?;
         }
+        Ok(())
     }
 
     fn validate_schema_and_kind(&self) -> Result<(), BundleCodecError> {

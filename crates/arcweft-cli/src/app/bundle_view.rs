@@ -2,6 +2,4 @@
 
 mod lowering;
 
-pub(in crate::app) use lowering::{
-    ViewSidecarError, expr_source, normalize_property_name, normalize_view_call, view_sidecars,
-};
+pub(in crate::app) use lowering::{normalize_view_call, view_sidecars};

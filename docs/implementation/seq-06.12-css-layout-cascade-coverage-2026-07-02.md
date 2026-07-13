@@ -1,5 +1,7 @@
 # Seq06.12 CSS layout/cascade coverage implementation note — 2026-07-02
 
+> **Superseded (2026-07-13):** Arcweft now has a native-only typed Style path. The CSS authoring, Takumi adapter, and CSS-named sample/tooling paths described below were removed; the remaining text is retained only as historical implementation evidence.
+
 This implementation slice adds deterministic CSS coverage classification around
 Takumi retained View lowering.
 

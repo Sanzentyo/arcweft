@@ -1,5 +1,7 @@
 # Seq06.12 CSS layout/cascade coverage package application
 
+> **Superseded (2026-07-13):** Arcweft now has a native-only typed Style path. The CSS authoring, Takumi adapter, and CSS-named sample/tooling paths described below were removed; the remaining text is retained only as historical implementation evidence.
+
 Date: 2026-07-09
 
 Maintenance update (2026-07-10): the fixture source scanner and its unused

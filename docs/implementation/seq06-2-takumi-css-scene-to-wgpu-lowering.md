@@ -1,5 +1,7 @@
 # seq06.2 Takumi CSS Scene to Direct wgpu Lowering
 
+> **Superseded (2026-07-13):** Arcweft now has a native-only typed Style path. The CSS authoring, Takumi adapter, and CSS-named sample/tooling paths described below were removed; the remaining text is retained only as historical implementation evidence.
+
 ## Pin
 
 The integration pins `kane50613/takumi` at commit

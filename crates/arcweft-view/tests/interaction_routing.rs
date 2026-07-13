@@ -1,4 +1,5 @@
 use arcweft_id::PublicId;
+use arcweft_presentation::appearance::{PresentationColor, PresentationEnvironment};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::hover::HoverPath;
 use arcweft_presentation::input::{InputEpoch, InputEvent, InteractionTarget, PointerId};
@@ -6,10 +7,15 @@ use arcweft_presentation::interaction::{FocusState, InteractionState, PressedTar
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_view::{
-    EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
-    LayoutResults, LayoutSize, LayoutTree, Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
-    StyleId, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput, ViewPropertyKind,
-    ViewPropertyValue, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewStyle, ViewStyleTable,
+    ContainerKind, EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength,
+    LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId,
+    ViewColorValue, ViewElementKind, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput,
+    ViewLengthMilli, ViewPropertyKind, ViewScalarMilli, ViewSemanticFragmentBuilder,
+    ViewSemanticNode, ViewSpecifiedValue, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleCombinator, ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId,
+    ViewStylePredicate, ViewStyleProgram, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
+    ViewStyleSourceId,
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -26,11 +32,14 @@ fn target(value: &str) -> InteractionTarget {
 
 fn fragment_and_layout() -> (arcweft_view::ViewFragment, LayoutResults) {
     let mut fragment = ViewFragmentBuilder::default();
+    let styles = [ViewStyleApplicationTarget::named(
+        ViewStyleSheetId::try_new("style.interaction").unwrap(),
+    )];
     let node = fragment
         .push_node(
             NodeKey(1),
             FragmentKind::RichText(RichTextSourceId(1)),
-            StyleId(7),
+            &styles,
             &[],
             &[EventBinding::new(EventKind::Activate, HandlerId(11))],
             Some(SemanticSpecId(0)),
@@ -74,63 +83,109 @@ fn semantic_fragment(
     semantics.finish()
 }
 
-fn interaction_styles() -> ViewStyleTable {
-    let idle = Rgba8::new(20, 30, 40, 255);
-    let hovered = Rgba8::new(40, 80, 140, 255);
-    let pressed = Rgba8::new(80, 120, 180, 255);
-    let disabled = Rgba8::new(30, 30, 30, 180);
-    let mut style = ViewStyle::default();
-    style
-        .set_base(
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(idle),
+fn color(red: u8, green: u8, blue: u8, alpha: u8) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Color {
+        value: ViewColorValue::Literal {
+            color: PresentationColor::rgba(red, green, blue, alpha),
+        },
+    }
+}
+
+fn style_rule(
+    source_order: u32,
+    state: Option<ViewInteractionSelector>,
+    declarations: Vec<(ViewPropertyKind, ViewSpecifiedValue)>,
+) -> ViewStyleRule {
+    let selector = ViewStyleSelector::new(vec![
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(ViewElementKind::Button),
+            None,
+            state
+                .map(ViewStylePredicate::Interaction)
+                .into_iter()
+                .collect(),
         )
-        .unwrap();
-    style
-        .set_rule(
-            ViewInteractionSelector::Hovered,
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(hovered),
-        )
-        .unwrap();
-    style
-        .set_rule(
-            ViewInteractionSelector::Focused,
-            ViewPropertyKind::OutlineColor,
-            ViewPropertyValue::Color(Rgba8::new(120, 210, 255, 255)),
-        )
-        .unwrap();
-    style
-        .set_rule(
-            ViewInteractionSelector::Focused,
-            ViewPropertyKind::OutlineWidth,
-            ViewPropertyValue::Milli(Milli::new(3_000)),
-        )
-        .unwrap();
-    style
-        .set_rule(
-            ViewInteractionSelector::Pressed,
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(pressed),
-        )
-        .unwrap();
-    style
-        .set_rule(
-            ViewInteractionSelector::Pressed,
-            ViewPropertyKind::Scale,
-            ViewPropertyValue::Milli(Milli::new(970)),
-        )
-        .unwrap();
-    style
-        .set_rule(
-            ViewInteractionSelector::Disabled,
-            ViewPropertyKind::BackgroundColor,
-            ViewPropertyValue::Color(disabled),
-        )
-        .unwrap();
-    let mut styles = ViewStyleTable::default();
-    styles.insert(StyleId(7), style).unwrap();
-    styles
+        .unwrap(),
+    ])
+    .unwrap();
+    ViewStyleRule::new(
+        selector,
+        declarations
+            .into_iter()
+            .enumerate()
+            .map(|(index, (property, value))| {
+                ViewStyleDeclaration::new(
+                    property,
+                    value,
+                    ViewStyleAssignOp::Replace,
+                    ViewStyleSourceId::new(source_order * 10 + u32::try_from(index).unwrap()),
+                )
+                .unwrap()
+            })
+            .collect(),
+        source_order,
+        ViewStyleSourceId::new(source_order),
+    )
+    .unwrap()
+}
+
+fn interaction_styles() -> ViewStyleProgram {
+    let rules = vec![
+        style_rule(
+            0,
+            None,
+            vec![(ViewPropertyKind::BackgroundColor, color(20, 30, 40, 255))],
+        ),
+        style_rule(
+            10,
+            Some(ViewInteractionSelector::Hovered),
+            vec![(ViewPropertyKind::BackgroundColor, color(40, 80, 140, 255))],
+        ),
+        style_rule(
+            20,
+            Some(ViewInteractionSelector::Focused),
+            vec![
+                (ViewPropertyKind::OutlineColor, color(120, 210, 255, 255)),
+                (
+                    ViewPropertyKind::OutlineWidth,
+                    ViewSpecifiedValue::Length {
+                        value: ViewLengthMilli::new(3_000),
+                    },
+                ),
+            ],
+        ),
+        style_rule(
+            30,
+            Some(ViewInteractionSelector::Pressed),
+            vec![
+                (ViewPropertyKind::BackgroundColor, color(80, 120, 180, 255)),
+                (
+                    ViewPropertyKind::Scale,
+                    ViewSpecifiedValue::Scalar {
+                        value: ViewScalarMilli::new(970),
+                    },
+                ),
+            ],
+        ),
+        style_rule(
+            40,
+            Some(ViewInteractionSelector::Disabled),
+            vec![(ViewPropertyKind::BackgroundColor, color(30, 30, 30, 180))],
+        ),
+    ];
+    ViewStyleProgram::try_new(
+        vec![
+            ViewStyleSheet::new(
+                ViewStyleSheetId::try_new("style.interaction").unwrap(),
+                Vec::new(),
+                rules,
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+    )
+    .unwrap()
 }
 
 fn output(enabled: bool) -> (ViewLayerOutput, LayerId, InteractionTarget) {
@@ -141,7 +196,8 @@ fn output(enabled: bool) -> (ViewLayerOutput, LayerId, InteractionTarget) {
     let styles = interaction_styles();
 
     (
-        ViewLayerOutput::from_fragment_with_styles(&fragment, &layouts, semantics, styles).unwrap(),
+        ViewLayerOutput::from_fragment_with_style_program(&fragment, &layouts, semantics, styles)
+            .unwrap(),
         view,
         button,
     )
@@ -170,17 +226,29 @@ fn interaction_cascade_resolves_hover_focus_and_pressed_without_backend_matching
 
     let resolved = output
         .display()
-        .resolve_interaction_styles(output.semantics(), output.styles(), &interaction)
+        .resolve_styles(
+            output.semantics(),
+            output.style_program(),
+            &interaction,
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            ViewStyleRevisionSet::default(),
+            &mut ViewStyleResolver::default(),
+        )
         .unwrap();
     let style = resolved.as_slice()[0].style();
     assert_eq!(
-        style.color(ViewPropertyKind::BackgroundColor),
-        Some(Rgba8::new(80, 120, 180, 255))
+        style.value(ViewPropertyKind::BackgroundColor),
+        Some(&color(80, 120, 180, 255))
     );
-    assert_eq!(style.scale(), Milli::new(970));
     assert_eq!(
-        style.color(ViewPropertyKind::OutlineColor),
-        Some(Rgba8::new(120, 210, 255, 255))
+        style.value(ViewPropertyKind::Scale),
+        Some(&ViewSpecifiedValue::Scalar {
+            value: ViewScalarMilli::new(970),
+        })
+    );
+    assert_eq!(
+        style.value(ViewPropertyKind::OutlineColor),
+        Some(&color(120, 210, 255, 255))
     );
 }
 
@@ -189,16 +257,167 @@ fn disabled_rule_has_final_precedence() {
     let (output, _, _) = output(false);
     let resolved = output
         .display()
-        .resolve_interaction_styles(
+        .resolve_styles(
             output.semantics(),
-            output.styles(),
+            output.style_program(),
             &InteractionState::default(),
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            ViewStyleRevisionSet::default(),
+            &mut ViewStyleResolver::default(),
         )
         .unwrap();
     assert_eq!(
         resolved.as_slice()[0]
             .style()
-            .color(ViewPropertyKind::BackgroundColor),
-        Some(Rgba8::new(30, 30, 30, 180))
+            .value(ViewPropertyKind::BackgroundColor),
+        Some(&color(30, 30, 30, 180))
     );
+}
+
+fn ancestry_fragment(
+    sheet_id: &ViewStyleSheetId,
+    patch_id: ViewStylePatchId,
+) -> (arcweft_view::ViewFragment, LayoutResults) {
+    let mut fragment = ViewFragmentBuilder::default();
+    let child = fragment
+        .push_node(
+            NodeKey(11),
+            FragmentKind::RichText(RichTextSourceId(2)),
+            &[],
+            &[],
+            &[],
+            Some(SemanticSpecId(0)),
+        )
+        .unwrap();
+    let root_styles = [
+        ViewStyleApplicationTarget::named(sheet_id.clone()),
+        ViewStyleApplicationTarget::inline(patch_id),
+    ];
+    let _root = fragment
+        .push_node(
+            NodeKey(10),
+            FragmentKind::Container(ContainerKind::Block),
+            &root_styles,
+            &[child],
+            &[],
+            None,
+        )
+        .unwrap();
+    let fragment = fragment.finish();
+    let tree = LayoutTree::from_fragment(&fragment).unwrap();
+    let mut layouts = LayoutResults::new(&tree);
+    layouts
+        .set(
+            child,
+            LayoutBox::new(
+                LayoutPoint::new(LayoutLength::px(0), LayoutLength::px(0)),
+                LayoutSize::new(LayoutLength::px(100), LayoutLength::px(20)),
+            ),
+        )
+        .unwrap();
+    (fragment, layouts)
+}
+
+fn ancestry_program(sheet_id: ViewStyleSheetId, patch_id: ViewStylePatchId) -> ViewStyleProgram {
+    let box_selector = ViewStyleSelector::new(vec![
+        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Box), None, Vec::new()).unwrap(),
+    ])
+    .unwrap();
+    let child_selector = ViewStyleSelector::new(vec![
+        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Box), None, Vec::new()).unwrap(),
+        ViewStyleSelectorSequence::new(
+            Some(ViewStyleCombinator::Child),
+            Some(ViewElementKind::Button),
+            None,
+            Vec::new(),
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let sheet = ViewStyleSheet::new(
+        sheet_id,
+        Vec::new(),
+        vec![
+            ViewStyleRule::new(
+                box_selector,
+                vec![
+                    ViewStyleDeclaration::new(
+                        ViewPropertyKind::Color,
+                        color(10, 20, 30, 255),
+                        ViewStyleAssignOp::Replace,
+                        ViewStyleSourceId::new(100),
+                    )
+                    .unwrap(),
+                ],
+                0,
+                ViewStyleSourceId::new(101),
+            )
+            .unwrap(),
+            ViewStyleRule::new(
+                child_selector,
+                vec![
+                    ViewStyleDeclaration::new(
+                        ViewPropertyKind::BackgroundColor,
+                        color(40, 50, 60, 255),
+                        ViewStyleAssignOp::Replace,
+                        ViewStyleSourceId::new(102),
+                    )
+                    .unwrap(),
+                ],
+                1,
+                ViewStyleSourceId::new(103),
+            )
+            .unwrap(),
+        ],
+    )
+    .unwrap();
+    let patch = ViewStylePatch::new(
+        patch_id,
+        vec![
+            ViewStyleDeclaration::new(
+                ViewPropertyKind::Width,
+                ViewSpecifiedValue::Length {
+                    value: ViewLengthMilli::new(99_000),
+                },
+                ViewStyleAssignOp::Replace,
+                ViewStyleSourceId::new(104),
+            )
+            .unwrap(),
+        ],
+    );
+    ViewStyleProgram::try_new(vec![sheet], vec![patch]).unwrap()
+}
+
+#[test]
+fn fragment_resolution_propagates_named_scope_and_inherits_only_parent_values() {
+    let sheet_id = ViewStyleSheetId::try_new("style.ancestry").unwrap();
+    let patch_id = ViewStylePatchId::new(5);
+    let (fragment, layouts) = ancestry_fragment(&sheet_id, patch_id);
+    let program = ancestry_program(sheet_id, patch_id);
+    let semantics = semantic_fragment(&layer("ancestry"), &target("ancestry.child"), true);
+    let output =
+        ViewLayerOutput::from_fragment_with_style_program(&fragment, &layouts, semantics, program)
+            .unwrap();
+    let resolved = output
+        .display()
+        .resolve_styles(
+            output.semantics(),
+            output.style_program(),
+            &InteractionState::default(),
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            ViewStyleRevisionSet::default(),
+            &mut ViewStyleResolver::default(),
+        )
+        .unwrap();
+    let computed = resolved.as_slice()[0].style();
+
+    assert_eq!(
+        computed.value(ViewPropertyKind::Color),
+        Some(&color(10, 20, 30, 255))
+    );
+    assert_eq!(
+        computed.value(ViewPropertyKind::BackgroundColor),
+        Some(&color(40, 50, 60, 255))
+    );
+    assert_eq!(computed.value(ViewPropertyKind::Width), None);
 }

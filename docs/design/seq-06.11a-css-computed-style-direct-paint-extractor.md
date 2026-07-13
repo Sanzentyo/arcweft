@@ -1,5 +1,7 @@
 # seq06.11a design: CSS computed style direct paint extractor
 
+> **Superseded Style-path premise (2026-07-13):** The Arcweft CSS/Takumi authoring, lowering, and evidence path assumed below was removed by the [native-only typed Style path](../implementation/native-only-style-path-2026-07-13.md). The body is retained as historical rationale and is not a current Style contract.
+
 ## Goal
 
 Make the CSS paint path explicit without adding a renderer side path:

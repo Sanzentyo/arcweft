@@ -6,6 +6,7 @@
 //! exact save state, and renderer-neutral frame output.
 
 mod evaluator;
+mod style_scope;
 mod value;
 
 use crate::dialogue::{DialogueViewInput, DialogueViewState};
@@ -16,8 +17,8 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
-    ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlStyle,
-    ViewRuntimeControlStyleDiagnostics, ViewStyleResource, ViewTextBlockBounds, ViewTextResource,
+    ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlVisualStyle, ViewStyleResource,
+    ViewTextBlockBounds, ViewTextResource,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_presentation::fx::{
@@ -27,13 +28,15 @@ use arcweft_presentation::fx::{
 use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
     ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState,
-    ViewProgramId, ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
+    ViewProgramId, ViewStyleProgram, ViewValueEvaluationError, ViewValueInventoryError,
+    ViewValueProgramInventory,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use thiserror::Error;
 
+pub use style_scope::{BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind};
 pub use value::BundleViewValueConversionError;
 
 const MAX_VIEW_INSTANCE_PATH_DEPTH: usize = 63;
@@ -165,8 +168,11 @@ pub struct BundleViewTextTarget {
     pub bounds: ViewTextBlockBounds,
     #[serde(default)]
     pub selection_policy: ViewTextSelectionPolicy,
-    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
-    pub style: ViewRuntimeControlStyle,
+    #[serde(
+        default,
+        skip_serializing_if = "ViewRuntimeControlVisualStyle::is_default"
+    )]
+    pub style: ViewRuntimeControlVisualStyle,
 }
 
 /// One active text source in a concrete mounted occurrence.
@@ -223,6 +229,8 @@ pub struct BundleViewMountOutput {
     pub paint: Vec<BundleViewPaintItem>,
     pub text: Vec<BundleViewTextOutput>,
     pub fx: Vec<BundleViewFxApplication>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub style_nodes: Vec<BundleViewStyleNode>,
 }
 
 impl BundleViewMountOutput {
@@ -357,9 +365,8 @@ struct MountedView {
 #[derive(Clone, Debug)]
 pub struct BundleViewRuntime {
     program: Option<ViewProgramResource>,
+    style_program: Option<ViewStyleProgram>,
     text: Option<ViewTextResource>,
-    text_styles: BTreeMap<String, ViewRuntimeControlStyle>,
-    text_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     definitions: BTreeMap<String, usize>,
     inventory: ViewValueProgramInventory,
     logical_time: FxLogicalTime,
@@ -444,19 +451,10 @@ impl BundleViewRuntime {
                 let _ = definition_program_id(index)?;
             }
         }
-        let styled_text = program.as_ref().map_or_else(Default::default, |program| {
-            program.runtime_text_styles_with_style(style)
-        });
-        let text_styles = styled_text
-            .controls
-            .into_iter()
-            .map(|binding| (binding.public_id, binding.style))
-            .collect();
         Ok(Self {
             program,
+            style_program: style.map(|style| style.program.clone()),
             text,
-            text_styles,
-            text_style_diagnostics: styled_text.diagnostics,
             definitions,
             inventory,
             logical_time: FxLogicalTime::zero(),
@@ -632,10 +630,10 @@ impl BundleViewRuntime {
         Ok(occurrences)
     }
 
-    /// Style-cascade diagnostics produced for typed text targets at construction.
+    /// Canonical native Style program retained for live player resolution.
     #[must_use]
-    pub const fn text_style_diagnostics(&self) -> &ViewRuntimeControlStyleDiagnostics {
-        &self.text_style_diagnostics
+    pub const fn style_program(&self) -> Option<&ViewStyleProgram> {
+        self.style_program.as_ref()
     }
 
     pub fn advance_millis(&mut self, milliseconds: u64) -> Result<(), BundleViewRuntimeError> {

@@ -3,7 +3,7 @@ use arcweft_lang_sema::{
     check::{TypeCheckReport, analyze_types},
     diagnostics::TypeCheckErrorKind,
     env::TypeCheckEnv,
-    style::{CheckedViewStyleSyntax, StyleDiagnosticCode},
+    style::StyleDiagnosticCode,
 };
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_view::style::{
@@ -47,9 +47,15 @@ fn native_style_catalog_contains_typed_tokens_selectors_and_values() {
     );
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
     let sheet = &report.style_catalog.sheets()[0];
-    assert_eq!(sheet.syntax(), CheckedViewStyleSyntax::Arcweft);
     assert_eq!(sheet.tokens().len(), 3);
-    assert_eq!(sheet.rules()[0].selector().specificity().predicates(), 1);
+    assert_eq!(
+        sheet.rules()[0]
+            .selector()
+            .specificity()
+            .expect("checked selector specificity")
+            .predicates(),
+        1
+    );
     let declarations = sheet.rules()[0].declarations();
     assert_eq!(declarations[0].property(), ViewPropertyKind::Color);
     assert_eq!(declarations[0].value().kind(), ViewStyleValueKind::Color);
@@ -233,35 +239,31 @@ pub view Example() {
 }
 
 #[test]
-fn css_style_and_inline_patch_remain_raw_in_the_checked_catalog() {
-    let source = r#"pub style web: .Css {
-Button:hover { color: rgb(1 2 3); }
+fn native_inline_patch_catalog_uses_source_order_as_its_only_identity() {
+    let source = r#"pub style controls {
+Button:hover { color = rgba(1, 2, 3, 255) }
 }
 pub view Example() {
-    Button("OK").style(.Css) { opacity: 0.9; }
+    Button("OK")
+        .style { opacity = 900milli }
+        .style { outline-width = 2px }
 }
 "#;
     let report = analyze(source);
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
     let sheet = &report.style_catalog.sheets()[0];
-    assert_eq!(sheet.syntax(), CheckedViewStyleSyntax::Css);
-    assert!(
-        sheet
-            .css_source()
-            .is_some_and(|source| source.contains("rgb"))
-    );
-    let css_range = sheet.css_source_range().expect("named CSS body range");
+    assert_eq!(sheet.rules().len(), 1);
+    let patches = report.style_catalog.inline_patches();
+    assert_eq!(patches.len(), 2);
+    assert_eq!(patches[0].id().value(), 0);
+    assert_eq!(patches[1].id().value(), 1);
     assert_eq!(
-        &source[css_range.as_range()],
-        sheet.css_source().expect("named CSS source")
+        patches[0].declarations()[0].property(),
+        ViewPropertyKind::Opacity
     );
-    assert_ne!(css_range, sheet.range());
-    let patch = &report.style_catalog.inline_patches()[0];
-    assert_eq!(patch.syntax(), CheckedViewStyleSyntax::Css);
-    assert!(
-        patch
-            .css_source()
-            .is_some_and(|source| source.contains("opacity"))
+    assert_eq!(
+        patches[1].declarations()[0].property(),
+        ViewPropertyKind::OutlineWidth
     );
 }
 

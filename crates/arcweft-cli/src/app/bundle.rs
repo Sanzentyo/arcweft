@@ -47,31 +47,19 @@ use arcweft_bundle::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
     resource_codec::{
-        ViewInputResource, ViewLocalizedTextResource, ViewProgramResource, ViewStyleResource,
-        ViewTextResource, ViewThemeResource,
-        view::{
-            RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef,
-            StyleSyntax as ProductStyleSyntax, SystemColor, ViewElementKind, ViewElementState,
-            ViewInteractionState, ViewStyleDeclaration, ViewStyleRule, ViewStyleSelector,
-            ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
-        },
+        ViewInputResource, ViewLocalizedTextResource, ViewProgramResource,
+        ViewProgramStyleResources, ViewStyleResource, ViewTextResource, ViewThemeResource,
     },
 };
+use arcweft_compiler::style::CompiledViewStyleArtifact;
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
     plan::{FlowOp, RuntimeEntryKind, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
-use arcweft_lang_hir::{
-    model::{HirModule, HirTopLevelDecl},
-    style::{
-        HirStyleAssignOp, HirStyleBody, HirStyleCombinator, HirStyleDecl, HirStyleDeclaration,
-        HirStyleExpr, HirStyleRuleDecl, HirStyleSelectorSequence, HirStyleTokenDecl,
-    },
-};
+use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_sema::dialogue_view::DialogueViewModelRegistry;
-use arcweft_lang_syntax::expr::{CallArg, Expr, Literal, UnaryOp, UnitNumberSuffix};
 use arcweft_launch::LaunchKind;
 use arcweft_project::manifest::AuthoredResourceRoots;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -88,7 +76,6 @@ use arcweft_verify::{
 use clap::Args;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
@@ -97,9 +84,6 @@ mod stage_placement;
 mod view_mounts;
 use stage_placement::{image_design_bounds, image_stage_placement};
 use view_mounts::{mounted_view_ids, mounted_view_matches};
-
-mod view_merge;
-use view_merge::merge_view_programs;
 
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct BundleOptions {
@@ -345,7 +329,12 @@ pub(in crate::app) fn compile_bundle_for_selection(
             })
         })?;
     let view_sidecars = collect_bundle_view_sidecars(authored_resources.content())?.merged(
-        collect_bundle_dsl_view_resources_for_package(&compiled.hir, &image_objects, &package)?,
+        collect_bundle_dsl_view_resources_with_style_for_package(
+            &compiled.hir,
+            &compiled.style,
+            &image_objects,
+            &package,
+        )?,
     )?;
     image_objects.extend(view_sidecars.image_objects.iter().cloned());
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
@@ -372,7 +361,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
         .with_image_assets(image_assets)
         .with_image_objects(image_objects),
         view_sidecars,
-    );
+    )?;
     Ok(CompiledBundleArtifact {
         bundle,
         entry_kinds,
@@ -397,19 +386,16 @@ struct BundleViewSidecars {
 
 impl BundleViewSidecars {
     fn merged(mut self, other: Self) -> Result<Self, ExitCode> {
-        self.program = match (self.program, other.program) {
-            (Some(left), Some(right)) => {
-                Some(merge_view_programs(left, right).map_err(|error| {
-                    eprintln!("error: failed to merge View value inventories: {error}");
-                    ExitCode::FAILURE
-                })?)
-            }
-            (Some(program), None) | (None, Some(program)) => Some(program),
-            (None, None) => None,
-        };
+        let merged = ViewProgramStyleResources::new(self.program, self.style)
+            .merge(ViewProgramStyleResources::new(other.program, other.style))
+            .map_err(|error| {
+                eprintln!("error: failed to merge View program and Style resources: {error}");
+                ExitCode::FAILURE
+            })?;
+        self.program = merged.program;
+        self.style = merged.style;
         self.text = merge_optional(self.text, other.text, merge_view_text);
         self.input = merge_optional(self.input, other.input, merge_view_input);
-        self.style = merge_optional(self.style, other.style, merge_view_style);
         self.theme = self.theme.or(other.theme);
         self.image_objects.extend(other.image_objects);
         Ok(self)
@@ -443,21 +429,6 @@ fn merge_view_text(mut left: ViewTextResource, right: ViewTextResource) -> ViewT
 
 fn merge_view_input(mut left: ViewInputResource, right: ViewInputResource) -> ViewInputResource {
     left.options.extend(right.options);
-    left.adapter_requirements.extend(right.adapter_requirements);
-    left
-}
-
-fn merge_view_style(mut left: ViewStyleResource, right: ViewStyleResource) -> ViewStyleResource {
-    left.arcweft_sources.extend(right.arcweft_sources);
-    left.css_sources.extend(right.css_sources);
-    left.tokens.extend(right.tokens);
-    left.rules.extend(right.rules);
-    left.part_rules.extend(right.part_rules);
-    left.environment_predicates
-        .extend(right.environment_predicates);
-    left.source_map_refs.extend(right.source_map_refs);
-    left.external_css_descriptors
-        .extend(right.external_css_descriptors);
     left.adapter_requirements.extend(right.adapter_requirements);
     left
 }
@@ -509,19 +480,47 @@ fn collect_bundle_dsl_view_resources(
     collect_bundle_dsl_view_resources_for_package(module, image_objects, "test-package")
 }
 
+#[cfg(test)]
 fn collect_bundle_dsl_view_resources_for_package(
     module: &HirModule,
     image_objects: &[BundleImageObject],
     package: &str,
 ) -> Result<BundleViewSidecars, ExitCode> {
-    let styles = module
-        .declarations()
-        .iter()
-        .filter_map(|decl| match decl {
-            HirTopLevelDecl::Style(item) => Some(item),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let typecheck = arcweft_compiler::hir::validate_hir_with_env(
+        module,
+        &arcweft_lang_sema::env::TypeCheckEnv::standard(),
+    )
+    .map_err(|error| {
+        eprintln!("error: test View HIR did not typecheck: {error}");
+        ExitCode::FAILURE
+    })?;
+    // These tests historically retained only HIR. A bounded synthetic source
+    // document preserves their source ranges while production always passes
+    // the exact source bytes through `ProfileCompiledRuntimePlan`.
+    let source = " ".repeat(1 << 20);
+    let style_artifact = arcweft_compiler::style::lower_source_view_styles(
+        module,
+        &typecheck.style_catalog,
+        &source,
+    )
+    .map_err(|error| {
+        eprintln!("error: test View Style lowering failed: {error}");
+        ExitCode::FAILURE
+    })?;
+    collect_bundle_dsl_view_resources_with_style_for_package(
+        module,
+        &style_artifact,
+        image_objects,
+        package,
+    )
+}
+
+fn collect_bundle_dsl_view_resources_with_style_for_package(
+    module: &HirModule,
+    style_artifact: &CompiledViewStyleArtifact,
+    image_objects: &[BundleImageObject],
+    package: &str,
+) -> Result<BundleViewSidecars, ExitCode> {
     let mounted_views = mounted_view_ids(module);
     let views = module
         .declarations()
@@ -536,7 +535,9 @@ fn collect_bundle_dsl_view_resources_for_package(
             _ => None,
         })
         .collect::<Vec<_>>();
-    let style = dsl_view_style_resource(&styles)?;
+    let style = (!style_artifact.resource().program.sheets().is_empty()
+        || !style_artifact.resource().program.patches().is_empty())
+    .then(|| style_artifact.resource().clone());
     let dialogue_view_models = DialogueViewModelRegistry::from_hir(module).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
@@ -550,7 +551,7 @@ fn collect_bundle_dsl_view_resources_for_package(
     let view_sidecars = view_sidecars(
         &views,
         &dialogue_view_models,
-        style.as_ref(),
+        style_artifact.applications(),
         image_objects,
         &fx_definitions,
     )
@@ -558,482 +559,31 @@ fn collect_bundle_dsl_view_resources_for_package(
         eprintln!("{error}");
         ExitCode::FAILURE
     })?;
-    let mut sidecars = BundleViewSidecars {
-        style,
-        ..BundleViewSidecars::default()
-    };
-    sidecars = sidecars.merged(BundleViewSidecars {
-        program: view_sidecars.program,
-        style: view_sidecars.style,
+    let resources = ViewProgramStyleResources::new(view_sidecars.program, style);
+    resources.validate().map_err(|error| {
+        eprintln!("error: invalid compiler-owned View program and Style resources: {error}");
+        ExitCode::FAILURE
+    })?;
+    Ok(BundleViewSidecars {
+        program: resources.program,
+        style: resources.style,
         text: view_sidecars.text,
         input: view_sidecars.input,
         theme: None,
         image_objects: view_sidecars.image_objects,
-    })?;
-
-    Ok(sidecars)
-}
-
-fn dsl_view_style_resource(
-    styles: &[&HirStyleDecl],
-) -> Result<Option<ViewStyleResource>, ExitCode> {
-    let mut style_program_id = None;
-    let mut arcweft_sources = Vec::new();
-    let mut css_sources = Vec::new();
-    let mut tokens = Vec::new();
-    let mut rules = Vec::new();
-    for style in styles {
-        style_program_id.get_or_insert_with(|| style.id().body().to_owned());
-        match style.body() {
-            HirStyleBody::Arcweft(sheet) => {
-                let source = native_style_identity_source(sheet);
-                arcweft_sources.push(dsl_style_source_identity(
-                    style,
-                    &source,
-                    ProductStyleSyntax::Arcweft,
-                ));
-                for token in sheet.tokens() {
-                    tokens.push(dsl_view_style_token(token)?);
-                }
-                for rule in sheet.rules() {
-                    rules.push(dsl_view_style_rule(rule)?);
-                }
-            }
-            HirStyleBody::Css(source) => css_sources.push(dsl_style_source_identity(
-                style,
-                source.source(),
-                ProductStyleSyntax::Css,
-            )),
-        }
-    }
-    let Some(style_program_id) = style_program_id else {
-        return Ok(None);
-    };
-    let resource = ViewStyleResource {
-        style_program_id,
-        arcweft_sources,
-        css_sources,
-        tokens,
-        rules,
-        part_rules: Vec::new(),
-        environment_predicates: Vec::new(),
-        source_map_refs: Vec::new(),
-        external_css_descriptors: Vec::new(),
-        adapter_requirements: Vec::new(),
-    };
-    validate_view_interactive_overflow_style_rules(&resource)?;
-    Ok(Some(resource))
-}
-
-fn native_style_identity_source(sheet: &arcweft_lang_hir::style::HirStyleSheet) -> String {
-    let mut source = String::new();
-    for token in sheet.tokens() {
-        source.push_str("token ");
-        source.push_str(token.public_id());
-        if let Some(value_type) = token.value_type() {
-            source.push(':');
-            write!(&mut source, "{value_type:?}").expect("writing to a String cannot fail");
-        }
-        source.push('=');
-        source.push_str(token.value().source());
-        source.push('\n');
-    }
-    for rule in sheet.rules() {
-        for sequence in rule.selector().sequences() {
-            if let Some(relation) = sequence.relation_to_previous() {
-                source.push_str(match relation {
-                    HirStyleCombinator::Descendant => " ",
-                    HirStyleCombinator::Child => ">",
-                });
-            }
-            if let Some(element) = sequence.element() {
-                source.push_str(element.text());
-            }
-            if let Some(part) = sequence.part() {
-                source.push_str("::");
-                source.push_str(part.text());
-            }
-            for predicate in sequence.predicates() {
-                source.push(':');
-                source.push_str(predicate.text());
-            }
-        }
-        source.push('{');
-        for declaration in rule.declarations() {
-            source.push_str(declaration.property().text());
-            source.push_str(match declaration.op() {
-                HirStyleAssignOp::Replace => "=",
-                HirStyleAssignOp::Append => "+=",
-            });
-            source.push_str(declaration.value().source());
-            source.push(';');
-        }
-        source.push_str("}\n");
-    }
-    source
-}
-
-fn validate_view_interactive_overflow_style_rules(
-    style: &ViewStyleResource,
-) -> Result<(), ExitCode> {
-    for rule in &style.rules {
-        let Some(element) = view_style_rule_element(rule) else {
-            continue;
-        };
-        if element == ViewElementKind::Scroll {
-            continue;
-        }
-        for declaration in &rule.declarations {
-            if !view_style_overflow_property_is_interactive(
-                style,
-                &declaration.property,
-                &declaration.value,
-            ) {
-                continue;
-            }
-            eprintln!(
-                "error[AWF0617 view::interactive_overflow_requires_scroll]: style rule selector `{}` cannot use `{}: {}` as an interactive overflow container; wrap the content in `Scroll {{ ... }}` or move `{}` to the Scroll element",
-                element.source_name(),
-                normalize_view_style_property(&declaration.property),
-                view_style_value_label(&declaration.value),
-                normalize_view_style_property(&declaration.property)
-            );
-            return Err(ExitCode::FAILURE);
-        }
-    }
-    Ok(())
-}
-
-fn view_style_rule_element(rule: &ViewStyleRule) -> Option<ViewElementKind> {
-    rule.selector.parts.iter().find_map(|part| match part {
-        ViewStyleSelectorPart::Element(element) => Some(*element),
-        ViewStyleSelectorPart::Part(_)
-        | ViewStyleSelectorPart::State(_)
-        | ViewStyleSelectorPart::Interaction(_)
-        | ViewStyleSelectorPart::Environment(_)
-        | ViewStyleSelectorPart::Descendant
-        | ViewStyleSelectorPart::Child => None,
     })
-}
-
-fn view_style_overflow_property_is_interactive(
-    style: &ViewStyleResource,
-    property: &str,
-    value: &ViewStyleValue,
-) -> bool {
-    let property = normalize_view_style_property(property);
-    if !matches!(property.as_str(), "overflow" | "overflow-x" | "overflow-y") {
-        return false;
-    }
-    view_style_interactive_overflow_value(style, value, 0)
-}
-
-fn view_style_interactive_overflow_value(
-    style: &ViewStyleResource,
-    value: &ViewStyleValue,
-    depth: u8,
-) -> bool {
-    if depth > 8 {
-        return false;
-    }
-    match value {
-        ViewStyleValue::Text(value) | ViewStyleValue::Resource(value) => {
-            matches!(
-                value.trim().trim_matches('"').trim_start_matches('.'),
-                "auto" | "scroll"
-            )
-        }
-        ViewStyleValue::Token(token) => style
-            .tokens
-            .iter()
-            .find(|candidate| id_or_tail_matches(token, &candidate.public_id))
-            .is_some_and(|token| {
-                view_style_interactive_overflow_value(style, &token.value, depth + 1)
-            }),
-        ViewStyleValue::SystemColor(_)
-        | ViewStyleValue::Rgba(_)
-        | ViewStyleValue::Milli(_)
-        | ViewStyleValue::List(_)
-        | ViewStyleValue::Digest(_) => false,
-    }
-}
-
-fn view_style_value_label(value: &ViewStyleValue) -> String {
-    match value {
-        ViewStyleValue::Token(value)
-        | ViewStyleValue::Text(value)
-        | ViewStyleValue::Resource(value) => value.trim().trim_matches('"').to_owned(),
-        ViewStyleValue::SystemColor(value) => format!("{value:?}"),
-        ViewStyleValue::Rgba(color) => format!(
-            "rgba({}, {}, {}, {})",
-            color.red, color.green, color.blue, color.alpha
-        ),
-        ViewStyleValue::Milli(value) => value.to_string(),
-        ViewStyleValue::List(values) => values
-            .iter()
-            .map(view_style_value_label)
-            .collect::<Vec<_>>()
-            .join(" "),
-        ViewStyleValue::Digest(value) => value.to_string(),
-    }
-}
-
-fn normalize_view_style_property(value: &str) -> String {
-    value.trim().replace('_', "-").to_ascii_lowercase()
-}
-
-fn id_or_tail_matches(candidate: &str, target: &str) -> bool {
-    let candidate = candidate.trim().trim_start_matches('.');
-    let target = target.trim().trim_start_matches('@');
-    candidate == target
-        || target
-            .rsplit('.')
-            .next()
-            .is_some_and(|tail| candidate == tail)
-}
-
-fn dsl_style_source_identity(
-    style: &HirStyleDecl,
-    source: &str,
-    syntax: ProductStyleSyntax,
-) -> StyleSourceIdentity {
-    let source_digest = BundleDigest::of(source.as_bytes());
-    StyleSourceIdentity {
-        public_id: format!("{}.source", style.id().body()),
-        syntax,
-        identity: StyleSourceRef::Inline { source_digest },
-        content_digest: Some(source_digest),
-    }
-}
-
-fn dsl_view_style_token(token: &HirStyleTokenDecl) -> Result<ViewStyleToken, ExitCode> {
-    Ok(ViewStyleToken {
-        public_id: token.public_id().to_owned(),
-        value: dsl_view_style_value(token.value())?,
-    })
-}
-
-fn dsl_view_style_rule(rule: &HirStyleRuleDecl) -> Result<ViewStyleRule, ExitCode> {
-    let parts = rule
-        .selector()
-        .sequences()
-        .iter()
-        .map(dsl_view_style_selector_sequence)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(ViewStyleRule {
-        selector: ViewStyleSelector {
-            parts: parts.into_iter().flatten().collect(),
-        },
-        declarations: rule
-            .declarations()
-            .iter()
-            .map(dsl_view_style_declaration)
-            .collect::<Result<Vec<_>, _>>()?,
-        source: None,
-    })
-}
-
-fn dsl_view_style_selector_sequence(
-    sequence: &HirStyleSelectorSequence,
-) -> Result<Vec<ViewStyleSelectorPart>, ExitCode> {
-    let mut parts = Vec::new();
-    if let Some(relation) = sequence.relation_to_previous() {
-        parts.push(match relation {
-            HirStyleCombinator::Descendant => ViewStyleSelectorPart::Descendant,
-            HirStyleCombinator::Child => ViewStyleSelectorPart::Child,
-        });
-    }
-    if let Some(element) = sequence.element() {
-        parts.push(ViewStyleSelectorPart::Element(dsl_view_element_kind(
-            element.text(),
-        )?));
-    }
-    if let Some(part) = sequence.part() {
-        parts.push(ViewStyleSelectorPart::Part(part.text().to_owned()));
-    }
-    for predicate in sequence.predicates() {
-        let predicate = predicate.text();
-        parts.push(match predicate {
-            "hover" => ViewStyleSelectorPart::Interaction(ViewInteractionState::Hover),
-            "active" => ViewStyleSelectorPart::Interaction(ViewInteractionState::Active),
-            "disabled" => ViewStyleSelectorPart::Interaction(ViewInteractionState::Disabled),
-            "focus-visible" => ViewStyleSelectorPart::State(ViewElementState::FocusVisible),
-            "read-only" => ViewStyleSelectorPart::State(ViewElementState::ReadOnly),
-            "invalid" => ViewStyleSelectorPart::State(ViewElementState::Invalid),
-            "composing" => ViewStyleSelectorPart::State(ViewElementState::Composing),
-            "placeholder-shown" => ViewStyleSelectorPart::State(ViewElementState::PlaceholderShown),
-            other => {
-                eprintln!("error: View style predicate `{other}` is not representable by the current bundle Style resource");
-                return Err(ExitCode::FAILURE);
-            }
-        });
-    }
-    Ok(parts)
-}
-
-fn dsl_view_style_declaration(
-    declaration: &HirStyleDeclaration,
-) -> Result<ViewStyleDeclaration, ExitCode> {
-    Ok(ViewStyleDeclaration {
-        property: declaration.property().text().to_owned(),
-        value: dsl_view_style_value(declaration.value())?,
-        op: match declaration.op() {
-            HirStyleAssignOp::Replace => StyleAssignOp::Replace,
-            HirStyleAssignOp::Append => StyleAssignOp::Append,
-        },
-    })
-}
-
-fn dsl_view_style_value(value: &HirStyleExpr) -> Result<ViewStyleValue, ExitCode> {
-    dsl_view_style_expr(value.expr())
-        .map_or_else(|| Ok(ViewStyleValue::Text(value.source().to_owned())), Ok)
-}
-
-fn dsl_view_style_expr(expr: &Expr) -> Option<ViewStyleValue> {
-    match expr {
-        Expr::Literal(Literal::String(value)) => Some(ViewStyleValue::Text(value.clone())),
-        Expr::Literal(Literal::Bool(value)) => Some(ViewStyleValue::Text(value.to_string())),
-        Expr::Literal(Literal::Int(value)) => i32::try_from(value.magnitude().ok()?)
-            .ok()
-            .map(ViewStyleValue::Milli),
-        Expr::Literal(Literal::UnitNumber {
-            raw,
-            suffix: UnitNumberSuffix::Milli,
-        }) => raw
-            .strip_suffix("milli")?
-            .replace('_', "")
-            .parse::<i32>()
-            .ok()
-            .map(ViewStyleValue::Milli),
-        Expr::Path(path) => Some(ViewStyleValue::Text(path.as_label().to_owned())),
-        Expr::ShortVariant(name) => Some(ViewStyleValue::Text(format!(".{name}"))),
-        Expr::BracketSeq(items) => items
-            .iter()
-            .map(dsl_view_style_expr)
-            .collect::<Option<Vec<_>>>()
-            .map(ViewStyleValue::List),
-        Expr::Unary {
-            op: UnaryOp::Neg,
-            expr,
-        } => match dsl_view_style_expr(expr)? {
-            ViewStyleValue::Milli(value) => value.checked_neg().map(ViewStyleValue::Milli),
-            _ => None,
-        },
-        Expr::Call { callee, args } => {
-            let name = callee.dotted_selector_label()?;
-            let positional = args
-                .iter()
-                .filter_map(|arg| match arg {
-                    CallArg::Positional(value) => Some(value),
-                    CallArg::Named { .. } | CallArg::Spread { .. } => None,
-                })
-                .collect::<Vec<_>>();
-            match name.as_str() {
-                "token" => positional
-                    .first()?
-                    .dotted_selector_label()
-                    .map(ViewStyleValue::Token),
-                "resource" => positional
-                    .first()?
-                    .dotted_selector_label()
-                    .map(ViewStyleValue::Resource),
-                "text" => match positional.as_slice() {
-                    [Expr::Literal(Literal::String(value))] => {
-                        Some(ViewStyleValue::Text(value.clone()))
-                    }
-                    _ => None,
-                },
-                "milli" => match positional.as_slice() {
-                    [value] => style_integer_value(value).map(ViewStyleValue::Milli),
-                    _ => None,
-                },
-                "system_color" => match positional.as_slice() {
-                    [value] => style_enum_name(value)
-                        .and_then(dsl_view_system_color_name)
-                        .map(ViewStyleValue::SystemColor),
-                    _ => None,
-                },
-                "rgba" => {
-                    let channels = positional
-                        .iter()
-                        .map(|value| u8::try_from(style_integer_value(value)?).ok())
-                        .collect::<Option<Vec<_>>>()?;
-                    let [red, green, blue, alpha] = channels.as_slice() else {
-                        return None;
-                    };
-                    Some(ViewStyleValue::Rgba(RgbaColor {
-                        red: *red,
-                        green: *green,
-                        blue: *blue,
-                        alpha: *alpha,
-                    }))
-                }
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-fn style_integer_value(expr: &Expr) -> Option<i32> {
-    match expr {
-        Expr::Literal(Literal::Int(value)) => i32::try_from(value.magnitude().ok()?).ok(),
-        Expr::Unary {
-            op: UnaryOp::Neg,
-            expr,
-        } => style_integer_value(expr)?.checked_neg(),
-        _ => None,
-    }
-}
-
-fn style_enum_name(expr: &Expr) -> Option<&str> {
-    match expr {
-        Expr::ShortVariant(name) => Some(name.as_str()),
-        Expr::Path(path) => Some(path.as_label()),
-        _ => None,
-    }
-}
-
-fn dsl_view_element_kind(value: &str) -> Result<ViewElementKind, ExitCode> {
-    if let Some(element) = ViewElementKind::from_source_name(value) {
-        Ok(element)
-    } else {
-        eprintln!("error: unknown View style element selector `{value}`");
-        Err(ExitCode::FAILURE)
-    }
-}
-
-fn dsl_view_system_color_name(value: &str) -> Option<SystemColor> {
-    match value {
-        "Canvas" => Some(SystemColor::Canvas),
-        "CanvasText" => Some(SystemColor::CanvasText),
-        "Surface" => Some(SystemColor::Panel),
-        "SurfaceText" => Some(SystemColor::PanelText),
-        "RaisedSurface" => Some(SystemColor::RaisedPanel),
-        "MutedText" => Some(SystemColor::MutedText),
-        "Border" => Some(SystemColor::Border),
-        "Accent" => Some(SystemColor::Accent),
-        "AccentText" => Some(SystemColor::AccentText),
-        "FocusRing" => Some(SystemColor::FocusRing),
-        "Selection" => Some(SystemColor::Selection),
-        "SelectionText" => Some(SystemColor::SelectionText),
-        "Danger" => Some(SystemColor::Danger),
-        "Warning" => Some(SystemColor::Warning),
-        "Success" => Some(SystemColor::Success),
-        _ => None,
-    }
 }
 
 fn attach_bundle_view_sidecars(
     mut bundle: ArcweftBundle,
     sidecars: BundleViewSidecars,
-) -> ArcweftBundle {
-    if let Some(resource) = sidecars.program {
-        bundle = bundle.with_view_program(resource);
-    }
-    if let Some(resource) = sidecars.style {
-        bundle = bundle.with_view_style(resource);
-    }
+) -> Result<ArcweftBundle, ExitCode> {
+    bundle = bundle
+        .with_view_resources(sidecars.program, sidecars.style)
+        .map_err(|error| {
+            eprintln!("error: failed to attach View program and Style resources: {error}");
+            ExitCode::FAILURE
+        })?;
     if let Some(mut resource) = sidecars.text {
         hydrate_default_view_localization(&mut resource, &bundle.display);
         bundle = bundle.with_view_text(resource);
@@ -1044,7 +594,7 @@ fn attach_bundle_view_sidecars(
     if let Some(resource) = sidecars.theme {
         bundle = bundle.with_view_theme(resource);
     }
-    bundle
+    Ok(bundle)
 }
 
 fn hydrate_default_view_localization(

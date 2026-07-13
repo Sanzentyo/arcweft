@@ -1,9 +1,8 @@
 use super::control_style::{
-    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
-    PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
-    control_font_families, fill_with_opacity, push_control_backdrop_plan, push_control_border,
-    push_control_corner_frame, push_control_filter_plan, push_control_focus_ring,
-    push_control_shadow_plan, state_from_interaction,
+    PreparedControlBackdrop, PreparedControlFilter, PreparedControlPaint, PreparedControlShadow,
+    RenderControlVisualStyle, control_font_families, control_text_weight, fill_with_opacity,
+    push_control_backdrop_plan, push_control_border, push_control_corner_frame,
+    push_control_filter_plan, push_control_focus_ring, push_control_shadow_plan,
 };
 use super::{
     FramePlanError, PaintRect, Palette, PlannedFrameText, PlannedTextOwner,
@@ -49,7 +48,7 @@ pub struct RenderTextInputControl {
     pub bounds: HitRect,
     pub viewport_clip: Option<HitRect>,
     pub label: Option<String>,
-    pub style: RenderControlStyle,
+    pub style: RenderControlVisualStyle,
 }
 
 impl RenderTextInputControl {
@@ -73,7 +72,7 @@ impl RenderTextInputControl {
             bounds,
             viewport_clip: None,
             label: None,
-            style: RenderControlStyle::default(),
+            style: RenderControlVisualStyle::default(),
         }
     }
 
@@ -99,7 +98,7 @@ impl RenderTextInputControl {
     }
 
     #[must_use]
-    pub fn with_style(mut self, style: RenderControlStyle) -> Self {
+    pub fn with_style(mut self, style: RenderControlVisualStyle) -> Self {
         self.style = style;
         self
     }
@@ -135,6 +134,7 @@ pub(super) struct PlannedTextInput {
     style: ResolvedTextStyle,
     selection_rgba: [f32; 4],
     caret: TextColor,
+    composition_underline: TextColor,
     owner: PlannedTextOwner,
     focused: bool,
 }
@@ -162,7 +162,7 @@ impl PlannedTextInput {
         engine: &mut GlyphonTextEngine,
         viewport: RenderViewport,
     ) -> Result<PreparedPlannedTextInput, FramePlanError> {
-        let display = TextControlDisplayText::new(&self.control.value, &self.options);
+        let display = TextControlDisplayText::for_control(&self.control, &self.options);
         let inner = text_inner_bounds(&self.control);
         let document = display.document(self.style.clone())?;
         let unscrolled = layout_text_input(
@@ -231,7 +231,7 @@ impl PlannedTextInput {
                         usize::try_from(rect.range.end().get()).unwrap_or(usize::MAX),
                     ),
                     bounds: hit_rect_to_layout(rect.bounds),
-                    color: self.caret,
+                    color: self.composition_underline,
                     thickness: 1.0,
                 })
                 .collect();
@@ -254,16 +254,8 @@ impl PlannedTextInput {
     }
 }
 
-pub(super) fn text_input_depth_milli(
-    scene: &super::RenderScene,
-    control: &RenderTextInputControl,
-) -> i32 {
-    let state = visual_state_for_control(scene, control);
-    control
-        .style
-        .visual_for_state(state)
-        .depth_milli
-        .unwrap_or_default()
+pub(super) fn text_input_depth_milli(control: &RenderTextInputControl) -> i32 {
+    control.style.depth_milli.unwrap_or_default()
 }
 
 #[expect(
@@ -284,53 +276,56 @@ pub(super) fn build_text_input(
 ) -> Result<PreparedControlPaint, FramePlanError> {
     let options = control.resolved_options()?;
     let focused = scene.interaction.focused.as_ref() == Some(&control.target);
-    let state = visual_state_for_control(scene, control);
-    let visual = control.style.visual_for_state(state);
+    let visual = &control.style;
     let radii = visual.radii();
     let visible_bounds = visible_control_bounds(control).unwrap_or(control.bounds);
     let backdrop_start = control_backdrops.len();
-    push_control_backdrop_plan(control_backdrops, &control.target, visible_bounds, &visual);
+    push_control_backdrop_plan(control_backdrops, &control.target, visible_bounds, visual);
     let shadow_start = control_shadows.len();
-    push_control_shadow_plan(control_shadows, &control.target, visible_bounds, &visual);
+    push_control_shadow_plan(control_shadows, &control.target, visible_bounds, visual);
     let rectangle_start = rectangles.len();
     rectangles.push(PaintRect::with_radii(
         control.bounds,
-        fill_with_opacity(
-            visual.fill.unwrap_or(if focused {
-                palette.choice_active
-            } else {
-                palette.choice_idle
-            }),
-            visual.opacity,
-        ),
+        fill_with_opacity(visual.fill.unwrap_or(palette.choice_idle), visual.opacity),
         radii,
     ));
     push_control_border(rectangles, control.bounds, visual.border, radii);
     push_control_corner_frame(rectangles, control.bounds, visual.corner_frame);
-    if focused {
-        if let Some(ring) = visual.focus_ring {
-            push_control_focus_ring(rectangles, control.bounds, ring, radii);
-        } else {
-            super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
-        }
+    if let Some(ring) = visual.focus_ring {
+        push_control_focus_ring(rectangles, control.bounds, ring, radii);
     }
 
     let text_start = text.len();
-    let text_rgba = visual.text.unwrap_or(palette.choice_text);
+    let text_rgba =
+        if control.value.is_empty() && control.label.as_deref().is_some_and(|v| !v.is_empty()) {
+            visual
+                .placeholder
+                .or(visual.text)
+                .unwrap_or(palette.choice_text)
+        } else {
+            visual.text.unwrap_or(palette.choice_text)
+        };
     let style = super::prepared_text::resolved_plain_style(
-        control_font_families(&visual),
-        text_control_font_size(control, &visual),
-        text_control_line_height(control, &visual),
-        TextWeight::Normal,
+        control_font_families(visual),
+        text_control_font_size(control, visual),
+        text_control_line_height(control, visual),
+        control_text_weight(visual, TextWeight::Normal),
         TextSlant::Upright,
         text_rgba,
-    )?;
+    )?
+    .with_spacing(visual.letter_spacing_milli.unwrap_or_default(), 0);
     text.push(PlannedFrameText::TextInput(Box::new(PlannedTextInput {
         control: control.clone(),
         options,
         style,
         selection_rgba: visual.selection.unwrap_or(palette.choice_active),
         caret: text_color(visual.caret.unwrap_or(palette.focus_ring)),
+        composition_underline: text_color(
+            visual
+                .composition_underline
+                .or(visual.caret)
+                .unwrap_or(palette.focus_ring),
+        ),
         owner: PlannedTextOwner {
             semantic_id: control.target.id().clone(),
             object_bounds: visible_bounds,
@@ -338,7 +333,7 @@ pub(super) fn build_text_input(
         focused,
     })));
     let filter_start = control_filters.len();
-    push_control_filter_plan(control_filters, &control.target, visible_bounds, &visual);
+    push_control_filter_plan(control_filters, &control.target, visible_bounds, visual);
     apply_viewport_clip_to_rectangles(&mut rectangles[rectangle_start..], control.viewport_clip);
     let paint = PreparedControlPaint {
         target: control.target.clone(),
@@ -400,6 +395,29 @@ struct TextControlDisplayChar {
 }
 
 impl TextControlDisplayText {
+    fn for_control(control: &RenderTextInputControl, options: &TextInputOptions) -> Self {
+        if control.value.is_empty()
+            && let Some(placeholder) = control.label.as_deref().filter(|value| !value.is_empty())
+        {
+            return Self::placeholder(placeholder);
+        }
+        Self::new(&control.value, options)
+    }
+
+    fn placeholder(placeholder: &str) -> Self {
+        let chars = placeholder
+            .char_indices()
+            .map(|(start, ch)| TextControlDisplayChar {
+                display: start..start.saturating_add(ch.len_utf8()),
+                source: 0..0,
+            })
+            .collect();
+        Self {
+            value: placeholder.to_owned(),
+            chars,
+        }
+    }
+
     fn new(source: &str, options: &TextInputOptions) -> Self {
         let mut value = String::with_capacity(source.len());
         let mut chars = Vec::new();
@@ -684,19 +702,6 @@ fn text_control_line_height(
         .unwrap_or_else(|| text_control_font_size(control, visual) * 1.25)
         .max(1.0)
         .min(inner_height)
-}
-
-fn visual_state_for_control(
-    scene: &super::RenderScene,
-    control: &RenderTextInputControl,
-) -> super::RenderControlVisualState {
-    let hovered = scene.interaction.hovered.as_ref() == Some(&control.target);
-    let pressed = scene.interaction.pressed.as_ref() == Some(&control.target);
-    state_from_interaction(ControlInteractionStyleState {
-        enabled: true,
-        focused: scene.interaction.focused.as_ref() == Some(&control.target),
-        pointer: ControlPointerStyleState::from_interaction(hovered, pressed),
-    })
 }
 
 fn visible_control_bounds(control: &RenderTextInputControl) -> Option<HitRect> {

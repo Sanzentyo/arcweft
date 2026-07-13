@@ -6,9 +6,10 @@
 //! environment snapshots, then emit `ViewFragment`, `ViewFrameResources`,
 //! handlers, semantics, and style overlays.
 
+use crate::style::ViewStyleApplicationTarget;
 use crate::{
-    CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, StyleId, TextSourceId, ViewId,
-    ViewProgramId, ViewStyleApplication, ViewValueProgramId, ViewValueProgramInventory,
+    CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, TextSourceId, ViewId,
+    ViewProgramId, ViewValueProgramId, ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
 use serde::{Deserialize, Serialize};
@@ -45,7 +46,6 @@ pub enum ViewInstruction {
     CallView(ViewCall),
     Branch(ViewBranch),
     RepeatKeyed(ViewRepeat),
-    ApplyStyle(ViewStyleApplication),
     BindEvent(ViewEventBindingSpec),
     AttachSemantic(ViewSemanticSpec),
 }
@@ -53,7 +53,8 @@ pub enum ViewInstruction {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewElementSpec {
     pub kind: ViewElementKind,
-    pub style: Option<StyleId>,
+    /// Ordered named-sheet and inline-patch applications authored on this node.
+    pub styles: Vec<ViewStyleApplicationTarget>,
     pub part: Option<ViewPartId>,
     pub key: Option<ViewStableKey>,
 }
@@ -221,21 +222,24 @@ pub struct ViewStableKey(pub u64);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewTextSpec {
     pub source: TextSourceId,
-    pub style: Option<StyleId>,
+    /// Ordered named-sheet and inline-patch applications authored on this node.
+    pub styles: Vec<ViewStyleApplicationTarget>,
     pub part: Option<ViewPartId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewImageSpec {
     pub image: ImageId,
-    pub style: Option<StyleId>,
+    /// Ordered named-sheet and inline-patch applications authored on this node.
+    pub styles: Vec<ViewStyleApplicationTarget>,
     pub part: Option<ViewPartId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewCustomSpec {
     pub element: CustomElementId,
-    pub style: Option<StyleId>,
+    /// Ordered named-sheet and inline-patch applications authored on this node.
+    pub styles: Vec<ViewStyleApplicationTarget>,
     pub part: Option<ViewPartId>,
 }
 
@@ -243,7 +247,8 @@ pub struct ViewCustomSpec {
 pub struct ViewCall {
     pub view: ViewId,
     pub arguments: Vec<ViewCallArgument>,
-    pub style: Option<StyleId>,
+    /// Ordered applications established before the nested View is evaluated.
+    pub styles: Vec<ViewStyleApplicationTarget>,
     pub part: Option<ViewPartId>,
     pub key: Option<ViewStableKey>,
 }
@@ -426,10 +431,12 @@ impl ViewProgram {
 #[cfg(test)]
 mod tests {
     use super::{
-        ViewElementKind, ViewElementLayoutKind, ViewElementSpec, ViewElementTextInputKind,
-        ViewInstruction, ViewPartExport, ViewPartId, ViewProgramBuilder,
+        ViewCall, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
+        ViewElementTextInputKind, ViewImageSpec, ViewInstruction, ViewPartExport, ViewPartId,
+        ViewProgramBuilder, ViewTextSpec,
     };
-    use crate::{ViewId, ViewProgramId};
+    use crate::style::{ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId};
+    use crate::{CustomElementId, ImageId, TextSourceId, ViewId, ViewProgramId};
     use std::collections::BTreeSet;
 
     #[test]
@@ -437,7 +444,7 @@ mod tests {
         let mut builder = ViewProgramBuilder::new(ViewProgramId(1), ViewId(2), 0xCAFE);
         builder.push(ViewInstruction::OpenElement(ViewElementSpec {
             kind: ViewElementKind::TextField,
-            style: None,
+            styles: Vec::new(),
             part: Some(ViewPartId(1)),
             key: None,
         }));
@@ -449,6 +456,59 @@ mod tests {
         assert_eq!(program.instructions().len(), 2);
         assert_eq!(program.exported_parts()[0].public_name, "field");
         assert_eq!(program.state_schema_hash(), 0xCAFE);
+    }
+
+    #[test]
+    fn every_node_producer_preserves_ordered_typed_style_applications() {
+        let applications = vec![
+            ViewStyleApplicationTarget::named(
+                ViewStyleSheetId::try_new("app.style.primary")
+                    .expect("test sheet ID must be valid"),
+            ),
+            ViewStyleApplicationTarget::inline(ViewStylePatchId::new(7)),
+        ];
+        let instructions = [
+            ViewInstruction::OpenElement(ViewElementSpec {
+                kind: ViewElementKind::Panel,
+                styles: applications.clone(),
+                part: None,
+                key: None,
+            }),
+            ViewInstruction::EmitText(ViewTextSpec {
+                source: TextSourceId(1),
+                styles: applications.clone(),
+                part: None,
+            }),
+            ViewInstruction::EmitImage(ViewImageSpec {
+                image: ImageId(2),
+                styles: applications.clone(),
+                part: None,
+            }),
+            ViewInstruction::EmitCustom(ViewCustomSpec {
+                element: CustomElementId(3),
+                styles: applications.clone(),
+                part: None,
+            }),
+            ViewInstruction::CallView(ViewCall {
+                view: ViewId(4),
+                arguments: Vec::new(),
+                styles: applications.clone(),
+                part: None,
+                key: None,
+            }),
+        ];
+
+        for instruction in &instructions {
+            let styles = match instruction {
+                ViewInstruction::OpenElement(spec) => &spec.styles,
+                ViewInstruction::EmitText(spec) => &spec.styles,
+                ViewInstruction::EmitImage(spec) => &spec.styles,
+                ViewInstruction::EmitCustom(spec) => &spec.styles,
+                ViewInstruction::CallView(call) => &call.styles,
+                _ => panic!("test inventory contains only node-producing instructions"),
+            };
+            assert_eq!(styles, &applications);
+        }
     }
 
     #[test]

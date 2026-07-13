@@ -10,6 +10,13 @@ impl InputController {
         &self.interaction
     }
 
+    pub fn focus_visible_for(
+        &self,
+        target: &arcweft_presentation::input::InteractionTarget,
+    ) -> bool {
+        self.focus_visible && self.interaction.is_focused(target)
+    }
+
     pub const fn choice_scroll(&self) -> ChoiceScroll {
         self.choice_scroll
     }
@@ -195,7 +202,7 @@ impl InputController {
             && self.focused_text_editor.is_none()
             && let Some(target) = frame.choices.first().map(|choice| choice.target.clone())
         {
-            self.set_focus(frame, target);
+            self.set_focus(frame, target, true);
             self.interaction.focus().target().is_some()
         } else {
             false

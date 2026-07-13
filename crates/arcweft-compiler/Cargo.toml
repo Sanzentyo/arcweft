@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
+arcweft-id = { path = "../arcweft-id" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
@@ -17,12 +18,10 @@ arcweft-project = { path = "../arcweft-project" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-source = { path = "../arcweft-source" }
+arcweft-view = { path = "../arcweft-view" }
 
 blake3.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-arcweft-id = { path = "../arcweft-id" }
 
 [lib]
 path = "src/lib.rs"

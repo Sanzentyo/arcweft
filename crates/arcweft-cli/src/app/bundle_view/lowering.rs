@@ -11,7 +11,6 @@ use self::modifiers::{
     lower_text_modifiers,
 };
 use self::scroll::lower_scroll_region;
-pub(in crate::app) use self::scroll::{inline_style_properties, normalize_property_name};
 use self::text_controls::{
     InputHandleBinding, lower_text_control_payload_field, lower_text_field, modifier_label,
     normalize_input_payload_ref, register_input_handle_binding, symbol_expr_name,
@@ -28,29 +27,30 @@ use arcweft_bundle::{
         ViewFocusInitialPolicy, ViewFocusNavigationEdge, ViewFocusNavigationResource,
         ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
         ViewFxArgumentBindingRef, ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource,
-        ViewLogicalRect, ViewParameterResource, ViewPartStyleRule, ViewProgramResource,
-        ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds, ViewScrollAxis,
-        ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
-        ViewScrollRegionResource, ViewStyleResource, ViewSurfaceResource, ViewTextBlockBounds,
-        ViewTextBlockResource, ViewTextResource,
+        ViewLogicalRect, ViewParameterResource, ViewProgramResource, ViewRuntimeButtonBounds,
+        ViewRuntimeSurfaceBounds, ViewScrollAxis, ViewScrollIndicatorsPolicy,
+        ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
+        ViewSurfaceResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
         view::{
-            CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, StyleAssignOp,
-            StyleSourceIdentity, StyleSourceRef, StyleSyntax, TextAssistPolicy, TextCapitalization,
-            ViewElementKind, ViewFocusAutoScrollPolicy, ViewInputKind, ViewInputOptions,
-            ViewInputPurpose, ViewParameterRole, ViewProgramInstruction, ViewSecureInputPolicy,
-            ViewSemanticTarget, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleSelector,
-            ViewStyleSelectorPart, ViewStyleValue, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-            ViewTextSourceKind, ViewTextSourceRecord, ViewTextSurface, ViewTextTabPolicy,
+            CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, TextAssistPolicy,
+            TextCapitalization, ViewElementKind, ViewFocusAutoScrollPolicy, ViewInputKind,
+            ViewInputOptions, ViewInputPurpose, ViewParameterRole, ViewProgramInstruction,
+            ViewSecureInputPolicy, ViewSemanticTarget, ViewStyleApplicationTarget,
+            ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
+            ViewTextSourceRecord, ViewTextSurface, ViewTextTabPolicy,
             ViewTextVerticalNavigationPolicy,
         },
     },
 };
+use arcweft_compiler::style::ViewStyleApplicationLookup;
+use arcweft_id::{IdError, PublicId};
 use arcweft_lang_sema::dialogue_view::{
     DialogueViewModel, DialogueViewModelRegistry,
     DialogueViewProjection as SemanticDialogueViewProjection,
 };
 use arcweft_lang_syntax::{
     ast::{
+        common::TextRange,
         ids::{EntityRef, EntityRefSyntax},
         items::EntityDeclItem,
         view::{
@@ -58,8 +58,8 @@ use arcweft_lang_syntax::{
             ViewButton, ViewButtonLabel, ViewCall, ViewElement, ViewExpr, ViewForEach,
             ViewFxApplication, ViewIf, ViewImage, ViewLet, ViewMatch, ViewMatchArm, ViewModifier,
             ViewNavigationDirection, ViewNavigationInitial, ViewNavigationTarget,
-            ViewNavigationTrap, ViewStyleModifier, ViewText, ViewTextControlPayloadField,
-            ViewTextField, ViewTextFieldMode,
+            ViewNavigationTrap, ViewText, ViewTextControlPayloadField, ViewTextField,
+            ViewTextFieldMode,
         },
     },
     expr::{CallArg, Expr, Literal},
@@ -74,15 +74,13 @@ use super::super::bundle_view_layout::{
     VIEW_LAYOUT_GAP_MILLI, VIEW_LAYOUT_SCROLL_VIEWPORT_HEIGHT_MILLI,
     VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI, ViewLayoutCursor, ViewLayoutFrame, button_bounds,
     modifier_layout_length_i32, modifier_layout_length_u32, named_arg, named_layout_length_i32,
-    named_layout_length_u32, parse_px_milli, text_block_frame, u32_to_i32_saturating,
+    named_layout_length_u32, text_block_frame, u32_to_i32_saturating,
 };
-use super::super::bundle_view_overflow::validate_interactive_overflow_modifiers;
 use super::super::bundle_view_schema::{ViewValueCompileError, ViewValueProgramCompiler};
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::app) struct ViewBundleSidecars {
     pub(in crate::app) program: Option<ViewProgramResource>,
-    pub(in crate::app) style: Option<ViewStyleResource>,
     pub(in crate::app) text: Option<ViewTextResource>,
     pub(in crate::app) input: Option<ViewInputResource>,
     pub(in crate::app) image_objects: Vec<BundleImageObject>,
@@ -90,14 +88,6 @@ pub(in crate::app) struct ViewBundleSidecars {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub(in crate::app) enum ViewSidecarError {
-    #[error(
-        "error[AWF0617 view::interactive_overflow_requires_scroll]: `{element}` cannot use `{property}: {value}` as an interactive overflow container; wrap the content in `Scroll {{ ... }}` or move `{property}` to the Scroll element"
-    )]
-    InteractiveOverflowRequiresScroll {
-        element: String,
-        property: String,
-        value: String,
-    },
     #[error(
         "error[AWF0618 view::scroll_axis_both_unsupported]: `{element}` cannot use `{value}` as a Scroll axis in this cut; use `.vertical` or `.horizontal` and keep two-axis scrolling behind a future typed contract"
     )]
@@ -108,6 +98,8 @@ pub(in crate::app) enum ViewSidecarError {
     TooManyViewCallArguments,
     #[error("View `{view}` has an invalid parameter signature: {message}")]
     InvalidViewSignature { view: String, message: String },
+    #[error("View `{value}` has an invalid public ID: {source}")]
+    InvalidViewPublicId { value: String, source: IdError },
     #[error("View `{view}` parameter {ordinal} must use one identifier binding")]
     UnsupportedViewParameter { view: String, ordinal: usize },
     #[error("View call references unknown definition `{view}`")]
@@ -146,10 +138,8 @@ struct ViewLoweringState {
     focus_groups: Vec<ViewFocusGroupResource>,
     focus_navigation: Vec<ViewFocusNavigationResource>,
     focus_group_stack: Vec<String>,
-    style_resource: Option<ViewStyleResource>,
-    inline_arcweft_sources: Vec<StyleSourceIdentity>,
-    inline_css_sources: Vec<StyleSourceIdentity>,
-    inline_part_rules: Vec<ViewPartStyleRule>,
+    style_applications: ViewStyleApplicationLookup,
+    active_view: Option<PublicId>,
     input_handle_bindings: Vec<InputHandleBinding>,
     source_image_objects: Vec<BundleImageObject>,
     image_objects: Vec<BundleImageObject>,
@@ -162,7 +152,16 @@ struct ViewLoweringState {
     element_counter: u32,
     group_counter: u32,
     handler_counter: u32,
-    patch_counter: u32,
+}
+
+impl ViewLoweringState {
+    fn producer_styles(&self, range: TextRange) -> Vec<ViewStyleApplicationTarget> {
+        self.active_view.as_ref().map_or_else(Vec::new, |view| {
+            self.style_applications
+                .applications_for(view, range)
+                .to_vec()
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -189,14 +188,14 @@ struct ViewParameterSchema {
 pub(in crate::app) fn view_sidecars(
     views: &[&EntityDeclItem],
     dialogue_view_models: &DialogueViewModelRegistry,
-    style_resource: Option<&ViewStyleResource>,
+    style_applications: &ViewStyleApplicationLookup,
     source_image_objects: &[BundleImageObject],
     fx_definitions: &[FxDefinition],
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
         fx_definitions: view_fx_definitions(fx_definitions),
         view_schemas: view_definition_schemas(views, dialogue_view_models)?,
-        style_resource: style_resource.cloned(),
+        style_applications: style_applications.clone(),
         source_image_objects: source_image_objects.to_vec(),
         ..ViewLoweringState::default()
     };
@@ -206,6 +205,12 @@ pub(in crate::app) fn view_sidecars(
     for view in views {
         if let Some(body) = view.view_body().and_then(|body| body.view()) {
             let public_id = view_resource_id(view.id().body());
+            let typed_public_id = PublicId::try_new(public_id.clone()).map_err(|source| {
+                ViewSidecarError::InvalidViewPublicId {
+                    value: public_id.clone(),
+                    source,
+                }
+            })?;
             let schema = state.view_schemas.get(&public_id).cloned().ok_or_else(|| {
                 ViewSidecarError::UnknownViewCall {
                     view: public_id.clone(),
@@ -231,12 +236,19 @@ pub(in crate::app) fn view_sidecars(
                         .map(|model| (parameter.name.clone(), model))
                 })
                 .collect();
+            let root_styles = state
+                .style_applications
+                .root_applications_for(&typed_public_id)
+                .to_vec();
             let start_instruction = usize_to_u32_saturating(state.instructions.len());
+            state.active_view = Some(typed_public_id.clone());
             lower_view_body(view.id(), body, &mut state)?;
+            state.active_view = None;
             state.dialogue_parameters.clear();
             let end_instruction = usize_to_u32_saturating(state.instructions.len());
             state.definitions.push(ViewDefinitionResource {
                 public_id,
+                styles: root_styles,
                 body: ViewInstructionSpan::new(start_instruction, end_instruction),
                 parameters,
                 state_schema_hash: view_state_schema_hash(&schema, body),
@@ -262,9 +274,6 @@ fn finish_view_sidecars(
         && state.action_buttons.is_empty()
         && state.focus_groups.is_empty()
         && state.focus_navigation.is_empty()
-        && state.inline_arcweft_sources.is_empty()
-        && state.inline_css_sources.is_empty()
-        && state.inline_part_rules.is_empty()
         && state.image_objects.is_empty()
     {
         return Ok(ViewBundleSidecars::default());
@@ -288,19 +297,6 @@ fn finish_view_sidecars(
             focus_navigation: state.focus_navigation,
             adapter_requirements: Vec::new(),
         }),
-        style: (!state.inline_arcweft_sources.is_empty() || !state.inline_css_sources.is_empty())
-            .then(|| ViewStyleResource {
-                style_program_id: "view.style.inline.view".to_owned(),
-                arcweft_sources: state.inline_arcweft_sources,
-                css_sources: state.inline_css_sources,
-                tokens: Vec::new(),
-                rules: Vec::new(),
-                part_rules: state.inline_part_rules,
-                environment_predicates: Vec::new(),
-                source_map_refs: Vec::new(),
-                external_css_descriptors: Vec::new(),
-                adapter_requirements: Vec::new(),
-            }),
         text: (!state.text_sources.is_empty()).then(|| ViewTextResource {
             sources: state.text_sources,
             ..ViewTextResource::default()
@@ -574,10 +570,11 @@ fn lower_nested_view_call(
             });
         }
     }
+    let styles = state.producer_styles(call.range());
     state.instructions.push(ViewProgramInstruction::CallView {
         view,
         arguments,
-        style: None,
+        styles,
         part: first_part(call.modifiers()),
         key: None,
         source: None,
@@ -604,7 +601,7 @@ fn lower_view_expr(
         ViewExpr::Raw(raw) => {
             state.instructions.push(ViewProgramInstruction::EmitCustom {
                 element: raw.clone(),
-                style: None,
+                styles: Vec::new(),
                 part: None,
                 source: None,
             });
@@ -834,24 +831,20 @@ fn lower_element(
     layout: &mut ViewLayoutCursor,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     if let Some(kind) = ViewElementKind::from_source_name(element.callee()) {
-        validate_interactive_overflow_modifiers(
-            element.callee(),
-            element.modifiers(),
-            kind.layout_kind() == Some(ViewElementLayoutKind::Scroll),
-        )?;
         let origin = ViewLayoutCursor {
             x_milli: named_layout_length_i32(element.args(), &["x"]).unwrap_or(layout.x_milli),
             y_milli: named_layout_length_i32(element.args(), &["y"]).unwrap_or(layout.y_milli),
         };
         let target = next_element_id(view_id, state);
         let part = element_part(element);
+        let styles = state.producer_styles(element.range());
         let open_instruction = state.instructions.len();
         state
             .instructions
             .push(ViewProgramInstruction::OpenElement {
                 element: kind,
                 target: Some(target.clone()),
-                style: None,
+                styles,
                 part,
                 key: None,
                 source: None,
@@ -891,7 +884,6 @@ fn lower_element(
                     frame.width_milli,
                     frame.height_milli,
                 ),
-                style: None,
                 source: None,
             });
         }
@@ -903,9 +895,10 @@ fn lower_element(
             .push(ViewProgramInstruction::CloseElement);
         Ok(frame)
     } else {
+        let styles = state.producer_styles(element.range());
         state.instructions.push(ViewProgramInstruction::EmitCustom {
             element: element.callee().to_owned(),
-            style: None,
+            styles,
             part: first_part(element.modifiers()),
             source: None,
         });
@@ -1027,10 +1020,6 @@ fn next_focus_group_id(view_id: &str, state: &mut ViewLoweringState) -> String {
     id
 }
 
-fn normalize_style_ref(reference: &EntityRefSyntax) -> String {
-    normalize_entity_ref(reference)
-}
-
 fn normalize_entity_ref(reference: &EntityRefSyntax) -> String {
     reference.canonical_body()
 }
@@ -1040,7 +1029,7 @@ pub(in crate::app) fn expr_source(expr: &Expr) -> String {
         Expr::Literal(Literal::String(value)) | Expr::Raw(value) => value.clone(),
         Expr::Path(value) => value.as_label().to_owned(),
         Expr::ShortVariant(value) => format!(".{value}"),
-        Expr::EntityRef(reference) => normalize_style_ref(reference),
+        Expr::EntityRef(reference) => normalize_entity_ref(reference),
         other => format!("{other:?}"),
     }
 }

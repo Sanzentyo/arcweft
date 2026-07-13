@@ -3,7 +3,7 @@
   "target": "web",
   "fixture": "seq06_13e1_inset_box_shadow",
   "date": "2026-07-04",
-  "source_css": "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css",
+  "source_style": "docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw",
   "scene": {
     "viewport": {
       "width": 320,
@@ -40,13 +40,13 @@
     ]
   },
   "route": [
-    "Takumi typed CSS parse/cascade for authored CSS fixture",
+    "typed native Style sheet and selector resolution",
     "ViewStyleResource typed Panel part style rules",
     "ViewProgramResource::runtime_surfaces_with_style",
     "BundlePresentationSnapshot::surfaces",
     "ViewRuntimeControlVisualStyle fill/radius/shadows",
     "ViewRoundedRect primitive from player-owned surface resource",
-    "arcweft-takumi-adapter box_shadow_list_from_takumi",
+    "computed native Style box-shadow value",
     "ViewCompositingEffects::box_shadows",
     "PlayerFramePlanner::prepare",
     "SharedRenderer::render_to_view",
@@ -56,7 +56,7 @@
     "WebAssembly-exported renderer readback from an Arcweft-owned WebGPU texture"
   ],
   "forbidden_paths": [
-    "browser DOM CSS box-shadow screenshots",
+    "browser DOM style-rendered screenshots",
     "SVG filters",
     "canvas 2D fallback",
     "CPU raster fallback",

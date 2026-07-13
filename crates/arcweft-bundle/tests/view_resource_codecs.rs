@@ -1,35 +1,44 @@
 use arcweft_bundle::container::{BundleDigest, BundleSectionKind};
 use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::view::{
-    ColorSchemeDefault, CompositionOnBlurPolicy, ContrastPreference, DialogueTextProjection,
-    EnterKeyHint, ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp,
-    StyleSourceIdentity, StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride,
+    CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, SystemColorOverride,
     TextAssistPolicy, TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
-    ViewDefinitionResource, ViewElementKind, ViewElementState, ViewFocusAutoScrollPolicy,
+    ViewDefinitionResource, ViewElementKind, ViewExportedPart, ViewFocusAutoScrollPolicy,
     ViewFxArgumentBindingRef, ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose,
     ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource, ViewLocalizedTextResource,
     ViewLogicalRect, ViewObserveClassification, ViewParameterResource, ViewProgramInstruction,
-    ViewProgramResource, ViewResourceBudget, ViewResourceCompatibility, ViewScrollAxis,
-    ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
-    ViewScrollRegionResource, ViewSecureInputPolicy, ViewSecureRedactionMetadata,
-    ViewSemanticTarget, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue, ViewTextBlockBounds,
-    ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
-    ViewThemeEnvironmentDefaults, ViewThemeResource, ViewValueInputNamespace,
-    ViewValueInputResource, ViewValueInputSource, migrated_view_section_compatibility,
+    ViewProgramResource, ViewProgramStyleResources, ViewResourceBudget, ViewResourceCompatibility,
+    ViewScrollAxis, ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy,
+    ViewScrollOverscrollPolicy, ViewScrollRegionResource, ViewSecureInputPolicy,
+    ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleResource,
+    ViewStyleRule, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken,
+    ViewStyleTokenId, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
+    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
+    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
+    ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
+    migrated_view_section_compatibility,
 };
 use arcweft_render_text::{RichTextDocument, RichTextNode};
 
 use arcweft_bundle::resource_codec::{
-    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
-    SectionCodecBudget,
+    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, PublicIdRef, PublicIdTable,
+    ResourceField, ResourceWireType, SectionCodecBudget, SourceRangeRef,
 };
-use arcweft_bundle::{BundleVirtualFileRef, BundleVirtualFileSpace};
+use arcweft_presentation::appearance::{
+    ColorSchemePreference, ContrastPreference, PresentationColor, SystemColor,
+};
 use arcweft_presentation::fx::{
     FiniteF32, FxId, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
+use arcweft_view::style::{
+    ViewColorValue, ViewElementState, ViewPropertyKind, ViewSpecifiedValue, ViewStylePredicate,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleValueKind,
+};
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
+
+const MALFORMED_RESOURCE_IDENTITIES: [&str; 4] =
+    ["", "part shared", "part.\u{0007}shared", "#part.shared"];
 
 #[test]
 fn view_element_inventory_owns_codec_tags_and_round_trips() {
@@ -78,13 +87,218 @@ fn view_resource_compact_sections_round_trip_with_deterministic_bytes() {
         &input,
     );
 
-    let theme = fixture_theme(RgbaColor::rgb(0x25, 0x63, 0xEB));
+    let theme = fixture_theme(PresentationColor::rgb(0x25, 0x63, 0xEB));
     assert_round_trip(
         ProductSectionCodecKind::ViewTheme,
         &theme.encode_canonical_section().expect("theme encodes"),
         ViewThemeResource::decode_canonical_section,
         &theme,
     );
+}
+
+#[test]
+fn emit_text_requires_a_one_to_one_owned_text_block_graph() {
+    let mut missing = fixture_program();
+    let ViewProgramInstruction::EmitText { text_block, .. } = &mut missing.instructions[1] else {
+        panic!("fixture instruction 1 emits text");
+    };
+    *text_block = "text.block.missing".to_owned();
+    assert_eq!(
+        missing
+            .encode_canonical_section()
+            .expect_err("EmitText must reference an existing text block"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_emit_text_block_refs",
+        ),
+    );
+
+    let mut duplicate = fixture_program();
+    duplicate.instructions[2] = duplicate.instructions[1].clone();
+    assert_eq!(
+        duplicate
+            .encode_canonical_section()
+            .expect_err("one text block cannot be bound by multiple EmitText instructions"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_emit_text_block_duplicate_refs",
+        ),
+    );
+
+    let mut unreferenced = fixture_program();
+    unreferenced.text_blocks.push(ViewTextBlockResource::new(
+        "text.block.dialogue.unreferenced",
+        Some("view.dialogue".to_owned()),
+        None,
+        "text.dialogue.unreferenced",
+        ViewTextBlockBounds::from_px(0, 0, 100, 20),
+    ));
+    assert_eq!(
+        unreferenced
+            .encode_canonical_section()
+            .expect_err("every text block must have one EmitText owner"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_emit_text_block_coverage",
+        ),
+    );
+
+    let mut wrong_source = fixture_program();
+    wrong_source.text_blocks[0].text_source = "text.dialogue.other".to_owned();
+    assert_eq!(
+        wrong_source
+            .encode_canonical_section()
+            .expect_err("EmitText and its text block must share one text source"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_emit_text_block_sources",
+        ),
+    );
+
+    let mut wrong_owner = fixture_program();
+    wrong_owner.text_blocks[0].view = Some("view.other".to_owned());
+    assert_eq!(
+        wrong_owner
+            .encode_canonical_section()
+            .expect_err("EmitText and its text block must share one View owner"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_emit_text_block_owners",
+        ),
+    );
+}
+
+#[test]
+fn emit_text_transcript_requires_the_text_block_reference() {
+    let program = fixture_program();
+    let mut value = serde_json::to_value(&program.instructions[1]).expect("instruction encodes");
+    value
+        .get_mut("emit_text")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("EmitText uses the canonical tagged payload")
+        .remove("text_block");
+
+    assert!(
+        serde_json::from_value::<ViewProgramInstruction>(value).is_err(),
+        "the unreleased canonical model has no missing-field default or dual reader",
+    );
+}
+
+#[test]
+fn view_program_rejects_removed_string_style_fields() {
+    let bytes = arcweft_bundle::standard_view::dialogue_program()
+        .encode_canonical_section()
+        .expect("standard View program encodes");
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::ViewProgram,
+        SectionCodecBudget::default(),
+    )
+    .expect("View program envelope decodes");
+    let transcript = envelope
+        .fields
+        .iter()
+        .find(|field| field.id == FieldId(1))
+        .expect("View transcript field exists");
+    let canonical: serde_json::Value =
+        serde_json::from_slice(&transcript.payload).expect("View transcript is JSON");
+
+    for table in ["action_buttons", "text_blocks", "surfaces"] {
+        let mut tampered = canonical.clone();
+        tampered[table][0]
+            .as_object_mut()
+            .expect("standard View record is an object")
+            .insert(
+                "style".to_owned(),
+                serde_json::Value::String("legacy.string.style".to_owned()),
+            );
+        let payload = serde_json::to_vec(&tampered).expect("tampered transcript encodes");
+        let bytes = envelope_with_replaced_field_payload(&envelope, FieldId(1), &payload);
+
+        assert_eq!(
+            ViewProgramResource::decode_canonical_section(&bytes)
+                .expect_err("removed string Style field must not disappear during decode"),
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable("view_program"),
+            "removed `{table}[0].style` must reject",
+        );
+    }
+}
+
+#[test]
+fn view_style_codec_rejects_missing_and_ambiguous_inline_token_owners() {
+    let bytes = fixture_style()
+        .encode_canonical_section()
+        .expect("Style encodes");
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::ViewStyle,
+        SectionCodecBudget::default(),
+    )
+    .expect("Style envelope decodes");
+    let transcript = envelope
+        .fields
+        .iter()
+        .find(|field| field.id == FieldId(1))
+        .expect("View transcript field exists");
+    let canonical: serde_json::Value =
+        serde_json::from_slice(&transcript.payload).expect("View transcript is JSON");
+
+    let mut missing = canonical.clone();
+    missing["program"]["patches"][0]["declarations"][0]["value"] = serde_json::json!({
+        "kind": "token",
+        "token": "token.missing",
+        "value_kind": "ratio",
+    });
+
+    let mut ambiguous = canonical;
+    let mut second_sheet = ambiguous["program"]["sheets"][0].clone();
+    second_sheet["id"] = serde_json::json!("style.secondary");
+    ambiguous["program"]["sheets"]
+        .as_array_mut()
+        .expect("sheet inventory")
+        .push(second_sheet);
+    ambiguous["program"]["patches"][0]["declarations"][0]["value"] = serde_json::json!({
+        "kind": "token",
+        "token": "token.accent",
+        "value_kind": "ratio",
+    });
+
+    for (label, tampered) in [("missing", missing), ("ambiguous", ambiguous)] {
+        let payload = serde_json::to_vec(&tampered).expect("tampered transcript encodes");
+        let bytes = envelope_with_replaced_field_payload(&envelope, FieldId(1), &payload);
+        assert_eq!(
+            ViewStyleResource::decode_canonical_section(&bytes)
+                .expect_err("invalid inline token ownership must reject during decode"),
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable("view_style"),
+            "{label} inline token owner must reject",
+        );
+    }
+}
+
+#[test]
+fn view_resource_merge_remaps_program_source_public_ids() {
+    let merged = ViewProgramStyleResources::new(Some(sourced_program("view.z_left")), None)
+        .merge(ViewProgramStyleResources::new(
+            Some(sourced_program("view.a_right")),
+            None,
+        ))
+        .expect("program resources merge atomically");
+    let program = merged.program.expect("merged program is retained");
+    let public_ids = program
+        .public_id_table()
+        .expect("merged program public IDs are canonical");
+    let resolved = program
+        .instructions
+        .iter()
+        .map(|instruction| {
+            let ViewProgramInstruction::EmitCustom {
+                source: Some(source),
+                ..
+            } = instruction
+            else {
+                panic!("sourced fixture contains only custom node producers");
+            };
+            public_ids.get(source.source)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .expect("merged source refs stay in bounds");
+
+    assert_eq!(resolved, vec!["view.z_left", "view.a_right"]);
 }
 
 #[test]
@@ -180,12 +394,14 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
             ViewDefinitionResource {
                 public_id: "view.Caller".to_owned(),
                 body: ViewInstructionSpan::new(0, 1),
+                styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
                 public_id: "view.Child".to_owned(),
                 body: ViewInstructionSpan::new(1, 1),
+                styles: Vec::new(),
                 parameters: vec![
                     ViewParameterResource {
                         ordinal: 0,
@@ -234,7 +450,7 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
         instructions: vec![ViewProgramInstruction::CallView {
             view: "view.Child".to_owned(),
             arguments,
-            style: None,
+            styles: Vec::new(),
             part: None,
             key: None,
             source: None,
@@ -254,6 +470,219 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
 
     let wrong_type = program(vec![binding(0, "count", 1), binding(1, "opacity", 1)]);
     assert!(wrong_type.encode_canonical_section().is_err());
+}
+
+#[test]
+fn exported_part_identity_is_scoped_to_its_owning_view() {
+    let program = exported_part_program();
+    program
+        .validate_style_contract(None)
+        .expect("each exported part resolves inside its owning View");
+    let canonical = program
+        .encode_canonical_section()
+        .expect("different Views may export the same local and public part names");
+    let mut reversed = program.clone();
+    reversed.exported_parts.reverse();
+    assert_eq!(
+        reversed
+            .encode_canonical_section()
+            .expect("reordered exported parts encode"),
+        canonical,
+        "canonical bytes must not depend on authored cross-View export order",
+    );
+
+    let mut duplicate_local = program.clone();
+    duplicate_local.exported_parts.push(ViewExportedPart {
+        view: "view.Left".to_owned(),
+        part_id: "part.shared".to_owned(),
+        public_name: "part.other-public".to_owned(),
+    });
+    assert!(
+        duplicate_local.encode_canonical_section().is_err(),
+        "one View may not export the same local part twice",
+    );
+
+    let mut duplicate_public = program;
+    duplicate_public.exported_parts.push(ViewExportedPart {
+        view: "view.Left".to_owned(),
+        part_id: "part.other".to_owned(),
+        public_name: "part.public".to_owned(),
+    });
+    assert!(
+        duplicate_public.encode_canonical_section().is_err(),
+        "one View may not bind one public part name to multiple local parts",
+    );
+}
+
+#[test]
+fn exported_part_references_are_validated_by_the_program_codec() {
+    let mut missing_view = exported_part_program();
+    missing_view.exported_parts[0].view = "view.Missing".to_owned();
+    assert_eq!(
+        missing_view
+            .encode_canonical_section()
+            .expect_err("an exported part must name an owning View"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_exported_part_views",
+        ),
+    );
+
+    let mut missing_target = exported_part_program();
+    missing_target.exported_parts[0].part_id = "part.missing".to_owned();
+    assert_eq!(
+        missing_target
+            .encode_canonical_section()
+            .expect_err("an exported part must name a part inside its owning View"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_exported_part_targets",
+        ),
+    );
+}
+
+#[test]
+fn view_program_identities_reject_malformed_resource_ids() {
+    for malformed in MALFORMED_RESOURCE_IDENTITIES {
+        let mut invalid_program = exported_part_program();
+        invalid_program.program_id = malformed.to_owned();
+        assert_eq!(
+            invalid_program
+                .encode_canonical_section()
+                .expect_err("a View program ID must follow resource identity rules"),
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                "view_program_identities",
+            ),
+        );
+
+        let mut invalid_view = exported_part_program();
+        invalid_view.definitions[0].public_id = malformed.to_owned();
+        invalid_view.exported_parts[0].view = malformed.to_owned();
+        assert_eq!(
+            invalid_view
+                .encode_canonical_section()
+                .expect_err("a View ID must follow resource identity rules"),
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                "view_program_identities",
+            ),
+        );
+    }
+}
+
+#[test]
+fn exported_part_identities_reject_malformed_resource_ids() {
+    for malformed in MALFORMED_RESOURCE_IDENTITIES {
+        let mut invalid_view = exported_part_program();
+        invalid_view.exported_parts[0].view = malformed.to_owned();
+        assert_eq!(
+            invalid_view
+                .encode_canonical_section()
+                .expect_err("an exported-part View must follow resource identity rules"),
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                "view_exported_part_identities",
+            ),
+        );
+
+        let mut invalid_part = exported_part_program();
+        invalid_part.exported_parts[0].part_id = malformed.to_owned();
+        let ViewProgramInstruction::EmitCustom { part, .. } = &mut invalid_part.instructions[0]
+        else {
+            unreachable!("exported-part fixture begins with EmitCustom")
+        };
+        *part = Some(malformed.to_owned());
+        assert_eq!(
+            invalid_part
+                .encode_canonical_section()
+                .expect_err("an exported part ID must follow resource identity rules"),
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                "view_exported_part_identities",
+            ),
+        );
+
+        let mut invalid_public_name = exported_part_program();
+        invalid_public_name.exported_parts[0].public_name = malformed.to_owned();
+        assert_eq!(
+            invalid_public_name
+                .encode_canonical_section()
+                .expect_err("an exported part public name must follow resource identity rules"),
+            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                "view_exported_part_identities",
+            ),
+        );
+    }
+}
+
+#[test]
+fn instruction_parts_reject_malformed_resource_ids() {
+    for malformed in MALFORMED_RESOURCE_IDENTITIES {
+        let instructions = [
+            (
+                "open_element",
+                ViewProgramInstruction::OpenElement {
+                    element: ViewElementKind::Panel,
+                    target: None,
+                    styles: Vec::new(),
+                    part: Some(malformed.to_owned()),
+                    key: None,
+                    source: None,
+                },
+            ),
+            (
+                "emit_text",
+                ViewProgramInstruction::EmitText {
+                    text_source: "text.body".to_owned(),
+                    text_block: "text.block.body".to_owned(),
+                    styles: Vec::new(),
+                    part: Some(malformed.to_owned()),
+                    source: None,
+                },
+            ),
+            (
+                "emit_image",
+                ViewProgramInstruction::EmitImage {
+                    image: "image.hero".to_owned(),
+                    target: None,
+                    styles: Vec::new(),
+                    part: Some(malformed.to_owned()),
+                    source: None,
+                },
+            ),
+            (
+                "emit_custom",
+                ViewProgramInstruction::EmitCustom {
+                    element: "element.custom".to_owned(),
+                    styles: Vec::new(),
+                    part: Some(malformed.to_owned()),
+                    source: None,
+                },
+            ),
+            (
+                "call_view",
+                ViewProgramInstruction::CallView {
+                    view: "view.Left".to_owned(),
+                    arguments: Vec::new(),
+                    styles: Vec::new(),
+                    part: Some(malformed.to_owned()),
+                    key: None,
+                    source: None,
+                },
+            ),
+        ];
+
+        for (kind, instruction) in instructions {
+            let mut program = exported_part_program();
+            program.exported_parts.clear();
+            program.instructions[0] = instruction;
+            let error = program
+                .encode_canonical_section()
+                .expect_err("an instruction part must follow resource identity rules");
+            assert_eq!(
+                error,
+                arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+                    "view_instruction_parts",
+                ),
+                "{kind} accepted malformed part identity {malformed:?}",
+            );
+        }
+    }
 }
 
 #[test]
@@ -335,6 +764,61 @@ fn view_resource_unknown_optional_fields_skip_and_unknown_required_reject() {
 }
 
 #[test]
+fn view_envelope_declared_inventory_must_match_the_typed_transcript() {
+    let bytes = fixture_style()
+        .encode_canonical_section()
+        .expect("fixture Style encodes");
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::ViewStyle,
+        SectionCodecBudget::default(),
+    )
+    .expect("Style envelope decodes");
+
+    let mut tampered_ids = envelope.public_ids.values().to_vec();
+    tampered_ids[0].push_str(".tampered");
+    let tampered_public_ids =
+        PublicIdTable::new(tampered_ids).expect("tampered IDs remain canonical");
+    let public_id_bytes = ProductResourceEnvelope::new(
+        envelope.header.codec,
+        envelope.strings.clone(),
+        tampered_public_ids,
+        envelope.enums.clone(),
+        envelope.fields.clone(),
+        envelope.header.record_count,
+    )
+    .expect("tampered envelope rebuilds")
+    .encode_canonical()
+    .expect("tampered envelope encodes");
+    assert_eq!(
+        ViewStyleResource::decode_canonical_section(&public_id_bytes)
+            .expect_err("declared public IDs must match the transcript"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_envelope_public_ids",
+        ),
+    );
+
+    let record_count_bytes = ProductResourceEnvelope::new(
+        envelope.header.codec,
+        envelope.strings,
+        envelope.public_ids,
+        envelope.enums,
+        envelope.fields,
+        envelope.header.record_count.saturating_add(1),
+    )
+    .expect("record-count envelope rebuilds")
+    .encode_canonical()
+    .expect("record-count envelope encodes");
+    assert_eq!(
+        ViewStyleResource::decode_canonical_section(&record_count_bytes)
+            .expect_err("declared record count must match the transcript"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_envelope_record_count",
+        ),
+    );
+}
+
+#[test]
 fn view_resource_budget_failures_are_reported() {
     let program_bytes = fixture_program()
         .encode_canonical_section()
@@ -373,6 +857,29 @@ fn view_resource_budget_failures_are_reported() {
         )
         .is_err()
     );
+    for budget in [
+        ViewResourceBudget {
+            style_sheets: 0,
+            ..ViewResourceBudget::default()
+        },
+        ViewResourceBudget {
+            style_patches: 0,
+            ..ViewResourceBudget::default()
+        },
+        ViewResourceBudget {
+            style_declarations: 1,
+            ..ViewResourceBudget::default()
+        },
+        ViewResourceBudget {
+            style_token_depth: 0,
+            ..ViewResourceBudget::default()
+        },
+    ] {
+        assert!(
+            ViewStyleResource::decode_canonical_section_with_budget(&style_bytes, budget).is_err(),
+            "each owned Style inventory must enforce its decode budget",
+        );
+    }
     assert!(
         ViewStyleResource::decode_canonical_section_with_budget(
             &style_bytes,
@@ -469,23 +976,9 @@ fn view_program_scroll_region_policy_values_are_preserved() {
 }
 
 #[test]
-fn view_style_external_css_descriptor_refs_preserve_file_vs_embed_identity() {
-    let style = fixture_style();
-    let bytes = style.encode_canonical_section().expect("style encodes");
-    let decoded = ViewStyleResource::decode_canonical_section(&bytes).expect("style decodes");
-
-    assert!(decoded.external_css_descriptors.iter().any(|descriptor| {
-        matches!(descriptor.identity, ExternalCssIdentity::File { ref path } if path == "view/dialogue.css")
-    }));
-    assert!(decoded.external_css_descriptors.iter().any(|descriptor| {
-        matches!(descriptor.identity, ExternalCssIdentity::EmbeddedFile { ref file } if file.path == "view/default.css")
-    }));
-}
-
-#[test]
 fn view_theme_palette_changes_are_content_only() {
-    let old = fixture_theme(RgbaColor::rgb(0x25, 0x63, 0xEB));
-    let new = fixture_theme(RgbaColor::rgb(0x58, 0xA6, 0xFF));
+    let old = fixture_theme(PresentationColor::rgb(0x25, 0x63, 0xEB));
+    let new = fixture_theme(PresentationColor::rgb(0x58, 0xA6, 0xFF));
 
     assert_eq!(
         old.compatibility_with(&new),
@@ -606,6 +1099,42 @@ fn envelope_with_extra_field(envelope: &ProductResourceEnvelope, field: Resource
     .expect("envelope re-encodes")
 }
 
+fn envelope_with_replaced_field_payload(
+    envelope: &ProductResourceEnvelope,
+    field_id: FieldId,
+    payload: &[u8],
+) -> Vec<u8> {
+    let fields: Vec<ResourceField> = envelope
+        .fields
+        .iter()
+        .map(|field| {
+            if field.id == field_id {
+                ResourceField::new(
+                    field.id,
+                    field.requirement,
+                    field.wire_type,
+                    field.nesting_depth,
+                    field.reference_count,
+                    payload.to_vec(),
+                )
+            } else {
+                field.clone()
+            }
+        })
+        .collect();
+    ProductResourceEnvelope::new(
+        envelope.header.codec,
+        envelope.strings.clone(),
+        envelope.public_ids.clone(),
+        envelope.enums.clone(),
+        fields,
+        envelope.header.record_count,
+    )
+    .expect("envelope rebuilds")
+    .encode_canonical()
+    .expect("envelope re-encodes")
+}
+
 fn view_program_bytes_without_scroll_region_field(field_name: &str) -> Vec<u8> {
     let bytes = fixture_program()
         .encode_canonical_section()
@@ -628,35 +1157,100 @@ fn view_program_bytes_without_scroll_region_field(field_name: &str) -> Vec<u8> {
         .expect("scroll region transcript is an object")
         .remove(field_name);
     let updated_transcript = serde_json::to_vec(&json).expect("updated transcript encodes");
-    let fields: Vec<ResourceField> = envelope
-        .fields
-        .iter()
-        .map(|field| {
-            if field.id == FieldId(1) {
-                ResourceField::new(
-                    field.id,
-                    field.requirement,
-                    field.wire_type,
-                    field.nesting_depth,
-                    field.reference_count,
-                    updated_transcript.clone(),
-                )
-            } else {
-                field.clone()
-            }
-        })
-        .collect();
-    ProductResourceEnvelope::new(
-        envelope.header.codec,
-        envelope.strings,
-        envelope.public_ids,
-        envelope.enums,
-        fields,
-        envelope.header.record_count,
-    )
-    .expect("envelope rebuilds")
-    .encode_canonical()
-    .expect("envelope re-encodes")
+    envelope_with_replaced_field_payload(&envelope, FieldId(1), &updated_transcript)
+}
+
+fn exported_part_program() -> ViewProgramResource {
+    ViewProgramResource {
+        program_id: "program.exported-parts".to_owned(),
+        definitions: vec![
+            ViewDefinitionResource {
+                public_id: "view.Left".to_owned(),
+                body: ViewInstructionSpan::new(0, 2),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 0,
+            },
+            ViewDefinitionResource {
+                public_id: "view.Right".to_owned(),
+                body: ViewInstructionSpan::new(2, 3),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 0,
+            },
+        ],
+        instructions: vec![
+            ViewProgramInstruction::EmitCustom {
+                element: "element.left.shared".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.shared".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "element.left.other".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.other".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "element.right.shared".to_owned(),
+                styles: Vec::new(),
+                part: Some("part.shared".to_owned()),
+                source: None,
+            },
+        ],
+        exported_parts: vec![
+            ViewExportedPart {
+                view: "view.Left".to_owned(),
+                part_id: "part.shared".to_owned(),
+                public_name: "part.public".to_owned(),
+            },
+            ViewExportedPart {
+                view: "view.Right".to_owned(),
+                part_id: "part.shared".to_owned(),
+                public_name: "part.public".to_owned(),
+            },
+        ],
+        ..ViewProgramResource::default()
+    }
+}
+
+fn sourced_program(view_id: &str) -> ViewProgramResource {
+    let mut program = ViewProgramResource {
+        program_id: format!("program.{view_id}"),
+        definitions: vec![ViewDefinitionResource {
+            public_id: view_id.to_owned(),
+            body: ViewInstructionSpan::new(0, 1),
+            styles: Vec::new(),
+            parameters: Vec::new(),
+            state_schema_hash: 0,
+        }],
+        instructions: vec![ViewProgramInstruction::EmitCustom {
+            element: format!("{view_id}.element"),
+            styles: Vec::new(),
+            part: None,
+            source: None,
+        }],
+        ..ViewProgramResource::default()
+    };
+    let source = program
+        .public_id_table()
+        .expect("fixture program public IDs are canonical")
+        .id_for(view_id)
+        .expect("definition ID is retained in the program public-ID table");
+    let ViewProgramInstruction::EmitCustom {
+        source: instruction_source,
+        ..
+    } = &mut program.instructions[0]
+    else {
+        unreachable!("fixture instruction was constructed as EmitCustom");
+    };
+    *instruction_source = Some(SourceRangeRef {
+        source,
+        start_byte: 0,
+        end_byte: 1,
+    });
+    program
 }
 
 fn fixture_program() -> ViewProgramResource {
@@ -665,6 +1259,7 @@ fn fixture_program() -> ViewProgramResource {
         definitions: vec![ViewDefinitionResource {
             public_id: "view.dialogue".to_owned(),
             body: ViewInstructionSpan::new(0, 4),
+            styles: vec![named_style("style.dialogue")],
             parameters: Vec::new(),
             state_schema_hash: 0xD1A1_06A0_0000_0001,
         }],
@@ -680,14 +1275,15 @@ fn fixture_program() -> ViewProgramResource {
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::Column,
                 target: None,
-                style: Some("style.dialogue".to_owned()),
+                styles: vec![ViewStyleApplicationTarget::inline(ViewStylePatchId::new(7))],
                 part: Some("part.root".to_owned()),
                 key: Some(7),
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.dialogue.title".to_owned(),
-                style: Some("style.dialogue.title".to_owned()),
+                text_block: "text.block.dialogue.title".to_owned(),
+                styles: vec![named_style("style.dialogue.secondary")],
                 part: Some("part.title".to_owned()),
                 source: None,
             },
@@ -771,66 +1367,94 @@ fn constant_value_program(id: ViewValueProgramId, value: FxRuntimeValue) -> View
 }
 
 fn fixture_style() -> ViewStyleResource {
-    ViewStyleResource {
-        style_program_id: "style.dialogue".to_owned(),
-        arcweft_sources: vec![StyleSourceIdentity {
-            public_id: "style.dialogue.arcw".to_owned(),
-            syntax: StyleSyntax::Arcweft,
-            identity: StyleSourceRef::Inline {
-                source_digest: BundleDigest::of(b"opacity: 1"),
+    let sheet_source = ViewStyleSourceId::new(0);
+    let patch_source = ViewStyleSourceId::new(1);
+    let sheet_id = ViewStyleSheetId::try_new("style.dialogue").expect("valid sheet ID");
+    let token_id = ViewStyleTokenId::try_new("token.accent").expect("valid token ID");
+    let token = ViewStyleToken::new(
+        token_id.clone(),
+        ViewStyleValueKind::Color,
+        ViewSpecifiedValue::Color {
+            value: ViewColorValue::Literal {
+                color: PresentationColor::rgb(0x25, 0x63, 0xEB),
             },
-            content_digest: None,
-        }],
-        css_sources: vec![StyleSourceIdentity {
-            public_id: "style.dialogue.css".to_owned(),
-            syntax: StyleSyntax::Css,
-            identity: StyleSourceRef::File {
-                path: "view/dialogue.css".to_owned(),
-            },
-            content_digest: Some(BundleDigest::of(b"dialogue-css")),
-        }],
-        tokens: vec![ViewStyleToken {
-            public_id: "token.accent".to_owned(),
-            value: ViewStyleValue::SystemColor(SystemColor::Accent),
-        }],
-        rules: vec![ViewStyleRule {
-            selector: ViewStyleSelector {
-                parts: vec![
-                    ViewStyleSelectorPart::Element(ViewElementKind::Button),
-                    ViewStyleSelectorPart::State(ViewElementState::FocusVisible),
-                ],
-            },
-            declarations: vec![ViewStyleDeclaration {
-                property: "border_color".to_owned(),
-                value: ViewStyleValue::Token("token.accent".to_owned()),
-                op: StyleAssignOp::Replace,
-            }],
-            source: None,
-        }],
-        part_rules: vec![],
-        environment_predicates: vec![],
-        source_map_refs: vec![],
-        external_css_descriptors: vec![
-            ExternalCssDescriptorRef {
-                public_id: "css.embed.default".to_owned(),
-                identity: ExternalCssIdentity::EmbeddedFile {
-                    file: BundleVirtualFileRef {
-                        space: BundleVirtualFileSpace::Asset,
-                        path: "view/default.css".to_owned(),
-                    },
+        },
+        sheet_source,
+    )
+    .expect("valid token");
+    let selector = ViewStyleSelector::new(vec![
+        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Column), None, Vec::new())
+            .expect("valid ancestor selector"),
+        ViewStyleSelectorSequence::new(
+            Some(arcweft_view::ViewStyleCombinator::Child),
+            Some(ViewElementKind::Button),
+            None,
+            vec![ViewStylePredicate::ElementState(
+                ViewElementState::FocusVisible,
+            )],
+        )
+        .expect("valid target selector"),
+    ])
+    .expect("valid selector");
+    let declaration = ViewStyleDeclaration::new(
+        ViewPropertyKind::BackgroundColor,
+        ViewSpecifiedValue::Token {
+            token: token_id,
+            value_kind: ViewStyleValueKind::Color,
+        },
+        ViewStyleAssignOp::Replace,
+        sheet_source,
+    )
+    .expect("valid declaration");
+    let rule =
+        ViewStyleRule::new(selector, vec![declaration], 0, sheet_source).expect("valid rule");
+    let sheet =
+        ViewStyleSheet::new(sheet_id.clone(), vec![token], vec![rule]).expect("valid sheet");
+    let patch = ViewStylePatch::new(
+        ViewStylePatchId::new(7),
+        vec![
+            ViewStyleDeclaration::new(
+                ViewPropertyKind::Opacity,
+                ViewSpecifiedValue::Ratio {
+                    value: arcweft_view::ViewRatioMilli::new(750).expect("valid ratio"),
                 },
-                source_map: None,
+                ViewStyleAssignOp::Replace,
+                patch_source,
+            )
+            .expect("valid patch declaration"),
+        ],
+    );
+    let mut resource = ViewStyleResource {
+        style_program_id: "view.style.program".to_owned(),
+        program: ViewStyleProgram::try_new(vec![sheet], vec![patch]).expect("valid Style program"),
+        source_map_refs: vec![
+            SourceRangeRef {
+                source: PublicIdRef::default(),
+                start_byte: 0,
+                end_byte: 1,
             },
-            ExternalCssDescriptorRef {
-                public_id: "css.file.dialogue".to_owned(),
-                identity: ExternalCssIdentity::File {
-                    path: "view/dialogue.css".to_owned(),
-                },
-                source_map: None,
+            SourceRangeRef {
+                source: PublicIdRef::default(),
+                start_byte: 2,
+                end_byte: 3,
             },
         ],
-        adapter_requirements: vec![],
-    }
+        adapter_requirements: Vec::new(),
+    };
+    let public_ids = resource.public_id_table().expect("valid public IDs");
+    resource.source_map_refs[0].source = public_ids
+        .id_for(sheet_id.public_id().as_str())
+        .expect("sheet owner exists");
+    resource.source_map_refs[1].source = public_ids
+        .id_for(&resource.style_program_id)
+        .expect("program owner exists");
+    resource
+}
+
+fn named_style(id: &str) -> ViewStyleApplicationTarget {
+    ViewStyleApplicationTarget::named(
+        ViewStyleSheetId::try_new(id).expect("valid fixture sheet ID"),
+    )
 }
 
 fn fixture_text() -> ViewTextResource {
@@ -909,16 +1533,16 @@ fn fixture_input(secure_policy: ViewSecureInputPolicy) -> ViewInputResource {
     }
 }
 
-fn fixture_theme(accent: RgbaColor) -> ViewThemeResource {
+fn fixture_theme(accent: PresentationColor) -> ViewThemeResource {
     ViewThemeResource {
         palette_overrides: vec![SystemColorOverride {
             color: SystemColor::Accent,
             light: Some(accent),
-            dark: Some(RgbaColor::rgb(0x58, 0xA6, 0xFF)),
+            dark: Some(PresentationColor::rgb(0x58, 0xA6, 0xFF)),
             source: None,
         }],
         defaults: ViewThemeEnvironmentDefaults {
-            color_scheme: ColorSchemeDefault::default(),
+            color_scheme: ColorSchemePreference::default(),
             contrast: ContrastPreference::Standard,
             reduce_motion: false,
             text_scale_milli: 1_000,

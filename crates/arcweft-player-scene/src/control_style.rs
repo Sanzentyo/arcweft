@@ -1,33 +1,29 @@
 use arcweft_bundle::resource_codec::view::{
-    RgbaColor, ViewRuntimeControlBorderStyle, ViewRuntimeControlCornerFrameStyle,
+    ViewRuntimeControlBorderStyle, ViewRuntimeControlCornerFrameStyle,
     ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlFilterList,
-    ViewRuntimeControlFocusRingStyle, ViewRuntimeControlRadii, ViewRuntimeControlStyle,
-    ViewRuntimeControlVisualStyle, ViewRuntimeShadow, ViewRuntimeShadowKind,
+    ViewRuntimeControlFocusRingStyle, ViewRuntimeControlRadii, ViewRuntimeControlVisualStyle,
+    ViewRuntimeShadow, ViewRuntimeShadowKind,
 };
+use arcweft_presentation::appearance::PresentationColor;
 use arcweft_render_wgpu::geometry::{
     PaintRectCornerRadius, PaintRectRadii, RenderControlBorderStyle, RenderControlCornerFrameStyle,
     RenderControlFilter, RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
-    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
+    RenderControlShadowKind, RenderControlVisualStyle,
 };
 use num_traits::ToPrimitive;
 
-pub(crate) fn lower_control_style(style: &ViewRuntimeControlStyle) -> RenderControlStyle {
-    RenderControlStyle {
-        normal: lower_visual_style(&style.normal),
-        hover: style.hover.as_ref().map(lower_visual_style),
-        pressed: style.pressed.as_ref().map(lower_visual_style),
-        focus_visible: style.focus_visible.as_ref().map(lower_visual_style),
-        disabled: style.disabled.as_ref().map(lower_visual_style),
-    }
-}
-
-fn lower_visual_style(style: &ViewRuntimeControlVisualStyle) -> RenderControlVisualStyle {
+pub(crate) fn lower_control_style(
+    style: &ViewRuntimeControlVisualStyle,
+) -> RenderControlVisualStyle {
     RenderControlVisualStyle {
         fill: style.fill.map(rgba_f32),
         text: style.text.map(rgba_u8),
+        placeholder: style.placeholder.map(rgba_u8),
+        composition_underline: style.composition_underline.map(rgba_f32),
         font_family: style.font_family.clone(),
         font_size_px: style.font_size_milli.map(milli_u32_to_f32),
         line_height_px: style.line_height_milli.map(milli_u32_to_f32),
+        letter_spacing_milli: style.letter_spacing_milli,
         font_weight: style.font_weight,
         selection: style.selection.map(rgba_f32),
         caret: style.caret.map(rgba_f32),
@@ -139,7 +135,7 @@ fn lower_shadow(shadow: ViewRuntimeShadow) -> RenderControlShadow {
     }
 }
 
-fn rgba_f32(color: RgbaColor) -> [f32; 4] {
+fn rgba_f32(color: PresentationColor) -> [f32; 4] {
     [
         f32::from(color.red) / 255.0,
         f32::from(color.green) / 255.0,
@@ -148,7 +144,7 @@ fn rgba_f32(color: RgbaColor) -> [f32; 4] {
     ]
 }
 
-fn rgba_u8(color: RgbaColor) -> [u8; 4] {
+fn rgba_u8(color: PresentationColor) -> [u8; 4] {
     [color.red, color.green, color.blue, color.alpha]
 }
 

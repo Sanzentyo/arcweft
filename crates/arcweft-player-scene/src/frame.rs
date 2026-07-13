@@ -1,10 +1,13 @@
 use crate::action_buttons::{RuntimeActionButtonLowerer, RuntimeActionButtonLoweringError};
 use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigation};
+use crate::frame::view_style::{PlayerViewStyleState, ResolvedViewStyleFrame, StyledViewResources};
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
 use arcweft_bundle::fx_definitions::FxDefinitions;
+use arcweft_bundle::resource_codec::ViewRuntimeStyleProjectionError;
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
+use arcweft_presentation::appearance::{PresentationEnvironment, SystemPaletteSet};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
@@ -14,11 +17,13 @@ use arcweft_render_wgpu::geometry::{
     SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
+use arcweft_view::style::{ViewPropertyKind, ViewStyleProgram, ViewStyleResolveError};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
 mod focus_navigation;
 mod surfaces;
+mod view_style;
 mod view_text;
 
 /// Player-owned frame inputs shared by native, web, and Agent observation.
@@ -27,6 +32,9 @@ pub struct PlayerFrameRequest<'a> {
     pub presentation: &'a BundlePresentationSnapshot,
     pub fx_definitions: &'a FxDefinitions,
     pub images: &'a BundleImageCatalog,
+    pub style_program: Option<&'a ViewStyleProgram>,
+    pub style_environment: &'a PresentationEnvironment,
+    pub style_palettes: &'a SystemPaletteSet,
     pub viewport: RenderViewport,
     pub fit: PlayerFrameFit,
     pub image_time_millis: u64,
@@ -60,6 +68,29 @@ pub enum PlayerFrameError {
     TextEditor(#[from] TextEditorError),
     #[error(transparent)]
     Layout(#[from] LayoutError),
+    #[error(transparent)]
+    StyleResolve(#[from] ViewStyleResolveError),
+    #[error(transparent)]
+    StyleProjection(ViewRuntimeStyleProjectionError),
+    #[error("executed View Style applications have no canonical Style program")]
+    MissingStyleProgram,
+    #[error("View Style node target `{target}` is produced more than once in one frame")]
+    DuplicateStyleTarget { target: String },
+    #[error("View Style node identity repeats in mount {mount} at instruction {instruction}")]
+    DuplicateStyleNode { mount: u64, instruction: u32 },
+    #[error("View Style parent is missing for mount {mount} instruction {instruction}")]
+    MissingStyleParent { mount: u64, instruction: u32 },
+    #[error("View Style parent is ambiguous for mount {mount} instruction {instruction}")]
+    AmbiguousStyleParent { mount: u64, instruction: u32 },
+    #[error(
+        "View Style property {property:?} has no {target} consumer for mount {mount} instruction {instruction}"
+    )]
+    UnsupportedStyleProperty {
+        mount: u64,
+        instruction: u32,
+        target: &'static str,
+        property: ViewPropertyKind,
+    },
     #[error("invalid focus navigation public id `{value}`")]
     InvalidId { value: String },
     #[error(transparent)]
@@ -82,6 +113,13 @@ pub struct PlayerFramePlanner;
 #[derive(Debug, Default)]
 pub struct PlayerFramePlannerState {
     shared: SharedFramePlanContext,
+    view_style: PlayerViewStyleState,
+}
+
+struct ResolvedPlayerScene {
+    scene: RenderScene,
+    styles: ResolvedViewStyleFrame,
+    resources: StyledViewResources,
 }
 
 impl PlayerFrameFit {
@@ -154,51 +192,8 @@ impl PlayerFramePlanner {
         input: &mut InputController,
         request: PlayerFrameRequest<'_>,
     ) -> Result<RenderScene, PlayerFrameError> {
-        let text_inputs =
-            RuntimeTextControlLowerer::lower_for_frame(input, &request.presentation.text_inputs)?;
-        let action_buttons = RuntimeActionButtonLowerer::lower_buttons(
-            &request.presentation.action_buttons,
-            &text_inputs,
-        )?;
-        Ok(RenderScene {
-            content_avoidance_regions: dialogue_content_avoidance_regions(request.presentation),
-            choices: request
-                .presentation
-                .choices
-                .iter()
-                .map(|choice| RenderChoiceItem {
-                    id: choice.id.clone(),
-                    label: choice.label.clone(),
-                })
-                .collect(),
-            text_inputs,
-            action_buttons,
-            focus_groups: render_focus_groups(&request.presentation.focus_groups)?,
-            focus_navigation: render_focus_navigation(&request.presentation.focus_navigation)?,
-            images: request.images.render_images(
-                &request.presentation.images,
-                request.image_time_millis,
-                request.viewport,
-            )?,
-            viewport: request.viewport,
-            visual_time_millis: request.visual_time_millis,
-            preferences: request.preferences,
-            interaction: input.visual_state(),
-            choice_scroll: input.choice_scroll(),
-            scroll_regions: request
-                .presentation
-                .scroll_regions
-                .iter()
-                .map(|region| {
-                    render_scroll_region(
-                        input,
-                        region,
-                        request.visual_time_millis,
-                        request.preferences.reduce_motion,
-                    )
-                })
-                .collect(),
-        })
+        resolve_player_scene(&mut PlayerViewStyleState::default(), input, request)
+            .map(|resolved| resolved.scene)
     }
 
     pub fn prepare(
@@ -213,7 +208,74 @@ impl PlayerFramePlanner {
     }
 }
 
-fn dialogue_content_avoidance_regions(presentation: &BundlePresentationSnapshot) -> Vec<HitRect> {
+fn resolve_player_scene(
+    style_state: &mut PlayerViewStyleState,
+    input: &mut InputController,
+    request: PlayerFrameRequest<'_>,
+) -> Result<ResolvedPlayerScene, PlayerFrameError> {
+    let styles = style_state.resolve(
+        input,
+        request.presentation,
+        request.style_program,
+        request.style_environment,
+        request.style_palettes,
+    )?;
+    let resources = styles.apply_to_presentation(request.presentation);
+    let text_inputs = RuntimeTextControlLowerer::lower_for_frame(input, &resources.text_inputs)?;
+    let action_buttons =
+        RuntimeActionButtonLowerer::lower_buttons(&resources.action_buttons, &text_inputs)?;
+    let scene = RenderScene {
+        content_avoidance_regions: dialogue_content_avoidance_regions(
+            request.presentation,
+            &resources.surfaces,
+        ),
+        choices: request
+            .presentation
+            .choices
+            .iter()
+            .map(|choice| RenderChoiceItem {
+                id: choice.id.clone(),
+                label: choice.label.clone(),
+            })
+            .collect(),
+        text_inputs,
+        action_buttons,
+        focus_groups: render_focus_groups(&request.presentation.focus_groups)?,
+        focus_navigation: render_focus_navigation(&request.presentation.focus_navigation)?,
+        images: request.images.render_images(
+            &resources.images,
+            request.image_time_millis,
+            request.viewport,
+        )?,
+        viewport: request.viewport,
+        visual_time_millis: request.visual_time_millis,
+        preferences: request.preferences,
+        interaction: input.visual_state(),
+        choice_scroll: input.choice_scroll(),
+        scroll_regions: resources
+            .scroll_regions
+            .iter()
+            .map(|region| {
+                render_scroll_region(
+                    input,
+                    region,
+                    request.visual_time_millis,
+                    request.preferences.reduce_motion,
+                )
+            })
+            .collect(),
+    };
+    Ok(ResolvedPlayerScene {
+        scene,
+        styles,
+        resources,
+    })
+}
+
+fn dialogue_content_avoidance_regions(
+    presentation: &BundlePresentationSnapshot,
+    surfaces: &[arcweft_bundle::resource_codec::ViewRuntimeSurface],
+) -> Vec<HitRect> {
     presentation
         .view
         .mounts
@@ -221,8 +283,7 @@ fn dialogue_content_avoidance_regions(presentation: &BundlePresentationSnapshot)
         .filter(|mount| mount.dialogue.is_some() && mount.path.segments().is_empty())
         .filter_map(|mount| {
             let owner = mount.scoped_id(&mount.view);
-            presentation
-                .surfaces
+            surfaces
                 .iter()
                 .filter(|surface| surface.view.as_deref() == Some(owner.as_str()))
                 .map(|surface| {
@@ -418,42 +479,29 @@ impl PlayerFramePlannerState {
             ..request
         };
         let content_rect = fit.content_rect(request.viewport)?;
-        let mut scene = PlayerFramePlanner::render_scene(input, design_request)?;
-        let mut frame = self.prepare_mapped_frame(
-            &scene,
-            design_request.presentation,
-            input,
-            request,
-            content_rect,
-        )?;
+        let mut resolved = resolve_player_scene(&mut self.view_style, input, design_request)?;
+        let mut frame = self.prepare_mapped_frame(&resolved, input, request, content_rect)?;
         if input.ensure_choice_focus(&frame) {
-            scene = PlayerFramePlanner::render_scene(input, design_request)?;
-            frame = self.prepare_mapped_frame(
-                &scene,
-                design_request.presentation,
-                input,
-                request,
-                content_rect,
-            )?;
+            resolved = resolve_player_scene(&mut self.view_style, input, design_request)?;
+            frame = self.prepare_mapped_frame(&resolved, input, request, content_rect)?;
         }
         if input.apply_pending_text_pointer_selection(&frame)? {
-            let scene = PlayerFramePlanner::render_scene(input, design_request)?;
-            let frame = self.prepare_mapped_frame(
-                &scene,
-                design_request.presentation,
-                input,
-                request,
-                content_rect,
-            )?;
-            return Ok(PlayerPreparedFrame { scene, frame });
+            let resolved = resolve_player_scene(&mut self.view_style, input, design_request)?;
+            let frame = self.prepare_mapped_frame(&resolved, input, request, content_rect)?;
+            return Ok(PlayerPreparedFrame {
+                scene: resolved.scene,
+                frame,
+            });
         }
-        Ok(PlayerPreparedFrame { scene, frame })
+        Ok(PlayerPreparedFrame {
+            scene: resolved.scene,
+            frame,
+        })
     }
 
     fn prepare_mapped_frame(
         &mut self,
-        scene: &RenderScene,
-        presentation: &BundlePresentationSnapshot,
+        resolved: &ResolvedPlayerScene,
         input: &InputController,
         request: PlayerFrameRequest<'_>,
         content_rect: Option<ContentRect>,
@@ -461,29 +509,31 @@ impl PlayerFramePlannerState {
         let mut frame = match content_rect {
             Some(content_rect) => {
                 self.shared
-                    .prepare_mapped(scene, request.viewport, content_rect)?
+                    .prepare_mapped(&resolved.scene, request.viewport, content_rect)?
             }
-            None => self.shared.prepare(scene)?,
+            None => self.shared.prepare(&resolved.scene)?,
         };
         let prepared_view_text = view_text::prepare_runtime_view_text(
             &mut self.shared,
             &mut frame,
             view_text::RuntimeViewTextRequest {
                 input,
-                scene,
-                presentation,
+                scene: &resolved.scene,
+                presentation: request.presentation,
                 fx_definitions: request.fx_definitions,
                 visual_time_millis: request.visual_time_millis,
                 latest_reveal_complete: request.dialogue_reveal_complete,
+                styles: &resolved.styles,
                 content: content_rect,
             },
         )?;
         surfaces::push_runtime_view_scene(
             &mut frame,
-            scene,
-            &presentation.surfaces,
-            &presentation.view,
+            &resolved.scene,
+            &resolved.resources.surfaces,
+            &request.presentation.view,
             &prepared_view_text,
+            &resolved.styles,
             content_rect,
         );
         Ok(frame)

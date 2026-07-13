@@ -1,5 +1,10 @@
 # seq06.13c CSS Clip/Mask Support Matrix
 
+> **Superseded Style-path premise (2026-07-13):** The CSS/Takumi support path
+> in this matrix was removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). Generic
+> clip/mask renderer evidence is retained only as historical substrate evidence.
+
 | Area | seq06.13c status | Evidence | Notes |
 | --- | --- | --- | --- |
 | `clip-path: inset(...)` | Implemented, unchanged | `ViewClipGeometryPlan::Inset`, WGSL | Seq06.13a retained. |

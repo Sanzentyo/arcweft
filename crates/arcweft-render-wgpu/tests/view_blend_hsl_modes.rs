@@ -20,7 +20,7 @@ fn hsl_family_blend_modes_are_planned_for_shader_execution() {
 }
 
 #[test]
-fn supported_blend_modes_matrix_includes_css_color_family() {
+fn supported_blend_modes_matrix_includes_nonseparable_color_family() {
     for mode in [
         ViewBlendMode::Hue,
         ViewBlendMode::Saturation,

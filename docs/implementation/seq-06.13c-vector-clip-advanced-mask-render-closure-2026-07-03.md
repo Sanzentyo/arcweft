@@ -1,5 +1,10 @@
 # seq06.13c Vector Clip / Advanced Mask Render Closure Implementation Note — 2026-07-03
 
+> **Superseded Style-path premise (2026-07-13):** CSS/Takumi lowering and
+> coverage claims below were removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). Generic
+> vector clip/mask renderer evidence remains historical substrate evidence.
+
 ## Source assumptions
 
 This overlay assumes Arcweft main as inspected through the GitHub connector on 2026-07-03. The relevant current code already has:

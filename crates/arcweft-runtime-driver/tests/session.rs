@@ -16,8 +16,9 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::resource_codec::{
-    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewValueInputNamespace,
-    ViewValueInputResource, ViewValueInputSource,
+    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewThemeEnvironmentDefaults,
+    ViewThemeEnvironmentError, ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource,
+    ViewValueInputSource,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -44,6 +45,7 @@ use arcweft_interaction_model::{
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
 };
+use arcweft_presentation::appearance::{ColorScheme, ColorSchemePreference};
 use arcweft_presentation::fx::{FxRuntimeType, ValueInstruction, ValueProgramSchema};
 use arcweft_presentation::input::{
     Action, ActionTarget, InteractionTarget as PresentationInteractionTarget,
@@ -149,6 +151,33 @@ fn paged_fixture_bundle() -> ArcweftBundle {
     bundle
 }
 
+fn paged_inventory_fixture_bundle() -> ArcweftBundle {
+    paged_fixture_bundle()
+        .with_view_resources(
+            Some(ViewProgramResource {
+                program_id: "view.program.inventory".to_owned(),
+                definitions: vec![ViewDefinitionResource {
+                    public_id: "view.inventory".to_owned(),
+                    body: ViewInstructionSpan::new(0, 0),
+                    styles: Vec::new(),
+                    parameters: Vec::new(),
+                    state_schema_hash: 0,
+                }],
+                scroll_regions: vec![ViewScrollRegionResource::new(
+                    "scroll.inventory",
+                    Some("view.inventory".to_owned()),
+                    ViewLogicalRect::from_px(0, 0, 100, 100),
+                    100_000,
+                    240,
+                    ViewScrollAxis::Vertical,
+                )],
+                ..ViewProgramResource::default()
+            }),
+            None,
+        )
+        .expect("View resources merge")
+}
+
 fn structured_vm_fixture_bundle() -> ArcweftBundle {
     fixture_bundle_from_parts("WebGPU dialogue", false, false, false)
 }
@@ -229,6 +258,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
         definitions: vec![ViewDefinitionResource {
             public_id: "view.Root".to_owned(),
             body: ViewInstructionSpan::new(0, 5),
+            styles: Vec::new(),
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: "active".to_owned(),
@@ -271,20 +301,22 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.session.yes".to_owned(),
-                style: None,
+                text_block: "text.block.yes".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: "text.session.no".to_owned(),
-                style: None,
+                text_block: "text.block.no".to_owned(),
+                styles: Vec::new(),
                 part: None,
                 source: None,
             },
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::TextField,
                 target: Some("input.session.name".to_owned()),
-                style: None,
+                styles: Vec::new(),
                 part: None,
                 key: None,
                 source: None,
@@ -911,6 +943,53 @@ fn add_awbc_strings<const N: usize>(
 }
 
 #[test]
+fn session_resolves_system_theme_from_the_explicit_host_scheme() {
+    let mut bundle = fixture_bundle();
+    bundle.view_theme = Some(ViewThemeResource {
+        defaults: ViewThemeEnvironmentDefaults {
+            color_scheme: ColorSchemePreference::System,
+            ..ViewThemeEnvironmentDefaults::default()
+        },
+        ..ViewThemeResource::default()
+    });
+    let session = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            system_color_scheme: ColorScheme::Light,
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session resolves the host system scheme");
+
+    assert_eq!(
+        session.view_style_environment().color_scheme(),
+        ColorScheme::Light
+    );
+}
+
+#[test]
+fn session_propagates_invalid_theme_environment_as_a_typed_error() {
+    let mut bundle = fixture_bundle();
+    bundle.view_theme = Some(ViewThemeResource {
+        defaults: ViewThemeEnvironmentDefaults {
+            text_scale_milli: u32::from(u16::MAX) + 1,
+            ..ViewThemeEnvironmentDefaults::default()
+        },
+        ..ViewThemeResource::default()
+    });
+
+    let error = BundleSession::new(&bundle, BundleSessionOptions::default())
+        .expect_err("out-of-range theme scale rejects session construction");
+
+    assert_eq!(
+        error,
+        BundleSessionError::ViewThemeEnvironment(ViewThemeEnvironmentError::TextScaleOutOfRange {
+            value: u32::from(u16::MAX) + 1,
+        })
+    );
+}
+
+#[test]
 fn session_requires_explicit_clock_and_exposes_presentation() {
     let bundle = fixture_bundle();
     let mut session =
@@ -1060,25 +1139,7 @@ fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
 
 #[test]
 fn session_save_restores_complete_per_mount_virtual_range_state() {
-    let mut bundle = paged_fixture_bundle();
-    bundle = bundle.with_view_program(ViewProgramResource {
-        program_id: "view.program.inventory".to_owned(),
-        definitions: vec![ViewDefinitionResource {
-            public_id: "view.inventory".to_owned(),
-            body: ViewInstructionSpan::new(0, 0),
-            parameters: Vec::new(),
-            state_schema_hash: 0,
-        }],
-        scroll_regions: vec![ViewScrollRegionResource::new(
-            "scroll.inventory",
-            Some("view.inventory".to_owned()),
-            ViewLogicalRect::from_px(0, 0, 100, 100),
-            100_000,
-            240,
-            ViewScrollAxis::Vertical,
-        )],
-        ..ViewProgramResource::default()
-    });
+    let bundle = paged_inventory_fixture_bundle();
     let mut session =
         BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
     session.step_with_clock(

@@ -8,7 +8,7 @@ use arcweft_presentation::text_input::{
     TextRange,
 };
 use arcweft_render_wgpu::geometry::{
-    PreparedDialogueViewState, RenderActionButton, RenderControlStyle, RenderPreferences,
+    PreparedDialogueViewState, RenderActionButton, RenderControlVisualStyle, RenderPreferences,
     RenderScene, RenderScrollAxis, RenderScrollIndicatorsPolicy, RenderScrollOverflow,
     RenderScrollOverscrollPolicy, RenderScrollRegion, RenderViewport, SharedFramePlanContext,
 };
@@ -526,7 +526,7 @@ fn pointer_activation_on_action_button_clears_text_editor_focus() {
             containing_scroll_region: None,
             bounds: HitRect::new(300.0, 30.0, 120.0, 32.0),
             viewport_clip: None,
-            style: RenderControlStyle::default(),
+            style: RenderControlVisualStyle::default(),
             action: RenderActionButtonAction::Noop,
         }],
         ..scene(control.clone())

@@ -56,10 +56,10 @@ pub character clerk {
 
 pub style rich_text_panel {
     .dialogue_panel {
-        background = rgba(17, 18, 16, 242)
+        background-color = rgba(17, 18, 16, 242)
     }
     .dialogue_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
     .rich_text_panel {
         color = rgba(205, 239, 255, 255)

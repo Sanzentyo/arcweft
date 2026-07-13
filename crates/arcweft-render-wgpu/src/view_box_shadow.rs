@@ -1,9 +1,9 @@
 //! Box-shadow pass planning for Arcweft View compositing.
 //!
-//! CSS `box-shadow` is distinct from `filter: drop-shadow(...)`: box-shadow is
-//! generated from a box/radius/spread list, while drop-shadow is generated from
-//! rendered subtree alpha. This module is pure renderer planning data and has no
-//! GPU, filesystem, DOM, canvas, or Takumi raster dependency.
+//! Box shadows are generated from an ordered box/radius/spread list, while drop
+//! shadows are generated from rendered subtree alpha. This module is pure
+//! renderer planning data and has no GPU, filesystem, platform surface, or
+//! external raster dependency.
 
 use crate::view_scene::{
     ViewBoxShadow, ViewBoxShadowCorner, ViewBoxShadowKind, ViewBoxShadowList, ViewBoxShadowRadii,
@@ -25,7 +25,7 @@ pub struct ViewBoxShadowPassPlan {
 /// One box-shadow draw pass.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewBoxShadowPass {
-    /// Original CSS-list index. Lower indices are visually above higher indices.
+    /// Original shadow-list index. Lower indices are visually above higher indices.
     pub shadow_index: usize,
     pub shadow: ViewBoxShadow,
     pub body_rect: HitRect,

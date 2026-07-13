@@ -1,5 +1,7 @@
 # CSS layout/cascade support matrix — seq06.12 first cut
 
+> **Superseded Style-path premise (2026-07-13):** The Arcweft CSS/Takumi authoring, lowering, and evidence path assumed below was removed by the [native-only typed Style path](../implementation/native-only-style-path-2026-07-13.md). The body is retained as historical rationale and is not a current Style contract.
+
 Status definitions:
 
 - **Supported now**: accepted by the retained View CSS path and expected to flow through Takumi layout/cascade into Arcweft-owned direct/composited `ViewScene` data.

@@ -1,11 +1,13 @@
+use super::view_style::{ResolvedViewStyleFrame, box_style};
 use super::view_text::PreparedMountedViewText;
 use super::{milli_i32_to_f32, milli_u32_to_f32, scroll_adjusted_bounds};
 use arcweft_bundle::resource_codec::view::{
-    RgbaColor, ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter,
-    ViewRuntimeControlFilterList, ViewRuntimeControlRadii, ViewRuntimeControlState,
-    ViewRuntimeControlVisualStyle, ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
+    ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlFilterList,
+    ViewRuntimeControlRadii, ViewRuntimeControlVisualStyle, ViewRuntimeNodeStyle,
+    ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
 };
 use arcweft_layout::{ContentRect, LayoutRect as FitLayoutRect};
+use arcweft_presentation::appearance::PresentationColor;
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedViewImageResource, PreparedViewScene, PreparedViewSceneResources,
@@ -16,11 +18,12 @@ use arcweft_render_wgpu::view_scene::{
     ViewClip, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup, ViewCornerRadii,
     ViewCornerRadius, ViewFilter, ViewFilterList, ViewImagePrimitive, ViewImageUvRect,
     ViewPaintNode, ViewPrimitive, ViewPrimitiveRange, ViewScene, ViewSceneContext,
-    ViewSurfaceBackground, ViewSurfacePaint, ViewTextPrimitive,
+    ViewSurfaceBackground, ViewSurfaceBorder, ViewSurfacePaint, ViewTextPrimitive,
 };
 use arcweft_runtime_driver::view_runtime::{
     BundleViewFrame, BundleViewMountOutput, BundleViewPaintItem,
 };
+use arcweft_view::style::ViewOverflow;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy)]
@@ -38,6 +41,7 @@ pub(super) fn push_runtime_view_scene(
     surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
     text: &[PreparedMountedViewText],
+    styles: &ResolvedViewStyleFrame,
     content: Option<ContentRect>,
 ) {
     let mut consumed_surfaces = BTreeSet::new();
@@ -63,6 +67,7 @@ pub(super) fn push_runtime_view_scene(
             surfaces,
             view,
             text,
+            styles,
             mount,
             content,
         );
@@ -78,6 +83,7 @@ pub(super) fn push_runtime_view_scene(
         surfaces
             .iter()
             .filter(|surface| !consumed_surfaces.contains(&surface.public_id)),
+        styles,
         content,
     ) {
         frame.push_view_scene(surface_scene);
@@ -99,6 +105,7 @@ fn push_mount_paint(
     surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
     text: &[PreparedMountedViewText],
+    styles: &ResolvedViewStyleFrame,
     mount: &BundleViewMountOutput,
     content: Option<ContentRect>,
 ) {
@@ -110,13 +117,20 @@ fn push_mount_paint(
             BundleViewPaintItem::Element { target } => {
                 let scoped = mount.scoped_id(target);
                 if let Some(surface) = surfaces.iter().find(|surface| surface.target == scoped)
-                    && push_surface(output, scene, surface, content).is_some()
+                    && push_surface(
+                        output,
+                        scene,
+                        surface,
+                        styles.control(&scoped).or_else(|| styles.part(&scoped)),
+                        content,
+                    )
+                    .is_some()
                 {
                     consumed_surfaces.insert(surface.public_id.clone());
                 }
             }
             BundleViewPaintItem::Text { source_id, target } => {
-                push_mount_text(output, mount, text, source_id, target);
+                push_mount_text(output, mount, text, styles, source_id, target);
             }
             BundleViewPaintItem::Image { target } => {
                 let scoped = mount.scoped_id(target);
@@ -146,6 +160,7 @@ fn push_mount_paint(
                         surfaces,
                         view,
                         text,
+                        styles,
                         child,
                         content,
                     );
@@ -160,6 +175,7 @@ fn push_mount_text(
     output: &mut ViewScene,
     mount: &BundleViewMountOutput,
     text: &[PreparedMountedViewText],
+    styles: &ResolvedViewStyleFrame,
     source_id: &str,
     target: &str,
 ) {
@@ -170,7 +186,12 @@ fn push_mount_text(
     }) else {
         return;
     };
-    let effects = mount
+    let scoped = mount.scoped_id(target);
+    let resolved_visual = styles
+        .text(&scoped)
+        .or_else(|| styles.part(&scoped))
+        .map(ViewRuntimeNodeStyle::visual);
+    let authored_visual = mount
         .text
         .iter()
         .find(|output| output.source_id == source_id)
@@ -180,13 +201,11 @@ fn push_mount_text(
                 .iter()
                 .find(|candidate| candidate.public_id == target)
         })
-        .map_or_else(ViewCompositingEffects::default, |target| {
-            compositing_effects_from_style(
-                &target
-                    .style
-                    .visual_for_state(ViewRuntimeControlState::Normal),
-            )
-        });
+        .map(|target| &target.style);
+    let effects = resolved_visual.or(authored_visual).map_or_else(
+        ViewCompositingEffects::default,
+        compositing_effects_from_style,
+    );
     push_text(output, prepared, effects);
 }
 
@@ -253,17 +272,27 @@ fn runtime_surface_scene<'a>(
     viewport_height: f32,
     render_scene: &RenderScene,
     surfaces: impl Iterator<Item = &'a ViewRuntimeSurface>,
+    styles: &ResolvedViewStyleFrame,
     content: Option<ContentRect>,
 ) -> Option<PreparedViewScene> {
     let mut scene = ViewScene::new(viewport_width, viewport_height);
     let mut ordered = surfaces.collect::<Vec<_>>();
     ordered.sort_by(|left, right| {
-        surface_depth_milli(left)
-            .cmp(&surface_depth_milli(right))
+        surface_depth_milli(left, resolved_surface_style(styles, left))
+            .cmp(&surface_depth_milli(
+                right,
+                resolved_surface_style(styles, right),
+            ))
             .then_with(|| left.public_id.cmp(&right.public_id))
     });
     for surface in ordered {
-        push_surface(&mut scene, render_scene, surface, content);
+        push_surface(
+            &mut scene,
+            render_scene,
+            surface,
+            resolved_surface_style(styles, surface),
+            content,
+        );
     }
     (!scene.paint_nodes().is_empty()).then(|| PreparedViewScene::new(scene))
 }
@@ -272,8 +301,10 @@ fn push_surface(
     scene: &mut ViewScene,
     render_scene: &RenderScene,
     surface: &ViewRuntimeSurface,
+    style: Option<&ViewRuntimeNodeStyle>,
     content: Option<ContentRect>,
 ) -> Option<()> {
+    let box_style = style.map(box_style);
     let bounds = HitRect::new(
         milli_i32_to_f32(surface.bounds.x_milli),
         milli_i32_to_f32(surface.bounds.y_milli),
@@ -286,15 +317,27 @@ fn push_surface(
         bounds,
     )?;
     let bounds = map_rect(bounds, content);
-    let clip = clip.map(|clip| map_rect(clip, content));
+    let scroll_clip = clip.map(|clip| map_rect(clip, content));
     if bounds.width <= 0.0 || bounds.height <= 0.0 {
         return None;
     }
-    let visual = surface
-        .style
-        .visual_for_state(ViewRuntimeControlState::Normal);
-    let effects = compositing_effects_from_style(&visual);
-    let direct = surface_fill_range(scene, bounds, &visual).map(|range| direct(range, clip));
+    let overflow_clip = box_style.and_then(|style| {
+        overflow_clip(
+            render_scene.viewport.logical_width,
+            render_scene.viewport.logical_height,
+            bounds,
+            style.overflow_x,
+            style.overflow_y,
+        )
+    });
+    let clip = match (scroll_clip, overflow_clip) {
+        (Some(left), Some(right)) => Some(intersection(left, right)?),
+        (Some(clip), None) | (None, Some(clip)) => Some(clip),
+        (None, None) => None,
+    };
+    let visual = style.map_or(&surface.style, |style| style.visual());
+    let effects = compositing_effects_from_style(visual);
+    let direct = surface_paint_range(scene, bounds, visual).map(|range| direct(range, clip));
     match (effects.is_identity(), direct) {
         (true, Some(node)) => scene.push_paint_node(node),
         (false, Some(node)) => scene.push_paint_node(ViewPaintNode::Group(
@@ -331,17 +374,29 @@ fn push_text(
     }
 }
 
-fn surface_fill_range(
+fn surface_paint_range(
     scene: &mut ViewScene,
     bounds: HitRect,
     visual: &ViewRuntimeControlVisualStyle,
 ) -> Option<ViewPrimitiveRange> {
-    let fill = visual.fill.filter(|color| color.alpha > 0)?;
     let radii = surface_fill_radii(visual);
-    let paint = ViewSurfacePaint::new().with_background(ViewSurfaceBackground::Solid {
-        color: view_rgba(fill),
-        radii,
-    });
+    let mut paint = ViewSurfacePaint::new();
+    if let Some(fill) = visual.fill.filter(|color| color.alpha > 0) {
+        paint = paint.with_background(ViewSurfaceBackground::Solid {
+            color: view_rgba(fill),
+            radii,
+        });
+    }
+    if let Some(border) = visual
+        .border
+        .filter(|border| border.width_milli > 0 && border.color.alpha > 0)
+    {
+        paint = paint.with_border(ViewSurfaceBorder {
+            width: milli_u32_to_f32(border.width_milli),
+            radius: radii.top_left.x_px.max(radii.top_left.y_px),
+            color: view_rgba(border.color),
+        });
+    }
     scene.push_surface_primitives(bounds, &paint)
 }
 
@@ -474,12 +529,52 @@ fn view_corner_radius(radius: ViewRuntimeControlCornerRadius) -> ViewCornerRadiu
     )
 }
 
-fn surface_depth_milli(surface: &ViewRuntimeSurface) -> i32 {
-    surface
-        .style
-        .visual_for_state(ViewRuntimeControlState::Normal)
+fn surface_depth_milli(surface: &ViewRuntimeSurface, style: Option<&ViewRuntimeNodeStyle>) -> i32 {
+    style
+        .map_or(&surface.style, |style| style.visual())
         .depth_milli
         .unwrap_or_default()
+}
+
+fn resolved_surface_style<'a>(
+    styles: &'a ResolvedViewStyleFrame,
+    surface: &ViewRuntimeSurface,
+) -> Option<&'a ViewRuntimeNodeStyle> {
+    styles
+        .control(&surface.target)
+        .or_else(|| styles.part(&surface.target))
+        .or_else(|| styles.part(&surface.public_id))
+}
+
+fn overflow_clip(
+    viewport_width: f32,
+    viewport_height: f32,
+    bounds: HitRect,
+    overflow_x: ViewOverflow,
+    overflow_y: ViewOverflow,
+) -> Option<HitRect> {
+    let clip_x = overflow_x != ViewOverflow::Visible;
+    let clip_y = overflow_y != ViewOverflow::Visible;
+    (clip_x || clip_y).then(|| {
+        HitRect::new(
+            if clip_x { bounds.x } else { 0.0 },
+            if clip_y { bounds.y } else { 0.0 },
+            if clip_x { bounds.width } else { viewport_width },
+            if clip_y {
+                bounds.height
+            } else {
+                viewport_height
+            },
+        )
+    })
+}
+
+fn intersection(left: HitRect, right: HitRect) -> Option<HitRect> {
+    let x = left.x.max(right.x);
+    let y = left.y.max(right.y);
+    let right_edge = (left.x + left.width).min(right.x + right.width);
+    let bottom_edge = (left.y + left.height).min(right.y + right.height);
+    (right_edge > x && bottom_edge > y).then(|| HitRect::new(x, y, right_edge - x, bottom_edge - y))
 }
 
 fn direct(range: ViewPrimitiveRange, clip: Option<HitRect>) -> ViewPaintNode {
@@ -491,7 +586,7 @@ fn direct(range: ViewPrimitiveRange, clip: Option<HitRect>) -> ViewPaintNode {
     })
 }
 
-fn view_rgba(color: RgbaColor) -> ViewColorRgba8 {
+fn view_rgba(color: PresentationColor) -> ViewColorRgba8 {
     ViewColorRgba8 {
         red: color.red,
         green: color.green,
@@ -529,7 +624,15 @@ fn map_rect(rect: HitRect, content: Option<ContentRect>) -> HitRect {
 #[cfg(test)]
 mod tests {
     use super::{
-        PreparedMountedViewText, prepare_mounted_view_image, push_image, push_mount_paint,
+        PreparedMountedViewText, ResolvedViewStyleFrame, overflow_clip, prepare_mounted_view_image,
+        push_image, push_mount_paint, push_surface, surface_paint_range,
+    };
+    use arcweft_bundle::resource_codec::view::{
+        ViewRuntimeControlBorderStyle, ViewRuntimeControlVisualStyle, ViewRuntimeNodeStyle,
+        ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
+    };
+    use arcweft_presentation::appearance::{
+        PresentationColor, PresentationEnvironment, SystemPaletteSet,
     };
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
@@ -544,8 +647,132 @@ mod tests {
     use arcweft_runtime_driver::view_runtime::{
         BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
     };
-    use arcweft_view::ViewMountId;
+    use arcweft_view::{
+        ViewElementKind, ViewMountId,
+        style::{
+            ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewColorValue, ViewLengthMilli,
+            ViewOverflow, ViewPropertyKind, ViewScalarMilli, ViewSpecifiedValue, ViewStyleAssignOp,
+            ViewStyleContribution, ViewStyleContributionSource, ViewStylePriority,
+        },
+    };
     use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn axis_overflow_clip_preserves_the_visible_axis() {
+        let bounds = HitRect::new(24.0, 32.0, 120.0, 48.0);
+        assert_eq!(
+            overflow_clip(
+                320.0,
+                180.0,
+                bounds,
+                ViewOverflow::Hidden,
+                ViewOverflow::Visible,
+            ),
+            Some(HitRect::new(24.0, 0.0, 120.0, 180.0))
+        );
+    }
+
+    #[test]
+    fn current_surface_border_reaches_view_border_primitive() {
+        let mut scene = ViewScene::new(320.0, 180.0);
+        let style = ViewRuntimeControlVisualStyle {
+            radius_milli: Some(12_000),
+            border: Some(ViewRuntimeControlBorderStyle {
+                color: PresentationColor::rgba(94, 234, 212, 255),
+                width_milli: 2_000,
+            }),
+            ..ViewRuntimeControlVisualStyle::default()
+        };
+
+        let range = surface_paint_range(&mut scene, HitRect::new(20.0, 30.0, 100.0, 60.0), &style)
+            .expect("border creates a surface primitive");
+
+        assert_eq!(range.start, 0);
+        assert_eq!(range.end, 1);
+        let ViewPrimitive::Border(border) = &scene.primitives()[0] else {
+            panic!("surface border must lower to ViewPrimitive::Border");
+        };
+        assert!((border.width - 2.0).abs() < f32::EPSILON);
+        assert!((border.radius - 12.0).abs() < f32::EPSILON);
+        assert_eq!(border.color.red, 94);
+        assert_eq!(border.color.green, 234);
+        assert_eq!(border.color.blue, 212);
+        assert_eq!(border.color.alpha, 255);
+    }
+
+    #[test]
+    fn surface_paint_uses_precomputed_resource_bounds_without_reapplying_box_style() {
+        let mut builder = ComputedViewStyleBuilder::default();
+        for (order, (property, value)) in [
+            (
+                ViewPropertyKind::Width,
+                ViewSpecifiedValue::Length {
+                    value: ViewLengthMilli::new(200_000),
+                },
+            ),
+            (
+                ViewPropertyKind::TranslateX,
+                ViewSpecifiedValue::Length {
+                    value: ViewLengthMilli::new(50_000),
+                },
+            ),
+            (
+                ViewPropertyKind::Scale,
+                ViewSpecifiedValue::Scalar {
+                    value: ViewScalarMilli::new(1_500),
+                },
+            ),
+            (
+                ViewPropertyKind::BackgroundColor,
+                ViewSpecifiedValue::Color {
+                    value: ViewColorValue::Literal {
+                        color: PresentationColor::rgb(20, 40, 60),
+                    },
+                },
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(builder.apply(ViewStyleContribution::new(
+                property,
+                value,
+                ViewStyleAssignOp::Replace,
+                ViewStylePriority::new(1, 1, 0, 0, 0, u32::try_from(order).unwrap_or(u32::MAX),),
+                ViewStyleContributionSource::Inherited,
+            )));
+        }
+        let style = ViewRuntimeNodeStyle::try_from_computed(
+            &builder.finish(ComputedViewStyleRevision::new(1)),
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+        let surface = ViewRuntimeSurface {
+            public_id: "surface.precomputed".to_owned(),
+            target: "surface.precomputed".to_owned(),
+            view: None,
+            containing_scroll_region: None,
+            element: ViewElementKind::Panel,
+            bounds: ViewRuntimeSurfaceBounds::from_px(70, 30, 300, 60),
+            style: ViewRuntimeControlVisualStyle::default(),
+        };
+        let mut output = ViewScene::new(320.0, 180.0);
+
+        push_surface(
+            &mut output,
+            &empty_render_scene(),
+            &surface,
+            Some(&style),
+            None,
+        )
+        .expect("current fill paints the precomputed resource bounds");
+
+        let ViewPrimitive::SolidRect(fill) = &output.primitives()[0] else {
+            panic!("zero-radius current fill must lower to a solid rectangle");
+        };
+        assert_eq!(fill.bounds, HitRect::new(70.0, 30.0, 300.0, 60.0));
+    }
 
     #[test]
     fn mounted_image_moves_into_view_resources_with_exact_crop_and_transform() {
@@ -631,6 +858,7 @@ mod tests {
             ],
             text: Vec::new(),
             fx: Vec::new(),
+            style_nodes: Vec::new(),
         };
         let child = BundleViewMountOutput {
             dialogue: None,
@@ -646,6 +874,7 @@ mod tests {
             }],
             text: Vec::new(),
             fx: Vec::new(),
+            style_nodes: Vec::new(),
         };
         let view = BundleViewFrame {
             mounts: vec![root.clone(), child],
@@ -663,6 +892,7 @@ mod tests {
         let mut prepared_images = BTreeMap::new();
         let mut consumed_surfaces = BTreeSet::new();
         let mut active_mounts = BTreeSet::new();
+        let styles = ResolvedViewStyleFrame::default();
 
         push_mount_paint(
             &mut output,
@@ -675,6 +905,7 @@ mod tests {
             &[],
             &view,
             &text,
+            &styles,
             &root,
             None,
         );

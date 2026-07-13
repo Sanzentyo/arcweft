@@ -112,7 +112,7 @@ impl InputController {
                     self.deactivate_focused_text_editor();
                     DragIntent::SelectOrActivate
                 };
-                self.set_focus(frame, target.clone());
+                self.set_focus(frame, target.clone(), false);
                 self.interaction.capture_pointer(PointerCapture::new(
                     pointer,
                     node.layer().clone(),
@@ -141,6 +141,7 @@ impl InputController {
         if !focused_routed_target {
             self.deactivate_focused_text_editor();
             self.interaction.clear_focus();
+            self.focus_visible = false;
             self.blank_presses.insert(
                 pointer.0,
                 BlankPointerPressState {
@@ -267,7 +268,7 @@ impl InputController {
         if let RouteDecision::Routed(event) = routed.decision() {
             let target = event.target().clone();
             if frame_target_is_text_input(frame, &target) {
-                self.set_focus(frame, target.clone());
+                self.set_focus(frame, target.clone(), false);
                 let _ = self.apply_or_defer_text_pointer_selection(
                     frame,
                     TextPointerSelectionState {

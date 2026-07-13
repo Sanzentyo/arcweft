@@ -50,7 +50,7 @@ struct Args {
 impl Args {
     fn parse(args: Vec<String>) -> Result<Self, String> {
         let mut parsed = Self {
-            dir: PathBuf::from("target/css-style-parity"),
+            dir: PathBuf::from("target/native-style-parity"),
             font: PathBuf::from("web/assets/arcweft-demo.ttf"),
             checkpoints: vec![
                 "default".to_owned(),
@@ -102,7 +102,7 @@ impl Args {
 
     fn usage() -> String {
         "usage: cargo +nightly -Zscript tools/run-text-parity-gates.rs \
-         [--dir target/css-style-parity] [--font web/assets/arcweft-demo.ttf] \
+         [--dir target/native-style-parity] [--font web/assets/arcweft-demo.ttf] \
          [--checkpoints default,compact,hidpi] [--no-imq]"
             .to_owned()
     }

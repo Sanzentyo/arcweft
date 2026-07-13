@@ -1,5 +1,11 @@
 # seq06.1 View style, text input, and direct wgpu substrate
 
+> **Superseded Style-path premise (2026-07-13):** The CSS/Takumi authoring and
+> legacy View Style contracts described below were removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). Generic
+> text-input and renderer substrate details remain historical implementation
+> evidence, not an alternate Style path.
+
 ## Goal
 
 Implement the seq06.1 Sans I/O UI/style/text-input substrate and renderer

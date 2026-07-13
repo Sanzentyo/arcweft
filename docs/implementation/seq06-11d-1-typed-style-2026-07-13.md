@@ -1,5 +1,12 @@
 # Seq06.11d.1 typed Style syntax, HIR, and semantic catalog
 
+> **Superseded by the completed model (2026-07-13):** This intermediate cut
+> still preserved raw CSS bodies and deferred the bundle/runtime replacement.
+> The [native-only typed Style path](native-only-style-path-2026-07-13.md)
+> removes that provisional branch and completes the sheet-owned product and
+> single-resolver integration. The body below is retained as historical
+> implementation evidence.
+
 This cut implements the language and semantic ownership slice from the
 `arcweft-seq06.11d-typed-style-computed-style-2026-07-13` design package. It
 replaces the provisional line-oriented Style path with one typed pipeline from

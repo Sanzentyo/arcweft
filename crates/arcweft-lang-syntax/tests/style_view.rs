@@ -1,7 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{
         items::Item,
-        style::{StylePatch, StyleSyntax},
         view::{
             ViewAction, ViewActionPayload, ViewAwaitBranchKind, ViewExpr, ViewModifier,
             ViewStyleModifier, ViewTextControlPayloadField,
@@ -31,8 +30,8 @@ pub style @style:.secondary_button {
     }
 }
 
-pub style danger_button: .Css {
-    Button:hover { background-color: rgb(210 64 92); }
+pub style danger_button {
+    Button:hover { background-color = rgba(210, 64, 92, 255) }
 }
 ",
     );
@@ -52,9 +51,7 @@ pub style danger_button: .Css {
     assert_eq!(styles[0].id().body(), "style.hoge.primary_button");
     assert_eq!(styles[1].id().body(), "style.hoge.secondary_button");
     assert_eq!(styles[2].id().body(), "style.hoge.danger_button");
-    assert_eq!(styles[2].syntax(), StyleSyntax::Css);
-    let active_declarations =
-        styles[1].body().arcweft().expect("native sheet").rules()[0].declarations();
+    let active_declarations = styles[1].sheet().rules()[0].declarations();
     assert!(matches!(
         active_declarations[0].value().expr(),
         Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Milli })
@@ -69,12 +66,7 @@ pub style danger_button: .Css {
         Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Px })
             if raw == "12px"
     ));
-    assert!(
-        styles[2]
-            .body()
-            .css()
-            .is_some_and(|source| source.source().contains("background-color"))
-    );
+    assert_eq!(styles[2].sheet().rules()[0].declarations().len(), 1);
 }
 
 #[test]
@@ -106,7 +98,7 @@ fn native_style_multiline_values_keep_expression_and_source_ranges() {
             _ => None,
         })
         .expect("style declaration");
-    let sheet = style.body().arcweft().expect("native sheet");
+    let sheet = style.sheet();
     let token = &sheet.tokens()[0];
     assert!(matches!(token.value().expr(), Expr::BracketSeq(values) if values.len() == 1));
     assert_eq!(
@@ -146,20 +138,46 @@ fn style_parser_reports_missing_equals_and_malformed_combinators_with_ranges() {
 }
 
 #[test]
-fn css_style_body_is_preserved_at_its_exact_source_range() {
-    let source = "pub style imported: .Css {Button:hover { color: rgb(1 2 3); }}\n";
+fn non_native_named_style_heads_use_ordinary_parser_recovery() {
+    let source = r"pub style imported: .Css { Button { color: red; } }
+pub style explicit: .Arcweft { Button { color = rgba(1, 2, 3, 255) } }
+";
     let parsed = parse_source(source);
-    assert_eq!(parsed.errors(), &[]);
-    let css = parsed
-        .typed_tree()
-        .items()
+    let head_errors = parsed
+        .errors()
         .iter()
-        .find_map(|item| match item {
-            Item::Style(style) => style.body().css(),
-            _ => None,
-        })
-        .expect("CSS source");
-    assert_eq!(&source[css.range().as_range()], css.source());
+        .filter(|error| error.message() == "unexpected text after style declaration head")
+        .collect::<Vec<_>>();
+    assert_eq!(head_errors.len(), 2);
+    assert!(head_errors.iter().all(|error| error.found().is_none()));
+    assert!(
+        parsed
+            .errors()
+            .iter()
+            .all(|error| error.code() == "syntax.parse")
+    );
+}
+
+#[test]
+fn non_native_property_assignments_use_the_existing_missing_equals_recovery() {
+    let source = r#"pub style broken {
+    Button { color: red; }
+}
+pub view Example() {
+    Button("OK").style { opacity: 0.9; }
+}
+"#;
+    let parsed = parse_source(source);
+    let diagnostics = parsed
+        .errors()
+        .iter()
+        .filter(|error| error.message() == "style declaration needs `=`")
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 2);
+    for diagnostic in diagnostics {
+        assert_eq!(diagnostic.code(), "syntax.parse");
+        assert!(source[diagnostic.range().as_range()].contains(':'));
+    }
 }
 
 #[test]
@@ -196,7 +214,7 @@ pub view Example() {
             _ => None,
         })
         .expect("named style");
-    let declarations = named.body().arcweft().expect("native sheet").rules()[0].declarations();
+    let declarations = named.sheet().rules()[0].declarations();
     assert!(matches!(
         declarations[0].value().expr(),
         Expr::RecordLiteral(fields) if fields.len() == 2
@@ -244,7 +262,7 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
 }
 
 #[test]
-fn inline_style_ranges_follow_original_native_and_css_source_lines() {
+fn non_native_inline_style_head_uses_ordinary_view_modifier_recovery() {
     let source = r#"pub view ExactRanges() {
     Button("One")
         .style {
@@ -260,7 +278,12 @@ fn inline_style_ranges_follow_original_native_and_css_source_lines() {
 }
 "#;
     let parsed = parse_source(source);
-    assert_eq!(parsed.errors(), &[]);
+    let rejected = parsed
+        .errors()
+        .iter()
+        .find(|error| error.message() == "unsupported View modifier")
+        .expect("ordinary View modifier diagnostic");
+    assert_eq!(rejected.code(), "syntax.parse");
     let patches = parsed
         .typed_tree()
         .items()
@@ -270,7 +293,7 @@ fn inline_style_ranges_follow_original_native_and_css_source_lines() {
             _ => None,
         })
         .expect("View style patches");
-    assert_eq!(patches.len(), 3);
+    assert_eq!(patches.len(), 2);
 
     let native_bodies = source
         .match_indices("\n            opacity = 900milli\n        ")
@@ -297,17 +320,13 @@ fn inline_style_ranges_follow_original_native_and_css_source_lines() {
             declaration.value().source()
         );
     }
-
-    let css = patches[2].css_source().expect("inline CSS source");
-    assert_eq!(&source[css.range().as_range()], css.source());
-    assert_eq!(css.source(), "\n            color: white;\n        ");
 }
 
 #[test]
 fn inline_style_ranges_survive_same_line_view_chain_expansion() {
     let source = r#"pub view ExpandedRange() {
     Button("One").style { opacity = 900milli }
-    Button("Css").style(.Css) { color: white; }
+    Button("Two").style { outline-width = 2px }
 }
 "#;
     let parsed = parse_source(source);
@@ -327,9 +346,12 @@ fn inline_style_ranges_survive_same_line_view_chain_expansion() {
         &source[patch.declarations()[0].range().as_range()],
         "opacity = 900milli"
     );
-    let css = patches[1].css_source().expect("expanded inline CSS source");
-    assert_eq!(&source[css.range().as_range()], " color: white; ");
-    assert_eq!(&source[css.range().as_range()], css.source());
+    let second = patches[1];
+    assert_eq!(&source[second.range().as_range()], " outline-width = 2px ");
+    assert_eq!(
+        &source[second.declarations()[0].range().as_range()],
+        "outline-width = 2px"
+    );
 }
 
 #[test]
@@ -390,9 +412,7 @@ pub view Example() {
             _ => None,
         })
         .expect("named style");
-    let named_expr = named.body().arcweft().expect("native").rules()[0].declarations()[0]
-        .value()
-        .expr();
+    let named_expr = named.sheet().rules()[0].declarations()[0].value().expr();
     let inline_expr = parsed
         .typed_tree()
         .items()
@@ -1042,9 +1062,6 @@ pub view ButtonRow() {
         .style {
             padding-x = milli(24000)
         }
-        .style(.Css) {
-            color: white;
-        }
         .part(confirm)
         .on_click(|| noop)
 }
@@ -1078,14 +1095,17 @@ pub view ButtonRow() {
         named_styles,
         ["style.hoge.primary_button", "style.hoge.primary_button"]
     );
-    assert!(button.modifiers().iter().any(|modifier| matches!(
-        modifier,
-        ViewModifier::Style(ViewStyleModifier::Inline(StylePatch::Arcweft { .. }))
-    )));
-    assert!(button.modifiers().iter().any(|modifier| matches!(
-        modifier,
-        ViewModifier::Style(ViewStyleModifier::Inline(StylePatch::Css(_)))
-    )));
+    assert_eq!(
+        button
+            .modifiers()
+            .iter()
+            .filter(|modifier| matches!(
+                modifier,
+                ViewModifier::Style(ViewStyleModifier::Inline(_))
+            ))
+            .count(),
+        1
+    );
 }
 
 #[test]

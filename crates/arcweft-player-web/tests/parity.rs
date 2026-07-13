@@ -198,6 +198,10 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
                 presentation: &second.presentation,
                 fx_definitions: &bundle.fx_definitions,
                 images: &BundleImageCatalog::empty(),
+                style_program: bundle.view_style.as_ref().map(|style| &style.program),
+                style_environment:
+                    &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+                style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
                 viewport: parity_test_viewport(),
                 fit: PlayerFrameFit::raw(),
                 image_time_millis: 32,
@@ -659,6 +663,10 @@ fn authored_view_flow_player_frame(
             presentation: &presentation,
             fx_definitions: &bundle.fx_definitions,
             images: &images,
+            style_program: bundle.view_style.as_ref().map(|style| &style.program),
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
             viewport: parity_test_viewport(),
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
@@ -803,7 +811,8 @@ flow view_scoped_disposed {
     let plan = lower_runtime_plan(&hir).expect("authored view fixture lowers to runtime plan");
     bundle_from_runtime_plan(&plan, SOURCE, "web-authored-view-controls.arcw")
         .with_view_text(authored_view_text_resource())
-        .with_view_program(authored_view_program_resource())
+        .with_view_resources(Some(authored_view_program_resource()), None)
+        .expect("authored View resources merge")
         .with_view_input(authored_view_input_resource())
 }
 
@@ -876,6 +885,7 @@ fn authored_view_program_resource() -> ViewProgramResource {
         definitions: vec![ViewDefinitionResource {
             public_id: "view.WebPanel".to_owned(),
             body: ViewInstructionSpan::new(0, 6),
+            styles: Vec::new(),
             parameters: Vec::new(),
             state_schema_hash: 0,
         }],
@@ -892,7 +902,7 @@ fn authored_view_program_resource() -> ViewProgramResource {
                 ViewProgramInstruction::OpenElement {
                     element,
                     target: Some(target.to_owned()),
-                    style: None,
+                    styles: Vec::new(),
                     part: None,
                     key: None,
                     source: None,
@@ -931,7 +941,6 @@ fn authored_view_program_resource() -> ViewProgramResource {
                 }),
             },
             bounds: ViewLogicalRect::from_px(64, 124, 160, 44).runtime_button_bounds(),
-            style: None,
             source: None,
         }],
         focus_groups: Vec::new(),

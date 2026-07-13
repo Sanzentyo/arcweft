@@ -8,10 +8,10 @@ use arcweft_id::PublicId;
 use arcweft_presentation::appearance::{PresentationColor, SystemColor};
 use serde::{Deserialize, Serialize};
 
+mod codec;
+
 /// Normalized ratio/progress value in thousandths.
-#[derive(
-    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct ViewRatioMilli(u16);
 
 impl ViewRatioMilli {
@@ -28,6 +28,19 @@ impl ViewRatioMilli {
 
     pub const fn value(self) -> u16 {
         self.0
+    }
+
+    /// Linearly interpolates two normalized ratios.
+    #[must_use]
+    pub fn lerp(self, target: Self, progress: Self) -> Self {
+        Self(
+            u16::try_from(lerp_unsigned(
+                u64::from(self.0),
+                u64::from(target.0),
+                progress,
+            ))
+            .unwrap_or(Self::ONE.0),
+        )
     }
 }
 
@@ -51,6 +64,19 @@ impl ViewScalarMilli {
     pub const fn value(self) -> u32 {
         self.0
     }
+
+    /// Linearly interpolates two non-negative scalars.
+    #[must_use]
+    pub fn lerp(self, target: Self, progress: ViewRatioMilli) -> Self {
+        Self(
+            u32::try_from(lerp_unsigned(
+                u64::from(self.0),
+                u64::from(target.0),
+                progress,
+            ))
+            .unwrap_or(u32::MAX),
+        )
+    }
 }
 
 /// Signed logical-pixel length represented in thousandths.
@@ -66,6 +92,12 @@ impl ViewLengthMilli {
 
     pub const fn value(self) -> i32 {
         self.0
+    }
+
+    /// Linearly interpolates two signed logical lengths.
+    #[must_use]
+    pub fn lerp(self, target: Self, progress: ViewRatioMilli) -> Self {
+        Self(lerp_signed(self.0, target.0, progress))
     }
 }
 
@@ -83,10 +115,16 @@ impl ViewAngleMilliDegrees {
     pub const fn value(self) -> i32 {
         self.0
     }
+
+    /// Linearly interpolates two signed angles.
+    #[must_use]
+    pub fn lerp(self, target: Self, progress: ViewRatioMilli) -> Self {
+        Self(lerp_signed(self.0, target.0, progress))
+    }
 }
 
 /// Checked OpenType-compatible font weight.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct ViewFontWeight(u16);
 
 impl ViewFontWeight {
@@ -140,13 +178,14 @@ impl ViewSystemFontFamily {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewFontFamily {
     Named(String),
     System(ViewSystemFontFamily),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ViewFontFamilyList {
     families: Vec<ViewFontFamily>,
 }
@@ -422,13 +461,27 @@ impl ViewAlignment {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum ViewColorValue {
     Literal { color: PresentationColor },
     System { role: SystemColor },
 }
 
+impl ViewColorValue {
+    /// Interpolates literal colors. System roles require environment resolution first.
+    pub fn lerp(self, target: Self, progress: ViewRatioMilli) -> Option<Self> {
+        match (self, target) {
+            (Self::Literal { color }, Self::Literal { color: target }) => Some(Self::Literal {
+                color: color.lerp(target, progress.value()),
+            }),
+            (Self::System { .. }, _) | (Self::Literal { .. }, Self::System { .. }) => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewBorderRadii {
     pub top_left: ViewLengthMilli,
     pub top_right: ViewLengthMilli,
@@ -436,7 +489,8 @@ pub struct ViewBorderRadii {
     pub bottom_left: ViewLengthMilli,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewShadow {
     pub x: ViewLengthMilli,
     pub y: ViewLengthMilli,
@@ -447,7 +501,7 @@ pub struct ViewShadow {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum ViewFilter {
     Blur { radius: ViewLengthMilli },
     Brightness { amount: ViewScalarMilli },
@@ -455,7 +509,8 @@ pub enum ViewFilter {
     Opacity { amount: ViewRatioMilli },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewClip {
     None,
     RoundedRect(ViewBorderRadii),
@@ -467,10 +522,11 @@ impl ViewClip {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewMask {
     None,
-    Resource(PublicId),
+    Resource(#[serde(with = "codec::public_id")] PublicId),
 }
 
 impl ViewMask {
@@ -519,7 +575,7 @@ impl ViewBlendMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct ViewStyleTransition {
     property: ViewPropertyKind,
     duration_millis: u32,
@@ -557,7 +613,8 @@ impl ViewStyleTransition {
 }
 
 /// Typed native Style value before token/environment resolution.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum ViewSpecifiedValue {
     Token {
         token: ViewStyleTokenId,
@@ -633,6 +690,7 @@ pub enum ViewSpecifiedValue {
         value: Vec<ViewStyleTransition>,
     },
     Resource {
+        #[serde(with = "codec::public_id")]
         value: PublicId,
     },
 }
@@ -666,5 +724,109 @@ impl ViewSpecifiedValue {
             Self::Transition { .. } => ViewStyleValueKind::Transition,
             Self::Resource { .. } => ViewStyleValueKind::Resource,
         }
+    }
+
+    /// Interpolates canonical computed values for one transitionable property.
+    pub fn interpolate(
+        &self,
+        property: ViewPropertyKind,
+        target: &Self,
+        progress: ViewRatioMilli,
+    ) -> Option<Self> {
+        if !property.is_transitionable()
+            || self.kind() != property.value_kind()
+            || target.kind() != property.value_kind()
+        {
+            return None;
+        }
+        if progress == ViewRatioMilli::ZERO {
+            return Some(self.clone());
+        }
+        if progress == ViewRatioMilli::ONE {
+            return Some(target.clone());
+        }
+        match (self, target) {
+            (Self::Ratio { value }, Self::Ratio { value: target }) => Some(Self::Ratio {
+                value: value.lerp(*target, progress),
+            }),
+            (Self::Scalar { value }, Self::Scalar { value: target }) => Some(Self::Scalar {
+                value: value.lerp(*target, progress),
+            }),
+            (Self::Length { value }, Self::Length { value: target }) => Some(Self::Length {
+                value: value.lerp(*target, progress),
+            }),
+            (Self::Angle { value }, Self::Angle { value: target }) => Some(Self::Angle {
+                value: value.lerp(*target, progress),
+            }),
+            (Self::Color { value }, Self::Color { value: target }) => Some(Self::Color {
+                value: value.lerp(*target, progress)?,
+            }),
+            _ => None,
+        }
+    }
+
+    /// Sheet-local token referenced by this value, together with its checked kind.
+    pub const fn token_reference(&self) -> Option<(&ViewStyleTokenId, ViewStyleValueKind)> {
+        match self {
+            Self::Token { token, value_kind } => Some((token, *value_kind)),
+            Self::Bool { .. }
+            | Self::Integer { .. }
+            | Self::Ratio { .. }
+            | Self::Scalar { .. }
+            | Self::Length { .. }
+            | Self::Angle { .. }
+            | Self::Color { .. }
+            | Self::FontFamilyList { .. }
+            | Self::FontWeight { .. }
+            | Self::FontStyle { .. }
+            | Self::Display { .. }
+            | Self::Position { .. }
+            | Self::Overflow { .. }
+            | Self::FlexDirection { .. }
+            | Self::FlexWrap { .. }
+            | Self::Alignment { .. }
+            | Self::BorderRadii { .. }
+            | Self::ShadowList { .. }
+            | Self::FilterList { .. }
+            | Self::Clip { .. }
+            | Self::Mask { .. }
+            | Self::BlendMode { .. }
+            | Self::Transition { .. }
+            | Self::Resource { .. } => None,
+        }
+    }
+}
+
+fn lerp_signed(source: i32, target: i32, progress: ViewRatioMilli) -> i32 {
+    let source = i64::from(source);
+    let delta = i64::from(target).saturating_sub(source);
+    let value =
+        source.saturating_add((delta.saturating_mul(i64::from(progress.value())) + 500) / 1_000);
+    i32::try_from(value.clamp(i64::from(i32::MIN), i64::from(i32::MAX))).unwrap_or_else(|_| {
+        if value.is_negative() {
+            i32::MIN
+        } else {
+            i32::MAX
+        }
+    })
+}
+
+fn lerp_unsigned(source: u64, target: u64, progress: ViewRatioMilli) -> u64 {
+    if target >= source {
+        source.saturating_add(
+            target
+                .saturating_sub(source)
+                .saturating_mul(u64::from(progress.value()))
+                .saturating_add(500)
+                / 1_000,
+        )
+    } else {
+        source.saturating_sub(
+            source
+                .saturating_sub(target)
+                .saturating_mul(u64::from(progress.value()))
+                .saturating_sub(500)
+                / 1_000,
+        )
     }
 }

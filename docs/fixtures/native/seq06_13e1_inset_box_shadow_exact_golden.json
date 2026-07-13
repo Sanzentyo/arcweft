@@ -3,7 +3,7 @@
   "target": "native",
   "fixture": "seq06_13e1_inset_box_shadow",
   "date": "2026-07-04",
-  "source_css": "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css",
+  "source_style": "docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw",
   "scene": {
     "viewport": {
       "width": 320,
@@ -36,15 +36,15 @@
     ]
   },
   "route": [
-    "Takumi typed CSS parse/cascade for authored CSS fixture",
-    "arcweft-takumi-adapter box_shadow_list_from_takumi",
+    "typed native Style sheet and selector resolution",
+    "computed native Style box-shadow value",
     "ViewCompositingEffects::box_shadows",
     "ViewBoxShadowPassPlan unified outer/inset pass list",
     "ViewCompositor::render_group",
     "PASS_BOX_SHADOW WGSL kind flag"
   ],
   "forbidden_paths": [
-    "browser DOM CSS box-shadow screenshots",
+    "browser DOM style-rendered screenshots",
     "SVG filters",
     "canvas 2D fallback",
     "CPU raster fallback",

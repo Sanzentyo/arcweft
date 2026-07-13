@@ -134,14 +134,31 @@ impl HirModule {
     /// Appends declarations and executable bodies from another source module.
     ///
     /// Source-level attributes are intentionally not promoted to crate-level
-    /// attributes. The module-preserving owner remains [`HirProject`].
+    /// attributes. Inline style patch ordinals are rebased from the appended
+    /// module's local ordinal space into this linked module's global ordinal
+    /// space. HIR does not yet own a separate style-application reference ABI;
+    /// d.2 compiler lowering resolves applications from checked catalogs and
+    /// the source View structure. The module-preserving owner remains
+    /// [`HirProject`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the linked module would contain more inline style patches
+    /// than a `u32` ordinal can identify.
     pub fn append_module_body(&mut self, mut module: Self) {
         self.source_len = None;
         self.top_level_ranges.clear();
+        let style_patch_base = u32::try_from(self.style_patches.len())
+            .expect("linked HIR contains more inline style patches than u32 can identify");
+        module
+            .style_patches
+            .iter_mut()
+            .for_each(|patch| patch.rebase_ordinal(style_patch_base));
         self.flows.append(&mut module.flows);
         self.functions.append(&mut module.functions);
         self.agents.append(&mut module.agents);
         self.declarations.append(&mut module.declarations);
+        self.style_patches.append(&mut module.style_patches);
         self.top_level_items.append(&mut module.top_level_items);
     }
 }
@@ -150,10 +167,82 @@ impl HirModule {
 mod tests {
     use super::{HirProject, HirProjectModule};
     use crate::lower::lower_to_hir;
+    use crate::style::HirStylePatch;
     use arcweft_lang_syntax::{
-        ast::module_path::{CanonicalModulePath, ModuleSegment},
+        ast::{
+            common::TextRange,
+            module_path::{CanonicalModulePath, ModuleSegment},
+        },
         parser::parse_source,
     };
+    use std::collections::BTreeSet;
+
+    struct LinkedStyleProject {
+        project: HirProject,
+        alpha_path: CanonicalModulePath,
+        omega_path: CanonicalModulePath,
+        patch_ranges: [TextRange; 4],
+    }
+
+    fn linked_style_project() -> LinkedStyleProject {
+        let root = lower_to_hir(
+            &parse_source(
+                r#"pub view Root() {
+    Button("root").style { opacity = 100milli }
+}
+"#,
+            )
+            .into_typed_tree(),
+        )
+        .unwrap();
+        let alpha = lower_to_hir(
+            &parse_source(
+                r#"pub view Alpha() {
+    Button("alpha")
+        .style { outline-width = 2px }
+        .style { opacity = 200milli }
+}
+"#,
+            )
+            .into_typed_tree(),
+        )
+        .unwrap();
+        let omega = lower_to_hir(
+            &parse_source(
+                r#"pub view Omega() {
+    Button("omega").style { width = 3px }
+}
+"#,
+            )
+            .into_typed_tree(),
+        )
+        .unwrap();
+        let patch_ranges = [
+            root.style_patches()[0].range(),
+            alpha.style_patches()[0].range(),
+            alpha.style_patches()[1].range(),
+            omega.style_patches()[0].range(),
+        ];
+        let alpha_path =
+            CanonicalModulePath::crate_root().join(ModuleSegment::new("alpha").unwrap());
+        let omega_path =
+            CanonicalModulePath::crate_root().join(ModuleSegment::new("omega").unwrap());
+        let project = HirProject::new(
+            "game",
+            [
+                HirProjectModule::new(omega_path.clone(), omega),
+                HirProjectModule::new(CanonicalModulePath::crate_root(), root),
+                HirProjectModule::new(alpha_path.clone(), alpha),
+            ],
+        )
+        .unwrap();
+        LinkedStyleProject {
+            project,
+            alpha_path,
+            omega_path,
+            patch_ranges,
+        }
+    }
 
     #[test]
     fn linked_view_preserves_root_attributes_and_appends_child_body() {
@@ -184,5 +273,76 @@ mod tests {
             .find_map(|(path, module)| (!path.is_crate_root()).then_some(module))
             .expect("child module");
         assert_eq!(child.functions()[0].qualified_name(), "child.helper");
+    }
+
+    #[test]
+    fn linked_view_preserves_and_rebases_inline_style_patches_in_module_order() {
+        let fixture = linked_style_project();
+
+        assert_eq!(
+            fixture
+                .project
+                .module(&fixture.alpha_path)
+                .expect("alpha module")
+                .style_patches()
+                .iter()
+                .map(HirStylePatch::ordinal)
+                .collect::<Vec<_>>(),
+            [0, 1]
+        );
+        assert_eq!(
+            fixture
+                .project
+                .module(&fixture.omega_path)
+                .expect("omega module")
+                .style_patches()[0]
+                .ordinal(),
+            0
+        );
+
+        let linked = fixture.project.linked_module();
+        assert_eq!(linked.style_patches().len(), 4);
+        assert_eq!(
+            linked
+                .style_patches()
+                .iter()
+                .map(HirStylePatch::ordinal)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            linked
+                .style_patches()
+                .iter()
+                .map(HirStylePatch::ordinal)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            linked.style_patches().len(),
+            "downstream ordinal-based patch references must remain collision-free"
+        );
+    }
+
+    #[test]
+    fn linked_view_preserves_inline_patch_bodies_and_source_ranges() {
+        let fixture = linked_style_project();
+        let linked = fixture.project.linked_module();
+        assert_eq!(
+            linked
+                .style_patches()
+                .iter()
+                .map(HirStylePatch::range)
+                .collect::<Vec<_>>(),
+            fixture.patch_ranges
+        );
+        assert_eq!(linked.style_patches()[1].declarations().len(), 1);
+        assert_eq!(
+            linked.style_patches()[1].declarations()[0].value().source(),
+            "2px"
+        );
+        assert_eq!(linked.style_patches()[2].declarations().len(), 1);
+        assert_eq!(
+            linked.style_patches()[3].declarations()[0].value().source(),
+            "3px"
+        );
     }
 }

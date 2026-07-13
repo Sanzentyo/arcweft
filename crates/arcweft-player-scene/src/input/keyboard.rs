@@ -23,7 +23,7 @@ impl InputController {
                     return InputOutcome::redraw(true);
                 }
                 if let Some(target) = frame.first_keyboard_focus_target() {
-                    self.set_focus(frame, target);
+                    self.set_focus(frame, target, true);
                 }
                 InputOutcome::redraw(true)
             }
@@ -32,7 +32,7 @@ impl InputController {
                     return InputOutcome::redraw(true);
                 }
                 if let Some(target) = frame.last_keyboard_focus_target() {
-                    self.set_focus(frame, target);
+                    self.set_focus(frame, target, true);
                 }
                 InputOutcome::redraw(true)
             }
@@ -138,7 +138,7 @@ impl InputController {
                 .map(TextEditorState::target)
         });
         if let Some(next) = frame.focus_target(current, direction) {
-            self.set_focus(frame, next);
+            self.set_focus(frame, next, true);
         }
         InputOutcome::redraw(true)
     }

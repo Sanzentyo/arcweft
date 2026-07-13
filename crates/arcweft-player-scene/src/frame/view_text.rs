@@ -1,13 +1,13 @@
 //! Canonical View text-source resolution and frame-local preparation.
 
+use super::view_style::{ResolvedViewStyleFrame, box_style};
 use super::{milli_i32_to_f32, milli_u32_to_f32, scroll_adjusted_bounds};
 use crate::input::InputController;
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_bundle::resource_codec::view::{
-    RgbaColor, ViewRuntimeControlState, ViewTextSelectionPolicy,
-};
+use arcweft_bundle::resource_codec::view::{ViewRuntimeNodeStyle, ViewTextSelectionPolicy};
 use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutRect as FitLayoutRect};
+use arcweft_presentation::appearance::PresentationColor;
 use arcweft_presentation::fx::{
     FxApplication, FxApplicationResolver, FxDiagnostic, FxDiagnosticCode, FxDiagnosticContext,
     FxEvaluationBinding,
@@ -35,6 +35,7 @@ use arcweft_runtime_driver::{
     presentation_handles::PresentationHandleId,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
+use arcweft_view::style::ViewOverflow;
 use std::collections::BTreeMap;
 
 /// Prepared ID associated with one exact mounted View text paint target.
@@ -141,6 +142,7 @@ pub(super) struct RuntimeViewTextRequest<'a> {
     pub(super) fx_definitions: &'a FxDefinitions,
     pub(super) visual_time_millis: u64,
     pub(super) latest_reveal_complete: bool,
+    pub(super) styles: &'a ResolvedViewStyleFrame,
     pub(super) content: Option<ContentRect>,
 }
 
@@ -266,12 +268,23 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         target: &BundleViewTextTarget,
         dialogue: Option<DialogueTextContext<'request>>,
     ) -> Result<(), FramePlanError> {
-        let Some((bounds, clip)) =
-            target_geometry(self.request.scene, mount, target, self.request.content)
-        else {
+        let scoped_id = mount.scoped_id(&target.public_id);
+        let resolved = self
+            .request
+            .styles
+            .text(&scoped_id)
+            .or_else(|| self.request.styles.part(&scoped_id));
+        let layout_offset = self.request.styles.text_layout_offset(&scoped_id);
+        let Some((bounds, clip)) = target_geometry(
+            self.request.scene,
+            mount,
+            target,
+            resolved,
+            layout_offset,
+            self.request.content,
+        ) else {
             return Ok(());
         };
-        let scoped_id = mount.scoped_id(&target.public_id);
         let semantic_id = PublicId::try_new(&scoped_id)
             .map_err(|_| FramePlanError::InvalidId { value: scoped_id })?;
         let interaction_target = Some(InteractionTarget::new(semantic_id.clone()));
@@ -288,14 +301,16 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
                     usize::try_from(selection.end().get()).unwrap_or(usize::MAX),
                 )
             });
-        let visual = target
-            .style
-            .visual_for_state(ViewRuntimeControlState::Normal);
-        let fit_scale = self.request.content.map_or(1.0, |content| {
+        let visual = resolved.map_or(&target.style, |style| style.visual());
+        let content_scale = self.request.content.map_or(1.0, |content| {
             ((content.scale_x.abs() + content.scale_y.abs()) * 0.5).max(f32::EPSILON)
         });
+        let style_scale = resolved.map_or(1.0, |style| {
+            num_traits::ToPrimitive::to_f32(&box_style(style).scale_milli).unwrap_or(f32::MAX)
+                / 1_000.0
+        });
         let text_scale = f32::from(self.request.scene.preferences.text_scale_milli) / 1_000.0;
-        let style = resolved_style(&visual, fit_scale * text_scale)?;
+        let style = resolved_style(visual, content_scale * style_scale * text_scale)?;
         let text_request = PreparedTextDocumentRequest {
             origin: LayoutPoint::new(bounds.x, bounds.y),
             size: LayoutSize::new(bounds.width, bounds.height),
@@ -307,7 +322,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             selection_rgba: rgba_f32(
                 visual
                     .selection
-                    .unwrap_or(RgbaColor::rgba(64, 128, 255, 90)),
+                    .unwrap_or(PresentationColor::rgba(64, 128, 255, 90)),
             ),
         };
         let pushed = push_text_value(
@@ -582,14 +597,45 @@ fn target_geometry(
     scene: &RenderScene,
     mount: &BundleViewMountOutput,
     target: &BundleViewTextTarget,
+    style: Option<&ViewRuntimeNodeStyle>,
+    layout_offset: (i32, i32),
     content: Option<ContentRect>,
 ) -> Option<(HitRect, Option<HitRect>)> {
-    let bounds = HitRect::new(
-        milli_i32_to_f32(target.bounds.x_milli),
-        milli_i32_to_f32(target.bounds.y_milli),
-        milli_u32_to_f32(target.bounds.width_milli),
-        milli_u32_to_f32(target.bounds.height_milli),
+    let box_style = style.map(box_style);
+    let x_milli = target
+        .bounds
+        .x_milli
+        .saturating_add(layout_offset.0)
+        .saturating_add(box_style.as_ref().map_or(0, |style| style.translate_x));
+    let y_milli = target
+        .bounds
+        .y_milli
+        .saturating_add(layout_offset.1)
+        .saturating_add(box_style.as_ref().map_or(0, |style| style.translate_y));
+    let scale_milli = box_style.as_ref().map_or(1_000, |style| style.scale_milli);
+    let width_milli = scaled_dimension(
+        box_style
+            .as_ref()
+            .and_then(|style| style.width)
+            .unwrap_or(target.bounds.width_milli),
+        scale_milli,
     );
+    let height_milli = scaled_dimension(
+        box_style
+            .as_ref()
+            .and_then(|style| style.height)
+            .unwrap_or(target.bounds.height_milli),
+        scale_milli,
+    );
+    let bounds = HitRect::new(
+        milli_i32_to_f32(x_milli),
+        milli_i32_to_f32(y_milli),
+        milli_u32_to_f32(width_milli),
+        milli_u32_to_f32(height_milli),
+    );
+    if bounds.width <= 0.0 || bounds.height <= 0.0 {
+        return None;
+    }
     let scroll = target.containing_scroll_region.as_deref().map(|region| {
         let scoped = mount.scoped_id(region);
         if scene
@@ -603,10 +649,59 @@ fn target_geometry(
         }
     });
     let (bounds, clip) = scroll_adjusted_bounds(scene, scroll.as_deref(), bounds)?;
-    Some((
-        map_rect(bounds, content),
-        clip.map(|clip| map_rect(clip, content)),
-    ))
+    let bounds = map_rect(bounds, content);
+    let scroll_clip = clip.map(|clip| map_rect(clip, content));
+    let overflow_clip = box_style.and_then(|style| {
+        overflow_clip(
+            scene.viewport.logical_width,
+            scene.viewport.logical_height,
+            bounds,
+            style.overflow_x,
+            style.overflow_y,
+        )
+    });
+    let clip = match (scroll_clip, overflow_clip) {
+        (Some(left), Some(right)) => Some(intersection(left, right)?),
+        (Some(clip), None) | (None, Some(clip)) => Some(clip),
+        (None, None) => None,
+    };
+    Some((bounds, clip))
+}
+
+fn scaled_dimension(value: u32, scale_milli: u32) -> u32 {
+    u32::try_from(u64::from(value).saturating_mul(u64::from(scale_milli)) / 1_000)
+        .unwrap_or(u32::MAX)
+}
+
+fn overflow_clip(
+    viewport_width: f32,
+    viewport_height: f32,
+    bounds: HitRect,
+    overflow_x: ViewOverflow,
+    overflow_y: ViewOverflow,
+) -> Option<HitRect> {
+    let clip_x = overflow_x != ViewOverflow::Visible;
+    let clip_y = overflow_y != ViewOverflow::Visible;
+    (clip_x || clip_y).then(|| {
+        HitRect::new(
+            if clip_x { bounds.x } else { 0.0 },
+            if clip_y { bounds.y } else { 0.0 },
+            if clip_x { bounds.width } else { viewport_width },
+            if clip_y {
+                bounds.height
+            } else {
+                viewport_height
+            },
+        )
+    })
+}
+
+fn intersection(left: HitRect, right: HitRect) -> Option<HitRect> {
+    let x = left.x.max(right.x);
+    let y = left.y.max(right.y);
+    let right_edge = (left.x + left.width).min(right.x + right.width);
+    let bottom_edge = (left.y + left.height).min(right.y + right.height);
+    (right_edge > x && bottom_edge > y).then(|| HitRect::new(x, y, right_edge - x, bottom_edge - y))
 }
 
 fn dialogue_surface_bounds(
@@ -694,7 +789,9 @@ fn resolved_style(
             .unwrap_or_else(|| visual.font_size_milli.unwrap_or(20_000).saturating_mul(6) / 5),
         scale,
     )?;
-    let color = visual.text.unwrap_or(RgbaColor::rgb(245, 245, 245));
+    let color = visual
+        .text
+        .unwrap_or(PresentationColor::rgba(245, 245, 245, 255));
     Ok(ResolvedTextStyle::new(
         font_families(visual.font_family.as_deref()),
         font_size,
@@ -702,6 +799,7 @@ fn resolved_style(
     )?
     .with_weight(text_weight(visual.font_weight.unwrap_or(400)))
     .with_slant(TextSlant::Upright)
+    .with_spacing(visual.letter_spacing_milli.unwrap_or_default(), 0)
     .with_color(TextColor::rgba(
         color.red,
         color.green,
@@ -780,7 +878,7 @@ const fn layout_rect(rect: HitRect) -> LayoutRect {
     LayoutRect::new(rect.x, rect.y, rect.width, rect.height)
 }
 
-fn rgba_f32(color: RgbaColor) -> [f32; 4] {
+fn rgba_f32(color: PresentationColor) -> [f32; 4] {
     [
         f32::from(color.red) / 255.0,
         f32::from(color.green) / 255.0,

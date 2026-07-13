@@ -1,11 +1,16 @@
-//! Display-list generation boundary for laid-out retained View fragments.
+//! Display-list generation and canonical Style resolution for retained fragments.
 
 use crate::{
-    CustomElementId, FragmentKind, ImageId, LayoutBox, LayoutResults, NodeId, ResolvedViewStyle,
-    RichTextSourceId, SemanticSpecId, StyleId, TextSourceId, ViewError, ViewFragment,
-    ViewSemanticFragment, ViewStyleTable,
+    ComputedViewStyle, ContainerKind, CustomElementId, FragmentKind, ImageId, LayoutBox,
+    LayoutResults, NodeId, RichTextSourceId, SemanticSpecId, TextSourceId, ViewElementKind,
+    ViewError, ViewFragment, ViewInteractionSelector, ViewInteractionStateSet,
+    ViewSemanticFragment, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts,
+    ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleProgram, ViewStyleResolveContext,
+    ViewStyleResolver, ViewStyleRevisionSet, ViewStyleScopeId, ViewStyleTraceMode,
 };
-use arcweft_presentation::interaction::InteractionState;
+use arcweft_presentation::{
+    appearance::PresentationEnvironment, interaction::InteractionState, semantic::SemanticRole,
+};
 
 /// Frame-local display item identifier.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -25,25 +30,43 @@ pub enum DisplayItemKind {
 pub struct DisplayItem {
     node: NodeId,
     kind: DisplayItemKind,
-    style: StyleId,
     layout: LayoutBox,
     semantics: Option<SemanticSpecId>,
 }
 
-/// Ordered View display list for renderer submission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DisplayStyleNode {
+    key: ViewStyleNodeKey,
+    parent: Option<NodeId>,
+    ancestors: Vec<NodeId>,
+    element: Option<ViewElementKind>,
+    semantics: Option<SemanticSpecId>,
+    active_scopes: Vec<ViewStyleScopeId>,
+    applications: Vec<ViewStyleApplication>,
+}
+
+#[derive(Default)]
+struct FragmentStyleAllocator {
+    next_scope: u64,
+    next_application_order: u32,
+}
+
+/// Ordered View display list with resolver-ready retained node ancestry.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DisplayList {
     items: Vec<DisplayItem>,
+    style_nodes: Vec<DisplayStyleNode>,
+    resolution_order: Vec<NodeId>,
 }
 
-/// One display item with interaction selectors resolved for the current frame.
+/// One display item with canonical computed Style for the current frame.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedDisplayItem {
     item: DisplayItem,
-    style: ResolvedViewStyle,
+    style: ComputedViewStyle,
 }
 
-/// Ordered display list after hover/focus/pressed/disabled style resolution.
+/// Ordered display list after canonical Style resolution.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ResolvedDisplayList {
     items: Vec<ResolvedDisplayItem>,
@@ -56,10 +79,6 @@ impl DisplayItem {
 
     pub const fn kind(self) -> DisplayItemKind {
         self.kind
-    }
-
-    pub const fn style(self) -> StyleId {
-        self.style
     }
 
     pub const fn layout(self) -> LayoutBox {
@@ -76,6 +95,8 @@ impl DisplayList {
         fragment: &ViewFragment,
         layouts: &LayoutResults,
     ) -> Result<Self, ViewError> {
+        let parents = fragment_parents(fragment)?;
+        let (style_nodes, resolution_order) = retain_style_nodes(fragment, &parents)?;
         let items = fragment
             .nodes()
             .iter()
@@ -95,47 +116,85 @@ impl DisplayList {
                 Some(layouts.require(id).map(|layout| DisplayItem {
                     node: id,
                     kind,
-                    style: node.style(),
                     layout,
                     semantics: node.semantics(),
                 }))
             })
             .collect::<Result<Vec<_>, ViewError>>()?;
-        Ok(Self { items })
+        Ok(Self {
+            items,
+            style_nodes,
+            resolution_order,
+        })
     }
 
-    pub fn resolve_interaction_styles(
+    /// Resolves every retained node parent-first, then projects display-node results.
+    pub fn resolve_styles(
         &self,
         semantics: &ViewSemanticFragment,
-        styles: &ViewStyleTable,
+        program: &ViewStyleProgram,
         interaction: &InteractionState,
+        environment: &PresentationEnvironment,
+        revisions: ViewStyleRevisionSet,
+        resolver: &mut ViewStyleResolver,
     ) -> Result<ResolvedDisplayList, ViewError> {
-        self.items
+        let facts = self
+            .style_nodes
+            .iter()
+            .map(|node| style_facts(node, semantics, interaction))
+            .collect::<Result<Vec<_>, ViewError>>()?;
+        let mut computed = vec![None; self.style_nodes.len()];
+
+        for node in &self.resolution_order {
+            let index = node.0 as usize;
+            let style_node = self
+                .style_nodes
+                .get(index)
+                .ok_or(ViewError::InvalidFragmentNode(*node))?;
+            let ancestors = style_node
+                .ancestors
+                .iter()
+                .map(|ancestor| {
+                    facts
+                        .get(ancestor.0 as usize)
+                        .cloned()
+                        .ok_or(ViewError::InvalidFragmentNode(*ancestor))
+                })
+                .collect::<Result<Vec<_>, ViewError>>()?;
+            let parent = style_node
+                .parent
+                .and_then(|parent| computed.get(parent.0 as usize))
+                .and_then(Option::as_ref);
+            let resolution = resolver.resolve(
+                program,
+                &ViewStyleResolveContext {
+                    node_key: &style_node.key,
+                    node: &facts[index],
+                    ancestors: &ancestors,
+                    applications: &style_node.applications,
+                    parent,
+                    environment,
+                    revisions,
+                    trace: ViewStyleTraceMode::Off,
+                },
+            )?;
+            computed[index] = Some(resolution.into_computed());
+        }
+
+        let items = self
+            .items
             .iter()
             .copied()
             .map(|item| {
-                let semantic = match item.semantics() {
-                    Some(id) => {
-                        Some(semantics.get(id).ok_or(ViewError::UnknownDisplaySemantic {
-                            node: item.node(),
-                            semantic: id,
-                        })?)
-                    }
-                    None => None,
-                };
-                let resolved = styles.resolve(
-                    item.style(),
-                    semantic.map(crate::ViewSemanticNode::target),
-                    semantic.is_none_or(crate::ViewSemanticNode::enabled),
-                    interaction,
-                )?;
-                Ok(ResolvedDisplayItem {
-                    item,
-                    style: resolved,
-                })
+                let style = computed
+                    .get(item.node().0 as usize)
+                    .and_then(Option::as_ref)
+                    .cloned()
+                    .ok_or(ViewError::InvalidFragmentNode(item.node()))?;
+                Ok(ResolvedDisplayItem { item, style })
             })
-            .collect::<Result<Vec<_>, ViewError>>()
-            .map(|items| ResolvedDisplayList { items })
+            .collect::<Result<Vec<_>, ViewError>>()?;
+        Ok(ResolvedDisplayList { items })
     }
 
     pub fn as_slice(&self) -> &[DisplayItem] {
@@ -152,7 +211,7 @@ impl ResolvedDisplayItem {
         self.item
     }
 
-    pub const fn style(&self) -> &ResolvedViewStyle {
+    pub const fn style(&self) -> &ComputedViewStyle {
         &self.style
     }
 }
@@ -168,5 +227,231 @@ impl ResolvedDisplayList {
 
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+}
+
+fn fragment_parents(fragment: &ViewFragment) -> Result<Vec<Option<NodeId>>, ViewError> {
+    let mut parents = vec![None; fragment.nodes().len()];
+    for (index, _) in fragment.nodes().iter().enumerate() {
+        let parent = NodeId(u32::try_from(index).map_err(|_| ViewError::CapacityExceeded)?);
+        for child in fragment
+            .node_children(parent)
+            .ok_or(ViewError::InvalidFragmentNode(parent))?
+        {
+            let slot = parents
+                .get_mut(child.0 as usize)
+                .ok_or(ViewError::InvalidFragmentNode(*child))?;
+            if slot.replace(parent).is_some() {
+                return Err(ViewError::MultipleFragmentParents(*child));
+            }
+        }
+    }
+    Ok(parents)
+}
+
+fn retain_style_nodes(
+    fragment: &ViewFragment,
+    parents: &[Option<NodeId>],
+) -> Result<(Vec<DisplayStyleNode>, Vec<NodeId>), ViewError> {
+    let mut style_nodes: Vec<Option<DisplayStyleNode>> = vec![None; fragment.nodes().len()];
+    let mut resolution_order = Vec::with_capacity(fragment.nodes().len());
+    let mut roots = parents
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parent)| parent.is_none().then_some(index))
+        .map(|index| {
+            u32::try_from(index)
+                .map(NodeId)
+                .map_err(|_| ViewError::CapacityExceeded)
+        })
+        .collect::<Result<Vec<_>, ViewError>>()?;
+    roots.reverse();
+    let mut stack = roots;
+    let mut allocator = FragmentStyleAllocator::default();
+
+    while let Some(node) = stack.pop() {
+        let parent = parents[node.0 as usize];
+        let parent_style = parent
+            .and_then(|parent| style_nodes.get(parent.0 as usize))
+            .and_then(Option::as_ref);
+        let retained = retain_style_node(fragment, node, parent, parent_style, &mut allocator)?;
+        style_nodes[node.0 as usize] = Some(retained);
+        resolution_order.push(node);
+
+        let children = fragment
+            .node_children(node)
+            .ok_or(ViewError::InvalidFragmentNode(node))?;
+        stack.extend(children.iter().rev().copied());
+    }
+
+    let style_nodes = style_nodes
+        .into_iter()
+        .enumerate()
+        .map(|(index, node)| {
+            node.ok_or_else(|| {
+                ViewError::InvalidFragmentNode(NodeId(u32::try_from(index).unwrap_or(u32::MAX)))
+            })
+        })
+        .collect::<Result<Vec<_>, ViewError>>()?;
+    Ok((style_nodes, resolution_order))
+}
+
+fn retain_style_node(
+    fragment: &ViewFragment,
+    node: NodeId,
+    parent: Option<NodeId>,
+    parent_style: Option<&DisplayStyleNode>,
+    allocator: &mut FragmentStyleAllocator,
+) -> Result<DisplayStyleNode, ViewError> {
+    let source = fragment
+        .nodes()
+        .get(node.0 as usize)
+        .ok_or(ViewError::InvalidFragmentNode(node))?;
+    let local = fragment
+        .node_style_applications(node)
+        .ok_or(ViewError::InvalidFragmentNode(node))?;
+    let applications = allocator.materialize(parent_style, local)?;
+    let active_scopes = named_scope_inventory(&applications);
+    let mut ancestors = parent_style.map_or_else(Vec::new, |parent| parent.ancestors.clone());
+    if let Some(parent) = parent {
+        ancestors.push(parent);
+    }
+    let mut path = parent_style.map_or_else(Vec::new, |parent| parent.key.path().to_vec());
+    path.push(source.key().0);
+    Ok(DisplayStyleNode {
+        key: ViewStyleNodeKey::new(0, path, node.0),
+        parent,
+        ancestors,
+        element: fragment_element(source.kind()),
+        semantics: source.semantics(),
+        active_scopes,
+        applications,
+    })
+}
+
+impl FragmentStyleAllocator {
+    fn materialize(
+        &mut self,
+        parent: Option<&DisplayStyleNode>,
+        local: &[ViewStyleApplicationTarget],
+    ) -> Result<Vec<ViewStyleApplication>, ViewError> {
+        let mut applications = parent.map_or_else(Vec::new, |parent| {
+            parent
+                .applications
+                .iter()
+                .filter(|application| is_named_application(application))
+                .cloned()
+                .collect()
+        });
+        if local.is_empty() {
+            return Ok(applications);
+        }
+        let scope_depth = applications
+            .iter()
+            .map(ViewStyleApplication::scope_depth)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or(ViewError::CapacityExceeded)?;
+        let scope = ViewStyleScopeId::new(self.next_scope);
+        self.next_scope = self
+            .next_scope
+            .checked_add(1)
+            .ok_or(ViewError::CapacityExceeded)?;
+        for target in local {
+            applications.push(ViewStyleApplication::new(
+                target.clone(),
+                scope,
+                scope_depth,
+                self.next_application_order,
+                ViewStyleBoundaryFacts::SAME_VIEW,
+            ));
+            self.next_application_order = self
+                .next_application_order
+                .checked_add(1)
+                .ok_or(ViewError::CapacityExceeded)?;
+        }
+        Ok(applications)
+    }
+}
+
+fn named_scope_inventory(applications: &[ViewStyleApplication]) -> Vec<ViewStyleScopeId> {
+    applications
+        .iter()
+        .filter(|application| is_named_application(application))
+        .map(ViewStyleApplication::scope)
+        .fold(Vec::new(), |mut scopes, scope| {
+            if scopes.last().copied() != Some(scope) {
+                scopes.push(scope);
+            }
+            scopes
+        })
+}
+
+fn is_named_application(application: &ViewStyleApplication) -> bool {
+    matches!(
+        application.target(),
+        ViewStyleApplicationTarget::Named { .. }
+    )
+}
+
+fn style_facts(
+    node: &DisplayStyleNode,
+    semantics: &ViewSemanticFragment,
+    interaction: &InteractionState,
+) -> Result<ViewStyleNodeFacts, ViewError> {
+    let semantic = match node.semantics {
+        Some(id) => Some(semantics.get(id).ok_or(ViewError::UnknownDisplaySemantic {
+            node: NodeId(node.key.instruction()),
+            semantic: id,
+        })?),
+        None => None,
+    };
+    let interactions = ViewInteractionSelector::ALL
+        .iter()
+        .copied()
+        .filter(|selector| {
+            selector.matches(
+                semantic.map(crate::ViewSemanticNode::target),
+                semantic.is_none_or(crate::ViewSemanticNode::enabled),
+                interaction,
+            )
+        })
+        .fold(ViewInteractionStateSet::default(), |states, state| {
+            states.with(state)
+        });
+    let element = semantic
+        .and_then(|semantic| semantic_element(semantic.role()))
+        .or(node.element);
+    Ok(ViewStyleNodeFacts::new(element)
+        .with_interactions(interactions)
+        .with_active_scopes(node.active_scopes.clone()))
+}
+
+const fn semantic_element(role: SemanticRole) -> Option<ViewElementKind> {
+    match role {
+        SemanticRole::Button => Some(ViewElementKind::Button),
+        SemanticRole::TextField => Some(ViewElementKind::TextField),
+        SemanticRole::TextArea => Some(ViewElementKind::TextArea),
+        SemanticRole::SecureTextField => Some(ViewElementKind::SecureField),
+        SemanticRole::Dialogue
+        | SemanticRole::Activity
+        | SemanticRole::Image
+        | SemanticRole::Debug
+        | SemanticRole::Custom => None,
+    }
+}
+
+const fn fragment_element(kind: FragmentKind) -> Option<ViewElementKind> {
+    match kind {
+        FragmentKind::Container(ContainerKind::Block | ContainerKind::Inline) => {
+            Some(ViewElementKind::Box)
+        }
+        FragmentKind::Container(ContainerKind::Stack) => Some(ViewElementKind::Stack),
+        FragmentKind::Text(_)
+        | FragmentKind::RichText(_)
+        | FragmentKind::Image(_)
+        | FragmentKind::View(_)
+        | FragmentKind::Custom(_) => None,
     }
 }

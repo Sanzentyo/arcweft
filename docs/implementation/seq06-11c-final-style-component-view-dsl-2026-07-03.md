@@ -1,5 +1,10 @@
 # Seq06.11c final style declaration and View DSL
 
+> **Superseded Style-path premise (2026-07-13):** The provisional CSS syntax,
+> source inventories, and flattened Style resource recorded below were removed
+> by the [native-only typed Style path](native-only-style-path-2026-07-13.md).
+> The body remains historical evidence only.
+
 This cut applied the seq06.11c direction in production code: source authors use
 root `style` declarations and View bodies. Product resources keep their compact
 names such as `ViewStyleResource` and `ViewProgramResource`.

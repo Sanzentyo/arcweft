@@ -1,6 +1,6 @@
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputPurpose, ViewRuntimeControlStyle, ViewRuntimeTextControl,
+    ViewInputPurpose, ViewRuntimeControlVisualStyle, ViewRuntimeTextControl,
     ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
     ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
     ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
@@ -511,7 +511,7 @@ fn runtime_control(public_id: &str, kind: ViewInputKind, value: &str) -> ViewRun
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 260, 48),
         label: Some("Name".to_owned()),
         handlers: ViewRuntimeTextControlHandlers::default(),
-        style: ViewRuntimeControlStyle::default(),
+        style: ViewRuntimeControlVisualStyle::default(),
     }
 }
 

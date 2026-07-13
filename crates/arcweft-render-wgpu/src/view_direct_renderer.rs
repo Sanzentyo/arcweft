@@ -2,8 +2,8 @@
 //!
 //! This module is intentionally renderer-owned. It consumes Arcweft-owned
 //! `ViewPrimitive` values and prepared image/mask resources. It does not parse
-//! CSS, inspect Takumi computed style, or
-//! route View through platform-specific DOM/canvas fallback paths.
+//! authoring syntax, inspect upstream style state, or route View through
+//! platform-specific surface fallback paths.
 
 use crate::geometry::{PreparedViewMaskResource, PreparedViewSceneResources, RenderImageFrame};
 use crate::view_compositor::{

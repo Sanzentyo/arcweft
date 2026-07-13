@@ -14,7 +14,7 @@ test-workspace:
     @cargo test -p arcweft-cli --lib --bins --quiet
     @cargo test -p arcweft-cli --test runtime_native_options --quiet
     @cargo test -p arcweft-cli --test check_core_cli --quiet
-    @cargo test -p arcweft-cli --test css_style_parity_sample --quiet
+    @cargo test -p arcweft-cli --test native_style_parity_sample --quiet
     @cargo test -p arcweft-cli --test release_trust_json --quiet
     @cargo test -p arcweft-cli --test responsive_stage_placement --quiet
     @cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet

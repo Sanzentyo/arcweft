@@ -1,18 +1,31 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
-    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax,
     ViewDefinitionResource, ViewElementKind, ViewInstructionSpan, ViewProgramInstruction,
-    ViewProgramResource, ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewStyleDeclaration,
-    ViewStyleResource, ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
-    ViewSurfaceResource,
+    ViewProgramResource, ViewRuntimeSurfaceBounds, ViewSurfaceResource,
 };
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::images::BundleImageCatalog;
 use arcweft_player_scene::input::InputController;
+use arcweft_presentation::appearance::{
+    PresentationColor, PresentationEnvironment, SystemPaletteSet,
+};
 use arcweft_render_wgpu::geometry::{PreparedFrame, RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_render_wgpu::view_effects::ViewTextureExtent;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
+use arcweft_runtime_driver::view_runtime::{
+    BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
+    BundleViewStyleNode, BundleViewStyleNodeKind,
+};
+use arcweft_view::ViewMountId;
+use arcweft_view::style::{
+    ViewColorValue, ViewLengthMilli, ViewPartName, ViewPropertyKind, ViewShadow,
+    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleBoundaryFacts, ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule,
+    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
+    ViewStyleSheetId, ViewStyleSourceId,
+};
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
 use wasm_bindgen::prelude::*;
@@ -20,13 +33,14 @@ use wasm_bindgen::prelude::*;
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 180;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const EXACT_STYLE_ID: &str = "style.seq06_13e1_inset_box_shadow_exact";
 
 /// Captures the seq06.13e.1 inset box-shadow exact fixture through the portable
 /// Arcweft player renderer in a browser WebGPU runtime.
 ///
 /// The returned object contains raw RGBA pixels, observe JSON, and adapter
 /// evidence. JavaScript owns PNG encoding and filesystem writes so the browser
-/// side never uses DOM/CSS screenshots, SVG filters, Canvas 2D, or CPU raster
+/// side never uses browser-layout screenshots, SVG filters, Canvas 2D, or CPU raster
 /// replacement as the visual source.
 #[wasm_bindgen]
 pub async fn capture_seq06_13e1_inset_box_shadow_exact_png() -> Result<JsValue, JsValue> {
@@ -179,10 +193,7 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
         physical_height: HEIGHT,
         scale_factor: 1.0,
     };
-    let presentation = BundlePresentationSnapshot {
-        surfaces: exact_surfaces()?,
-        ..BundlePresentationSnapshot::default()
-    };
+    let (presentation, style_program) = exact_presentation()?;
     let images = BundleImageCatalog::empty();
     let fx_definitions = FxDefinitions::default();
     let mut input = InputController::default();
@@ -192,6 +203,9 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
             presentation: &presentation,
             fx_definitions: &fx_definitions,
             images: &images,
+            style_program: Some(&style_program),
+            style_environment: &PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &SystemPaletteSet::ENGINE_DEFAULT,
             viewport,
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
@@ -226,23 +240,74 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
     Ok((prepared.frame, stats))
 }
 
-fn exact_surfaces() -> Result<Vec<ViewRuntimeSurface>, String> {
-    let style = exact_style_resource();
-    let program = exact_view_program();
-    let styled_surfaces = program.runtime_surfaces_with_style(Some(&style));
-    if !styled_surfaces.diagnostics.is_empty() {
-        let diagnostics = styled_surfaces
-            .diagnostics
-            .diagnostics
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(format!(
-            "resolve seq06.13e.1 exact ViewProgram surfaces: {diagnostics}"
-        ));
+fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram), String> {
+    const PARTS: [&str; 2] = ["rounded_inset_shadow_card", "mixed_outer_inset_shadow_card"];
+    let style_program = exact_style_program();
+    let view_program = exact_view_program();
+    let mount_id = ViewMountId::from_raw(1);
+    let handle = PresentationHandleId::try_new("handle.seq06_13e1_exact")
+        .map_err(|error| format!("construct exact View handle: {error}"))?;
+    let mut surfaces = view_program.runtime_surfaces();
+    for surface in &mut surfaces {
+        surface.public_id = format!("view_mount_{}.{}", mount_id.get(), surface.public_id);
+        surface.target = format!("view_mount_{}.{}", mount_id.get(), surface.target);
+        surface.view = surface
+            .view
+            .take()
+            .map(|view| format!("view_mount_{}.{}", mount_id.get(), view));
     }
-    Ok(styled_surfaces.controls)
+    let scope = ViewStyleScopeId::new(1);
+    let nodes = PARTS
+        .iter()
+        .enumerate()
+        .map(|(index, part)| BundleViewStyleNode {
+            path: BundleViewInstancePath::default(),
+            instruction: u32::try_from(index.saturating_mul(2)).unwrap_or(u32::MAX),
+            parent: None,
+            kind: BundleViewStyleNodeKind::Element {
+                element: ViewElementKind::Panel,
+                target: Some((*part).to_owned()),
+            },
+            part: Some((*part).to_owned()),
+            exported_part: None,
+            applications: vec![ViewStyleApplication::new(
+                ViewStyleApplicationTarget::named(exact_style_sheet_id()),
+                scope,
+                0,
+                u32::try_from(index).unwrap_or(u32::MAX),
+                ViewStyleBoundaryFacts::SAME_VIEW,
+            )],
+        })
+        .collect();
+    let mount = BundleViewMountOutput {
+        handle,
+        mount: mount_id,
+        view: "view.InsetShadowExactFixture".to_owned(),
+        path: BundleViewInstancePath::default(),
+        dialogue: None,
+        active_targets: PARTS.iter().map(|part| (*part).to_owned()).collect(),
+        active_images: Vec::new(),
+        paint: PARTS
+            .iter()
+            .map(|part| BundleViewPaintItem::Element {
+                target: (*part).to_owned(),
+            })
+            .collect(),
+        text: Vec::new(),
+        fx: Vec::new(),
+        style_nodes: nodes,
+    };
+    Ok((
+        BundlePresentationSnapshot {
+            surfaces,
+            view: BundleViewFrame {
+                mounts: vec![mount],
+                diagnostics: Vec::new(),
+            },
+            ..BundlePresentationSnapshot::default()
+        },
+        style_program,
+    ))
 }
 
 fn exact_view_program() -> ViewProgramResource {
@@ -251,6 +316,7 @@ fn exact_view_program() -> ViewProgramResource {
         definitions: vec![ViewDefinitionResource {
             public_id: "view.InsetShadowExactFixture".to_owned(),
             body: ViewInstructionSpan::new(0, 4),
+            styles: vec![ViewStyleApplicationTarget::named(exact_style_sheet_id())],
             parameters: Vec::new(),
             state_schema_hash: 0,
         }],
@@ -284,83 +350,155 @@ fn panel_part(public_id: &str) -> ViewProgramInstruction {
     ViewProgramInstruction::OpenElement {
         element: ViewElementKind::Panel,
         target: None,
-        style: None,
+        styles: Vec::new(),
         part: Some(public_id.to_owned()),
         key: None,
         source: None,
     }
 }
 
-fn exact_style_resource() -> ViewStyleResource {
-    ViewStyleResource {
-        style_program_id: "style.seq06_13e1_inset_box_shadow_exact".to_owned(),
-        css_sources: vec![StyleSourceIdentity {
-            public_id: "style.source.seq06_13e_inset_box_shadow_card_css".to_owned(),
-            syntax: StyleSyntax::Css,
-            identity: StyleSourceRef::File {
-                path: "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css".to_owned(),
-            },
-            content_digest: None,
-        }],
-        rules: vec![
+fn exact_style_program() -> ViewStyleProgram {
+    let source = ViewStyleSourceId::new(0);
+    let sheet = ViewStyleSheet::new(
+        exact_style_sheet_id(),
+        Vec::new(),
+        vec![
             surface_rule(
                 "rounded_inset_shadow_card",
                 [
-                    decl("background-color", style_rgba(36, 42, 54, 255)),
-                    decl("border-radius", ViewStyleValue::Text("14px".to_owned())),
                     decl(
-                        "box-shadow",
-                        ViewStyleValue::Text(
-                            "inset 0px 3px 12px 2px rgba(0,0,0,0.56)".to_owned(),
-                        ),
+                        ViewPropertyKind::BackgroundColor,
+                        style_rgba(36, 42, 54, 255),
+                        source,
+                    ),
+                    decl(ViewPropertyKind::BorderRadius, style_length(14_000), source),
+                    decl(
+                        ViewPropertyKind::BoxShadow,
+                        ViewSpecifiedValue::ShadowList {
+                            value: vec![shadow(
+                                0,
+                                3_000,
+                                12_000,
+                                2_000,
+                                PresentationColor::rgba(0, 0, 0, 143),
+                                true,
+                            )],
+                        },
+                        source,
                     ),
                 ],
+                0,
+                source,
             ),
             surface_rule(
                 "mixed_outer_inset_shadow_card",
                 [
-                    decl("background-color", style_rgba(255, 255, 255, 255)),
-                    decl("border-radius", ViewStyleValue::Text("16px".to_owned())),
                     decl(
-                        "box-shadow",
-                        ViewStyleValue::Text(
-                            "0px 10px 18px 2px rgba(0,0,0,0.38), inset 0px -2px 10px 1px rgba(255,255,255,0.35)"
-                                .to_owned(),
-                        ),
+                        ViewPropertyKind::BackgroundColor,
+                        style_rgba(255, 255, 255, 255),
+                        source,
+                    ),
+                    decl(ViewPropertyKind::BorderRadius, style_length(16_000), source),
+                    decl(
+                        ViewPropertyKind::BoxShadow,
+                        ViewSpecifiedValue::ShadowList {
+                            value: vec![
+                                shadow(
+                                    0,
+                                    10_000,
+                                    18_000,
+                                    2_000,
+                                    PresentationColor::rgba(0, 0, 0, 97),
+                                    false,
+                                ),
+                                shadow(
+                                    0,
+                                    -2_000,
+                                    10_000,
+                                    1_000,
+                                    PresentationColor::rgba(255, 255, 255, 89),
+                                    true,
+                                ),
+                            ],
+                        },
+                        source,
                     ),
                 ],
+                1,
+                source,
             ),
         ],
-        ..ViewStyleResource::default()
-    }
+    )
+    .expect("exact inset-shadow Style sheet is statically valid");
+    ViewStyleProgram::try_new(vec![sheet], Vec::new())
+        .expect("exact inset-shadow native Style program is statically valid")
 }
 
 fn surface_rule<const N: usize>(
     public_id: &str,
     declarations: [ViewStyleDeclaration; N],
+    source_order: u32,
+    source: ViewStyleSourceId,
 ) -> ViewStyleRule {
-    ViewStyleRule {
-        selector: ViewStyleSelector {
-            parts: vec![
-                ViewStyleSelectorPart::Element(ViewElementKind::Panel),
-                ViewStyleSelectorPart::Part(public_id.to_owned()),
-            ],
+    let sequence = ViewStyleSelectorSequence::new(
+        None,
+        Some(ViewElementKind::Panel),
+        Some(ViewPartName::try_new(public_id).expect("exact Style part ID is valid")),
+        Vec::new(),
+    )
+    .expect("element-and-part selector is non-empty");
+    ViewStyleRule::new(
+        ViewStyleSelector::new(vec![sequence]).expect("single selector sequence is valid"),
+        declarations.into(),
+        source_order,
+        source,
+    )
+    .expect("exact Style rule is statically valid")
+}
+
+fn decl(
+    property: ViewPropertyKind,
+    value: ViewSpecifiedValue,
+    source: ViewStyleSourceId,
+) -> ViewStyleDeclaration {
+    ViewStyleDeclaration::new(property, value, ViewStyleAssignOp::Replace, source)
+        .expect("exact Style declaration is statically valid")
+}
+
+fn exact_style_sheet_id() -> ViewStyleSheetId {
+    ViewStyleSheetId::try_new(EXACT_STYLE_ID).expect("exact Style sheet ID is valid")
+}
+
+fn style_length(value: i32) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Length {
+        value: ViewLengthMilli::new(value),
+    }
+}
+
+fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Color {
+        value: ViewColorValue::Literal {
+            color: PresentationColor::rgba(red, green, blue, alpha),
         },
-        declarations: declarations.into(),
-        source: None,
     }
 }
 
-fn decl(property: &str, value: ViewStyleValue) -> ViewStyleDeclaration {
-    ViewStyleDeclaration {
-        property: property.to_owned(),
-        value,
-        op: StyleAssignOp::Replace,
+const fn shadow(
+    x: i32,
+    y: i32,
+    blur: i32,
+    spread: i32,
+    color: PresentationColor,
+    inset: bool,
+) -> ViewShadow {
+    ViewShadow {
+        x: ViewLengthMilli::new(x),
+        y: ViewLengthMilli::new(y),
+        blur: ViewLengthMilli::new(blur),
+        spread: ViewLengthMilli::new(spread),
+        color: ViewColorValue::Literal { color },
+        inset,
     }
-}
-
-fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewStyleValue {
-    ViewStyleValue::Rgba(RgbaColor::rgba(red, green, blue, alpha))
 }
 
 fn create_readback_buffer(
@@ -484,9 +622,11 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
     let route_entries = [
-        "ViewProgramResource::runtime_surfaces_with_style",
-        "BundlePresentationSnapshot::surfaces",
-        "ViewRuntimeControlVisualStyle fill/radius/shadows",
+        "BundleViewMountOutput::style_nodes executed inventory",
+        "ViewStyleResolver current computed snapshot",
+        "ViewRuntimeNodeStyle::try_from_computed",
+        "BundlePresentationSnapshot mount-scoped surfaces",
+        "ViewRuntimeControlVisualStyle fill/radius/shadows projection",
         "PlayerFramePlanner surface lowering to ViewScene",
         "ViewRoundedRect primitive from player-owned surface resource",
         "ViewCompositingEffects::box_shadows",
@@ -514,7 +654,7 @@ fn observe_json(capture: &CaptureOutput) -> String {
     .unwrap();
     writeln!(
         &mut json,
-        "    \"style_source\": \"ViewStyleResource typed CSS-lowered surface rules\","
+        "    \"style_source\": \"canonical typed native Style program\","
     )
     .unwrap();
     writeln!(&mut json, "    \"rounded_rect_fill\": true,").unwrap();

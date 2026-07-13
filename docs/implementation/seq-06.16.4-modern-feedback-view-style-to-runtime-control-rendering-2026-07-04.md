@@ -1,5 +1,10 @@
 # Implementation note: seq06.16.4 modern feedback View style-to-runtime-control rendering
 
+> **Superseded Style-path premise (2026-07-13):** The flattened resource,
+> inline CSS bridge, and bundle-owned resolution described below were replaced
+> by the [native-only typed Style path](native-only-style-path-2026-07-13.md).
+> Runtime-control rendering evidence is retained only for provenance.
+
 ## Audit summary
 
 Current repo inspection showed the missing link is exactly at the product View/runtime-control boundary:

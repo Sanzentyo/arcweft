@@ -23,10 +23,10 @@ run with `arcw`.
 - [rich-text-profiled](rich-text-profiled/README.md) - project-shaped rich-text
   sample with launch profiles that select different `dialogue defaults`
   profiles for provenance-aware runtime-plan and LSP cascade checks.
-- [css-style-parity](css-style-parity/README.md) - image-free Web/native
-  renderer parity sample for CSS-like text and choice styling.
-- [css-layout-cascade-coverage](css-layout-cascade-coverage/README.md) -
-  retained View CSS layout/cascade coverage sample and fixture entry for seq06.12.
+- [native-style-parity](native-style-parity/README.md) - image-free Web/native
+  renderer parity sample for typed native Style and choice rendering.
+- [native-style-layout-coverage](native-style-layout-coverage/README.md) -
+  retained View layout and native Style application coverage sample.
 - [vertical-writing-style](vertical-writing-style/README.md) - an authored
   dialogue View and `pub style` sample with visible vertical-rl/vertical-lr,
   ruby, text-combine-upright, and loose/strict JLREQ output.

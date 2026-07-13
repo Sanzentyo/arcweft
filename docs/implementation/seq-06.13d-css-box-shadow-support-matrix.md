@@ -1,5 +1,10 @@
 # seq06.13d CSS Box-Shadow Support Matrix
 
+> **Superseded (2026-07-13):** The CSS/Takumi source and coverage contracts in
+> this matrix were removed by the [native-only typed Style path](native-only-style-path-2026-07-13.md).
+> The renderer's generic shadow substrate remains useful, but this table is
+> historical evidence rather than a current support matrix.
+
 | Area | Status | Evidence in package | Notes |
 | --- | --- | --- | --- |
 | Takumi typed source | Implemented | `ComputedStyle::box_shadow: Option<BoxShadows>` | No new Takumi extension required. |

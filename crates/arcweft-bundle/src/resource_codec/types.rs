@@ -27,6 +27,7 @@ pub struct DigestRef {
 /// Source range reference. Byte offsets are UTF-8 byte positions in the
 /// referenced normalized source, not character or line-column pairs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceRangeRef {
     pub source: PublicIdRef,
     pub start_byte: u32,
@@ -36,6 +37,7 @@ pub struct SourceRangeRef {
 /// Cross-section reference. The section kind code is raw so future optional
 /// section kinds can still participate in deterministic resource identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CrossSectionRef {
     pub section_kind: SectionKindCode,
     pub section_id: SectionId,

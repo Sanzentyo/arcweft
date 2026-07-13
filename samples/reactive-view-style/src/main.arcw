@@ -14,20 +14,67 @@ pub character designer {
 
 pub style reactive_panel {
     .dialogue_panel {
-        background = rgba(17, 18, 16, 242)
+        background-color = rgba(17, 18, 16, 242)
     }
     .dialogue_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
-    .reactive_panel {
-        font-family = text("Arcweft Demo")
+    .dialogue_content {
+        font-family = ["Arcweft Demo"]
         color = rgba(247, 251, 255, 255)
-        font-size = 27000milli
+        font-size = 27px
+    }
+}
+
+pub style reactive_interaction {
+    token font.view_stack: FontFamilyList = [
+        "Arcweft Demo",
+        "Yu Gothic",
+        "Hiragino Sans",
+        "Noto Sans JP",
+        system_font(.Ui),
+    ]
+    token color.canvas: Color = rgba(13, 18, 31, 255)
+    token color.button: Color = rgba(26, 45, 76, 255)
+    token color.button_hover: Color = rgba(43, 85, 132, 255)
+    token color.button_active: Color = rgba(17, 103, 117, 255)
+    token color.accent: Color = rgba(116, 230, 218, 255)
+    token metric.corner: Length = 8px
+
+    Panel {
+        background-color = token(color.canvas)
+        color = system_color(.SurfaceText)
+        font-family = token(font.view_stack)
+    }
+
+    Button {
+        background-color = token(color.button)
+        border-radius = token(metric.corner)
+        color = system_color(.AccentText)
+    }
+
+    Button:hover {
+        background-color = token(color.button_hover)
+        translate-y = -1px
+    }
+
+    Button:active {
+        background-color = token(color.button_active)
+        scale = 970milli
+    }
+
+    Button:focus-visible {
+        outline-color = token(color.accent)
+        outline-width = 3px
+    }
+
+    Button:disabled {
+        opacity = 520milli
     }
 }
 
 pub view ReactivePanel(dialogue: DialogueView) {
-    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {
         Text(dialogue.speaker)
             .x(85.6px)
             .y(480.8px)
@@ -38,11 +85,14 @@ pub view ReactivePanel(dialogue: DialogueView) {
             .y(518.8px)
             .width(1108.8px)
             .height(125.6px)
-            .style(@style.reactive_panel)
+            .part(dialogue_content)
         Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
             .part(dialogue_action)
             .on_click { dialogue.primary_action }
     }
+        .part(dialogue_panel)
+        .style(@style.reactive_panel)
+        .style(@style.reactive_interaction)
 }
 
 pub dialogue defaults {
@@ -61,8 +111,8 @@ entry game @entry.reactive_view_style {
 
 flow reactive_view_style {
     designer(id=@say.reactive_view_style.intro, voice=auto):
-        [font "Arcweft Demo"][color #64d2c8]Reactive View style sample[/color][/font] bundles Arcweft View style resources and CSS source identity together.[r]
-        Hover and press the choices below. The current player path renders choice interaction states through the shared renderer, while the product View sidecars record the intended Arcweft-style and CSS-style layers for the retained View path.[p]
+        [font "Arcweft Demo"][color #64d2c8]Reactive View style sample[/color][/font] bundles typed, sheet-owned native Style resources.[r]
+        Hover and press the choices below. The shared renderer consumes the same ordered native Style applications for each interaction state.[p]
 
     choice @choice.reactive_view_style {
         @choice.reactive_view_style.primary "Primary button: hover + press" -> @flow.primary

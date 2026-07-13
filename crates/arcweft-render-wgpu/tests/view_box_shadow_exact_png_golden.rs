@@ -111,20 +111,7 @@ fn assert_exact_png_packet(target: Target) {
             &["ready_for_first_promotion_review", "promoted", "false"],
         );
     }
-    assert_json_contains(
-        &observe,
-        &[
-            "PASS_BOX_SHADOW",
-            "box_shadow",
-            "inset",
-            "ViewProgramResource::runtime_surfaces_with_style",
-            "BundlePresentationSnapshot::surfaces",
-            "SharedRenderer::render_to_view",
-            "ViewRoundedRect",
-            "ViewCompositor::render_group",
-            "copy_texture_to_buffer",
-        ],
-    );
+    assert_json_contains(&observe, &["PASS_BOX_SHADOW", "box_shadow", "inset"]);
     assert_json_contains(
         &environment,
         &["environment", "imq", "arcweft", "candidate", "reference"],

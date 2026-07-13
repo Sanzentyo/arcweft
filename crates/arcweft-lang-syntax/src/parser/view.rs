@@ -18,7 +18,7 @@ use crate::pattern::parse_pattern;
 
 use super::headers::{normalize_decl_id_ref, parse_required_id_ref, simple_error};
 use super::recovery::ParseError;
-use super::style::{parse_inline_css_style, parse_inline_native_style};
+use super::style::parse_inline_native_style;
 use super::{parse_expr_lossy, split_top_level_binding};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -742,11 +742,7 @@ fn parse_view_modifiers(
     while index < lines.len() && is_view_modifier_line(lines[index]) {
         let line = lines[index];
         let error_count = errors.len();
-        let rejected_consumed = if line.trim().starts_with(".fx") {
-            collect_modifier_lines(&lines[index..]).max(1)
-        } else {
-            1
-        };
+        let rejected_consumed = collect_modifier_lines(&lines[index..]).max(1);
         if let Some((modifier, consumed)) = parse_view_modifier(
             &lines[index..],
             base,
@@ -765,7 +761,7 @@ fn parse_view_modifiers(
                 errors.push(simple_error(
                     base,
                     line.len(),
-                    &format!("unsupported View modifier `{line}`"),
+                    "unsupported View modifier",
                     ".label(\"Text\") | .on_click { action.invoke(@action:.name) } | .style(@style:.name)",
                 ));
             }
@@ -905,15 +901,10 @@ fn parse_view_modifier(
         }
         return Some((ViewModifier::Style(ViewStyleModifier::named(reference)), 1));
     }
-    if line.starts_with(".style(.Css)") {
-        let (source, consumed, range) =
-            collect_inline_style_block(lines, ".style(.Css)", source_map)?;
-        return Some((
-            ViewModifier::style_inline(parse_inline_css_style(&source, range)),
-            consumed,
-        ));
-    }
-    if line.starts_with(".style") && line.contains('{') {
+    if line
+        .split_once('{')
+        .is_some_and(|(head, _)| head.trim() == ".style")
+    {
         let (source, consumed, range) = collect_inline_style_block(lines, ".style", source_map)?;
         let patch = parse_inline_native_style(&source, range, errors);
         return Some((ViewModifier::style_inline(patch), consumed));

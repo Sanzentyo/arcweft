@@ -851,8 +851,8 @@ mod tests {
         ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
     };
     use arcweft_bundle::resource_codec::{
-        ViewRuntimeControlStyle, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
-        ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+        ViewRuntimeControlVisualStyle, ViewRuntimeTextControlBounds,
+        ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
     };
 
     fn handle(value: &str) -> PresentationHandleId {
@@ -902,7 +902,7 @@ mod tests {
             bounds: ViewRuntimeTextControlBounds::from_px(0, 0, 100, 24),
             label: None,
             handlers: ViewRuntimeTextControlHandlers::default(),
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }
     }
 

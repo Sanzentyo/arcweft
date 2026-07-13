@@ -177,7 +177,7 @@ fn inset_shadow_plan_preserves_elliptical_radii() {
 }
 
 #[test]
-fn oversized_mixed_corner_radii_are_css_normalized() {
+fn oversized_mixed_corner_radii_are_normalized_to_bounds() {
     let radii = ViewBoxShadowRadii::from_corners(
         ViewBoxShadowCornerRadius::new(90.0, 60.0),
         ViewBoxShadowCornerRadius::new(90.0, 60.0),

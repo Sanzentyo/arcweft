@@ -9,20 +9,20 @@ import { chromium } from "playwright";
 // Drives deterministic prepared-text checkpoints through the browser player.
 
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
-const sample = process.env.ARW_TEXT_PARITY_SAMPLE ?? "css-style-parity";
+const sample = process.env.ARW_TEXT_PARITY_SAMPLE ?? "native-style-parity";
 const outputDir = process.env.ARW_TEXT_PARITY_DIR ??
-  normalize(join(root, "..", "target", "css-style-parity"));
+  normalize(join(root, "..", "target", "native-style-parity"));
 const checkpoints = (process.env.ARW_TEXT_PARITY_CHECKPOINTS ?? "default,compact")
   .split(",")
   .map((name) => name.trim())
   .filter(Boolean);
 const bundleUrl = process.env.ARW_TEXT_PARITY_BUNDLE_URL ??
-  "./local/css-style-parity.awfb";
+  "./local/native-style-parity.awfb";
 const fontUrl = process.env.ARW_TEXT_PARITY_FONT_URL ??
   "./assets/arcweft-demo.ttf";
 const additionalFontUrls = (
   process.env.ARW_TEXT_PARITY_ADDITIONAL_FONT_URLS ??
-    "./assets/noto-sans-jp-css-style-parity.ttf"
+    "./assets/noto-sans-jp-native-style-parity.ttf"
 )
   .split(",")
   .map((url) => url.trim())

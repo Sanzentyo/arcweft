@@ -12,9 +12,9 @@ use crate::{
         common::TextRange,
         ids::EntityRef,
         style::{
-            StyleAssignOp, StyleCombinator, StyleCssSource, StyleDecl, StyleDeclBody,
-            StyleDeclarationDecl, StyleExpr, StyleName, StylePatch, StylePredicate, StyleRuleDecl,
-            StyleSelector, StyleSelectorSequence, StyleSheet, StyleSyntax, StyleTokenDecl,
+            StyleAssignOp, StyleCombinator, StyleDecl, StyleDeclarationDecl, StyleExpr, StyleName,
+            StylePatch, StylePredicate, StyleRuleDecl, StyleSelector, StyleSelectorSequence,
+            StyleSheet, StyleTokenDecl,
         },
     },
     expr::parse_expr,
@@ -41,7 +41,7 @@ impl Parser<'_> {
         let (visibility, rest) = parse_visibility_prefix(head);
         let rest = rest.trim_start().strip_prefix("style")?.trim_start();
         let id_base = start_line.start + slice_offset(head, rest);
-        let (id, syntax, trailing) = parse_style_decl_head(
+        let (id, trailing) = parse_style_decl_head(
             rest,
             id_base,
             self.current_module_path.as_deref(),
@@ -51,9 +51,9 @@ impl Parser<'_> {
             self.push_error(
                 TextRange::new(id.range().end(), start_line.end),
                 "unexpected text after style declaration head",
-                ["{", ": .Css {"],
-                Some(trailing.trim()),
-                ["move properties into the style body or place `: .Css` before the body"],
+                ["{"],
+                None,
+                ["move properties into the native Style body"],
             );
         }
 
@@ -63,21 +63,12 @@ impl Parser<'_> {
             .map_or(TextRange::new(start_line.end, start_line.end), |range| {
                 TextRange::new(range.start, range.end)
             });
-        let body = match syntax {
-            StyleSyntax::Arcweft => StyleDeclBody::Arcweft(parse_native_sheet(
-                &block.body,
-                body_range,
-                &mut self.errors,
-            )),
-            StyleSyntax::Css => {
-                StyleDeclBody::Css(StyleCssSource::new(block.body.into_owned(), body_range))
-            }
-        };
+        let sheet = parse_native_sheet(&block.body, body_range, &mut self.errors);
         Some(StyleDecl::new(
             attrs,
             visibility,
             id,
-            body,
+            sheet,
             TextRange::new(start_line.start, block.end),
         ))
     }
@@ -92,12 +83,7 @@ pub(crate) fn parse_inline_native_style(
 ) -> StylePatch {
     let mut parser = NativeStyleParser::new(source, range.start(), errors);
     let declarations = parser.parse_declarations(range.end(), StyleDeclarationContext::InlinePatch);
-    StylePatch::arcweft(declarations, range)
-}
-
-/// Preserves an inline CSS body without native expression parsing.
-pub(crate) fn parse_inline_css_style(source: &str, range: TextRange) -> StylePatch {
-    StylePatch::css(source, range)
+    StylePatch::new(declarations, range)
 }
 
 fn parse_native_sheet(source: &str, range: TextRange, errors: &mut Vec<ParseError>) -> StyleSheet {
@@ -582,7 +568,7 @@ fn parse_style_decl_head(
     base: usize,
     module_path: Option<&str>,
     errors: &mut Vec<ParseError>,
-) -> Option<(EntityRef, StyleSyntax, String)> {
+) -> Option<(EntityRef, String)> {
     let input = input.trim_start();
     let (id, tail) = if input.starts_with('@') {
         let (parsed, rest) =
@@ -640,8 +626,7 @@ fn parse_style_decl_head(
             tail,
         )
     };
-    let (syntax, tail) = parse_style_syntax_tail(&tail, id.range().end(), errors)?;
-    Some((id, syntax, tail))
+    Some((id, tail))
 }
 
 fn normalize_style_decl_colon(entity: EntityRef, rest: &str) -> (EntityRef, String) {
@@ -689,34 +674,6 @@ fn parse_style_name_and_tail(input: &str) -> (Option<String>, String) {
         tail = next_tail;
     }
     (Some(name), tail.trim().to_owned())
-}
-
-fn parse_style_syntax_tail(
-    tail: &str,
-    base: usize,
-    errors: &mut Vec<ParseError>,
-) -> Option<(StyleSyntax, String)> {
-    let tail = tail.trim_start();
-    if tail.is_empty() {
-        return Some((StyleSyntax::Arcweft, String::new()));
-    }
-    let Some(rest) = tail.strip_prefix(':') else {
-        return Some((StyleSyntax::Arcweft, tail.to_owned()));
-    };
-    let syntax = rest.trim_start();
-    if let Some(trailing) = syntax.strip_prefix(".Css") {
-        Some((StyleSyntax::Css, trailing.to_owned()))
-    } else if let Some(trailing) = syntax.strip_prefix(".Arcweft") {
-        Some((StyleSyntax::Arcweft, trailing.to_owned()))
-    } else {
-        errors.push(simple_error(
-            base,
-            tail.len(),
-            "style declaration syntax must be `.Css` or `.Arcweft`",
-            ": .Css",
-        ));
-        None
-    }
 }
 
 fn statement_end(source: &str, start: usize) -> usize {

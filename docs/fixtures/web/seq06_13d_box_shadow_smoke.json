@@ -3,24 +3,23 @@
   "fixture": "seq06.13d-box-shadow-card",
   "date": "2026-07-03",
   "route": [
-    "author CSS",
-    "Takumi StyleSheet parse/cascade",
-    "ComputedStyle::box_shadow typed value",
-    "arcweft-takumi-adapter box_shadow_list_from_takumi",
+    "author native Style",
+    "checked sheet-owned ViewStyleProgram",
+    "computed box-shadow typed value",
     "ViewCompositingEffects::box_shadows",
     "ViewCompositor::render_group",
     "PASS_BOX_SHADOW before child paint"
   ],
   "expectations": {
     "outer_shadow_count": 2,
-    "paint_order": "CSS list order retained in ViewBoxShadowList; ViewBoxShadowPassPlan paints indices [1, 0] back-to-front",
+    "paint_order": "authored list order retained in ViewBoxShadowList; ViewBoxShadowPassPlan paints indices [1, 0] back-to-front",
     "negative_spread": "second shadow keeps spread_radius_px = -2.0",
     "drop_shadow_probe": "filter: drop-shadow(...) populates ViewFilter::DropShadow and not ViewBoxShadowList",
     "inset_probe": "ViewBoxShadowKind::Inset lowers then ViewBoxShadowPlanError::InsetUnsupported is emitted"
   },
   "forbidden_paths": [
     "DOM clipping",
-    "browser CSS shadow rendering",
+    "browser DOM shadow rendering",
     "canvas fallback",
     "SVG filter",
     "CPU raster",

@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn corner_radii_clamp_to_rect_like_css_border_radius() {
+    fn corner_radii_clamp_to_rect_bounds() {
         let radii = ViewCornerRadii::from_corners(
             ViewCornerRadius::new(80.0, 40.0),
             ViewCornerRadius::new(80.0, 20.0),

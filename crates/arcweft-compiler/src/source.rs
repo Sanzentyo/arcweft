@@ -5,6 +5,7 @@ use arcweft_lang_syntax::parser::parse_source;
 use crate::error::{CompileSourceError, ValidateHirError};
 use crate::hir::validate_hir_with_env;
 use crate::lower::lower_source_runtime_plan_with_typecheck_stats_and_options;
+use crate::style::lower_source_view_styles;
 use crate::types::CompiledSource;
 
 /// Compiles an Arcweft source string with the standard type-checking environment.
@@ -27,6 +28,7 @@ pub fn compile_source_with_env(
         ValidateHirError::Readiness(errors) => CompileSourceError::Readiness(errors),
         ValidateHirError::Type(errors) => CompileSourceError::Type(errors),
     })?;
+    let style = lower_source_view_styles(&hir, &typecheck_report.style_catalog, source)?;
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck_report,
@@ -38,6 +40,7 @@ pub fn compile_source_with_env(
         display: report.line_display_catalog,
         hir,
         typecheck_report,
+        style,
         runtime_plan_stats: report.stats,
     })
 }

@@ -1026,7 +1026,7 @@ mod tests {
     }
 
     #[test]
-    fn filter_visual_outset_uses_css_blur_and_shadow_extents() {
+    fn filter_visual_outset_uses_blur_and_shadow_extents() {
         let filters = ViewFilterList::new([
             ViewFilter::Blur { radius_px: 6.0 },
             ViewFilter::DropShadow {

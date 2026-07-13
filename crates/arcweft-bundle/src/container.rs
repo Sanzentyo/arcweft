@@ -846,6 +846,10 @@ impl SectionInput {
         self.kind
     }
 
+    pub(crate) const fn content_digest(&self) -> BundleDigest {
+        self.content_digest
+    }
+
     pub fn embedded_unknown_optional(
         id: SectionId,
         kind: SectionKindCode,

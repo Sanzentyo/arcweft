@@ -767,7 +767,7 @@ mod tests {
         ViewTextVerticalNavigationPolicy,
     };
     use arcweft_bundle::resource_codec::{
-        ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlStyle,
+        ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle,
         ViewRuntimeScrollRegionBounds, ViewRuntimeTextControlBounds,
         ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
     };
@@ -1268,7 +1268,7 @@ mod tests {
             bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
             label: None,
             handlers: ViewRuntimeTextControlHandlers::default(),
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }
     }
 
@@ -1282,7 +1282,7 @@ mod tests {
             enabled: true,
             bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
             action: ViewRuntimeActionButtonAction::Noop,
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }
     }
 
@@ -1312,7 +1312,7 @@ mod tests {
             bounds: arcweft_bundle::resource_codec::ViewRuntimeSurfaceBounds::from_px(
                 8, 12, 96, 48,
             ),
-            style: ViewRuntimeControlStyle::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
         }
     }
 

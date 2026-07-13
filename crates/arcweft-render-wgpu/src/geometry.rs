@@ -42,8 +42,7 @@ pub use control_style::{
     PreparedControlBackdrop, PreparedControlFilter, PreparedControlPaint, PreparedControlShadow,
     RenderControlBorderStyle, RenderControlCornerFrameStyle, RenderControlFilter,
     RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
-    RenderControlShadowKind, RenderControlStyle, RenderControlVisualState,
-    RenderControlVisualStyle, RuntimeControlBackdropSamplePolicy,
+    RenderControlShadowKind, RenderControlVisualStyle, RuntimeControlBackdropSamplePolicy,
 };
 pub use focus_navigation::{
     FocusNavigationDebug, FocusNavigationDebugCandidate, PreparedFocusGraph, PreparedFocusGroup,
@@ -1066,12 +1065,26 @@ fn mapped_text_style(
 ) -> Result<ResolvedTextStyle, FramePlanError> {
     let font_size = style.font_size_milli().to_f32().unwrap_or(f32::MAX) / 1_000.0 * scale;
     let line_height = style.line_height_milli().to_f32().unwrap_or(f32::MAX) / 1_000.0 * scale;
+    let letter_spacing = scaled_spacing_milli(style.letter_spacing_milli(), scale);
+    let word_spacing = scaled_spacing_milli(style.word_spacing_milli(), scale);
     style
         .with_font_metrics(
             prepared_text::pixels_to_milli("font_size", font_size)?,
             prepared_text::pixels_to_milli("line_height", line_height)?,
         )
+        .map(|style| style.with_spacing(letter_spacing, word_spacing))
         .map_err(FramePlanError::from)
+}
+
+fn scaled_spacing_milli(value: i32, scale: f32) -> i32 {
+    let scaled = f64::from(value) * f64::from(scale);
+    scaled.round().to_i32().unwrap_or_else(|| {
+        if scaled.is_sign_negative() {
+            i32::MIN
+        } else {
+            i32::MAX
+        }
+    })
 }
 
 fn intersect_layout_rect(left: LayoutRect, right: LayoutRect) -> LayoutRect {
@@ -1459,7 +1472,7 @@ fn build_runtime_controls(
             .enumerate()
             .map(|(index, control)| RuntimeControlPlanItem::TextInput {
                 index,
-                depth_milli: text_controls::text_input_depth_milli(scene, control),
+                depth_milli: text_controls::text_input_depth_milli(control),
             }),
     );
     items.extend(
@@ -1469,7 +1482,7 @@ fn build_runtime_controls(
             .enumerate()
             .map(|(index, button)| RuntimeControlPlanItem::ActionButton {
                 index,
-                depth_milli: action_buttons::action_button_depth_milli(scene, button),
+                depth_milli: action_buttons::action_button_depth_milli(button),
             }),
     );
     items.sort_by_key(|item| (item.depth_milli(), item.kind_order(), item.source_order()));
@@ -1519,7 +1532,6 @@ fn build_runtime_controls(
                 button.bounds = bounds;
                 button.viewport_clip = viewport_clip;
                 let (button, paint) = action_buttons::build_action_button(
-                    scene,
                     &ids.action_button,
                     &button,
                     action_buttons::ActionButtonBuildOutput {

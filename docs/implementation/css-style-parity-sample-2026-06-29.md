@@ -1,5 +1,7 @@
 # CSS Style Parity Sample - 2026-06-29
 
+> **Superseded (2026-07-13):** Arcweft now has a native-only typed Style path. The CSS authoring, Takumi adapter, and CSS-named sample/tooling paths described below were removed; the remaining text is retained only as historical implementation evidence.
+
 ## Scope
 
 Added an image-free Web/native parity sample for CSS-like Arcweft styling. The

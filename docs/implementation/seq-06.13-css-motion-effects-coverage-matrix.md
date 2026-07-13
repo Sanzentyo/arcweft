@@ -1,5 +1,10 @@
 # seq06.13 / seq06.13a Implemented Coverage Matrix
 
+> **Superseded Style-path premise (2026-07-13):** CSS/Takumi coverage and the
+> legacy Style value contracts below were removed by the
+> [native-only typed Style path](native-only-style-path-2026-07-13.md). Generic
+> native renderer algorithms remain useful; this is not a current support matrix.
+
 | Area | Status | Evidence in package | Notes |
 | --- | --- | --- | --- |
 | Transitionable property set | Implemented | `arcweft-view/src/motion.rs`, `style.rs` patch | Paint-only properties. Layout properties are excluded. |
