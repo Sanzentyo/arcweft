@@ -39,6 +39,7 @@ mod state;
 #[cfg(test)]
 mod tests;
 mod text_edit;
+pub mod wheel;
 
 const POINTER_ACTIVATION_DISTANCE_SQUARED: f32 = 64.0;
 

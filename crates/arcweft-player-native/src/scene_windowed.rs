@@ -22,6 +22,9 @@ use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
+use arcweft_player_scene::input::wheel::{
+    WheelDelta, WheelNormalizationError, WheelNormalizationPolicy,
+};
 use arcweft_player_scene::input::{
     DialogueProgress, InputController, InputControllerSnapshot, InputControllerSnapshotError,
     InputOutcome,
@@ -198,6 +201,8 @@ enum NativeSceneWindowError {
     NativePlayerSessionSaveDecode { message: String },
     #[error("player input snapshot restore failed: {0}")]
     InputSnapshot(#[from] InputControllerSnapshotError),
+    #[error("platform wheel input normalization failed: {0}")]
+    WheelNormalization(#[from] WheelNormalizationError),
     #[error("windowed runtime owner failed: {0}")]
     RuntimeOwner(#[from] WindowedRuntimeOwnerError),
     #[error("runtime clock failed: {0}")]
@@ -831,13 +836,18 @@ impl NativeSceneState {
         let Some(frame) = self.prepared.clone() else {
             return Ok(());
         };
-        let delta_y = match delta {
-            MouseScrollDelta::LineDelta(_, y) => y * 32.0,
-            MouseScrollDelta::PixelDelta(position) => (position.y / self.window.scale_factor())
-                .to_f32()
-                .unwrap_or(0.0),
+        let delta = match delta {
+            MouseScrollDelta::LineDelta(x, y) => WheelDelta::lines(f64::from(x), f64::from(y)),
+            MouseScrollDelta::PixelDelta(position) => WheelDelta::from_physical_pixels(
+                position.x,
+                position.y,
+                self.window.scale_factor(),
+            )?,
         };
-        let outcome = self.input.wheel(&frame, delta_y);
+        let delta = WheelNormalizationPolicy::default().normalize(delta)?;
+        let outcome = self
+            .input
+            .precision_scroll(&frame, delta.horizontal(), delta.vertical());
         self.apply_outcome(outcome)?;
         let prepared = self.prepare_frame()?;
         self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;

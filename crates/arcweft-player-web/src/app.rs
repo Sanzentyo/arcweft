@@ -14,6 +14,9 @@ use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
+use arcweft_player_scene::input::wheel::{
+    WheelDelta, WheelNormalizationError, WheelNormalizationPolicy,
+};
 use arcweft_player_scene::input::{DialogueProgress, InputController, InputOutcome};
 use arcweft_presentation::clipboard::TextClipboardRequest;
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
@@ -76,6 +79,8 @@ enum WebPlayerError {
     TextInput(String),
     #[error("player text editor failed: {0}")]
     TextEditor(String),
+    #[error("platform wheel input normalization failed: {0}")]
+    WheelNormalization(#[from] WheelNormalizationError),
 }
 
 struct ReadyGpu {
@@ -434,14 +439,29 @@ impl ApplicationHandler for BrowserApp {
                 window.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let delta_y = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y * 32.0,
-                    MouseScrollDelta::PixelDelta(position) => {
-                        (position.y / window.scale_factor()) as f32
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => {
+                        Ok(WheelDelta::lines(f64::from(x), f64::from(y)))
+                    }
+                    MouseScrollDelta::PixelDelta(position) => WheelDelta::from_physical_pixels(
+                        position.x,
+                        position.y,
+                        window.scale_factor(),
+                    ),
+                }
+                .and_then(|delta| WheelNormalizationPolicy::default().normalize(delta));
+                let delta = match delta {
+                    Ok(delta) => delta,
+                    Err(error) => {
+                        set_fatal(&mut state, error.into());
+                        return;
                     }
                 };
                 if let Some(frame) = state.prepared.clone() {
-                    let outcome = state.input.wheel(&frame, delta_y);
+                    let outcome =
+                        state
+                            .input
+                            .precision_scroll(&frame, delta.horizontal(), delta.vertical());
                     let clipboard_requests = apply_outcome(&mut state, outcome);
                     schedule_clipboard_requests(Rc::clone(&self.state), clipboard_requests);
                 }

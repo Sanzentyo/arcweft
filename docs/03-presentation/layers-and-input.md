@@ -35,6 +35,15 @@ tick N+1 input:
 
 raw input だけを記録すると View layout 差で replay が壊れる可能性があるため、replay には原則として routed event を保存する。必要なら raw input と `routing_hash` も保存する。
 
+### Wheel input units
+
+Native と Web の wheel 入力は host ごとに係数を持たない。platform の
+line delta または physical-pixel delta を `arcweft-player-scene` の共有境界へ
+渡し、そこで logical pixel へ正規化する。line delta は Arcweft の既定 policy
+として 1 line = 32 logical pixels、physical pixel は window scale factor で
+除算する。非有限値、0 以下の scale factor、logical `f32` 範囲外の値は入力
+エラーであり、0、clamp、saturating cast へ黙示変換しない。
+
 ## LayerTree
 
 ```rust
