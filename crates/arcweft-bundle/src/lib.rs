@@ -384,6 +384,8 @@ pub enum BundleCodecError {
     DecodeAwfb { message: String },
     #[error("product AWFB is missing its canonical AWBC executable payload")]
     MissingProductAwbcExecutable,
+    #[error("product AWFB manifest is missing its required executable payload discriminator")]
+    MissingProductExecutablePayload,
     #[error("product AWFB contains malformed AWBC executable payload: {message}")]
     MalformedProductAwbcExecutable { message: String },
     #[error("product AWFB structured bytecode payload tag {encoding_tag} is no longer executable")]

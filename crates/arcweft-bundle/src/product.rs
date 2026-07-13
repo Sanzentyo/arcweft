@@ -3,6 +3,7 @@ use crate::container::{
     ContentResidency, ExternalSectionPayload, ReadBudget, SectionId, SectionInput, encode_bundle,
 };
 use crate::fx_definitions::FxDefinitions;
+use crate::product_awbc::ProductExecutablePayload;
 use crate::resource_codec::runtime::{
     AdapterRequirementsSection as CompactAdapterRequirementsSection,
     EntrypointsSection as CompactEntrypointsSection,
@@ -22,7 +23,7 @@ use crate::{
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
 const LEGACY_BYTECODE_SECTION_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
@@ -33,22 +34,39 @@ const LEGACY_PRODUCT_BYTECODE_COMPACT_SIDECAR_TAG: u32 = 2;
 struct ProductManifest {
     schema_version: u32,
     bundle_kind: BundleKind,
-    #[serde(default = "default_executable_payload")]
-    executable_payload: String,
+    executable_payload: ProductExecutablePayload,
     manifest: BundleManifest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<AgentArtifactManifest>,
 }
 
-fn default_executable_payload() -> String {
-    crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned()
+#[derive(Debug, Deserialize)]
+struct ProductExecutablePayloadProbe {
+    #[serde(default)]
+    executable_payload: ProductExecutablePayloadField,
+}
+
+#[derive(Debug, Default)]
+enum ProductExecutablePayloadField {
+    #[default]
+    Missing,
+    Present(serde_json::Value),
+}
+
+impl<'de> Deserialize<'de> for ProductExecutablePayloadField {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        serde_json::Value::deserialize(deserializer).map(Self::Present)
+    }
 }
 
 pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCodecError> {
     let product_manifest = ProductManifest {
         schema_version: bundle.schema_version,
         bundle_kind: bundle.bundle_kind,
-        executable_payload: crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned(),
+        executable_payload: ProductExecutablePayload::AwbcV1,
         manifest: bundle.manifest.clone(),
         agent: bundle.agent.clone(),
     };
@@ -129,7 +147,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
             message: error.to_string(),
         }
     })?;
-    let product_manifest = decode_json::<ProductManifest>(view.manifest())?;
+    let product_manifest = decode_product_manifest(view.manifest())?;
     if product_manifest.schema_version != ARCWEFT_BUNDLE_SCHEMA_VERSION {
         return Err(BundleCodecError::UnsupportedSchema {
             actual: product_manifest.schema_version,
@@ -141,14 +159,6 @@ pub(crate) fn from_awfb_slice_with_external_sections(
             message: "container kind does not match product manifest bundle kind".to_owned(),
         });
     }
-    if product_manifest.executable_payload
-        != crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1
-    {
-        return Err(BundleCodecError::UnsupportedProductExecutablePayload {
-            actual: product_manifest.executable_payload,
-        });
-    }
-
     let product_awbc = required_product_awbc_bytes(&view, external_sections)
         .and_then(|bytes| reject_structured_or_decode_awbc(&bytes))?;
     let runtime_types = required_runtime_types(&view, external_sections)?;
@@ -673,6 +683,24 @@ where
     })
 }
 
+fn decode_product_manifest(bytes: &[u8]) -> Result<ProductManifest, BundleCodecError> {
+    let probe = decode_json::<ProductExecutablePayloadProbe>(bytes)?;
+    match probe.executable_payload {
+        ProductExecutablePayloadField::Missing => {
+            return Err(BundleCodecError::MissingProductExecutablePayload);
+        }
+        ProductExecutablePayloadField::Present(serde_json::Value::String(wire_name))
+            if ProductExecutablePayload::from_wire_name(&wire_name).is_none() =>
+        {
+            return Err(BundleCodecError::UnsupportedProductExecutablePayload {
+                actual: wire_name,
+            });
+        }
+        ProductExecutablePayloadField::Present(_) => {}
+    }
+    decode_json(bytes)
+}
+
 fn container_kind(kind: BundleKind) -> ContainerBundleKind {
     match kind {
         BundleKind::Game => ContainerBundleKind::Program,
@@ -691,9 +719,9 @@ fn section_id(kind: BundleSectionKind) -> SectionId {
 mod tests {
     use super::{
         AWFB_SECTION_SCHEMA_VERSION, CompactAdapterRequirementsSection, CompactEntrypointsSection,
-        CompactRuntimeTypesSection, ProductManifest, container_kind, encode_json,
-        optional_asset_catalog_section, optional_audio_graph_section, optional_section,
-        required_section, section_id,
+        CompactRuntimeTypesSection, ProductExecutablePayload, ProductManifest, container_kind,
+        encode_json, optional_asset_catalog_section, optional_audio_graph_section,
+        optional_section, required_section, section_id,
     };
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
@@ -785,6 +813,108 @@ mod tests {
     }
 
     #[test]
+    fn awfb_product_manifest_discriminator_round_trips_canonically() {
+        let bundle = empty_bundle();
+        let bytes = bundle
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("AWFB encodes");
+        let view = BundleView::parse(&bytes, ReadBudget::default()).expect("AWFB parses");
+        let manifest = serde_json::from_slice::<serde_json::Value>(view.manifest())
+            .expect("product manifest is JSON");
+
+        assert_eq!(
+            manifest
+                .get("executable_payload")
+                .and_then(|value| value.as_str()),
+            Some(ProductExecutablePayload::AwbcV1.wire_name())
+        );
+
+        let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
+            .expect("canonical product manifest decodes");
+        assert_eq!(decoded, bundle);
+        assert_eq!(
+            decoded
+                .to_format_bytes(BundleFormat::Awfb)
+                .expect("decoded AWFB re-encodes"),
+            bytes,
+            "canonical product bytes must be deterministic after round-trip"
+        );
+    }
+
+    #[test]
+    fn awfb_product_rejects_missing_executable_payload_discriminator() {
+        let bundle = empty_bundle();
+        let mut manifest = product_manifest_json(&bundle);
+        manifest
+            .as_object_mut()
+            .expect("product manifest is an object")
+            .remove("executable_payload");
+        let (bytes, payload) = awfb_with_external_bytecode_and_manifest(&bundle, &manifest);
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("missing executable payload discriminator is rejected");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::MissingProductExecutablePayload
+        ));
+    }
+
+    #[test]
+    fn awfb_product_rejects_null_executable_payload_as_malformed() {
+        let bundle = empty_bundle();
+        let mut manifest = product_manifest_json(&bundle);
+        manifest["executable_payload"] = serde_json::Value::Null;
+        let (bytes, payload) = awfb_with_external_bytecode_and_manifest(&bundle, &manifest);
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("null executable payload discriminator is malformed");
+
+        assert!(matches!(error, BundleCodecError::DecodeAwfb { .. }));
+    }
+
+    #[test]
+    fn awfb_product_rejects_duplicate_executable_payload_as_malformed() {
+        let bundle = empty_bundle();
+        let manifest = String::from_utf8(
+            encode_json(&product_manifest(&bundle)).expect("canonical manifest encodes"),
+        )
+        .expect("canonical manifest is UTF-8");
+        let manifest_body = manifest
+            .strip_prefix('{')
+            .expect("canonical manifest is a JSON object");
+        let manifest = format!(
+            "{{\"executable_payload\":\"{}\",{}",
+            ProductExecutablePayload::AwbcV1.wire_name(),
+            manifest_body
+        );
+        let (bytes, payload) =
+            awfb_with_external_bytecode_and_manifest_bytes(&bundle, manifest.as_bytes());
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("duplicate executable payload discriminator is malformed");
+
+        assert!(matches!(error, BundleCodecError::DecodeAwfb { .. }));
+    }
+
+    #[test]
+    fn awfb_product_rejects_wrong_executable_payload_discriminator() {
+        let bundle = empty_bundle();
+        let mut manifest = product_manifest_json(&bundle);
+        manifest["executable_payload"] = serde_json::Value::String("structured_json_v0".to_owned());
+        let (bytes, payload) = awfb_with_external_bytecode_and_manifest(&bundle, &manifest);
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("wrong executable payload discriminator is rejected");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::UnsupportedProductExecutablePayload { actual }
+                if actual == "structured_json_v0"
+        ));
+    }
+
+    #[test]
     fn awfb_product_round_trips_first_class_fx_definitions_section() {
         let definition = FxDefinition::new(
             FxId::try_new("test", "fx.pulse").expect("valid Fx ID"),
@@ -839,18 +969,39 @@ mod tests {
         awfb_with_external_program_bytecode(bundle, bytecode_bytes)
     }
 
+    fn awfb_with_external_bytecode_and_manifest(
+        bundle: &ArcweftBundle,
+        manifest: &serde_json::Value,
+    ) -> (Vec<u8>, ExternalSectionPayload) {
+        let manifest = serde_json::to_vec(manifest).expect("manifest encodes");
+        awfb_with_external_bytecode_and_manifest_bytes(bundle, &manifest)
+    }
+
+    fn awfb_with_external_bytecode_and_manifest_bytes(
+        bundle: &ArcweftBundle,
+        manifest: &[u8],
+    ) -> (Vec<u8>, ExternalSectionPayload) {
+        let bytecode_bytes = bundle
+            .product_awbc_program()
+            .expect("product AWBC exists")
+            .encode_canonical()
+            .expect("AWBC encodes");
+        awfb_with_external_program_bytecode_and_manifest(bundle, bytecode_bytes, manifest)
+    }
+
     fn awfb_with_external_program_bytecode(
         bundle: &ArcweftBundle,
         bytecode_bytes: Vec<u8>,
     ) -> (Vec<u8>, ExternalSectionPayload) {
-        let product_manifest = ProductManifest {
-            schema_version: bundle.schema_version,
-            bundle_kind: bundle.bundle_kind,
-            executable_payload: crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned(),
-            manifest: bundle.manifest.clone(),
-            agent: bundle.agent.clone(),
-        };
-        let manifest = encode_json(&product_manifest).expect("manifest encodes");
+        let manifest = encode_json(&product_manifest(bundle)).expect("manifest encodes");
+        awfb_with_external_program_bytecode_and_manifest(bundle, bytecode_bytes, &manifest)
+    }
+
+    fn awfb_with_external_program_bytecode_and_manifest(
+        bundle: &ArcweftBundle,
+        bytecode_bytes: Vec<u8>,
+        manifest: &[u8],
+    ) -> (Vec<u8>, ExternalSectionPayload) {
         let bytecode_id = section_id(BundleSectionKind::ProgramBytecode);
         let sections = vec![
             SectionInput::external_ref(
@@ -903,12 +1054,26 @@ mod tests {
         .chain(optional_asset_catalog_section(bundle).expect("asset catalog encodes"))
         .chain(optional_audio_graph_section(bundle).expect("audio graph encodes"))
         .collect::<Vec<_>>();
-        let bytes = encode_bundle(container_kind(bundle.bundle_kind), &manifest, sections)
+        let bytes = encode_bundle(container_kind(bundle.bundle_kind), manifest, sections)
             .expect("AWFB encodes");
         (
             bytes,
             ExternalSectionPayload::new(bytecode_id, bytecode_bytes),
         )
+    }
+
+    fn product_manifest(bundle: &ArcweftBundle) -> ProductManifest {
+        ProductManifest {
+            schema_version: bundle.schema_version,
+            bundle_kind: bundle.bundle_kind,
+            executable_payload: ProductExecutablePayload::AwbcV1,
+            manifest: bundle.manifest.clone(),
+            agent: bundle.agent.clone(),
+        }
+    }
+
+    fn product_manifest_json(bundle: &ArcweftBundle) -> serde_json::Value {
+        serde_json::to_value(product_manifest(bundle)).expect("manifest is JSON")
     }
 
     fn empty_bundle() -> ArcweftBundle {

@@ -7,8 +7,52 @@ use crate::{BundleAwbcEncoding, BundleAwbcProgram, BundleCodecError};
 use arcweft_core::awbc::codec::AwbcDecodeBudget;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub const PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1: &str = "awbc_v1";
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProductExecutablePayload {
+    AwbcV1,
+}
+
+impl ProductExecutablePayload {
+    pub(crate) const fn wire_name(self) -> &'static str {
+        match self {
+            Self::AwbcV1 => "awbc_v1",
+        }
+    }
+
+    pub(crate) fn from_wire_name(wire_name: &str) -> Option<Self> {
+        if wire_name == Self::AwbcV1.wire_name() {
+            Some(Self::AwbcV1)
+        } else {
+            None
+        }
+    }
+}
+
+impl Serialize for ProductExecutablePayload {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.wire_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProductExecutablePayload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire_name = String::deserialize(deserializer)?;
+        Self::from_wire_name(&wire_name).ok_or_else(|| {
+            D::Error::custom(format!(
+                "unsupported product executable payload `{wire_name}`"
+            ))
+        })
+    }
+}
 
 impl BundleAwbcProgram {
     pub fn new(program: AwbcProgram) -> Self {
