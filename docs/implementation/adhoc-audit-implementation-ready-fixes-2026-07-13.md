@@ -71,18 +71,48 @@ behavior; no source gate is used.
   roots, Unicode, strings/comments/dialogue, nested speakers, containing
   replacements, invalid ranges, and overlapping edits.
 
+## Implementation-ready next cut
+
+### AW-AH-012 — canonical presentation aliases
+
+AW-AH-012 requires no additional design. After this independent request-file
+cut, implement it as an independent reviewable change before the typed
+presentation ABI work:
+
+- retain one canonical presentation command and argument spelling from the
+  accepted language contract;
+- delete alternate callee/key recognition from sema and runtime consumers;
+- reject removed spellings through normal structured compiler diagnostics;
+- leave no runtime alias reader, deprecated spelling, wrapper, or migration
+  shim; and
+- prove canonical success, removed-spelling rejection, and lack of direct
+  runtime alias acceptance through behavior tests rather than source gates.
+
+The resulting canonical semantic identities are fixed substrate for
+AW-AH-011/AW-AH-013. That ABI design must not reopen the AW-AH-012 naming cut.
+
 ## Design-gated findings
 
 The audit establishes that AW-AH-003, AW-AH-007 through AW-AH-009,
-AW-AH-011 through AW-AH-013, and AW-AH-015 are real. Their packages explicitly
-leave semantic or ABI choices open. They remain completion work, but require
+AW-AH-011, AW-AH-013, and AW-AH-015 are real. Their packages explicitly leave
+semantic or ABI choices open. They remain completion work, but require
 repository-visible design decisions before production migration:
 
 - sema identity supplied to formatting/canonicalization;
 - typed/ranged RichText attributes and malformed-value policy;
 - character nominal type scope and serialization identity;
-- the typed presentation command/AWBC ABI and canonical source spellings;
+- the typed presentation command/AWBC ABI for AW-AH-011 and AW-AH-013;
 - vertical-break normalization, quality policy, and evaluation corpus.
+
+Each design-gated boundary now has a standalone request that includes the
+accepted finding, established substrate, required decisions, compatibility-free
+migration, diagnostics/codecs, and validation contract:
+
+- [AW-AH-003 sema-backed speaker-sugar canonicalization](../reviews/requests/2026-07-14-aw-ah-003-sema-backed-speaker-sugar-canonicalization.md)
+- [AW-AH-007/008 typed RichText attribute validation](../reviews/requests/2026-07-14-aw-ah-007-008-typed-rich-text-attribute-validation.md)
+- [AW-AH-009 character nominal type identity](../reviews/requests/2026-07-14-aw-ah-009-character-nominal-type-identity.md)
+- [AW-AH-011/AW-AH-013 typed presentation command ABI](../reviews/requests/2026-07-14-aw-ah-011-and-013-typed-presentation-command-abi.md)
+- [AW-AH-015 vertical-break quality policy](../reviews/requests/2026-07-14-aw-ah-015-vertical-break-quality-policy.md)
 
 No provisional compatibility layer will be introduced while those designs are
 completed.

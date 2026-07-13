@@ -187,6 +187,26 @@ and incremental compilation for the large validation run.
 | Canonical structural audit | Pass: 0 errors, 126 warnings; reports under `docs/implementation/structure-audits/native-only-style-path/` |
 | Tracked and ignored non-`target` AWFB inspection | Pass across 14 bundles; all 10 tracked bundles decode, and none contain removed CSS source, descriptor, discriminator, synthetic-part, or Takumi identities |
 
+## Independent follow-up design requests
+
+The native-only d.1 through d.3 implementation is complete. The remaining
+authoring, adaptive, and explain surfaces require decisions that were not fixed
+by the package. They are split into new, self-contained requests so none of
+them silently expands this completed cut or redesigns its substrate:
+
+- [seq-06.11d.2.1.1 exported-part authoring final contract](../reviews/requests/2026-07-14-seq-06.11d.2.1.1-view-exported-part-authoring-final-contract.md);
+- [seq-06.11d.4.1 native logical-axis Style](../reviews/requests/2026-07-14-seq-06.11d.4.1-native-logical-axis-style-contract.md);
+- [seq-06.11d.4.2 native environment Style conditions](../reviews/requests/2026-07-14-seq-06.11d.4.2-native-environment-style-condition-contract.md);
+- [seq-06.11d.4.3 native container conditions and invalidation](../reviews/requests/2026-07-14-seq-06.11d.4.3-native-container-style-condition-invalidation-contract.md);
+- [seq-06.11d.5.1 native Style trace](../reviews/requests/2026-07-14-seq-06.11d.5.1-native-style-trace-contract.md);
+- [seq-06.11d.5.2 Agent Style observation](../reviews/requests/2026-07-14-seq-06.11d.5.2-agent-native-style-observation-protocol.md);
+- [seq-06.11d.5.3 Style LSP and formatter](../reviews/requests/2026-07-14-seq-06.11d.5.3-native-style-lsp-formatter-contract.md).
+
+Container runtime work follows the logical-axis contract. Agent observation
+and the LSP/formatter contract follow the trace contract; those two may then be
+designed in parallel. Each request repeats its fixed substrate and acceptance
+criteria and can be handed to a designer without this implementation note.
+
 ## Structural audit disposition and follow-ups
 
 The canonical audit reports no error-level findings. Style-specific production
