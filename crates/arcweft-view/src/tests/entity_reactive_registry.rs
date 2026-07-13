@@ -60,14 +60,6 @@ fn property_binding_invalidation_keeps_paint_changes_out_of_layout_and_fragment(
             ValueSourceId(11),
         ))
         .unwrap();
-    builder
-        .push(PropertyBinding::new(
-            ViewPropertyId(4),
-            ViewPropertyKind::SemanticLabel,
-            ValueSourceId(12),
-        ))
-        .unwrap();
-
     let table = builder.finish();
     let paint_flags = table.dirty_flags_for_source(ValueSourceId(10));
     assert!(paint_flags.contains(DirtyFlags::PAINT));
@@ -77,10 +69,6 @@ fn property_binding_invalidation_keeps_paint_changes_out_of_layout_and_fragment(
     let layout_flags = table.dirty_flags_for_source(ValueSourceId(11));
     assert!(layout_flags.contains(DirtyFlags::LAYOUT));
     assert!(!layout_flags.contains(DirtyFlags::FRAGMENT));
-
-    let semantics_flags = table.dirty_flags_for_source(ValueSourceId(12));
-    assert!(semantics_flags.contains(DirtyFlags::SEMANTICS));
-    assert!(!semantics_flags.contains(DirtyFlags::LAYOUT));
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use crate::style::StyleDiagnostic;
 use crate::{
     effect_diagnostics::{EffectDiagnostic, EffectTraceStep},
     effect_model::EffectSite,
@@ -100,6 +101,8 @@ pub enum TypeCheckErrorKind {
     Effect { diagnostic: EffectDiagnostic },
     /// A structured trait / impl / associated-type diagnostic.
     Trait { diagnostic: TraitDiagnostic },
+    /// A structured native Style semantic diagnostic.
+    Style { diagnostic: StyleDiagnostic },
 }
 
 /// Semantic diagnostic emitted by the trait catalog and coherence substrate.
@@ -272,6 +275,13 @@ impl TypeCheckError {
         Self {
             message,
             kind: TypeCheckErrorKind::Message,
+        }
+    }
+
+    pub(crate) fn style(diagnostic: StyleDiagnostic) -> Self {
+        Self {
+            message: diagnostic.message().to_owned(),
+            kind: TypeCheckErrorKind::Style { diagnostic },
         }
     }
 
@@ -612,7 +622,8 @@ impl TypeCheckError {
             | TypeCheckErrorKind::InlineCallErrorPolicyMissing { .. }
             | TypeCheckErrorKind::InlineFailurePolicyConflict { .. }
             | TypeCheckErrorKind::UnknownInlineFailurePolicy { .. }
-            | TypeCheckErrorKind::Trait { .. } => diagnostic,
+            | TypeCheckErrorKind::Trait { .. }
+            | TypeCheckErrorKind::Style { .. } => diagnostic,
         }
     }
 }
@@ -1136,6 +1147,7 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
         TypeCheckErrorKind::Trait { diagnostic } => diagnostic.code().to_owned(),
+        TypeCheckErrorKind::Style { diagnostic } => diagnostic.code().as_str().to_owned(),
     }
 }
 

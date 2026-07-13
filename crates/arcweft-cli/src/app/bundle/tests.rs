@@ -700,28 +700,6 @@ flow test {
 }
 
 #[test]
-fn view_inline_style_rejects_interactive_overflow_on_non_scroll_element() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
-view Notes() {
-  Text("No implicit scroll")
-    .style {
-      overflow-y: scroll
-    }
-}
-
-flow test {
-  view(@view:.Notes)
-}
-"#,
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-
-    assert!(collect_bundle_dsl_view_resources(&hir, &[]).is_err());
-}
-
-#[test]
 fn view_scroll_without_axis_defaults_to_vertical_in_authoring() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"

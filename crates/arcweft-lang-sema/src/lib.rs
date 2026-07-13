@@ -23,6 +23,7 @@ pub mod lifetime;
 pub mod project_index;
 pub mod resolve;
 pub mod semantic;
+pub mod style;
 pub mod symbols;
 pub mod traits;
 pub mod types;

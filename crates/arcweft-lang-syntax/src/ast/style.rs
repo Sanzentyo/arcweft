@@ -1,174 +1,446 @@
-//! Syntax-level style declaration data.
+//! Syntax tree for Arcweft `style` declarations and inline style patches.
 //!
-//! `style` declarations are entity declarations whose body is parsed enough for
-//! HIR lowering, formatting, diagnostics, and source/file dependency tracking.
-//! CSS is a style language variant, not a separate top-level declaration family.
+//! Native values use the ordinary expression AST. CSS bodies remain opaque so
+//! later layers can hand them to the CSS adapter without interpreting them as
+//! Arcweft expressions.
 
-use super::common::TextRange;
+use crate::{expr::Expr, types::TypeRef};
 
+use super::{
+    common::{TextRange, Visibility},
+    ids::EntityRef,
+    items::Attribute,
+};
+
+/// Language used by one style declaration or inline patch.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum StyleSyntax {
+    /// Arcweft's typed native style language.
     #[default]
     Arcweft,
+    /// CSS preserved for the Takumi adapter.
     Css,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum StyleVisibility {
-    #[default]
-    Private,
-    Public,
-}
-
+/// One top-level `style` declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StyleDecl {
-    visibility: StyleVisibility,
-    name: String,
+    attrs: Vec<Attribute>,
+    visibility: Option<Visibility>,
+    id: EntityRef,
     body: StyleDeclBody,
     range: TextRange,
 }
 
+/// Parsed body of a top-level style declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StyleDeclBody {
-    syntax: StyleSyntax,
-    source: StyleDeclSource,
+pub enum StyleDeclBody {
+    /// Typed native tokens and selector rules.
+    Arcweft(StyleSheet),
+    /// Opaque CSS source.
+    Css(StyleCssSource),
+}
+
+/// Native declarations owned by one named style sheet.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleSheet {
+    tokens: Vec<StyleTokenDecl>,
+    rules: Vec<StyleRuleDecl>,
     range: TextRange,
 }
 
+/// A named native style token.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StyleDeclSource {
-    Inline(String),
-    Files(Vec<StyleFileSource>),
-    FilesWithInline {
-        files: Vec<StyleFileSource>,
-        inline: String,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StyleFileSource {
-    mode: StyleFileMode,
-    path: String,
+pub struct StyleTokenDecl {
+    public_id: String,
+    value_type: Option<TypeRef>,
+    value: StyleExpr,
     range: TextRange,
 }
 
+/// One selector rule inside a native style sheet.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleRuleDecl {
+    selector: StyleSelector,
+    declarations: Vec<StyleDeclarationDecl>,
+    range: TextRange,
+}
+
+/// A structurally valid native selector.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleSelector {
+    sequences: Vec<StyleSelectorSequence>,
+    range: TextRange,
+}
+
+/// One compound selector and its relation to the preceding sequence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleSelectorSequence {
+    relation_to_previous: Option<StyleCombinator>,
+    element: Option<StyleName>,
+    part: Option<StyleName>,
+    predicates: Vec<StylePredicate>,
+    range: TextRange,
+}
+
+/// Supported native selector combinator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StyleFileMode {
-    File,
-    Embed,
+pub enum StyleCombinator {
+    Descendant,
+    Child,
+}
+
+/// A selector predicate whose spelling is resolved by semantic analysis.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StylePredicate {
+    name: String,
+    range: TextRange,
+}
+
+/// A source name and its exact source range.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleName {
+    text: String,
+    range: TextRange,
+}
+
+/// One property assignment in a native selector rule or inline patch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleDeclarationDecl {
+    property: StyleName,
+    value: StyleExpr,
+    op: StyleAssignOp,
+    range: TextRange,
+}
+
+/// Assignment operation for a native style declaration.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StyleAssignOp {
+    #[default]
+    Replace,
+    Append,
+}
+
+/// Ordinary Arcweft expression together with authored source provenance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleExpr {
+    expr: Expr,
+    source: String,
+    range: TextRange,
+}
+
+/// Opaque CSS source and its authored range.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleCssSource {
+    source: String,
+    range: TextRange,
+}
+
+/// Inline `.style {}` or `.style(.Css) {}` patch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StylePatch {
+    Arcweft {
+        declarations: Vec<StyleDeclarationDecl>,
+        range: TextRange,
+    },
+    Css(StyleCssSource),
 }
 
 impl StyleDecl {
-    pub fn new(
-        visibility: StyleVisibility,
-        name: impl Into<String>,
+    pub(crate) const fn new(
+        attrs: Vec<Attribute>,
+        visibility: Option<Visibility>,
+        id: EntityRef,
         body: StyleDeclBody,
         range: TextRange,
     ) -> Self {
         Self {
+            attrs,
             visibility,
-            name: name.into(),
+            id,
             body,
             range,
         }
     }
 
-    pub fn public(name: impl Into<String>, body: StyleDeclBody, range: TextRange) -> Self {
-        Self::new(StyleVisibility::Public, name, body, range)
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
-    pub const fn visibility(&self) -> StyleVisibility {
+    pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn id(&self) -> &EntityRef {
+        &self.id
+    }
+
+    pub const fn syntax(&self) -> StyleSyntax {
+        match self.body {
+            StyleDeclBody::Arcweft(_) => StyleSyntax::Arcweft,
+            StyleDeclBody::Css(_) => StyleSyntax::Css,
+        }
     }
 
     pub const fn body(&self) -> &StyleDeclBody {
         &self.body
     }
 
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl StyleDeclBody {
+    pub const fn arcweft(&self) -> Option<&StyleSheet> {
+        match self {
+            Self::Arcweft(sheet) => Some(sheet),
+            Self::Css(_) => None,
+        }
+    }
+
+    pub const fn css(&self) -> Option<&StyleCssSource> {
+        match self {
+            Self::Arcweft(_) => None,
+            Self::Css(source) => Some(source),
+        }
+    }
+}
+
+impl StyleSheet {
+    pub(crate) const fn new(
+        tokens: Vec<StyleTokenDecl>,
+        rules: Vec<StyleRuleDecl>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            tokens,
+            rules,
+            range,
+        }
+    }
+
+    pub fn tokens(&self) -> &[StyleTokenDecl] {
+        &self.tokens
+    }
+
+    pub fn rules(&self) -> &[StyleRuleDecl] {
+        &self.rules
+    }
+
     pub const fn range(&self) -> TextRange {
         self.range
     }
 }
 
-impl StyleDeclBody {
-    pub const fn new(syntax: StyleSyntax, source: StyleDeclSource, range: TextRange) -> Self {
+impl StyleTokenDecl {
+    pub(crate) fn new(
+        public_id: impl Into<String>,
+        value_type: Option<TypeRef>,
+        value: StyleExpr,
+        range: TextRange,
+    ) -> Self {
         Self {
-            syntax,
-            source,
+            public_id: public_id.into(),
+            value_type,
+            value,
             range,
         }
     }
 
-    pub const fn syntax(&self) -> StyleSyntax {
-        self.syntax
+    pub fn public_id(&self) -> &str {
+        &self.public_id
     }
 
-    pub const fn source(&self) -> &StyleDeclSource {
+    pub const fn value_type(&self) -> Option<&TypeRef> {
+        self.value_type.as_ref()
+    }
+
+    pub const fn value(&self) -> &StyleExpr {
+        &self.value
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleRuleDecl {
+    pub(crate) const fn new(
+        selector: StyleSelector,
+        declarations: Vec<StyleDeclarationDecl>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            selector,
+            declarations,
+            range,
+        }
+    }
+
+    pub const fn selector(&self) -> &StyleSelector {
+        &self.selector
+    }
+
+    pub fn declarations(&self) -> &[StyleDeclarationDecl] {
+        &self.declarations
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleSelector {
+    pub(crate) const fn new(sequences: Vec<StyleSelectorSequence>, range: TextRange) -> Self {
+        Self { sequences, range }
+    }
+
+    pub fn sequences(&self) -> &[StyleSelectorSequence] {
+        &self.sequences
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleSelectorSequence {
+    pub(crate) const fn new(
+        relation_to_previous: Option<StyleCombinator>,
+        element: Option<StyleName>,
+        part: Option<StyleName>,
+        predicates: Vec<StylePredicate>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            relation_to_previous,
+            element,
+            part,
+            predicates,
+            range,
+        }
+    }
+
+    pub const fn relation_to_previous(&self) -> Option<StyleCombinator> {
+        self.relation_to_previous
+    }
+
+    pub const fn element(&self) -> Option<&StyleName> {
+        self.element.as_ref()
+    }
+
+    pub const fn part(&self) -> Option<&StyleName> {
+        self.part.as_ref()
+    }
+
+    pub fn predicates(&self) -> &[StylePredicate] {
+        &self.predicates
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleName {
+    pub(crate) fn new(text: impl Into<String>, range: TextRange) -> Self {
+        Self {
+            text: text.into(),
+            range,
+        }
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StylePredicate {
+    pub(crate) fn new(name: impl Into<String>, range: TextRange) -> Self {
+        Self {
+            name: name.into(),
+            range,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleDeclarationDecl {
+    pub(crate) const fn new(
+        property: StyleName,
+        value: StyleExpr,
+        op: StyleAssignOp,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            property,
+            value,
+            op,
+            range,
+        }
+    }
+
+    pub const fn property(&self) -> &StyleName {
+        &self.property
+    }
+
+    pub const fn value(&self) -> &StyleExpr {
+        &self.value
+    }
+
+    pub const fn op(&self) -> StyleAssignOp {
+        self.op
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleExpr {
+    pub(crate) fn new(expr: Expr, source: impl Into<String>, range: TextRange) -> Self {
+        Self {
+            expr,
+            source: source.into(),
+            range,
+        }
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub fn source(&self) -> &str {
         &self.source
     }
 
     pub const fn range(&self) -> TextRange {
         self.range
     }
-
-    pub fn arcweft_inline(source: impl Into<String>, range: TextRange) -> Self {
-        Self::new(
-            StyleSyntax::Arcweft,
-            StyleDeclSource::Inline(source.into()),
-            range,
-        )
-    }
-
-    pub fn css_inline(source: impl Into<String>, range: TextRange) -> Self {
-        Self::new(
-            StyleSyntax::Css,
-            StyleDeclSource::Inline(source.into()),
-            range,
-        )
-    }
-
-    pub fn css_file(path: impl Into<String>, range: TextRange) -> Self {
-        Self::new(StyleSyntax::Css, StyleDeclSource::file(path, range), range)
-    }
-
-    pub fn css_embed(path: impl Into<String>, range: TextRange) -> Self {
-        Self::new(StyleSyntax::Css, StyleDeclSource::embed(path, range), range)
-    }
 }
 
-impl StyleDeclSource {
-    pub fn file(path: impl Into<String>, range: TextRange) -> Self {
-        Self::Files(vec![StyleFileSource::new(StyleFileMode::File, path, range)])
-    }
-
-    pub fn embed(path: impl Into<String>, range: TextRange) -> Self {
-        Self::Files(vec![StyleFileSource::new(
-            StyleFileMode::Embed,
-            path,
-            range,
-        )])
-    }
-}
-
-impl StyleFileSource {
-    pub fn new(mode: StyleFileMode, path: impl Into<String>, range: TextRange) -> Self {
+impl StyleCssSource {
+    pub(crate) fn new(source: impl Into<String>, range: TextRange) -> Self {
         Self {
-            mode,
-            path: path.into(),
+            source: source.into(),
             range,
         }
     }
 
-    pub const fn mode(&self) -> StyleFileMode {
-        self.mode
-    }
-
-    pub fn path(&self) -> &str {
-        &self.path
+    pub fn source(&self) -> &str {
+        &self.source
     }
 
     pub const fn range(&self) -> TextRange {
@@ -176,39 +448,43 @@ impl StyleFileSource {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{
-        StyleDecl, StyleDeclBody, StyleDeclSource, StyleFileMode, StyleSyntax, StyleVisibility,
-    };
-    use crate::ast::common::TextRange;
-
-    #[test]
-    fn public_style_defaults_to_arcweft_syntax() {
-        let range = TextRange::new(0, 22);
-        let decl = StyleDecl::public(
-            "dialogue",
-            StyleDeclBody::arcweft_inline("opacity: 1", range),
+impl StylePatch {
+    pub(crate) const fn arcweft(declarations: Vec<StyleDeclarationDecl>, range: TextRange) -> Self {
+        Self::Arcweft {
+            declarations,
             range,
-        );
-
-        assert_eq!(decl.visibility(), StyleVisibility::Public);
-        assert_eq!(decl.body().syntax(), StyleSyntax::Arcweft);
+        }
     }
 
-    #[test]
-    fn css_style_sources_distinguish_file_and_embed() {
-        let range = TextRange::new(0, 32);
-        let file = StyleDeclBody::css_file("view/dialogue.css", range);
-        let embed = StyleDeclBody::css_embed("view/default.css", range);
+    pub(crate) fn css(source: impl Into<String>, range: TextRange) -> Self {
+        Self::Css(StyleCssSource::new(source, range))
+    }
 
-        assert!(matches!(
-            file.source(),
-            StyleDeclSource::Files(files) if files[0].mode() == StyleFileMode::File
-        ));
-        assert!(matches!(
-            embed.source(),
-            StyleDeclSource::Files(files) if files[0].mode() == StyleFileMode::Embed
-        ));
+    pub const fn syntax(&self) -> StyleSyntax {
+        match self {
+            Self::Arcweft { .. } => StyleSyntax::Arcweft,
+            Self::Css(_) => StyleSyntax::Css,
+        }
+    }
+
+    pub fn declarations(&self) -> &[StyleDeclarationDecl] {
+        match self {
+            Self::Arcweft { declarations, .. } => declarations,
+            Self::Css(_) => &[],
+        }
+    }
+
+    pub const fn css_source(&self) -> Option<&StyleCssSource> {
+        match self {
+            Self::Arcweft { .. } => None,
+            Self::Css(source) => Some(source),
+        }
+    }
+
+    pub const fn range(&self) -> TextRange {
+        match self {
+            Self::Arcweft { range, .. } => *range,
+            Self::Css(source) => source.range(),
+        }
     }
 }

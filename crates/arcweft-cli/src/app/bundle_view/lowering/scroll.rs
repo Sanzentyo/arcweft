@@ -151,16 +151,16 @@ fn reject_dual_axis_scroll_authoring(element: &ViewElement) -> Result<(), ViewSi
                     value: expr_source(value),
                 });
             }
-            ViewModifier::Style(
-                ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
-            ) => {
-                for (name, value) in inline_style_properties(source) {
-                    if normalize_property_name(&name) == "axis"
-                        && ViewScrollAxis::is_unsupported_dual_axis_symbol(&value)
+            ViewModifier::Style(ViewStyleModifier::Inline(patch)) => {
+                for declaration in patch.declarations() {
+                    if normalize_property_name(declaration.property().text()) == "axis"
+                        && ViewScrollAxis::is_unsupported_dual_axis_symbol(
+                            declaration.value().source(),
+                        )
                     {
                         return Err(ViewSidecarError::UnsupportedScrollBothAxis {
                             element: element.callee().to_owned(),
-                            value,
+                            value: declaration.value().source().to_owned(),
                         });
                     }
                 }
@@ -594,11 +594,13 @@ fn apply_scroll_property_modifiers(options: &mut ScrollRegionOptions, modifiers:
             ViewModifier::Property { name, value } => {
                 apply_scroll_property(options, name, &expr_source(value));
             }
-            ViewModifier::Style(
-                ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
-            ) => {
-                for (name, value) in inline_style_properties(source) {
-                    apply_scroll_property(options, &name, &value);
+            ViewModifier::Style(ViewStyleModifier::Inline(patch)) => {
+                for declaration in patch.declarations() {
+                    apply_scroll_property(
+                        options,
+                        declaration.property().text(),
+                        declaration.value().source(),
+                    );
                 }
             }
             _ => {}

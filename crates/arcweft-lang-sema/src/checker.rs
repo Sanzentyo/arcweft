@@ -341,6 +341,7 @@ pub struct TypeCheckReport {
     pub effects: EffectAnalysisReport,
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
     pub trait_catalog: TraitCatalog,
+    pub style_catalog: crate::style::CheckedViewStyleCatalog,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

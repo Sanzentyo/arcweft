@@ -1,5 +1,6 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
 use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
+use crate::style::{HirStyleDecl, HirStylePatch};
 use arcweft_lang_syntax::ast::{
     items::{AgentItem, Attribute, FunctionItem, Item, TypedSyntaxTree},
     module_path::CanonicalModulePath,
@@ -48,6 +49,7 @@ struct HirLoweringState {
     functions: Vec<HirFunction>,
     agents: Vec<HirAgent>,
     declarations: Vec<HirTopLevelDecl>,
+    style_patches: Vec<HirStylePatch>,
     top_level_items: Vec<crate::model::HirFlowItem>,
     errors: Vec<HirLowerError>,
 }
@@ -96,6 +98,19 @@ impl HirLoweringState {
                 self.declarations.push(HirTopLevelDecl::Enum(item.clone()));
             }
             Item::EntityDecl(item) => {
+                if let Some(view) = item.view_body().and_then(|body| body.view()) {
+                    for patch in view.style_patches() {
+                        let Ok(ordinal) = u32::try_from(self.style_patches.len()) else {
+                            self.errors.push(HirLowerError::new(
+                                "too many inline style patches",
+                                Some(patch.range()),
+                            ));
+                            break;
+                        };
+                        self.style_patches
+                            .push(HirStylePatch::from_syntax(ordinal, patch));
+                    }
+                }
                 self.declarations
                     .push(HirTopLevelDecl::EntityDecl(item.clone()));
             }
@@ -146,7 +161,8 @@ impl HirLoweringState {
                     .push(HirTopLevelDecl::Source(item.clone()));
             }
             Item::Style(item) => {
-                self.declarations.push(HirTopLevelDecl::Style(item.clone()));
+                self.declarations
+                    .push(HirTopLevelDecl::Style(HirStyleDecl::from(item)));
             }
             Item::State(item) => {
                 self.declarations.push(HirTopLevelDecl::State(item.clone()));
@@ -181,6 +197,7 @@ impl HirLoweringState {
                 functions: self.functions,
                 agents: self.agents,
                 declarations: self.declarations,
+                style_patches: self.style_patches,
                 top_level_items: self.top_level_items,
             })
         } else {

@@ -56,29 +56,35 @@ pub dialogue defaults {
 }
 
 style css_style_parity {
-  token font.display_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-view")
-  token color.panel = rgba(15, 21, 31, 238)
-  token color.panel_hover = rgba(30, 44, 59, 242)
-  token color.accent = rgba(100, 210, 200, 255)
-  token color.selection = rgba(100, 210, 200, 96)
-  token metric.corner_lg = milli(8000)
-  token metric.focus_ring = milli(2000)
-  token motion.hover_lift = milli(-3000)
-  token motion.pressed_scale = milli(970)
+  token font.display_stack: FontFamilyList = [
+    "Arcweft Demo",
+    "Yu Gothic",
+    "Hiragino Sans",
+    "Noto Sans JP",
+    system_font(.Ui),
+  ]
+  token color.panel: Color = rgba(15, 21, 31, 238)
+  token color.panel_hover: Color = rgba(30, 44, 59, 242)
+  token color.accent: Color = rgba(100, 210, 200, 255)
+  token color.selection: Color = rgba(100, 210, 200, 96)
+  token metric.corner_lg: Length = 8px
+  token metric.focus_ring: Length = 2px
+  token motion.hover_lift: Length = -3px
+  token motion.pressed_scale: Scalar = 970milli
 
   Panel {
     background-color = token(color.panel)
-    color = system_color(panel_text)
+    color = system_color(.SurfaceText)
     font-family = token(font.display_stack)
   }
 
   Button {
     background-color = token(color.panel)
-    color = system_color(accent_text)
+    color = system_color(.AccentText)
     border-radius = token(metric.corner_lg)
-    opacity = milli(1000)
-    scale = milli(1000)
-    translate-y = milli(0)
+    opacity = 1000milli
+    scale = 1000milli
+    translate-y = 0px
   }
 
   Button:hover {
@@ -88,19 +94,19 @@ style css_style_parity {
   }
 
   Button:active {
-    opacity = milli(920)
+    opacity = 920milli
     scale = token(motion.pressed_scale)
   }
 
   Button:focus-visible {
-    outline-color = system_color(focus_ring)
+    outline-color = system_color(.FocusRing)
     outline-width = token(metric.focus_ring)
   }
 
   TextField {
     caret-color = token(color.accent)
     selection-color = token(color.selection)
-    placeholder-color = system_color(muted_text)
+    placeholder-color = system_color(.MutedText)
     border-radius = token(metric.corner_lg)
   }
 
@@ -109,10 +115,8 @@ style css_style_parity {
   }
 
   TextField:placeholder-shown {
-    color = system_color(muted_text)
+    color = system_color(.MutedText)
   }
-
-  environment text_scale_at_least_milli = 1000
 }
 
 entry game @entry.css_style_parity {

@@ -9,7 +9,7 @@ use arcweft_lang_syntax::{
         items::{
             AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
             ExternCapabilityItem, ExternModItem, FunctionKind, HookItem, ImplItem, MemoFn,
-            ParserItem, StateItem, StructItem, StyleItem, TraitItem, TypeAliasItem,
+            ParserItem, StateItem, StructItem, TraitItem, TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -23,6 +23,8 @@ use arcweft_source::{
     Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceName, SourceRange, SourceSpan,
 };
 use thiserror::Error;
+
+use crate::style::{HirStyleDecl, HirStylePatch};
 
 /// HIR-facing module produced from parsed surface syntax.
 ///
@@ -39,6 +41,7 @@ pub struct HirModule {
     pub(crate) functions: Vec<HirFunction>,
     pub(crate) agents: Vec<HirAgent>,
     pub(crate) declarations: Vec<HirTopLevelDecl>,
+    pub(crate) style_patches: Vec<HirStylePatch>,
     pub(crate) top_level_items: Vec<HirFlowItem>,
 }
 
@@ -100,7 +103,7 @@ pub enum HirTopLevelDecl {
     Bench(BenchItem),
     Parser(ParserItem),
     Source(SourceItem),
-    Style(StyleItem),
+    Style(HirStyleDecl),
 }
 
 /// HIR-facing flow item.
@@ -379,6 +382,11 @@ impl HirModule {
 
     pub fn declarations(&self) -> &[HirTopLevelDecl] {
         &self.declarations
+    }
+
+    /// Inline style patches in deterministic source order.
+    pub fn style_patches(&self) -> &[HirStylePatch] {
+        &self.style_patches
     }
 
     pub fn top_level_items(&self) -> &[HirFlowItem] {

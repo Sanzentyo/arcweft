@@ -543,6 +543,10 @@ impl Parser<'_> {
             .body_range
             .as_ref()
             .map(|range| TextRange::new(range.start, range.end));
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
         let (kind, visibility, id, name, surface_alias, signature_tail) = parse_entity_decl_head(
             head.trim(),
             start_line.start,
@@ -554,6 +558,7 @@ impl Parser<'_> {
             &signature_tail,
             &body,
             start_line.start,
+            body_base,
             self.current_module_path.as_deref(),
             &mut self.errors,
         );
@@ -781,6 +786,7 @@ fn parse_structured_entity_decl_body(
     signature_tail: &str,
     body: &str,
     base: usize,
+    body_base: usize,
     module_path: Option<&str>,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> Option<EntityDeclBody> {
@@ -801,7 +807,7 @@ fn parse_structured_entity_decl_body(
                 ));
             }
             Some(EntityDeclBody::View(Box::new(ViewDeclBody::new(
-                parse_view_body(body, base, module_path, errors),
+                parse_view_body(body, body_base, module_path, errors),
             ))))
         }
         _ => None,

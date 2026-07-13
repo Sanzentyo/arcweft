@@ -1,12 +1,13 @@
 use arcweft_lang_syntax::{
     ast::{
-        items::{Item, ViewStyleValueDecl},
-        style::StyleSyntax,
+        items::Item,
+        style::{StylePatch, StyleSyntax},
         view::{
             ViewAction, ViewActionPayload, ViewAwaitBranchKind, ViewExpr, ViewModifier,
             ViewStyleModifier, ViewTextControlPayloadField,
         },
     },
+    expr::{Expr, Literal, UnitNumberSuffix},
     parser::parse_source,
 };
 
@@ -25,7 +26,7 @@ pub style primary_button {
 pub style @style:.secondary_button {
     Button:active {
         opacity = 920milli
-        z-index = milli(920)
+        z-index = 920
         border-radius = 12px
     }
 }
@@ -52,24 +53,359 @@ pub style danger_button: .Css {
     assert_eq!(styles[1].id().body(), "style.hoge.secondary_button");
     assert_eq!(styles[2].id().body(), "style.hoge.danger_button");
     assert_eq!(styles[2].syntax(), StyleSyntax::Css);
-    let active_declarations = styles[1].rules()[0].declarations();
-    assert_eq!(
-        active_declarations[0].value(),
-        active_declarations[1].value()
-    );
-    assert_eq!(
-        active_declarations[0].value(),
-        &ViewStyleValueDecl::Milli(920)
-    );
-    assert_eq!(
-        active_declarations[2].value(),
-        &ViewStyleValueDecl::Text("12px".to_owned())
-    );
+    let active_declarations =
+        styles[1].body().arcweft().expect("native sheet").rules()[0].declarations();
+    assert!(matches!(
+        active_declarations[0].value().expr(),
+        Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Milli })
+            if raw == "920milli"
+    ));
+    assert!(matches!(
+        active_declarations[1].value().expr(),
+        Expr::Literal(Literal::Int(value)) if value.raw() == "920"
+    ));
+    assert!(matches!(
+        active_declarations[2].value().expr(),
+        Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Px })
+            if raw == "12px"
+    ));
     assert!(
         styles[2]
-            .inline_source()
-            .is_some_and(|source| { source.contains("background-color") })
+            .body()
+            .css()
+            .is_some_and(|source| source.source().contains("background-color"))
     );
+}
+
+#[test]
+fn native_style_multiline_values_keep_expression_and_source_ranges() {
+    let source = r"pub style control {
+    token shadow.control: ShadowList = [
+        shadow(
+            x = 0px,
+            y = 12px,
+            blur = 28px,
+            spread = 0px,
+            color = rgba(0, 0, 0, 92),
+        ),
+    ]
+
+    Button:hover {
+        box-shadow = token(shadow.control)
+    }
+}
+";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let style = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::Style(style) => Some(style),
+            _ => None,
+        })
+        .expect("style declaration");
+    let sheet = style.body().arcweft().expect("native sheet");
+    let token = &sheet.tokens()[0];
+    assert!(matches!(token.value().expr(), Expr::BracketSeq(values) if values.len() == 1));
+    assert_eq!(
+        &source[token.value().range().as_range()],
+        token.value().source()
+    );
+    let declaration = &sheet.rules()[0].declarations()[0];
+    assert!(matches!(declaration.value().expr(), Expr::Call { .. }));
+    assert_eq!(
+        &source[declaration.value().range().as_range()],
+        declaration.value().source()
+    );
+}
+
+#[test]
+fn style_parser_reports_missing_equals_and_malformed_combinators_with_ranges() {
+    let missing = parse_source("pub style broken {\n token color.text Color\n}\n");
+    let missing_error = missing
+        .errors()
+        .iter()
+        .find(|error| error.message().contains("needs `=`"))
+        .expect("missing equals diagnostic");
+    assert!(missing_error.range().end() > missing_error.range().start());
+
+    let selector = parse_source(
+        "pub style broken {\n Panel > > Button {\n color = rgba(0, 0, 0, 255)\n }\n}\n",
+    );
+    let selector_error = selector
+        .errors()
+        .iter()
+        .find(|error| error.message().contains("child combinator"))
+        .expect("malformed selector diagnostic");
+    assert_eq!(
+        selector_error.range().end() - selector_error.range().start(),
+        1
+    );
+}
+
+#[test]
+fn css_style_body_is_preserved_at_its_exact_source_range() {
+    let source = "pub style imported: .Css {Button:hover { color: rgb(1 2 3); }}\n";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let css = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::Style(style) => style.body().css(),
+            _ => None,
+        })
+        .expect("CSS source");
+    assert_eq!(&source[css.range().as_range()], css.source());
+}
+
+#[test]
+fn native_style_braces_in_values_strings_and_comments_are_not_selector_rules() {
+    let source = r#"pub style authored_values {
+    Button {
+        custom-data = {
+            label: "{literal brace}",
+            nested: { amount: 1 },
+        }
+        content = "an unmatched { inside a string"
+        opacity = 900milli // selector-looking { in a comment
+        // Another selector-looking { comment is trivia.
+    }
+}
+pub view Example() {
+    Button("OK").style {
+        custom-data = {
+            label: "inline record",
+            nested: { amount: 2 },
+        }
+    }
+}
+"#;
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[], "syntax errors: {:?}", parsed.errors());
+
+    let named = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::Style(style) => Some(style),
+            _ => None,
+        })
+        .expect("named style");
+    let declarations = named.body().arcweft().expect("native sheet").rules()[0].declarations();
+    assert!(matches!(
+        declarations[0].value().expr(),
+        Expr::RecordLiteral(fields) if fields.len() == 2
+    ));
+    assert!(matches!(
+        declarations[1].value().expr(),
+        Expr::Literal(Literal::String(value)) if value.contains('{')
+    ));
+
+    let inline = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view()?.style_patches().first().copied(),
+            _ => None,
+        })
+        .expect("inline style");
+    assert!(matches!(
+        inline.declarations()[0].value().expr(),
+        Expr::RecordLiteral(fields) if fields.len() == 2
+    ));
+}
+
+#[test]
+fn inline_native_style_rejects_only_a_top_level_selector_rule() {
+    let source = r#"pub view Example() {
+    Button("OK").style {
+        custom-data = { label: "{" }
+        Button:hover { opacity = 900milli }
+    }
+}
+"#;
+    let parsed = parse_source(source);
+    let error = parsed
+        .errors()
+        .iter()
+        .find(|error| error.message().contains("cannot contain selector rules"))
+        .expect("inline selector diagnostic");
+    assert_eq!(error.code(), "style::inline_selector_not_supported");
+    assert_eq!(
+        error.range().end() - error.range().start(),
+        "Button:hover { opacity = 900milli }".len()
+    );
+}
+
+#[test]
+fn inline_style_ranges_follow_original_native_and_css_source_lines() {
+    let source = r#"pub view ExactRanges() {
+    Button("One")
+        .style {
+            opacity = 900milli
+        }
+    Button("Two")
+        .style {
+            opacity = 900milli
+        }
+        .style(.Css) {
+            color: white;
+        }
+}
+"#;
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let patches = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view().map(|view| view.style_patches()),
+            _ => None,
+        })
+        .expect("View style patches");
+    assert_eq!(patches.len(), 3);
+
+    let native_bodies = source
+        .match_indices("\n            opacity = 900milli\n        ")
+        .map(|(start, body)| (start, start + body.len()))
+        .collect::<Vec<_>>();
+    for (patch, (expected_start, expected_end)) in patches[..2].iter().zip(native_bodies) {
+        assert_eq!(patch.range().start(), expected_start);
+        assert_eq!(patch.range().end(), expected_end);
+        assert_eq!(
+            &source[patch.range().as_range()],
+            "\n            opacity = 900milli\n        "
+        );
+        let declaration = &patch.declarations()[0];
+        assert_eq!(
+            &source[declaration.range().as_range()],
+            "opacity = 900milli"
+        );
+        assert_eq!(
+            &source[declaration.property().range().as_range()],
+            "opacity"
+        );
+        assert_eq!(
+            &source[declaration.value().range().as_range()],
+            declaration.value().source()
+        );
+    }
+
+    let css = patches[2].css_source().expect("inline CSS source");
+    assert_eq!(&source[css.range().as_range()], css.source());
+    assert_eq!(css.source(), "\n            color: white;\n        ");
+}
+
+#[test]
+fn inline_style_ranges_survive_same_line_view_chain_expansion() {
+    let source = r#"pub view ExpandedRange() {
+    Button("One").style { opacity = 900milli }
+    Button("Css").style(.Css) { color: white; }
+}
+"#;
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let patches = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view().map(|view| view.style_patches()),
+            _ => None,
+        })
+        .expect("expanded inline style patches");
+    let patch = patches[0];
+    assert_eq!(&source[patch.range().as_range()], " opacity = 900milli ");
+    assert_eq!(
+        &source[patch.declarations()[0].range().as_range()],
+        "opacity = 900milli"
+    );
+    let css = patches[1].css_source().expect("expanded inline CSS source");
+    assert_eq!(&source[css.range().as_range()], " color: white; ");
+    assert_eq!(&source[css.range().as_range()], css.source());
+}
+
+#[test]
+fn inline_native_style_diagnostic_starts_at_the_original_repeated_modifier() {
+    let source = r#"pub view ExactDiagnostic() {
+    Button("One")
+        .style {
+            opacity = 900milli
+        }
+    Button("Two")
+        .style {
+            opacity 900milli
+        }
+}
+"#;
+    let parsed = parse_source(source);
+    let error = parsed
+        .errors()
+        .iter()
+        .find(|error| error.message().contains("style declaration needs `=`"))
+        .expect("missing equals diagnostic");
+    let expected = source
+        .find("opacity 900milli")
+        .expect("malformed declaration source");
+    assert_eq!(error.range().start(), expected);
+    assert_eq!(&source[error.range().as_range()], "opacity 900milli");
+}
+
+#[test]
+fn style_parser_reports_an_unclosed_style_block() {
+    let parsed = parse_source("pub style broken {\n Button { opacity = 900milli }\n");
+    assert!(
+        parsed
+            .errors()
+            .iter()
+            .any(|error| error.message().contains("unclosed block"))
+    );
+}
+
+#[test]
+fn inline_and_named_native_styles_share_expression_ast() {
+    let parsed = parse_source(
+        r#"pub style named {
+    Button { opacity = 900milli }
+}
+pub view Example() {
+    Button("OK").style { opacity = 900milli }
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let named = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::Style(style) => Some(style),
+            _ => None,
+        })
+        .expect("named style");
+    let named_expr = named.body().arcweft().expect("native").rules()[0].declarations()[0]
+        .value()
+        .expr();
+    let inline_expr = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view()?.style_patches().first().copied(),
+            _ => None,
+        })
+        .expect("inline style")
+        .declarations()[0]
+        .value()
+        .expr();
+    assert_eq!(named_expr, inline_expr);
 }
 
 #[test]
@@ -744,11 +1080,11 @@ pub view ButtonRow() {
     );
     assert!(button.modifiers().iter().any(|modifier| matches!(
         modifier,
-        ViewModifier::Style(ViewStyleModifier::InlineArcweft(_))
+        ViewModifier::Style(ViewStyleModifier::Inline(StylePatch::Arcweft { .. }))
     )));
     assert!(button.modifiers().iter().any(|modifier| matches!(
         modifier,
-        ViewModifier::Style(ViewStyleModifier::InlineCss(_))
+        ViewModifier::Style(ViewStyleModifier::Inline(StylePatch::Css(_)))
     )));
 }
 

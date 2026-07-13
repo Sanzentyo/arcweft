@@ -6,9 +6,7 @@ use arcweft_lang_syntax::{
     expr::{Expr, Literal, UnitNumberSuffix},
 };
 
-use super::bundle_view::{
-    inline_style_properties, normalize_property_name, style_layout_length_u32,
-};
+use super::bundle_view::normalize_property_name;
 
 pub(in crate::app) const VIEW_LAYOUT_GAP_MILLI: i32 = 16_000;
 pub(in crate::app) const VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI: u32 = 420_000;
@@ -228,18 +226,18 @@ fn estimated_text_advance_milli(ch: char, font_size_milli: u32) -> u32 {
 
 fn modifier_inline_style_length_u32(modifiers: &[ViewModifier], names: &[&str]) -> Option<u32> {
     modifiers.iter().find_map(|modifier| {
-        let ViewModifier::Style(
-            ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
-        ) = modifier
-        else {
+        let ViewModifier::Style(ViewStyleModifier::Inline(patch)) = modifier else {
             return None;
         };
-        inline_style_properties(source).find_map(|(name, value)| {
-            let name = normalize_property_name(&name);
+        patch.declarations().iter().find_map(|declaration| {
+            let name = normalize_property_name(declaration.property().text());
             names
                 .iter()
                 .any(|candidate| name == normalize_property_name(candidate))
-                .then(|| style_layout_length_u32(&value))
+                .then(|| {
+                    expr_px_milli(declaration.value().expr())
+                        .and_then(|value| u32::try_from(value.max(1)).ok())
+                })
                 .flatten()
         })
     })

@@ -15,7 +15,6 @@ pub mod program;
 pub mod reactive;
 pub mod semantics;
 pub mod style;
-pub mod style_authoring;
 pub mod text_field;
 pub mod text_source;
 pub mod value_program;
@@ -62,8 +61,7 @@ pub use program::{
     ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind,
     ViewElementSpec, ViewElementTextInputKind, ViewEventBindingSpec, ViewHandlerProgram,
     ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartExport, ViewPartId, ViewProgram,
-    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewStyleApply,
-    ViewStylePatchId, ViewTextSpec,
+    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{
@@ -71,8 +69,18 @@ pub use semantics::{
 };
 pub use style::{
     Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder,
-    ResolvedViewProperty, ResolvedViewStyle, Rgba8, ValueSourceId, ViewInteractionSelector,
-    ViewPropertyId, ViewPropertyKind, ViewPropertyValue, ViewStyle, ViewStyleRule, ViewStyleTable,
+    ResolvedViewProperty, ResolvedViewStyle, Rgba8, ValueSourceId, ViewAlignment,
+    ViewAngleMilliDegrees, ViewBlendMode, ViewBorderRadii, ViewClip, ViewColorValue,
+    ViewContainerAxis, ViewContainerPredicate, ViewDisplay, ViewElementState,
+    ViewEnvironmentPredicate, ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily,
+    ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewInteractionSelector, ViewLengthMilli,
+    ViewMask, ViewOverflow, ViewPartName, ViewPosition, ViewPropertyId, ViewPropertyKind,
+    ViewPropertyValue, ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue, ViewStyle,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleCombinator,
+    ViewStyleComparison, ViewStyleInvalidationSet, ViewStylePatchId, ViewStylePredicate,
+    ViewStyleRule, ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence,
+    ViewStyleSheetId, ViewStyleSourceId, ViewStyleSpecificity, ViewStyleTable, ViewStyleTokenId,
+    ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,

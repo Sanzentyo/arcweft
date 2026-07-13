@@ -8,6 +8,7 @@ use crate::ast::common::TextRange;
 use crate::ast::flow::Stmt;
 use crate::ast::ids::EntityRefSyntax;
 use crate::ast::pattern::Pattern;
+use crate::ast::style::{StylePatch, StyleSyntax};
 use crate::expr::{CallArg, Expr, Literal, MatchExprArm};
 
 mod fx;
@@ -306,8 +307,7 @@ pub enum ViewNavigationTrap {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewStyleModifier {
     Named(EntityRefSyntax),
-    InlineArcweft(String),
-    InlineCss(String),
+    Inline(StylePatch),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -381,6 +381,13 @@ impl ViewBody {
         let mut applications = Vec::new();
         fx::collect_fx_applications(&self.value, &mut applications);
         applications
+    }
+
+    /// Returns inline style patches in authored depth-first order.
+    pub fn style_patches(&self) -> Vec<&StylePatch> {
+        let mut patches = Vec::new();
+        collect_style_patches(&self.value, &mut patches);
+        patches
     }
 
     pub const fn range(&self) -> TextRange {
@@ -886,29 +893,24 @@ impl ViewStyleModifier {
     pub fn named(name: EntityRefSyntax) -> Self {
         Self::Named(name)
     }
-    pub fn inline_arcweft(source: impl Into<String>) -> Self {
-        Self::InlineArcweft(source.into())
-    }
-    pub fn inline_css(source: impl Into<String>) -> Self {
-        Self::InlineCss(source.into())
+    pub const fn inline(patch: StylePatch) -> Self {
+        Self::Inline(patch)
     }
 
     pub const fn syntax_name(&self) -> Option<&'static str> {
         match self {
             Self::Named(_) => None,
-            Self::InlineArcweft(_) => Some("Arcweft"),
-            Self::InlineCss(_) => Some("Css"),
+            Self::Inline(patch) => match patch.syntax() {
+                StyleSyntax::Arcweft => Some("Arcweft"),
+                StyleSyntax::Css => Some("Css"),
+            },
         }
     }
 }
 
 impl ViewModifier {
-    pub fn style_arcweft(source: impl Into<String>) -> Self {
-        Self::Style(ViewStyleModifier::inline_arcweft(source))
-    }
-
-    pub fn style_css(source: impl Into<String>) -> Self {
-        Self::Style(ViewStyleModifier::inline_css(source))
+    pub const fn style_inline(patch: StylePatch) -> Self {
+        Self::Style(ViewStyleModifier::inline(patch))
     }
 }
 
@@ -1148,6 +1150,69 @@ fn collect_view_calls<'a>(expr: &'a ViewExpr, calls: &mut Vec<&'a ViewCall>) {
             }
         }
         ViewExpr::Text(_)
+        | ViewExpr::Image(_)
+        | ViewExpr::TextField(_)
+        | ViewExpr::Button(_)
+        | ViewExpr::Let(_)
+        | ViewExpr::Expr(_)
+        | ViewExpr::Raw(_) => {}
+    }
+}
+
+fn collect_style_patches<'a>(expr: &'a ViewExpr, patches: &mut Vec<&'a StylePatch>) {
+    let modifiers = match expr {
+        ViewExpr::Element(element) => Some(element.modifiers.as_slice()),
+        ViewExpr::ViewCall(call) => Some(call.modifiers.as_slice()),
+        ViewExpr::Text(text) => Some(text.modifiers.as_slice()),
+        ViewExpr::Image(image) => Some(image.modifiers.as_slice()),
+        ViewExpr::TextField(field) => Some(field.modifiers.as_slice()),
+        ViewExpr::Button(button) => Some(button.modifiers.as_slice()),
+        ViewExpr::Fragment(_)
+        | ViewExpr::Let(_)
+        | ViewExpr::If(_)
+        | ViewExpr::Match(_)
+        | ViewExpr::ForEach(_)
+        | ViewExpr::Await(_)
+        | ViewExpr::Expr(_)
+        | ViewExpr::Raw(_) => None,
+    };
+    if let Some(modifiers) = modifiers {
+        patches.extend(modifiers.iter().filter_map(|modifier| match modifier {
+            ViewModifier::Style(ViewStyleModifier::Inline(patch)) => Some(patch),
+            _ => None,
+        }));
+    }
+
+    match expr {
+        ViewExpr::Fragment(children) => {
+            for child in children {
+                collect_style_patches(child, patches);
+            }
+        }
+        ViewExpr::Element(element) => {
+            for child in &element.children {
+                collect_style_patches(child, patches);
+            }
+        }
+        ViewExpr::If(view_if) => {
+            collect_style_patches(view_if.then_branch(), patches);
+            if let Some(else_branch) = view_if.else_branch() {
+                collect_style_patches(else_branch, patches);
+            }
+        }
+        ViewExpr::Match(view_match) => {
+            for arm in view_match.arms() {
+                collect_style_patches(arm.value(), patches);
+            }
+        }
+        ViewExpr::ForEach(view_for_each) => collect_style_patches(view_for_each.body(), patches),
+        ViewExpr::Await(view_await) => {
+            for branch in view_await.branches() {
+                collect_style_patches(branch.value(), patches);
+            }
+        }
+        ViewExpr::ViewCall(_)
+        | ViewExpr::Text(_)
         | ViewExpr::Image(_)
         | ViewExpr::TextField(_)
         | ViewExpr::Button(_)

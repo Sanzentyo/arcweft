@@ -12,12 +12,13 @@ use crate::env::{
 use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::style::HirStyleDecl;
 use arcweft_lang_syntax::{
     ast::{
         choice::ChoiceAction,
         flow::{Stmt, StmtMatchArm},
         ids::EntityRef,
-        items::{CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EntryItem, StyleItem},
+        items::{CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EntryItem},
         pattern::Pattern,
     },
     expr::{CallArg, Expr, Literal, MatchExprArm},
@@ -1001,7 +1002,7 @@ fn index_top_level_declaration(
 
 fn index_view_style_entity(
     index: ProjectSemanticIndex,
-    item: &StyleItem,
+    item: &HirStyleDecl,
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     index_view_resource_entity(index, item.id(), EntityKind::Style, source_name, "style")

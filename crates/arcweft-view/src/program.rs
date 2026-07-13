@@ -8,7 +8,7 @@
 
 use crate::{
     CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, StyleId, TextSourceId, ViewId,
-    ViewProgramId, ViewValueProgramId, ViewValueProgramInventory,
+    ViewProgramId, ViewStyleApplication, ViewValueProgramId, ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ pub enum ViewInstruction {
     CallView(ViewCall),
     Branch(ViewBranch),
     RepeatKeyed(ViewRepeat),
-    ApplyStyle(ViewStyleApply),
+    ApplyStyle(ViewStyleApplication),
     BindEvent(ViewEventBindingSpec),
     AttachSemantic(ViewSemanticSpec),
 }
@@ -274,16 +274,6 @@ pub struct ViewInstructionRange {
     pub start: u32,
     pub end: u32,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ViewStyleApply {
-    Named(StyleId),
-    InlineArcweft(ViewStylePatchId),
-    InlineCss(ViewStylePatchId),
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewStylePatchId(pub u32);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewEventBindingSpec {

@@ -12,7 +12,9 @@ arcweft-data.workspace = true
 arcweft-id = { path = "../arcweft-id" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-source = { path = "../arcweft-source" }
+arcweft-view = { path = "../arcweft-view" }
 thiserror.workspace = true
 
 [lib]

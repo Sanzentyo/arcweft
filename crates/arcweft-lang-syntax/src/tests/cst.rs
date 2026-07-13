@@ -246,18 +246,16 @@ fn parses_retained_style_item() {
     let parsed = parse_source(
         r#"
 style native_text_input_sample {
-  token font.jp_sans_stack = text("Yu Gothic, system-ui")
+  token font.jp_sans_stack: FontFamilyList = ["Yu Gothic", system_font(.Ui)]
 
   TextField {
     font-family = token(font.jp_sans_stack)
-    border-color = system_color(border)
+    border-color = system_color(.Border)
   }
 
   TextField:focus-visible {
-    focus-ring-width-milli = milli(2000)
+    focus-ring-width = 2px
   }
-
-  environment text_scale_at_least_milli = 1000
 }
 "#,
     );
@@ -267,9 +265,9 @@ style native_text_input_sample {
         panic!("expected a typed style item");
     };
     assert_eq!(style.id().body(), "style.native_text_input_sample");
-    assert_eq!(style.tokens().len(), 1);
-    assert_eq!(style.rules().len(), 2);
-    assert_eq!(style.environment_predicates().len(), 1);
+    let sheet = style.body().arcweft().expect("native style sheet");
+    assert_eq!(sheet.tokens().len(), 1);
+    assert_eq!(sheet.rules().len(), 2);
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::style::HirStyleDecl;
 use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlanItem},
@@ -7,7 +8,7 @@ use arcweft_lang_syntax::{
             AwaitWith, ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget,
         },
         ids::{EntityRef, EntityRefSyntax, IdRef},
-        items::{ImplMember, RawSyntax, StyleItem, TraitMember},
+        items::{ImplMember, RawSyntax, TraitMember},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::{Pattern, VariantPatternPayload},
     },
@@ -179,7 +180,7 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
     }
 }
 
-fn collect_style_decl(item: &StyleItem, uses: &mut Vec<SymbolUse>) {
+fn collect_style_decl(item: &HirStyleDecl, uses: &mut Vec<SymbolUse>) {
     push_entity(uses, item.id());
 }
 

@@ -7,7 +7,7 @@ use super::flow::{AuthoredExpr, ContractClause, Flow, FlowItem, Stmt};
 use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
 use super::source::SourceItem;
-use super::style::StyleSyntax;
+use super::style::StyleDecl;
 use super::view::ViewBody;
 
 /// Typed syntax view of an `.arcw` source with module/use headers and items.
@@ -47,98 +47,9 @@ pub enum Item {
     Bench(BenchItem),
     Parser(ParserItem),
     Source(SourceItem),
-    Style(StyleItem),
+    Style(StyleDecl),
     FlowItem(Box<FlowItem>),
     Raw(RawItem),
-}
-
-/// Top-level retained style declaration lowered into product View resources.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StyleItem {
-    attrs: Vec<Attribute>,
-    visibility: Option<Visibility>,
-    id: EntityRef,
-    syntax: StyleSyntax,
-    inline_source: Option<String>,
-    tokens: Vec<ViewStyleTokenDecl>,
-    rules: Vec<ViewStyleRuleDecl>,
-    environment_predicates: Vec<ViewStyleEnvironmentPredicateDecl>,
-    range: TextRange,
-}
-
-pub(crate) struct StyleItemInit {
-    pub(crate) attrs: Vec<Attribute>,
-    pub(crate) visibility: Option<Visibility>,
-    pub(crate) id: EntityRef,
-    pub(crate) syntax: StyleSyntax,
-    pub(crate) inline_source: Option<String>,
-    pub(crate) tokens: Vec<ViewStyleTokenDecl>,
-    pub(crate) rules: Vec<ViewStyleRuleDecl>,
-    pub(crate) environment_predicates: Vec<ViewStyleEnvironmentPredicateDecl>,
-    pub(crate) range: TextRange,
-}
-
-/// A named style token declared inside a `style` block.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewStyleTokenDecl {
-    public_id: String,
-    value: ViewStyleValueDecl,
-}
-
-/// A selector rule declared inside a `style` block.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewStyleRuleDecl {
-    selector: Vec<ViewStyleSelectorPartDecl>,
-    declarations: Vec<ViewStyleDeclarationDecl>,
-}
-
-/// Selector segment for retained Arcweft-authored View style rules.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ViewStyleSelectorPartDecl {
-    Element(String),
-    Part(String),
-    State(String),
-    Interaction(String),
-    Descendant,
-    Child,
-}
-
-/// A single style property assignment in a `style` selector rule.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewStyleDeclarationDecl {
-    property: String,
-    value: ViewStyleValueDecl,
-    op: ViewStyleAssignOpDecl,
-}
-
-/// Assignment operation for retained View style declarations.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ViewStyleAssignOpDecl {
-    Replace,
-    Append,
-}
-
-/// Style value syntax that maps directly to the product View style model.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ViewStyleValueDecl {
-    Token(String),
-    SystemColor(String),
-    Rgba {
-        red: u8,
-        green: u8,
-        blue: u8,
-        alpha: u8,
-    },
-    Milli(i32),
-    Text(String),
-    List(Vec<ViewStyleValueDecl>),
-    Resource(String),
-}
-
-/// Resource-level environment predicate for a `style` block.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ViewStyleEnvironmentPredicateDecl {
-    TextScaleAtLeastMilli(u32),
 }
 
 /// Raw top-level item preserved for grammar families not lowered yet.
@@ -263,118 +174,6 @@ impl Item {
             Self::Raw(item) => Some(*item.range()),
             Self::FlowItem(_) => None,
         }
-    }
-}
-
-impl StyleItem {
-    pub(crate) fn new(init: StyleItemInit) -> Self {
-        Self {
-            attrs: init.attrs,
-            visibility: init.visibility,
-            id: init.id,
-            syntax: init.syntax,
-            inline_source: init.inline_source,
-            tokens: init.tokens,
-            rules: init.rules,
-            environment_predicates: init.environment_predicates,
-            range: init.range,
-        }
-    }
-
-    pub fn attrs(&self) -> &[Attribute] {
-        &self.attrs
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub const fn id(&self) -> &EntityRef {
-        &self.id
-    }
-
-    pub const fn syntax(&self) -> StyleSyntax {
-        self.syntax
-    }
-
-    pub fn inline_source(&self) -> Option<&str> {
-        self.inline_source.as_deref()
-    }
-
-    pub fn tokens(&self) -> &[ViewStyleTokenDecl] {
-        &self.tokens
-    }
-
-    pub fn rules(&self) -> &[ViewStyleRuleDecl] {
-        &self.rules
-    }
-
-    pub fn environment_predicates(&self) -> &[ViewStyleEnvironmentPredicateDecl] {
-        &self.environment_predicates
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl ViewStyleTokenDecl {
-    pub(crate) fn new(public_id: String, value: ViewStyleValueDecl) -> Self {
-        Self { public_id, value }
-    }
-
-    pub fn public_id(&self) -> &str {
-        &self.public_id
-    }
-
-    pub const fn value(&self) -> &ViewStyleValueDecl {
-        &self.value
-    }
-}
-
-impl ViewStyleRuleDecl {
-    pub(crate) fn new(
-        selector: Vec<ViewStyleSelectorPartDecl>,
-        declarations: Vec<ViewStyleDeclarationDecl>,
-    ) -> Self {
-        Self {
-            selector,
-            declarations,
-        }
-    }
-
-    pub fn selector(&self) -> &[ViewStyleSelectorPartDecl] {
-        &self.selector
-    }
-
-    pub fn declarations(&self) -> &[ViewStyleDeclarationDecl] {
-        &self.declarations
-    }
-}
-
-impl ViewStyleDeclarationDecl {
-    pub(crate) fn new(
-        property: String,
-        value: ViewStyleValueDecl,
-        op: ViewStyleAssignOpDecl,
-    ) -> Self {
-        Self {
-            property,
-            value,
-            op,
-        }
-    }
-
-    pub fn property(&self) -> &str {
-        &self.property
-    }
-
-    pub const fn value(&self) -> &ViewStyleValueDecl {
-        &self.value
-    }
-
-    pub const fn op(&self) -> ViewStyleAssignOpDecl {
-        self.op
     }
 }
 

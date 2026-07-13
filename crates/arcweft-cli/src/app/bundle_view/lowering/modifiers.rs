@@ -11,6 +11,10 @@ use super::{
     inline_style_properties, next_focus_group_id, normalize_entity_ref, normalize_style_ref,
     view_resource_id,
 };
+use arcweft_lang_syntax::ast::style::{
+    StyleAssignOp as SyntaxStyleAssignOp, StyleDeclarationDecl, StylePatch,
+};
+use arcweft_lang_syntax::expr::{CallArg, Expr, Literal, UnaryOp, UnitNumberSuffix};
 
 pub(super) fn lower_modifiers(
     view_id: &str,
@@ -246,14 +250,29 @@ fn lower_style_apply(
         ViewStyleModifier::Named(reference) => {
             ViewStyleApplyRef::Named(normalize_style_ref(reference))
         }
-        ViewStyleModifier::InlineArcweft(source) => {
-            let patch_id = next_patch_id(view_id, source, StyleSyntax::Arcweft, state);
-            ViewStyleApplyRef::InlineArcweft { patch_id }
-        }
-        ViewStyleModifier::InlineCss(source) => {
-            let patch_id = next_patch_id(view_id, source, StyleSyntax::Css, state);
-            ViewStyleApplyRef::InlineCss { patch_id }
-        }
+        ViewStyleModifier::Inline(patch) => match patch {
+            StylePatch::Arcweft { declarations, .. } => {
+                let source = inline_arcweft_identity_source(declarations);
+                let declarations = declarations
+                    .iter()
+                    .map(lower_inline_arcweft_declaration)
+                    .collect();
+                let patch_id =
+                    next_patch_id(view_id, &source, StyleSyntax::Arcweft, declarations, state);
+                ViewStyleApplyRef::InlineArcweft { patch_id }
+            }
+            StylePatch::Css(source) => {
+                let declarations = inline_style_declarations(source.source());
+                let patch_id = next_patch_id(
+                    view_id,
+                    source.source(),
+                    StyleSyntax::Css,
+                    declarations,
+                    state,
+                );
+                ViewStyleApplyRef::InlineCss { patch_id }
+            }
+        },
     }
 }
 
@@ -261,6 +280,7 @@ fn next_patch_id(
     view_id: &str,
     source: &str,
     syntax: StyleSyntax,
+    declarations: Vec<ViewStyleDeclaration>,
     state: &mut ViewLoweringState,
 ) -> u32 {
     let patch_id = state.patch_counter;
@@ -276,7 +296,6 @@ fn next_patch_id(
         StyleSyntax::Arcweft => state.inline_arcweft_sources.push(identity),
         StyleSyntax::Css => state.inline_css_sources.push(identity),
     }
-    let declarations = inline_style_declarations(source);
     if !declarations.is_empty() {
         state.inline_part_rules.push(ViewPartStyleRule {
             part: ViewStyleApplyRef::inline_patch_part(patch_id),
@@ -286,6 +305,86 @@ fn next_patch_id(
         });
     }
     patch_id
+}
+
+fn inline_arcweft_identity_source(declarations: &[StyleDeclarationDecl]) -> String {
+    declarations
+        .iter()
+        .map(|declaration| {
+            let op = match declaration.op() {
+                SyntaxStyleAssignOp::Replace => "=",
+                SyntaxStyleAssignOp::Append => "+=",
+            };
+            format!(
+                "{} {op} {}",
+                declaration.property().text(),
+                declaration.value().source()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn lower_inline_arcweft_declaration(declaration: &StyleDeclarationDecl) -> ViewStyleDeclaration {
+    ViewStyleDeclaration {
+        property: declaration.property().text().to_owned(),
+        value: inline_arcweft_value(declaration.value().expr())
+            .unwrap_or_else(|| ViewStyleValue::Text(declaration.value().source().to_owned())),
+        op: match declaration.op() {
+            SyntaxStyleAssignOp::Replace => StyleAssignOp::Replace,
+            SyntaxStyleAssignOp::Append => StyleAssignOp::Append,
+        },
+    }
+}
+
+fn inline_arcweft_value(expr: &Expr) -> Option<ViewStyleValue> {
+    match expr {
+        Expr::Literal(Literal::String(value)) => Some(ViewStyleValue::Text(value.clone())),
+        Expr::Literal(Literal::Bool(value)) => Some(ViewStyleValue::Text(value.to_string())),
+        Expr::Literal(Literal::UnitNumber {
+            raw,
+            suffix: UnitNumberSuffix::Milli,
+        }) => raw
+            .strip_suffix("milli")?
+            .replace('_', "")
+            .parse::<i32>()
+            .ok()
+            .map(ViewStyleValue::Milli),
+        Expr::Path(path) => Some(ViewStyleValue::Text(path.as_label().to_owned())),
+        Expr::ShortVariant(name) => Some(ViewStyleValue::Text(format!(".{name}"))),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } => match inline_arcweft_value(expr)? {
+            ViewStyleValue::Milli(value) => value.checked_neg().map(ViewStyleValue::Milli),
+            _ => None,
+        },
+        Expr::Call { callee, args } => {
+            let name = callee.dotted_selector_label()?;
+            let value = args.iter().find_map(|arg| match arg {
+                CallArg::Positional(value) => Some(value),
+                CallArg::Named { .. } | CallArg::Spread { .. } => None,
+            })?;
+            match name.as_str() {
+                "token" => value.dotted_selector_label().map(ViewStyleValue::Token),
+                "resource" => value.dotted_selector_label().map(ViewStyleValue::Resource),
+                "text" => match value {
+                    Expr::Literal(Literal::String(value)) => {
+                        Some(ViewStyleValue::Text(value.clone()))
+                    }
+                    _ => None,
+                },
+                "milli" => match value {
+                    Expr::Literal(Literal::Int(value)) => i32::try_from(value.magnitude().ok()?)
+                        .ok()
+                        .map(ViewStyleValue::Milli),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn inline_style_declarations(source: &str) -> Vec<ViewStyleDeclaration> {

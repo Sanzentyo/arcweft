@@ -920,6 +920,7 @@ mod tests {
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
             trait_catalog: TraitCatalog::default(),
+            style_catalog: arcweft_lang_sema::style::CheckedViewStyleCatalog::default(),
         }));
     }
 
@@ -972,6 +973,7 @@ mod tests {
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
             trait_catalog: TraitCatalog::default(),
+            style_catalog: arcweft_lang_sema::style::CheckedViewStyleCatalog::default(),
         }
     }
 }

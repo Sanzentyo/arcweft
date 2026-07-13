@@ -30,29 +30,35 @@ entry game @entry.modern_feedback_view {
 }
 
 pub style modern_feedback_panel {
-  token font.view_stack = ["Noto Sans JP", "Yu Gothic UI", "Yu Gothic", "Meiryo", "MS PGothic", "MS Gothic", "Hiragino Sans", "Noto Emoji", "system-ui", "Arcweft Demo"]
-  token color.canvas = rgba(11, 16, 22, 210)
-  token color.panel = rgba(28, 41, 56, 178)
-  token color.panel_hover = rgba(50, 70, 88, 214)
-  token color.field = rgba(8, 14, 24, 164)
-  token color.accent = rgba(94, 234, 212, 255)
-  token color.accent_pressed = rgba(45, 212, 191, 255)
-  token color.selection = rgba(94, 234, 212, 116)
-  token color.text = rgba(244, 247, 251, 255)
-  token color.muted = rgba(164, 176, 194, 255)
-  token color.glass_border = rgba(158, 245, 231, 96)
-  token shadow.glass_control = text("0px 18px 42px 0px rgba(0,0,0,0.42), inset 0px 1px 0px 0px rgba(255,255,255,0.18)")
-  token shadow.glass_button = text("0px 14px 30px 0px rgba(0,0,0,0.36), inset 0px 1px 0px 0px rgba(255,255,255,0.14)")
-  token filter.glass_blur = text("blur(10px)")
-  token depth.field = 1200milli
-  token depth.button = 1600milli
-  token depth.button_hover = 2200milli
-  token metric.corner_lg = 14000milli
-  token metric.corner_md = 9000milli
-  token metric.focus_ring = 2000milli
-  token metric.corner_frame = 26000milli
-  token metric.corner_frame_width = 3000milli
-  token metric.corner_frame_offset = 2000milli
+  token font.view_stack: FontFamilyList = ["Noto Sans JP", "Yu Gothic UI", "Yu Gothic", "Meiryo", "MS PGothic", "MS Gothic", "Hiragino Sans", "Noto Emoji", system_font(.Ui), "Arcweft Demo"]
+  token color.canvas: Color = rgba(11, 16, 22, 210)
+  token color.panel: Color = rgba(28, 41, 56, 178)
+  token color.panel_hover: Color = rgba(50, 70, 88, 214)
+  token color.field: Color = rgba(8, 14, 24, 164)
+  token color.accent: Color = rgba(94, 234, 212, 255)
+  token color.accent_pressed: Color = rgba(45, 212, 191, 255)
+  token color.selection: Color = rgba(94, 234, 212, 116)
+  token color.text: Color = rgba(244, 247, 251, 255)
+  token color.muted: Color = rgba(164, 176, 194, 255)
+  token color.glass_border: Color = rgba(158, 245, 231, 96)
+  token shadow.glass_control: ShadowList = [
+    shadow(x = 0px, y = 18px, blur = 42px, spread = 0px, color = rgba(0, 0, 0, 107)),
+    inset_shadow(x = 0px, y = 1px, blur = 0px, spread = 0px, color = rgba(255, 255, 255, 46)),
+  ]
+  token shadow.glass_button: ShadowList = [
+    shadow(x = 0px, y = 14px, blur = 30px, spread = 0px, color = rgba(0, 0, 0, 92)),
+    inset_shadow(x = 0px, y = 1px, blur = 0px, spread = 0px, color = rgba(255, 255, 255, 36)),
+  ]
+  token filter.glass_blur: FilterList = [blur(10px)]
+  token depth.field: Integer = 1200
+  token depth.button: Integer = 1600
+  token depth.button_hover: Integer = 2200
+  token metric.corner_lg: Length = 14px
+  token metric.corner_md: Length = 9px
+  token metric.focus_ring: Length = 2px
+  token metric.corner_frame: Length = 26px
+  token metric.corner_frame_width: Length = 3px
+  token metric.corner_frame_offset: Length = 2px
 
   Panel {
     background-color = token(color.canvas)
@@ -61,11 +67,11 @@ pub style modern_feedback_panel {
   }
 
   Column {
-    gap = 14000milli
+    gap = 14px
   }
 
   Row {
-    gap = 10000milli
+    gap = 10px
   }
 
   TextField {
@@ -132,7 +138,6 @@ pub style modern_feedback_panel {
     opacity = 460milli
   }
 
-  environment text_scale_at_least_milli = 1000
 }
 
 pub view ModernFeedbackNamePanel() {
@@ -143,14 +148,14 @@ pub view ModernFeedbackNamePanel() {
       Text("Control deck")
         .style {
           color = rgba(244, 247, 251, 255)
-          font-size = 36000milli
-          font-weight = text("720")
+          font-size = 36px
+          font-weight = 720
         }
 
       Text("A one-line player-rendered view scoped to the name receive step.")
         .style {
           color = rgba(164, 176, 194, 255)
-          font-size = 16000milli
+          font-size = 16px
       }
 
       Row {
@@ -184,14 +189,14 @@ pub view ModernFeedbackBriefPanel() {
       Text("Control deck")
         .style {
           color = rgba(244, 247, 251, 255)
-          font-size = 36000milli
-          font-weight = text("720")
+          font-size = 36px
+          font-weight = 720
         }
 
       Text("A multi-line player-rendered view scoped to the brief receive step.")
         .style {
           color = rgba(164, 176, 194, 255)
-          font-size = 16000milli
+          font-size = 16px
       }
 
       TextArea(product_brief)

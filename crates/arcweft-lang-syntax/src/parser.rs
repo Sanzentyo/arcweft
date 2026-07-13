@@ -42,6 +42,7 @@ pub mod proof;
 pub mod recovery;
 pub mod source;
 pub mod statements;
+pub mod style;
 pub mod top_level;
 pub mod view;
 use await_::{is_await_with_head, parse_await_with};

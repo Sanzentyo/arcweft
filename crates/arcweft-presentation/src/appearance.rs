@@ -5,15 +5,18 @@
 //! pure data into Arcweft presentation and View evaluation.
 
 use arcweft_id::PublicId;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ColorScheme {
     #[default]
     Light,
     Dark,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ColorSchemePreference {
     #[default]
     System,
@@ -21,17 +24,18 @@ pub enum ColorSchemePreference {
     Dark,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ContrastPreference {
     #[default]
     Standard,
     More,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct TextScaleMilli(pub u16);
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct EnvironmentRevision(pub u64);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,7 +48,8 @@ pub struct PresentationEnvironment {
     revision: EnvironmentRevision,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SystemColor {
     Canvas,
     CanvasText,
@@ -63,7 +68,7 @@ pub enum SystemColor {
     Success,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct PresentationColor {
     pub red: u8,
     pub green: u8,
@@ -71,7 +76,7 @@ pub struct PresentationColor {
     pub alpha: u8,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SystemPalette {
     pub canvas: PresentationColor,
     pub canvas_text: PresentationColor,
@@ -90,7 +95,7 @@ pub struct SystemPalette {
     pub success: PresentationColor,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SystemPaletteSet {
     pub light: SystemPalette,
     pub dark: SystemPalette,
@@ -194,6 +199,73 @@ impl PresentationColor {
     pub const fn rgb(red: u8, green: u8, blue: u8) -> Self {
         Self::rgba(red, green, blue, 255)
     }
+
+    /// Linearly interpolates channels with a clamped thousandths progress.
+    #[must_use]
+    pub fn lerp(self, target: Self, progress_milli: u16) -> Self {
+        let progress = i32::from(progress_milli.min(1_000));
+        Self {
+            red: lerp_channel(self.red, target.red, progress),
+            green: lerp_channel(self.green, target.green, progress),
+            blue: lerp_channel(self.blue, target.blue, progress),
+            alpha: lerp_channel(self.alpha, target.alpha, progress),
+        }
+    }
+}
+
+impl SystemColor {
+    pub const ALL: &'static [Self] = &[
+        Self::Canvas,
+        Self::CanvasText,
+        Self::Surface,
+        Self::SurfaceText,
+        Self::RaisedSurface,
+        Self::MutedText,
+        Self::Border,
+        Self::Accent,
+        Self::AccentText,
+        Self::FocusRing,
+        Self::Selection,
+        Self::SelectionText,
+        Self::Danger,
+        Self::Warning,
+        Self::Success,
+    ];
+
+    /// Canonical native Style enum shorthand without the leading dot.
+    pub const fn source_name(self) -> &'static str {
+        match self {
+            Self::Canvas => "Canvas",
+            Self::CanvasText => "CanvasText",
+            Self::Surface => "Surface",
+            Self::SurfaceText => "SurfaceText",
+            Self::RaisedSurface => "RaisedSurface",
+            Self::MutedText => "MutedText",
+            Self::Border => "Border",
+            Self::Accent => "Accent",
+            Self::AccentText => "AccentText",
+            Self::FocusRing => "FocusRing",
+            Self::Selection => "Selection",
+            Self::SelectionText => "SelectionText",
+            Self::Danger => "Danger",
+            Self::Warning => "Warning",
+            Self::Success => "Success",
+        }
+    }
+
+    pub fn from_source_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|role| role.source_name() == value)
+    }
+}
+
+fn lerp_channel(source: u8, target: u8, progress_milli: i32) -> u8 {
+    let source = i32::from(source);
+    let delta = i32::from(target) - source;
+    let value = source + (delta * progress_milli + 500) / 1_000;
+    u8::try_from(value.clamp(0, 255)).unwrap_or_default()
 }
 
 impl SystemPalette {

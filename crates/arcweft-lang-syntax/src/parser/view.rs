@@ -18,6 +18,7 @@ use crate::pattern::parse_pattern;
 
 use super::headers::{normalize_decl_id_ref, parse_required_id_ref, simple_error};
 use super::recovery::ParseError;
+use super::style::{parse_inline_css_style, parse_inline_native_style};
 use super::{parse_expr_lossy, split_top_level_binding};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,22 +60,57 @@ struct ParsedViewChain {
     modifiers: Vec<ViewModifier>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ViewSourceLine {
+    text: String,
+    start: usize,
+    end: usize,
+}
+
+struct ViewSourceMap<'a> {
+    body: &'a str,
+    base: usize,
+    lines: Vec<(usize, usize, usize)>,
+}
+
+impl<'a> ViewSourceMap<'a> {
+    fn new(body: &'a str, base: usize, lines: &[ViewSourceLine]) -> Self {
+        Self {
+            body,
+            base,
+            lines: lines
+                .iter()
+                .map(|line| (line.text.as_ptr() as usize, line.start, line.end))
+                .collect(),
+        }
+    }
+
+    fn location(&self, line: &str) -> Option<TextRange> {
+        let pointer = line.as_ptr() as usize;
+        self.lines
+            .iter()
+            .find(|(candidate, _, _)| *candidate == pointer)
+            .map(|(_, start, end)| TextRange::new(*start, *end))
+    }
+
+    fn source(&self, range: TextRange) -> Option<&'a str> {
+        let start = range.start().checked_sub(self.base)?;
+        let end = range.end().checked_sub(self.base)?;
+        self.body.get(start..end)
+    }
+}
+
 pub(super) fn parse_view_body(
     body: &str,
     base: usize,
     module_path: Option<&str>,
     errors: &mut Vec<ParseError>,
 ) -> Option<ViewBody> {
-    let expanded_lines = body
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .filter(|line| !line.starts_with("//") && !line.starts_with("///"))
-        .flat_map(expand_view_line)
-        .collect::<Vec<_>>();
+    let expanded_lines = mapped_view_lines(body, base);
+    let source_map = ViewSourceMap::new(body, base, &expanded_lines);
     let lines = expanded_lines
         .iter()
-        .map(String::as_str)
+        .map(|line| line.text.as_str())
         .collect::<Vec<_>>();
 
     if lines.is_empty() {
@@ -88,37 +124,81 @@ pub(super) fn parse_view_body(
     }
 
     let range = TextRange::new(base, base.saturating_add(body.len()));
-    let value = parse_view_exprs(&lines, base, module_path, errors);
+    let value = parse_view_exprs(&lines, base, module_path, &source_map, errors);
     Some(ViewBody::new(Vec::new(), Vec::new(), value, range))
 }
 
-fn expand_view_line(line: &str) -> Vec<String> {
-    expand_else_line(line)
-        .into_iter()
-        .flat_map(|line| expand_inline_view_chain_line(&line))
+fn mapped_view_lines(body: &str, base: usize) -> Vec<ViewSourceLine> {
+    let mut offset = 0;
+    body.split_inclusive('\n')
+        .filter_map(|raw_line| {
+            let content = raw_line.trim_end_matches(['\r', '\n']);
+            let trimmed = content.trim();
+            let leading = content.len() - content.trim_start().len();
+            let line =
+                (!trimmed.is_empty() && !trimmed.starts_with("//") && !trimmed.starts_with("///"))
+                    .then(|| ViewSourceLine {
+                        text: trimmed.to_owned(),
+                        start: base + offset + leading,
+                        end: base + offset + leading + trimmed.len(),
+                    });
+            offset += raw_line.len();
+            line
+        })
+        .flat_map(expand_view_line)
         .collect()
 }
 
-fn expand_else_line(line: &str) -> Vec<String> {
-    let trimmed = line.trim();
-    let Some(rest) = trimmed.strip_prefix("} else") else {
-        return vec![line.to_owned()];
-    };
-    vec!["}".to_owned(), format!("else{rest}").trim().to_owned()]
+fn expand_view_line(line: ViewSourceLine) -> Vec<ViewSourceLine> {
+    expand_else_line(line)
+        .into_iter()
+        .flat_map(expand_inline_view_chain_line)
+        .collect()
 }
 
-fn expand_inline_view_chain_line(line: &str) -> Vec<String> {
-    let Some(index) = line.find(").") else {
-        return vec![line.to_owned()];
+fn expand_else_line(line: ViewSourceLine) -> Vec<ViewSourceLine> {
+    let Some(rest) = line.text.strip_prefix("} else") else {
+        return vec![line];
     };
-    let (head, tail) = line.split_at(index + 1);
-    vec![head.trim().to_owned(), tail.trim().to_owned()]
+    let else_start = line.text.len() - "else".len() - rest.len();
+    vec![
+        ViewSourceLine {
+            text: "}".to_owned(),
+            start: line.start,
+            end: line.start + '}'.len_utf8(),
+        },
+        ViewSourceLine {
+            text: line.text[else_start..].to_owned(),
+            start: line.start + else_start,
+            end: line.end,
+        },
+    ]
+}
+
+fn expand_inline_view_chain_line(line: ViewSourceLine) -> Vec<ViewSourceLine> {
+    let Some(index) = line.text.find(").") else {
+        return vec![line];
+    };
+    let split = index + 1;
+    vec![
+        ViewSourceLine {
+            text: line.text[..split].to_owned(),
+            start: line.start,
+            end: line.start + split,
+        },
+        ViewSourceLine {
+            text: line.text[split..].to_owned(),
+            start: line.start + split,
+            end: line.end,
+        },
+    ]
 }
 
 fn parse_view_exprs(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> ViewExpr {
     let mut items = Vec::new();
@@ -156,40 +236,47 @@ fn parse_view_exprs(
         }
         if line.starts_with("if ") && line.ends_with('{') {
             let (nested, consumed) =
-                parse_view_if_block(&lines[index..], base, module_path, errors);
+                parse_view_if_block(&lines[index..], base, module_path, source_map, errors);
             items.push(nested);
             index += consumed.max(1);
             continue;
         }
         if line.starts_with("match ") && line.ends_with('{') {
             let (nested, consumed) =
-                parse_view_match_block(&lines[index..], base, module_path, errors);
+                parse_view_match_block(&lines[index..], base, module_path, source_map, errors);
             items.push(nested);
             index += consumed.max(1);
             continue;
         }
         if line.starts_with("for ") && line.ends_with('{') {
             let (nested, consumed) =
-                parse_view_for_block(&lines[index..], base, module_path, errors);
+                parse_view_for_block(&lines[index..], base, module_path, source_map, errors);
             items.push(nested);
             index += consumed.max(1);
             continue;
         }
         if line.starts_with("AwaitView(") && line.ends_with('{') {
             let (nested, consumed) =
-                parse_view_await_block(&lines[index..], base, module_path, errors);
+                parse_view_await_block(&lines[index..], base, module_path, source_map, errors);
             items.push(nested);
             index += consumed.max(1);
             continue;
         }
         if line.ends_with('{') && !line.starts_with('.') {
-            let (nested, consumed) = parse_view_block(&lines[index..], base, module_path, errors);
+            let (nested, consumed) =
+                parse_view_block(&lines[index..], base, module_path, source_map, errors);
             items.push(nested);
             index += consumed.max(1);
             continue;
         }
         let consumed = collect_view_chain_lines(&lines[index..]);
-        let chain = parse_view_chain(&lines[index..index + consumed], base, module_path, errors);
+        let chain = parse_view_chain(
+            &lines[index..index + consumed],
+            base,
+            module_path,
+            source_map,
+            errors,
+        );
         let range = TextRange::new(base, base.saturating_add(line.len()));
         items.push(build_view_expr(chain, range));
         index += consumed;
@@ -222,6 +309,7 @@ fn parse_view_await_block(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> (ViewExpr, usize) {
     let head = lines[0].trim().trim_end_matches('{').trim();
@@ -254,7 +342,9 @@ fn parse_view_await_block(
     };
     let branches = lines[1..end]
         .iter()
-        .filter_map(|line| parse_view_await_branch(line.trim(), base, module_path, errors))
+        .filter_map(|line| {
+            parse_view_await_branch(line.trim(), base, module_path, source_map, errors)
+        })
         .collect::<Vec<_>>();
     (
         ViewExpr::Await(ViewAwait::new(
@@ -270,6 +360,7 @@ fn parse_view_await_branch(
     line: &str,
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> Option<ViewAwaitBranch> {
     if line.is_empty() {
@@ -313,7 +404,7 @@ fn parse_view_await_branch(
     Some(ViewAwaitBranch::new(
         kind,
         parse_pattern(pattern),
-        parse_view_exprs(&[value.trim()], base, module_path, errors),
+        parse_view_exprs(&[value.trim()], base, module_path, source_map, errors),
     ))
 }
 
@@ -331,6 +422,7 @@ fn parse_view_if_block(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> (ViewExpr, usize) {
     let head = lines[0].trim().trim_end_matches('{').trim();
@@ -344,7 +436,7 @@ fn parse_view_if_block(
         ));
         return (ViewExpr::Raw(head.to_owned()), lines.len());
     };
-    let then_branch = parse_view_exprs(&lines[1..then_end], base, module_path, errors);
+    let then_branch = parse_view_exprs(&lines[1..then_end], base, module_path, source_map, errors);
     let mut consumed = then_end + 1;
     let else_branch = lines.get(consumed).and_then(|line| {
         let line = line.trim();
@@ -354,6 +446,7 @@ fn parse_view_if_block(
                 &lines[consumed + 1..consumed + else_end],
                 base,
                 module_path,
+                source_map,
                 errors,
             );
             consumed += else_end + 1;
@@ -377,6 +470,7 @@ fn parse_view_match_block(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> (ViewExpr, usize) {
     let head = lines[0].trim().trim_end_matches('{').trim();
@@ -395,7 +489,7 @@ fn parse_view_match_block(
     };
     let arms = lines[1..end]
         .iter()
-        .filter_map(|line| parse_view_match_arm(line.trim(), base, module_path, errors))
+        .filter_map(|line| parse_view_match_arm(line.trim(), base, module_path, source_map, errors))
         .collect::<Vec<_>>();
     (
         ViewExpr::Match(ViewMatch::new(
@@ -411,6 +505,7 @@ fn parse_view_match_arm(
     line: &str,
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> Option<ViewMatchArm> {
     if line.is_empty() {
@@ -431,7 +526,7 @@ fn parse_view_match_arm(
     Some(ViewMatchArm::new(
         parse_pattern(pattern.trim()),
         guard.map(|guard| parse_expr_lossy(guard.trim())),
-        parse_view_exprs(&[value.trim()], base, module_path, errors),
+        parse_view_exprs(&[value.trim()], base, module_path, source_map, errors),
     ))
 }
 
@@ -439,6 +534,7 @@ fn parse_view_for_block(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> (ViewExpr, usize) {
     let head = lines[0].trim().trim_end_matches('{').trim();
@@ -466,7 +562,7 @@ fn parse_view_for_block(
         split_top_level_punctuation_once(key.trim(), '=')
             .map(|(_, value)| parse_expr_lossy(value.trim()))
     });
-    let body = parse_view_exprs(&lines[1..end], base, module_path, errors);
+    let body = parse_view_exprs(&lines[1..end], base, module_path, source_map, errors);
     (
         ViewExpr::ForEach(ViewForEach::new(
             parse_pattern(pattern.trim()),
@@ -500,6 +596,7 @@ fn parse_view_block(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> (ViewExpr, usize) {
     let head = lines[0].trim().trim_end_matches('{').trim();
@@ -516,7 +613,13 @@ fn parse_view_block(
         if index == 0 {
             body_start = 1;
         } else if depth <= 0 {
-            let children = parse_view_exprs(&lines[body_start..index], base, module_path, errors);
+            let children = parse_view_exprs(
+                &lines[body_start..index],
+                base,
+                module_path,
+                source_map,
+                errors,
+            );
             let child_list = match children {
                 ViewExpr::Fragment(children) => children,
                 child => vec![child],
@@ -537,7 +640,7 @@ fn parse_view_block(
                 return (ViewExpr::Raw(head.to_owned()), index + 1);
             }
             let (modifiers, modifier_lines) =
-                parse_view_modifiers(&lines[index + 1..], base, module_path, errors);
+                parse_view_modifiers(&lines[index + 1..], base, module_path, source_map, errors);
             return (
                 ViewExpr::Element(ViewElement::new(
                     callee.to_owned(),
@@ -618,10 +721,11 @@ fn parse_view_chain(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> ParsedViewChain {
     let head = parse_view_head(lines[0], base, module_path, errors);
-    let (modifiers, _) = parse_view_modifiers(&lines[1..], base, module_path, errors);
+    let (modifiers, _) = parse_view_modifiers(&lines[1..], base, module_path, source_map, errors);
     ParsedViewChain { head, modifiers }
 }
 
@@ -629,6 +733,7 @@ fn parse_view_modifiers(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> (Vec<ViewModifier>, usize) {
     let mut modifiers = Vec::new();
@@ -646,6 +751,7 @@ fn parse_view_modifiers(
             &lines[index..],
             base,
             module_path,
+            source_map,
             ViewFxApplicationOrdinal::new(fx_ordinal),
             errors,
         ) {
@@ -774,6 +880,7 @@ fn parse_view_modifier(
     lines: &[&str],
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     fx_ordinal: ViewFxApplicationOrdinal,
     errors: &mut Vec<ParseError>,
 ) -> Option<(ViewModifier, usize)> {
@@ -799,12 +906,17 @@ fn parse_view_modifier(
         return Some((ViewModifier::Style(ViewStyleModifier::named(reference)), 1));
     }
     if line.starts_with(".style(.Css)") {
-        let (source, consumed) = collect_inline_modifier_block(lines, ".style(.Css)");
-        return Some((ViewModifier::style_css(source), consumed));
+        let (source, consumed, range) =
+            collect_inline_style_block(lines, ".style(.Css)", source_map)?;
+        return Some((
+            ViewModifier::style_inline(parse_inline_css_style(&source, range)),
+            consumed,
+        ));
     }
     if line.starts_with(".style") && line.contains('{') {
-        let (source, consumed) = collect_inline_modifier_block(lines, ".style");
-        return Some((ViewModifier::style_arcweft(source), consumed));
+        let (source, consumed, range) = collect_inline_style_block(lines, ".style", source_map)?;
+        let patch = parse_inline_native_style(&source, range, errors);
+        return Some((ViewModifier::style_inline(patch), consumed));
     }
     if let Some(part) = call_arg(line, ".part") {
         return Some((ViewModifier::Part(part.trim().to_owned()), 1));
@@ -950,7 +1062,7 @@ fn view_event_modifier(lines: &[&str], line: &str) -> Option<(ViewModifier, usiz
         return Some((view_on_event(name, parse_expr_lossy(value)), 1));
     }
     if tail.starts_with('{') {
-        let (source, consumed) = collect_inline_modifier_block(lines, head);
+        let (source, consumed, _) = collect_inline_modifier_block(lines, head);
         return Some((
             view_on_event(name, crate::parser::parse_callback_block_expr_body(&source)),
             consumed,
@@ -1509,7 +1621,25 @@ fn call_arg<'a>(source: &'a str, name: &str) -> Option<&'a str> {
         .map(str::trim)
 }
 
-fn collect_inline_modifier_block(lines: &[&str], head_prefix: &str) -> (String, usize) {
+fn collect_inline_style_block(
+    lines: &[&str],
+    head_prefix: &str,
+    source_map: &ViewSourceMap<'_>,
+) -> Option<(String, usize, TextRange)> {
+    let consumed = collect_modifier_lines(lines);
+    let first = source_map.location(lines.first()?)?;
+    let last = source_map.location(lines.get(consumed.saturating_sub(1))?)?;
+    let block_range = TextRange::new(first.start(), last.end());
+    let block = source_map.source(block_range)?;
+    let tail = block.strip_prefix(head_prefix)?;
+    let open = head_prefix.len() + tail.find('{')?;
+    let close = block.rfind('}')?;
+    let body_start = open.saturating_add('{'.len_utf8()).min(close);
+    let range = TextRange::new(first.start() + body_start, first.start() + close);
+    Some((block[body_start..close].to_owned(), consumed, range))
+}
+
+fn collect_inline_modifier_block(lines: &[&str], head_prefix: &str) -> (String, usize, usize) {
     let mut depth = 0_i32;
     let mut body = Vec::new();
     let mut consumed = 0;
@@ -1528,18 +1658,13 @@ fn collect_inline_modifier_block(lines: &[&str], head_prefix: &str) -> (String, 
         }
     }
     let joined = body.join("\n");
-    let without_head = joined
-        .trim_start()
-        .strip_prefix(head_prefix)
-        .unwrap_or(joined.trim_start())
-        .trim_start();
-    let without_open = without_head.strip_prefix('{').unwrap_or(without_head);
-    (
-        without_open
-            .trim_end()
-            .trim_end_matches('}')
-            .trim()
-            .to_owned(),
-        consumed,
-    )
+    let head_start = joined.find(head_prefix).unwrap_or_default();
+    let open = joined[head_start + head_prefix.len()..]
+        .find('{')
+        .map_or(head_start + head_prefix.len(), |offset| {
+            head_start + head_prefix.len() + offset
+        });
+    let close = joined.rfind('}').unwrap_or(joined.len());
+    let body_start = open.saturating_add(1).min(close);
+    (joined[body_start..close].to_owned(), consumed, body_start)
 }

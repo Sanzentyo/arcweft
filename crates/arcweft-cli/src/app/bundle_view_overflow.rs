@@ -1,6 +1,4 @@
-use super::bundle_view::{
-    ViewSidecarError, expr_source, inline_style_properties, normalize_property_name,
-};
+use super::bundle_view::{ViewSidecarError, expr_source, normalize_property_name};
 use arcweft_lang_syntax::ast::view::{ViewModifier, ViewStyleModifier};
 
 pub(in crate::app) fn validate_interactive_overflow_modifiers(
@@ -16,14 +14,7 @@ pub(in crate::app) fn validate_interactive_overflow_modifiers(
             ViewModifier::Property { name, value } => {
                 reject_interactive_overflow_property(element, name, &expr_source(value))?;
             }
-            ViewModifier::Style(
-                ViewStyleModifier::InlineArcweft(source) | ViewStyleModifier::InlineCss(source),
-            ) => {
-                for (name, value) in inline_style_properties(source) {
-                    reject_interactive_overflow_property(element, &name, &value)?;
-                }
-            }
-            ViewModifier::Style(ViewStyleModifier::Named(_))
+            ViewModifier::Style(ViewStyleModifier::Named(_) | ViewStyleModifier::Inline(_))
             | ViewModifier::Fx(_)
             | ViewModifier::Part(_)
             | ViewModifier::Label(_)

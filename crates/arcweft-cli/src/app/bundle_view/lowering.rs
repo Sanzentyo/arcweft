@@ -11,9 +11,7 @@ use self::modifiers::{
     lower_text_modifiers,
 };
 use self::scroll::lower_scroll_region;
-pub(in crate::app) use self::scroll::{
-    inline_style_properties, normalize_property_name, style_layout_length_u32,
-};
+pub(in crate::app) use self::scroll::{inline_style_properties, normalize_property_name};
 use self::text_controls::{
     InputHandleBinding, lower_text_control_payload_field, lower_text_field, modifier_label,
     normalize_input_payload_ref, register_input_handle_binding, symbol_expr_name,

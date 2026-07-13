@@ -20,13 +20,15 @@ use crate::effect_model::{
     CallableId, CallableKind, EffectContract, Visibility as EffectVisibility,
 };
 use crate::effects::EffectSet;
+use crate::style::check_view_styles;
 use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
+use arcweft_lang_hir::style::HirStyleDecl;
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::flow::AuthoredExpr;
 use arcweft_lang_syntax::ast::items::{
     EntityDeclItem, EntityDeclKind, EntryItem, EntryRouteBinding, EntryRouteBindingSource,
     EnumItem, EnumVariant, ExternModItem, ExternModMember, ImplItem, ImplMember, StructItem,
-    StyleItem, TypeAliasItem,
+    TypeAliasItem,
 };
 use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
@@ -80,7 +82,11 @@ impl TypeCheckReport {
 
 /// Analyzes lowered HIR with an explicit symbol/method environment.
 pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
+    let (style_catalog, style_diagnostics) = check_view_styles(module);
     let mut checker = TypeChecker::new(env);
+    checker
+        .errors
+        .extend(style_diagnostics.into_iter().map(TypeCheckError::style));
     checker.check_module(module);
     checker.apply_pending_higher_order_effect_calls();
     let effects = std::mem::take(&mut checker.effect_collector).finish();
@@ -101,6 +107,7 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
         effects,
         for_iteration_evidence: checker.for_iteration_evidence,
         trait_catalog: checker.trait_catalog,
+        style_catalog,
     }
 }
 
@@ -751,7 +758,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_style_decl(&mut self, item: &StyleItem) {
+    fn check_style_decl(&mut self, item: &HirStyleDecl) {
         self.expect_entity_kind(item.id(), &EntityKind::Style, "style id");
     }
 

@@ -885,7 +885,9 @@ dependencies = [
  "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
+ "arcweft-presentation",
  "arcweft-source",
+ "arcweft-view",
  "thiserror 2.0.18",
 ]
 

@@ -10,6 +10,7 @@ use crate::ast::common::TextRange;
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("{message}")]
 pub struct ParseError {
+    code: String,
     range: TextRange,
     expected: Vec<String>,
     found: Option<String>,
@@ -43,6 +44,7 @@ impl ParseError {
         anchor: arcweft_source::SourceAnchor,
     ) -> Self {
         Self {
+            code: "syntax.parse".to_owned(),
             range,
             expected,
             found,
@@ -58,6 +60,16 @@ impl ParseError {
             self.range.end() + base_offset,
         );
         self
+    }
+
+    pub(crate) fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = code.into();
+        self
+    }
+
+    /// Stable diagnostic code used by compiler and tooling integrations.
+    pub fn code(&self) -> &str {
+        &self.code
     }
 
     /// Error byte range.
@@ -97,7 +109,7 @@ impl ParseError {
             SourceRange::new(self.range.start(), self.range.end()),
         );
         let mut diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
-            .with_code("syntax.parse")
+            .with_code(self.code.clone())
             .with_label(DiagnosticLabel::primary(
                 span,
                 self.found

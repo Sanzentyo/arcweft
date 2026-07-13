@@ -1,8 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-use arcweft_lang_syntax::ast::items::{Item, ViewStyleSelectorPartDecl, ViewStyleValueDecl};
 use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::{
+    ast::{items::Item, style::StyleDeclBody},
+    expr::Expr,
+};
 
 #[test]
 fn css_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
@@ -26,33 +29,51 @@ fn css_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
         })
         .expect("css-style-parity style item");
 
+    let StyleDeclBody::Arcweft(sheet) = style.body() else {
+        panic!("css-style-parity should use native Style syntax");
+    };
+    assert!(sheet.tokens().iter().any(|token| {
+        token.public_id() == "color.accent"
+            && matches!(
+                token.value().expr(),
+                Expr::Call { callee, .. }
+                    if callee.dotted_selector_label().as_deref() == Some("rgba")
+            )
+    }));
     assert!(
-        style
-            .tokens()
-            .iter()
-            .any(|token| token.public_id() == "color.accent"
-                && matches!(token.value(), ViewStyleValueDecl::Rgba { .. }))
-    );
-    assert!(
-        style
+        sheet
             .rules()
             .iter()
-            .any(|rule| rule.selector().iter().any(|part| {
-                matches!(part, ViewStyleSelectorPartDecl::Interaction(value) if value == "hover")
-            }))
+            .any(|rule| style_rule_has_predicate(rule, "hover"))
     );
     assert!(
-        style
+        sheet
             .rules()
             .iter()
-            .any(|rule| rule.selector().iter().any(|part| {
-                matches!(part, ViewStyleSelectorPartDecl::Interaction(value) if value == "active")
-            }))
+            .any(|rule| style_rule_has_predicate(rule, "active"))
     );
-    assert!(style.rules().iter().any(|rule| rule.selector().iter().any(
-        |part| matches!(part, ViewStyleSelectorPartDecl::State(value) if value == "focus_visible")
-    )));
-    assert!(style.rules().iter().any(|rule| rule.selector().iter().any(
-        |part| matches!(part, ViewStyleSelectorPartDecl::State(value) if value == "composing")
-    )));
+    assert!(
+        sheet
+            .rules()
+            .iter()
+            .any(|rule| style_rule_has_predicate(rule, "focus-visible"))
+    );
+    assert!(
+        sheet
+            .rules()
+            .iter()
+            .any(|rule| style_rule_has_predicate(rule, "composing"))
+    );
+}
+
+fn style_rule_has_predicate(
+    rule: &arcweft_lang_syntax::ast::style::StyleRuleDecl,
+    expected: &str,
+) -> bool {
+    rule.selector().sequences().iter().any(|sequence| {
+        sequence
+            .predicates()
+            .iter()
+            .any(|predicate| predicate.name() == expected)
+    })
 }

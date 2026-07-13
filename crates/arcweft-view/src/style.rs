@@ -1,4 +1,9 @@
 //! Style property bindings and interaction-aware retained View style data.
+//!
+//! The typed native Style owner modules are the forward contract. The legacy
+//! `Milli`, `Rgba8`, `ViewPropertyValue`, and retained `ViewStyle` resolver
+//! below remain only until the seq06.11d.3 computed-style migration removes
+//! that runtime bridge; they are not compatibility aliases for the new model.
 
 use crate::{DirtyFlags, StyleId, ViewError};
 use arcweft_presentation::appearance::{
@@ -29,32 +34,28 @@ pub struct Rgba8 {
     pub alpha: u8,
 }
 
-/// Property family used by style/property binding and invalidation.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum ViewPropertyKind {
-    Opacity,
-    TranslateX,
-    TranslateY,
-    Scale,
-    Rotate,
-    Color,
-    BackgroundColor,
-    PlaceholderColor,
-    SelectionColor,
-    CaretColor,
-    CompositionUnderlineColor,
-    OutlineColor,
-    OutlineWidth,
-    BorderRadius,
-    FontSize,
-    Visibility,
-    Width,
-    Height,
-    Display,
-    SemanticLabel,
-    StructuralCondition,
-    Custom(u32),
-}
+pub mod property;
+pub mod selector;
+pub mod sheet;
+pub mod value;
+
+pub use property::{ViewPropertyKind, ViewStyleInvalidationSet, ViewStyleValueKind};
+pub use selector::{
+    ViewContainerAxis, ViewContainerPredicate, ViewElementState, ViewEnvironmentPredicate,
+    ViewInteractionSelector, ViewPartName, ViewStyleCombinator, ViewStyleComparison,
+    ViewStylePredicate, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSpecificity,
+};
+pub use sheet::{
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStylePatchId,
+    ViewStyleScopeId, ViewStyleSheetId, ViewStyleSourceId, ViewStyleTokenId,
+};
+pub use value::{
+    ViewAlignment, ViewAngleMilliDegrees, ViewBlendMode, ViewBorderRadii, ViewClip, ViewColorValue,
+    ViewDisplay, ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList,
+    ViewFontStyle, ViewFontWeight, ViewLengthMilli, ViewMask, ViewOverflow, ViewPosition,
+    ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue, ViewStyleTransition,
+    ViewSystemFontFamily,
+};
 
 /// Typed property value used by style evaluation output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,15 +65,6 @@ pub enum ViewPropertyValue {
     Color(Rgba8),
     SystemColor(SystemColor),
     Resource(u32),
-}
-
-/// Pseudo-state selector evaluated from the shared presentation interaction state.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum ViewInteractionSelector {
-    Hovered,
-    Focused,
-    Pressed,
-    Disabled,
 }
 
 /// The minimum retained View work required after a property source changes.
@@ -202,26 +194,6 @@ impl Rgba8 {
 }
 
 impl ViewPropertyKind {
-    pub const fn is_transitionable(self) -> bool {
-        matches!(
-            self,
-            Self::Opacity
-                | Self::TranslateX
-                | Self::TranslateY
-                | Self::Scale
-                | Self::Rotate
-                | Self::Color
-                | Self::BackgroundColor
-                | Self::PlaceholderColor
-                | Self::SelectionColor
-                | Self::CaretColor
-                | Self::CompositionUnderlineColor
-                | Self::OutlineColor
-                | Self::OutlineWidth
-                | Self::BorderRadius
-        )
-    }
-
     pub fn interpolate_value(
         self,
         source: ViewPropertyValue,
@@ -255,57 +227,47 @@ impl ViewPropertyKind {
         }
     }
 
-    pub const fn default_invalidation(self) -> Invalidation {
-        match self {
-            Self::Opacity
-            | Self::TranslateX
-            | Self::TranslateY
-            | Self::Scale
-            | Self::Rotate
-            | Self::Color
-            | Self::BackgroundColor
-            | Self::PlaceholderColor
-            | Self::SelectionColor
-            | Self::CaretColor
-            | Self::CompositionUnderlineColor
-            | Self::OutlineColor
-            | Self::OutlineWidth
-            | Self::BorderRadius
-            | Self::Visibility
-            | Self::Custom(_) => Invalidation::Paint,
-            Self::Width | Self::Height | Self::Display | Self::FontSize => Invalidation::Layout,
-            Self::SemanticLabel => Invalidation::Semantics,
-            Self::StructuralCondition => Invalidation::Fragment,
+    pub(crate) const fn runtime_invalidation(self) -> Invalidation {
+        let invalidation = self.default_invalidation();
+        if invalidation.contains(ViewStyleInvalidationSet::FRAGMENT) {
+            Invalidation::Fragment
+        } else if invalidation.contains(ViewStyleInvalidationSet::SEMANTICS) {
+            Invalidation::Semantics
+        } else if invalidation.contains(ViewStyleInvalidationSet::LAYOUT)
+            || invalidation.contains(ViewStyleInvalidationSet::TEXT_LAYOUT)
+        {
+            Invalidation::Layout
+        } else if invalidation.is_empty() {
+            Invalidation::None
+        } else {
+            Invalidation::Paint
         }
     }
 
     pub const fn accepts(self, value: ViewPropertyValue) -> bool {
-        match self {
-            Self::Opacity
-            | Self::TranslateX
-            | Self::TranslateY
-            | Self::Scale
-            | Self::Rotate
-            | Self::OutlineWidth
-            | Self::BorderRadius
-            | Self::FontSize
-            | Self::Width
-            | Self::Height => matches!(value, ViewPropertyValue::Milli(_)),
-            Self::Color
-            | Self::BackgroundColor
-            | Self::PlaceholderColor
-            | Self::SelectionColor
-            | Self::CaretColor
-            | Self::CompositionUnderlineColor
-            | Self::OutlineColor => matches!(
-                value,
-                ViewPropertyValue::Color(_) | ViewPropertyValue::SystemColor(_)
+        match value {
+            ViewPropertyValue::Bool(_) => matches!(self, Self::Visibility | Self::Display),
+            ViewPropertyValue::Milli(_) => matches!(
+                self.value_kind(),
+                ViewStyleValueKind::Integer
+                    | ViewStyleValueKind::Ratio
+                    | ViewStyleValueKind::Scalar
+                    | ViewStyleValueKind::Length
+                    | ViewStyleValueKind::Angle
             ),
-            Self::Visibility | Self::Display | Self::StructuralCondition => {
-                matches!(value, ViewPropertyValue::Bool(_))
+            ViewPropertyValue::Color(_) | ViewPropertyValue::SystemColor(_) => {
+                matches!(self.value_kind(), ViewStyleValueKind::Color)
             }
-            Self::SemanticLabel => matches!(value, ViewPropertyValue::Resource(_)),
-            Self::Custom(_) => true,
+            ViewPropertyValue::Resource(_) => !matches!(
+                self.value_kind(),
+                ViewStyleValueKind::Bool
+                    | ViewStyleValueKind::Integer
+                    | ViewStyleValueKind::Ratio
+                    | ViewStyleValueKind::Scalar
+                    | ViewStyleValueKind::Length
+                    | ViewStyleValueKind::Angle
+                    | ViewStyleValueKind::Color
+            ),
         }
     }
 }
@@ -359,26 +321,6 @@ impl ViewPropertyValue {
     }
 }
 
-impl ViewInteractionSelector {
-    pub const fn cascade() -> [Self; 4] {
-        [Self::Hovered, Self::Focused, Self::Pressed, Self::Disabled]
-    }
-
-    pub fn matches(
-        self,
-        target: Option<&InteractionTarget>,
-        enabled: bool,
-        interaction: &InteractionState,
-    ) -> bool {
-        match self {
-            Self::Hovered => target.is_some_and(|target| interaction.is_hovered(target)),
-            Self::Focused => target.is_some_and(|target| interaction.is_focused(target)),
-            Self::Pressed => target.is_some_and(|target| interaction.is_pressed(target)),
-            Self::Disabled => !enabled,
-        }
-    }
-}
-
 impl Invalidation {
     pub const fn dirty_flags(self) -> DirtyFlags {
         match self {
@@ -401,7 +343,7 @@ impl PropertyBinding {
             property,
             kind,
             source,
-            invalidation: kind.default_invalidation(),
+            invalidation: kind.runtime_invalidation(),
         }
     }
 
