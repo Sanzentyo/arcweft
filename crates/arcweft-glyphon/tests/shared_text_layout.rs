@@ -1,13 +1,16 @@
 use std::collections::BTreeSet;
 
-use arcweft_glyphon::{GlyphonTextEngine, PreparedTextBatch};
+use arcweft_glyphon::{
+    GlyphonTextEngine, PreparedTextBatch, PreparedTextBoundsEdge, PreparedTextError,
+    PreparedTextPhysicalBoundsError,
+};
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
     ResolvedTextStyle, RichTextInlineDirection, RichTextPresentation, RichTextRange,
     RichTextWritingMode, TextDocumentRevision, TextFontFamily,
 };
 use arcweft_text_layout::{
-    GlyphOrientation, LayoutPoint, LayoutSize, TextLayoutRequest, layout_document,
+    GlyphOrientation, LayoutPoint, LayoutRect, LayoutSize, TextLayoutRequest, layout_document,
 };
 
 const JAPANESE_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
@@ -224,5 +227,33 @@ fn prepared_batch_reuses_layout_for_paint_and_interaction() {
     assert_eq!(
         batch.get(id).map(|item| item.layout.hash),
         Some(layout_hash)
+    );
+}
+
+#[test]
+fn prepared_item_rejects_finite_clip_scale_overflow_with_numeric_context() {
+    let document = one_run_document("A", horizontal_style(), Vec::new(), 6);
+    let mut engine = engine();
+    let layout =
+        layout_document(&document, request(100.0, 100.0), &mut engine).expect("text lays out");
+
+    let error = engine
+        .prepare_layout(
+            layout,
+            None,
+            Some(LayoutRect::new(f32::MAX, 0.0, 0.0, 0.0)),
+            2.0,
+        )
+        .expect_err("finite operands whose product overflows must fail preparation");
+
+    assert_eq!(
+        error,
+        PreparedTextError::PhysicalClipBounds(
+            PreparedTextPhysicalBoundsError::PhysicalScaleOverflow {
+                edge: PreparedTextBoundsEdge::Left,
+                logical: f32::MAX,
+                raster_scale: 2.0,
+            }
+        )
     );
 }

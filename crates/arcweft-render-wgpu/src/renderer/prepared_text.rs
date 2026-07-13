@@ -5,12 +5,12 @@ use super::{
     frame_logical_extent, rectangle_vertex_buffer, runtime_control_filter_texture, slice_range,
     text_index_is_excluded,
 };
-use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::geometry::PaintRect;
 use crate::view_compositor::{ViewCompositor, ViewCompositorTarget, ViewPreparedTextEffectFrame};
 use crate::view_effects::ViewTextureExtent;
 use arcweft_glyphon::{
-    GlyphonTextEngine, PreparedTextAffine, PreparedTextItem, PreparedTextSubmission,
+    GlyphonTextEngine, PreparedTextAffine, PreparedTextItem, PreparedTextPhysicalBounds,
+    PreparedTextSubmission,
 };
 use arcweft_text_layout::LayoutRect;
 use glyphon::{
@@ -124,7 +124,7 @@ fn render_prepared_text_item(
             viewport,
             swash_cache,
             request.target,
-            item.clip,
+            item.physical_clip_bounds(),
             &submission,
         )?;
     } else {
@@ -151,7 +151,7 @@ fn render_prepared_text_item(
             viewport,
             swash_cache,
             &effect_view,
-            item.clip,
+            item.physical_clip_bounds(),
             &submission,
         )?;
         view_compositor.render_prepared_text_effects(&mut ViewPreparedTextEffectFrame {
@@ -285,7 +285,7 @@ pub(super) fn render_prepared_text_item_with_affine(
     target: ViewCompositorTarget<'_>,
     item: &PreparedTextItem,
     affine: PreparedTextAffine,
-    clip: Option<LayoutRect>,
+    physical_clip_bounds: Option<PreparedTextPhysicalBounds>,
     device_pixel_ratio: f32,
 ) -> Result<(), SharedRendererError> {
     let engine = engine.ok_or(SharedRendererError::MissingPreparedTextFonts)?;
@@ -319,7 +319,7 @@ pub(super) fn render_prepared_text_item_with_affine(
             &viewport,
             swash_cache,
             target.view,
-            clip,
+            physical_clip_bounds,
             &submission,
         );
     }
@@ -347,7 +347,7 @@ pub(super) fn render_prepared_text_item_with_affine(
         &viewport,
         swash_cache,
         &effect_view,
-        clip,
+        physical_clip_bounds,
         &submission,
     )?;
     effect_compositor.render_prepared_text_effects(&mut ViewPreparedTextEffectFrame {
@@ -382,10 +382,11 @@ fn render_prepared_submission_with_renderer(
     viewport: &Viewport,
     swash_cache: &mut SwashCache,
     target: &wgpu::TextureView,
-    clip: Option<LayoutRect>,
+    physical_clip_bounds: Option<PreparedTextPhysicalBounds>,
     submission: &PreparedTextSubmission,
 ) -> Result<(), SharedRendererError> {
-    let area = submission.glyph_area(prepared_text_bounds(clip, submission.raster_scale()));
+    let bounds = physical_clip_bounds.map_or_else(TextBounds::default, TextBounds::from);
+    let area = submission.glyph_area(bounds);
     text_renderer
         .prepare_glyph_areas(
             device,
@@ -416,13 +417,4 @@ fn render_prepared_submission_with_renderer(
     text_renderer
         .render(atlas, viewport, &mut pass)
         .map_err(|error| SharedRendererError::TextRender(error.to_string()))
-}
-
-fn prepared_text_bounds(clip: Option<LayoutRect>, raster_scale: f32) -> TextBounds {
-    clip.map_or_else(TextBounds::default, |clip| TextBounds {
-        left: pixel_floor_as_i32(clip.x * raster_scale),
-        top: pixel_floor_as_i32(clip.y * raster_scale),
-        right: pixel_ceil_as_i32(clip.right() * raster_scale),
-        bottom: pixel_ceil_as_i32(clip.bottom() * raster_scale),
-    })
 }

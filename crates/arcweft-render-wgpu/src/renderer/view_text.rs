@@ -7,7 +7,7 @@ use crate::view_compositor::{
 };
 use crate::view_direct_renderer::WgpuViewDirectPrimitiveRenderer;
 use crate::view_scene::{PreparedTextId, ViewAffine2D, ViewClip, ViewColorRgba8, ViewSolidRect};
-use arcweft_glyphon::{GlyphonTextEngine, PreparedTextAffine};
+use arcweft_glyphon::{GlyphonTextEngine, PreparedTextAffine, PreparedTextPhysicalBounds};
 use arcweft_text_layout::LayoutRect;
 use glyphon::{Cache, TextAtlas, TextRenderer};
 
@@ -82,6 +82,9 @@ impl ViewTextRenderer for WgpuViewPreparedTextRenderer<'_> {
             frame.context.clip.as_ref(),
             frame.target,
         );
+        let physical_clip_bounds = clip
+            .map(|clip| PreparedTextPhysicalBounds::try_from_logical(clip, item.raster_scale()))
+            .transpose()?;
         let selection_color = selection_color(item.interaction.selection_rgba)?;
         let selection = item
             .interaction
@@ -103,7 +106,7 @@ impl ViewTextRenderer for WgpuViewPreparedTextRenderer<'_> {
             frame.target,
             item,
             affine,
-            clip,
+            physical_clip_bounds,
             self.device_pixel_ratio,
         )
         .map_err(text_error)?;

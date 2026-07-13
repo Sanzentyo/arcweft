@@ -20,7 +20,10 @@ use glyphon::{
 };
 use thiserror::Error;
 
-use crate::{GlyphonTextEngine, GlyphonTextEngineError};
+use crate::{
+    GlyphonTextEngine, GlyphonTextEngineError, PreparedTextPhysicalBounds,
+    PreparedTextPhysicalBoundsError,
+};
 
 /// Frame-local stable index into one [`PreparedTextBatch`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -62,6 +65,7 @@ pub struct PreparedTextItem {
     pub paint: TextPaintPlan,
     pub interaction: TextInteractionPlan,
     pub clip: Option<LayoutRect>,
+    physical_clip_bounds: Option<PreparedTextPhysicalBounds>,
     raster_scale: f32,
 }
 
@@ -142,7 +146,7 @@ pub struct PreparedTextAffine {
 }
 
 /// Structured prepared-text construction failure.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum PreparedTextError {
     #[error("prepared text batch contains more than u32::MAX items")]
     TooManyItems,
@@ -153,8 +157,8 @@ pub enum PreparedTextError {
         glyph_index: usize,
         opacity_milli: u16,
     },
-    #[error("prepared text clip contains invalid geometry")]
-    InvalidClip,
+    #[error(transparent)]
+    PhysicalClipBounds(#[from] PreparedTextPhysicalBoundsError),
     #[error("prepared text submission affine contains a non-finite value")]
     InvalidSubmissionAffine,
     #[error("prepared text submission opacity {value} is outside [0, 1]")]
@@ -479,7 +483,9 @@ impl GlyphonTextEngine {
         clip: Option<LayoutRect>,
         raster_scale: f32,
     ) -> Result<PreparedTextItem, PreparedTextError> {
-        validate_clip(clip)?;
+        let physical_clip_bounds = clip
+            .map(|clip| PreparedTextPhysicalBounds::try_from_logical(clip, raster_scale))
+            .transpose()?;
         let expected_glyphs = layout
             .ruby
             .iter()
@@ -507,6 +513,7 @@ impl GlyphonTextEngine {
             paint,
             interaction,
             clip,
+            physical_clip_bounds,
             raster_scale,
         })
     }
@@ -575,6 +582,18 @@ impl GlyphonTextEngine {
 }
 
 impl PreparedTextItem {
+    /// Checked physical clip prepared alongside this item's logical clip.
+    #[must_use]
+    pub const fn physical_clip_bounds(&self) -> Option<PreparedTextPhysicalBounds> {
+        self.physical_clip_bounds
+    }
+
+    /// Physical raster scale used by glyph instances and clip conversion.
+    #[must_use]
+    pub const fn raster_scale(&self) -> f32 {
+        self.raster_scale
+    }
+
     /// Builds glyphon instances from the current paint-only state.
     #[must_use]
     pub fn submission(&self) -> PreparedTextSubmission {
@@ -720,16 +739,6 @@ fn glyph_color(
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn unit_to_u8(value: f32) -> u8 {
     (value * 255.0).round() as u8
-}
-
-fn validate_clip(clip: Option<LayoutRect>) -> Result<(), PreparedTextError> {
-    if let Some(clip) = clip {
-        let values = [clip.x, clip.y, clip.width, clip.height];
-        if values.iter().any(|value| !value.is_finite()) || clip.width < 0.0 || clip.height < 0.0 {
-            return Err(PreparedTextError::InvalidClip);
-        }
-    }
-    Ok(())
 }
 
 fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {

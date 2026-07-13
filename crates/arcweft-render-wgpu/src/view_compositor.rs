@@ -15,6 +15,7 @@ use crate::view_scene::{
     PreparedTextId, ViewBlendMode, ViewBoxShadowKind, ViewCompositingGroup, ViewFilter,
     ViewFilterList, ViewMaskImage, ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
 };
+use arcweft_glyphon::PreparedTextPhysicalBoundsError;
 use arcweft_presentation::{
     fx::{ResolvedFxOffscreenPass, ResolvedFxPostProcess},
     hit::HitRect,
@@ -235,6 +236,8 @@ pub enum ViewCompositorError {
     MissingImageResource { resource_index: u32 },
     #[error("view text references missing prepared text item {text_index}")]
     MissingPreparedText { text_index: u32 },
+    #[error("view prepared text physical clip failed: {0}")]
+    PreparedTextPhysicalBounds(#[from] PreparedTextPhysicalBoundsError),
     #[error("view prepared text rendering failed: {reason}")]
     TextRender { reason: Box<str> },
     #[error("unsupported view clip: {reason}")]
