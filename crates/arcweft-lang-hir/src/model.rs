@@ -3,7 +3,7 @@ use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
         common::{TextRange, UseItem, Visibility},
-        dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
+        dialogue::{DialogueContent, DialogueDefaultsItem, LineArg, SpeakerLineSurface},
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
@@ -147,6 +147,8 @@ pub enum HirFlowItem {
 /// Dialogue call normalized enough for type checking to resolve speaker symbols.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirDialogue {
+    pub(crate) source_module: Option<CanonicalModulePath>,
+    pub(crate) speaker_surface: Option<SpeakerLineSurface>,
     pub(crate) callee: String,
     pub(crate) id: Option<EntityRef>,
     pub(crate) text_key: Option<EntityRef>,
@@ -517,6 +519,8 @@ impl HirDialogue {
         plan: Option<LinePlan>,
     ) -> Self {
         Self {
+            source_module: None,
+            speaker_surface: None,
             callee,
             id: None,
             text_key: None,
@@ -543,6 +547,16 @@ impl HirDialogue {
 
     pub fn callee(&self) -> &str {
         &self.callee
+    }
+
+    /// Canonical source module assigned when this dialogue enters a HIR project.
+    pub const fn source_module(&self) -> Option<&CanonicalModulePath> {
+        self.source_module.as_ref()
+    }
+
+    /// Parser-owned authored speaker-line ranges, when this came from speaker sugar.
+    pub const fn speaker_surface(&self) -> Option<&SpeakerLineSurface> {
+        self.speaker_surface.as_ref()
     }
 
     pub const fn id(&self) -> Option<&EntityRef> {

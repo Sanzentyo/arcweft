@@ -1,0 +1,8 @@
+fn factory() -> SpeakerPreset<Character> {
+  SpeakerPreset.new(@character.alice)
+}
+
+flow main {
+  let speaker = factory()
+  speaker: helper return
+}

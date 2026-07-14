@@ -1,10 +1,10 @@
 use super::{
     AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, EntityRefSyntax,
-    EnumVariantPayload, Expr, LifetimeScopeKind, Literal, MapKind, NominalTypeContext, Pattern,
-    Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
+    EnumVariantPayload, Expr, FnParam, FnSignature, LifetimeScopeKind, Literal, MapKind,
+    NominalTypeContext, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
 };
 use crate::{effect_row::EffectRow, effects::EffectSet};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
     let head = entity.body().split(['.', '@', ':']).next()?;
@@ -124,13 +124,6 @@ pub(super) fn numeric_literal_suffix_type(suffix: Option<&str>) -> Option<TypeKi
             _ => return None,
         })
     })
-}
-
-pub(super) fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
-    ty.is_some_and(|ty| ty.is_entity_ref_kind(&EntityKind::Character))
-        || matches!(ty, Some(TypeKind::Speaker(_)))
-        || matches!(ty, Some(TypeKind::SpeakerPreset(_)))
-        || matches!(ty, Some(TypeKind::Named(name)) if name == "SpeakerPreset")
 }
 
 pub(super) fn is_character_entity_literal(source: &str) -> bool {
@@ -960,6 +953,16 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
         TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => {
             TypeKind::Option(Box::new(type_ref_kind(&args[0])))
         }
+        TypeRef::Generic { base, args } if base == "Speaker" && args.len() == 1 => {
+            speaker_entity_kind(&args[0])
+                .map_or_else(|| TypeKind::Named(type_ref_label(ty)), TypeKind::Speaker)
+        }
+        TypeRef::Generic { base, args } if base == "SpeakerPreset" && args.len() == 1 => {
+            speaker_entity_kind(&args[0]).map_or_else(
+                || TypeKind::Named(type_ref_label(ty)),
+                TypeKind::SpeakerPreset,
+            )
+        }
         TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
             ready: Box::new(type_ref_kind(&args[0])),
             error: Box::new(type_ref_kind(&args[1])),
@@ -992,6 +995,84 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
             .unwrap_or_else(|| TypeKind::Slice(Box::new(type_ref_kind(inner)))),
         TypeRef::Generic { .. } => TypeKind::Named(type_ref_label(ty)),
     }
+}
+
+pub(super) fn function_param_local_type(param: &FnParam) -> TypeKind {
+    function_param_local_type_with_generics(param, &HashSet::new())
+}
+
+pub(super) fn function_param_local_type_with_generics(
+    param: &FnParam,
+    generic_names: &HashSet<String>,
+) -> TypeKind {
+    let ty = type_ref_kind_with_generics(param.ty(), generic_names);
+    if param.is_rest() {
+        TypeKind::Vec(Box::new(ty))
+    } else {
+        ty
+    }
+}
+
+pub(super) fn signature_generic_names(signature: &FnSignature) -> HashSet<String> {
+    signature
+        .generic_params()
+        .iter()
+        .filter_map(|param| param.as_type())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+pub(super) fn type_ref_kind_with_generics(
+    ty: &TypeRef,
+    generic_names: &HashSet<String>,
+) -> TypeKind {
+    match ty {
+        TypeRef::Path(path) if generic_names.contains(path) => TypeKind::GenericParam(path.clone()),
+        TypeRef::Projection { subject, assoc } => TypeKind::Projection {
+            subject: Box::new(type_ref_kind_with_generics(subject, generic_names)),
+            trait_name: None,
+            assoc: assoc.clone(),
+        },
+        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => TypeKind::Vec(
+            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+        ),
+        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => TypeKind::Option(
+            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+        ),
+        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+            TypeKind::Result {
+                ok: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+                error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
+            }
+        }
+        TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
+            ready: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+            error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
+        },
+        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
+            lifetime: lifetime
+                .as_ref()
+                .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
+            inner: Box::new(type_ref_kind_with_generics(inner, generic_names)),
+        },
+        TypeRef::Slice(inner) => {
+            TypeKind::Slice(Box::new(type_ref_kind_with_generics(inner, generic_names)))
+        }
+        TypeRef::Choice(alternatives) => normalize_choice_type(
+            alternatives
+                .iter()
+                .map(|alternative| type_ref_kind_with_generics(alternative, generic_names))
+                .collect::<Vec<_>>(),
+        ),
+        _ => type_ref_kind(ty),
+    }
+}
+
+fn speaker_entity_kind(ty: &TypeRef) -> Option<EntityKind> {
+    let TypeRef::Path(name) = ty else {
+        return None;
+    };
+    EntityKind::from_type_name(name)
 }
 
 fn array_type_from_slice_inner(inner: &TypeRef) -> Option<TypeKind> {

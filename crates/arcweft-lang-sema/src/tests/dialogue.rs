@@ -95,7 +95,7 @@ flow @flow.opening opening {
     let hir = lower_to_hir(&tree).expect("dialogue callee fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
-        .with_symbol("alice2", TypeKind::Named("SpeakerPreset".to_owned()));
+        .with_symbol("alice2", TypeKind::SpeakerPreset(EntityKind::Character));
 
     typecheck_hir(&hir, &env).expect("dialogue callee forms typecheck");
     let flow = &hir.flows()[0];

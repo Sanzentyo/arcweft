@@ -1,15 +1,14 @@
+use arcweft_lang_sema::types::SpeakerLineType;
 use arcweft_lang_syntax::{
     ast::{common::TextRange, dialogue::SpeakerLine},
-    cst::CstLineEvents,
+    cst::{CstLineEvents, is_identifier},
 };
-use std::collections::BTreeSet;
 
 use crate::dialogue_sugar::{
     DialogueSugarContext, DialogueSugarMode, dialogue_text_canonical_edits,
 };
 use crate::edit::{SourceEditOverlay, apply_text_edits};
 use crate::model::{TextEdit, ToolingError};
-use crate::util::is_identifier;
 
 pub(crate) fn await_question_edit(
     source: &str,
@@ -34,8 +33,7 @@ pub(crate) fn await_question_edit(
 pub(crate) fn speaker_line_edit(
     source: &str,
     line: &SpeakerLine,
-    speaker_presets: &BTreeSet<String>,
-    character_aliases: &BTreeSet<String>,
+    classification: &SpeakerLineType,
     overlay: &mut SourceEditOverlay,
 ) -> Result<Option<TextEdit>, ToolingError> {
     let surface = line.surface();
@@ -52,18 +50,15 @@ pub(crate) fn speaker_line_edit(
         .arguments_range()
         .map(|range| overlay.rewrite_range(source, range.as_range()))
         .transpose()?;
-    let callee = if speaker_presets.contains(base_name) {
-        args.map_or_else(
+    let callee = match classification {
+        SpeakerLineType::Preset(_) => args.map_or_else(
             || base_name.to_owned(),
             |args| format!("{base_name}({args})"),
-        )
-    } else if args.is_some() || character_aliases.contains(base_name) {
-        args.map_or_else(
+        ),
+        SpeakerLineType::Speaker(_) => args.map_or_else(
             || format!("{base_name}.say()"),
             |args| format!("{base_name}.say({args})"),
-        )
-    } else {
-        format!("{base_name}.say()")
+        ),
     };
     let line_range = surface.source_line_range();
     Ok(Some(TextEdit {

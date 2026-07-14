@@ -5,7 +5,10 @@ use crate::dialogue_view::{
 };
 use crate::effect_row::EffectRow;
 use crate::types::{EntityKind, EntityType, TypeKind};
-use arcweft_character::manifest::CharacterManifest;
+use arcweft_character::{
+    id::{CharacterId, CharacterPartId},
+    manifest::CharacterManifest,
+};
 use arcweft_data::DataFormat;
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -131,6 +134,7 @@ pub struct TypeCheckEnv {
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
     pub(crate) rust_packages: HashMap<String, RustPackageExports>,
     pub(crate) nominal_records: HashMap<String, HashMap<String, TypeKind>>,
+    pub(crate) character_symbols: HashMap<String, CharacterId>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
 }
 
@@ -562,6 +566,16 @@ impl TypeCheckEnv {
     pub fn with_standard_builtins(self) -> Self {
         self.with_standard_dialogue_view_types()
             .with_function("fmt", TypeKind::DisplayText)
+            .with_function_signature(
+                "SpeakerPreset.new",
+                FunctionSignature::new(
+                    TypeKind::SpeakerPreset(crate::types::EntityKind::Character),
+                    [FunctionParam::required(
+                        "character",
+                        TypeKind::entity_ref(crate::types::EntityKind::Character),
+                    )],
+                ),
+            )
             .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
             .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_builtins()
@@ -798,60 +812,79 @@ impl TypeCheckEnv {
     /// Registers look, part, and per-part variant enums from one validated manifest.
     #[must_use]
     pub fn with_character_manifest(mut self, manifest: &CharacterManifest) -> Self {
-        let character = manifest.character().as_str();
-        self = self.with_symbol(character, TypeKind::entity_ref(EntityKind::Character));
-        if let Some(compact_name) = character.strip_prefix("character.")
+        let character = manifest.character().clone();
+        let source_name = character.as_str().to_owned();
+        self.character_symbols
+            .insert(source_name.clone(), character.clone());
+        self = self.with_symbol(
+            source_name.clone(),
+            TypeKind::entity_ref(EntityKind::Character),
+        );
+        if let Some(compact_name) = source_name.strip_prefix("character.")
             && !compact_name.is_empty()
         {
+            self.character_symbols
+                .insert(compact_name.to_owned(), character.clone());
             self = self.with_symbol(compact_name, TypeKind::entity_ref(EntityKind::Character));
         }
         self = self.with_enum_variants(
-            TypeKind::character_look(character),
+            TypeKind::character_look(character.clone()),
             manifest.looks().iter().map(|look| look.id().as_str()),
         );
         self = self.with_enum_variants(
-            TypeKind::character_part(character),
+            TypeKind::character_part(character.clone()),
             manifest.parts().iter().map(|part| part.id().as_str()),
         );
         for part in manifest.parts() {
             self = self.with_enum_variants(
-                TypeKind::character_variant(character, part.id().as_str()),
+                TypeKind::character_variant(character.clone(), part.id().clone()),
                 part.variants().iter().map(|variant| variant.id().as_str()),
             );
         }
         self
     }
 
+    /// Resolves a source-visible character symbol to its canonical manifest id.
+    pub(crate) fn character_id_for_symbol(&self, symbol: &str) -> Option<&CharacterId> {
+        self.character_symbols.get(symbol)
+    }
+
     /// Returns the registered look enum type when character metadata is loaded.
-    pub fn character_look_type(&self, character: &str) -> Option<TypeKind> {
-        let ty = TypeKind::character_look(character);
+    pub fn character_look_type(&self, character: &CharacterId) -> Option<TypeKind> {
+        let ty = TypeKind::character_look(character.clone());
         self.enum_variants.contains_key(&ty).then_some(ty)
     }
 
+    /// Resolves a source alias before returning its structural look type.
+    pub(crate) fn character_look_type_for_symbol(&self, symbol: &str) -> Option<TypeKind> {
+        self.character_id_for_symbol(symbol)
+            .and_then(|character| self.character_look_type(character))
+    }
+
     /// Returns sorted manifest-declared looks for tooling and tests.
-    pub fn character_look_variants(&self, character: &str) -> Option<Vec<String>> {
-        let ty = TypeKind::character_look(character);
-        self.enum_variants.get(&ty).map(|variants| {
-            let mut variants = variants.iter().cloned().collect::<Vec<_>>();
-            variants.sort();
-            variants
-        })
+    pub fn character_look_variants(&self, character: &CharacterId) -> Option<Vec<String>> {
+        self.sorted_enum_variants(&TypeKind::character_look(character.clone()))
     }
 
     /// Returns sorted manifest-declared part ids for tooling and tests.
-    pub fn character_part_variants(&self, character: &str) -> Option<Vec<String>> {
-        let ty = TypeKind::character_part(character);
-        self.enum_variants.get(&ty).map(|variants| {
-            let mut variants = variants.iter().cloned().collect::<Vec<_>>();
-            variants.sort();
-            variants
-        })
+    pub fn character_part_variants(&self, character: &CharacterId) -> Option<Vec<String>> {
+        self.sorted_enum_variants(&TypeKind::character_part(character.clone()))
     }
 
     /// Returns sorted manifest-declared variants for one character part.
-    pub fn character_variant_variants(&self, character: &str, part: &str) -> Option<Vec<String>> {
-        let ty = TypeKind::character_variant(character, part);
-        self.enum_variants.get(&ty).map(|variants| {
+    pub fn character_variant_variants(
+        &self,
+        character: &CharacterId,
+        part: &CharacterPartId,
+    ) -> Option<Vec<String>> {
+        self.sorted_enum_variants(&TypeKind::character_variant(
+            character.clone(),
+            part.clone(),
+        ))
+    }
+
+    fn sorted_enum_variants(&self, ty: &TypeKind) -> Option<Vec<String>> {
+        self.enum_variants.get(ty).map(|variants| {
             let mut variants = variants.iter().cloned().collect::<Vec<_>>();
             variants.sort();
             variants
@@ -867,12 +900,12 @@ impl TypeCheckEnv {
             .map(|(ty, variants)| {
                 let mut variants = variants.iter().cloned().collect::<Vec<_>>();
                 variants.sort();
-                (format!("{ty:?}"), ty.clone(), variants)
+                (ty.source_label(), format!("{ty:?}"), ty.clone(), variants)
             })
             .collect::<Vec<_>>();
-        sets.sort_by(|left, right| left.0.cmp(&right.0));
+        sets.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
         sets.into_iter()
-            .map(|(_, ty, variants)| (ty, variants))
+            .map(|(_, _, ty, variants)| (ty, variants))
             .collect()
     }
 

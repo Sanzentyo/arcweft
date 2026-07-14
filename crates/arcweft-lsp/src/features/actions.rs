@@ -42,7 +42,12 @@ pub fn actions(
     analysis: &DocumentAnalysis,
     position: Position,
 ) -> Result<Vec<CodeAction>, ToolingError> {
-    let mut actions = source_code_actions_with_mapper(uri, document.text(), document.line_index())?;
+    let mut actions = source_code_actions_with_mapper(
+        uri,
+        document.text(),
+        document.line_index(),
+        analysis.canonicalization_input(),
+    )?;
     if let Some(report) = analysis.verification_report() {
         actions.extend(code_actions_from_report_with_mapper(
             uri,

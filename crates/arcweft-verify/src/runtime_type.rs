@@ -921,6 +921,7 @@ mod tests {
             for_iteration_evidence: Vec::new(),
             trait_catalog: TraitCatalog::default(),
             style_catalog: arcweft_lang_sema::style::CheckedViewStyleCatalog::default(),
+            canonicalization_inventories: Vec::new(),
         }));
     }
 
@@ -974,6 +975,7 @@ mod tests {
             for_iteration_evidence: Vec::new(),
             trait_catalog: TraitCatalog::default(),
             style_catalog: arcweft_lang_sema::style::CheckedViewStyleCatalog::default(),
+            canonicalization_inventories: Vec::new(),
         }
     }
 }

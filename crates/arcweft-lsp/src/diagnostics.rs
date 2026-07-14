@@ -3,6 +3,10 @@ use crate::positions::{LineIndex, PositionEncoding};
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
+    canonicalization::{
+        CheckedCanonicalizationInventory, SemanticDataUnavailable, SemanticDocumentId,
+        SemanticSourceRevision,
+    },
     check::{analyze_types, validate_typecheck_ready},
     diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning},
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
@@ -33,6 +37,8 @@ pub struct DocumentAnalysis {
     diagnostics: Vec<Diagnostic>,
     line_index: LineIndex,
     verification_report: Option<VerificationReport>,
+    canonicalization: Result<CheckedCanonicalizationInventory, SemanticDataUnavailable>,
+    source_revision: SemanticSourceRevision,
 }
 
 impl DocumentAnalysis {
@@ -101,7 +107,28 @@ impl DocumentAnalysis {
             diagnostics,
             line_index,
             verification_report,
+            canonicalization: Err(SemanticDataUnavailable::new(
+                SemanticDocumentId::new("<memory>"),
+                "standalone document analysis has no checked project snapshot",
+            )),
+            source_revision: SemanticSourceRevision::from_source(source),
         }
+    }
+
+    /// Runs analysis against the containing project and exact open-document snapshot.
+    pub fn analyze_project(
+        source: &str,
+        encoding: PositionEncoding,
+        profile: &LspProfile,
+        uri: &Uri,
+    ) -> Self {
+        let mut analysis = Self::analyze(source, encoding, profile);
+        analysis.canonicalization = crate::canonicalization::checked_inventory_for_document(
+            uri,
+            source,
+            &profile.typecheck_env(),
+        );
+        analysis
     }
 
     /// Diagnostics emitted for the analyzed document.
@@ -117,6 +144,23 @@ impl DocumentAnalysis {
     /// Verifier report retained for typed verifier code actions.
     pub const fn verification_report(&self) -> Option<&VerificationReport> {
         self.verification_report.as_ref()
+    }
+
+    /// Exact checked inventory or typed unavailability for this snapshot.
+    pub const fn canonicalization_input(
+        &self,
+    ) -> arcweft_tooling::model::CanonicalizationInput<'_> {
+        match &self.canonicalization {
+            Ok(inventory) => arcweft_tooling::model::CanonicalizationInput::Checked(inventory),
+            Err(unavailable) => {
+                arcweft_tooling::model::CanonicalizationInput::Unavailable(unavailable)
+            }
+        }
+    }
+
+    /// BLAKE3 revision of the exact UTF-8 source analyzed here.
+    pub const fn source_revision(&self) -> SemanticSourceRevision {
+        self.source_revision
     }
 }
 
@@ -141,7 +185,16 @@ pub fn publish_diagnostics(
         snapshot.line_index().position_encoding(),
         profile,
     );
-    let mut diagnostics = analysis.diagnostics;
+    publish_diagnostics_from_analysis(snapshot, profile, &analysis)
+}
+
+/// Builds diagnostics from the exact analysis shared by the current session cache.
+pub fn publish_diagnostics_from_analysis(
+    snapshot: &DocumentSnapshot,
+    profile: &LspProfile,
+    analysis: &DocumentAnalysis,
+) -> PublishDiagnosticsParams {
+    let mut diagnostics = analysis.diagnostics.clone();
     diagnostics.extend(profile_diagnostics(profile));
     PublishDiagnosticsParams::new(snapshot.uri().clone(), diagnostics, snapshot.version())
 }

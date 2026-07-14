@@ -875,6 +875,7 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-source",
  "arcweft-view",
+ "blake3",
  "thiserror 2.0.18",
 ]
 
@@ -1351,6 +1352,7 @@ name = "arcweft-tooling"
 version = "0.1.0"
 dependencies = [
  "arcweft-lang-hir",
+ "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "serde",
  "thiserror 2.0.18",
@@ -1375,6 +1377,7 @@ name = "arcweft-verify-lsp"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-lang-sema",
  "arcweft-runtime-host",
  "arcweft-rust-abi",
  "arcweft-tooling",

@@ -11,6 +11,7 @@ use arcweft_lang_sema::{
     },
     effect_model::CallableId,
     resolve::{registry_from_hir, validate_hir_references},
+    types::TypeKind,
 };
 use arcweft_lang_syntax::ast::dialogue::{
     DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem,
@@ -49,8 +50,12 @@ pub fn hover(
     if let Some(hover) = closure_effect_row_hover(profile, document, offset) {
         return Some(hover);
     }
-    let (word, _) = word?;
-    if let Some(text) = character_hover_markdown(profile, &word) {
+    let (word, word_range) = word?;
+    let expected_character_type = word
+        .starts_with('.')
+        .then(|| character_nominal_type_at(profile, document, word_range))
+        .flatten();
+    if let Some(text) = character_hover_markdown(profile, &word, expected_character_type.as_ref()) {
         return Some(Hover {
             contents: HoverContents::Scalar(MarkedString::String(text)),
             range: None,
@@ -60,6 +65,54 @@ pub fn hover(
         return Some(hover);
     }
     profile_hover(&profile.context(), &word)
+}
+
+fn character_nominal_type_at(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    word_range: TextRange,
+) -> Option<TypeKind> {
+    let parsed = parse_source(document.text().to_owned());
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    let hir = lower_to_hir(parsed.typed_tree()).ok()?;
+    let registry = registry_from_hir(&hir);
+    if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
+    {
+        return None;
+    }
+    let report = analyze_types(&hir, &profile.typecheck_env());
+    report
+        .judgments
+        .iter()
+        .filter(|judgment| {
+            judgment.source_range.is_some_and(|range| {
+                range.start() <= word_range.start() && word_range.end() <= range.end()
+            })
+        })
+        .filter_map(|judgment| {
+            judgment
+                .expected_type()
+                .filter(|ty| ty.character_nominal().is_some())
+                .or_else(|| {
+                    judgment
+                        .ty
+                        .character_nominal()
+                        .is_some()
+                        .then_some(&judgment.ty)
+                })
+                .map(|ty| {
+                    (
+                        judgment
+                            .source_range
+                            .map_or(usize::MAX, |range| range.end() - range.start()),
+                        ty.clone(),
+                    )
+                })
+        })
+        .min_by_key(|(span, _)| *span)
+        .map(|(_, ty)| ty)
 }
 
 fn dialogue_view_hover(

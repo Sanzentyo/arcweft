@@ -7,11 +7,11 @@ use arcweft_rust_abi::{
 };
 use lsp_types::{
     ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
-    DidChangeWatchedFilesParams, DidOpenTextDocumentParams, GotoDefinitionResponse, InlayHint,
-    InlayHintLabel, PartialResultParams, Position, Range, ReferenceContext, SignatureHelp,
-    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
-    WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
+    DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    GotoDefinitionResponse, InlayHint, InlayHintLabel, PartialResultParams, Position, Range,
+    ReferenceContext, SignatureHelp, TextDocumentContentChangeEvent, TextDocumentIdentifier,
+    TextDocumentItem, TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier,
+    WorkDoneProgressParams, WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
 };
 use std::{
     fs::{create_dir_all, write},
@@ -75,6 +75,148 @@ fn full_sync_notifications_publish_diagnostics() {
 
     assert_eq!(notifications.len(), 1);
     assert_eq!(notifications[0].method, PublishDiagnostics::METHOD);
+}
+
+#[test]
+fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
+    let project = TestProject::new("lsp-analysis-cache");
+    project.write("arcw.toml", "[package]\nname = \"lsp-analysis-cache\"\n");
+    let first = "pub character @character.alice Alice as alice {}\nflow main {\n  alice: one\n}\n";
+    project.write("src/main.arcw", first);
+    let uri = file_uri(&project.path("src/main.arcw"));
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    open_text(&mut session, uri.clone(), first);
+
+    assert_eq!(session.analyses_by_uri.len(), 1);
+    let first_analysis = Arc::clone(
+        &session
+            .analyses_by_uri
+            .get(&uri.to_string())
+            .expect("open analysis")
+            .analysis,
+    );
+    assert_code_actions_reuse_analysis(&session, &uri, &first_analysis);
+
+    let second = first.replace("alice: one", "alice: two");
+    session
+        .handle_notification(Notification::new(
+            DidChangeTextDocument::METHOD.to_owned(),
+            DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: uri.clone(),
+                    version: 2,
+                },
+                content_changes: vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: second,
+                }],
+            },
+        ))
+        .expect("full text change");
+    assert_eq!(session.analyses_by_uri.len(), 1);
+    let changed = Arc::clone(
+        &session
+            .analyses_by_uri
+            .get(&uri.to_string())
+            .expect("changed analysis")
+            .analysis,
+    );
+    assert!(!Arc::ptr_eq(&first_analysis, &changed));
+
+    let saved_analysis = assert_notification_rebuilds_analysis(
+        &mut session,
+        &uri,
+        Notification::new(
+            DidSaveTextDocument::METHOD.to_owned(),
+            DidSaveTextDocumentParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                text: None,
+            },
+        ),
+        &changed,
+        "save document",
+    );
+    let configuration_analysis = assert_notification_rebuilds_analysis(
+        &mut session,
+        &uri,
+        Notification::new(
+            DidChangeConfiguration::METHOD.to_owned(),
+            DidChangeConfigurationParams {
+                settings: serde_json::Value::Null,
+            },
+        ),
+        &saved_analysis,
+        "configuration change",
+    );
+    assert_notification_rebuilds_analysis(
+        &mut session,
+        &uri,
+        Notification::new(
+            DidChangeWatchedFiles::METHOD.to_owned(),
+            DidChangeWatchedFilesParams {
+                changes: Vec::new(),
+            },
+        ),
+        &configuration_analysis,
+        "project context refresh",
+    );
+
+    session
+        .handle_notification(Notification::new(
+            DidCloseTextDocument::METHOD.to_owned(),
+            DidCloseTextDocumentParams {
+                text_document: TextDocumentIdentifier { uri },
+            },
+        ))
+        .expect("close document");
+    assert!(session.analyses_by_uri.is_empty());
+}
+
+fn assert_notification_rebuilds_analysis(
+    session: &mut ArcweftLspSession,
+    uri: &Uri,
+    notification: Notification,
+    previous: &Arc<DocumentAnalysis>,
+    context: &str,
+) -> Arc<DocumentAnalysis> {
+    let previous_epoch = session.profile_epoch;
+    session.handle_notification(notification).expect(context);
+    assert_eq!(session.profile_epoch, previous_epoch + 1);
+    assert_eq!(session.analyses_by_uri.len(), 1);
+    let current = Arc::clone(
+        &session
+            .analyses_by_uri
+            .get(&uri.to_string())
+            .expect("rebuilt analysis")
+            .analysis,
+    );
+    assert!(!Arc::ptr_eq(previous, &current));
+    current
+}
+
+fn assert_code_actions_reuse_analysis(
+    session: &ArcweftLspSession,
+    uri: &Uri,
+    expected: &Arc<DocumentAnalysis>,
+) {
+    let _ = session
+        .code_actions(&CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range::new(Position::new(0, 0), Position::new(4, 0)),
+            context: CodeActionContext::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        })
+        .expect("cached code actions");
+    assert!(Arc::ptr_eq(
+        expected,
+        &session
+            .analyses_by_uri
+            .get(&uri.to_string())
+            .expect("reused analysis")
+            .analysis
+    ));
 }
 
 #[test]
@@ -263,10 +405,16 @@ fn code_actions_canonical_rich_text_preserve_nested_proxy_params() {
 }
 
 #[test]
-fn code_actions_expand_sugar_respects_decl_identity_attributes() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+fn code_actions_canonicalize_sugar_respects_decl_identity_attributes() {
+    let project = TestProject::new("lsp-checked-canonicalize-identities");
+    project.write(
+        "arcw.toml",
+        "[package]\nname = \"lsp-canonicalize-identities\"\n",
+    );
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = "#[generated]\nflow @flow.generated generated {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\nflow @flow.opening opening {\n}\nflow @flow.opening start {\n}\n";
+    project.write("src/main.arcw", source);
+    let uri = file_uri(&project.path("src/main.arcw"));
     open_text(&mut session, uri.clone(), source);
 
     let actions = session
@@ -282,7 +430,9 @@ fn code_actions_expand_sugar_respects_decl_identity_attributes() {
     let action = actions
         .iter()
         .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action) if action.title == "Expand Arcweft sugar" => {
+            CodeActionOrCommand::CodeAction(action)
+                if action.title == "Canonicalize Arcweft sugar" =>
+            {
                 Some(action)
             }
             CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
@@ -304,10 +454,50 @@ fn code_actions_expand_sugar_respects_decl_identity_attributes() {
 }
 
 #[test]
-fn code_actions_expand_sugar_respects_source_allow_decl_identity_attribute() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+fn code_actions_shared_helper_corpus_matches_tooling_output() {
+    let project = TestProject::new("lsp-checked-canonicalize-shared-helper");
+    project.write(
+        "arcw.toml",
+        "[package]\nname = \"lsp-canonicalize-shared-helper\"\n",
+    );
+    let source = include_str!(
+        "../../../arcweft-tooling/tests/fixtures/canonicalization/aw-ah-003-helper.arcw"
+    );
+    let expected = include_str!(
+        "../../../arcweft-tooling/tests/fixtures/canonicalization/aw-ah-003-helper.expected.arcw"
+    );
+    project.write("src/main.arcw", source);
+    let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default());
-    let source = "#![allow(style::redundant_decl_identity)]\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
+    open_text(&mut session, uri.clone(), source);
+
+    let actions = session
+        .code_actions(&CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range::new(Position::new(0, 0), Position::new(8, 0)),
+            context: CodeActionContext::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        })
+        .expect("open document actions");
+    let action = code_action_by_title(&actions, "Canonicalize Arcweft sugar")
+        .expect("semantic canonicalization action");
+    let replacements = workspace_edit_replacements(action);
+
+    assert_eq!(replacements, [expected.to_owned()]);
+}
+
+#[test]
+fn code_actions_canonicalize_sugar_respects_source_allow_decl_identity_attribute() {
+    let project = TestProject::new("lsp-checked-canonicalize-source-allow");
+    project.write(
+        "arcw.toml",
+        "[package]\nname = \"lsp-canonicalize-source-allow\"\n",
+    );
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    let source = "#![allow(style::redundant_decl_identity)]\npub character @character.alice Alice as alice {}\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
+    project.write("src/main.arcw", source);
+    let uri = file_uri(&project.path("src/main.arcw"));
     open_text(&mut session, uri.clone(), source);
 
     let actions = session
@@ -323,7 +513,9 @@ fn code_actions_expand_sugar_respects_source_allow_decl_identity_attribute() {
     let action = actions
         .iter()
         .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action) if action.title == "Expand Arcweft sugar" => {
+            CodeActionOrCommand::CodeAction(action)
+                if action.title == "Canonicalize Arcweft sugar" =>
+            {
                 Some(action)
             }
             CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
@@ -343,10 +535,16 @@ fn code_actions_expand_sugar_respects_source_allow_decl_identity_attribute() {
 }
 
 #[test]
-fn code_actions_expand_sugar_nests_dotted_dialogue_defaults() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+fn code_actions_canonicalize_sugar_nests_dotted_dialogue_defaults() {
+    let project = TestProject::new("lsp-checked-canonicalize-dialogue-defaults");
+    project.write(
+        "arcw.toml",
+        "[package]\nname = \"lsp-canonicalize-defaults\"\n",
+    );
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n}\n";
+    project.write("src/main.arcw", source);
+    let uri = file_uri(&project.path("src/main.arcw"));
     open_text(&mut session, uri.clone(), source);
 
     let actions = session
@@ -362,7 +560,9 @@ fn code_actions_expand_sugar_nests_dotted_dialogue_defaults() {
     let action = actions
         .iter()
         .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action) if action.title == "Expand Arcweft sugar" => {
+            CodeActionOrCommand::CodeAction(action)
+                if action.title == "Canonicalize Arcweft sugar" =>
+            {
                 Some(action)
             }
             CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,

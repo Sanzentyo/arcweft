@@ -198,6 +198,20 @@ fn temp_arcw(name: &str, source: &str) -> PathBuf {
     path
 }
 
+fn temp_arcw_project(name: &str, source: &str) -> PathBuf {
+    let root = temp_dir(name);
+    fs::write(
+        root.join("arcw.toml"),
+        format!("[package]\nname = \"{name}\"\n"),
+    )
+    .expect("write temp project manifest");
+    let source_dir = root.join("src");
+    fs::create_dir_all(&source_dir).expect("create temp project source directory");
+    let path = source_dir.join("main.arcw");
+    fs::write(&path, source).expect("write temp project source");
+    path
+}
+
 fn temp_file(name: &str, extension: &str, source: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     let suffix = if extension.is_empty() {

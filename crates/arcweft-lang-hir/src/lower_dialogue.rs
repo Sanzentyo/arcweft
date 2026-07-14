@@ -23,6 +23,8 @@ pub(crate) fn lower_speaker_line(
         .map(|view| normalize_entity_ref_syntax(view, context))
         .transpose()?;
     Ok(HirDialogue {
+        source_module: None,
+        speaker_surface: Some(line.surface()),
         callee: line.speaker().to_owned(),
         text_key,
         id,
@@ -66,6 +68,8 @@ pub(crate) fn lower_content_call(
         .map(|view| normalize_entity_ref_syntax(view, context))
         .transpose()?;
     Ok(HirDialogue {
+        source_module: None,
+        speaker_surface: None,
         callee: call.callee().to_owned(),
         text_key,
         id,

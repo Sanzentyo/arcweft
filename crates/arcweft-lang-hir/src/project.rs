@@ -1,6 +1,6 @@
 //! Multi-module HIR container and transitional crate-level link view.
 
-use crate::model::HirModule;
+use crate::model::{HirFlowItem, HirModule};
 use crate::symbol::{
     CallableLinkError, CallablePackageId, CallablePackageIdError, CallableSymbolTable,
 };
@@ -122,6 +122,7 @@ impl HirModule {
     fn assign_declaration_module(&mut self, path: &CanonicalModulePath) {
         for flow in &mut self.flows {
             flow.module_path = Some(path.clone());
+            assign_flow_item_modules(&mut flow.body, path);
         }
         for function in &mut self.functions {
             function.module_path = Some(path.clone());
@@ -129,6 +130,7 @@ impl HirModule {
         for agent in &mut self.agents {
             agent.module_path = Some(path.clone());
         }
+        assign_flow_item_modules(&mut self.top_level_items, path);
     }
 
     /// Appends declarations and executable bodies from another source module.
@@ -163,10 +165,61 @@ impl HirModule {
     }
 }
 
+fn assign_flow_item_modules(items: &mut [HirFlowItem], path: &CanonicalModulePath) {
+    for item in items {
+        assign_flow_item_module(item, path);
+    }
+}
+
+fn assign_flow_item_module(item: &mut HirFlowItem, path: &CanonicalModulePath) {
+    match item {
+        HirFlowItem::Dialogue(dialogue) => dialogue.source_module = Some(path.clone()),
+        HirFlowItem::Thread(thread) => assign_flow_item_modules(&mut thread.body, path),
+        HirFlowItem::If(block) => {
+            assign_flow_item_modules(&mut block.body, path);
+            assign_flow_item_modules(&mut block.else_body, path);
+        }
+        HirFlowItem::IfLet(block) => {
+            assign_flow_item_modules(&mut block.body, path);
+            assign_flow_item_modules(&mut block.else_body, path);
+        }
+        HirFlowItem::Match(block) => block
+            .arms
+            .iter_mut()
+            .for_each(|arm| assign_flow_item_modules(&mut arm.body, path)),
+        HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+            assign_flow_item_modules(&mut block.body, path);
+        }
+        HirFlowItem::While(block) => assign_flow_item_modules(&mut block.body, path),
+        HirFlowItem::WhileLet(block) => assign_flow_item_modules(&mut block.body, path),
+        HirFlowItem::For(block) => assign_flow_item_modules(&mut block.body, path),
+        HirFlowItem::Select(block) => block
+            .branches
+            .iter_mut()
+            .for_each(|branch| assign_flow_item_modules(&mut branch.body, path)),
+        HirFlowItem::Borrow(block) => assign_flow_item_modules(&mut block.body, path),
+        HirFlowItem::SourceLocale(block) => assign_flow_item_modules(&mut block.body, path),
+        HirFlowItem::Scope(block) => assign_flow_item_modules(&mut block.body, path),
+        HirFlowItem::Await(block)
+        | HirFlowItem::LetAwait {
+            await_with: block, ..
+        } => block
+            .branches
+            .iter_mut()
+            .for_each(|branch| assign_flow_item_modules(&mut branch.body, path)),
+        HirFlowItem::Stmt(_)
+        | HirFlowItem::Choice(_)
+        | HirFlowItem::LetChoice { .. }
+        | HirFlowItem::LetScope { .. }
+        | HirFlowItem::Include(_) => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{HirProject, HirProjectModule};
     use crate::lower::lower_to_hir;
+    use crate::model::HirFlowItem;
     use crate::style::HirStylePatch;
     use arcweft_lang_syntax::{
         ast::{
@@ -273,6 +326,46 @@ mod tests {
             .find_map(|(path, module)| (!path.is_crate_root()).then_some(module))
             .expect("child module");
         assert_eq!(child.functions()[0].qualified_name(), "child.helper");
+    }
+
+    #[test]
+    fn project_module_assigns_source_path_through_nested_flow_families() {
+        let source = r"flow opening {
+    scope outer {
+        if true {
+            thread worker {
+                alice: Inside[p]
+            }
+        } else {
+            alice: Else[p]
+        }
+    }
+}
+";
+        let parsed = parse_source(source);
+        assert_eq!(parsed.errors(), &[]);
+        let hir = lower_to_hir(parsed.typed_tree()).expect("nested flow lowers");
+        let child_path =
+            CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
+        let module = HirProjectModule::new(child_path.clone(), hir);
+
+        let HirFlowItem::Scope(scope) = &module.hir().flows()[0].body()[0] else {
+            panic!("outer scope must lower");
+        };
+        let HirFlowItem::If(if_block) = &scope.body()[0] else {
+            panic!("if block must lower");
+        };
+        let HirFlowItem::Thread(thread) = &if_block.body()[0] else {
+            panic!("thread must lower");
+        };
+        let HirFlowItem::Dialogue(inside) = &thread.body()[0] else {
+            panic!("thread dialogue must lower");
+        };
+        let HirFlowItem::Dialogue(otherwise) = &if_block.else_body()[0] else {
+            panic!("else dialogue must lower");
+        };
+        assert_eq!(inside.source_module(), Some(&child_path));
+        assert_eq!(otherwise.source_module(), Some(&child_path));
     }
 
     #[test]

@@ -69,8 +69,8 @@ fn character_metadata_completions(profile: &LspProfile) -> Vec<CompletionItem> {
                 label: format!(".{}", look.id().as_str()),
                 kind: Some(CompletionItemKind::ENUM_MEMBER),
                 detail: Some(format!(
-                    "CharacterLook<{}>.{}",
-                    manifest.character().as_str(),
+                    "{}.{}",
+                    TypeKind::character_look(manifest.character().clone()).source_label(),
                     look.id().as_str()
                 )),
                 documentation: Some(Documentation::String(format!(
@@ -133,8 +133,8 @@ fn part_completion(manifest: &CharacterManifest, part: &CharacterPart) -> Comple
         label: format!(".{}", part.id().as_str()),
         kind: Some(CompletionItemKind::PROPERTY),
         detail: Some(format!(
-            "CharacterPart<{}>.{}",
-            manifest.character().as_str(),
+            "{}.{}",
+            TypeKind::character_part(manifest.character().clone()).source_label(),
             part.id().as_str()
         )),
         documentation: Some(Documentation::String(format!(
@@ -158,9 +158,9 @@ fn variant_completion(
         label: format!(".{}", variant.id().as_str()),
         kind: Some(CompletionItemKind::ENUM_MEMBER),
         detail: Some(format!(
-            "CharacterVariant<{},{}>.{}",
-            manifest.character().as_str(),
-            part.id().as_str(),
+            "{}.{}",
+            TypeKind::character_variant(manifest.character().clone(), part.id().clone())
+                .source_label(),
             variant.id().as_str()
         )),
         documentation: Some(Documentation::String(variant_documentation(part, variant))),
@@ -229,8 +229,5 @@ fn dedup_completion_items(items: Vec<CompletionItem>) -> Vec<CompletionItem> {
 }
 
 fn type_kind_label(ty: &TypeKind) -> String {
-    match ty {
-        TypeKind::Named(name) => name.clone(),
-        _ => format!("{ty:?}"),
-    }
+    ty.source_label()
 }

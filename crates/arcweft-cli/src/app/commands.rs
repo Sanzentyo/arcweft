@@ -14,7 +14,7 @@ use super::runtime::options::{
     CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
     ScriptTestOptions, ServeOptions,
 };
-use super::tooling::ToolingCommandOptions;
+use super::tooling::{CanonicalizeCommandOptions, ToolingCommandOptions};
 use super::verify::{UnsafeOptions, VerifyOptions, VerifyTypesOptions};
 use crate::toolchain_profile::ToolchainProfileOptions;
 use clap::{Parser, Subcommand};
@@ -81,6 +81,8 @@ pub(super) enum CliCommand {
         command: JitCommand,
     },
     Fmt(ToolingCommandOptions),
+    /// Canonicalizes semantic Arcweft sugar using the containing checked project.
+    Canonicalize(CanonicalizeCommandOptions),
     Ids {
         #[command(subcommand)]
         command: IdsCommand,

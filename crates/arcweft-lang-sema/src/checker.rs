@@ -2,6 +2,10 @@ use crate::borrow::{
     BorrowLocalState, BorrowStateCheckpoint, BorrowStateDelta, BorrowStateDeltaEntry,
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
+use crate::canonicalization::{
+    CanonicalizationSourceSet, CheckedCanonicalizationInventory, CheckedSpeakerLine,
+    SemanticScopeId, SemanticSymbolIdentity,
+};
 use crate::diagnostics::{
     TraitDiagnostic, TypeCheckError, TypeCheckReadinessError, TypeCheckWarning,
 };
@@ -25,7 +29,10 @@ use crate::traits::{
     ProjectionError, ProjectionResolution, TraitCatalog, TraitPredicate, collect_trait_catalog,
 };
 use crate::types::{EntityKind, MapKind, TypeKind};
-use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::{
+    model::{HirFlowItem, HirModule, HirTopLevelDecl},
+    symbol::{CallableDeclarationId, CallableSymbolTable},
+};
 use arcweft_lang_syntax::{
     ast::{
         choice::ChoiceAction,
@@ -47,6 +54,7 @@ use arcweft_lang_syntax::{
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub mod borrow_state;
+mod canonicalization;
 pub mod choice;
 pub mod effects;
 pub mod expr;
@@ -63,16 +71,18 @@ pub mod source_ranges;
 pub mod stmt;
 pub mod suspension;
 
-pub use module::analyze_types;
+pub use module::{analyze_project_types_for_canonicalization, analyze_types};
 
 use fx::FxCatalog;
 use helpers::{
     await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
-    entity_kind_for_decl, entity_syntax_kind, expr_path_label, ident_pattern_name,
-    is_character_entity_literal, is_dialogue_callee_type, is_drop_callee, is_local_ident,
-    iter_item_type, merge_line_output, normalize_choice_type, pattern_bindings_with_fallback,
-    pattern_bindings_with_nominal_types, source_return_types, stmts_diverge, stream_return_types,
-    type_ref_kind, typed_pattern_binding, unify_loop_break_types, variant_payload_type_for_name,
+    entity_kind_for_decl, entity_syntax_kind, expr_path_label, function_param_local_type,
+    function_param_local_type_with_generics, ident_pattern_name, is_character_entity_literal,
+    is_drop_callee, is_local_ident, iter_item_type, merge_line_output, normalize_choice_type,
+    pattern_bindings_with_fallback, pattern_bindings_with_nominal_types, signature_generic_names,
+    source_return_types, stmts_diverge, stream_return_types, type_ref_kind,
+    type_ref_kind_with_generics, typed_pattern_binding, unify_loop_break_types,
+    variant_payload_type_for_name,
 };
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
@@ -342,6 +352,7 @@ pub struct TypeCheckReport {
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
     pub trait_catalog: TraitCatalog,
     pub style_catalog: crate::style::CheckedViewStyleCatalog,
+    pub canonicalization_inventories: Vec<CheckedCanonicalizationInventory>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -449,6 +460,16 @@ struct TypeChecker<'a> {
     pending_higher_order_effect_calls: Vec<PendingHigherOrderEffectCall>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
+    canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
+    callable_symbols: Option<&'a CallableSymbolTable>,
+    project_functions: BTreeMap<CallableDeclarationId, TypeKind>,
+    project_function_signatures: BTreeMap<CallableDeclarationId, FunctionSignature>,
+    local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
+    semantic_scope_stack: Vec<SemanticScopeId>,
+    next_semantic_scope: u32,
+    next_semantic_binding: u32,
+    current_module: Option<arcweft_lang_syntax::ast::module_path::CanonicalModulePath>,
+    checked_speaker_lines: Vec<CheckedSpeakerLine>,
 }
 
 /// Type and authored provenance of the value bound by one active pipe RHS.
@@ -550,7 +571,10 @@ impl<'a> NominalTypeContext<'a> {
 }
 
 #[derive(Clone, Debug, Default)]
-struct LocalBindingSnapshot(Vec<LocalBindingSnapshotEntry>);
+struct LocalBindingSnapshot {
+    entries: Vec<LocalBindingSnapshotEntry>,
+    entered_semantic_scope: Option<SemanticScopeId>,
+}
 
 #[derive(Clone, Debug)]
 struct LocalBindingSnapshotEntry {
@@ -560,6 +584,7 @@ struct LocalBindingSnapshotEntry {
     previous_callable_signature: Option<SourceCallableSignature>,
     previous_curried_signature_call: Option<CurriedSignatureCallValue>,
     previous_higher_order_param_alias: Option<String>,
+    previous_symbol_identity: Option<SemanticSymbolIdentity>,
 }
 
 #[derive(Clone, Debug)]
@@ -670,6 +695,16 @@ struct LoopContext {
 
 impl TypeChecker<'_> {
     fn new(env: &TypeCheckEnv) -> TypeChecker<'_> {
+        TypeChecker::new_with_canonicalization(env, None, None)
+    }
+}
+
+impl<'a> TypeChecker<'a> {
+    fn new_with_canonicalization(
+        env: &'a TypeCheckEnv,
+        canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
+        callable_symbols: Option<&'a CallableSymbolTable>,
+    ) -> Self {
         TypeChecker {
             env,
             errors: Vec::new(),
@@ -737,6 +772,16 @@ impl TypeChecker<'_> {
             pending_higher_order_effect_calls: Vec::new(),
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
+            canonicalization_sources,
+            callable_symbols,
+            project_functions: BTreeMap::new(),
+            project_function_signatures: BTreeMap::new(),
+            local_symbol_identities: HashMap::new(),
+            semantic_scope_stack: Vec::new(),
+            next_semantic_scope: 0,
+            next_semantic_binding: 0,
+            current_module: None,
+            checked_speaker_lines: Vec::new(),
         }
     }
 
@@ -744,8 +789,9 @@ impl TypeChecker<'_> {
         &mut self,
         bindings: impl IntoIterator<Item = (String, TypeKind)>,
     ) -> LocalBindingSnapshot {
-        LocalBindingSnapshot(
-            bindings
+        let entered_semantic_scope = self.push_semantic_scope();
+        LocalBindingSnapshot {
+            entries: bindings
                 .into_iter()
                 .map(|(name, ty)| {
                     let previous_function_effect = self.local_function_effects.get(&name).cloned();
@@ -755,6 +801,7 @@ impl TypeChecker<'_> {
                         self.local_curried_signature_calls.get(&name).cloned();
                     let previous_higher_order_param_alias =
                         self.local_higher_order_param_aliases.get(&name).cloned();
+                    let previous_symbol_identity = self.local_symbol_identities.get(&name).cloned();
                     let previous_ty = self.bind_local(name.clone(), ty);
                     LocalBindingSnapshotEntry {
                         name,
@@ -763,10 +810,12 @@ impl TypeChecker<'_> {
                         previous_callable_signature,
                         previous_curried_signature_call,
                         previous_higher_order_param_alias,
+                        previous_symbol_identity,
                     }
                 })
                 .collect(),
-        )
+            entered_semantic_scope: Some(entered_semantic_scope),
+        }
     }
 
     fn bind_local(&mut self, name: String, ty: TypeKind) -> Option<TypeKind> {
@@ -775,17 +824,28 @@ impl TypeChecker<'_> {
         let previous_callable_signature = self.local_callable_signatures.remove(&name);
         let previous_curried_signature_call = self.local_curried_signature_calls.remove(&name);
         let previous_higher_order_param_alias = self.local_higher_order_param_aliases.remove(&name);
+        let scope = self.current_semantic_scope();
+        let binding = self.allocate_semantic_binding();
+        let previous_symbol_identity = self.local_symbol_identities.insert(
+            name.clone(),
+            SemanticSymbolIdentity::Local {
+                scope,
+                binding,
+                name: name.clone(),
+            },
+        );
         if let Some(frame) = self.closure_capture_stack.last_mut() {
             frame.locals.insert(name.clone());
         }
         if let Some(scope) = self.local_scope_stack.last_mut() {
-            scope.0.push(LocalBindingSnapshotEntry {
+            scope.entries.push(LocalBindingSnapshotEntry {
                 name,
                 previous_ty: previous.clone(),
                 previous_function_effect,
                 previous_callable_signature,
                 previous_curried_signature_call,
                 previous_higher_order_param_alias,
+                previous_symbol_identity,
             });
         }
         previous
@@ -812,7 +872,7 @@ impl TypeChecker<'_> {
     }
 
     fn restore_scoped_locals(&mut self, snapshot: LocalBindingSnapshot) {
-        for entry in snapshot.0.into_iter().rev() {
+        for entry in snapshot.entries.into_iter().rev() {
             if let Some(ty) = entry.previous_ty {
                 self.locals.insert(entry.name.clone(), ty);
             } else {
@@ -838,10 +898,18 @@ impl TypeChecker<'_> {
             }
             if let Some(param_name) = entry.previous_higher_order_param_alias {
                 self.local_higher_order_param_aliases
-                    .insert(entry.name, param_name);
+                    .insert(entry.name.clone(), param_name);
             } else {
                 self.local_higher_order_param_aliases.remove(&entry.name);
             }
+            if let Some(identity) = entry.previous_symbol_identity {
+                self.local_symbol_identities.insert(entry.name, identity);
+            } else {
+                self.local_symbol_identities.remove(&entry.name);
+            }
+        }
+        if snapshot.entered_semantic_scope.is_some() {
+            self.pop_semantic_scope();
         }
     }
 
@@ -858,7 +926,11 @@ impl TypeChecker<'_> {
     }
 
     fn with_local_mutation_scope<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {
-        self.local_scope_stack.push(LocalBindingSnapshot::default());
+        let entered_semantic_scope = self.push_semantic_scope();
+        self.local_scope_stack.push(LocalBindingSnapshot {
+            entries: Vec::new(),
+            entered_semantic_scope: Some(entered_semantic_scope),
+        });
         let result = check(self);
         let snapshot = self
             .local_scope_stack
@@ -1555,15 +1627,23 @@ impl TypeChecker<'_> {
     }
 
     fn function_type(&self, name: &str) -> Option<&TypeKind> {
-        self.global_functions
-            .get(name)
-            .or_else(|| self.env.function_type(name))
+        self.resolve_project_callable(name)
+            .and_then(|declaration| self.project_functions.get(declaration))
+            .or_else(|| {
+                self.global_functions
+                    .get(name)
+                    .or_else(|| self.env.function_type(name))
+            })
     }
 
     fn function_signature(&self, name: &str) -> Option<&FunctionSignature> {
-        self.global_function_signatures
-            .get(name)
-            .or_else(|| self.env.function_signature(name))
+        self.resolve_project_callable(name)
+            .and_then(|declaration| self.project_function_signatures.get(declaration))
+            .or_else(|| {
+                self.global_function_signatures
+                    .get(name)
+                    .or_else(|| self.env.function_signature(name))
+            })
     }
 
     fn function_value_type(&mut self, name: &str) -> Option<TypeKind> {
@@ -1627,11 +1707,19 @@ impl TypeChecker<'_> {
     }
 
     fn is_dialogue_callee(&self, callee: &str) -> bool {
-        if is_dialogue_callee_type(self.symbol_type(callee)) {
+        if self
+            .speaker_reference_type(callee)
+            .as_ref()
+            .and_then(TypeKind::speaker_line_classification)
+            .is_some()
+        {
             return true;
         }
         callee.strip_suffix(".say").is_some_and(|receiver| {
-            is_dialogue_callee_type(self.symbol_type(receiver))
+            self.speaker_reference_type(receiver)
+                .as_ref()
+                .and_then(TypeKind::speaker_line_classification)
+                .is_some()
                 || is_character_entity_literal(receiver)
         })
     }
@@ -2222,74 +2310,6 @@ fn nominal_record_type_name(ty: &TypeKind) -> Option<&str> {
             nominal_record_type_name(inner)
         }
         _ => None,
-    }
-}
-
-fn function_param_local_type(param: &FnParam) -> TypeKind {
-    function_param_local_type_with_generics(param, &HashSet::new())
-}
-
-fn function_param_local_type_with_generics(
-    param: &FnParam,
-    generic_names: &HashSet<String>,
-) -> TypeKind {
-    let ty = type_ref_kind_with_generics(param.ty(), generic_names);
-    if param.is_rest() {
-        TypeKind::Vec(Box::new(ty))
-    } else {
-        ty
-    }
-}
-
-fn signature_generic_names(signature: &FnSignature) -> HashSet<String> {
-    signature
-        .generic_params()
-        .iter()
-        .filter_map(|param| param.as_type())
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
-fn type_ref_kind_with_generics(ty: &TypeRef, generic_names: &HashSet<String>) -> TypeKind {
-    match ty {
-        TypeRef::Path(path) if generic_names.contains(path) => TypeKind::GenericParam(path.clone()),
-        TypeRef::Projection { subject, assoc } => TypeKind::Projection {
-            subject: Box::new(type_ref_kind_with_generics(subject, generic_names)),
-            trait_name: None,
-            assoc: assoc.clone(),
-        },
-        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => TypeKind::Vec(
-            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-        ),
-        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => TypeKind::Option(
-            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-        ),
-        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
-            TypeKind::Result {
-                ok: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-                error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
-            }
-        }
-        TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
-            ready: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-            error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
-        },
-        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
-            lifetime: lifetime
-                .as_ref()
-                .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
-            inner: Box::new(type_ref_kind_with_generics(inner, generic_names)),
-        },
-        TypeRef::Slice(inner) => {
-            TypeKind::Slice(Box::new(type_ref_kind_with_generics(inner, generic_names)))
-        }
-        TypeRef::Choice(alternatives) => normalize_choice_type(
-            alternatives
-                .iter()
-                .map(|alternative| type_ref_kind_with_generics(alternative, generic_names))
-                .collect::<Vec<_>>(),
-        ),
-        _ => type_ref_kind(ty),
     }
 }
 

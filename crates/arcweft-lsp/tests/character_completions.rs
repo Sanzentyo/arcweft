@@ -1,3 +1,5 @@
+use arcweft_character::id::CharacterId;
+use arcweft_lang_sema::types::TypeKind;
 use arcweft_lsp::features::character_metadata::character_hover_markdown;
 use arcweft_lsp::features::completion::completions;
 use arcweft_lsp::profiles::{LspProfileDiagnosticKind, LspProfileResolver};
@@ -64,7 +66,9 @@ character_manifests = ["assets/zundamon.awchar"]
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
     let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
-    let hover = character_hover_markdown(&profile, ".smile").expect("hover");
+    let expected =
+        TypeKind::character_look(CharacterId::try_new("character.zundamon").expect("character id"));
+    let hover = character_hover_markdown(&profile, ".smile", Some(&expected)).expect("typed hover");
 
     assert!(hover.contains("character look") || hover.contains("character variant"));
     assert!(hover.contains("source PSD layer") || hover.contains("mouth = smile"));

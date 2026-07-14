@@ -5,6 +5,7 @@
 //! crates do not depend on it.
 
 pub mod borrow;
+pub mod canonicalization;
 pub mod check;
 pub mod checker;
 pub mod diagnostics;

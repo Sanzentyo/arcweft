@@ -1,12 +1,13 @@
 use crate::commands::ArcweftCommand;
 use crate::config::LspConfig;
 use crate::custom::ArcweftCustomRequest;
-use crate::diagnostics::{DocumentAnalysis, publish_diagnostics};
+use crate::diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis};
 use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore};
 use crate::features;
 use crate::positions::PositionEncoding;
 use crate::profiles::{LspProfile, LspProfileResolver};
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
+use arcweft_lang_sema::canonicalization::SemanticSourceRevision;
 use arcweft_tooling::model::ToolingError;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response};
@@ -30,7 +31,10 @@ use lsp_types::{
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use thiserror::Error;
 
 /// Stateful Sans I/O session used by the stdio transport.
@@ -39,10 +43,20 @@ pub struct ArcweftLspSession {
     documents: DocumentStore,
     default_profile: LspProfile,
     profiles_by_uri: BTreeMap<String, LspProfile>,
+    analyses_by_uri: BTreeMap<String, CachedDocumentAnalysis>,
+    profile_epoch: u64,
     profile_resolver: LspProfileResolver,
     workspace_edit_policy: WorkspaceEditPolicy,
     position_encoding: PositionEncoding,
     cancelled: BTreeSet<RequestId>,
+}
+
+#[derive(Debug)]
+struct CachedDocumentAnalysis {
+    version: Option<i32>,
+    revision: SemanticSourceRevision,
+    profile_epoch: u64,
+    analysis: Arc<DocumentAnalysis>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -78,6 +92,8 @@ impl ArcweftLspSession {
             documents: DocumentStore::default(),
             default_profile,
             profiles_by_uri: BTreeMap::new(),
+            analyses_by_uri: BTreeMap::new(),
+            profile_epoch: 0,
             profile_resolver,
             workspace_edit_policy: WorkspaceEditPolicy::default(),
             position_encoding: PositionEncoding::default(),
@@ -171,7 +187,10 @@ impl ArcweftLspSession {
                 )?;
                 let snapshot = self.documents.open(params, self.position_encoding);
                 self.refresh_profile_for_uri(snapshot.uri());
-                Ok(vec![self.publish_diagnostics_notification(&snapshot)])
+                let analysis = self.replace_analysis(&snapshot);
+                Ok(vec![
+                    self.publish_diagnostics_notification(&snapshot, &analysis),
+                ])
             }
             DidChangeTextDocument::METHOD => {
                 let params = decode::<DidChangeTextDocumentParams>(
@@ -179,7 +198,10 @@ impl ArcweftLspSession {
                     notification.params,
                 )?;
                 let snapshot = self.documents.change(params, self.position_encoding)?;
-                Ok(vec![self.publish_diagnostics_notification(&snapshot)])
+                let analysis = self.replace_analysis(&snapshot);
+                Ok(vec![
+                    self.publish_diagnostics_notification(&snapshot, &analysis),
+                ])
             }
             DidCloseTextDocument::METHOD => {
                 let params = decode::<DidCloseTextDocumentParams>(
@@ -187,6 +209,8 @@ impl ArcweftLspSession {
                     notification.params,
                 )?;
                 self.profiles_by_uri
+                    .remove(&params.text_document.uri.to_string());
+                self.analyses_by_uri
                     .remove(&params.text_document.uri.to_string());
                 self.documents.close(&params.text_document.uri);
                 Ok(vec![Notification::new(
@@ -203,13 +227,15 @@ impl ArcweftLspSession {
                     DidSaveTextDocument::METHOD,
                     notification.params,
                 )?;
+                self.invalidate_analysis_cache();
                 self.refresh_profile_for_uri(&params.text_document.uri);
-                Ok(self
-                    .documents
-                    .get(&params.text_document.uri)
-                    .map_or_else(Vec::new, |snapshot| {
-                        vec![self.publish_diagnostics_notification(snapshot)]
-                    }))
+                let Some(snapshot) = self.documents.get(&params.text_document.uri).cloned() else {
+                    return Ok(Vec::new());
+                };
+                let analysis = self.replace_analysis(&snapshot);
+                Ok(vec![
+                    self.publish_diagnostics_notification(&snapshot, &analysis),
+                ])
             }
             DidChangeWatchedFiles::METHOD => {
                 let _params = decode::<DidChangeWatchedFilesParams>(
@@ -366,16 +392,18 @@ impl ArcweftLspSession {
         let Some(document) = self.document_for_params(&params.text_document.uri) else {
             return Ok(Vec::new());
         };
-        let analysis = DocumentAnalysis::analyze(
-            document.text(),
-            document.line_index().position_encoding(),
-            self.profile_for_uri(document.uri()),
-        );
+        let analysis = self.cached_analysis(document).unwrap_or_else(|| {
+            Arc::new(DocumentAnalysis::analyze(
+                document.text(),
+                document.line_index().position_encoding(),
+                self.profile_for_uri(document.uri()),
+            ))
+        });
         let actions = features::actions::actions(
             self.profile_for_uri(document.uri()),
             &params.text_document.uri,
             document,
-            &analysis,
+            analysis.as_ref(),
             params.range.start,
         )?
         .into_iter()
@@ -413,13 +441,17 @@ impl ArcweftLspSession {
     }
 
     fn refresh_profile_for_open_documents(&mut self) -> Vec<Notification> {
+        self.invalidate_analysis_cache();
         let snapshots = self.documents.snapshots().cloned().collect::<Vec<_>>();
         for snapshot in &snapshots {
             self.refresh_profile_for_uri(snapshot.uri());
         }
         snapshots
             .iter()
-            .map(|snapshot| self.publish_diagnostics_notification(snapshot))
+            .map(|snapshot| {
+                let analysis = self.replace_analysis(snapshot);
+                self.publish_diagnostics_notification(snapshot, &analysis)
+            })
             .collect()
     }
 
@@ -429,10 +461,55 @@ impl ArcweftLspSession {
             .unwrap_or(&self.default_profile)
     }
 
-    fn publish_diagnostics_notification(&self, snapshot: &DocumentSnapshot) -> Notification {
+    fn replace_analysis(&mut self, snapshot: &DocumentSnapshot) -> Arc<DocumentAnalysis> {
+        let profile = self.profile_for_uri(snapshot.uri()).clone();
+        let analysis = Arc::new(DocumentAnalysis::analyze_project(
+            snapshot.text(),
+            snapshot.line_index().position_encoding(),
+            &profile,
+            snapshot.uri(),
+        ));
+        self.analyses_by_uri.insert(
+            snapshot.uri().to_string(),
+            CachedDocumentAnalysis {
+                version: snapshot.version(),
+                revision: analysis.source_revision(),
+                profile_epoch: self.profile_epoch,
+                analysis: Arc::clone(&analysis),
+            },
+        );
+        analysis
+    }
+
+    fn cached_analysis(&self, snapshot: &DocumentSnapshot) -> Option<Arc<DocumentAnalysis>> {
+        let revision = SemanticSourceRevision::from_source(snapshot.text());
+        self.analyses_by_uri
+            .get(&snapshot.uri().to_string())
+            .filter(|cached| {
+                cached.version == snapshot.version()
+                    && cached.revision == revision
+                    && cached.profile_epoch == self.profile_epoch
+            })
+            .map(|cached| Arc::clone(&cached.analysis))
+    }
+
+    fn invalidate_analysis_cache(&mut self) {
+        self.profile_epoch = self.profile_epoch.wrapping_add(1);
+        self.analyses_by_uri.clear();
+    }
+
+    fn publish_diagnostics_notification(
+        &self,
+        snapshot: &DocumentSnapshot,
+        analysis: &DocumentAnalysis,
+    ) -> Notification {
         Notification::new(
             PublishDiagnostics::METHOD.to_owned(),
-            publish_diagnostics(snapshot, self.profile_for_uri(snapshot.uri())),
+            publish_diagnostics_from_analysis(
+                snapshot,
+                self.profile_for_uri(snapshot.uri()),
+                analysis,
+            ),
         )
     }
 }

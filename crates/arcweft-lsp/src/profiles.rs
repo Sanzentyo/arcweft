@@ -657,7 +657,7 @@ fn path_label(path: &Path, manifest_dir: &Path) -> String {
     }
 }
 
-fn file_path_from_uri(uri: &lsp_types::Uri) -> Option<PathBuf> {
+pub(crate) fn file_path_from_uri(uri: &lsp_types::Uri) -> Option<PathBuf> {
     let raw = uri.as_str();
     let path = raw.strip_prefix("file://")?;
     let path = percent_decode(path)?;

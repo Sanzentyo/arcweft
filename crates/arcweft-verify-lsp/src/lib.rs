@@ -607,23 +607,34 @@ fn verifier_code_action_kind(kind: ToolActionKind) -> CodeActionKind {
 pub fn source_code_actions(
     uri: &Uri,
     source: &str,
+    canonicalization: arcweft_tooling::model::CanonicalizationInput<'_>,
 ) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
-    Ok(arcweft_tooling::code_actions::source_code_actions(source)?
-        .into_iter()
-        .map(|action| CodeAction {
-            title: action.label,
-            kind: Some(CodeActionKind::REFACTOR_REWRITE),
-            command: Some(lsp_types::Command {
-                title: action.id.clone(),
-                command: action.id,
-                arguments: Some(vec![
-                    serde_json::json!(uri.to_string()),
-                    serde_json::json!(action.edit),
-                ]),
-            }),
-            ..CodeAction::default()
-        })
-        .collect())
+    Ok(
+        arcweft_tooling::code_actions::source_code_actions(source, canonicalization)?
+            .into_iter()
+            .map(|action| {
+                let diagnostics = action
+                    .diagnostics
+                    .into_iter()
+                    .map(|diagnostic| tooling_diagnostic(&diagnostic))
+                    .collect::<Vec<_>>();
+                CodeAction {
+                    title: action.label,
+                    kind: Some(CodeActionKind::REFACTOR_REWRITE),
+                    diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
+                    command: Some(lsp_types::Command {
+                        title: action.id.clone(),
+                        command: action.id,
+                        arguments: Some(vec![
+                            serde_json::json!(uri.to_string()),
+                            serde_json::json!(action.edit),
+                        ]),
+                    }),
+                    ..CodeAction::default()
+                }
+            })
+            .collect(),
+    )
 }
 
 /// Converts source-level Arcweft tooling actions into edit-bearing LSP code actions.
@@ -631,23 +642,54 @@ pub fn source_code_actions_with_mapper(
     uri: &Uri,
     source: &str,
     mapper: &impl LspPositionMapper,
+    canonicalization: arcweft_tooling::model::CanonicalizationInput<'_>,
 ) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
-    Ok(arcweft_tooling::code_actions::source_code_actions(source)?
-        .into_iter()
-        .map(|action| {
-            let edit = action
-                .edit
-                .as_ref()
-                .map(|edit| workspace_edit_from_tooling_edit(uri, edit, mapper));
-            CodeAction {
-                title: action.label,
-                kind: Some(CodeActionKind::REFACTOR_REWRITE),
-                edit,
-                command: None,
-                ..CodeAction::default()
-            }
-        })
-        .collect())
+    Ok(
+        arcweft_tooling::code_actions::source_code_actions(source, canonicalization)?
+            .into_iter()
+            .map(|action| {
+                let edit = action
+                    .edit
+                    .as_ref()
+                    .map(|edit| workspace_edit_from_tooling_edit(uri, edit, mapper));
+                let diagnostics = action
+                    .diagnostics
+                    .iter()
+                    .map(|diagnostic| tooling_diagnostic_with_mapper(diagnostic, mapper))
+                    .collect::<Vec<_>>();
+                CodeAction {
+                    title: action.label,
+                    kind: Some(CodeActionKind::REFACTOR_REWRITE),
+                    diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
+                    edit,
+                    command: None,
+                    ..CodeAction::default()
+                }
+            })
+            .collect(),
+    )
+}
+
+fn tooling_diagnostic(diagnostic: &arcweft_tooling::model::ToolingDiagnostic) -> Diagnostic {
+    let mut converted = Diagnostic::new_simple(Range::default(), diagnostic.message.clone());
+    converted.severity = Some(DiagnosticSeverity::WARNING);
+    converted.code = Some(NumberOrString::String(diagnostic.code.clone()));
+    converted.source = Some("arcweft-tooling".to_owned());
+    converted
+}
+
+fn tooling_diagnostic_with_mapper(
+    diagnostic: &arcweft_tooling::model::ToolingDiagnostic,
+    mapper: &impl LspPositionMapper,
+) -> Diagnostic {
+    let mut converted = Diagnostic::new_simple(
+        mapper.range_from_byte_span(diagnostic.start, diagnostic.end),
+        diagnostic.message.clone(),
+    );
+    converted.severity = Some(DiagnosticSeverity::WARNING);
+    converted.code = Some(NumberOrString::String(diagnostic.code.clone()));
+    converted.source = Some("arcweft-tooling".to_owned());
+    converted
 }
 
 /// Converts one Arcweft tooling edit into an LSP workspace edit.
@@ -1133,11 +1175,16 @@ mod tests {
             .parse::<Uri>()
             .expect("uri");
         let source = "flow @.opening opening {\n    alice: [.shake amp=2px]hi[/][p]\n}\n";
-        let actions = source_code_actions(&uri, source).expect("source code actions");
+        let unavailable = arcweft_lang_sema::canonicalization::SemanticDataUnavailable::new(
+            arcweft_lang_sema::canonicalization::SemanticDocumentId::new(uri.to_string()),
+            "standalone test document",
+        );
+        let input = arcweft_tooling::model::CanonicalizationInput::Unavailable(&unavailable);
+        let actions = source_code_actions(&uri, source, input).expect("source code actions");
         assert!(
-            actions
+            !actions
                 .iter()
-                .any(|action| action.title == "Expand Arcweft sugar")
+                .any(|action| action.title == "Canonicalize Arcweft sugar")
         );
         assert!(actions.iter().any(|action| {
             action.title == "Canonicalize inferred rich-text tags"
@@ -1151,7 +1198,7 @@ mod tests {
                 .iter()
                 .any(|action| action.title == "Materialize inferred Arcweft ID")
         );
-        let mapped_actions = source_code_actions_with_mapper(&uri, source, &TestMapper)
+        let mapped_actions = source_code_actions_with_mapper(&uri, source, &TestMapper, input)
             .expect("mapped source code actions");
         assert!(mapped_actions.iter().any(|action| {
             action.title == "Canonicalize inferred rich-text tags" && action.edit.is_some()

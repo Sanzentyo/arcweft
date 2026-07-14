@@ -1,3 +1,4 @@
+use arcweft_character::id::CharacterId;
 use arcweft_lsp::profiles::LspProfileResolver;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use std::{
@@ -59,7 +60,7 @@ character_manifests = ["assets/akane.awchar"]
     assert_eq!(
         profile
             .typecheck_env()
-            .character_look_variants("character.akane"),
+            .character_look_variants(&CharacterId::try_new("character.akane").expect("character")),
         Some(vec!["normal".to_owned(), "smile".to_owned()])
     );
 }

@@ -343,6 +343,49 @@ pub dialogue defaults @dialogue.mobile {
     }
 
     #[test]
+    fn lowering_preserves_speaker_surface_only_for_authored_colon_sugar() {
+        let source = r"flow opening {
+    alice(voice=auto): Hello[p]
+    alice.say()[Again[p]]
+}
+";
+        let parsed = parse_source(source);
+        assert_eq!(parsed.errors(), &[]);
+
+        let hir = lower_to_hir(parsed.typed_tree()).expect("dialogue source lowers");
+        let dialogues = hir.flows()[0]
+            .body()
+            .iter()
+            .filter_map(|item| match item {
+                crate::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue.as_ref()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(dialogues.len(), 2);
+
+        let surface = dialogues[0]
+            .speaker_surface()
+            .expect("colon-style speaker line keeps parser provenance");
+        assert_eq!(
+            &source[surface.source_line_range().as_range()],
+            "    alice(voice=auto): Hello[p]"
+        );
+        assert_eq!(
+            &source[surface.head_range().as_range()],
+            "alice(voice=auto)"
+        );
+        assert_eq!(
+            &source[surface.arguments_range().unwrap().as_range()],
+            "voice=auto"
+        );
+        assert_eq!(
+            &source[surface.inline_content_range().unwrap().as_range()],
+            "Hello[p]"
+        );
+        assert_eq!(dialogues[1].speaker_surface(), None);
+    }
+
+    #[test]
     fn lowering_rejects_wrong_dialogue_id_families() {
         for (line, expected) in [
             (

@@ -12,6 +12,10 @@ use super::{
     normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
     type_ref_kind_with_generics, validate_typecheck_ready,
 };
+use crate::canonicalization::{
+    CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
+    SemanticDocumentId, SemanticSourceIdentity,
+};
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::dialogue_view::{
     DialogueViewModelRegistry, DialogueViewProjection, STANDARD_DIALOGUE_VIEW_RESOURCE,
@@ -22,7 +26,9 @@ use crate::effect_model::{
 use crate::effects::EffectSet;
 use crate::style::check_view_styles;
 use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
+use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_hir::style::HirStyleDecl;
+use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::flow::AuthoredExpr;
 use arcweft_lang_syntax::ast::items::{
@@ -78,12 +84,73 @@ impl TypeCheckReport {
             }
         })
     }
+
+    /// Returns canonicalization evidence for one exact registered source identity.
+    pub fn canonicalization_inventory(
+        &self,
+        source: &SemanticSourceIdentity,
+    ) -> Option<&CheckedCanonicalizationInventory> {
+        self.canonicalization_inventories
+            .iter()
+            .find(|inventory| inventory.source() == source)
+    }
 }
 
 /// Analyzes lowered HIR with an explicit symbol/method environment.
 pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
     let (style_catalog, style_diagnostics) = check_view_styles(module);
     let mut checker = TypeChecker::new(env);
+    finish_type_check(module, style_catalog, style_diagnostics, &mut checker)
+}
+
+/// Analyzes one linked project while retaining exact-source speaker-line evidence.
+pub fn analyze_project_types_for_canonicalization(
+    project: &HirProject,
+    env: &TypeCheckEnv,
+    sources: &CanonicalizationSourceSet,
+) -> Result<TypeCheckReport, SemanticDataUnavailable> {
+    let document = sources
+        .first_document()
+        .cloned()
+        .unwrap_or_else(|| SemanticDocumentId::new("<project>"));
+    if sources.project() != project.package() {
+        return Err(SemanticDataUnavailable::new(
+            document,
+            format!(
+                "source project `{}` does not match checked project `{}`",
+                sources.project(),
+                project.package()
+            ),
+        ));
+    }
+    let callable_symbols = project.callable_symbols().map_err(|errors| {
+        SemanticDataUnavailable::new(
+            document,
+            errors
+                .into_iter()
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; "),
+        )
+    })?;
+    let module = project.linked_module();
+    let (style_catalog, style_diagnostics) = check_view_styles(&module);
+    let mut checker =
+        TypeChecker::new_with_canonicalization(env, Some(sources), Some(&callable_symbols));
+    Ok(finish_type_check(
+        &module,
+        style_catalog,
+        style_diagnostics,
+        &mut checker,
+    ))
+}
+
+fn finish_type_check(
+    module: &HirModule,
+    style_catalog: crate::style::CheckedViewStyleCatalog,
+    style_diagnostics: Vec<crate::style::StyleDiagnostic>,
+    checker: &mut TypeChecker<'_>,
+) -> TypeCheckReport {
     checker
         .errors
         .extend(style_diagnostics.into_iter().map(TypeCheckError::style));
@@ -96,18 +163,20 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
     checker
         .warnings
         .extend(effects.warnings().cloned().map(TypeCheckWarning::effect));
+    let canonicalization_inventories = checker.finish_canonicalization_inventories();
     TypeCheckReport {
-        diagnostics: checker.errors,
-        warnings: checker.warnings,
-        stats: checker.stats,
-        judgments: checker.judgments,
-        typed_lowering_evidence: checker.typed_lowering_evidence,
-        closure_captures: checker.closure_captures,
-        numeric_fallbacks: checker.numeric_fallbacks,
+        diagnostics: std::mem::take(&mut checker.errors),
+        warnings: std::mem::take(&mut checker.warnings),
+        stats: checker.stats.clone(),
+        judgments: std::mem::take(&mut checker.judgments),
+        typed_lowering_evidence: std::mem::take(&mut checker.typed_lowering_evidence),
+        closure_captures: std::mem::take(&mut checker.closure_captures),
+        numeric_fallbacks: std::mem::take(&mut checker.numeric_fallbacks),
         effects,
-        for_iteration_evidence: checker.for_iteration_evidence,
-        trait_catalog: checker.trait_catalog,
+        for_iteration_evidence: std::mem::take(&mut checker.for_iteration_evidence),
+        trait_catalog: std::mem::take(&mut checker.trait_catalog),
         style_catalog,
+        canonicalization_inventories,
     }
 }
 
@@ -147,6 +216,8 @@ impl TypeChecker<'_> {
         for declaration in module.declarations() {
             self.check_top_level_decl(declaration);
         }
+        self.locals.clear();
+        self.reset_semantic_root_scope(None);
         self.check_flow_items(module.top_level_items());
     }
 
@@ -154,6 +225,7 @@ impl TypeChecker<'_> {
         for agent in agents {
             self.clear_borrow_state();
             self.locals.clear();
+            self.reset_semantic_root_scope(agent.module_path());
             self.loop_stack.clear();
             self.yield_stack.clear();
             self.active_presentation_defaults.clear();
@@ -210,6 +282,7 @@ impl TypeChecker<'_> {
         for flow in flows {
             self.clear_borrow_state();
             self.locals.clear();
+            self.reset_semantic_root_scope(flow.module_path());
             self.loop_stack.clear();
             self.active_presentation_defaults.clear();
             self.line_mark_stack.clear();
@@ -256,6 +329,7 @@ impl TypeChecker<'_> {
         for function in functions {
             self.clear_borrow_state();
             self.locals.clear();
+            self.reset_semantic_root_scope(function.module_path());
             self.loop_stack.clear();
             self.yield_stack.clear();
             self.active_presentation_defaults.clear();
@@ -562,6 +636,14 @@ impl TypeChecker<'_> {
             } else {
                 signature_type
             };
+            if let Some(symbols) = self.callable_symbols {
+                let declaration = CallableDeclarationId::for_function(symbols.package(), function)
+                    .expect("linked callable functions must retain canonical module provenance");
+                self.project_functions
+                    .insert(declaration.clone(), signature_type.return_type().clone());
+                self.project_function_signatures
+                    .insert(declaration, signature_type.clone());
+            }
             self.global_functions.insert(
                 function.name().to_owned(),
                 signature_type.return_type().clone(),
@@ -707,6 +789,7 @@ impl TypeChecker<'_> {
             HirTopLevelDecl::Callable(item) => {
                 self.clear_borrow_state();
                 self.locals.clear();
+                self.reset_semantic_root_scope(None);
                 self.loop_stack.clear();
                 for contract in item.contracts() {
                     self.check_contract_clause(contract);
@@ -715,6 +798,7 @@ impl TypeChecker<'_> {
             HirTopLevelDecl::State(item) => {
                 self.clear_borrow_state();
                 self.locals.clear();
+                self.reset_semantic_root_scope(None);
                 self.loop_stack.clear();
                 for field in item.fields() {
                     self.check_expr(field.default());
@@ -733,6 +817,7 @@ impl TypeChecker<'_> {
             HirTopLevelDecl::MemoFn(item) => {
                 self.clear_borrow_state();
                 self.locals.clear();
+                self.reset_semantic_root_scope(None);
                 self.loop_stack.clear();
                 self.yield_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
@@ -740,6 +825,7 @@ impl TypeChecker<'_> {
             HirTopLevelDecl::Parser(item) => {
                 self.clear_borrow_state();
                 self.locals.clear();
+                self.reset_semantic_root_scope(None);
                 self.loop_stack.clear();
                 self.yield_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
@@ -747,6 +833,7 @@ impl TypeChecker<'_> {
             HirTopLevelDecl::Source(item) => {
                 self.clear_borrow_state();
                 self.locals.clear();
+                self.reset_semantic_root_scope(None);
                 self.loop_stack.clear();
                 self.yield_stack.clear();
                 if let Some(id) = item.id() {
@@ -1063,6 +1150,7 @@ impl TypeChecker<'_> {
             };
             self.clear_borrow_state();
             self.locals.clear();
+            self.reset_semantic_root_scope(None);
             self.loop_stack.clear();
             self.yield_stack.clear();
             self.check_signature_type_refs(signature);
@@ -1097,6 +1185,7 @@ impl TypeChecker<'_> {
         }
         self.clear_borrow_state();
         self.locals.clear();
+        self.reset_semantic_root_scope(None);
         self.loop_stack.clear();
         self.yield_stack.clear();
         self.active_presentation_defaults.clear();
@@ -1269,6 +1358,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_dialogue_item(&mut self, dialogue: &arcweft_lang_hir::model::HirDialogue) {
+        self.record_checked_speaker_line(dialogue);
         if !self.is_dialogue_callee(dialogue.callee()) {
             self.errors.push(TypeCheckError::new(format!(
                 "dialogue callee `{}` must resolve to Ref<Character> or SpeakerPreset",

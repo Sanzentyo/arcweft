@@ -1,5 +1,7 @@
 use crate::effect_row::{EffectRow, EffectRowTail};
+use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_syntax::expr::{IntSuffix, LifetimeScopeKind};
+use core::fmt;
 
 /// Entity family used by semantic references and ID checks.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -42,6 +44,127 @@ pub enum EntityKind {
     Slot,
     Target,
     Other(String),
+}
+
+impl EntityKind {
+    /// Resolves the canonical Arcweft type name for an entity family.
+    #[must_use]
+    pub fn from_type_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "Agent" => Self::Agent,
+            "Entry" => Self::Entry,
+            "Flow" => Self::Flow,
+            "Choice" => Self::Choice,
+            "ChoiceOption" => Self::ChoiceOption,
+            "Character" => Self::Character,
+            "View" => Self::View,
+            "Action" => Self::Action,
+            "Activity" => Self::Activity,
+            "DialogueLine" => Self::DialogueLine,
+            "Text" => Self::Text,
+            "Content" => Self::Content,
+            "Input" => Self::Input,
+            "Button" => Self::Button,
+            "Style" => Self::Style,
+            "Asset" => Self::Asset,
+            "Image" => Self::Image,
+            "Animation" => Self::Animation,
+            "Capture" => Self::Capture,
+            "Hook" => Self::Hook,
+            "Signal" => Self::Signal,
+            "Metric" => Self::Metric,
+            "Scene" => Self::Scene,
+            "Source" => Self::Source,
+            "Test" => Self::Test,
+            "Bench" => Self::Bench,
+            "Layer" => Self::Layer,
+            "Voice" => Self::Voice,
+            "Se" => Self::Se,
+            "Bgm" => Self::Bgm,
+            "AudioBus" => Self::AudioBus,
+            "MixerSnapshot" => Self::MixerSnapshot,
+            "Ducking" => Self::Ducking,
+            "Motion" => Self::Motion,
+            "Rig" => Self::Rig,
+            "Slot" => Self::Slot,
+            "Target" => Self::Target,
+            _ => return None,
+        })
+    }
+}
+
+/// Manifest-backed character enum family.
+///
+/// The discriminant is part of nominal identity: a look, a part, and a
+/// per-part variant are never interchangeable even when their member spellings
+/// happen to be equal.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CharacterNominalKind {
+    Look,
+    Part,
+    Variant,
+}
+
+/// Structural identity of a manifest-derived character enum.
+///
+/// Identity is keyed by validated [`CharacterId`] and [`CharacterPartId`]
+/// values rather than by formatting a synthetic [`TypeKind::Named`] string.
+/// This keeps equality, hashing, expected-type enum shorthand, diagnostics,
+/// and tooling provenance on one canonical representation.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CharacterNominalType {
+    Look {
+        character: CharacterId,
+    },
+    Part {
+        character: CharacterId,
+    },
+    Variant {
+        character: CharacterId,
+        part: CharacterPartId,
+    },
+}
+
+impl CharacterNominalType {
+    #[must_use]
+    pub const fn kind(&self) -> CharacterNominalKind {
+        match self {
+            Self::Look { .. } => CharacterNominalKind::Look,
+            Self::Part { .. } => CharacterNominalKind::Part,
+            Self::Variant { .. } => CharacterNominalKind::Variant,
+        }
+    }
+
+    /// Character manifest that owns this nominal enum.
+    #[must_use]
+    pub const fn character(&self) -> &CharacterId {
+        match self {
+            Self::Look { character }
+            | Self::Part { character }
+            | Self::Variant { character, .. } => character,
+        }
+    }
+
+    /// Owning part for a per-part variant enum.
+    #[must_use]
+    pub const fn part(&self) -> Option<&CharacterPartId> {
+        match self {
+            Self::Variant { part, .. } => Some(part),
+            Self::Look { .. } | Self::Part { .. } => None,
+        }
+    }
+
+    /// Canonical Arcweft surface spelling used by diagnostics and tooling.
+    #[must_use]
+    pub fn source_label(&self) -> String {
+        match self {
+            Self::Look { character } => format!("CharacterLook<{character}>"),
+            Self::Part { character } => format!("CharacterPart<{character}>"),
+            Self::Variant { character, part } => {
+                format!("CharacterVariant<{character},{part}>")
+            }
+        }
+    }
 }
 
 /// Entity reference type with optional payload type.
@@ -160,11 +283,20 @@ pub enum TypeKind {
     SpeakerPreset(EntityKind),
     CharacterPatch(EntityKind),
     FocusPatch,
+    /// Manifest-backed character enum with structural nominal identity.
+    CharacterNominal(CharacterNominalType),
     Named(String),
     Tuple(Vec<TypeKind>),
     Choice(Vec<TypeKind>),
     Unit,
     Never,
+}
+
+/// Sema-owned classification of a value accepted as authored speaker-line sugar.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SpeakerLineType {
+    Preset(EntityKind),
+    Speaker(EntityKind),
 }
 
 impl From<IntSuffix> for TypeKind {
@@ -204,6 +336,34 @@ impl EntityType {
 }
 
 impl TypeKind {
+    /// Returns the entity family carried by an actual semantic preset type.
+    #[must_use]
+    pub const fn speaker_preset_entity_kind(&self) -> Option<&EntityKind> {
+        match self {
+            Self::SpeakerPreset(kind) => Some(kind),
+            _ => None,
+        }
+    }
+
+    /// Reports whether this semantic preset targets the expected entity family.
+    #[must_use]
+    pub fn is_speaker_preset_for(&self, expected: &EntityKind) -> bool {
+        self.speaker_preset_entity_kind() == Some(expected)
+    }
+
+    /// Classifies only the semantic types accepted by speaker-line sugar.
+    #[must_use]
+    pub fn speaker_line_classification(&self) -> Option<SpeakerLineType> {
+        match self {
+            Self::SpeakerPreset(kind) => Some(SpeakerLineType::Preset(kind.clone())),
+            Self::Speaker(kind) => Some(SpeakerLineType::Speaker(kind.clone())),
+            Self::Ref(entity) if entity.kind() == &EntityKind::Character => {
+                Some(SpeakerLineType::Speaker(EntityKind::Character))
+            }
+            _ => None,
+        }
+    }
+
     pub const ACTION_EVENT_TYPE_NAME: &'static str = "ActionEvent";
 
     pub(crate) fn resolve_effect_rows_with<E>(
@@ -371,6 +531,7 @@ impl TypeKind {
             Self::Speaker(kind) => format!("Speaker<{kind:?}>"),
             Self::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
             Self::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
+            Self::CharacterNominal(nominal) => nominal.source_label(),
             Self::Tuple(items) => format!(
                 "({})",
                 items
@@ -618,32 +779,29 @@ impl TypeKind {
 
     /// Per-character enum type used for manifest-declared look values.
     #[must_use]
-    pub fn character_look(character: impl AsRef<str>) -> Self {
-        Self::Named(format!("CharacterLook<{}>", character.as_ref()))
+    pub fn character_look(character: CharacterId) -> Self {
+        Self::CharacterNominal(CharacterNominalType::Look { character })
     }
 
     /// Per-character enum type used for manifest-declared part ids.
     #[must_use]
-    pub fn character_part(character: impl AsRef<str>) -> Self {
-        Self::Named(format!("CharacterPart<{}>", character.as_ref()))
+    pub fn character_part(character: CharacterId) -> Self {
+        Self::CharacterNominal(CharacterNominalType::Part { character })
     }
 
     /// Per-character, per-part enum type used for manifest-declared variants.
     #[must_use]
-    pub fn character_variant(character: impl AsRef<str>, part: impl AsRef<str>) -> Self {
-        Self::Named(format!(
-            "CharacterVariant<{},{}>",
-            character.as_ref(),
-            part.as_ref()
-        ))
+    pub fn character_variant(character: CharacterId, part: CharacterPartId) -> Self {
+        Self::CharacterNominal(CharacterNominalType::Variant { character, part })
     }
 
-    /// Character id encoded by a `CharacterLook<...>` semantic type.
-    pub fn character_look_character(&self) -> Option<&str> {
-        let Self::Named(name) = self else {
-            return None;
-        };
-        name.strip_prefix("CharacterLook<")?.strip_suffix('>')
+    /// Manifest-backed character nominal identity, when this is one.
+    #[must_use]
+    pub const fn character_nominal(&self) -> Option<&CharacterNominalType> {
+        match self {
+            Self::CharacterNominal(nominal) => Some(nominal),
+            _ => None,
+        }
     }
 
     #[must_use]
@@ -678,6 +836,39 @@ impl TypeKind {
             "Never" => Self::Never,
             _ => return None,
         })
+    }
+}
+
+impl fmt::Display for TypeKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.source_label())
+    }
+}
+
+#[cfg(test)]
+mod speaker_line_tests {
+    use super::{EntityKind, SpeakerLineType, TypeKind};
+
+    #[test]
+    fn semantic_types_are_the_only_speaker_line_classifier() {
+        let character = EntityKind::Character;
+        assert_eq!(
+            TypeKind::SpeakerPreset(character.clone()).speaker_line_classification(),
+            Some(SpeakerLineType::Preset(character.clone()))
+        );
+        assert_eq!(
+            TypeKind::Speaker(character.clone()).speaker_line_classification(),
+            Some(SpeakerLineType::Speaker(character.clone()))
+        );
+        assert_eq!(
+            TypeKind::entity_ref(character.clone()).speaker_line_classification(),
+            Some(SpeakerLineType::Speaker(character))
+        );
+        assert!(
+            TypeKind::Named("SpeakerPreset".to_owned())
+                .speaker_line_classification()
+                .is_none()
+        );
     }
 }
 

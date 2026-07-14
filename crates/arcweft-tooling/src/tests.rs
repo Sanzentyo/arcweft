@@ -1,10 +1,88 @@
 use crate::{
+    canonicalize_source,
     code_actions::source_code_actions,
     format::{format_source, format_source_with_dialect},
     id_context::materialize_ids,
-    model::{FormatOptions, ToolingError},
+    model::{
+        CanonicalizationInput, FormatOptions, ToolingCodeAction, ToolingEditReport, ToolingError,
+    },
 };
-use arcweft_lang_syntax::parser::SourceDialect;
+use arcweft_lang_hir::{
+    lower::lower_to_hir,
+    project::{HirProject, HirProjectModule},
+};
+use arcweft_lang_sema::{
+    canonicalization::{
+        CanonicalizationSourceSet, SemanticDataUnavailable, SemanticDocumentId,
+        SemanticSourceIdentity,
+    },
+    check::analyze_project_types_for_canonicalization,
+    env::TypeCheckEnv,
+    types::{EntityKind, TypeKind},
+};
+use arcweft_lang_syntax::{
+    ast::module_path::{CanonicalModulePath, ModuleSegment},
+    parser::{SourceDialect, parse_source},
+};
+
+fn with_checked_inventory<T>(
+    source: &str,
+    use_inventory: impl FnOnce(
+        &arcweft_lang_sema::canonicalization::CheckedCanonicalizationInventory,
+    ) -> T,
+) -> T {
+    let module = CanonicalModulePath::crate_root();
+    with_checked_project_inventory(&[(module.clone(), source)], &module, use_inventory)
+}
+
+fn with_checked_project_inventory<T>(
+    modules: &[(CanonicalModulePath, &str)],
+    selected: &CanonicalModulePath,
+    use_inventory: impl FnOnce(
+        &arcweft_lang_sema::canonicalization::CheckedCanonicalizationInventory,
+    ) -> T,
+) -> T {
+    let lowered = modules.iter().map(|(module, source)| {
+        let parsed = parse_source(*source);
+        let hir = lower_to_hir(parsed.typed_tree()).expect("tooling fixture must lower to HIR");
+        HirProjectModule::new(module.clone(), hir)
+    });
+    let project = HirProject::new("tooling-tests", lowered).expect("tooling fixture project");
+    let identities = modules
+        .iter()
+        .map(|(module, source)| {
+            SemanticSourceIdentity::from_source(
+                project.package().clone(),
+                SemanticDocumentId::new(format!("memory:///{module}.arcw")),
+                module.clone(),
+                source,
+            )
+        })
+        .collect::<Vec<_>>();
+    let sources = CanonicalizationSourceSet::try_new(project.package().clone(), identities)
+        .expect("exact source set");
+    let env =
+        TypeCheckEnv::standard().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
+    let report = analyze_project_types_for_canonicalization(&project, &env, &sources)
+        .expect("checked project inventory");
+    let identity = sources.source(selected).expect("selected source identity");
+    let inventory = report
+        .canonicalization_inventory(identity)
+        .expect("module inventory");
+    use_inventory(inventory)
+}
+
+fn canonicalize_for_test(source: &str) -> Result<ToolingEditReport, ToolingError> {
+    with_checked_inventory(source, |inventory| {
+        canonicalize_source(source, CanonicalizationInput::Checked(inventory))
+    })
+}
+
+fn checked_source_code_actions(source: &str) -> Result<Vec<ToolingCodeAction>, ToolingError> {
+    with_checked_inventory(source, |inventory| {
+        source_code_actions(source, CanonicalizationInput::Checked(inventory))
+    })
+}
 
 #[test]
 fn default_format_preserves_sugar() {
@@ -22,28 +100,6 @@ fn agent_format_accepts_awfagent_dialect_without_game_sugar() {
 
     assert!(!report.changed);
     assert_eq!(report.output, source);
-}
-
-#[test]
-fn agent_format_rejects_game_sugar_rewrites() {
-    let source = "agent @agent.opening {\n}\n";
-    let error = format_source_with_dialect(
-        source,
-        SourceDialect::Agent,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect_err("agent formatter rejects game sugar expansion");
-
-    assert!(matches!(
-        error,
-        ToolingError::UnsupportedFormatOption {
-            option: "expand_sugar",
-            dialect: "Agent",
-        }
-    ));
 }
 
 #[test]
@@ -149,14 +205,7 @@ fn assert_agent_format_golden(source: &str) {
 #[test]
 fn expands_speaker_with_and_parent_sugar() {
     let source = "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let report = canonicalize_for_test(source).expect("canonicalization report");
     assert!(report.output.contains("alice.say()[hi[p]]"));
     assert!(report.output.contains("with {"));
     assert!(report.output.contains("    }"));
@@ -176,14 +225,7 @@ fn parent_path_expansion_uses_cst_path_ranges_only() {
         "}\n",
     );
 
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("typed sugar expansion");
+    let report = canonicalize_for_test(source).expect("typed sugar expansion");
 
     let expected = source
         .replacen("parent::first", "super::first", 1)
@@ -215,14 +257,8 @@ fn speaker_expansion_composes_contained_parent_path_edits() {
         "}\n",
     );
 
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("contained path edits compose into the speaker replacement");
+    let report = canonicalize_for_test(source)
+        .expect("contained path edits compose into the speaker replacement");
 
     assert_eq!(
         report.output,
@@ -244,14 +280,8 @@ fn speaker_expansion_composes_contained_parent_path_edits() {
 fn await_expansion_composes_contained_parent_path_edits() {
     let source = "flow opening {\n    await? parent::next\n}\n";
 
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("contained path edit composes into the await replacement");
+    let report = canonicalize_for_test(source)
+        .expect("contained path edit composes into the await replacement");
 
     assert_eq!(
         report.output,
@@ -269,14 +299,8 @@ fn dialogue_defaults_expansion_composes_parent_paths_in_values() {
         "}\n",
     );
 
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("contained path edit composes into the dialogue-defaults replacement");
+    let report = canonicalize_for_test(source)
+        .expect("contained path edit composes into the dialogue-defaults replacement");
 
     assert_eq!(
         report.output,
@@ -315,14 +339,7 @@ fn speaker_expansion_consumes_typed_statement_context() {
         "}\n",
     );
 
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("typed speaker expansion");
+    let report = canonicalize_for_test(source).expect("typed speaker expansion");
 
     let expected = source.replacen(
         "alice(voice=auto): こんにちは[p]",
@@ -442,16 +459,9 @@ fn dialogue_tokenizer_canonical_edits_are_valid_utf8_plans() {
 }
 
 #[test]
-fn expand_sugar_canonicalizes_redundant_decl_identity_only() {
+fn canonicalization_removes_redundant_decl_identity_only() {
     let source = "flow @flow.opening opening {\n}\nflow @flow.opening start {\n}\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\ncharacter @character.alice alice {\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let report = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(report.output.contains("flow opening {"));
     assert!(report.output.contains("flow @flow.opening start {"));
@@ -464,16 +474,9 @@ fn expand_sugar_canonicalizes_redundant_decl_identity_only() {
 }
 
 #[test]
-fn expand_sugar_preserves_generated_decl_identity_surface() {
+fn canonicalization_preserves_generated_decl_identity_surface() {
     let source = "#[generated]\nflow @flow.opening opening {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let report = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(!report.changed);
     assert!(report.output.contains("flow @flow.opening opening {"));
@@ -485,16 +488,9 @@ fn expand_sugar_preserves_generated_decl_identity_surface() {
 }
 
 #[test]
-fn expand_sugar_preserves_source_generated_decl_identity_surface() {
+fn canonicalization_preserves_source_generated_decl_identity_surface() {
     let source = "#![generated(tool)]\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let report = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(report.changed);
     assert!(report.output.contains("flow @flow.generated generated {"));
@@ -502,16 +498,9 @@ fn expand_sugar_preserves_source_generated_decl_identity_surface() {
 }
 
 #[test]
-fn expand_sugar_preserves_source_allowed_decl_identity_surface() {
+fn canonicalization_preserves_source_allowed_decl_identity_surface() {
     let source = "#![allow(style::redundant_decl_identity)]\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let report = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(report.changed);
     assert!(report.output.contains("flow @flow.generated generated {"));
@@ -519,16 +508,9 @@ fn expand_sugar_preserves_source_allowed_decl_identity_surface() {
 }
 
 #[test]
-fn expand_sugar_nests_dotted_dialogue_defaults_assignments() {
+fn canonicalization_nests_dotted_dialogue_defaults_assignments() {
     let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let report = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(report.changed);
     assert!(report.output.contains(
@@ -539,33 +521,221 @@ fn expand_sugar_nests_dotted_dialogue_defaults_assignments() {
 }
 
 #[test]
-fn expands_speaker_presets_from_typed_tree_without_helper_false_positive() {
-    let source = "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let helper = compute()\n    alice2: preset[p]\n    helper: helper[p]\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+fn helper_returns_and_deceptive_names_use_semantic_types() {
+    let source = "fn factory() -> SpeakerPreset<Character> {\n    SpeakerPreset.new(@character.alice)\n}\nfn SpeakerPresetFactory() -> i32 { 1 }\nflow @flow.opening opening {\n    let alice2 = factory()\n    let deceptive = SpeakerPresetFactory()\n    alice2: preset[p]\n    deceptive: helper[p]\n}\n";
+    let report = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(report.output.contains("alice2[preset[p]]"));
-    assert!(report.output.contains("helper.say()[helper[p]]"));
-    assert!(!report.output.contains("helper[helper[p]]"));
+    assert!(report.output.contains("deceptive: helper[p]"));
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "AWT-CANON-004")
+    );
 }
 
 #[test]
-fn expands_chained_speaker_presets_from_typed_tree() {
-    let source = "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let alice3 = alice2(face=smile)\n    alice3: chained[p]\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
+fn shared_helper_corpus_matches_the_adapter_contract() {
+    let source = include_str!("../tests/fixtures/canonicalization/aw-ah-003-helper.arcw");
+    let expected =
+        include_str!("../tests/fixtures/canonicalization/aw-ah-003-helper.expected.arcw");
+
+    let report = canonicalize_for_test(source).expect("shared helper canonicalization");
+
+    assert_eq!(report.output, expected);
+    assert!(report.diagnostics.is_empty());
+}
+
+#[test]
+fn closure_returns_use_the_checked_result_type() {
+    let source = "flow main {\n  let factory = || -> SpeakerPreset<Character> {\n    SpeakerPreset.new(@character.alice)\n  }\n  let from_closure = factory()\n  from_closure: closure return\n}\n";
+
+    let report = canonicalize_for_test(source).expect("closure canonicalization");
+
+    assert!(report.output.contains("from_closure[closure return]"));
+    assert!(report.diagnostics.is_empty());
+}
+
+#[test]
+fn direct_aliases_and_presets_use_checked_semantic_types() {
+    let source = "fn make_direct() -> SpeakerPreset<Character> {\n  SpeakerPreset.new(@character.alice)\n}\n\nflow main {\n  let preset = SpeakerPreset.new(@character.alice)\n  preset: direct preset\n\n  let alice = @character.alice\n  alice: character alias\n}\n";
+    let expected = "fn make_direct() -> SpeakerPreset<Character> {\n  SpeakerPreset.new(@character.alice)\n}\n\nflow main {\n  let preset = SpeakerPreset.new(@character.alice)\n  preset[direct preset]\n\n  let alice = @character.alice\n  alice.say()[character alias]\n}\n";
+
+    let report = canonicalize_for_test(source).expect("direct canonicalization");
+
+    assert_eq!(report.output, expected);
+    assert!(report.diagnostics.is_empty());
+}
+
+#[test]
+fn branch_return_types_drive_speaker_canonicalization() {
+    let source = "fn factory() -> SpeakerPreset<Character> {\n  SpeakerPreset.new(@character.alice)\n}\n\nfn from_block() -> SpeakerPreset<Character> {\n  {\n    let value = factory()\n    value\n  }\n}\n\nfn from_if(flag: Bool) -> SpeakerPreset<Character> {\n  if flag {\n    factory()\n  } else {\n    from_block()\n  }\n}\n\nfn from_if_let(maybe: Option<SpeakerPreset<Character>>) -> SpeakerPreset<Character> {\n  if let .Some(value) = maybe {\n    value\n  } else {\n    factory()\n  }\n}\n\nfn from_match(maybe: Option<SpeakerPreset<Character>>) -> SpeakerPreset<Character> {\n  match maybe {\n    .Some(value) => value\n    .None => factory()\n  }\n}\n\nflow main {\n  let block_value = from_block()\n  block_value: block\n  let if_value = from_if(true)\n  if_value: if\n  let if_let_value = from_if_let(.None)\n  if_let_value: if let\n  let match_value = from_match(.None)\n  match_value: match\n}\n";
+
+    let report = canonicalize_for_test(source).expect("branch canonicalization");
+
+    for canonical in [
+        "block_value[block]",
+        "if_value[if]",
+        "if_let_value[if let]",
+        "match_value[match]",
+    ] {
+        assert!(report.output.contains(canonical), "missing `{canonical}`");
+    }
+}
+
+#[test]
+fn lexical_shadowing_preserves_only_the_non_speaker_line() {
+    let source = "fn factory() -> SpeakerPreset<Character> {\n  SpeakerPreset.new(@character.alice)\n}\n\nflow main {\n  let speaker = factory()\n  speaker: outer before\n  scope {\n    let speaker = 1\n    speaker: inner non-speaker remains unchanged\n  }\n  speaker: outer after\n}\n";
+
+    let report = canonicalize_for_test(source).expect("shadowing canonicalization");
+
+    assert!(report.output.contains("speaker[outer before]"));
+    assert!(
+        report
+            .output
+            .contains("speaker: inner non-speaker remains unchanged")
+    );
+    assert!(report.output.contains("speaker[outer after]"));
+    assert_eq!(report.status, "partial");
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic.code.as_str(),
+            "AWT-CANON-003" | "AWT-CANON-004"
+        ))
+    );
+}
+
+#[test]
+fn unresolved_line_is_left_unchanged_without_blocking_proven_lines() {
+    let source = "flow main {\n  alice: checked speaker\n  missing: unresolved speaker\n}\n";
+
+    let report = canonicalize_for_test(source).expect("partial canonicalization");
+
+    assert!(report.output.contains("alice.say()[checked speaker]"));
+    assert!(report.output.contains("missing: unresolved speaker"));
+    assert_eq!(report.status, "partial");
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "AWT-CANON-003"
+            && diagnostic.arguments.get("reference").map(String::as_str) == Some("missing")
+            && diagnostic.arguments.get("state").map(String::as_str) == Some("unresolved")
+    }));
+}
+
+#[test]
+fn imported_callable_aliases_resolve_by_canonical_declaration() {
+    let root = CanonicalModulePath::crate_root();
+    let helpers = root.join(ModuleSegment::new("helpers").expect("valid module segment"));
+    let other = root.join(ModuleSegment::new("other").expect("valid module segment"));
+    let root_source = "use helpers.neutral_name as build\nuse helpers.misleading_preset_name as SpeakerPresetFactory\n\nflow main {\n  let imported = build()\n  imported: imported helper return\n\n  let qualified = helpers.neutral_name()\n  qualified: qualified helper return\n\n  let deceptive = SpeakerPresetFactory()\n  deceptive: non-preset remains unchanged\n\n  let collision = other.neutral_name()\n  collision: same-spelling non-preset remains unchanged\n}\n";
+    let helper_source = "pub fn neutral_name() -> SpeakerPreset<Character> {\n  SpeakerPreset.new(@character.alice)\n}\n\npub fn misleading_preset_name() -> i32 {\n  1\n}\n";
+    let other_source = "pub fn neutral_name() -> i32 {\n  1\n}\n";
+
+    let report = with_checked_project_inventory(
+        &[
+            (root.clone(), root_source),
+            (helpers, helper_source),
+            (other, other_source),
+        ],
+        &root,
+        |inventory| canonicalize_source(root_source, CanonicalizationInput::Checked(inventory)),
     )
-    .expect("format report");
+    .expect("import canonicalization");
+
+    assert!(report.output.contains("imported[imported helper return]"));
+    assert!(report.output.contains("qualified[qualified helper return]"));
+    assert!(
+        report
+            .output
+            .contains("deceptive: non-preset remains unchanged")
+    );
+    assert!(
+        report
+            .output
+            .contains("collision: same-spelling non-preset remains unchanged")
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "AWT-CANON-004")
+    );
+}
+
+#[test]
+fn unicode_identifier_and_crlf_ranges_are_preserved() {
+    let source = "flow main {\r\n  let 話者 = @character.alice\r\n  話者: こんにちは\r\n}\r\n";
+    let expected =
+        "flow main {\r\n  let 話者 = @character.alice\r\n  話者.say()[こんにちは]\r\n}\r\n";
+
+    let report = canonicalize_for_test(source).expect("Unicode CRLF canonicalization");
+
+    assert_eq!(report.output, expected);
+}
+
+#[test]
+fn stale_and_unavailable_semantics_are_hard_errors() {
+    let source = "flow main {\n  alice: hi\n}\n";
+    with_checked_inventory(source, |inventory| {
+        let error = canonicalize_source(
+            &format!("{source}\n"),
+            CanonicalizationInput::Checked(inventory),
+        )
+        .expect_err("changed source must reject stale inventory");
+        assert_eq!(error.code(), "AWT-CANON-002");
+    });
+
+    let unavailable = SemanticDataUnavailable::new(
+        SemanticDocumentId::new("memory:///unavailable.arcw"),
+        "project analysis failed",
+    );
+    let error = canonicalize_source(source, CanonicalizationInput::Unavailable(&unavailable))
+        .expect_err("unavailable semantic data must stop canonicalization");
+    assert_eq!(error.code(), "AWT-CANON-001");
+}
+
+#[test]
+fn checked_canonicalization_is_deterministic() {
+    let source = "flow main {\n  let alice2 = alice(voice=auto)\n  alice2: hi[p]\n}\n";
+
+    let first = canonicalize_for_test(source).expect("first canonicalization");
+    let second = canonicalize_for_test(source).expect("second canonicalization");
+
+    assert_eq!(first, second);
+}
+
+#[test]
+fn inconsistent_semantic_record_multiplicity_and_surface_are_diagnostics() {
+    let source = "flow main {\n  alice: first\n  alice: second\n}\n";
+    with_checked_inventory(source, |inventory| {
+        let parsed = parse_source(source);
+        let lines = crate::dialogue_content::collect_speaker_lines(&parsed);
+        let records = inventory.speaker_lines();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(records.len(), 2);
+
+        for (matches, expected_reason) in [
+            (Vec::new(), "missing_record"),
+            (vec![&records[0], &records[0]], "duplicate_record"),
+            (vec![&records[1]], "surface_mismatch"),
+        ] {
+            let diagnostic = crate::canonicalization::speaker_record_diagnostic_for_matches(
+                source, lines[0], &matches,
+            )
+            .expect("inconsistent record must diagnose");
+            assert_eq!(diagnostic.code, "AWT-CANON-005");
+            assert_eq!(
+                diagnostic.arguments.get("reason").map(String::as_str),
+                Some(expected_reason)
+            );
+        }
+    });
+}
+
+#[test]
+fn canonicalizes_chained_speaker_presets_from_checked_types() {
+    let source = "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    let alice2 = alice(voice=auto)\n    let alice3 = alice2(face=smile)\n    alice3: chained[p]\n}\n";
+    let report = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(report.output.contains("alice3[chained[p]]"));
 }
@@ -576,14 +746,7 @@ fn expands_dialogue_authoring_sugar_only_when_requested() {
     let preserved = format_source(source, FormatOptions::default()).expect("format report");
     assert_eq!(preserved.output, source);
 
-    let expanded = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let expanded = canonicalize_for_test(source).expect("canonicalization report");
     assert!(expanded.output.contains("|[変な夢](へんなゆめ)"));
     assert!(expanded.output.contains("|[悪夢](あくむ)"));
     assert!(expanded.output.contains("#[name]"));
@@ -598,14 +761,7 @@ fn expands_dialogue_authoring_sugar_only_when_requested() {
 #[test]
 fn short_scalar_tag_sugar_emits_the_canonical_value_form() {
     let source = "flow @flow.opening opening {\n    alice: [color #a8b5ff:夜][p]\n}\n";
-    let expanded = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let expanded = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(
         expanded
@@ -615,16 +771,9 @@ fn short_scalar_tag_sugar_emits_the_canonical_value_form() {
 }
 
 #[test]
-fn expand_sugar_does_not_treat_dialogue_content_lines_as_speaker_sugar() {
+fn canonicalization_does_not_treat_dialogue_content_lines_as_speaker_sugar() {
     let source = "flow @flow.opening opening {\n    alice.say()[\n        cue: [raw: [p]や#[expr]をそのまま表示] と [! flash()][p]\n    ]\n}\n";
-    let expanded = format_source(
-        source,
-        FormatOptions {
-            expand_sugar: true,
-            canonical_rich_text: false,
-        },
-    )
-    .expect("format report");
+    let expanded = canonicalize_for_test(source).expect("canonicalization report");
 
     assert!(!expanded.output.contains("cue.say()"));
     assert!(
@@ -640,7 +789,6 @@ fn canonical_rich_text_expands_dot_inference_without_other_sugar() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -672,7 +820,6 @@ fn canonical_rich_text_preserves_explicit_fx_spans() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -696,7 +843,6 @@ fn canonical_rich_text_preserves_closing_brackets_inside_quoted_arguments() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -716,7 +862,6 @@ fn canonical_rich_text_projects_indented_multiline_lf_and_crlf_edits() {
         let report = format_source(
             &source,
             FormatOptions {
-                expand_sugar: false,
                 canonical_rich_text: true,
             },
         )
@@ -739,7 +884,6 @@ fn canonical_rich_text_visits_flow_else_branches() {
         let report = format_source(
             &source,
             FormatOptions {
-                expand_sugar: false,
                 canonical_rich_text: true,
             },
         )
@@ -764,7 +908,6 @@ fn canonical_rich_text_uses_the_dialogue_delimiters_when_content_repeats_in_call
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -788,7 +931,6 @@ fn canonical_rich_text_projects_multiline_dialogue_call_expressions_across_crlf(
         let report = format_source(
             &source,
             FormatOptions {
-                expand_sugar: false,
                 canonical_rich_text: true,
             },
         )
@@ -811,7 +953,6 @@ fn canonical_rich_text_visits_statement_bodies_outside_flows() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -832,7 +973,6 @@ fn canonical_rich_text_expands_inferred_text_proxy_objects() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -863,7 +1003,6 @@ fn canonical_rich_text_expands_inferred_rich_text_proxy_objects() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -888,7 +1027,6 @@ fn canonical_rich_text_expands_nested_inferred_text_proxy_objects() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -914,7 +1052,6 @@ fn canonical_rich_text_removes_marker_like_inferred_close() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -934,7 +1071,6 @@ fn canonical_rich_text_uses_the_shared_reserved_marker_classification() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )
@@ -948,7 +1084,7 @@ fn canonical_rich_text_uses_the_shared_reserved_marker_classification() {
 #[test]
 fn source_code_actions_include_canonical_rich_text_edits() {
     let source = "flow @flow.opening opening {\n    alice: [.keyword][.vertical_rl]縦[/]\n}\n";
-    let actions = source_code_actions(source).expect("source code actions");
+    let actions = checked_source_code_actions(source).expect("source code actions");
 
     let action = actions
         .iter()
@@ -968,14 +1104,14 @@ fn source_code_actions_include_canonical_rich_text_edits() {
 }
 
 #[test]
-fn source_code_actions_group_expand_sugar_rewrites() {
+fn source_code_actions_group_semantic_canonicalization_rewrites() {
     let source = "flow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n}\n";
-    let actions = source_code_actions(source).expect("source code actions");
+    let actions = checked_source_code_actions(source).expect("source code actions");
 
     let action = actions
         .iter()
-        .find(|action| action.id == "arcweft.expandSugar")
-        .expect("expand action");
+        .find(|action| action.id == "arcweft.canonicalizeSugar")
+        .expect("canonicalization action");
     let edit = action.edit.as_ref().expect("expand action has edit");
 
     assert_eq!(edit.start, 0);
@@ -990,11 +1126,11 @@ fn source_code_actions_group_expand_sugar_rewrites() {
 fn source_code_actions_include_decl_identity_rewrite_only_when_linted() {
     let source =
         "flow @flow.opening opening {\n}\n#[generated]\nflow @flow.generated generated {\n}\n";
-    let actions = source_code_actions(source).expect("source code actions");
+    let actions = checked_source_code_actions(source).expect("source code actions");
     let action = actions
         .iter()
-        .find(|action| action.id == "arcweft.expandSugar")
-        .expect("expand action");
+        .find(|action| action.id == "arcweft.canonicalizeSugar")
+        .expect("canonicalization action");
     let edit = action.edit.as_ref().expect("expand action has edit");
 
     assert_eq!(edit.start, 0);
@@ -1058,7 +1194,6 @@ fn canonical_rich_text_keeps_dialogue_call_ranges_after_natural_apostrophes() {
     let report = format_source(
         source,
         FormatOptions {
-            expand_sugar: false,
             canonical_rich_text: true,
         },
     )

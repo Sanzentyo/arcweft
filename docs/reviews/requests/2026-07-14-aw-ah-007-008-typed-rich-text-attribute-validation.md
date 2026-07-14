@@ -10,6 +10,13 @@ re-audit their existence. Evidence was recorded at revision
 `4204d25965129ced50abe82cf5de67d528b483d0`; implementation targets the current
 checkout, where line numbers may have moved.
 
+The first implementation delivery and its `v2` re-delivery contained no
+applicable implementation payload. Exact archive, manifest, and missing-content
+evidence is recorded in the
+[2026-07-14 delivery status](../../implementation/aw-ah-007-008-typed-rich-text-attribute-validation-delivery-status-2026-07-14.md).
+This request therefore remains open and is still the only design source for a
+future implementation package.
+
 These findings must be designed together because duplicate/unknown-attribute
 policy and value parsing share one typed attribute schema. Designing either in
 isolation would create two incompatible validation boundaries.

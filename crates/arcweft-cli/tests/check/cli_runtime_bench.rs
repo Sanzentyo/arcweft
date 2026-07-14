@@ -2694,7 +2694,7 @@ fn fmt_accepts_awfagent_path_and_preserves_agent_source_json() {
 }
 
 #[test]
-fn fmt_rejects_game_sugar_rewrites_for_awfagent_path() {
+fn fmt_rejects_removed_expand_sugar_flag() {
     let source = "#[agent(version = 1)]\nagent @agent.cli.format_smoke format_smoke()\n{\n    return \"ok\"\n}\n";
     let path = temp_file("fmt-agent-reject-expand", "awfagent", source);
 
@@ -2707,31 +2707,30 @@ fn fmt_rejects_game_sugar_rewrites_for_awfagent_path() {
 
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("not supported for Agent"),
-        "Agent formatter should reject game sugar rewrites, stderr: {}",
+        String::from_utf8_lossy(&output.stderr).contains("--expand-sugar"),
+        "fmt should reject the removed semantic flag, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
 }
 
 #[test]
-fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
-    let path = temp_arcw(
-        "fmt-expand",
+fn canonicalize_accepts_flags_before_path_and_writes() {
+    let path = temp_arcw_project(
+        "canonicalize-expand",
         "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("fmt")
-        .arg("--expand-sugar")
+        .arg("canonicalize")
         .arg("--write")
         .arg(&path)
         .output()
-        .expect("arcw fmt runs");
+        .expect("arcw canonicalize runs");
 
     assert!(
         output.status.success(),
-        "fmt --expand-sugar should succeed, stderr: {}",
+        "canonicalize should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let rewritten = fs::read_to_string(&path).expect("rewritten source");
@@ -2741,21 +2740,64 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 }
 
 #[test]
-fn fmt_expand_sugar_respects_decl_identity_attributes_when_writing() {
-    let source = "#[generated]\nflow @flow.generated generated {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\nflow @flow.opening opening {\n}\nflow @flow.opening start {\n}\n";
-    let path = temp_arcw("fmt-expand-decl-identity-attrs", source);
+fn canonicalize_shared_helper_corpus_matches_tooling_output() {
+    let source = include_str!(
+        "../../../arcweft-tooling/tests/fixtures/canonicalization/aw-ah-003-helper.arcw"
+    );
+    let expected = include_str!(
+        "../../../arcweft-tooling/tests/fixtures/canonicalization/aw-ah-003-helper.expected.arcw"
+    );
+    let path = temp_arcw_project("canonicalize-shared-helper", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("fmt")
-        .arg("--expand-sugar")
+        .arg("canonicalize")
         .arg("--write")
         .arg(&path)
         .output()
-        .expect("arcw fmt runs");
+        .expect("arcw canonicalize runs");
 
     assert!(
         output.status.success(),
-        "fmt --expand-sugar should succeed, stderr: {}",
+        "canonicalize should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&path).expect("rewritten source"),
+        expected
+    );
+}
+
+#[test]
+fn canonicalize_rejects_unavailable_project_without_writing() {
+    let source = "flow main {\n  alice: unchanged\n}\n";
+    let path = temp_arcw("canonicalize-no-project", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("canonicalize")
+        .arg("--write")
+        .arg(&path)
+        .output()
+        .expect("arcw canonicalize runs");
+
+    assert!(!output.status.success());
+    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
+}
+
+#[test]
+fn canonicalize_respects_decl_identity_attributes_when_writing() {
+    let source = "#[generated]\nflow @flow.generated generated {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\nflow @flow.opening opening {\n}\nflow @flow.opening start {\n}\n";
+    let path = temp_arcw_project("canonicalize-decl-identity-attrs", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("canonicalize")
+        .arg("--write")
+        .arg(&path)
+        .output()
+        .expect("arcw canonicalize runs");
+
+    assert!(
+        output.status.success(),
+        "canonicalize should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let rewritten = fs::read_to_string(&path).expect("rewritten source");
@@ -2766,21 +2808,20 @@ fn fmt_expand_sugar_respects_decl_identity_attributes_when_writing() {
 }
 
 #[test]
-fn fmt_expand_sugar_respects_source_generated_attribute_when_writing() {
-    let source = "#![generated(tool)]\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
-    let path = temp_arcw("fmt-expand-source-generated", source);
+fn canonicalize_respects_source_generated_attribute_when_writing() {
+    let source = "#![generated(tool)]\npub character @character.alice Alice as alice {}\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
+    let path = temp_arcw_project("canonicalize-source-generated", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("fmt")
-        .arg("--expand-sugar")
+        .arg("canonicalize")
         .arg("--write")
         .arg(&path)
         .output()
-        .expect("arcw fmt runs");
+        .expect("arcw canonicalize runs");
 
     assert!(
         output.status.success(),
-        "fmt --expand-sugar should succeed, stderr: {}",
+        "canonicalize should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let rewritten = fs::read_to_string(&path).expect("rewritten source");
@@ -2789,21 +2830,20 @@ fn fmt_expand_sugar_respects_source_generated_attribute_when_writing() {
 }
 
 #[test]
-fn fmt_expand_sugar_respects_source_allow_attribute_when_writing() {
-    let source = "#![allow(style::redundant_decl_identity)]\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
-    let path = temp_arcw("fmt-expand-source-allow", source);
+fn canonicalize_respects_source_allow_attribute_when_writing() {
+    let source = "#![allow(style::redundant_decl_identity)]\npub character @character.alice Alice as alice {}\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
+    let path = temp_arcw_project("canonicalize-source-allow", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("fmt")
-        .arg("--expand-sugar")
+        .arg("canonicalize")
         .arg("--write")
         .arg(&path)
         .output()
-        .expect("arcw fmt runs");
+        .expect("arcw canonicalize runs");
 
     assert!(
         output.status.success(),
-        "fmt --expand-sugar should succeed, stderr: {}",
+        "canonicalize should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let rewritten = fs::read_to_string(&path).expect("rewritten source");
@@ -2812,21 +2852,20 @@ fn fmt_expand_sugar_respects_source_allow_attribute_when_writing() {
 }
 
 #[test]
-fn fmt_expand_sugar_nests_dotted_dialogue_defaults_when_writing() {
+fn canonicalize_nests_dotted_dialogue_defaults_when_writing() {
     let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
-    let path = temp_arcw("fmt-expand-dialogue-defaults", source);
+    let path = temp_arcw_project("canonicalize-dialogue-defaults", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("fmt")
-        .arg("--expand-sugar")
+        .arg("canonicalize")
         .arg("--write")
         .arg(&path)
         .output()
-        .expect("arcw fmt runs");
+        .expect("arcw canonicalize runs");
 
     assert!(
         output.status.success(),
-        "fmt --expand-sugar should succeed, stderr: {}",
+        "canonicalize should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let rewritten = fs::read_to_string(&path).expect("rewritten source");

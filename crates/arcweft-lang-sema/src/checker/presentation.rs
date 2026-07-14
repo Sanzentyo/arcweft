@@ -267,7 +267,7 @@ impl TypeChecker<'_> {
             return;
         };
         if let Some(character) = character
-            && let Some(expected) = self.env.character_look_type(character)
+            && let Some(expected) = self.env.character_look_type_for_symbol(character)
         {
             self.expect_expr_type(look, &expected, "show character look");
         } else {

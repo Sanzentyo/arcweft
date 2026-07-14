@@ -4,6 +4,7 @@
 //! It does not read files, write files, watch paths, or run an LSP transport.
 
 pub mod agent_repl;
+mod canonicalization;
 pub mod code_actions;
 mod decl_identity;
 mod dialogue_content;
@@ -15,9 +16,8 @@ pub mod id_context;
 mod line_sugar;
 pub mod model;
 mod path_sugar;
-mod speaker_presets;
-mod sugar_expansion;
-mod util;
+
+pub use canonicalization::canonicalize_source;
 
 #[cfg(test)]
 mod tests;
