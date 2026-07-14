@@ -398,6 +398,32 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn project_index_does_not_project_removed_image_call_alias_actions() {
+    let tree = parse_source(
+        r#"
+flow @flow.opening opening {
+    image.show(asset = @asset:.bg.pulse, target = "target.sample.pulse", action = "action.inspect.pulse")
+}
+"#,
+    )
+    .into_typed_tree();
+    let hir = lower_to_hir(&tree).expect("removed image call alias lowers to HIR");
+    let index = project_semantic_index_from_hir(
+        &hir,
+        ProgramHash::new("program-a"),
+        &SourceName::path("game.arcw"),
+    )
+    .expect("invalid call remains indexable without projecting image metadata");
+
+    assert!(
+        index
+            .typecheck_env()
+            .agent_actions("target.sample.pulse")
+            .is_none()
+    );
+}
+
+#[test]
 fn project_index_projects_agent_action_signatures() {
     let index = ProjectSemanticIndex::new(ProgramHash::new("program-a")).with_entity(
         EntitySymbol::new(

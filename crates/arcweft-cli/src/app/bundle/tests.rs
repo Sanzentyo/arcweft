@@ -2187,7 +2187,7 @@ fn static_image_asset_refs_collects_nested_asset_image_entity_refs() {
 fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
     let plan = plan_with_ops(vec![
         image_effect_call("bg", "@asset:.bg.room"),
-        image_effect_call("image.show", "asset = \"asset.view.logo\""),
+        image_effect_call("image", "asset = \"asset.view.logo\""),
         FlowOp::Await {
             binding: None,
             target: AwaitTarget::new(
@@ -2210,6 +2210,16 @@ fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
             "asset.view.logo".to_owned()
         ]
     );
+}
+
+#[test]
+fn static_image_asset_refs_ignore_removed_image_call_alias() {
+    let plan = plan_with_ops(vec![image_effect_call(
+        "image.show",
+        "asset = @asset:.view.logo",
+    )]);
+
+    assert!(static_image_asset_refs(&plan, &BTreeMap::new()).is_empty());
 }
 
 #[test]
@@ -2272,6 +2282,7 @@ image @image.sample.pulse {
     fit = intrinsic
     alignment.x = right
     alignment.y = bottom
+    playback.start = 25ms
     playback.local_time = 50ms
     transform.tx = 24px
     transform.ty = 12px
@@ -2312,7 +2323,7 @@ image @image.sample.pulse {
                 y_milli: 1_000,
             },
             playback: BundleImageObjectPlayback {
-                start_time_millis: 0,
+                start_time_millis: 25,
                 rate_milli: 1_000,
                 paused_at_millis: None,
                 pinned_local_time_millis: Some(50),
@@ -2353,6 +2364,37 @@ image @image.sample.pulse {
             visible: true,
         }]
     );
+}
+
+#[test]
+fn bundle_image_objects_ignore_removed_presentation_argument_aliases() {
+    let declarations = parse_declared_image_objects(
+        r"
+image @image.sample.aliases {
+    asset = @asset:.bg.poster
+    x = 12px
+    y = 34px
+    width = 56px
+    height = 78px
+    align.x = right
+    align.y = bottom
+    playback.start_time = 25ms
+    playback.pinned_local_time = 50ms
+}
+",
+    );
+
+    let objects = bundle_image_objects(&declarations).expect("image object metadata");
+    let object = objects.first().expect("declared image object");
+
+    assert_eq!(
+        object.alignment,
+        BundleImageObjectAlignment {
+            x_milli: 500,
+            y_milli: 500,
+        }
+    );
+    assert_eq!(object.playback, BundleImageObjectPlayback::default());
 }
 
 #[test]

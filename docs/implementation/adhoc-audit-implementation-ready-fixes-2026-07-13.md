@@ -71,24 +71,35 @@ behavior; no source gate is used.
   roots, Unicode, strings/comments/dialogue, nested speakers, containing
   replacements, invalid ranges, and overlapping edits.
 
-## Implementation-ready next cut
-
 ### AW-AH-012 — canonical presentation aliases
 
-AW-AH-012 requires no additional design. After this independent request-file
-cut, implement it as an independent reviewable change before the typed
-presentation ABI work:
+- Retained `image`, `bg`, and `player_viewport` as the only presentation
+  command spellings. Their canonical keys are `width` / `height` / `fit`,
+  `alignment.x` / `alignment.y`, and `playback.start` /
+  `playback.paused_at` / `playback.local_time`.
+- Removed alternate callee and key recognition from semantic checking, project
+  indexing, bundle asset discovery, image declaration projection, and the
+  runtime driver. Launch TOML, Agent JSON, capture scopes, and other unrelated
+  boundaries that use similar words were not changed. In particular, the
+  separate `viewport()` Agent intrinsic remains valid; the runtime presentation
+  dispatcher simply no longer treats `viewport` as `player_viewport`.
+- Added the general machine-readable
+  `TypeCheckErrorKind::UnknownPresentationArgument` diagnostic for unknown
+  named arguments on the affected commands. Removed dotted callees use the
+  ordinary unresolved-call diagnostic, while spellings that are not legal
+  argument grammar fail with `syntax.parse`.
+- Direct runtime calls containing only removed command or viewport-key
+  spellings are no-ops. Removed image keys no longer change an existing image
+  object, and bundle tooling no longer discovers or projects them.
+- Image declarations still preserve arbitrary unknown fields as open source
+  metadata, but the removed keys no longer have projection semantics. Closing
+  and typing the complete declaration field contract belongs to the
+  AW-AH-011/AW-AH-013 ABI redesign; it is not retained as an alias reader here.
+- No production runtime alias reader, deprecated spelling, wrapper, migration
+  shim, or source gate remains. All removal evidence is exercised through
+  parser, semantic, bundle, or runtime behavior.
 
-- retain one canonical presentation command and argument spelling from the
-  accepted language contract;
-- delete alternate callee/key recognition from sema and runtime consumers;
-- reject removed spellings through normal structured compiler diagnostics;
-- leave no runtime alias reader, deprecated spelling, wrapper, or migration
-  shim; and
-- prove canonical success, removed-spelling rejection, and lack of direct
-  runtime alias acceptance through behavior tests rather than source gates.
-
-The resulting canonical semantic identities are fixed substrate for
+These canonical semantic identities are fixed substrate for
 AW-AH-011/AW-AH-013. That ABI design must not reopen the AW-AH-012 naming cut.
 
 ## Design-gated findings
@@ -117,6 +128,34 @@ migration, diagnostics/codecs, and validation contract:
 No provisional compatibility layer will be introduced while those designs are
 completed.
 
+## AW-AH-012 structural audit
+
+The canonical audit ran at Jujutsu change `zqskstvu`. It scanned 2,699 files /
+1,289 Rust files / 629,584 Rust physical LOC and reported 0 errors / 126
+existing warnings. The full workspace rankings, dependency edges, and public
+type inventory are stored in the
+[AW-AH-012 structural audit](structure-audits/aw-ah-012-canonical-presentation-spellings/violations.md).
+
+| Changed Rust file | Classification and responsibility | Bytes | Physical LOC |
+| --- | --- | ---: | ---: |
+| `crates/arcweft-cli/src/app/bundle.rs` | production; bundle assembly, image metadata projection, and static asset discovery | 70,318 | 1,971 |
+| `crates/arcweft-cli/src/app/bundle/tests.rs` | unit test; bundle image projection and asset-discovery behavior | 79,322 | 2,486 |
+| `crates/arcweft-lang-sema/src/checker/presentation.rs` | production; canonical presentation call and argument checking | 23,256 | 572 |
+| `crates/arcweft-lang-sema/src/diagnostics.rs` | production; semantic error kinds, messages, and stable codes | 43,860 | 1,231 |
+| `crates/arcweft-lang-sema/src/project_index/entities.rs` | production; typed entity and Agent-action indexing | 33,401 | 942 |
+| `crates/arcweft-lang-sema/src/project_index/tests.rs` | unit test; canonical and removed image-call indexing behavior | 13,923 | 455 |
+| `crates/arcweft-lang-sema/src/tests/mod.rs` | unit-test facade | 455 | 26 |
+| `crates/arcweft-lang-sema/src/tests/presentation.rs` | unit test; canonical and removed presentation spelling behavior | 6,134 | 143 |
+| `crates/arcweft-runtime-driver/src/display.rs` | production with embedded unit tests; snapshot projection and viewport/image command consumption | 61,455 | 1,631 |
+
+No Cargo dependency changed. The recorded package fan-out / fan-in counts are
+9 / 8 for `arcweft-lang-sema`, 13 / 6 for `arcweft-runtime-driver`, and 65 / 0
+for the application-only `arcweft-cli`. Existing size warnings remain for
+`bundle.rs`, `diagnostics.rs`, and `display.rs`. `display.rs` consists of 740
+production LOC and 891 embedded-test LOC; it remains below the error threshold,
+and AW-AH-011/AW-AH-013 is the planned ownership redesign rather than splitting
+the string-command consumer during this alias-only cut.
+
 ## Validation
 
 Completed focused evidence:
@@ -134,13 +173,15 @@ Completed focused evidence:
   before the final overlay generalization. The final tooling overlay change was
   revalidated by its 54-test suite, all-target/all-feature check, and Clippy
   with `-D warnings`.
+- AW-AH-012 passed all 517 semantic library tests, all 117 runtime-driver
+  tests, and all 193 CLI library tests. The affected sema/runtime/CLI
+  all-target/all-feature check passed, as did workspace all-target/all-feature
+  Clippy with `-D warnings`.
 - The integrated 12-crate all-target/all-feature check passed. Workspace Clippy
   passed. `just test-fast` passed its 183 / 36 / 9 / 64 / 15-test suites.
-- `just test-workspace` completed the non-CLI workspace lib/test phase without
-  a test failure. Its following CLI build stopped while creating an
-  `arcweft-bundle` archive because the drive ran out of space (`os error 112`),
-  before the CLI tests began. This is a remaining validation gap, not an
-  assertion failure.
+- The earlier `just test-workspace` run stopped before CLI tests when the drive
+  ran out of space (`os error 112`). The current AW-AH-012 cut reran the full
+  command after cleanup and it passed, resolving that validation gap.
 - A preliminary combined non-incremental focused invocation also hit its
   242.6-second command timeout and produced a broken-pipe panic when the test
   harness was killed; the same AWFB cases passed 10/10 when rerun alone.
@@ -152,6 +193,9 @@ Completed focused evidence:
   were temporarily preserved, `cargo clean` removed 80,974 generated files /
   100.3 GiB, and the preserved outputs were restored. Drive free space after
   cleanup was 264.89 GiB.
+- Tier 2 MCP stdio, broad Agent observe, exact visual-golden, and doc-test
+  suites were intentionally not run for AW-AH-012 because this cut changes no
+  MCP, capture, renderer, image output, or Rust documentation contract.
 
 Formatting and `git diff --check` passed. No implementation TODO remains in the
 findings listed under **Implemented findings**. The design-gated findings above

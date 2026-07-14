@@ -1081,11 +1081,9 @@ fn image_fit_arg(declaration: &DeclaredImageObject) -> BundleImageObjectFit {
 fn image_alignment_arg(declaration: &DeclaredImageObject) -> BundleImageObjectAlignment {
     BundleImageObjectAlignment {
         x_milli: declaration_arg_value(declaration.args(), "alignment.x")
-            .or_else(|| declaration_arg_value(declaration.args(), "align.x"))
             .and_then(|value| parse_alignment_component_milli(value, "x"))
             .unwrap_or(500),
         y_milli: declaration_arg_value(declaration.args(), "alignment.y")
-            .or_else(|| declaration_arg_value(declaration.args(), "align.y"))
             .and_then(|value| parse_alignment_component_milli(value, "y"))
             .unwrap_or(500),
     }
@@ -1109,7 +1107,6 @@ fn parse_alignment_component_milli(value: &str, axis: &str) -> Option<i32> {
 fn image_playback_arg(declaration: &DeclaredImageObject) -> BundleImageObjectPlayback {
     BundleImageObjectPlayback {
         start_time_millis: declaration_arg_value(declaration.args(), "playback.start")
-            .or_else(|| declaration_arg_value(declaration.args(), "playback.start_time"))
             .and_then(parse_duration_millis)
             .unwrap_or_default(),
         rate_milli: declaration_arg_value(declaration.args(), "playback.rate")
@@ -1118,7 +1115,6 @@ fn image_playback_arg(declaration: &DeclaredImageObject) -> BundleImageObjectPla
         paused_at_millis: declaration_arg_value(declaration.args(), "playback.paused_at")
             .and_then(parse_duration_millis),
         pinned_local_time_millis: declaration_arg_value(declaration.args(), "playback.local_time")
-            .or_else(|| declaration_arg_value(declaration.args(), "playback.pinned_local_time"))
             .and_then(parse_duration_millis),
     }
 }
@@ -1588,7 +1584,7 @@ fn collect_line_effect_static_image_asset_refs(effect: &LineEffectRequest) -> Ve
 
 fn static_image_asset_ref_for_runtime_call(call: &RuntimeCall) -> Option<String> {
     match call.callee.as_str() {
-        "bg" | "image" | "image.show" => runtime_call_asset_arg(call, 0),
+        "bg" | "image" => runtime_call_asset_arg(call, 0),
         _ => None,
     }
 }

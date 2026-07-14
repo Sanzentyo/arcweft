@@ -361,11 +361,7 @@ enum PresentationViewportEffect {
 impl PresentationViewportEffect {
     fn from_call(call: &RuntimeCall) -> Option<Self> {
         match call.callee.as_str() {
-            "player_viewport"
-            | "viewport"
-            | "viewport.fit"
-            | "player.viewport"
-            | "player.viewport.fit" => viewport_effect_from_call(call),
+            "player_viewport" => viewport_effect_from_call(call),
             _ => None,
         }
     }
@@ -390,25 +386,19 @@ fn viewport_fit_from_effects(
 }
 
 fn viewport_effect_from_call(call: &RuntimeCall) -> Option<PresentationViewportEffect> {
-    let fit_arg = named_arg(&call.args, "fit")
-        .or_else(|| named_arg(&call.args, "policy"))
-        .or_else(|| named_arg(&call.args, "scale_policy"))
-        .or_else(|| named_arg(&call.args, "scale-policy"))
-        .map_or("contain", unquote_arg);
+    let width_arg = named_arg(&call.args, "width");
+    let height_arg = named_arg(&call.args, "height");
+    let fit_arg = named_arg(&call.args, "fit");
+    if width_arg.is_none() && height_arg.is_none() && fit_arg.is_none() {
+        return None;
+    }
+    let fit_arg = fit_arg.map_or("contain", unquote_arg);
     match fit_arg {
         "default" | "host" | "inherit" => Some(PresentationViewportEffect::Clear),
         "raw" | "none" => Some(PresentationViewportEffect::Set(BundleViewportFit::raw())),
         "contain" | "cover" | "stretch" => {
-            let design_width = named_arg(&call.args, "design_width")
-                .or_else(|| named_arg(&call.args, "design-width"))
-                .or_else(|| named_arg(&call.args, "width"))
-                .and_then(parse_positive_u32_px)
-                .unwrap_or(1280);
-            let design_height = named_arg(&call.args, "design_height")
-                .or_else(|| named_arg(&call.args, "design-height"))
-                .or_else(|| named_arg(&call.args, "height"))
-                .and_then(parse_positive_u32_px)
-                .unwrap_or(720);
+            let design_width = width_arg.and_then(parse_positive_u32_px).unwrap_or(1280);
+            let design_height = height_arg.and_then(parse_positive_u32_px).unwrap_or(720);
             let scale_policy = match fit_arg {
                 "cover" => ScalePolicy::Cover,
                 "stretch" => ScalePolicy::Stretch,
@@ -434,7 +424,7 @@ enum PresentationImageEffect {
 impl PresentationImageEffect {
     fn from_call(call: &RuntimeCall) -> Option<Self> {
         match call.callee.as_str() {
-            "image" | "image.show" => inline_image_object(call)
+            "image" => inline_image_object(call)
                 .map(|object| Self::InlineObject(Box::new(object)))
                 .or_else(|| {
                     call.args
@@ -445,7 +435,7 @@ impl PresentationImageEffect {
                         .filter(|id| id.starts_with("image."))
                         .map(Self::Object)
                 }),
-            "bg" | "background" => call
+            "bg" => call
                 .args
                 .first()
                 .map(String::as_str)
@@ -600,11 +590,9 @@ fn image_fit_arg(call: &RuntimeCall) -> BundleImageObjectFit {
 fn image_alignment_arg(call: &RuntimeCall) -> BundleImageObjectAlignment {
     BundleImageObjectAlignment {
         x_milli: named_arg(&call.args, "alignment.x")
-            .or_else(|| named_arg(&call.args, "align.x"))
             .and_then(|value| parse_alignment_view_milli(value, "x"))
             .unwrap_or(500),
         y_milli: named_arg(&call.args, "alignment.y")
-            .or_else(|| named_arg(&call.args, "align.y"))
             .and_then(|value| parse_alignment_view_milli(value, "y"))
             .unwrap_or(500),
     }
@@ -628,7 +616,6 @@ fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
 fn image_playback_arg(call: &RuntimeCall) -> BundleImageObjectPlayback {
     BundleImageObjectPlayback {
         start_time_millis: named_arg(&call.args, "playback.start")
-            .or_else(|| named_arg(&call.args, "playback.start_time"))
             .and_then(parse_duration_millis)
             .unwrap_or_default(),
         rate_milli: named_arg(&call.args, "playback.rate")
@@ -637,7 +624,6 @@ fn image_playback_arg(call: &RuntimeCall) -> BundleImageObjectPlayback {
         paused_at_millis: named_arg(&call.args, "playback.paused_at")
             .and_then(parse_duration_millis),
         pinned_local_time_millis: named_arg(&call.args, "playback.local_time")
-            .or_else(|| named_arg(&call.args, "playback.pinned_local_time"))
             .and_then(parse_duration_millis),
     }
 }
@@ -786,7 +772,11 @@ mod tests {
                 "width = 360".to_owned(),
                 "height = 600".to_owned(),
                 "fit = \"contain\"".to_owned(),
+                "alignment.x = \"right\"".to_owned(),
                 "alignment.y = \"bottom\"".to_owned(),
+                "playback.start = 250ms".to_owned(),
+                "playback.paused_at = 500ms".to_owned(),
+                "playback.local_time = 750ms".to_owned(),
             ],
         };
 
@@ -810,21 +800,25 @@ mod tests {
         assert_eq!(object.layer.as_deref(), Some("layer.character"));
         assert_eq!(object.bounds.x_milli, 760_000);
         assert_eq!(object.bounds.height_milli, 600_000);
+        assert_eq!(object.alignment.x_milli, 1_000);
         assert_eq!(object.alignment.y_milli, 1_000);
+        assert_eq!(object.playback.start_time_millis, 250);
+        assert_eq!(object.playback.paused_at_millis, Some(500));
+        assert_eq!(object.playback.pinned_local_time_millis, Some(750));
     }
 
     #[test]
     fn viewport_effect_sets_and_clears_runtime_fit() {
         let contain = RuntimeCall {
-            callee: "player.viewport".to_owned(),
+            callee: "player_viewport".to_owned(),
             args: vec![
-                "design-width = 1920".to_owned(),
-                "design-height = 1080px".to_owned(),
+                "width = 1920".to_owned(),
+                "height = 1080px".to_owned(),
                 "fit = \"cover\"".to_owned(),
             ],
         };
         let reset = RuntimeCall {
-            callee: "viewport".to_owned(),
+            callee: "player_viewport".to_owned(),
             args: vec!["fit = \"default\"".to_owned()],
         };
 
@@ -838,6 +832,167 @@ mod tests {
             viewport_fit_from_effects(Some(fit), &[LineEffectRequest::Call(reset)]),
             None
         );
+    }
+
+    #[test]
+    fn canonical_presentation_commands_mutate_direct_runtime_state() {
+        let image = presentation_image_object("image.glass_bg");
+        let resources = image_runtime_resources(&image);
+
+        for call in [
+            RuntimeCall {
+                callee: "image".to_owned(),
+                args: vec!["@image.glass_bg".to_owned()],
+            },
+            RuntimeCall {
+                callee: "bg".to_owned(),
+                args: vec!["@asset.glass_bg".to_owned()],
+            },
+        ] {
+            let mut snapshot = BundlePresentationSnapshot::default();
+            let diagnostics = update_snapshot_with_effects(
+                &mut snapshot,
+                &[LineEffectRequest::Call(call)],
+                resources,
+            );
+
+            assert!(diagnostics.is_empty());
+            assert_eq!(snapshot.images, vec![image.clone()]);
+            assert_eq!(snapshot.revision, 1);
+        }
+
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let diagnostics = update_snapshot_with_effects(
+            &mut snapshot,
+            &[LineEffectRequest::Call(RuntimeCall {
+                callee: "player_viewport".to_owned(),
+                args: vec![
+                    "width = 1920".to_owned(),
+                    "height = 1080".to_owned(),
+                    "fit = \"stretch\"".to_owned(),
+                ],
+            })],
+            resources,
+        );
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(
+            snapshot.viewport_fit,
+            Some(BundleViewportFit::design(1920, 1080, ScalePolicy::Stretch))
+        );
+        assert_eq!(snapshot.revision, 1);
+    }
+
+    #[test]
+    fn removed_command_aliases_do_not_mutate_direct_runtime_state() {
+        let image = presentation_image_object("image.glass_bg");
+        let resources = image_runtime_resources(&image);
+        let aliases = [
+            RuntimeCall {
+                callee: "image.show".to_owned(),
+                args: vec!["@image.glass_bg".to_owned()],
+            },
+            RuntimeCall {
+                callee: "background".to_owned(),
+                args: vec!["@asset.glass_bg".to_owned()],
+            },
+            RuntimeCall {
+                callee: "viewport".to_owned(),
+                args: vec!["fit = \"cover\"".to_owned()],
+            },
+            RuntimeCall {
+                callee: "viewport.fit".to_owned(),
+                args: vec!["fit = \"cover\"".to_owned()],
+            },
+            RuntimeCall {
+                callee: "player.viewport".to_owned(),
+                args: vec!["fit = \"cover\"".to_owned()],
+            },
+            RuntimeCall {
+                callee: "player.viewport.fit".to_owned(),
+                args: vec!["fit = \"cover\"".to_owned()],
+            },
+        ];
+
+        for call in aliases {
+            let mut snapshot = BundlePresentationSnapshot {
+                revision: 41,
+                ..BundlePresentationSnapshot::default()
+            };
+            let before = snapshot.clone();
+            let callee = call.callee.clone();
+            let diagnostics = update_snapshot_with_effects(
+                &mut snapshot,
+                &[LineEffectRequest::Call(call)],
+                resources,
+            );
+
+            assert!(diagnostics.is_empty(), "removed callee: {callee}");
+            assert_eq!(snapshot, before, "removed callee: {callee}");
+        }
+    }
+
+    #[test]
+    fn removed_viewport_argument_aliases_do_not_mutate_direct_runtime_state() {
+        for arg in [
+            "design_width = 1920",
+            "design_height = 1080",
+            "design-width = 1920",
+            "design-height = 1080",
+            "policy = \"cover\"",
+            "scale_policy = \"cover\"",
+            "scale-policy = \"cover\"",
+        ] {
+            let mut snapshot = BundlePresentationSnapshot {
+                revision: 43,
+                viewport_fit: Some(BundleViewportFit::raw()),
+                ..BundlePresentationSnapshot::default()
+            };
+            let before = snapshot.clone();
+            let diagnostics = update_snapshot_with_effects(
+                &mut snapshot,
+                &[LineEffectRequest::Call(RuntimeCall {
+                    callee: "player_viewport".to_owned(),
+                    args: vec![arg.to_owned()],
+                })],
+                empty_presentation_resources(),
+            );
+
+            assert!(diagnostics.is_empty(), "removed argument: {arg}");
+            assert_eq!(snapshot, before, "removed argument: {arg}");
+        }
+    }
+
+    #[test]
+    fn removed_image_argument_aliases_do_not_mutate_direct_runtime_state() {
+        let canonical_call = inline_image_runtime_call();
+        let image = inline_image_object(&canonical_call).expect("canonical inline image");
+        let resources = image_runtime_resources(&image);
+
+        for arg in [
+            "align.x = \"right\"",
+            "align.y = \"bottom\"",
+            "playback.start_time = 250ms",
+            "playback.pause_at = 500ms",
+            "playback.pinned_local_time = 750ms",
+        ] {
+            let mut call = canonical_call.clone();
+            call.args.push(arg.to_owned());
+            let mut snapshot = BundlePresentationSnapshot {
+                revision: 47,
+                images: vec![image.clone()],
+                ..BundlePresentationSnapshot::default()
+            };
+            let before = snapshot.clone();
+            let diagnostics = update_snapshot_with_effects(
+                &mut snapshot,
+                &[LineEffectRequest::Call(call)],
+                resources,
+            );
+
+            assert!(diagnostics.is_empty(), "removed argument: {arg}");
+            assert_eq!(snapshot, before, "removed argument: {arg}");
+        }
     }
 
     #[test]
@@ -1378,6 +1533,20 @@ mod tests {
         })
     }
 
+    fn inline_image_runtime_call() -> RuntimeCall {
+        RuntimeCall {
+            callee: "image".to_owned(),
+            args: vec![
+                "asset = @asset:.glass_bg".to_owned(),
+                "id = \"image.glass_bg.inline\"".to_owned(),
+                "x = 0".to_owned(),
+                "y = 0".to_owned(),
+                "width = 1280".to_owned(),
+                "height = 720".to_owned(),
+            ],
+        }
+    }
+
     fn presentation_image_object(id: &str) -> BundleImageObject {
         BundleImageObject {
             id: id.to_owned(),
@@ -1404,6 +1573,18 @@ mod tests {
     fn image_runtime_resources(image: &BundleImageObject) -> BundlePresentationResources<'_> {
         BundlePresentationResources {
             image_objects: std::slice::from_ref(image),
+            text_inputs: &[],
+            action_buttons: &[],
+            scroll_regions: &[],
+            surfaces: &[],
+            focus_groups: &[],
+            focus_navigation: &[],
+        }
+    }
+
+    fn empty_presentation_resources() -> BundlePresentationResources<'static> {
+        BundlePresentationResources {
+            image_objects: &[],
             text_inputs: &[],
             action_buttons: &[],
             scroll_regions: &[],

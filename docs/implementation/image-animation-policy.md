@@ -214,10 +214,10 @@ Checked Arcweft source can express `opacity` as a ratio such as `0.5` or a
 milli value such as `500`; presentation call checking supplies the expected
 numeric type and the runtime lowering stores the result in the presentation
 model's `opacity_milli` field.
-`alignment.x` / `alignment.y` (or the short `align.x` / `align.y`) accept
-keywords (`left`, `center`, `right`, `top`, `bottom`, `start`, `end`), ratio
-values from `0` through `1`, or milli values from `0` through `1000`; they lower
-to `ImageObjectAlignment` before native fit and transform resolution.
+`alignment.x` / `alignment.y` accept keywords (`left`, `center`, `right`, `top`,
+`bottom`, `start`, `end`), ratio values from `0` through `1`, or milli values
+from `0` through `1000`; they lower to `ImageObjectAlignment` before native fit
+and transform resolution.
 `playback.start`, `playback.paused_at`, and `playback.local_time` accept
 non-negative durations (`150ms`, `0.15s`, or a bare seconds number).
 `playback.rate` accepts either a ratio (`0.5`) or milli value (`500`), and all

@@ -31,12 +31,12 @@ impl TypeChecker<'_> {
                 self.check_presentation_background_named_args(args);
                 Some(TypeKind::presentation_handle("BackgroundSurface"))
             }
-            "image" | "image.show" => {
+            "image" => {
                 self.check_presentation_image_source_arg(args);
                 self.check_presentation_image_named_args(args);
                 Some(TypeKind::presentation_handle("ImageSurface"))
             }
-            "player_viewport" | "viewport.fit" | "player.viewport" | "player.viewport.fit" => {
+            "player_viewport" => {
                 self.check_presentation_viewport_args(args);
                 Some(TypeKind::presentation_handle("Viewport"))
             }
@@ -80,14 +80,11 @@ impl TypeChecker<'_> {
             match arg {
                 CallArg::Positional(value) => self.check_presentation_image_loose_value(value),
                 CallArg::Named { name, value } => match name.as_str() {
-                    "width" | "height" | "design_width" | "design_height" | "design-width"
-                    | "design-height" => self.check_presentation_viewport_dimension_value(value),
-                    "fit" | "policy" | "scale_policy" | "scale-policy" => {
+                    "width" | "height" => self.check_presentation_viewport_dimension_value(value),
+                    "fit" => {
                         self.check_presentation_image_loose_value(value);
                     }
-                    _ => {
-                        self.check_expr(value);
-                    }
+                    _ => self.reject_unknown_presentation_argument("player_viewport", name, value),
                 },
                 CallArg::Spread { value } => {
                     self.check_expr(value);
@@ -312,10 +309,11 @@ impl TypeChecker<'_> {
                     &EntityKind::Other("scope".to_owned()),
                     "scope",
                 ),
-                _ if self.check_presentation_image_common_named_arg(name, value) => {}
-                _ => {
+                "fade" => {
                     self.check_expr(value);
                 }
+                _ if self.check_presentation_image_common_named_arg(name, value) => {}
+                _ => self.reject_unknown_presentation_argument("bg", name, value),
             }
         }
     }
@@ -330,10 +328,11 @@ impl TypeChecker<'_> {
                 "lifetime" => self.check_presentation_lifetime_arg(value),
                 "target" => self.check_presentation_image_id_value(value, &EntityKind::Target),
                 "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
-                "id" | "action" | "actions" | "fit" | "proxy.id" | "proxy.type" | "proxy.role" => {
+                "id" | "action" | "actions" | "fit" | "proxy.id" | "proxy.type" | "proxy.role"
+                | "focus" | "input_capture" | "owner" | "drop" => {
                     self.check_presentation_image_loose_value(value);
                 }
-                "alignment.x" | "alignment.y" | "align.x" | "align.y" => {
+                "alignment.x" | "alignment.y" => {
                     self.check_presentation_image_ratio_or_milli_value(value, "image alignment");
                 }
                 "depth" => {
@@ -351,12 +350,7 @@ impl TypeChecker<'_> {
                 "transform.m11" | "transform.m12" | "transform.m21" | "transform.m22" => {
                     self.check_presentation_image_transform_view_value(value);
                 }
-                "playback.start"
-                | "playback.start_time"
-                | "playback.paused_at"
-                | "playback.pause_at"
-                | "playback.local_time"
-                | "playback.pinned_local_time" => {
+                "playback.start" | "playback.paused_at" | "playback.local_time" => {
                     self.check_presentation_image_time_value(value);
                 }
                 "playback.rate" => {
@@ -380,9 +374,7 @@ impl TypeChecker<'_> {
                 custom if custom.starts_with("proxy.param.") => {
                     self.check_presentation_image_param_value(value);
                 }
-                _ => {
-                    self.check_expr(value);
-                }
+                _ => self.reject_unknown_presentation_argument("image", name, value),
             }
         }
     }
@@ -397,16 +389,11 @@ impl TypeChecker<'_> {
                 self.check_presentation_image_opacity_value(value);
                 true
             }
-            "alignment.x" | "alignment.y" | "align.x" | "align.y" => {
+            "alignment.x" | "alignment.y" => {
                 self.check_presentation_image_ratio_or_milli_value(value, "image alignment");
                 true
             }
-            "playback.start"
-            | "playback.start_time"
-            | "playback.paused_at"
-            | "playback.pause_at"
-            | "playback.local_time"
-            | "playback.pinned_local_time" => {
+            "playback.start" | "playback.paused_at" | "playback.local_time" => {
                 self.check_presentation_image_time_value(value);
                 true
             }
@@ -416,6 +403,19 @@ impl TypeChecker<'_> {
             }
             _ => false,
         }
+    }
+
+    fn reject_unknown_presentation_argument(
+        &mut self,
+        command: &str,
+        argument: &str,
+        value: &Expr,
+    ) {
+        self.check_expr(value);
+        self.errors
+            .push(TypeCheckError::unknown_presentation_argument(
+                command, argument,
+            ));
     }
 
     fn check_presentation_image_id_value(&mut self, expr: &Expr, expected: &EntityKind) {

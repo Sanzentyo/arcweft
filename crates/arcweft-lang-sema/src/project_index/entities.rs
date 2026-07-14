@@ -388,7 +388,7 @@ fn index_call_expr_agent_actions(
     mut index: ProjectSemanticIndex,
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    if matches!(callee, Expr::Path(path) if path == "image" || path == "image.show") {
+    if matches!(callee, Expr::Path(path) if path == "image") {
         index = index_image_call_agent_actions(args, index, source_name)?;
     }
     index = index_expr_agent_actions(callee, index, source_name)?;

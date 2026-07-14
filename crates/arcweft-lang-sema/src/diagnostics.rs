@@ -27,6 +27,8 @@ pub enum TypeCheckErrorKind {
         expected: TypeKind,
         actual: TypeKind,
     },
+    /// A presentation command received a named argument outside its canonical contract.
+    UnknownPresentationArgument { command: String, argument: String },
     /// An assignment target is not an executable lvalue in the current source grammar.
     UnsupportedAssignmentTarget { target: String, reason: String },
     /// A method-call expression matched a data-last callable fallback shape,
@@ -304,6 +306,20 @@ impl TypeCheckError {
                 expected,
                 actual,
             },
+        }
+    }
+
+    pub(crate) fn unknown_presentation_argument(
+        command: impl Into<String>,
+        argument: impl Into<String>,
+    ) -> Self {
+        let command = command.into();
+        let argument = argument.into();
+        Self {
+            message: format!(
+                "presentation call `{command}` does not accept named argument `{argument}`"
+            ),
+            kind: TypeCheckErrorKind::UnknownPresentationArgument { command, argument },
         }
     }
 
@@ -605,6 +621,7 @@ impl TypeCheckError {
             }
             TypeCheckErrorKind::Message
             | TypeCheckErrorKind::ArgumentTypeMismatch { .. }
+            | TypeCheckErrorKind::UnknownPresentationArgument { .. }
             | TypeCheckErrorKind::UnsupportedAssignmentTarget { .. }
             | TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. }
             | TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. }
@@ -1093,6 +1110,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         TypeCheckErrorKind::Message => "sema.typecheck".to_owned(),
         TypeCheckErrorKind::ArgumentTypeMismatch { .. } => {
             "sema.typecheck.argument_type_mismatch".to_owned()
+        }
+        TypeCheckErrorKind::UnknownPresentationArgument { .. } => {
+            "sema.presentation.unknown_argument".to_owned()
         }
         TypeCheckErrorKind::UnsupportedAssignmentTarget { .. } => {
             "sema.typecheck.unsupported_assignment_target".to_owned()
