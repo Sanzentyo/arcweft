@@ -11,10 +11,10 @@ use crate::{
     GlyphOrientation, GlyphVerticalForm, JlreqStrictness, LayoutPoint, LayoutRect, LayoutSize,
     ShapedTextGlyph, ShapedTextRun, TextLayout, TextLayoutError, TextLayoutGlyph,
     TextLayoutGlyphSource, TextLayoutLine, TextLayoutRequest, TextLayoutRun, TextLayoutSourceMap,
-    TextShapeRequest, TextShaper,
+    TextShapeRequest, TextShaper, VerticalBreakError,
     document_hash::layout_hash,
-    document_vertical::{VerticalPlanCluster, plan_vertical_segment},
     jlreq_punctuation,
+    vertical_break::{VerticalBreakCluster, plan_vertical_breaks},
     vertical_clusters::{line_break_offsets, vertical_clusters},
 };
 
@@ -69,13 +69,15 @@ pub fn layout_document<S: TextShaper>(
         }) {
             group_end += 1;
         }
-        state.place_vertical_group(
-            document,
-            &shaped_runs[run_index..group_end],
-            group_key.0,
-            group_key.1,
-            &logical_ordinals,
-        );
+        state
+            .place_vertical_group(
+                document,
+                &shaped_runs[run_index..group_end],
+                group_key.0,
+                group_key.1,
+                &logical_ordinals,
+            )
+            .map_err(|source| TextLayoutError::VerticalBreak { source })?;
         run_index = group_end;
     }
     state.finish_line();
@@ -356,7 +358,7 @@ impl DocumentLayoutState {
         writing_mode: RichTextWritingMode,
         strictness: JlreqStrictness,
         logical_ordinals: &BTreeMap<(usize, usize), u32>,
-    ) {
+    ) -> Result<(), VerticalBreakError> {
         let group_glyph_start = self.glyphs.len();
         let mut placements = runs
             .iter()
@@ -397,19 +399,20 @@ impl DocumentLayoutState {
             );
             let plan_input = placements[segment_start..segment_end]
                 .iter()
-                .map(|cluster| VerticalPlanCluster {
+                .map(|cluster| VerticalBreakCluster {
                     text: &cluster.text,
                     advance: cluster.inline_advance,
                     break_allowed_before: cluster.break_allowed_before,
                 })
                 .collect::<Vec<_>>();
-            let plan = plan_vertical_segment(
+            let plan = plan_vertical_breaks(
                 &plan_input,
                 self.request.origin.y,
                 self.vertical_cursor(writing_mode).y,
                 self.request.size.height,
                 strictness,
-            );
+                self.request.vertical_break_policy,
+            )?;
             for (offset, cluster) in placements[segment_start..segment_end].iter().enumerate() {
                 if plan.breaks_before(offset) {
                     self.break_vertical_line(writing_mode, cluster.column_step);
@@ -431,6 +434,7 @@ impl DocumentLayoutState {
             glyph_start = glyph_end;
         }
         debug_assert_eq!(glyph_start, group_glyph_end);
+        Ok(())
     }
 
     fn place_vertical_cluster(

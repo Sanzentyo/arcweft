@@ -110,6 +110,41 @@ line advance. A single cluster wider than the container is placed at the line
 start and may overhang; this keeps geometry deterministic until word-aware
 UAX14 wrapping and overflow diagnostics are implemented.
 
+### Vertical column break quality policy
+
+Vertical writing uses the closed `balanced_v1` `VerticalBreakPolicy` in the
+renderer-independent `arcweft-text-layout` planner. `vertical_rl` and
+`vertical_lr` therefore share the same inline break plan.
+
+Priority is normative and lexicographic:
+
+1. remove UAX #14/JLREQ-prohibited boundaries and generated keep-together pairs;
+2. minimize non-hanging forced overflow;
+3. score allowed hanging, intermediate raggedness, final-column shortness,
+   generated pair preference, and intermediate-column creation;
+4. minimize column count;
+5. prefer lexicographically later break offsets for deterministic fill-forward
+   ties.
+
+Physical metrics are normalized to 1/4096 of the lower median positive shaped
+cluster advance. Objective comparison is integer-only after normalization.
+Uniform scaling preserves decisions except when an input crosses the documented
+half-quantum normalization boundary. The final column has no ordinary
+raggedness or break cost; only a bounded short-final penalty below
+`min(capacity / 3, 2em)` applies after at least one preceding column.
+
+Closing punctuation and middle dots may use at most half of their already
+resolved cluster advance as hanging. Hanging is a bounded soft cost; overflow
+beyond that allowance is a forced-overflow escape and is considered only for
+the shortest legal fragment from a column start. The generated JLREQ tables
+remain the sole source of punctuation class, keep-together, and pair-penalty
+facts.
+
+The request carries only the closed `balanced_v1` identity. Unknown serialized
+policy names are rejected, arbitrary weights are not authored, and the policy
+identity participates in `TextLayoutHash`. Policy changes require curated
+corpus delta review; regenerating expectations is not approval.
+
 ## Content functions
 
 ```arcw

@@ -1340,6 +1340,7 @@ dependencies = [
  "arcweft-render-text",
  "blake3",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "unicode-linebreak",
  "unicode-segmentation",

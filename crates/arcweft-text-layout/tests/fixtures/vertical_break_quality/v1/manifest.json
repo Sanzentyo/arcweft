@@ -1,0 +1,334 @@
+{
+  "schema_id": "arcweft.vertical-break-quality-corpus.v1",
+  "corpus_version": 1,
+  "policy_id": "balanced_v1",
+  "license": "CC0-1.0",
+  "provenance": "Original short Japanese evaluation phrases authored for Arcweft AW-AH-015; no external text is reproduced.",
+  "approval_status": "owner_approved",
+  "metric_fixtures": [
+    {
+      "id": "synthetic-cjk-em-v1",
+      "units_per_em": 4096,
+      "description": "Renderer-neutral shaped-cluster advances; 4096 units represent one body em and 2048 a compressed punctuation cell."
+    }
+  ],
+  "review_thresholds": {
+    "hard_invariant_regressions_allowed": 0,
+    "preferred_break_regressions_allowed_without_owner_review": 0,
+    "acceptable_break_regressions_allowed_without_owner_review": 0,
+    "new_forced_overflow_cases_allowed_without_owner_review": 0
+  },
+  "cases": [
+    {
+      "id": "jp-prose-balanced-rl",
+      "plan_group": "jp-prose-balanced",
+      "source": "春の雨、窓辺に灯が揺れる",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 16384,
+      "clusters": [
+        {"text":"春","advance_units":4096,"break_allowed_before":false},
+        {"text":"の","advance_units":4096,"break_allowed_before":true},
+        {"text":"雨","advance_units":4096,"break_allowed_before":true},
+        {"text":"、","advance_units":2048,"break_allowed_before":true},
+        {"text":"窓","advance_units":4096,"break_allowed_before":true},
+        {"text":"辺","advance_units":4096,"break_allowed_before":true},
+        {"text":"に","advance_units":4096,"break_allowed_before":true},
+        {"text":"灯","advance_units":4096,"break_allowed_before":true},
+        {"text":"が","advance_units":4096,"break_allowed_before":true},
+        {"text":"揺","advance_units":4096,"break_allowed_before":true},
+        {"text":"れ","advance_units":4096,"break_allowed_before":true},
+        {"text":"る","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [4,8],
+      "acceptable_break_offsets": [[4,8]],
+      "expected_status": "normal",
+      "tags": ["prose","punctuation","balanced"]
+    },
+    {
+      "id": "jp-prose-balanced-lr",
+      "plan_group": "jp-prose-balanced",
+      "source": "春の雨、窓辺に灯が揺れる",
+      "writing_mode": "vertical_lr",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 16384,
+      "clusters": [
+        {"text":"春","advance_units":4096,"break_allowed_before":false},
+        {"text":"の","advance_units":4096,"break_allowed_before":true},
+        {"text":"雨","advance_units":4096,"break_allowed_before":true},
+        {"text":"、","advance_units":2048,"break_allowed_before":true},
+        {"text":"窓","advance_units":4096,"break_allowed_before":true},
+        {"text":"辺","advance_units":4096,"break_allowed_before":true},
+        {"text":"に","advance_units":4096,"break_allowed_before":true},
+        {"text":"灯","advance_units":4096,"break_allowed_before":true},
+        {"text":"が","advance_units":4096,"break_allowed_before":true},
+        {"text":"揺","advance_units":4096,"break_allowed_before":true},
+        {"text":"れ","advance_units":4096,"break_allowed_before":true},
+        {"text":"る","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [4,8],
+      "acceptable_break_offsets": [[4,8]],
+      "expected_status": "normal",
+      "tags": ["prose","direction-parity"]
+    },
+    {
+      "id": "closing-opening-loose",
+      "source": "天地。「人山川海",
+      "writing_mode": "vertical_rl",
+      "strictness": "loose",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 14336,
+      "clusters": [
+        {"text":"天","advance_units":4096,"break_allowed_before":false},
+        {"text":"地","advance_units":4096,"break_allowed_before":true},
+        {"text":"。","advance_units":2048,"break_allowed_before":true},
+        {"text":"「","advance_units":4096,"break_allowed_before":true},
+        {"text":"人","advance_units":4096,"break_allowed_before":true},
+        {"text":"山","advance_units":4096,"break_allowed_before":true},
+        {"text":"川","advance_units":4096,"break_allowed_before":true},
+        {"text":"海","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [3,6],
+      "acceptable_break_offsets": [[3,6]],
+      "expected_status": "normal",
+      "tags": ["dialogue","closing-opening","strictness"]
+    },
+    {
+      "id": "closing-opening-strict",
+      "source": "天地。「人山川海",
+      "writing_mode": "vertical_rl",
+      "strictness": "strict",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 14336,
+      "clusters": [
+        {"text":"天","advance_units":4096,"break_allowed_before":false},
+        {"text":"地","advance_units":4096,"break_allowed_before":true},
+        {"text":"。","advance_units":2048,"break_allowed_before":true},
+        {"text":"「","advance_units":4096,"break_allowed_before":true},
+        {"text":"人","advance_units":4096,"break_allowed_before":true},
+        {"text":"山","advance_units":4096,"break_allowed_before":true},
+        {"text":"川","advance_units":4096,"break_allowed_before":true},
+        {"text":"海","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [1,5],
+      "acceptable_break_offsets": [[1,5]],
+      "expected_status": "normal",
+      "tags": ["dialogue","closing-opening","strictness"]
+    },
+    {
+      "id": "leader-pair-normal",
+      "source": "月火……水木",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 12288,
+      "clusters": [
+        {"text":"月","advance_units":4096,"break_allowed_before":false},
+        {"text":"火","advance_units":4096,"break_allowed_before":true},
+        {"text":"…","advance_units":4096,"break_allowed_before":true},
+        {"text":"…","advance_units":4096,"break_allowed_before":true},
+        {"text":"水","advance_units":4096,"break_allowed_before":true},
+        {"text":"木","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [1,4],
+      "acceptable_break_offsets": [[1,4]],
+      "expected_status": "normal",
+      "tags": ["leaders","keep-together"]
+    },
+    {
+      "id": "legal-hanging-beats-early-break",
+      "source": "天地。人",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 9557,
+      "clusters": [
+        {"text":"天","advance_units":4096,"break_allowed_before":false},
+        {"text":"地","advance_units":4096,"break_allowed_before":true},
+        {"text":"。","advance_units":2048,"break_allowed_before":true},
+        {"text":"人","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [3],
+      "acceptable_break_offsets": [[3]],
+      "expected_status": "normal",
+      "tags": ["hanging","closing-punctuation"]
+    },
+    {
+      "id": "ruby-adjacent-body-plan",
+      "source": "物語世界へ",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 12288,
+      "clusters": [
+        {"text":"物","advance_units":4096,"break_allowed_before":false},
+        {"text":"語","advance_units":4096,"break_allowed_before":true},
+        {"text":"世","advance_units":4096,"break_allowed_before":true},
+        {"text":"界","advance_units":4096,"break_allowed_before":true},
+        {"text":"へ","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [3],
+      "acceptable_break_offsets": [[3]],
+      "expected_status": "normal",
+      "tags": ["ruby-adjacent","body-extent"]
+    },
+    {
+      "id": "mixed-latin-digits",
+      "source": "吾輩ABC2026猫。",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 16384,
+      "clusters": [
+        {"text":"吾","advance_units":4096,"break_allowed_before":false},
+        {"text":"輩","advance_units":4096,"break_allowed_before":true},
+        {"text":"ABC","advance_units":12288,"break_allowed_before":true},
+        {"text":"2026","advance_units":4096,"break_allowed_before":true},
+        {"text":"猫","advance_units":4096,"break_allowed_before":true},
+        {"text":"。","advance_units":2048,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [2,4],
+      "acceptable_break_offsets": [[2,4]],
+      "expected_status": "normal",
+      "tags": ["latin","digits","text-combine"]
+    },
+    {
+      "id": "emoji-grapheme-clusters",
+      "source": "春🌸家族👨‍👩‍👧‍👦物語",
+      "writing_mode": "vertical_lr",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 12288,
+      "clusters": [
+        {"text":"春","advance_units":4096,"break_allowed_before":false},
+        {"text":"🌸","advance_units":4096,"break_allowed_before":true},
+        {"text":"家","advance_units":4096,"break_allowed_before":true},
+        {"text":"族","advance_units":4096,"break_allowed_before":true},
+        {"text":"👨‍👩‍👧‍👦","advance_units":4096,"break_allowed_before":true},
+        {"text":"物","advance_units":4096,"break_allowed_before":true},
+        {"text":"語","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [3,6],
+      "acceptable_break_offsets": [[3,6]],
+      "expected_status": "normal",
+      "tags": ["emoji","grapheme"]
+    },
+    {
+      "id": "exact-fit-column",
+      "source": "山川海",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 12288,
+      "clusters": [
+        {"text":"山","advance_units":4096,"break_allowed_before":false},
+        {"text":"川","advance_units":4096,"break_allowed_before":true},
+        {"text":"海","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [],
+      "acceptable_break_offsets": [[]],
+      "expected_status": "normal",
+      "tags": ["exact-fit"]
+    },
+    {
+      "id": "wide-single-column",
+      "source": "春夏秋冬",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 40960,
+      "clusters": [
+        {"text":"春","advance_units":4096,"break_allowed_before":false},
+        {"text":"夏","advance_units":4096,"break_allowed_before":true},
+        {"text":"秋","advance_units":4096,"break_allowed_before":true},
+        {"text":"冬","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [],
+      "acceptable_break_offsets": [[]],
+      "expected_status": "normal",
+      "tags": ["wide"]
+    },
+    {
+      "id": "narrow-forced-overflow",
+      "source": "春夏秋",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 3072,
+      "clusters": [
+        {"text":"春","advance_units":4096,"break_allowed_before":false},
+        {"text":"夏","advance_units":4096,"break_allowed_before":true},
+        {"text":"秋","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [1,2],
+      "acceptable_break_offsets": [[1,2]],
+      "expected_status": "forced_overflow",
+      "tags": ["narrow","terminal-escape"]
+    },
+    {
+      "id": "pathological-unbreakable",
+      "source": "超長不可分",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 0,
+      "height_units": 8192,
+      "clusters": [
+        {"text":"超","advance_units":4096,"break_allowed_before":false},
+        {"text":"長","advance_units":4096,"break_allowed_before":false},
+        {"text":"不","advance_units":4096,"break_allowed_before":false},
+        {"text":"可","advance_units":4096,"break_allowed_before":false},
+        {"text":"分","advance_units":4096,"break_allowed_before":false}
+      ],
+      "preferred_break_offsets": [],
+      "acceptable_break_offsets": [[]],
+      "expected_status": "forced_overflow",
+      "tags": ["unbreakable","pathological"]
+    },
+    {
+      "id": "styled-run-partial-restart",
+      "source": "春夏",
+      "writing_mode": "vertical_rl",
+      "strictness": "normal",
+      "metric_fixture": "synthetic-cjk-em-v1",
+      "origin_units": 0,
+      "initial_units": 11264,
+      "height_units": 12288,
+      "clusters": [
+        {"text":"春","advance_units":4096,"break_allowed_before":false},
+        {"text":"夏","advance_units":4096,"break_allowed_before":true}
+      ],
+      "preferred_break_offsets": [0],
+      "acceptable_break_offsets": [[0]],
+      "expected_status": "normal",
+      "tags": ["styled-run","continuation","restart"]
+    }
+  ]
+}

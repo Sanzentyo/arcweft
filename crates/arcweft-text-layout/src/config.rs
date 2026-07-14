@@ -1,6 +1,9 @@
 //! Host configuration and structured layout failures.
 
-use crate::{LayoutPoint, LayoutSize};
+use crate::{
+    LayoutPoint, LayoutSize,
+    vertical_break::{VerticalBreakError, VerticalBreakPolicy},
+};
 use arcweft_render_text::{RichTextJlreqStrictness, RichTextRange, RichTextWritingMode};
 use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
@@ -15,6 +18,12 @@ where
     /// Host constraints contain non-finite or negative geometry.
     #[error("text layout request contains invalid geometry")]
     InvalidRequestGeometry,
+    /// The shared vertical-break planner rejected metrics or exhausted a checked bound.
+    #[error("vertical break planning failed: {source}")]
+    VerticalBreak {
+        #[source]
+        source: VerticalBreakError,
+    },
     /// A display-map range did not align with the resolved frame text.
     #[error("display range {range:?} is not valid for the resolved text")]
     InvalidRange {
@@ -79,6 +88,8 @@ pub struct TextLayoutRequest {
     pub horizontal_wrap: HorizontalWrap,
     pub default_writing_mode: RichTextWritingMode,
     pub jlreq_strictness: JlreqStrictness,
+    /// Closed, versioned quality objective used for all vertical writing backends.
+    pub vertical_break_policy: VerticalBreakPolicy,
 }
 
 impl Default for TextLayoutRequest {
@@ -89,6 +100,7 @@ impl Default for TextLayoutRequest {
             horizontal_wrap: HorizontalWrap::Wrap,
             default_writing_mode: RichTextWritingMode::HorizontalTb,
             jlreq_strictness: JlreqStrictness::Normal,
+            vertical_break_policy: VerticalBreakPolicy::BalancedV1,
         }
     }
 }

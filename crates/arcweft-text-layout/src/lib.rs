@@ -8,13 +8,13 @@ mod config;
 mod document_hash;
 mod document_layout;
 mod document_ruby;
-mod document_vertical;
 mod geometry;
 mod jlreq_punctuation;
 mod jlreq_punctuation_data;
 mod model;
 mod shaping;
 mod text_layout;
+mod vertical_break;
 mod vertical_clusters;
 mod vertical_orientation;
 
@@ -32,5 +32,12 @@ pub use shaping::{
 pub use text_layout::{
     TextLayout, TextLayoutGlyph, TextLayoutGlyphSource, TextLayoutHash, TextLayoutLine,
     TextLayoutRuby, TextLayoutRubyGlyph, TextLayoutRun, TextLayoutSourceMap,
+};
+pub use vertical_break::{
+    MAX_VERTICAL_BREAK_CLUSTERS, VERTICAL_BREAK_UNITS_PER_EM, VerticalBreakCluster,
+    VerticalBreakColumnExplain, VerticalBreakError, VerticalBreakExplain,
+    VerticalBreakHardConstraint, VerticalBreakMetricRole, VerticalBreakPlan,
+    VerticalBreakPlanStatus, VerticalBreakPolicy, VerticalBreakRejectionCounts, VerticalBreakScore,
+    VerticalBreakTieBreakReason, plan_vertical_breaks,
 };
 pub use vertical_orientation::UNICODE_VERTICAL_ORIENTATION_VERSION;
