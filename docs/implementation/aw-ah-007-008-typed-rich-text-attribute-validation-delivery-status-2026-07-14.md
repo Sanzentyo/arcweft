@@ -10,6 +10,15 @@ consistent manifest-only archive, so no production change is justified by this
 package. The implementation goal remains open behind the existing standalone
 [AW-AH-007/008 design request](../reviews/requests/2026-07-14-aw-ah-007-008-typed-rich-text-attribute-validation.md).
 
+A 2026-07-15 readiness re-evaluation also confirmed that the standalone request
+is not itself a final design: it intentionally asks the assignee to decide the
+grammar, positional policy, schema owners, value algebra, duplicate/unknown
+policy, defaults and limits, recovery, codec scope, and migration behavior.
+Those choices materially change the public authoring and checked-lowering
+contracts, so implementing them by inference would be speculative. The request
+now contains an explicit dispatch contract, required delivery layout, and
+decision-completeness gate for a design-only final-contract task.
+
 ## Audited package
 
 | Field | Evidence |
@@ -61,14 +70,21 @@ findings, required decisions, ownership constraints, migration order,
 diagnostics, codecs, test matrix, and acceptance criteria; duplicating it as a
 new sequence request would create two competing design sources.
 
-A usable re-delivery must provide, at minimum:
+A usable **design** re-delivery must first provide, at minimum:
 
 - the normative design decisions and explicit acceptance criteria;
-- an implementation patch or complete overlay tied to exact base blob hashes;
-- the non-empty source and test payload referenced by its manifests;
-- focused formatter, parser/HIR, semantic, runtime-plan, and cross-backend test
-  evidence; and
-- a clear list of intentionally excluded or design-gated work.
+- an exhaustive per-surface schema/default/diagnostic matrix;
+- exact type ownership, migration order, raw-parser deletion points, and
+  behavioral verification plan;
+- traceability from every open decision to a selected normative answer; and
+- a clear list of explicitly removed surfaces or genuine external blockers.
+
+That design package must not claim implementation completion and does not need
+a speculative Rust patch. After the final design contract is accepted, a
+separate implementation delivery must provide a patch or complete overlay tied
+to exact base blob hashes, non-empty source and test payload, focused parser/HIR,
+semantic, formatter/LSP, runtime-plan, codec (where applicable), and
+cross-backend evidence, plus a clear list of intentionally excluded work.
 
 Package integrity and checkout revision were checked directly. Compilation,
 tests, Clippy, formatting, and structural audit are not applicable because the

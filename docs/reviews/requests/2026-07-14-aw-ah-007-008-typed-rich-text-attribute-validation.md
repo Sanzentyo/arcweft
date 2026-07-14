@@ -1,25 +1,83 @@
 # Request: AW-AH-007/008 typed RichText attribute validation
 
 Date: 2026-07-14
+Last revised: 2026-07-15
 
 ## Request status and independence
 
 This is a standalone design request for AW-AH-007 and AW-AH-008. The findings
 are accepted as real; the assignee does not need the audit ZIP and must not
 re-audit their existence. Evidence was recorded at revision
-`4204d25965129ced50abe82cf5de67d528b483d0`; implementation targets the current
+`4204d25965129ced50abe82cf5de67d528b483d0`; the contract targets the current
 checkout, where line numbers may have moved.
 
 The first implementation delivery and its `v2` re-delivery contained no
 applicable implementation payload. Exact archive, manifest, and missing-content
 evidence is recorded in the
 [2026-07-14 delivery status](../../implementation/aw-ah-007-008-typed-rich-text-attribute-validation-delivery-status-2026-07-14.md).
-This request therefore remains open and is still the only design source for a
-future implementation package.
+This request therefore remains open and is still the only source for the final
+design contract that must precede implementation.
 
 These findings must be designed together because duplicate/unknown-attribute
 policy and value parsing share one typed attribute schema. Designing either in
 isolation would create two incompatible validation boundaries.
+
+## Dispatch contract
+
+This is a **design-contract task**, not an implementation task. Send this file
+by itself to exactly one assignee with access to the current Arcweft checkout.
+Do not attach either failed delivery ZIP and do not ask the assignee to confirm
+whether the findings exist. The findings above are accepted input.
+
+Sequence position:
+
+1. AW-AH-005/006 builtin Fx ownership and typed attribute-free selector work is
+   already implemented and remains fixed substrate.
+2. This AW-AH-007/008 task publishes one final attribute grammar, schema,
+   checked-lowering, diagnostic, recovery, codec, and migration contract.
+3. Only after that final contract is accepted should a separate implementation
+   task change Rust, tests, schemas, or fixtures.
+
+The assignee must answer the required decisions normatively. `MUST`, `MUST
+NOT`, exact type shapes, owner crates, deterministic tables, and explicit
+unsupported cases are acceptable. `TBD`, alternatives without a selected
+winner, “implementation may decide”, and prose that merely repeats the problem
+are not acceptable. If a current surface should be removed instead of
+supported, the contract must name that surface, give the removal diagnostic,
+and place removal before checked lowering; it must not silently omit the
+surface from the schema table.
+
+The design may inspect the current checkout to inventory consumers, but it must
+not redesign already implemented substrate unless it identifies a concrete
+contradiction with an accepted AW-AH-007/008 invariant. Any such contradiction
+must be isolated as a separately named blocker rather than folded into a broad
+rewrite.
+
+## Required checkout inputs
+
+Use the current checkout, with these files as the minimum ownership map:
+
+- `crates/arcweft-lang-syntax/src/ast/dialogue.rs` and
+  `crates/arcweft-lang-syntax/src/text.rs` for the existing ordered, ranged
+  `DialogueTagArg` surface;
+- `crates/arcweft-lang-hir/src/model.rs` for the current retained dialogue
+  content boundary;
+- `crates/arcweft-lang-sema/src/checker/line_plan.rs` and
+  `crates/arcweft-lang-sema/src/checker/fx.rs` for semantic checking and Fx
+  inventory integration;
+- `crates/arcweft-dialogue/src/rich_text.rs` for the closed builtin Fx family,
+  phase, and property inventory;
+- `crates/arcweft-runtime-plan/src/render_text/attrs.rs`, `tag.rs`,
+  `contributions.rs`, and `fx/builtins.rs` for every raw reparse and current
+  consumer;
+- `crates/arcweft-render-text/src/rich_effects.rs`, `rich_text.rs`, and
+  `style.rs` for renderer-neutral value consumers; and
+- the formatter/LSP, bundle/AWBC, cached-artifact, and debug-trace call sites
+  found from the typed boundary, but only when they actually carry this data.
+
+The output must record the exact repository revision it inspected. Line numbers
+in the findings are orientation only; symbol and responsibility ownership is
+the contract.
 
 ## Findings and evidence
 
@@ -228,13 +286,59 @@ tests must call parser/checker APIs; do not search source files for spellings.
 
 ## Expected output
 
-- Normative grammar and duplicate/unknown/positional policy.
-- Exact syntax, HIR, checked-value, schema, diagnostic, and optional codec
-  types with dependency direction.
-- Per-tag-family attribute/value/default table.
-- Failure and recovery semantics for compiler, formatter, LSP, and preview.
-- Compatibility-free migration and deletion plan.
-- Unit, integration, corpus, tamper, and cross-backend test matrices.
+- `DESIGN.md`: normative grammar and duplicate/unknown/positional policy; exact
+  syntax, HIR, checked-value, schema, diagnostic, and real-codec type shapes;
+  dependency direction; compiler/formatter/LSP/preview recovery semantics; and
+  the compatibility-free migration/deletion order.
+- `TAG_SCHEMA_MATRIX.md`: one exhaustive row for every currently accepted
+  control, direct span, style, layout, transform, object/proxy, builtin Fx,
+  host-event, marker, and registered custom/plugin surface. Each row names the
+  owner, accepted positional/named form, value kind, required/default status,
+  range/unit/limit, duplicate/unknown behavior, checked output, and whether the
+  surface is retained or explicitly removed.
+- `DIAGNOSTIC_AND_RECOVERY_MATRIX.md`: stable diagnostic identity and fields,
+  primary/related range selection, deterministic ordering, compile effect,
+  preview effect, and formatter behavior for every failure class.
+- `MIGRATION_AND_TEST_PLAN.md`: compiling implementation order, exact raw parser
+  and fallback deletion points, and unit/integration/corpus/tamper/cross-backend
+  tests mapped to each migration step.
+- `REQUIREMENTS_TRACEABILITY.md`: every numbered decision, required test, and
+  acceptance criterion in this request mapped to one normative section and at
+  least one planned behavioral test.
+- `FINAL_STATUS.md`: inspected revision, complete/incomplete result, and any
+  genuine external blocker. An incomplete result must not be labeled final or
+  implementation-ready.
+
+Deliver those files in
+`arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-final-contract.zip`.
+The archive may also include this request as input provenance, but must not
+include `.git`, `target`, caches, credentials, generated build output, or a
+speculative Rust patch. This design stage does not require production code or
+test logs; it requires a decision-complete contract whose planned verification
+is exact enough for the following implementation task.
+
+## Design completion gate
+
+Before returning the package, the assignee must verify all of the following:
+
+- every numbered required decision has one selected answer and no unresolved
+  branch;
+- every currently accepted tag surface appears in the schema matrix, even if
+  the selected answer is explicit removal;
+- every default is tied only to absence and every malformed spelling has a
+  deterministic diagnostic and recovery effect;
+- the syntax-to-HIR-to-checked-to-runtime-plan type flow contains no raw-string
+  reparse boundary;
+- custom/plugin behavior is either a fully typed registration contract with
+  limits or explicitly unsupported with a diagnostic;
+- formatter and LSP behavior use the same ranges, schema, and diagnostics as
+  compilation;
+- every actual serialized carrier is named and specified, while internal-only
+  values are explicitly identified as having no invented wire format; and
+- migration ends with deletion of all raw reparsers and malformed-to-default
+  branches, without aliases, dual readers, or compatibility shims.
+
+Failure of any item keeps AW-AH-007/008 in design, not implementation.
 
 ## Acceptance criteria
 

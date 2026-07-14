@@ -72,6 +72,37 @@ throwable requests are resolved:
 These requests must preserve the implemented structural identity unless they
 demonstrate a concrete flaw.
 
+## 2026-07-15 follow-up implementation-readiness review
+
+The three follow-ups were rechecked against the current checkout based on
+decision completeness, not on whether a previous delivery contained a patch.
+None is implementation-ready yet:
+
+| Follow-up | Current evidence | Readiness result |
+| --- | --- | --- |
+| AW-AH-009.1 | The sema builder is infallible and map-based, while catalog loading, provenance, aliases, conflicts, diagnostics, limits, and caller migration have no one final transaction contract. | Final design required before implementation. |
+| AW-AH-009.2 | Definition currently resolves presentation-style contributors, rename is a placeholder, and decoded manifests have no typed token source map. | Depends on the accepted AW-AH-009.1 provenance/scope contract, then final design. |
+| AW-AH-009.3 | Character-aware `look=` call surfaces exist, but LSP signature help selects only Rust adapter metadata by a word and has no native position-aware resolver. | Depends on AW-AH-009.1; requires a final design or a complete evidence-backed non-goal. |
+
+Implementing any of these now would choose public scope, alias, LSP edit, or
+signature-resolution policy by guesswork. No production Rust change is part of
+this readiness cut. The requests now require decision-complete independent
+archives, explicit negative/limit matrices, implementation handoffs, and no
+open questions.
+
+The throw dependency is:
+
+```text
+AW-AH-009.1 final registration/alias/provenance contract
+  +-- AW-AH-009.2 definition/rename final contract
+  `-- AW-AH-009.3 signature-help final contract or explicit non-goal
+```
+
+Throw AW-AH-009.1 first. After its final archive is accepted, AW-AH-009.2 and
+AW-AH-009.3 may run in parallel as separate tasks with one worker and one new
+archive per request. Each later task must receive the accepted AW-AH-009.1
+archive as an input and must not redefine its types or policies.
+
 ## Package deviations
 
 The package's design direction was retained, but its transformation and status
