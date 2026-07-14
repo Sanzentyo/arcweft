@@ -343,6 +343,26 @@ fn check_declaration(
         diagnostics.push(error);
         return None;
     }
+    if matches!(
+        property,
+        ViewPropertyKind::TranslateInline | ViewPropertyKind::TranslateBlock
+    ) && matches!(
+        value,
+        ViewSpecifiedValue::Length { value } if !value.is_axis_sign_reversible()
+    ) {
+        diagnostics.push(
+            StyleDiagnostic::new(
+                StyleDiagnosticCode::LogicalTranslationNotSignReversible,
+                format!(
+                    "logical translation `{}` cannot be represented reversibly in every box-axis mode",
+                    property.source_name()
+                ),
+                declaration.value().range(),
+            )
+            .with_subject(property.source_name()),
+        );
+        return None;
+    }
     if let Err(error) = check_interactive_overflow(property, target, &value, declaration.range()) {
         diagnostics.push(error);
         return None;

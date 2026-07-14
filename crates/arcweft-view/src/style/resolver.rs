@@ -1,16 +1,21 @@
 //! Single native computed-Style resolver for retained and control nodes.
 
+mod axis;
+
 use super::{
-    ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewElementState,
-    ViewEnvironmentPredicate, ViewInteractionSelector, ViewPartName, ViewSpecifiedValue,
-    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleCombinator, ViewStyleComparison,
-    ViewStyleContribution, ViewStyleContributionSource, ViewStylePatch, ViewStylePatchId,
-    ViewStylePredicate, ViewStylePriority, ViewStyleProgram, ViewStyleScopeId, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleTokenId, ViewStyleTrace,
-    ViewStyleTraceEntry, ViewStyleTraceMode, ViewStyleTraceRejection,
+    ComputedViewAxes, ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
+    ViewBoxAxisMode, ViewBoxAxisRevision, ViewComputedPropertyKind, ViewElementState,
+    ViewEnvironmentPredicate, ViewInteractionSelector, ViewPartName, ViewPropertyKind,
+    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleCombinator,
+    ViewStyleComparison, ViewStyleContribution, ViewStyleContributionSource, ViewStylePatch,
+    ViewStylePatchId, ViewStylePredicate, ViewStylePriority, ViewStyleProgram, ViewStyleScopeId,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
+    ViewStyleSourceId, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
+    ViewStyleTraceRejection,
 };
 use crate::ViewElementKind;
 use arcweft_presentation::appearance::{ColorScheme, ContrastPreference, PresentationEnvironment};
+use axis::{PendingViewStyleContribution, resolve_axes, resolve_contribution, resolve_transitions};
 use std::collections::{BTreeMap, VecDeque};
 use thiserror::Error;
 
@@ -118,6 +123,15 @@ pub enum ViewStyleResolveError {
     UnknownToken(ViewStyleTokenId),
     #[error("inline Style token {0:?} is not uniquely owned by one named sheet")]
     AmbiguousInlineToken(ViewStyleTokenId),
+    #[error(
+        "logical property {authored_property:?} overflows while resolving to {resolved_property:?} in {mode:?}"
+    )]
+    AxisValueOverflow {
+        style_source: ViewStyleSourceId,
+        authored_property: ViewPropertyKind,
+        resolved_property: ViewComputedPropertyKind,
+        mode: ViewBoxAxisMode,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -132,6 +146,8 @@ struct ViewStyleCacheKey {
     text_scale: u16,
     locale: Option<String>,
     environment_revision: u64,
+    axis_mode: u8,
+    axis_revision: ViewBoxAxisRevision,
 }
 
 #[derive(Default)]
@@ -367,22 +383,7 @@ impl ViewStyleResolver {
                 limit: self.limits.max_applications,
             });
         }
-        let cache_key = ViewStyleCacheKey::new(context);
-        if context.trace != ViewStyleTraceMode::Full
-            && let Some(computed) = self.cache.get(&cache_key).cloned()
-        {
-            let mut trace = ViewStyleTrace::default();
-            trace.finish_winners(context.trace, &computed);
-            return Ok(ViewStyleResolution {
-                computed,
-                trace,
-                cache_hit: true,
-            });
-        }
-
-        let revision = computed_revision(&cache_key);
         let inline_token_owners = InlineTokenOwners::new(program, self.limits.max_token_inventory)?;
-        let mut builder = ComputedViewStyleBuilder::inherit(context.parent);
         let mut trace = ViewStyleTrace::default();
         let mut budget = ResolveBudget::default();
         let mut contributions = Vec::new();
@@ -418,10 +419,52 @@ impl ViewStyleResolver {
                 }
             }
         }
-        contributions.sort_by_key(ViewStyleContribution::priority);
-        for contribution in contributions {
-            apply_contribution(&mut builder, contribution, context.trace, &mut trace);
+        contributions.sort_by_key(|contribution| contribution.priority);
+        let axes = resolve_axes(context.parent, &contributions);
+        let cache_key = ViewStyleCacheKey::new(context, &axes);
+        if context.trace != ViewStyleTraceMode::Full
+            && let Some(computed) = self.cache.get(&cache_key).cloned()
+        {
+            trace.finish_winners(context.trace, &computed);
+            return Ok(ViewStyleResolution {
+                computed,
+                trace,
+                cache_hit: true,
+            });
         }
+
+        let revision = computed_revision(&cache_key);
+        let mode = axes.mode();
+        let mut builder = ComputedViewStyleBuilder::inherit(context.parent);
+        builder.set_axes(axes);
+        let mut resolved_contribution_count = 0_usize;
+        for contribution in contributions {
+            if contribution.property.is_axis_context() {
+                continue;
+            }
+            if contribution.property.is_axis_dependent() {
+                builder.include_axis_usage(contribution.property.axis_usage());
+            }
+            let contributions = resolve_contribution(contribution, mode)?;
+            if contributions.len()
+                > self
+                    .limits
+                    .max_contributions
+                    .saturating_sub(resolved_contribution_count)
+            {
+                return Err(ViewStyleResolveError::ContributionBudget {
+                    limit: self.limits.max_contributions,
+                });
+            }
+            resolved_contribution_count += contributions.len();
+            for contribution in contributions {
+                apply_contribution(&mut builder, contribution, context.trace, &mut trace);
+            }
+        }
+        let (transitions, usage) =
+            resolve_transitions(builder.value(ViewPropertyKind::Transition), mode);
+        builder.include_axis_usage(usage);
+        builder.set_transitions(transitions);
         let computed = builder.finish(revision);
         trace.finish_winners(context.trace, &computed);
         if context.trace != ViewStyleTraceMode::Full {
@@ -446,7 +489,7 @@ impl ViewStyleResolver {
         application: &ViewStyleApplication,
         context: &ViewStyleResolveContext<'_>,
         trace: &mut ViewStyleTrace,
-        contributions: &mut Vec<ViewStyleContribution>,
+        contributions: &mut Vec<PendingViewStyleContribution>,
     ) -> Result<(), ViewStyleResolveError> {
         for (declaration_order, declaration) in patch.declarations().iter().enumerate() {
             if context
@@ -472,11 +515,11 @@ impl ViewStyleResolver {
             )?;
             push_contribution(
                 contributions,
-                ViewStyleContribution::new(
-                    declaration.property(),
+                PendingViewStyleContribution {
+                    property: declaration.property(),
                     value,
-                    declaration.op(),
-                    ViewStylePriority::new(
+                    operation: declaration.op(),
+                    priority: ViewStylePriority::new(
                         application.scope_depth(),
                         application.application_order(),
                         0,
@@ -484,11 +527,11 @@ impl ViewStyleResolver {
                         0,
                         u32::try_from(declaration_order).unwrap_or(u32::MAX),
                     ),
-                    ViewStyleContributionSource::Patch {
+                    source: ViewStyleContributionSource::Patch {
                         patch: patch.id(),
                         declaration: declaration.source(),
                     },
-                ),
+                },
                 self.limits.max_contributions,
             )?;
         }
@@ -507,7 +550,7 @@ impl ViewStyleResolver {
         context: &ViewStyleResolveContext<'_>,
         trace: &mut ViewStyleTrace,
         budget: &mut ResolveBudget,
-        contributions: &mut Vec<ViewStyleContribution>,
+        contributions: &mut Vec<PendingViewStyleContribution>,
     ) -> Result<(), ViewStyleResolveError> {
         let scoped_ancestors = scoped_ancestors(context.ancestors, application.scope());
         for rule in sheet.rules() {
@@ -578,11 +621,11 @@ impl ViewStyleResolver {
                     declaration.value(),
                     self.limits.max_token_depth,
                 )?;
-                let contribution = ViewStyleContribution::new(
-                    declaration.property(),
+                let contribution = PendingViewStyleContribution {
+                    property: declaration.property(),
                     value,
-                    declaration.op(),
-                    ViewStylePriority::new(
+                    operation: declaration.op(),
+                    priority: ViewStylePriority::new(
                         application.scope_depth(),
                         application.application_order(),
                         specificity.predicates(),
@@ -590,12 +633,12 @@ impl ViewStyleResolver {
                         rule.source_order(),
                         u32::try_from(declaration_order).unwrap_or(u32::MAX),
                     ),
-                    ViewStyleContributionSource::Sheet {
+                    source: ViewStyleContributionSource::Sheet {
                         sheet: sheet.id().clone(),
                         rule: rule.source(),
                         declaration: declaration.source(),
                     },
-                );
+                };
                 push_contribution(contributions, contribution, self.limits.max_contributions)?;
             }
         }
@@ -621,7 +664,7 @@ impl ViewStyleResolver {
 }
 
 impl ViewStyleCacheKey {
-    fn new(context: &ViewStyleResolveContext<'_>) -> Self {
+    fn new(context: &ViewStyleResolveContext<'_>, axes: &ComputedViewAxes) -> Self {
         let mut facts = context.ancestors.to_vec();
         facts.push(context.node.clone());
         Self {
@@ -638,6 +681,8 @@ impl ViewStyleCacheKey {
                 .locale()
                 .map(|locale| locale.as_str().to_owned()),
             environment_revision: context.environment.revision().0,
+            axis_mode: axes.mode().canonical_tag(),
+            axis_revision: axes.revision(),
         }
     }
 }
@@ -664,8 +709,8 @@ fn apply_contribution(
 }
 
 fn push_contribution(
-    contributions: &mut Vec<ViewStyleContribution>,
-    contribution: ViewStyleContribution,
+    contributions: &mut Vec<PendingViewStyleContribution>,
+    contribution: PendingViewStyleContribution,
     limit: usize,
 ) -> Result<(), ViewStyleResolveError> {
     if contributions.len() >= limit {
@@ -975,6 +1020,8 @@ fn computed_revision(key: &ViewStyleCacheKey) -> ComputedViewStyleRevision {
         key.revisions.containers,
         key.environment_revision,
         u64::from(key.text_scale),
+        u64::from(key.axis_mode),
+        key.axis_revision.value(),
     ] {
         revision ^= value;
         revision = revision.wrapping_mul(0x0000_0100_0000_01b3);

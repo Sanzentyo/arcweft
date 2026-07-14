@@ -8,10 +8,10 @@ use arcweft_presentation::appearance::{
 };
 use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewAlignment,
-    ViewAngleMilliDegrees, ViewBlendMode, ViewClip, ViewColorValue, ViewDisplay, ViewFlexDirection,
-    ViewFlexWrap, ViewFontFamily, ViewFontFamilyList, ViewFontStyle, ViewFontWeight,
-    ViewLengthMilli, ViewMask, ViewOverflow, ViewPosition, ViewPropertyKind, ViewRatioMilli,
-    ViewScalarMilli, ViewSpecifiedValue, ViewStyleAssignOp, ViewStyleContribution,
+    ViewAngleMilliDegrees, ViewBlendMode, ViewBoxAxisMode, ViewClip, ViewColorValue, ViewDisplay,
+    ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList, ViewFontStyle,
+    ViewFontWeight, ViewLengthMilli, ViewMask, ViewOverflow, ViewPosition, ViewPropertyKind,
+    ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue, ViewStyleAssignOp, ViewStyleContribution,
     ViewStyleContributionSource, ViewStylePriority, ViewStyleValueKind, ViewSystemFontFamily,
 };
 
@@ -33,6 +33,9 @@ fn computed(
 
 fn representative_value(kind: ViewStyleValueKind) -> ViewSpecifiedValue {
     match kind {
+        ViewStyleValueKind::BoxAxes => ViewSpecifiedValue::BoxAxes {
+            value: ViewBoxAxisMode::HorizontalLtr,
+        },
         ViewStyleValueKind::Bool => ViewSpecifiedValue::Bool { value: true },
         ViewStyleValueKind::Integer => ViewSpecifiedValue::Integer { value: 7 },
         ViewStyleValueKind::Ratio => ViewSpecifiedValue::Ratio {
@@ -104,6 +107,7 @@ fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
         ViewPropertyKind::ALL
             .iter()
             .copied()
+            .filter(|property| property.is_computed_canonical())
             .map(|property| (property, representative_value(property.value_kind()))),
     );
     let projected = ViewRuntimeNodeStyle::try_from_computed(
@@ -125,9 +129,15 @@ fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
             .iter()
             .map(|partition| partition.iter().len())
             .sum::<usize>(),
-        ViewPropertyKind::ALL.len()
+        ViewPropertyKind::ALL
+            .iter()
+            .filter(|property| property.is_computed_canonical())
+            .count()
     );
-    for property in ViewPropertyKind::ALL {
+    for property in ViewPropertyKind::ALL
+        .iter()
+        .filter(|property| property.is_computed_canonical())
+    {
         assert_eq!(
             partitions
                 .iter()

@@ -6,9 +6,10 @@ use arcweft_bundle::resource_codec::view::{
 };
 use arcweft_bundle::resource_codec::{CrossSectionRef, PublicIdRef, SourceRangeRef};
 use arcweft_view::style::{
-    ViewPropertyKind, ViewRatioMilli, ViewSpecifiedValue, ViewStyleAssignOp, ViewStyleDeclaration,
-    ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewBoxAxisMode, ViewPropertyKind, ViewRatioMilli, ViewSpecifiedValue, ViewStyleAssignOp,
+    ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleRule,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
+    ViewStyleSourceId,
 };
 
 #[test]
@@ -183,6 +184,15 @@ fn style_resource_with_source_inventory(
                 patch_source,
             )
             .expect("valid patch declaration"),
+            ViewStyleDeclaration::new(
+                ViewPropertyKind::BoxAxes,
+                ViewSpecifiedValue::BoxAxes {
+                    value: ViewBoxAxisMode::VerticalRl,
+                },
+                ViewStyleAssignOp::Replace,
+                patch_source,
+            )
+            .expect("valid axis declaration"),
         ],
     );
     let mut source_map_refs = vec![

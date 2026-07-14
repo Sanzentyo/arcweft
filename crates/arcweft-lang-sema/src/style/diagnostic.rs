@@ -17,6 +17,7 @@ pub enum StyleDiagnosticCode {
     TokenCycle,
     TokenTypeMismatch,
     InvalidAppend,
+    LogicalTranslationNotSignReversible,
     PropertyNotApplicable,
     InteractiveOverflowRequiresScroll,
     InlineSelectorNotSupported,
@@ -60,6 +61,9 @@ impl StyleDiagnosticCode {
             Self::TokenCycle => "style::token_cycle",
             Self::TokenTypeMismatch => "style::token_type_mismatch",
             Self::InvalidAppend => "style::invalid_append",
+            Self::LogicalTranslationNotSignReversible => {
+                "style::logical_translation_not_sign_reversible"
+            }
             Self::PropertyNotApplicable => "style::property_not_applicable",
             Self::InteractiveOverflowRequiresScroll => "view::interactive_overflow_requires_scroll",
             Self::InlineSelectorNotSupported => "style::inline_selector_not_supported",

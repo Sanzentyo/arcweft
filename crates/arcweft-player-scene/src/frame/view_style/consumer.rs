@@ -301,12 +301,8 @@ const fn scroll_box_property(property: ViewPropertyKind) -> bool {
         property,
         ViewPropertyKind::Width
             | ViewPropertyKind::Height
-            | ViewPropertyKind::InlineSize
-            | ViewPropertyKind::BlockSize
             | ViewPropertyKind::TranslateX
             | ViewPropertyKind::TranslateY
-            | ViewPropertyKind::TranslateInline
-            | ViewPropertyKind::TranslateBlock
             | ViewPropertyKind::Scale
     )
 }
@@ -324,12 +320,8 @@ const fn box_geometry_property(property: ViewPropertyKind) -> bool {
         property,
         ViewPropertyKind::Width
             | ViewPropertyKind::Height
-            | ViewPropertyKind::InlineSize
-            | ViewPropertyKind::BlockSize
             | ViewPropertyKind::TranslateX
             | ViewPropertyKind::TranslateY
-            | ViewPropertyKind::TranslateInline
-            | ViewPropertyKind::TranslateBlock
             | ViewPropertyKind::Scale
     )
 }
@@ -338,12 +330,7 @@ const fn surface_box_property(property: ViewPropertyKind) -> bool {
     box_geometry_property(property)
         || matches!(
             property,
-            ViewPropertyKind::ZIndex
-                | ViewPropertyKind::Overflow
-                | ViewPropertyKind::OverflowX
-                | ViewPropertyKind::OverflowY
-                | ViewPropertyKind::OverflowInline
-                | ViewPropertyKind::OverflowBlock
+            ViewPropertyKind::ZIndex | ViewPropertyKind::OverflowX | ViewPropertyKind::OverflowY
         )
 }
 
@@ -355,11 +342,7 @@ const fn text_box_property(property: ViewPropertyKind) -> bool {
     box_geometry_property(property)
         || matches!(
             property,
-            ViewPropertyKind::Overflow
-                | ViewPropertyKind::OverflowX
-                | ViewPropertyKind::OverflowY
-                | ViewPropertyKind::OverflowInline
-                | ViewPropertyKind::OverflowBlock
+            ViewPropertyKind::OverflowX | ViewPropertyKind::OverflowY
         )
 }
 
@@ -435,73 +418,25 @@ pub(in crate::frame) struct BoxStyle {
 }
 
 pub(in crate::frame) fn box_style(style: &ViewRuntimeNodeStyle) -> BoxStyle {
-    let width = length_property(style, ViewPropertyKind::Width)
-        .or_else(|| length_property(style, ViewPropertyKind::InlineSize));
-    let height = length_property(style, ViewPropertyKind::Height)
-        .or_else(|| length_property(style, ViewPropertyKind::BlockSize));
-    let translate_x = signed_length_property(style, ViewPropertyKind::TranslateX)
-        .or_else(|| signed_length_property(style, ViewPropertyKind::TranslateInline))
-        .unwrap_or_default();
-    let translate_y = signed_length_property(style, ViewPropertyKind::TranslateY)
-        .or_else(|| signed_length_property(style, ViewPropertyKind::TranslateBlock))
-        .unwrap_or_default();
+    let physical = style.physical_box();
+    let width = physical
+        .width
+        .map(|value| u32::try_from(value.value().max(0)).unwrap_or(u32::MAX));
+    let height = physical
+        .height
+        .map(|value| u32::try_from(value.value().max(0)).unwrap_or(u32::MAX));
     let scale_milli = match style.composite().value(ViewPropertyKind::Scale) {
         Some(ViewSpecifiedValue::Scalar { value }) => value.value(),
         _ => 1_000,
     };
-    let overflow_x = overflow_property(
-        style,
-        &[
-            ViewPropertyKind::OverflowX,
-            ViewPropertyKind::OverflowInline,
-            ViewPropertyKind::Overflow,
-        ],
-    );
-    let overflow_y = overflow_property(
-        style,
-        &[
-            ViewPropertyKind::OverflowY,
-            ViewPropertyKind::OverflowBlock,
-            ViewPropertyKind::Overflow,
-        ],
-    );
     BoxStyle {
         width,
         height,
-        translate_x,
-        translate_y,
+        translate_x: physical.translate_x.value(),
+        translate_y: physical.translate_y.value(),
         scale_milli,
-        overflow_x,
-        overflow_y,
-    }
-}
-
-fn overflow_property(
-    style: &ViewRuntimeNodeStyle,
-    properties: &[ViewPropertyKind],
-) -> ViewOverflow {
-    properties
-        .iter()
-        .find_map(|property| match style.layout().value(*property) {
-            Some(ViewSpecifiedValue::Overflow { value }) => Some(*value),
-            _ => None,
-        })
-        .unwrap_or(ViewOverflow::Visible)
-}
-
-fn length_property(style: &ViewRuntimeNodeStyle, property: ViewPropertyKind) -> Option<u32> {
-    signed_length_property(style, property)
-        .map(|value| u32::try_from(value.max(0)).unwrap_or(u32::MAX))
-}
-
-fn signed_length_property(style: &ViewRuntimeNodeStyle, property: ViewPropertyKind) -> Option<i32> {
-    match style
-        .layout()
-        .value(property)
-        .or_else(|| style.composite().value(property))
-    {
-        Some(ViewSpecifiedValue::Length { value }) => Some(value.value()),
-        _ => None,
+        overflow_x: physical.overflow_x,
+        overflow_y: physical.overflow_y,
     }
 }
 

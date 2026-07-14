@@ -1,12 +1,14 @@
 //! Typed values accepted by native Style before computed-style resolution.
 
 use super::{
+    ViewAxisSign, ViewBoxAxisMode,
     property::{ViewPropertyKind, ViewStyleValueKind},
     sheet::ViewStyleTokenId,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::appearance::{PresentationColor, SystemColor};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 mod codec;
 
@@ -85,6 +87,13 @@ impl ViewScalarMilli {
 )]
 pub struct ViewLengthMilli(i32);
 
+/// Failure while adapting a logical value to a physical axis.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum ViewAxisValueError {
+    #[error("logical translation cannot be negated within fixed-point range")]
+    NonReversibleLength,
+}
+
 impl ViewLengthMilli {
     pub const fn new(value: i32) -> Self {
         Self(value)
@@ -92,6 +101,22 @@ impl ViewLengthMilli {
 
     pub const fn value(self) -> i32 {
         self.0
+    }
+
+    /// Applies a resolved logical displacement sign without saturating.
+    pub fn checked_apply_axis_sign(self, sign: ViewAxisSign) -> Result<Self, ViewAxisValueError> {
+        if !self.is_axis_sign_reversible() {
+            return Err(ViewAxisValueError::NonReversibleLength);
+        }
+        Ok(match sign {
+            ViewAxisSign::Positive => self,
+            ViewAxisSign::Negative => Self(-self.0),
+        })
+    }
+
+    /// Whether the value can be mapped reversibly under every supported mode.
+    pub const fn is_axis_sign_reversible(self) -> bool {
+        self.0 != i32::MIN
     }
 
     /// Linearly interpolates two signed logical lengths.
@@ -620,6 +645,9 @@ pub enum ViewSpecifiedValue {
         token: ViewStyleTokenId,
         value_kind: ViewStyleValueKind,
     },
+    BoxAxes {
+        value: ViewBoxAxisMode,
+    },
     Bool {
         value: bool,
     },
@@ -699,6 +727,7 @@ impl ViewSpecifiedValue {
     pub const fn kind(&self) -> ViewStyleValueKind {
         match self {
             Self::Token { value_kind, .. } => *value_kind,
+            Self::BoxAxes { .. } => ViewStyleValueKind::BoxAxes,
             Self::Bool { .. } => ViewStyleValueKind::Bool,
             Self::Integer { .. } => ViewStyleValueKind::Integer,
             Self::Ratio { .. } => ViewStyleValueKind::Ratio,
@@ -769,7 +798,8 @@ impl ViewSpecifiedValue {
     pub const fn token_reference(&self) -> Option<(&ViewStyleTokenId, ViewStyleValueKind)> {
         match self {
             Self::Token { token, value_kind } => Some((token, *value_kind)),
-            Self::Bool { .. }
+            Self::BoxAxes { .. }
+            | Self::Bool { .. }
             | Self::Integer { .. }
             | Self::Ratio { .. }
             | Self::Scalar { .. }

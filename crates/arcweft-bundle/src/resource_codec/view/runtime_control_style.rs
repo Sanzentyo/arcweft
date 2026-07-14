@@ -4,7 +4,8 @@ use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironment, SystemPaletteSet,
 };
 use arcweft_view::style::{
-    ComputedViewStyle, ViewPropertyKind, ViewSpecifiedValue, ViewStyleValueKind,
+    ComputedViewStyle, ViewPhysicalBoxStyle, ViewPropertyKind, ViewSpecifiedValue,
+    ViewStyleValueKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,6 +24,7 @@ pub struct ViewRuntimeNodeStyle {
     paint: ViewRuntimeStyleProperties,
     composite: ViewRuntimeStyleProperties,
     transition: ViewRuntimeStyleProperties,
+    physical_box: ViewPhysicalBoxStyle,
     visual: ViewRuntimeControlVisualStyle,
 }
 
@@ -228,6 +230,11 @@ impl ViewRuntimeNodeStyle {
 
     pub const fn transition(&self) -> &ViewRuntimeStyleProperties {
         &self.transition
+    }
+
+    /// Canonical physical packet shared by layout, clip, input, focus, and scroll consumers.
+    pub const fn physical_box(&self) -> &ViewPhysicalBoxStyle {
+        &self.physical_box
     }
 
     pub const fn visual(&self) -> &ViewRuntimeControlVisualStyle {

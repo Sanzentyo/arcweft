@@ -61,7 +61,7 @@ fn node_path_encoding_distinguishes_all_segment_families_and_key_presence() {
 }
 
 #[test]
-fn box_style_prefers_axis_properties_and_retains_geometry_transform() {
+fn box_style_consumes_only_canonical_physical_geometry() {
     let style = projected_style([
         length(ViewPropertyKind::Width, 120_000),
         length(ViewPropertyKind::Height, 44_000),
@@ -74,19 +74,13 @@ fn box_style_prefers_axis_properties_and_retains_geometry_transform() {
             },
         ),
         (
-            ViewPropertyKind::Overflow,
-            ViewSpecifiedValue::Overflow {
-                value: ViewOverflow::Hidden,
-            },
-        ),
-        (
             ViewPropertyKind::OverflowX,
             ViewSpecifiedValue::Overflow {
                 value: ViewOverflow::Clip,
             },
         ),
         (
-            ViewPropertyKind::OverflowBlock,
+            ViewPropertyKind::OverflowY,
             ViewSpecifiedValue::Overflow {
                 value: ViewOverflow::Auto,
             },
@@ -340,16 +334,10 @@ fn silent_runtime_style_drops_are_rejected_with_typed_errors() {
         applications: Vec::new(),
     };
     let cases = [
-        (StyleConsumer::Control, ViewPropertyKind::Overflow),
         (StyleConsumer::Control, ViewPropertyKind::OverflowX),
         (StyleConsumer::Control, ViewPropertyKind::OverflowY),
-        (StyleConsumer::Control, ViewPropertyKind::OverflowInline),
-        (StyleConsumer::Control, ViewPropertyKind::OverflowBlock),
-        (StyleConsumer::Image, ViewPropertyKind::Overflow),
         (StyleConsumer::Image, ViewPropertyKind::OverflowX),
         (StyleConsumer::Image, ViewPropertyKind::OverflowY),
-        (StyleConsumer::Image, ViewPropertyKind::OverflowInline),
-        (StyleConsumer::Image, ViewPropertyKind::OverflowBlock),
         (StyleConsumer::Text, ViewPropertyKind::ZIndex),
         (StyleConsumer::Text, ViewPropertyKind::Opacity),
         (StyleConsumer::Text, ViewPropertyKind::BoxShadow),

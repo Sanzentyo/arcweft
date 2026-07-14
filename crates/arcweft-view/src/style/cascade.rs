@@ -1,7 +1,8 @@
 //! Per-property native Style cascade and application-layer priority.
 
 use super::{
-    ComputedViewProperty, ComputedViewStyle, ComputedViewStyleRevision, ViewFontFamilyList,
+    ComputedViewAxes, ComputedViewProperty, ComputedViewStyle, ComputedViewStyleRevision,
+    ComputedViewTransition, ViewAxisUsageSet, ViewComputedPropertyKind, ViewFontFamilyList,
     ViewPropertyKind, ViewSpecifiedValue, ViewStyleAssignOp, ViewStylePatchId, ViewStyleSheetId,
     ViewStyleSourceId,
 };
@@ -37,7 +38,9 @@ pub enum ViewStyleContributionSource {
 /// One token-resolved declaration ready for per-property winner comparison.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewStyleContribution {
-    property: ViewPropertyKind,
+    authored_property: ViewPropertyKind,
+    expanded_property: ViewPropertyKind,
+    resolved_property: ViewComputedPropertyKind,
     value: ViewSpecifiedValue,
     operation: ViewStyleAssignOp,
     priority: ViewStylePriority,
@@ -47,7 +50,10 @@ pub struct ViewStyleContribution {
 /// Public construction seam for typed adapters and the canonical resolver.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ComputedViewStyleBuilder {
-    properties: BTreeMap<ViewPropertyKind, ComputedViewProperty>,
+    axes: ComputedViewAxes,
+    properties: BTreeMap<ViewComputedPropertyKind, ComputedViewProperty>,
+    transitions: Vec<ComputedViewTransition>,
+    axis_usage: ViewAxisUsageSet,
 }
 
 impl ViewStylePriority {
@@ -100,15 +106,45 @@ impl ViewStylePriority {
 }
 
 impl ViewStyleContribution {
-    pub const fn new(
+    /// Constructs an already-canonical adapter contribution.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `property` is an axis context, shorthand, or logical alias.
+    /// Such authored declarations must pass through [`super::ViewStyleResolver`].
+    pub fn new(
         property: ViewPropertyKind,
         value: ViewSpecifiedValue,
         operation: ViewStyleAssignOp,
         priority: ViewStylePriority,
         source: ViewStyleContributionSource,
     ) -> Self {
-        Self {
+        let resolved_property = ViewComputedPropertyKind::try_from_property(property)
+            .expect("computed Style contributions require a canonical property");
+        Self::resolved(
             property,
+            property,
+            resolved_property,
+            value,
+            operation,
+            priority,
+            source,
+        )
+    }
+
+    pub(super) const fn resolved(
+        authored_property: ViewPropertyKind,
+        expanded_property: ViewPropertyKind,
+        resolved_property: ViewComputedPropertyKind,
+        value: ViewSpecifiedValue,
+        operation: ViewStyleAssignOp,
+        priority: ViewStylePriority,
+        source: ViewStyleContributionSource,
+    ) -> Self {
+        Self {
+            authored_property,
+            expanded_property,
+            resolved_property,
             value,
             operation,
             priority,
@@ -117,7 +153,19 @@ impl ViewStyleContribution {
     }
 
     pub const fn property(&self) -> ViewPropertyKind {
-        self.property
+        self.resolved_property.as_property()
+    }
+
+    pub const fn authored_property(&self) -> ViewPropertyKind {
+        self.authored_property
+    }
+
+    pub const fn expanded_property(&self) -> ViewPropertyKind {
+        self.expanded_property
+    }
+
+    pub const fn resolved_property(&self) -> ViewComputedPropertyKind {
+        self.resolved_property
     }
 
     pub const fn value(&self) -> &ViewSpecifiedValue {
@@ -141,12 +189,16 @@ impl ComputedViewStyleBuilder {
     pub fn inherit(parent: Option<&ComputedViewStyle>) -> Self {
         let properties = parent.map_or_else(BTreeMap::new, |parent| {
             parent
-                .properties()
-                .filter(|(property, _)| property.is_inherited())
-                .map(|(property, value)| {
+                .canonical_properties()
+                .filter(|(property, _)| property.as_property().is_inherited())
+                .map(|(resolved, value)| {
+                    let property = resolved.as_property();
                     (
-                        property,
+                        resolved,
                         ComputedViewProperty::new(
+                            property,
+                            property,
+                            resolved,
                             value.value().clone(),
                             ViewStylePriority::INHERITED,
                             ViewStyleContributionSource::Inherited,
@@ -155,7 +207,33 @@ impl ComputedViewStyleBuilder {
                 })
                 .collect()
         });
-        Self { properties }
+        let axes = parent.map_or_else(ComputedViewAxes::host_default, |parent| {
+            ComputedViewAxes::inherited(parent.axes().mode(), parent.axes().revision())
+        });
+        Self {
+            axes,
+            properties,
+            transitions: Vec::new(),
+            axis_usage: ViewAxisUsageSet::NONE,
+        }
+    }
+
+    pub fn set_axes(&mut self, axes: ComputedViewAxes) {
+        self.axes = axes;
+    }
+
+    pub fn set_transitions(&mut self, transitions: Vec<ComputedViewTransition>) {
+        self.transitions = transitions;
+    }
+
+    pub fn include_axis_usage(&mut self, usage: ViewAxisUsageSet) {
+        self.axis_usage = self.axis_usage.union(usage);
+    }
+
+    pub(super) fn value(&self, property: ViewPropertyKind) -> Option<&ViewSpecifiedValue> {
+        ViewComputedPropertyKind::try_from_property(property)
+            .and_then(|property| self.properties.get(&property))
+            .map(ComputedViewProperty::value)
     }
 
     /// Applies a contribution when it wins its property slot. Append operates
@@ -163,28 +241,41 @@ impl ComputedViewStyleBuilder {
     pub fn apply(&mut self, contribution: ViewStyleContribution) -> bool {
         if self
             .properties
-            .get(&contribution.property)
+            .get(&contribution.resolved_property)
             .is_some_and(|current| current.priority() > contribution.priority)
         {
             return false;
         }
         let value = if contribution.operation == ViewStyleAssignOp::Append {
             self.properties
-                .get(&contribution.property)
+                .get(&contribution.resolved_property)
                 .and_then(|current| append_values(current.value(), &contribution.value))
                 .unwrap_or_else(|| contribution.value.clone())
         } else {
             contribution.value.clone()
         };
         self.properties.insert(
-            contribution.property,
-            ComputedViewProperty::new(value, contribution.priority, contribution.source),
+            contribution.resolved_property,
+            ComputedViewProperty::new(
+                contribution.authored_property,
+                contribution.expanded_property,
+                contribution.resolved_property,
+                value,
+                contribution.priority,
+                contribution.source,
+            ),
         );
         true
     }
 
     pub fn finish(self, revision: ComputedViewStyleRevision) -> ComputedViewStyle {
-        ComputedViewStyle::from_properties(self.properties, revision)
+        ComputedViewStyle::from_properties(
+            self.axes,
+            self.properties,
+            self.transitions,
+            self.axis_usage,
+            revision,
+        )
     }
 }
 

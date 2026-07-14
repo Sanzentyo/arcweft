@@ -7,7 +7,8 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_view::style::{
-    ViewClip, ViewFilter, ViewMask, ViewPropertyKind, ViewSpecifiedValue, ViewStyleValueKind,
+    ViewBoxAxisMode, ViewClip, ViewFilter, ViewMask, ViewPropertyKind, ViewSpecifiedValue,
+    ViewStyleValueKind,
 };
 
 fn analyze(source: &str) -> TypeCheckReport {
@@ -60,6 +61,65 @@ fn native_style_catalog_contains_typed_tokens_selectors_and_values() {
     assert_eq!(declarations[0].property(), ViewPropertyKind::Color);
     assert_eq!(declarations[0].value().kind(), ViewStyleValueKind::Color);
     assert_eq!(declarations[3].property(), ViewPropertyKind::FontWeight);
+}
+
+#[test]
+fn box_axes_and_logical_properties_lower_as_authored_typed_values() {
+    let report = analyze(
+        r"pub style logical {
+    Panel {
+        box-axes = .VerticalRl
+        inline-size = 320px
+        translate-inline = 12px
+    }
+}
+",
+    );
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    let declarations = report.style_catalog.sheets()[0].rules()[0].declarations();
+    assert!(matches!(
+        declarations[0].value(),
+        ViewSpecifiedValue::BoxAxes {
+            value: ViewBoxAxisMode::VerticalRl
+        }
+    ));
+    assert_eq!(declarations[1].property(), ViewPropertyKind::InlineSize);
+    assert_eq!(
+        declarations[2].property(),
+        ViewPropertyKind::TranslateInline
+    );
+}
+
+#[test]
+fn box_axis_diagnostics_reject_unknown_modes_and_non_reversible_translation() {
+    let report = analyze(
+        r"pub style broken_axes {
+    Panel {
+        box-axes = .VerticalUnknown
+        translate-inline = -2147483.648px
+    }
+}
+",
+    );
+    let diagnostics = report
+        .diagnostics
+        .iter()
+        .filter_map(|error| match error.kind() {
+            TypeCheckErrorKind::Style { diagnostic } => Some(diagnostic),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let unknown = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code() == StyleDiagnosticCode::InvalidValueType)
+        .expect("unknown axis mode diagnostic");
+    assert_eq!(
+        unknown.valid_inventory(),
+        &["HorizontalLtr", "HorizontalRtl", "VerticalRl", "VerticalLr"]
+    );
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code() == StyleDiagnosticCode::LogicalTranslationNotSignReversible
+    }));
 }
 
 #[test]

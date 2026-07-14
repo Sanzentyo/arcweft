@@ -2304,7 +2304,8 @@ fn style_value_public_ids(value: &ViewSpecifiedValue) -> Vec<String> {
             vec![token.public_id().as_str().to_owned()]
         }
         ViewSpecifiedValue::Resource { value } => vec![value.as_str().to_owned()],
-        ViewSpecifiedValue::Bool { .. }
+        ViewSpecifiedValue::BoxAxes { .. }
+        | ViewSpecifiedValue::Bool { .. }
         | ViewSpecifiedValue::Integer { .. }
         | ViewSpecifiedValue::Ratio { .. }
         | ViewSpecifiedValue::Scalar { .. }

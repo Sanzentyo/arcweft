@@ -11,6 +11,7 @@ pub struct ViewPropertyId(pub u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ValueSourceId(pub u32);
 
+pub mod axis;
 pub mod cascade;
 pub mod computed;
 pub mod property;
@@ -20,11 +21,23 @@ pub mod sheet;
 pub mod trace;
 pub mod value;
 
+pub use axis::{
+    ViewAxisSign, ViewAxisUsageSet, ViewBoxAxisMode, ViewBoxAxisModeError, ViewBoxAxisRevision,
+    ViewBoxAxisSeedSource, ViewBoxAxisSource, ViewInheritedBoxAxes, ViewPhysicalAxis,
+    ViewPhysicalBoxStyle, ViewPhysicalEdges, ViewPhysicalSide, ViewResolvedAxis,
+    ViewResolvedBoxAxes,
+};
 pub use cascade::{
     ComputedViewStyleBuilder, ViewStyleContribution, ViewStyleContributionSource, ViewStylePriority,
 };
-pub use computed::{ComputedViewProperty, ComputedViewStyle, ComputedViewStyleRevision};
-pub use property::{ViewPropertyKind, ViewStyleInvalidationSet, ViewStyleValueKind};
+pub use computed::{
+    ComputedViewAxes, ComputedViewProperty, ComputedViewStyle, ComputedViewStyleRevision,
+    ComputedViewTransition,
+};
+pub use property::{
+    ViewComputedPropertyKind, ViewPropertyExpansion, ViewPropertyKind, ViewPropertyResolution,
+    ViewPropertyValueTransform, ViewStyleInvalidationSet, ViewStyleValueKind,
+};
 pub use resolver::{
     ViewElementStateSet, ViewInteractionStateSet, ViewStyleNodeFacts, ViewStyleNodeKey,
     ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver,
@@ -43,11 +56,11 @@ pub use sheet::{
 };
 pub use trace::{ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode, ViewStyleTraceRejection};
 pub use value::{
-    ViewAlignment, ViewAngleMilliDegrees, ViewBlendMode, ViewBorderRadii, ViewClip, ViewColorValue,
-    ViewDisplay, ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList,
-    ViewFontStyle, ViewFontWeight, ViewLengthMilli, ViewMask, ViewOverflow, ViewPosition,
-    ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue, ViewStyleTransition,
-    ViewSystemFontFamily,
+    ViewAlignment, ViewAngleMilliDegrees, ViewAxisValueError, ViewBlendMode, ViewBorderRadii,
+    ViewClip, ViewColorValue, ViewDisplay, ViewFilter, ViewFlexDirection, ViewFlexWrap,
+    ViewFontFamily, ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewLengthMilli, ViewMask,
+    ViewOverflow, ViewPosition, ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue,
+    ViewStyleTransition, ViewSystemFontFamily,
 };
 
 /// Dynamic property binding emitted by Rust or Arcweft view rendering.

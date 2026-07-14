@@ -55,12 +55,9 @@ fn paint_item(
     }
 
     let [x, y, width, height] = layout.milli_rect();
-    let translate_x = length(style, ViewPropertyKind::TranslateX)
-        .or_else(|| length(style, ViewPropertyKind::TranslateInline))
-        .unwrap_or_default();
-    let translate_y = length(style, ViewPropertyKind::TranslateY)
-        .or_else(|| length(style, ViewPropertyKind::TranslateBlock))
-        .unwrap_or_default();
+    let physical_box = style.physical_box();
+    let translate_x = physical_box.translate_x.value();
+    let translate_y = physical_box.translate_y.value();
     let scale = scalar(style, ViewPropertyKind::Scale).unwrap_or(1_000);
     let bounds = HitRect::new(
         milli_pixels(x),

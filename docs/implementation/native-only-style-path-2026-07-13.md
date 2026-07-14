@@ -196,16 +196,28 @@ them silently expands this completed cut or redesigns its substrate:
 
 - [seq-06.11d.2.1.1 exported-part authoring final contract](../reviews/requests/2026-07-14-seq-06.11d.2.1.1-view-exported-part-authoring-final-contract.md);
 - [seq-06.11d.4.1 native logical-axis Style](../reviews/requests/2026-07-14-seq-06.11d.4.1-native-logical-axis-style-contract.md);
-- [seq-06.11d.4.2 native environment Style conditions](../reviews/requests/2026-07-14-seq-06.11d.4.2-native-environment-style-condition-contract.md);
+- [seq-06.11d.4.2 native environment Style conditions](../reviews/requests/2026-07-14-seq-06.11d.4.2-native-environment-style-condition-contract.md),
+  whose supplied implementation ZIP has no checkout, patch, baseline, or
+  manifest and cannot be integrated; the standalone contract request remains
+  unanswered;
 - [seq-06.11d.4.3 native container conditions and invalidation](../reviews/requests/2026-07-14-seq-06.11d.4.3-native-container-style-condition-invalidation-contract.md);
-- [seq-06.11d.5.1 native Style trace](../reviews/requests/2026-07-14-seq-06.11d.5.1-native-style-trace-contract.md);
+- [seq-06.11d.5.1 native Style trace](../reviews/requests/2026-07-14-seq-06.11d.5.1-native-style-trace-contract.md),
+  preserved as the original capability request; its supplied implementation
+  package is design-gated and is not approved for integration;
+- [seq-06.11d.5.1.1 native Style trace reconciliation](../reviews/requests/2026-07-14-seq-06.11d.5.1.1-native-style-trace-contract-reconciliation.md),
+  required only after the d.4.1 → d.4.2 → d.4.3 implementation chain has
+  landed and passed its own validation;
 - [seq-06.11d.5.2 Agent Style observation](../reviews/requests/2026-07-14-seq-06.11d.5.2-agent-native-style-observation-protocol.md);
 - [seq-06.11d.5.3 Style LSP and formatter](../reviews/requests/2026-07-14-seq-06.11d.5.3-native-style-lsp-formatter-contract.md).
 
-Container runtime work follows the logical-axis contract. Agent observation
-and the LSP/formatter contract follow the trace contract; those two may then be
-designed in parallel. Each request repeats its fixed substrate and acceptance
-criteria and can be handed to a designer without this implementation note.
+The adaptive implementation order is d.4.1 logical-axis, then d.4.2
+environment conditions, then d.4.3 container conditions and invalidation. The
+d.5.1.1 trace reconciliation inspects those landed contracts before fixing
+environment/container evidence, revision, cursor, or cache bindings. Agent
+observation and the LSP/formatter contract follow the reconciled trace contract;
+those two may then be designed in parallel. Each request repeats its fixed
+substrate and acceptance criteria and can be handed to a designer without this
+implementation note.
 
 ## Structural audit disposition and follow-ups
 

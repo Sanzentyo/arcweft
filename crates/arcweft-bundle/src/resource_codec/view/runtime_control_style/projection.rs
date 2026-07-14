@@ -19,7 +19,10 @@ pub(super) fn project_computed_style(
     environment: &PresentationEnvironment,
     palettes: &SystemPaletteSet,
 ) -> Result<ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError> {
-    let mut projected = ViewRuntimeNodeStyle::default();
+    let mut projected = ViewRuntimeNodeStyle {
+        physical_box: computed.physical_box(),
+        ..ViewRuntimeNodeStyle::default()
+    };
     for (property, entry) in computed.properties() {
         let value = entry.value();
         let expected = property.value_kind();
@@ -53,7 +56,8 @@ fn retain_property(
     value: ViewSpecifiedValue,
 ) {
     match property {
-        ViewPropertyKind::Visibility
+        ViewPropertyKind::BoxAxes
+        | ViewPropertyKind::Visibility
         | ViewPropertyKind::Display
         | ViewPropertyKind::Width
         | ViewPropertyKind::Height
@@ -316,7 +320,8 @@ fn project_visual_property(
                 );
             }
         }
-        ViewPropertyKind::Visibility
+        ViewPropertyKind::BoxAxes
+        | ViewPropertyKind::Visibility
         | ViewPropertyKind::Display
         | ViewPropertyKind::Width
         | ViewPropertyKind::Height

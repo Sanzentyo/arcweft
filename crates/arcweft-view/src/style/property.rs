@@ -1,5 +1,6 @@
 //! Canonical native Style property inventory and metadata.
 
+use super::{ViewAxisSign, ViewBoxAxisMode, ViewPhysicalAxis, ViewPhysicalSide};
 use crate::ViewElementKind;
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewStyleValueKind {
+    BoxAxes,
     Bool,
     Integer,
     Ratio,
@@ -36,6 +38,7 @@ pub enum ViewStyleValueKind {
 impl ViewStyleValueKind {
     /// Complete inventory of native Style type annotation names.
     pub const ALL: &'static [Self] = &[
+        Self::BoxAxes,
         Self::Bool,
         Self::Integer,
         Self::Ratio,
@@ -65,6 +68,7 @@ impl ViewStyleValueKind {
     /// Canonical case-sensitive spelling in native Style type annotations.
     pub const fn source_name(self) -> &'static str {
         match self {
+            Self::BoxAxes => "BoxAxes",
             Self::Bool => "Bool",
             Self::Integer => "Integer",
             Self::Ratio => "Ratio",
@@ -105,6 +109,8 @@ impl ViewStyleValueKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewPropertyKind {
+    // Inherited logical-axis context. It never becomes a computed value slot.
+    BoxAxes,
     // Visibility and sizing.
     Visibility,
     Display,
@@ -220,6 +226,33 @@ pub struct ViewStyleInvalidationSet {
     bits: u16,
 }
 
+/// Canonical physical property key admitted to a computed Style map.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewComputedPropertyKind(ViewPropertyKind);
+
+/// Axis-specific mapping of one authored or expanded property.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ViewPropertyResolution {
+    authored: ViewPropertyKind,
+    resolved: ViewComputedPropertyKind,
+    value_transform: ViewPropertyValueTransform,
+}
+
+/// Value adaptation required while mapping a logical alias to a physical slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewPropertyValueTransform {
+    Identity,
+    SignedLength(ViewAxisSign),
+}
+
+/// Shape of shorthand expansion performed before alias resolution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewPropertyExpansion {
+    One(ViewPropertyKind),
+    FourPhysicalEdges,
+    TwoPhysicalAxes,
+}
+
 impl ViewStyleInvalidationSet {
     pub const NONE: Self = Self { bits: 0 };
     pub const TEXT_LAYOUT: Self = Self { bits: 1 << 0 };
@@ -229,6 +262,11 @@ impl ViewStyleInvalidationSet {
     pub const RESOURCE: Self = Self { bits: 1 << 4 };
     pub const SEMANTICS: Self = Self { bits: 1 << 5 };
     pub const FRAGMENT: Self = Self { bits: 1 << 6 };
+    pub const AXIS_CONTEXT: Self = Self { bits: 1 << 7 };
+    pub const HIT_TEST: Self = Self { bits: 1 << 8 };
+    pub const SCROLL: Self = Self { bits: 1 << 9 };
+    pub const FOCUS_GEOMETRY: Self = Self { bits: 1 << 10 };
+    pub const AVOIDANCE: Self = Self { bits: 1 << 11 };
 
     pub const fn union(self, other: Self) -> Self {
         Self {
@@ -245,9 +283,299 @@ impl ViewStyleInvalidationSet {
     }
 }
 
+impl ViewComputedPropertyKind {
+    /// Admits only canonical physical or axis-neutral computed slots.
+    pub const fn try_from_property(property: ViewPropertyKind) -> Option<Self> {
+        if property.is_computed_canonical() {
+            Some(Self(property))
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_property(self) -> ViewPropertyKind {
+        self.0
+    }
+}
+
+impl ViewPropertyResolution {
+    const fn new(
+        authored: ViewPropertyKind,
+        resolved: ViewPropertyKind,
+        value_transform: ViewPropertyValueTransform,
+    ) -> Self {
+        Self {
+            authored,
+            resolved: ViewComputedPropertyKind(resolved),
+            value_transform,
+        }
+    }
+
+    pub const fn authored(self) -> ViewPropertyKind {
+        self.authored
+    }
+
+    pub const fn resolved(self) -> ViewComputedPropertyKind {
+        self.resolved
+    }
+
+    pub const fn value_transform(self) -> ViewPropertyValueTransform {
+        self.value_transform
+    }
+}
+
+impl ViewPropertyKind {
+    /// Whether this property selects the inherited axis context itself.
+    pub const fn is_axis_context(self) -> bool {
+        matches!(self, Self::BoxAxes)
+    }
+
+    /// Whether this property's canonical slot or sign depends on box axes.
+    pub const fn is_axis_dependent(self) -> bool {
+        matches!(
+            self,
+            Self::InlineSize
+                | Self::BlockSize
+                | Self::MinInlineSize
+                | Self::MinBlockSize
+                | Self::MaxInlineSize
+                | Self::MaxBlockSize
+                | Self::PaddingInlineStart
+                | Self::PaddingInlineEnd
+                | Self::PaddingBlockStart
+                | Self::PaddingBlockEnd
+                | Self::MarginInlineStart
+                | Self::MarginInlineEnd
+                | Self::MarginBlockStart
+                | Self::MarginBlockEnd
+                | Self::InsetInlineStart
+                | Self::InsetInlineEnd
+                | Self::InsetBlockStart
+                | Self::InsetBlockEnd
+                | Self::TranslateInline
+                | Self::TranslateBlock
+                | Self::OverflowInline
+                | Self::OverflowBlock
+        )
+    }
+
+    /// Whether this property is a legal key in canonical computed Style.
+    pub const fn is_computed_canonical(self) -> bool {
+        !self.is_axis_context()
+            && !self.is_axis_dependent()
+            && !matches!(self, Self::Padding | Self::Margin | Self::Overflow)
+    }
+
+    /// Declares shorthand expansion shape before logical alias resolution.
+    pub const fn shorthand_expansion(self) -> ViewPropertyExpansion {
+        match self {
+            Self::Padding | Self::Margin => ViewPropertyExpansion::FourPhysicalEdges,
+            Self::Overflow => ViewPropertyExpansion::TwoPhysicalAxes,
+            _ => ViewPropertyExpansion::One(self),
+        }
+    }
+
+    /// Exact ordered longhands produced by native shorthand expansion.
+    pub const fn expanded_properties(self) -> &'static [Self] {
+        const PADDING: &[ViewPropertyKind] = &[
+            ViewPropertyKind::PaddingTop,
+            ViewPropertyKind::PaddingRight,
+            ViewPropertyKind::PaddingBottom,
+            ViewPropertyKind::PaddingLeft,
+        ];
+        const MARGIN: &[ViewPropertyKind] = &[
+            ViewPropertyKind::MarginTop,
+            ViewPropertyKind::MarginRight,
+            ViewPropertyKind::MarginBottom,
+            ViewPropertyKind::MarginLeft,
+        ];
+        const OVERFLOW: &[ViewPropertyKind] =
+            &[ViewPropertyKind::OverflowX, ViewPropertyKind::OverflowY];
+        match self {
+            Self::Padding => PADDING,
+            Self::Margin => MARGIN,
+            Self::Overflow => OVERFLOW,
+            _ => &[],
+        }
+    }
+
+    /// Resolves a longhand property against one immutable axis snapshot.
+    ///
+    /// `box-axes` and shorthands must be handled before calling this method.
+    ///
+    /// # Panics
+    ///
+    /// Panics when called with `box-axes`, `padding`, `margin`, or `overflow`.
+    pub const fn resolve_for_axes(self, mode: ViewBoxAxisMode) -> ViewPropertyResolution {
+        let axes = mode.resolved();
+        let inline = axes.inline();
+        let block = axes.block();
+        let (resolved, transform) = match self {
+            Self::InlineSize => (
+                size_property(inline.axis(), Self::Width, Self::Height),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::BlockSize => (
+                size_property(block.axis(), Self::Width, Self::Height),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MinInlineSize => (
+                size_property(inline.axis(), Self::MinWidth, Self::MinHeight),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MinBlockSize => (
+                size_property(block.axis(), Self::MinWidth, Self::MinHeight),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MaxInlineSize => (
+                size_property(inline.axis(), Self::MaxWidth, Self::MaxHeight),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MaxBlockSize => (
+                size_property(block.axis(), Self::MaxWidth, Self::MaxHeight),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::PaddingInlineStart => (
+                padding_property(inline.start()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::PaddingInlineEnd => (
+                padding_property(inline.end()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::PaddingBlockStart => (
+                padding_property(block.start()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::PaddingBlockEnd => (
+                padding_property(block.end()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MarginInlineStart => (
+                margin_property(inline.start()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MarginInlineEnd => (
+                margin_property(inline.end()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MarginBlockStart => (
+                margin_property(block.start()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::MarginBlockEnd => (
+                margin_property(block.end()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::InsetInlineStart => (
+                inset_property(inline.start()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::InsetInlineEnd => (
+                inset_property(inline.end()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::InsetBlockStart => (
+                inset_property(block.start()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::InsetBlockEnd => (
+                inset_property(block.end()),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::TranslateInline => (
+                size_property(inline.axis(), Self::TranslateX, Self::TranslateY),
+                ViewPropertyValueTransform::SignedLength(inline.positive_displacement()),
+            ),
+            Self::TranslateBlock => (
+                size_property(block.axis(), Self::TranslateX, Self::TranslateY),
+                ViewPropertyValueTransform::SignedLength(block.positive_displacement()),
+            ),
+            Self::OverflowInline => (
+                size_property(inline.axis(), Self::OverflowX, Self::OverflowY),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::OverflowBlock => (
+                size_property(block.axis(), Self::OverflowX, Self::OverflowY),
+                ViewPropertyValueTransform::Identity,
+            ),
+            Self::BoxAxes | Self::Padding | Self::Margin | Self::Overflow => {
+                panic!("axis context and shorthands must be handled before alias resolution")
+            }
+            _ => (self, ViewPropertyValueTransform::Identity),
+        };
+        ViewPropertyResolution::new(self, resolved, transform)
+    }
+
+    /// Axis usage family recorded when this logical property reaches mapping.
+    pub const fn axis_usage(self) -> super::ViewAxisUsageSet {
+        use super::ViewAxisUsageSet;
+        match self {
+            Self::InlineSize | Self::BlockSize => ViewAxisUsageSet::SIZE,
+            Self::MinInlineSize | Self::MinBlockSize | Self::MaxInlineSize | Self::MaxBlockSize => {
+                ViewAxisUsageSet::MIN_MAX_SIZE
+            }
+            Self::PaddingInlineStart
+            | Self::PaddingInlineEnd
+            | Self::PaddingBlockStart
+            | Self::PaddingBlockEnd
+            | Self::MarginInlineStart
+            | Self::MarginInlineEnd
+            | Self::MarginBlockStart
+            | Self::MarginBlockEnd => ViewAxisUsageSet::SPACING,
+            Self::InsetInlineStart
+            | Self::InsetInlineEnd
+            | Self::InsetBlockStart
+            | Self::InsetBlockEnd => ViewAxisUsageSet::INSET,
+            Self::TranslateInline | Self::TranslateBlock => ViewAxisUsageSet::TRANSLATION,
+            Self::OverflowInline | Self::OverflowBlock => ViewAxisUsageSet::OVERFLOW,
+            _ => ViewAxisUsageSet::NONE,
+        }
+    }
+}
+
+const fn size_property(
+    axis: ViewPhysicalAxis,
+    x: ViewPropertyKind,
+    y: ViewPropertyKind,
+) -> ViewPropertyKind {
+    match axis {
+        ViewPhysicalAxis::X => x,
+        ViewPhysicalAxis::Y => y,
+    }
+}
+
+const fn padding_property(side: ViewPhysicalSide) -> ViewPropertyKind {
+    match side {
+        ViewPhysicalSide::Top => ViewPropertyKind::PaddingTop,
+        ViewPhysicalSide::Right => ViewPropertyKind::PaddingRight,
+        ViewPhysicalSide::Bottom => ViewPropertyKind::PaddingBottom,
+        ViewPhysicalSide::Left => ViewPropertyKind::PaddingLeft,
+    }
+}
+
+const fn margin_property(side: ViewPhysicalSide) -> ViewPropertyKind {
+    match side {
+        ViewPhysicalSide::Top => ViewPropertyKind::MarginTop,
+        ViewPhysicalSide::Right => ViewPropertyKind::MarginRight,
+        ViewPhysicalSide::Bottom => ViewPropertyKind::MarginBottom,
+        ViewPhysicalSide::Left => ViewPropertyKind::MarginLeft,
+    }
+}
+
+const fn inset_property(side: ViewPhysicalSide) -> ViewPropertyKind {
+    match side {
+        ViewPhysicalSide::Top => ViewPropertyKind::Top,
+        ViewPhysicalSide::Right => ViewPropertyKind::Right,
+        ViewPhysicalSide::Bottom => ViewPropertyKind::Bottom,
+        ViewPhysicalSide::Left => ViewPropertyKind::Left,
+    }
+}
+
 impl ViewPropertyKind {
     /// Complete canonical inventory accepted by native Style source.
     pub const ALL: &'static [Self] = &[
+        Self::BoxAxes,
         Self::Visibility,
         Self::Display,
         Self::Width,
@@ -357,6 +685,7 @@ impl ViewPropertyKind {
     )]
     pub const fn source_name(self) -> &'static str {
         match self {
+            Self::BoxAxes => "box-axes",
             Self::Visibility => "visibility",
             Self::Display => "display",
             Self::Width => "width",
@@ -471,6 +800,7 @@ impl ViewPropertyKind {
 
     pub const fn value_kind(self) -> ViewStyleValueKind {
         match self {
+            Self::BoxAxes => ViewStyleValueKind::BoxAxes,
             Self::Visibility => ViewStyleValueKind::Bool,
             Self::ZIndex | Self::Order => ViewStyleValueKind::Integer,
             Self::Opacity => ViewStyleValueKind::Ratio,
@@ -602,7 +932,8 @@ impl ViewPropertyKind {
     pub const fn is_inherited(self) -> bool {
         matches!(
             self,
-            Self::Color
+            Self::BoxAxes
+                | Self::Color
                 | Self::FontFamily
                 | Self::FontSize
                 | Self::FontWeight
@@ -648,6 +979,7 @@ impl ViewPropertyKind {
     )]
     pub const fn default_invalidation(self) -> ViewStyleInvalidationSet {
         match self {
+            Self::BoxAxes => ViewStyleInvalidationSet::AXIS_CONTEXT,
             Self::FontFamily
             | Self::FontSize
             | Self::FontWeight

@@ -11,11 +11,12 @@ use arcweft_lang_syntax::{
 };
 use arcweft_presentation::appearance::{PresentationColor, SystemColor};
 use arcweft_view::style::{
-    ViewAlignment, ViewAngleMilliDegrees, ViewBlendMode, ViewBorderRadii, ViewClip, ViewColorValue,
-    ViewDisplay, ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList,
-    ViewFontStyle, ViewFontWeight, ViewLengthMilli, ViewMask, ViewOverflow, ViewPosition,
-    ViewPropertyKind, ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue,
-    ViewStyleTokenId, ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
+    ViewAlignment, ViewAngleMilliDegrees, ViewBlendMode, ViewBorderRadii, ViewBoxAxisMode,
+    ViewClip, ViewColorValue, ViewDisplay, ViewFilter, ViewFlexDirection, ViewFlexWrap,
+    ViewFontFamily, ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewLengthMilli, ViewMask,
+    ViewOverflow, ViewPosition, ViewPropertyKind, ViewRatioMilli, ViewScalarMilli, ViewShadow,
+    ViewSpecifiedValue, ViewStyleTokenId, ViewStyleTransition, ViewStyleValueKind,
+    ViewSystemFontFamily,
 };
 
 use super::diagnostic::{StyleDiagnostic, StyleDiagnosticCode};
@@ -93,6 +94,7 @@ pub(crate) fn check_value(
     }
 
     let checked = match expected {
+        ViewStyleValueKind::BoxAxes => box_axis_value(value.expr()),
         ViewStyleValueKind::Bool => bool_value(value.expr()),
         ViewStyleValueKind::Integer => {
             integer_value(value.expr()).map(|value| ViewSpecifiedValue::Integer { value })
@@ -212,12 +214,22 @@ fn invalid_value_diagnostic(
         || "unsupported expression".to_owned(),
         |kind| kind.source_name().to_owned(),
     );
-    StyleDiagnostic::new(
+    let diagnostic = StyleDiagnostic::new(
         StyleDiagnosticCode::InvalidValueType,
         format!("style value must have kind {expected:?}, found {actual}"),
         value.range(),
     )
-    .with_types(expected.source_name(), actual)
+    .with_types(expected.source_name(), actual);
+    if expected == ViewStyleValueKind::BoxAxes {
+        diagnostic.with_valid_inventory(
+            ViewBoxAxisMode::ALL
+                .iter()
+                .map(|mode| mode.source_name().to_owned())
+                .collect(),
+        )
+    } else {
+        diagnostic
+    }
 }
 
 fn accepted_units(expected: ViewStyleValueKind) -> &'static [&'static str] {
@@ -226,7 +238,8 @@ fn accepted_units(expected: ViewStyleValueKind) -> &'static [&'static str] {
         ViewStyleValueKind::Scalar => &["unitless", "milli", "%"],
         ViewStyleValueKind::Length | ViewStyleValueKind::BorderRadii => &["px"],
         ViewStyleValueKind::Angle => &["deg"],
-        ViewStyleValueKind::Bool
+        ViewStyleValueKind::BoxAxes
+        | ViewStyleValueKind::Bool
         | ViewStyleValueKind::Integer
         | ViewStyleValueKind::Color
         | ViewStyleValueKind::FontFamilyList
@@ -318,6 +331,12 @@ fn bool_value(expr: &Expr) -> Option<ViewSpecifiedValue> {
     }
 }
 
+fn box_axis_value(expr: &Expr) -> Option<ViewSpecifiedValue> {
+    enum_name(expr)
+        .and_then(ViewBoxAxisMode::from_source_name)
+        .map(|value| ViewSpecifiedValue::BoxAxes { value })
+}
+
 fn integer_value(expr: &Expr) -> Option<i32> {
     match expr {
         Expr::Literal(Literal::Int(value)) => i32::try_from(value.magnitude().ok()?).ok(),
@@ -378,17 +397,13 @@ fn scalar_value(expr: &Expr) -> Option<ViewScalarMilli> {
 }
 
 fn length_value(expr: &Expr) -> Option<ViewLengthMilli> {
-    let sign = if matches!(
+    let negative = matches!(
         expr,
         Expr::Unary {
             op: UnaryOp::Neg,
             ..
         }
-    ) {
-        -1
-    } else {
-        1
-    };
+    );
     let expr = match expr {
         Expr::Unary {
             op: UnaryOp::Neg,
@@ -403,7 +418,7 @@ fn length_value(expr: &Expr) -> Option<ViewLengthMilli> {
     else {
         return None;
     };
-    let value = fixed_milli(raw.strip_suffix("px")?)?.checked_mul(sign)?;
+    let value = signed_fixed_milli(raw.strip_suffix("px")?, negative)?;
     Some(ViewLengthMilli::new(value))
 }
 
@@ -668,6 +683,27 @@ fn fixed_milli(source: &str) -> Option<i32> {
         fraction.parse::<i32>().ok()? * 10_i32.pow(u32::try_from(3 - fraction.len()).ok()?)
     };
     whole.checked_add(fraction)
+}
+
+fn signed_fixed_milli(source: &str, negative: bool) -> Option<i32> {
+    let source = source.replace('_', "");
+    let (whole, fraction) = source.split_once('.').unwrap_or((&source, ""));
+    if fraction.len() > 3 || whole.is_empty() || !fraction.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let whole = whole.parse::<i64>().ok()?.checked_mul(1_000)?;
+    let fraction = if fraction.is_empty() {
+        0
+    } else {
+        fraction.parse::<i64>().ok()? * 10_i64.pow(u32::try_from(3 - fraction.len()).ok()?)
+    };
+    let magnitude = whole.checked_add(fraction)?;
+    i32::try_from(if negative {
+        magnitude.checked_neg()?
+    } else {
+        magnitude
+    })
+    .ok()
 }
 
 fn type_mismatch(

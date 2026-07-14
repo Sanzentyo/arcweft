@@ -180,6 +180,13 @@ pub enum ViewStyleModelError {
         expected: ViewStyleValueKind,
         actual: ViewStyleValueKind,
     },
+    #[error("axis context at source {style_source:?} does not support append assignment")]
+    AxisContextAppend { style_source: ViewStyleSourceId },
+    #[error("logical translation {property:?} at source {style_source:?} is not sign-reversible")]
+    LogicalTranslationNotSignReversible {
+        property: ViewPropertyKind,
+        style_source: ViewStyleSourceId,
+    },
     #[error("property {property:?} does not support append assignment")]
     InvalidAppend { property: ViewPropertyKind },
     #[error("alignment {alignment:?} is not valid for property {property:?}")]
@@ -469,6 +476,23 @@ impl ViewStyleDeclaration {
                 property,
                 expected,
                 actual,
+            });
+        }
+        if op == ViewStyleAssignOp::Append && property.is_axis_context() {
+            return Err(ViewStyleModelError::AxisContextAppend {
+                style_source: source,
+            });
+        }
+        if matches!(
+            property,
+            ViewPropertyKind::TranslateInline | ViewPropertyKind::TranslateBlock
+        ) && matches!(
+            &value,
+            ViewSpecifiedValue::Length { value } if !value.is_axis_sign_reversible()
+        ) {
+            return Err(ViewStyleModelError::LogicalTranslationNotSignReversible {
+                property,
+                style_source: source,
             });
         }
         if op == ViewStyleAssignOp::Append && !property.is_appendable() {
