@@ -1,6 +1,7 @@
 # AW-AH-007/008 typed RichText attribute validation delivery status
 
 Date: 2026-07-14
+Last re-evaluated: 2026-07-15
 
 ## Outcome
 
@@ -18,6 +19,38 @@ Those choices materially change the public authoring and checked-lowering
 contracts, so implementing them by inference would be speculative. The request
 now contains an explicit dispatch contract, required delivery layout, and
 decision-completeness gate for a design-only final-contract task.
+
+## 2026-07-15 diagnostic-only re-delivery
+
+The later archive at
+`D:/sanze/Downloads/arcweft-aw-ah-007-008-typed-rich-text-attribute-validation(1).zip`
+is not a byte-for-byte re-delivery of `v2`, but it is not a successor design or
+implementation contract either. It is a failed implementation-orchestration
+capture whose own `delivery/README.md` states that the private repository could
+not be obtained and that no implementation is present.
+
+| Field | Evidence |
+| --- | --- |
+| Inspected checkout | Git `02750f530cfb`; Jujutsu parent change `nsrnqtmx` |
+| ZIP size | 23,218 bytes |
+| ZIP SHA-256 | `a180b4972d0c48d19755f7eb684c499a6d028a20bc9305a4910116cff768c9a4` |
+| Archive entries | 14 total; 11 regular files and 3 directories |
+| README SHA-256 | `9e8036d99231a20683a87e1e743839b32465c6a23cc3431e28e43b6e7f5124fe` |
+| Orchestrator-log SHA-256 | `b78e2209d7f797ef79fd0ce278e576e9344daaee4ee31144a707c93ed360e95a` |
+| Embedded request SHA-256 | `807109509d9064f390eacc26f1c182ebdc72fa986ce19d8ab747e5d66653a16d` |
+
+The embedded request is byte-identical to the checked-in standalone request.
+Its duplicate full-read copy and both other input/full-read pairs also match
+their recorded SHA-256 values. The remaining files are the inputs, clone-failure
+logs, and an input-only hash list; there is no archive-wide manifest, final
+design, schema matrix, diagnostic matrix, migration/test plan, traceability,
+patch, source overlay, Rust change, or validation result.
+
+The archive therefore confirms only that another assignee could not access the
+checkout. It does not close any design decision and does not supersede the
+standalone request. The required final-contract archive
+`arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-final-contract.zip`
+was not present in the supplied download location at this re-evaluation.
 
 ## Audited package
 
