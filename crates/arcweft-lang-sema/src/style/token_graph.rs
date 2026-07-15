@@ -199,6 +199,8 @@ fn collect_token_references(expr: &Expr, references: &mut BTreeSet<String>) {
         | Expr::Await { expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Closure { body: expr, .. } => collect_token_references(expr, references),
+        Expr::Borrow(borrow) => collect_token_references(borrow.operand(), references),
+        Expr::Deref(deref) => collect_token_references(deref.operand(), references),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
             for (_, value) in fields {
                 collect_token_references(value, references);

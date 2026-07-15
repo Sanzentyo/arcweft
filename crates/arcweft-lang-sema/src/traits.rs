@@ -1504,14 +1504,16 @@ fn borrow_ref_type_pattern<'a>(
     match (pattern, actual) {
         (
             TypeKind::BorrowRef {
+                kind: lhs_kind,
                 lifetime: lhs_lifetime,
                 inner: lhs_inner,
             },
             TypeKind::BorrowRef {
+                kind: rhs_kind,
                 lifetime: rhs_lifetime,
                 inner: rhs_inner,
             },
-        ) if lhs_lifetime == rhs_lifetime => Some((lhs_inner, rhs_inner)),
+        ) if lhs_kind == rhs_kind && lhs_lifetime == rhs_lifetime => Some((lhs_inner, rhs_inner)),
         _ => None,
     }
 }
@@ -1588,7 +1590,12 @@ fn substitute_type(ty: &TypeKind, substitutions: &HashMap<String, TypeKind>) -> 
         TypeKind::Shared(inner) => {
             TypeKind::Shared(Box::new(substitute_type(inner, substitutions)))
         }
-        TypeKind::BorrowRef { lifetime, inner } => TypeKind::BorrowRef {
+        TypeKind::BorrowRef {
+            kind,
+            lifetime,
+            inner,
+        } => TypeKind::BorrowRef {
+            kind: *kind,
             lifetime: lifetime.clone(),
             inner: Box::new(substitute_type(inner, substitutions)),
         },
@@ -1745,10 +1752,11 @@ fn substitute_self_type(
                 })
                 .collect(),
         ),
-        TypeRef::Ref { inner, .. } => TypeKind::BorrowRef {
+        TypeRef::Reference(reference) => TypeKind::BorrowRef {
+            kind: reference.kind(),
             lifetime: None,
             inner: Box::new(substitute_self_type(
-                inner,
+                reference.referent(),
                 self_ty,
                 impl_decl,
                 generic_params,
@@ -1832,9 +1840,10 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
                 .map(|alternative| trait_type_ref_kind(alternative, generic_params))
                 .collect(),
         ),
-        TypeRef::Ref { inner, .. } => TypeKind::BorrowRef {
+        TypeRef::Reference(reference) => TypeKind::BorrowRef {
+            kind: reference.kind(),
             lifetime: None,
-            inner: Box::new(trait_type_ref_kind(inner, generic_params)),
+            inner: Box::new(trait_type_ref_kind(reference.referent(), generic_params)),
         },
         TypeRef::Slice(inner) => {
             TypeKind::Slice(Box::new(trait_type_ref_kind(inner, generic_params)))

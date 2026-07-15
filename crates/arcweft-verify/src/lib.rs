@@ -36,6 +36,7 @@ use arcweft_source::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+mod assertion;
 mod contract_smt;
 mod insertion;
 pub mod runtime_type;
@@ -112,6 +113,7 @@ pub struct VerificationPolicy {
 #[serde(rename_all = "snake_case")]
 pub enum ProofObligationKind {
     FunctionContract,
+    AssertionProof,
     LifetimePromotion,
     UnsafeLifetimeAudit,
     MustDropDischarge,
@@ -162,7 +164,7 @@ impl ProofObligationKind {
             return Vec::new();
         }
         match self {
-            Self::FunctionContract => vec![ToolAction::show_obligation()],
+            Self::FunctionContract | Self::AssertionProof => vec![ToolAction::show_obligation()],
             Self::LifetimePromotion
             | Self::MustDropDischarge
             | Self::ThreadCapture
@@ -1099,8 +1101,10 @@ impl ObligationCollector {
             LinePlanItem::Option { value, .. }
             | LinePlanItem::Let { expr: value, .. }
             | LinePlanItem::Out(value)
-            | LinePlanItem::Assert { expr: value, .. }
             | LinePlanItem::Expr(value) => self.collect_expr(value),
+            LinePlanItem::TimelineAssert(assertion) => {
+                self.collect_expr(assertion.condition());
+            }
             LinePlanItem::Stmt(stmt) => self.collect_stmt(stmt),
             LinePlanItem::CancelRule(rule) => self.collect_stmts(rule.action()),
             LinePlanItem::TimedCue { anchor, body } => {
@@ -1118,6 +1122,7 @@ impl ObligationCollector {
 
     fn collect_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            Stmt::Assertion(assertion) => self.collect_assertion(assertion),
             Stmt::LetElse {
                 expr, else_body, ..
             } => {
@@ -1340,6 +1345,8 @@ impl ObligationCollector {
             Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Unary { expr, .. } => {
                 self.collect_expr(expr);
             }
+            Expr::Borrow(borrow) => self.collect_expr(borrow.operand()),
+            Expr::Deref(deref) => self.collect_expr(deref.operand()),
             Expr::Thread { block } => self.collect_thread(block),
             Expr::Range { start, end, .. } => {
                 if let Some(start) = start {
@@ -1762,6 +1769,31 @@ impl ObligationCollector {
         discharge: &ProofDischarge,
         insertion_target: Option<VerifierInsertionTarget>,
     ) {
+        self.record_obligation(
+            kind,
+            message,
+            subject,
+            discharge,
+            insertion_target,
+            None,
+            None,
+        );
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one verifier record atomically owns its typed kind, source, discharge, insertion, and diagnostic identity"
+    )]
+    fn record_obligation(
+        &mut self,
+        kind: ProofObligationKind,
+        message: String,
+        subject: Option<String>,
+        discharge: &ProofDischarge,
+        insertion_target: Option<VerifierInsertionTarget>,
+        source: Option<SourceSpan>,
+        diagnostic_id: Option<&'static str>,
+    ) {
         self.next_obligation += 1;
         let id = format!("obligation.{:04}", self.next_obligation);
         let obligation = ProofObligation {
@@ -1769,7 +1801,7 @@ impl ObligationCollector {
             kind,
             message: message.clone(),
             subject: subject.clone(),
-            source: None,
+            source,
             insertion_target,
             discharge: discharge.clone(),
             smt: None,
@@ -1779,10 +1811,10 @@ impl ObligationCollector {
         let severity = self.severity_for(kind, discharge);
         if severity != Severity::Info || *discharge == ProofDischarge::Missing {
             self.report.diagnostics.push(VerificationDiagnostic {
-                id: format!("diagnostic.{id}"),
+                id: diagnostic_id.map_or_else(|| format!("diagnostic.{id}"), str::to_owned),
                 severity,
                 message,
-                source: None,
+                source,
                 obligation: Some(id),
                 related_ids: subject.into_iter().collect(),
                 actions,

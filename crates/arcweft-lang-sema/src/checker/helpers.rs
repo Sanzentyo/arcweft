@@ -978,11 +978,13 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
             assoc: assoc.clone(),
         },
         TypeRef::TraitBound(bound) => named_type_label(bound.path()),
-        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
-            lifetime: lifetime
-                .as_ref()
+        TypeRef::Reference(reference) => TypeKind::BorrowRef {
+            kind: reference.kind(),
+            lifetime: reference
+                .region()
+                .name()
                 .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
-            inner: Box::new(type_ref_kind(inner)),
+            inner: Box::new(type_ref_kind(reference.referent())),
         },
         TypeRef::Slice(inner) => array_type_from_slice_inner(inner)
             .unwrap_or_else(|| TypeKind::Slice(Box::new(type_ref_kind(inner)))),
@@ -1042,11 +1044,16 @@ pub(super) fn type_ref_kind_with_generics(
             ready: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
             error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
         },
-        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
-            lifetime: lifetime
-                .as_ref()
+        TypeRef::Reference(reference) => TypeKind::BorrowRef {
+            kind: reference.kind(),
+            lifetime: reference
+                .region()
+                .name()
                 .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
-            inner: Box::new(type_ref_kind_with_generics(inner, generic_names)),
+            inner: Box::new(type_ref_kind_with_generics(
+                reference.referent(),
+                generic_names,
+            )),
         },
         TypeRef::Slice(inner) => {
             TypeKind::Slice(Box::new(type_ref_kind_with_generics(inner, generic_names)))
@@ -1155,12 +1162,17 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
         TypeRef::Projection { subject, assoc } => {
             format!("{}::{assoc}", type_ref_label(subject))
         }
-        TypeRef::Ref { lifetime, inner } => {
-            let lifetime = lifetime
-                .as_ref()
+        TypeRef::Reference(reference) => {
+            let lifetime = reference
+                .region()
+                .name()
                 .map(|lifetime| format!("'{} ", lifetime.name()))
                 .unwrap_or_default();
-            format!("&{lifetime}{}", type_ref_label(inner))
+            format!(
+                "&{lifetime}{}{}",
+                reference.kind().source_qualifier(),
+                type_ref_label(reference.referent())
+            )
         }
         TypeRef::Slice(inner) => format!("[{}]", type_ref_label(inner)),
     }

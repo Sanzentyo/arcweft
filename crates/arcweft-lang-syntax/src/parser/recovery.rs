@@ -34,6 +34,10 @@ pub struct RecoveryEdit {
 }
 
 impl ParseError {
+    pub(crate) fn coded(code: &'static str, range: TextRange, message: impl Into<String>) -> Self {
+        Self::new(range, Vec::new(), None, message.into(), Vec::new()).with_code(code)
+    }
+
     pub(crate) fn new(
         range: TextRange,
         expected: Vec<String>,

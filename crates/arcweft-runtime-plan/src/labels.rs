@@ -183,12 +183,17 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
             format!("{}<{}>", bound.path(), args.join(", "))
         }
         TypeRef::Projection { subject, assoc } => format!("{}::{assoc}", type_label(subject)),
-        TypeRef::Ref { lifetime, inner } => {
-            let lifetime = lifetime
-                .as_ref()
+        TypeRef::Reference(reference) => {
+            let lifetime = reference
+                .region()
+                .name()
                 .map(|lifetime| format!("'{} ", lifetime.name()))
                 .unwrap_or_default();
-            format!("&{lifetime}{}", type_label(inner))
+            format!(
+                "&{lifetime}{}{}",
+                reference.kind().source_qualifier(),
+                type_label(reference.referent())
+            )
         }
         TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
     }

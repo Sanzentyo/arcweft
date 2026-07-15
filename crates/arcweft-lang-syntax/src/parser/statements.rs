@@ -1,3 +1,4 @@
+use super::assertion::{assertion_statement_candidate, parse_assertion_statement};
 use super::control_flow::parse_final_block_expr;
 use super::headers::parse_required_id_ref;
 use super::{
@@ -204,6 +205,10 @@ fn parse_stmt_inner(
     mut stats: Option<&mut SyntaxParseStats>,
     base: Option<usize>,
 ) -> Stmt {
+    if assertion_statement_candidate(trimmed) {
+        return parse_assertion_statement(trimmed, base.unwrap_or(0))
+            .map_or_else(|_| raw_stmt(trimmed), Stmt::Assertion);
+    }
     match classify_stmt(trimmed) {
         CstStmtKind::LifetimeSet => {
             let Some((target, expr)) =

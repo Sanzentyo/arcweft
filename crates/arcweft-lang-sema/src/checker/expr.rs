@@ -21,6 +21,7 @@ use arcweft_lang_syntax::expr::{
     BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder, SelectExpr,
     UnaryOp,
 };
+use arcweft_lang_syntax::reference::{BorrowExpr, DerefExpr};
 
 mod agent;
 mod builtin;
@@ -216,6 +217,8 @@ impl TypeChecker<'_> {
                 expression_id,
             )),
             Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr, expected)),
+            Expr::Borrow(borrow) => self.check_borrow_expr(borrow),
+            Expr::Deref(deref) => self.check_deref_expr(deref),
             Expr::Block { statements, value } => {
                 self.check_block_expr_with_expected(statements, value.as_deref(), expected)
             }
@@ -258,6 +261,29 @@ impl TypeChecker<'_> {
                 )));
                 None
             }
+        }
+    }
+
+    fn check_borrow_expr(&mut self, borrow: &BorrowExpr) -> Option<TypeKind> {
+        self.check_expr(borrow.operand())
+            .map(|inner| TypeKind::BorrowRef {
+                kind: borrow.kind(),
+                lifetime: None,
+                inner: Box::new(inner),
+            })
+    }
+
+    fn check_deref_expr(&mut self, deref: &DerefExpr) -> Option<TypeKind> {
+        match self.check_expr(deref.operand()) {
+            Some(TypeKind::BorrowRef { inner, .. }) => Some(*inner),
+            Some(other) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "dereference operand must be a reference, found {}",
+                    type_kind_label(&other)
+                )));
+                None
+            }
+            None => None,
         }
     }
 

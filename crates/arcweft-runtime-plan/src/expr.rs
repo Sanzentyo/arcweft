@@ -533,6 +533,8 @@ fn lower_runtime_expr_strict_with_helpers(
             .ok_or_else(|| "pipe-left placeholder is outside a runtime pipe scope".to_owned()),
         Expr::Thread { .. }
         | Expr::LifetimePath { .. }
+        | Expr::Borrow(_)
+        | Expr::Deref(_)
         | Expr::Placeholder(Placeholder::Partial)
         | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
     }

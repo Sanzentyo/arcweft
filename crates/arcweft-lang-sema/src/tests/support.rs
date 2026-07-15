@@ -42,6 +42,7 @@ pub(super) use arcweft_lang_syntax::{
     },
     lint::{SyntaxLintCode, lint_id_policy},
     parser::{parse_source, recovery::ParseError},
+    reference::BorrowKind,
     text::{parse_dialogue_text, parse_dialogue_tokens},
     types::{TypeRef, parse_fn_signature, parse_type_ref},
 };
@@ -151,6 +152,7 @@ pub(super) fn read_text_env() -> TypeCheckEnv {
 
 pub(super) fn pixel_borrow_ty() -> TypeKind {
     TypeKind::BorrowRef {
+        kind: BorrowKind::Shared,
         lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
         inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
             "Rgba8".to_owned(),

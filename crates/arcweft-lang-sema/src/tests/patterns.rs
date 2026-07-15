@@ -54,7 +54,7 @@ flow @flow.borrow borrow {
         &flow.body()[0],
         FlowItem::Stmt(Stmt::Let {
             pattern: Pattern::Ident(name),
-            ty: Some(TypeRef::Ref { .. }),
+            ty: Some(TypeRef::Reference(_)),
             ..
         }) if name == "pixels"
     ));

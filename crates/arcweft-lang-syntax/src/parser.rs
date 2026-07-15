@@ -26,6 +26,7 @@ use crate::text::parse_dialogue_text;
 use std::borrow::Cow;
 use std::ops::Range;
 
+pub mod assertion;
 pub mod await_;
 pub mod choice;
 pub mod control_flow;

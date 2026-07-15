@@ -665,7 +665,14 @@ pub(super) fn parse_expr_lossy_with_stats(
             }
             parsed.expr
         }
-        Err(_) => crate::expr::Expr::Raw(source.to_owned()),
+        Err(error) => {
+            if error.code() == "syntax.expr.prefix_depth_limit"
+                && let Some(stats) = stats
+            {
+                stats.prefix_depth_limit_failures += 1;
+            }
+            crate::expr::Expr::Raw(source.to_owned())
+        }
     }
 }
 

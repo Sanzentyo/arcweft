@@ -995,7 +995,8 @@ fn speaker_preset_edit_from_stmt(
         Stmt::Match { arms, .. } => arms.iter().find_map(|arm| {
             speaker_preset_edit_from_stmts(source, arm.body(), preset_name, option)
         }),
-        Stmt::Let { .. }
+        Stmt::Assertion(_)
+        | Stmt::Let { .. }
         | Stmt::Assign { .. }
         | Stmt::LetChoice { .. }
         | Stmt::LetActionReceive { .. }

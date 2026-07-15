@@ -1,6 +1,9 @@
 use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_character::id::{CharacterId, CharacterPartId};
-use arcweft_lang_syntax::expr::{IntSuffix, LifetimeScopeKind};
+use arcweft_lang_syntax::{
+    expr::{IntSuffix, LifetimeScopeKind},
+    reference::BorrowKind,
+};
 use core::fmt;
 
 mod character_nominal;
@@ -172,6 +175,7 @@ pub enum TypeKind {
         value: Box<TypeKind>,
     },
     BorrowRef {
+        kind: BorrowKind,
         lifetime: Option<LifetimeScopeKind>,
         inner: Box<TypeKind>,
     },
@@ -328,7 +332,12 @@ impl TypeKind {
                 key: Box::new(key.resolve_effect_rows_with(resolve)?),
                 value: Box::new(value.resolve_effect_rows_with(resolve)?),
             },
-            Self::BorrowRef { lifetime, inner } => Self::BorrowRef {
+            Self::BorrowRef {
+                kind,
+                lifetime,
+                inner,
+            } => Self::BorrowRef {
+                kind: *kind,
                 lifetime: lifetime.clone(),
                 inner: Box::new(inner.resolve_effect_rows_with(resolve)?),
             },
@@ -418,10 +427,21 @@ impl TypeKind {
             Self::Map { kind, key, value } => {
                 format!("{kind:?}<{}, {}>", key.source_label(), value.source_label())
             }
-            Self::BorrowRef { lifetime, inner } => lifetime.as_ref().map_or_else(
-                || format!("&{}", inner.source_label()),
-                |lifetime| format!("&{} {}", lifetime.as_str(), inner.source_label()),
-            ),
+            Self::BorrowRef {
+                kind,
+                lifetime,
+                inner,
+            } => {
+                let lifetime = lifetime
+                    .as_ref()
+                    .map(|lifetime| format!("'{} ", lifetime.as_str()))
+                    .unwrap_or_default();
+                format!(
+                    "&{lifetime}{}{}",
+                    kind.source_qualifier(),
+                    inner.source_label()
+                )
+            }
             Self::Need { ready, error } => {
                 format!("Need<{}, {}>", ready.source_label(), error.source_label())
             }

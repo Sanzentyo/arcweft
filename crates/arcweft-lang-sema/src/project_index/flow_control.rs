@@ -122,6 +122,7 @@ fn summarize_stmt_body_control(statements: &[Stmt]) -> ProjectFlowControlSummary
 fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
     let mut summary = ProjectFlowControlSummary::default();
     match stmt {
+        Stmt::Assertion(assertion) => summary.merge(summarize_assertion_control(assertion)),
         Stmt::Goto(expr) => {
             if matches!(expr.expr(), Expr::EntityRef(target) if target.as_absolute().is_some()) {
                 summary.record_static_goto();
@@ -220,6 +221,16 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
     summary
 }
 
+fn summarize_assertion_control(
+    assertion: &arcweft_lang_syntax::assertion::AssertionStmt,
+) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    for condition in assertion.conditions() {
+        summary.merge(summarize_expr_control(condition));
+    }
+    summary
+}
+
 fn summarize_await_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
     let mut summary = ProjectFlowControlSummary::default();
     summary.record_await();
@@ -250,6 +261,8 @@ fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
         | Expr::Unary { expr: target, .. }
         | Expr::DialogueCall { callee: target, .. }
         | Expr::Closure { body: target, .. } => summary.merge(summarize_expr_control(target)),
+        Expr::Borrow(borrow) => summary.merge(summarize_expr_control(borrow.operand())),
+        Expr::Deref(deref) => summary.merge(summarize_expr_control(deref.operand())),
         Expr::Index {
             target,
             index: item,

@@ -256,6 +256,8 @@ pub(super) fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::Binary { .. } => "binary",
         Expr::Closure { .. } => "closure",
         Expr::Unary { .. } => "unary",
+        Expr::Borrow(_) => "borrow",
+        Expr::Deref(_) => "deref",
         Expr::Block { .. } => "block",
         Expr::ComputationBlock { .. } => "computation_block",
         Expr::NamedBlock { .. } => "named_block",

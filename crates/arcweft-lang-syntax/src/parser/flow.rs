@@ -1,3 +1,4 @@
+use super::assertion::{assertion_statement_candidate, parse_assertion_statement};
 use super::headers::{
     implicit_flow_name_from_id, parse_contract_clause, parse_contract_clauses, parse_flow_head,
     parse_flow_signature, parse_name_and_tail, parse_optional_decl_id_ref,
@@ -6,10 +7,10 @@ use super::headers::{
 use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
     CstLineEvents, CstPunctuationDeltas, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit,
-    FlowItem, MappedDialogueSourceBuilder, Parser, RawSyntax, ScopeBlock, Stmt, SyntaxParseStats,
-    TextRange, UnsafeAuditInsertion, flat_block_head, indentation, is_await_with_head,
-    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
-    parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
+    FlowItem, MappedDialogueSourceBuilder, ParseError, Parser, RawSyntax, ScopeBlock, Stmt,
+    SyntaxParseStats, TextRange, UnsafeAuditInsertion, flat_block_head, indentation,
+    is_await_with_head, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
+    parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
     parse_line_plan_attachment, parse_scope_head, parse_stmt_lines, parse_stmt_with_stats_and_base,
     parse_thread_block, parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head,
     split_top_level_keyword_once,
@@ -167,6 +168,8 @@ impl<'a> Parser<'a> {
         self.errors
             .extend(nested.errors.drain(..).map(|err| err.rebased(base_offset)));
         self.syntax_stats.numeric_seq_summaries += nested.syntax_stats.numeric_seq_summaries;
+        self.syntax_stats.prefix_depth_limit_failures +=
+            nested.syntax_stats.prefix_depth_limit_failures;
         items
     }
 
@@ -184,6 +187,9 @@ impl<'a> Parser<'a> {
             return None;
         }
         let trimmed = line.text.trim();
+        if assertion_statement_candidate(trimmed) {
+            return Some(self.parse_assertion_flow_item(&line, indent));
+        }
         let kind = line.flow_item_kind();
 
         if trimmed.starts_with("#[") || trimmed.starts_with("#![") {
@@ -263,6 +269,27 @@ impl<'a> Parser<'a> {
         }
 
         None
+    }
+
+    fn parse_assertion_flow_item(&mut self, line: &CstLine<'_>, indent: usize) -> FlowItem {
+        let source = self.consume_stmt_text_with_continuations(indent);
+        let source = source.trim();
+        let base = line.start + line.text.len() - line.text.trim_start().len();
+        let statement = match parse_assertion_statement(source, base) {
+            Ok(assertion) => Stmt::Assertion(assertion),
+            Err(error) => {
+                self.errors.push(ParseError::coded(
+                    error.code(),
+                    error.range(),
+                    error.message(),
+                ));
+                Stmt::Raw(RawSyntax::stmt(
+                    source,
+                    Some(TextRange::new(base, base + source.len())),
+                ))
+            }
+        };
+        FlowItem::Stmt(statement)
     }
 
     fn consume_stmt_text_with_continuations(&mut self, indent: usize) -> Cow<'a, str> {

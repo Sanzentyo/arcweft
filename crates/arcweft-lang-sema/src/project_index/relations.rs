@@ -204,6 +204,11 @@ fn index_stmt_symbol_dependency_relations(
     mut index: ProjectSemanticIndex,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match stmt {
+        Stmt::Assertion(assertion) => {
+            for condition in assertion.conditions() {
+                index = index_expr_symbol_dependency_relations(parent, condition, index)?;
+            }
+        }
         Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             index = index_expr_symbol_dependency_relations(parent, expr, index)?;
         }
@@ -331,6 +336,9 @@ fn index_expr_symbol_dependency_relations(
         | Expr::Closure { body: target, .. } => {
             index = index_expr_symbol_dependency_relations(parent, target, index)?;
         }
+        Expr::Borrow(_) | Expr::Deref(_) => {
+            index = index_prefix_operand_dependency(parent, expr, index)?;
+        }
         Expr::Index {
             target,
             index: item,
@@ -377,11 +385,9 @@ fn index_expr_symbol_dependency_relations(
             statements,
             value,
         } => {
-            for (_, value) in options {
-                index = index_expr_symbol_dependency_relations(parent, value, index)?;
-            }
-            index = index_expr_block_symbol_dependency_relations(
+            index = index_memo_expr_symbol_dependency_relations(
                 parent,
+                options,
                 statements,
                 value.as_deref(),
                 index,
@@ -400,6 +406,32 @@ fn index_expr_symbol_dependency_relations(
         | Expr::Raw(_) => {}
     }
     Ok(index)
+}
+
+fn index_prefix_operand_dependency(
+    parent: &ProjectGraphSymbolRef,
+    expression: &Expr,
+    index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    let operand = match expression {
+        Expr::Borrow(borrow) => borrow.operand(),
+        Expr::Deref(deref) => deref.operand(),
+        _ => unreachable!("prefix reference dependency requires borrow or dereference"),
+    };
+    index_expr_symbol_dependency_relations(parent, operand, index)
+}
+
+fn index_memo_expr_symbol_dependency_relations(
+    parent: &ProjectGraphSymbolRef,
+    options: &[(String, Expr)],
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for (_, option) in options {
+        index = index_expr_symbol_dependency_relations(parent, option, index)?;
+    }
+    index_expr_block_symbol_dependency_relations(parent, statements, value, index)
 }
 
 fn index_call_expr_symbol_dependency_relations(
@@ -693,6 +725,11 @@ fn index_stmt_relations(
     mut index: ProjectSemanticIndex,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match stmt {
+        Stmt::Assertion(assertion) => {
+            for condition in assertion.conditions() {
+                index = index_expr_dependency_relations(parent, condition, index)?;
+            }
+        }
         Stmt::Goto(expr) => {
             if let Expr::EntityRef(target) = expr.expr()
                 && let (Some(parent), Some(target)) = (parent, target.as_absolute())
@@ -853,6 +890,12 @@ fn index_compound_expr_dependency_relations(
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. } => {
             index = index_expr_dependency_relations(parent, target, index)?;
+        }
+        Expr::Borrow(borrow) => {
+            index = index_expr_dependency_relations(parent, borrow.operand(), index)?;
+        }
+        Expr::Deref(deref) => {
+            index = index_expr_dependency_relations(parent, deref.operand(), index)?;
         }
         Expr::DialogueCall { callee, .. } | Expr::Closure { body: callee, .. } => {
             index = index_expr_dependency_relations(parent, callee, index)?;

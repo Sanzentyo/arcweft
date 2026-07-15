@@ -16,9 +16,9 @@ use crate::{
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum EffectContractLowerError {
     #[error("effect selector is not a capability path or scoped capability call: {expr:?}")]
-    UnsupportedSelector { expr: Expr },
+    UnsupportedSelector { expr: Box<Expr> },
     #[error("effect scope arguments must be positional and statically named: {expr:?}")]
-    UnsupportedScopeArgument { expr: Expr },
+    UnsupportedScopeArgument { expr: Box<Expr> },
     #[error("pure callable cannot declare non-empty effects {effects}")]
     PureEffectConflict { effects: EffectSet },
     #[error(transparent)]
@@ -106,7 +106,7 @@ fn effect_label(expression: &Expr) -> Result<String, EffectContractLowerError> {
             .map(|target| format!("{target}.{}", select.member().as_str())),
         Expr::Call { callee, args } => scoped_effect_label(callee, args),
         _ => Err(EffectContractLowerError::UnsupportedSelector {
-            expr: expression.clone(),
+            expr: Box::new(expression.clone()),
         }),
     }
 }
@@ -134,7 +134,7 @@ fn effect_scope_arg(argument: &CallArg) -> Result<String, EffectContractLowerErr
         CallArg::Positional(expression) => expression,
         CallArg::Named { value, .. } | CallArg::Spread { value } => {
             return Err(EffectContractLowerError::UnsupportedScopeArgument {
-                expr: value.as_ref().clone(),
+                expr: value.clone(),
             });
         }
     };
@@ -148,7 +148,7 @@ fn effect_scope_arg(argument: &CallArg) -> Result<String, EffectContractLowerErr
         Expr::EntityRef(entity) => Ok(entity.body().to_owned()),
         Expr::Literal(Literal::String(value)) => Ok(value.clone()),
         _ => Err(EffectContractLowerError::UnsupportedScopeArgument {
-            expr: expression.clone(),
+            expr: Box::new(expression.clone()),
         }),
     }
 }

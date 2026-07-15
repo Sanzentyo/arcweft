@@ -160,6 +160,7 @@ impl<'hir> ExecutableLoweringLocation<'hir> {
 
 fn statement_range(statement: &Stmt) -> Option<TextRange> {
     match statement {
+        Stmt::Assertion(assertion) => Some(assertion.range()),
         Stmt::Let { expr_range, .. }
         | Stmt::Return { expr_range, .. }
         | Stmt::Expr { expr_range, .. } => *expr_range,
@@ -200,6 +201,7 @@ fn statement_range(statement: &Stmt) -> Option<TextRange> {
 
 pub(crate) const fn statement_kind(statement: &Stmt) -> &'static str {
     match statement {
+        Stmt::Assertion(_) => "assertion",
         Stmt::Let { .. } => "let",
         Stmt::LetElse { .. } => "let-else",
         Stmt::LetScope { .. } => "let-scope",

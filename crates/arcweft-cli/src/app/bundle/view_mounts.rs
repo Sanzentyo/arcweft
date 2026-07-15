@@ -145,6 +145,7 @@ fn collect_mounted_view_ids(items: &[HirFlowItem], ids: &mut BTreeSet<String>) {
 
 fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
     match stmt {
+        Stmt::Assertion(assertion) => collect_mounted_view_ids_from_assertion(assertion, ids),
         Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             collect_mounted_view_ids_from_expr(expr, ids);
         }
@@ -242,6 +243,15 @@ fn collect_mounted_view_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<String>) {
     }
 }
 
+fn collect_mounted_view_ids_from_assertion(
+    assertion: &arcweft_lang_syntax::assertion::AssertionStmt,
+    ids: &mut BTreeSet<String>,
+) {
+    for condition in assertion.conditions() {
+        collect_mounted_view_ids_from_expr(condition, ids);
+    }
+}
+
 fn collect_mounted_view_ids_from_stmts(stmts: &[Stmt], ids: &mut BTreeSet<String>) {
     for stmt in stmts {
         collect_mounted_view_ids_from_stmt(stmt, ids);
@@ -287,6 +297,8 @@ fn collect_mounted_view_ids_from_expr(expr: &Expr, ids: &mut BTreeSet<String>) {
         Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Unary { expr, .. } => {
             collect_mounted_view_ids_from_expr(expr, ids);
         }
+        Expr::Borrow(borrow) => collect_mounted_view_ids_from_expr(borrow.operand(), ids),
+        Expr::Deref(deref) => collect_mounted_view_ids_from_expr(deref.operand(), ids),
         Expr::Thread { block } => {
             collect_mounted_view_ids_from_syntax_flow_items(block.body(), ids);
         }

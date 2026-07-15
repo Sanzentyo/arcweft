@@ -71,6 +71,10 @@ fn flow_item_contains_unchecked_promotion(item: &FlowItem) -> bool {
 
 fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
     match stmt {
+        Stmt::Assertion(assertion) => assertion
+            .conditions()
+            .iter()
+            .any(expr_contains_unchecked_promotion),
         Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             expr_contains_unchecked_promotion(expr)
         }
@@ -159,6 +163,8 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
         | Expr::Await { expr: value, .. }
         | Expr::Unary { expr: value, .. }
         | Expr::Closure { body: value, .. } => expr_contains_unchecked_promotion(value),
+        Expr::Borrow(borrow) => expr_contains_unchecked_promotion(borrow.operand()),
+        Expr::Deref(deref) => expr_contains_unchecked_promotion(deref.operand()),
         Expr::Binary { lhs, rhs, .. }
         | Expr::Pipe { lhs, rhs }
         | Expr::Index {
@@ -252,9 +258,11 @@ fn line_plan_item_contains_unchecked_promotion(item: &LinePlanItem) -> bool {
         LinePlanItem::On { body, .. } => stmts_contain_unchecked_promotion(body),
         LinePlanItem::Let { expr, .. }
         | LinePlanItem::Option { value: expr, .. }
-        | LinePlanItem::Assert { expr, .. }
         | LinePlanItem::Expr(expr)
         | LinePlanItem::Out(expr) => expr_contains_unchecked_promotion(expr),
+        LinePlanItem::TimelineAssert(assertion) => {
+            expr_contains_unchecked_promotion(assertion.condition())
+        }
         LinePlanItem::Stmt(stmt) => stmt_contains_unchecked_promotion(stmt),
         LinePlanItem::TimedCue { anchor, body } => {
             expr_contains_unchecked_promotion(anchor) || expr_contains_unchecked_promotion(body)

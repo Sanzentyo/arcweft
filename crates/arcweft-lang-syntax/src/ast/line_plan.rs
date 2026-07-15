@@ -52,12 +52,53 @@ pub enum LinePlanItem {
     },
     StartGroup(Vec<LinePlanItem>),
     TogetherGroup(Vec<LinePlanItem>),
-    Assert {
-        debug: bool,
-        expr: Expr,
-    },
+    TimelineAssert(TimelineAssert),
     Expr(Expr),
     Raw(RawSyntax),
+}
+
+/// Line-timeline assertion retained separately from statement assertions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimelineAssert {
+    policy: TimelineAssertPolicy,
+    condition: Expr,
+    range: TextRange,
+}
+
+/// Runtime profile for a line-timeline assertion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TimelineAssertPolicy {
+    Always,
+    DebugOnly,
+}
+
+impl TimelineAssert {
+    pub(crate) const fn new(
+        policy: TimelineAssertPolicy,
+        condition: Expr,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            policy,
+            condition,
+            range,
+        }
+    }
+
+    /// Returns whether this assertion is always or debug-only.
+    pub const fn policy(&self) -> TimelineAssertPolicy {
+        self.policy
+    }
+
+    /// Returns the single line-plan condition.
+    pub const fn condition(&self) -> &Expr {
+        &self.condition
+    }
+
+    /// Returns the complete authored call range.
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
 }
 
 /// Parsed cancellation syntax.

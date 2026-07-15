@@ -84,7 +84,7 @@ fn expected_enum_record_constructor_path(
 fn expected_type_path(ty: &TypeRef) -> Option<&str> {
     match ty {
         TypeRef::Path(path) => Some(path.as_str()),
-        TypeRef::Ref { inner, .. } => expected_type_path(inner),
+        TypeRef::Reference(reference) => expected_type_path(reference.referent()),
         _ => None,
     }
 }

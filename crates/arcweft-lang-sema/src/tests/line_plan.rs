@@ -630,10 +630,10 @@ flow @flow.opening opening {
     let plan = line.plan().expect("line plan");
     assert!(matches!(
         &plan.items()[0],
-        LinePlanItem::Assert {
-            debug: false,
-            expr: Expr::Path(path)
-        } if path == "dialogue_view_ready"
+        LinePlanItem::TimelineAssert(assertion)
+            if assertion.policy()
+                == arcweft_lang_syntax::ast::line_plan::TimelineAssertPolicy::Always
+                && matches!(assertion.condition(), Expr::Path(path) if path == "dialogue_view_ready")
     ));
 
     let hir = lower_to_hir(&tree).expect("line plan assertions lower");

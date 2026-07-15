@@ -292,7 +292,8 @@ fn stmt_binding_names(statement: &Stmt) -> Vec<String> {
         Stmt::WhileLet { pattern, .. } | Stmt::For { pattern, .. } => {
             pattern_binding_names(pattern)
         }
-        Stmt::Return { expr: _, .. }
+        Stmt::Assertion(_)
+        | Stmt::Return { expr: _, .. }
         | Stmt::Assign { .. }
         | Stmt::Out { .. }
         | Stmt::Goto(_)

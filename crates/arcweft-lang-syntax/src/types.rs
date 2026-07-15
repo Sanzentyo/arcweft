@@ -5,12 +5,17 @@ use crate::ast::pattern::Pattern;
 use crate::cst::{
     ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
     find_top_level_matching_punctuation, find_top_level_punctuation, split_leading_ident,
-    split_leading_lifetime, split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
+    split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
     split_top_level_punctuation, split_top_level_punctuation_once,
     strip_prefix_arcweft_punctuation, take_doc_comment_prefix,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
+use crate::reference::{BorrowKind, ReferenceType};
+
+mod reference;
+
+use self::reference::parse_reference_type;
 
 /// Lifetime name used in Arcweft type syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,10 +45,7 @@ pub enum TypeRef {
         subject: Box<TypeRef>,
         assoc: String,
     },
-    Ref {
-        lifetime: Option<LifetimeName>,
-        inner: Box<TypeRef>,
-    },
+    Reference(ReferenceType),
     Slice(Box<TypeRef>),
 }
 
@@ -126,6 +128,17 @@ pub enum FnReceiverKind {
     MutRef,
 }
 
+impl FnReceiverKind {
+    /// Returns the shared or mutable borrow permission for reference receivers.
+    pub const fn borrow_kind(self) -> Option<BorrowKind> {
+        match self {
+            Self::Owned => None,
+            Self::SharedRef => Some(BorrowKind::Shared),
+            Self::MutRef => Some(BorrowKind::Mutable),
+        }
+    }
+}
+
 /// One `where` clause predicate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WhereClause {
@@ -137,16 +150,64 @@ pub struct WhereClause {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("{message}")]
 pub struct TypeParseError {
+    code: &'static str,
+    range: Option<TextRange>,
     message: String,
 }
 
 /// Parses an Arcweft type expression.
 pub fn parse_type_ref(source: &str) -> Result<TypeRef, TypeParseError> {
-    let source = source.trim();
-    if source.is_empty() {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
         return Err(TypeParseError::new("expected type"));
     }
-    parse_function_type(source)
+    let mut parsed = parse_function_type(trimmed)?;
+    parsed.rebase_reference_ranges(subslice_offset(source, trimmed));
+    Ok(parsed)
+}
+
+impl TypeRef {
+    pub(crate) fn rebase_reference_ranges(&mut self, base: usize) {
+        match self {
+            Self::Tuple(items) | Self::Choice(items) => {
+                for item in items {
+                    item.rebase_reference_ranges(base);
+                }
+            }
+            Self::Function {
+                params,
+                return_type,
+                ..
+            } => {
+                for param in params {
+                    param.rebase_reference_ranges(base);
+                }
+                return_type.rebase_reference_ranges(base);
+            }
+            Self::Generic { args, .. } => {
+                for arg in args {
+                    arg.rebase_reference_ranges(base);
+                }
+            }
+            Self::TraitBound(bound) => {
+                for arg in &mut bound.args {
+                    arg.rebase_reference_ranges(base);
+                }
+                for binding in &mut bound.assoc_bindings {
+                    binding.value.rebase_reference_ranges(base);
+                }
+            }
+            Self::Projection { subject, .. } | Self::Slice(subject) => {
+                subject.rebase_reference_ranges(base);
+            }
+            Self::Reference(reference) => reference.rebase(base),
+            Self::Never | Self::ConstInt(_) | Self::Path(_) => {}
+        }
+    }
+}
+
+fn subslice_offset(source: &str, fragment: &str) -> usize {
+    (fragment.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }
 
 /// Parses the head of a function signature, including generics and curried parameter groups.
@@ -321,13 +382,21 @@ fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
 fn parse_function_type(source: &str) -> Result<TypeRef, TypeParseError> {
     let (function_source, effects) = split_type_effect_row_suffix(source)?;
     if let Some((params, return_type)) = split_top_level_arrow(function_source) {
-        let params = parse_function_type_params(params.trim())?;
-        if return_type.trim().is_empty() {
+        let params_source = params.trim();
+        let mut params = parse_function_type_params(params_source)?;
+        let params_base = subslice_offset(source, params_source);
+        for param in &mut params {
+            param.rebase_reference_ranges(params_base);
+        }
+        let return_source = return_type.trim();
+        if return_source.is_empty() {
             return Err(TypeParseError::new("expected return type after `->`"));
         }
+        let mut return_type = parse_function_type(return_source)?;
+        return_type.rebase_reference_ranges(subslice_offset(source, return_source));
         return Ok(TypeRef::Function {
             params,
-            return_type: Box::new(parse_function_type(return_type.trim())?),
+            return_type: Box::new(return_type),
             effects,
         });
     }
@@ -337,7 +406,8 @@ fn parse_function_type(source: &str) -> Result<TypeRef, TypeParseError> {
                 "effect row can only annotate a function type",
             ));
         };
-        let inner_ty = parse_function_type(inner)?;
+        let mut inner_ty = parse_function_type(inner)?;
+        inner_ty.rebase_reference_ranges(subslice_offset(source, inner));
         let TypeRef::Function {
             params,
             return_type,
@@ -363,20 +433,25 @@ fn parse_function_type(source: &str) -> Result<TypeRef, TypeParseError> {
 }
 
 fn parse_function_type_params(source: &str) -> Result<Vec<TypeRef>, TypeParseError> {
-    let params = if let Some(inner) = parenthesized_type(source) {
+    let mut params = if let Some(inner) = parenthesized_type(source) {
         let parts = split_top_level_punctuation(inner, ',');
         if parts.len() > 1 {
             parts
                 .into_iter()
-                .map(str::trim)
-                .map(parse_type_ref)
+                .map(|part| parse_nested_type(inner, part))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
-            vec![parse_type_ref(inner)?]
+            vec![parse_nested_type(inner, inner)?]
         }
     } else {
         vec![parse_type_choice(source)?]
     };
+    if let Some(inner) = parenthesized_type(source) {
+        let inner_base = subslice_offset(source, inner);
+        for param in &mut params {
+            param.rebase_reference_ranges(inner_base);
+        }
+    }
     if params
         .iter()
         .any(|param| matches!(param, TypeRef::Tuple(_)))
@@ -403,7 +478,8 @@ fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
             ));
         }
         reject_variant_row_type(alternative)?;
-        let ty = parse_type_atom(alternative)?;
+        let mut ty = parse_type_atom(alternative)?;
+        ty.rebase_reference_ranges(subslice_offset(source, alternative));
         let label = type_ref_parse_label(&ty);
         if labels.iter().any(|existing| existing == &label) {
             return Err(TypeParseError::new(&format!(
@@ -420,14 +496,15 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
     if let Some(inner) = parenthesized_type(source) {
         let parts = split_top_level_punctuation(inner, ',');
         if parts.len() > 1 {
-            return parts
+            let mut tuple = parts
                 .into_iter()
-                .map(str::trim)
-                .map(parse_type_ref)
+                .map(|part| parse_nested_type(inner, part))
                 .collect::<Result<Vec<_>, _>>()
-                .map(TypeRef::Tuple);
+                .map(TypeRef::Tuple)?;
+            tuple.rebase_reference_ranges(subslice_offset(source, inner));
+            return Ok(tuple);
         }
-        return parse_type_ref(inner);
+        return parse_nested_type(source, inner);
     }
     if let Ok(value) = source.parse::<usize>() {
         return Ok(TypeRef::ConstInt(value));
@@ -435,28 +512,23 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
     if matches!(source, "!" | "Never") {
         return Ok(TypeRef::Never);
     }
-    if let Some(rest) = source.strip_prefix('&') {
-        let rest = rest.trim_start();
-        let (lifetime, inner) = if let Some((lifetime, inner)) = split_leading_lifetime(rest) {
-            (Some(parse_lifetime_name(lifetime)), inner)
-        } else {
-            (None, rest)
-        };
-        return Ok(TypeRef::Ref {
-            lifetime,
-            inner: Box::new(parse_type_ref(inner)?),
-        });
+    if source.starts_with('&') {
+        return parse_reference_type(source).map(TypeRef::Reference);
     }
     if let Some(inner) = source
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
     {
-        return Ok(TypeRef::Slice(Box::new(parse_type_ref(inner.trim())?)));
+        return Ok(TypeRef::Slice(Box::new(parse_nested_type(source, inner)?)));
     }
     if let Some((base, args)) = split_generic_type(source) {
         let parsed_args = split_type_args(args)
             .into_iter()
-            .map(parse_type_arg)
+            .map(|arg| {
+                let mut parsed = parse_type_arg(arg)?;
+                parsed.rebase_reference_ranges(subslice_offset(args, arg));
+                Ok(parsed)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let mut type_args = Vec::new();
         let mut assoc_bindings = Vec::new();
@@ -467,22 +539,26 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
             }
         }
         if !assoc_bindings.is_empty() {
-            return Ok(TypeRef::TraitBound(TraitBound {
+            let mut result = TypeRef::TraitBound(TraitBound {
                 path: base.to_owned(),
                 args: type_args,
                 assoc_bindings,
-            }));
+            });
+            result.rebase_reference_ranges(subslice_offset(source, args));
+            return Ok(result);
         }
-        return Ok(TypeRef::Generic {
+        let mut result = TypeRef::Generic {
             base: base.to_owned(),
             args: type_args,
-        });
+        };
+        result.rebase_reference_ranges(subslice_offset(source, args));
+        return Ok(result);
     }
     if let Some((subject, assoc)) = split_type_projection(source) {
         let assoc = assoc.trim();
         if !assoc.is_empty() && assoc.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
             return Ok(TypeRef::Projection {
-                subject: Box::new(parse_type_ref(subject.trim())?),
+                subject: Box::new(parse_nested_type(source, subject)?),
                 assoc: assoc.to_owned(),
             });
         }
@@ -527,6 +603,15 @@ fn split_type_effect_row_suffix(
 enum TypeArg {
     Type(TypeRef),
     Assoc(AssocTypeBinding),
+}
+
+impl TypeArg {
+    fn rebase_reference_ranges(&mut self, base: usize) {
+        match self {
+            Self::Type(ty) => ty.rebase_reference_ranges(base),
+            Self::Assoc(binding) => binding.value.rebase_reference_ranges(base),
+        }
+    }
 }
 
 fn parenthesized_type(source: &str) -> Option<&str> {
@@ -574,10 +659,17 @@ fn parse_type_arg(source: &str) -> Result<TypeArg, TypeParseError> {
         }
         return Ok(TypeArg::Assoc(AssocTypeBinding {
             name: name.to_owned(),
-            value: parse_type_ref(value.trim())?,
+            value: parse_nested_type(source, value)?,
         }));
     }
-    Ok(TypeArg::Type(parse_type_ref(source.trim())?))
+    Ok(TypeArg::Type(parse_nested_type(source, source)?))
+}
+
+fn parse_nested_type(parent: &str, fragment: &str) -> Result<TypeRef, TypeParseError> {
+    let fragment = fragment.trim();
+    let mut parsed = parse_type_ref(fragment)?;
+    parsed.rebase_reference_ranges(subslice_offset(parent, fragment));
+    Ok(parsed)
 }
 
 fn split_type_projection(source: &str) -> Option<(&str, &str)> {
@@ -713,7 +805,8 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
         TypeRef::Projection { subject, assoc } => {
             assoc.chars().any(char::is_whitespace) || type_ref_has_whitespace_path(subject)
         }
-        TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => type_ref_has_whitespace_path(inner),
+        TypeRef::Reference(reference) => type_ref_has_whitespace_path(reference.referent()),
+        TypeRef::Slice(inner) => type_ref_has_whitespace_path(inner),
     }
 }
 
@@ -782,12 +875,17 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
         TypeRef::Projection { subject, assoc } => {
             format!("{}::{assoc}", type_ref_parse_label(subject))
         }
-        TypeRef::Ref { lifetime, inner } => {
-            let lifetime = lifetime
-                .as_ref()
+        TypeRef::Reference(reference) => {
+            let lifetime = reference
+                .region()
+                .name()
                 .map(|lifetime| format!("'{} ", lifetime.name()))
                 .unwrap_or_default();
-            format!("&{lifetime}{}", type_ref_parse_label(inner))
+            format!(
+                "&{lifetime}{}{}",
+                reference.kind().source_qualifier(),
+                type_ref_parse_label(reference.referent())
+            )
         }
         TypeRef::Slice(inner) => format!("[{}]", type_ref_parse_label(inner)),
     }
@@ -979,11 +1077,42 @@ impl FnParam {
 impl TypeParseError {
     fn new(message: &str) -> Self {
         Self {
+            code: "syntax.type.invalid",
+            range: None,
             message: message.to_owned(),
         }
     }
 
     fn new_owned(message: String) -> Self {
-        Self { message }
+        Self {
+            code: "syntax.type.invalid",
+            range: None,
+            message,
+        }
+    }
+
+    pub(super) fn at(code: &'static str, message: &str, range: TextRange) -> Self {
+        Self {
+            code,
+            range: Some(range),
+            message: message.to_owned(),
+        }
+    }
+
+    pub(super) fn rebased(mut self, base: usize) -> Self {
+        if let Some(range) = self.range {
+            self.range = Some(TextRange::new(range.start() + base, range.end() + base));
+        }
+        self
+    }
+
+    /// Stable parser diagnostic code.
+    pub const fn code(&self) -> &'static str {
+        self.code
+    }
+
+    /// Type-fragment-relative error range, when exact.
+    pub const fn range(&self) -> Option<TextRange> {
+        self.range
     }
 }

@@ -12,6 +12,7 @@ use arcweft_lang_syntax::{
         common::TextRange,
         flow::{AuthoredExpr, StmtMatchArm},
     },
+    reference::BorrowKind,
     types::TypeRef,
 };
 
@@ -54,6 +55,7 @@ impl TypeChecker<'_> {
         self.stats.statements += 1;
         self.check_seq_stmt_policy(stmt);
         match stmt {
+            Stmt::Assertion(assertion) => self.check_assertion(assertion),
             Stmt::Let { .. } => self.check_let_stmt_node(stmt),
             Stmt::Assign { target, expr } => self.check_assign_stmt(target, expr),
             Stmt::LetElse {
@@ -338,28 +340,64 @@ impl TypeChecker<'_> {
     fn check_assign_stmt(&mut self, target: &AuthoredExpr, expr: &AuthoredExpr) {
         self.register_expr_source_ranges(target.expr(), target.source(), target.range());
         self.register_expr_source_ranges(expr.expr(), expr.source(), expr.range());
-        let Some((receiver, field)) = direct_assignment_target(target.expr()) else {
+        let target_ty = if let Expr::Deref(deref) = target.expr() {
+            match self.check_expr(deref.operand()) {
+                Some(TypeKind::BorrowRef {
+                    kind: BorrowKind::Mutable,
+                    inner,
+                    ..
+                }) => Some(*inner),
+                Some(TypeKind::BorrowRef {
+                    kind: BorrowKind::Shared,
+                    ..
+                }) => {
+                    self.errors
+                        .push(TypeCheckError::unsupported_assignment_target(
+                            assignment_target_label(target.expr()),
+                            "shared references cannot be written through",
+                        ));
+                    None
+                }
+                Some(actual) => {
+                    self.errors
+                        .push(TypeCheckError::unsupported_assignment_target(
+                            assignment_target_label(target.expr()),
+                            format!(
+                                "dereference assignment requires a mutable reference, found {}",
+                                type_kind_label(&actual)
+                            ),
+                        ));
+                    None
+                }
+                None => None,
+            }
+        } else if let Some((receiver, field)) = direct_assignment_target(target.expr()) {
+            let Some(receiver_ty) = self.symbol_type(receiver).cloned() else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "assignment receiver `{receiver}` is not bound"
+                )));
+                self.check_authored_expr(expr);
+                return;
+            };
+            if let Some(target_ty) = self.nominal_field_type(&receiver_ty, field) {
+                Some(target_ty)
+            } else {
+                self.errors
+                    .push(TypeCheckError::unsupported_assignment_target(
+                        assignment_target_label(target.expr()),
+                        format!("field `{field}` is not known on {receiver_ty:?}"),
+                    ));
+                None
+            }
+        } else {
             self.errors
                 .push(TypeCheckError::unsupported_assignment_target(
                     assignment_target_label(target.expr()),
-                    "only direct local record fields are executable",
+                    "only direct local record fields and mutable-reference dereferences are executable",
                 ));
-            self.check_authored_expr(expr);
-            return;
+            None
         };
-        let Some(receiver_ty) = self.symbol_type(receiver).cloned() else {
-            self.errors.push(TypeCheckError::new(format!(
-                "assignment receiver `{receiver}` is not bound"
-            )));
-            self.check_authored_expr(expr);
-            return;
-        };
-        let Some(target_ty) = self.nominal_field_type(&receiver_ty, field) else {
-            self.errors
-                .push(TypeCheckError::unsupported_assignment_target(
-                    assignment_target_label(target.expr()),
-                    format!("field `{field}` is not known on {receiver_ty:?}"),
-                ));
+        let Some(target_ty) = target_ty else {
             self.check_authored_expr(expr);
             return;
         };
@@ -756,6 +794,12 @@ fn direct_assignment_target(target: &Expr) -> Option<(&str, &str)> {
 
 fn assignment_target_label(target: &Expr) -> String {
     match target {
+        Expr::Borrow(borrow) => format!(
+            "&{}{}",
+            borrow.kind().source_qualifier(),
+            assignment_target_label(borrow.operand())
+        ),
+        Expr::Deref(deref) => format!("*{}", assignment_target_label(deref.operand())),
         Expr::Select(select) => format!(
             "{}.{}",
             assignment_target_label(select.target()),

@@ -246,7 +246,8 @@ fn lower_source_stmt(
             }
             Ok(SourceOp::Close(SourceId(expr_label(expr.expr()))))
         }
-        Stmt::Let { .. }
+        Stmt::Assertion(_)
+        | Stmt::Let { .. }
         | Stmt::LetElse { .. }
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
@@ -477,9 +478,9 @@ mod tests {
     #[test]
     fn bounded_source_policy_rejects_zero_capacity() {
         let policy = SourceBackpressurePolicy::Bounded {
-            capacity: Some(AuthoredExpr::new(Expr::Literal(Literal::Int(
+            capacity: Some(Box::new(AuthoredExpr::new(Expr::Literal(Literal::Int(
                 IntLiteral::decimal(0, None),
-            )))),
+            ))))),
             overflow: SourceOverflowPolicy::DropOldest,
         };
 
@@ -491,9 +492,9 @@ mod tests {
     fn bounded_source_policy_rejects_unknown_overflow_name_at_its_authored_range() {
         let range = TextRange::new(24, 30);
         let policy = SourceBackpressurePolicy::Bounded {
-            capacity: Some(AuthoredExpr::new(Expr::Literal(Literal::Int(
+            capacity: Some(Box::new(AuthoredExpr::new(Expr::Literal(Literal::Int(
                 IntLiteral::decimal(1, None),
-            )))),
+            ))))),
             overflow: SourceOverflowPolicy::Raw {
                 value: "legacy".to_owned(),
                 range: Some(range),
@@ -512,9 +513,9 @@ mod tests {
     #[test]
     fn bounded_source_policy_distinguishes_missing_overflow() {
         let policy = SourceBackpressurePolicy::Bounded {
-            capacity: Some(AuthoredExpr::new(Expr::Literal(Literal::Int(
+            capacity: Some(Box::new(AuthoredExpr::new(Expr::Literal(Literal::Int(
                 IntLiteral::decimal(1, None),
-            )))),
+            ))))),
             overflow: SourceOverflowPolicy::Missing,
         };
 

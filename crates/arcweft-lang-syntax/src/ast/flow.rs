@@ -1,3 +1,4 @@
+use crate::assertion::AssertionStmt;
 use crate::expr::Expr;
 use crate::types::TypeRef;
 
@@ -271,6 +272,8 @@ pub struct UnsafeAuditInsertion {
 /// Typed Arcweft statement inside a flow body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Stmt {
+    /// Reserved `assert.prove/check/debug(...)` statement grammar.
+    Assertion(AssertionStmt),
     Let {
         pattern: Pattern,
         ty: Option<TypeRef>,

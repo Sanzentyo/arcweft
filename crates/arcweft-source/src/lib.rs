@@ -2,6 +2,7 @@ use core::ops::Range;
 
 pub mod diagnostic;
 pub mod document;
+pub mod identity;
 
 pub use diagnostic::{
     Diagnostic, DiagnosticApplicability, DiagnosticBag, DiagnosticCode, DiagnosticCommand,
@@ -12,7 +13,6 @@ pub use document::{
     SourceDocumentIdError, SourceDocumentIdentity, SourceRevision, SourceSetRevision,
     SourceSetRevisionError, SourceSpan, SourceSpanError,
 };
-
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SourceRange {
     start: usize,
@@ -70,7 +70,7 @@ impl SourceAnchor {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SourceName {
     Path(String),
     Generated,

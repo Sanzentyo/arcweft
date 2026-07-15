@@ -320,6 +320,8 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
         Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. } => expr_contains_partial_placeholder(target),
+        Expr::Borrow(borrow) => expr_contains_partial_placeholder(borrow.operand()),
+        Expr::Deref(deref) => expr_contains_partial_placeholder(deref.operand()),
         Expr::Index { target, index } => {
             expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(index)
         }

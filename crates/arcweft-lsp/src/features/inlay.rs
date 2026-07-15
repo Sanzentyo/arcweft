@@ -388,7 +388,8 @@ fn collect_stmt_site(stmt: &Stmt, source: &str, sites: &mut Vec<LetTypeInlaySite
                 collect_stmt_sites(arm.body(), source, sites);
             }
         }
-        Stmt::Let { .. }
+        Stmt::Assertion(_)
+        | Stmt::Let { .. }
         | Stmt::Assign { .. }
         | Stmt::LetChoice { .. }
         | Stmt::LetScope { .. }

@@ -187,7 +187,7 @@ impl<'a> SourceHeaderInventory<'a> {
 pub enum SourceBackpressurePolicy {
     Latest,
     Bounded {
-        capacity: Option<AuthoredExpr>,
+        capacity: Option<Box<AuthoredExpr>>,
         overflow: SourceOverflowPolicy,
     },
     BlockingNotAllowed,

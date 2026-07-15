@@ -2,8 +2,8 @@
 
 use crate::ast::items::TypedSyntaxTree;
 use crate::cst::{SyntaxNode, SyntaxParseStats};
-use crate::parser::recovery::ParseError;
-use std::{fmt, sync::Arc};
+use crate::parser::recovery::{ParseError, RecoveryEdit, RecoverySuggestion};
+use std::{cmp::Ordering, fmt, sync::Arc};
 
 /// Fully parsed source file.
 ///
@@ -46,9 +46,10 @@ impl ParsedSource {
         source: String,
         syntax: SyntaxNode,
         typed_tree: TypedSyntaxTree,
-        errors: Vec<ParseError>,
+        mut errors: Vec<ParseError>,
         syntax_stats: SyntaxParseStats,
     ) -> Self {
+        normalize_parse_errors(&mut errors);
         let source_hash = SourceHash::new(&source);
         let line_index = LineIndex::new(&source);
         Self {
@@ -108,6 +109,52 @@ impl ParsedSource {
     }
 }
 
+fn normalize_parse_errors(errors: &mut Vec<ParseError>) {
+    errors.sort_by(compare_parse_errors);
+    errors.dedup();
+}
+
+fn compare_parse_errors(left: &ParseError, right: &ParseError) -> Ordering {
+    left.range()
+        .start()
+        .cmp(&right.range().start())
+        .then_with(|| left.range().end().cmp(&right.range().end()))
+        .then_with(|| left.code().cmp(right.code()))
+        .then_with(|| left.message().cmp(right.message()))
+        .then_with(|| left.expected().cmp(right.expected()))
+        .then_with(|| left.found().cmp(&right.found()))
+        .then_with(|| compare_recovery(left.recovery(), right.recovery()))
+}
+
+fn compare_recovery(left: &[RecoverySuggestion], right: &[RecoverySuggestion]) -> Ordering {
+    for (left, right) in left.iter().zip(right) {
+        let ordering = left
+            .message()
+            .cmp(right.message())
+            .then_with(|| left.applicability().cmp(&right.applicability()))
+            .then_with(|| compare_recovery_edits(left.edits(), right.edits()));
+        if !ordering.is_eq() {
+            return ordering;
+        }
+    }
+    left.len().cmp(&right.len())
+}
+
+fn compare_recovery_edits(left: &[RecoveryEdit], right: &[RecoveryEdit]) -> Ordering {
+    for (left, right) in left.iter().zip(right) {
+        let ordering = left
+            .range()
+            .start()
+            .cmp(&right.range().start())
+            .then_with(|| left.range().end().cmp(&right.range().end()))
+            .then_with(|| left.replacement().cmp(right.replacement()));
+        if !ordering.is_eq() {
+            return ordering;
+        }
+    }
+    left.len().cmp(&right.len())
+}
+
 impl SourceHash {
     /// Number of bytes in a source digest.
     pub const LEN: usize = 32;
@@ -163,5 +210,62 @@ impl LineIndex {
         let line = self.starts.partition_point(|start| *start <= offset);
         let line = line.saturating_sub(1);
         (line, offset.saturating_sub(self.starts[line]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_parse_errors;
+    use crate::ast::common::TextRange;
+    use crate::parser::recovery::{ParseError, RecoveryEdit, RecoverySuggestion};
+    use arcweft_source::DiagnosticApplicability;
+
+    #[test]
+    fn parse_errors_are_sorted_and_exact_duplicates_are_removed() {
+        let duplicate = ParseError::coded("syntax.beta", TextRange::new(2, 4), "beta");
+        let mut errors = vec![
+            ParseError::coded("syntax.zeta", TextRange::new(8, 9), "zeta"),
+            duplicate.clone(),
+            ParseError::coded("syntax.alpha", TextRange::new(2, 4), "alpha"),
+            duplicate,
+        ];
+
+        normalize_parse_errors(&mut errors);
+
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0].code(), "syntax.alpha");
+        assert_eq!(errors[1].code(), "syntax.beta");
+        assert_eq!(errors[2].code(), "syntax.zeta");
+    }
+
+    #[test]
+    fn parse_errors_with_different_recovery_evidence_are_not_deduplicated() {
+        let plain = ParseError::new(
+            TextRange::new(2, 4),
+            vec!["value".to_owned()],
+            Some("token".to_owned()),
+            "same message".to_owned(),
+            Vec::new(),
+        )
+        .with_code("syntax.same");
+        let recovered = ParseError::new(
+            TextRange::new(2, 4),
+            vec!["value".to_owned()],
+            Some("token".to_owned()),
+            "same message".to_owned(),
+            vec![
+                RecoverySuggestion::new("replace token")
+                    .with_edit(RecoveryEdit::new(TextRange::new(2, 4), "value"))
+                    .with_applicability(DiagnosticApplicability::MachineApplicable),
+            ],
+        )
+        .with_code("syntax.same");
+        let mut errors = vec![recovered.clone(), plain.clone(), recovered];
+
+        normalize_parse_errors(&mut errors);
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0], plain);
+        assert_eq!(errors[1].recovery().len(), 1);
     }
 }

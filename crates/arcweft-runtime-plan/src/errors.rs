@@ -1,5 +1,7 @@
 //! Diagnostics emitted while lowering HIR into core runtime plans.
 
+use crate::lowering_context::ExecutableLoweringLocation;
+use arcweft_lang_hir::syntax::assertion::AssertionStmt;
 use arcweft_lang_hir::syntax::ast::common::TextRange;
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use std::fmt;
@@ -37,6 +39,26 @@ pub struct RuntimePlanLowerError {
     reason: String,
     context: Option<Box<RuntimePlanLowerContext>>,
     span: Option<SourceSpan>,
+    kind: RuntimePlanLowerErrorKind,
+}
+
+/// Stable diagnostic class for runtime-plan lowering failures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimePlanLowerErrorKind {
+    /// An authored construct cannot be represented by the runtime plan.
+    Lowering,
+    /// Code generation reached an undischarged `assert.prove` obligation.
+    UnresolvedProof,
+}
+
+impl RuntimePlanLowerErrorKind {
+    /// Stable diagnostic code shared by compiler, CLI, LSP, and Agent surfaces.
+    pub const fn diagnostic_code(self) -> &'static str {
+        match self {
+            Self::Lowering => "runtime.plan.lower",
+            Self::UnresolvedProof => "verify.proof.unresolved",
+        }
+    }
 }
 
 /// Authored executable location associated with a runtime-plan lowering error.
@@ -102,6 +124,7 @@ impl RuntimePlanLowerError {
             reason,
             context: None,
             span: None,
+            kind: RuntimePlanLowerErrorKind::Lowering,
         }
     }
 
@@ -113,7 +136,30 @@ impl RuntimePlanLowerError {
             reason,
             context: Some(Box::new(context)),
             span: None,
+            kind: RuntimePlanLowerErrorKind::Lowering,
         }
+    }
+
+    /// Creates the mandatory code-generation failure for an undischarged proof assertion.
+    pub(crate) fn unresolved_proof(
+        location: &ExecutableLoweringLocation,
+        assertion: &AssertionStmt,
+    ) -> Self {
+        let reason = "compile-time proof assertion was not discharged before runtime-plan lowering"
+            .to_owned();
+        let context = RuntimePlanLowerContext::statement(
+            location.owner(),
+            location.path().to_vec(),
+            "assertion",
+            Some(assertion.range()),
+        );
+        location.bind_error(Self {
+            message: format!("{context}: {reason}"),
+            reason,
+            context: Some(Box::new(context)),
+            span: None,
+            kind: RuntimePlanLowerErrorKind::UnresolvedProof,
+        })
     }
 
     /// Human-readable runtime lowering diagnostic.
@@ -149,10 +195,15 @@ impl RuntimePlanLowerError {
         self
     }
 
+    /// Returns the typed failure class used to select a stable diagnostic code.
+    pub const fn kind(&self) -> RuntimePlanLowerErrorKind {
+        self.kind
+    }
+
     /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
     pub fn diagnostic(&self) -> Diagnostic {
         let diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
-            .with_code("runtime.plan.lower");
+            .with_code(self.kind.diagnostic_code());
         let Some(source) = &self.span else {
             return diagnostic;
         };

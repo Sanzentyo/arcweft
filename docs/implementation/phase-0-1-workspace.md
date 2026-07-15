@@ -321,7 +321,10 @@ Syntax parser:
 - Function-like `source name() -> Source<T, E> { loop { ... yield ... } }` declarations still parse for diagnostics, but the checker rejects them as non-canonical authoring syntax. Use `source @source.id: Source<T, E> { ... }` so replay/privacy/backpressure policy remains explicit.
 - Top-level `signal`, `character`, `layer`, `activity`, and `component` declarations from the presentation/runtime docs parse as structured entity declarations with visibility, entity ID, optional public name, signature tail, optional body, and source range. HIR preserves them as declarations, registers their entity IDs for name-resolution tests, and minimally checks that the public ID prefix matches the declaration family without implementing rendering, activity, camera, audio, or USB backends.
 - Top-level `extern rust mod ... from crate "..." { ... }` declarations from the module docs parse as structured external-module declarations with ABI, module path, import source, member list, body text, and source range. Type/function/activity members are represented explicitly. HIR preserves those declarations, and semantic checking compares Rust type/function members against profile-selected Rust ABI metadata instead of accepting removed or missing adapter bindings dynamically.
-- Zero-copy `borrow expr as name: Type { ... }` blocks are parsed into AST/HIR, and the checker treats their non-`'static` lifetimes as active only inside the borrow body.
+- Prefix `&expr` / `&mut expr` and typed reference bindings are the ownership
+  surface. The obsolete zero-copy borrow block has no parser, AST, HIR, or
+  checker path; non-`'static` reference bindings remain active only for their
+  lexical lifetime.
 - Dialogue `#[...]` content interpolation, record expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`out`, line-plan assertions, line-plan cancellation actions, line-plan expression items, nested `start`/`together` groups, choice option fields, choice lifecycle plans, source-locale blocks, and `await ... with` carry parsed expressions/statements for later type checking and HIR lowering.
 - Line-plan memo declarations such as `memo(.rich_text, key=(line.id, locale, theme.text_hash), cache=.flow)` preserve the memo name and typed option expressions for symbol collection and checking.
 - Line-plan cancellation uses canonical ordinary calls such as
@@ -446,7 +449,8 @@ Syntax parser:
   clauses before semantic analysis, including checked targets, assumptions, and
   trusted axiom references. Scoped `defer` is applied by outcome, so
   completed-only cleanup does not discharge cancellation paths.
-- Typed let patterns and borrow blocks preserve borrow types, and the checker
+- Typed let patterns and reference expressions preserve reference types, and
+  the checker
   rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`,
   and `defer` suspension boundaries. Direct explicit local drop statements now
   end the tracked borrow before those boundaries for `drop(local)`,

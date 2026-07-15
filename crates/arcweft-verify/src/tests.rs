@@ -39,6 +39,39 @@ fn promotion_without_proof_is_an_obligation() {
 }
 
 #[test]
+fn prove_assertion_conditions_create_ordered_unresolved_obligations() {
+    let source = "flow assertions {\n  assert.prove(true, false)\n}\n";
+    let report = report(source, VerificationMode::Test);
+    let obligations = report
+        .obligations
+        .iter()
+        .filter(|obligation| obligation.kind == ProofObligationKind::AssertionProof)
+        .collect::<Vec<_>>();
+
+    assert_eq!(obligations.len(), 2);
+    assert_eq!(obligations[0].subject.as_deref(), Some("condition.0"));
+    assert_eq!(obligations[1].subject.as_deref(), Some("condition.1"));
+    assert!(
+        obligations
+            .iter()
+            .all(|obligation| obligation.discharge == ProofDischarge::Missing)
+    );
+    assert!(
+        obligations
+            .iter()
+            .all(|obligation| obligation.source.is_some())
+    );
+    assert_eq!(
+        report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.id == "verify.proof.unresolved")
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn semantic_diagnostics_carry_typed_verifier_actions() {
     let report = report(
         r"

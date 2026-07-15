@@ -4,6 +4,7 @@
 //! type-checking pass. It depends on parsed syntax and HIR, but parser/runtime
 //! crates do not depend on it.
 
+pub mod assertion;
 pub mod borrow;
 pub mod canonicalization;
 pub mod check;

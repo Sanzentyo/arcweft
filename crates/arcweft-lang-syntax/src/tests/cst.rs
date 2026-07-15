@@ -443,6 +443,19 @@ fn cst_punctuation_scan_deltas_ignore_strings_and_comments() {
 }
 
 #[test]
+fn cst_punctuation_scan_reports_block_parent_transitions() {
+    let else_head = CstPunctuationScan::new("} else {");
+    assert_eq!(else_head.leading_brace_closes(), 1);
+    assert_eq!(else_head.deltas().brace, 0);
+
+    let string_and_comment = CstPunctuationScan::new(r#"call("}") { // }"#);
+    assert_eq!(string_and_comment.leading_brace_closes(), 0);
+    assert_eq!(string_and_comment.deltas().brace, 1);
+
+    assert_eq!(CstPunctuationScan::new("}}").leading_brace_closes(), 2);
+}
+
+#[test]
 fn cst_punctuation_scan_reuses_fragment_tokens() {
     let source = r#"outer { call("[not]") } trailing"#;
     let scan = CstPunctuationScan::new(source);

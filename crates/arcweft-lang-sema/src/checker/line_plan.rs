@@ -96,8 +96,12 @@ impl TypeChecker<'_> {
                 None
             }
             LinePlanItem::CancelRule(rule) => self.check_line_plan_cancel_rule(rule),
-            LinePlanItem::Assert { expr, .. } => {
-                self.expect_expr_type(expr, &TypeKind::Bool, "line-plan assertion");
+            LinePlanItem::TimelineAssert(assertion) => {
+                self.expect_expr_type(
+                    assertion.condition(),
+                    &TypeKind::Bool,
+                    "line-plan assertion",
+                );
                 None
             }
             LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {

@@ -29,6 +29,7 @@ pub enum TypeMismatchPathSegment {
     MapFamily,
     MapKey,
     MapValue,
+    BorrowKind,
     BorrowLifetime,
     BorrowInner,
     NeedReady,
@@ -552,17 +553,26 @@ impl TypeKind {
                 }
             }
             Self::BorrowRef {
+                kind: expected_kind,
                 lifetime: expected_lifetime,
                 inner: expected,
             } => {
                 let Self::BorrowRef {
+                    kind: actual_kind,
                     lifetime: actual_lifetime,
                     inner: actual_inner,
                 } = actual
                 else {
                     unreachable!("equal discriminants")
                 };
-                if expected_lifetime == actual_lifetime {
+                if expected_kind != actual_kind {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::BorrowKind,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                } else if expected_lifetime == actual_lifetime {
                     expected
                         .first_mismatch(actual_inner)
                         .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::BorrowInner))

@@ -27,7 +27,9 @@ pub(crate) fn lifetime_value_type(key: &LifetimeKey) -> TypeKind {
 
 pub(crate) fn collect_type_kind_lifetimes(ty: &TypeKind, lifetimes: &mut Vec<String>) {
     match ty {
-        TypeKind::BorrowRef { lifetime, inner } => {
+        TypeKind::BorrowRef {
+            lifetime, inner, ..
+        } => {
             if let Some(lifetime) = lifetime
                 && !is_static_lifetime(lifetime)
             {

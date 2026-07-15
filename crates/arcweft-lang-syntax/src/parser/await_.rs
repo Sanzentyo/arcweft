@@ -235,6 +235,8 @@ impl Parser<'_> {
         }
         self.errors.extend(nested.errors);
         self.syntax_stats.numeric_seq_summaries += nested.syntax_stats.numeric_seq_summaries;
+        self.syntax_stats.prefix_depth_limit_failures +=
+            nested.syntax_stats.prefix_depth_limit_failures;
         if items.is_empty() {
             let body = self.collect_line_range_source(body_range);
             if !body.trim().is_empty() {

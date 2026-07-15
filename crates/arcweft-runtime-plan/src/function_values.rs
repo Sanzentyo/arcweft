@@ -465,6 +465,8 @@ fn runtime_function_value_expr_supported(
         }
         Expr::Pipe { lhs, rhs } => runtime_function_value_pipe_supported(lhs, rhs, context),
         Expr::LifetimePath { .. }
+        | Expr::Borrow(_)
+        | Expr::Deref(_)
         | Expr::Placeholder(_)
         | Expr::DialogueCall { .. }
         | Expr::Try { .. }

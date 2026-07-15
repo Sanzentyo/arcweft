@@ -207,7 +207,7 @@ fn parse_source_backpressure(value: &str, base: usize) -> SourceBackpressurePoli
             let options = parse_source_call_options(value, base);
             let capacity = options
                 .iter()
-                .find_map(|(key, value)| (key == "capacity").then_some(value.clone()));
+                .find_map(|(key, value)| (key == "capacity").then(|| Box::new(value.clone())));
             let overflow = options
                 .iter()
                 .find_map(|(key, value)| {

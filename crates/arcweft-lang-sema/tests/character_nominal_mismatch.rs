@@ -6,7 +6,7 @@ use arcweft_lang_sema::{
         TypeMismatchPathSegment, TypeMismatchReason,
     },
 };
-use arcweft_lang_syntax::expr::LifetimeScopeKind;
+use arcweft_lang_syntax::{expr::LifetimeScopeKind, reference::BorrowKind};
 
 fn look(owner: &str) -> TypeKind {
     TypeKind::character_look(CharacterId::try_new(owner).expect("character id"))
@@ -154,10 +154,12 @@ fn every_current_type_child_has_a_deterministic_path_segment() {
         ),
         (
             TypeKind::BorrowRef {
+                kind: BorrowKind::Shared,
                 lifetime: Some(LifetimeScopeKind::Flow),
                 inner: Box::new(expected.clone()),
             },
             TypeKind::BorrowRef {
+                kind: BorrowKind::Shared,
                 lifetime: Some(LifetimeScopeKind::Flow),
                 inner: Box::new(actual.clone()),
             },
@@ -327,6 +329,26 @@ fn every_current_type_child_has_a_deterministic_path_segment() {
             Some(&TypeMismatchPathSegment::CharacterOwner)
         );
     }
+}
+
+#[test]
+fn borrow_kind_mismatch_precedes_nested_nominal_mismatch() {
+    let expected = TypeKind::BorrowRef {
+        kind: BorrowKind::Shared,
+        lifetime: Some(LifetimeScopeKind::Flow),
+        inner: Box::new(look("character.a")),
+    };
+    let actual = TypeKind::BorrowRef {
+        kind: BorrowKind::Mutable,
+        lifetime: Some(LifetimeScopeKind::Flow),
+        inner: Box::new(look("character.b")),
+    };
+
+    let mismatch = expected
+        .first_mismatch(&actual)
+        .expect("borrow permission mismatch");
+    assert_eq!(mismatch.path(), &[TypeMismatchPathSegment::BorrowKind]);
+    assert_eq!(mismatch.reason(), &TypeMismatchReason::NonTypeParameter);
 }
 
 #[test]

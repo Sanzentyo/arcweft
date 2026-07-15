@@ -855,10 +855,12 @@ fn parses_lifetime_type_syntax_for_borrow_checks() {
     let borrowed_slice = parse_type_ref("&'asset [Rgba8]").expect("borrowed slice type parses");
     assert!(matches!(
         borrowed_slice,
-        TypeRef::Ref {
-            lifetime: Some(ref lifetime),
-            inner,
-        } if lifetime.name() == "asset" && matches!(inner.as_ref(), TypeRef::Slice(_))
+        TypeRef::Reference(reference)
+            if reference
+                .region()
+                .name()
+                .is_some_and(|lifetime| lifetime.name() == "asset")
+                && matches!(reference.referent(), TypeRef::Slice(_))
     ));
 
     let option_borrow =

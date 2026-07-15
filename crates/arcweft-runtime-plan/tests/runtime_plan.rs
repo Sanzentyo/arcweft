@@ -27,7 +27,8 @@ use arcweft_lang_syntax::{
     parser::{ParseOptions, SourceDialect, parse_document, parse_source},
 };
 use arcweft_runtime_plan::{
-    errors::{RuntimeHostRequestArgument, RuntimePlanLowerContext},
+    assertion::RuntimeAssertionBuildProfile,
+    errors::{RuntimeHostRequestArgument, RuntimePlanLowerContext, RuntimePlanLowerErrorKind},
     flow::{
         RuntimePlanLowerOptions, lower_agent_controller_plan_with_stats, lower_runtime_plan,
         lower_runtime_plan_with_options, lower_runtime_plan_with_stats,
@@ -2405,6 +2406,98 @@ flow @flow.assertions assertions {
     assert_eq!(
         debug_message,
         &RuntimeExpr::Value(RuntimeValue::String("assertion failed".to_owned()))
+    );
+}
+
+#[test]
+fn typed_check_assertions_lower_conditions_in_authored_order() {
+    let tree = parse_ok(
+        r"
+flow assertions {
+    assert.check(true, false, true)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("typed assertion fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("check assertion lowers to runtime guards");
+    let profiles_and_conditions = plan.flows[0]
+        .ops
+        .iter()
+        .map(|op| match op {
+            FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
+                condition, profile, ..
+            }) => (*profile, condition),
+            other => panic!("expected typed assertion guard, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(profiles_and_conditions.len(), 3);
+    assert!(
+        profiles_and_conditions
+            .iter()
+            .all(|(profile, _)| *profile == RuntimeAssertionProfile::Always)
+    );
+    assert_eq!(
+        profiles_and_conditions
+            .iter()
+            .map(|(_, condition)| *condition)
+            .collect::<Vec<_>>(),
+        vec![
+            &RuntimeExpr::Value(RuntimeValue::Bool(true)),
+            &RuntimeExpr::Value(RuntimeValue::Bool(false)),
+            &RuntimeExpr::Value(RuntimeValue::Bool(true)),
+        ]
+    );
+}
+
+#[test]
+fn release_profile_omits_typed_debug_assertion_and_condition_evaluation() {
+    let tree = parse_ok(
+        r#"
+flow assertions {
+    assert.debug(unknown.condition())
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("typed debug assertion fixture lowers to HIR");
+    let options = RuntimePlanLowerOptions::new()
+        .with_assertion_build_profile(RuntimeAssertionBuildProfile::Release);
+
+    let plan = lower_runtime_plan_with_options(&hir, &options)
+        .expect("release plan omits the complete debug assertion");
+
+    assert_eq!(
+        plan.flows[0].ops,
+        [FlowOp::ReturnExpr(RuntimeExpr::Value(
+            RuntimeValue::String("done".to_owned())
+        ))]
+    );
+}
+
+#[test]
+fn unresolved_typed_prove_assertion_blocks_runtime_plan_with_stable_code() {
+    let tree = parse_ok(
+        r"
+flow assertions {
+    assert.prove(true)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("typed prove assertion fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("unresolved prove blocks code generation");
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].kind(), RuntimePlanLowerErrorKind::UnresolvedProof);
+    assert_eq!(
+        errors[0]
+            .diagnostic()
+            .code()
+            .expect("diagnostic has a stable code")
+            .as_str(),
+        "verify.proof.unresolved"
     );
 }
 

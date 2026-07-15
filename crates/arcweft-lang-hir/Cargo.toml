@@ -11,11 +11,12 @@ arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-source = { path = "../arcweft-source" }
 thiserror.workspace = true
 
+[dev-dependencies]
+serde.workspace = true
+trybuild.workspace = true
+
 [lib]
 path = "src/lib.rs"
-
-[dev-dependencies]
-trybuild.workspace = true
 
 [lints]
 workspace = true

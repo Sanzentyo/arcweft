@@ -907,15 +907,17 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
             record_type_ref(subject, bytes)?;
             put_str(bytes, assoc)?;
         }
-        TypeRef::Ref { lifetime, inner } => {
+        TypeRef::Reference(reference) => {
             put_str(bytes, "ref")?;
+            put_str(bytes, reference.kind().stable_label())?;
             put_option_str(
                 bytes,
-                lifetime
-                    .as_ref()
+                reference
+                    .region()
+                    .name()
                     .map(arcweft_lang_syntax::types::LifetimeName::name),
             )?;
-            record_type_ref(inner, bytes)?;
+            record_type_ref(reference.referent(), bytes)?;
         }
         TypeRef::Slice(inner) => {
             put_str(bytes, "slice")?;

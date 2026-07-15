@@ -1451,6 +1451,8 @@ fn collect_expr_action_invokes(
         | Expr::Unary { expr: target, .. } => {
             collect_expr_action_invokes(target, range, invokes);
         }
+        Expr::Borrow(borrow) => collect_expr_action_invokes(borrow.operand(), range, invokes),
+        Expr::Deref(deref) => collect_expr_action_invokes(deref.operand(), range, invokes),
         Expr::Index { target, index } => {
             collect_expr_action_invokes(target, range, invokes);
             collect_expr_action_invokes(index, range, invokes);
@@ -1601,6 +1603,11 @@ fn collect_stmt_action_invokes(
     invokes: &mut Vec<ViewActionInvokeAction>,
 ) {
     match statement {
+        Stmt::Assertion(assertion) => {
+            for condition in assertion.conditions() {
+                collect_expr_action_invokes(condition, range, invokes);
+            }
+        }
         Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             collect_expr_action_invokes(expr, range, invokes);
         }

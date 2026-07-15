@@ -94,6 +94,7 @@ pub struct SyntaxParseStats {
     pub dot_normalization_owned: usize,
     pub dialogue_rescue_expr_parse_attempts: usize,
     pub numeric_seq_summaries: usize,
+    pub prefix_depth_limit_failures: usize,
 }
 
 /// Per-line punctuation depth summary computed once while projecting CST lines.

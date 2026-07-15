@@ -110,7 +110,7 @@ impl TypeChecker<'_> {
         match policy {
             SourceBackpressurePolicy::Latest | SourceBackpressurePolicy::BlockingNotAllowed => {}
             SourceBackpressurePolicy::Bounded { capacity, overflow } => {
-                match capacity.as_ref().map(AuthoredExpr::expr) {
+                match capacity.as_deref().map(AuthoredExpr::expr) {
                     None => self.errors.push(TypeCheckError::new(
                         "bounded source policy requires a `capacity` option".to_owned(),
                     )),

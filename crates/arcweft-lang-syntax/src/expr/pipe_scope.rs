@@ -41,6 +41,8 @@ impl Expr {
             | Self::Await { expr, .. }
             | Self::Unary { expr, .. }
             | Self::Closure { body: expr, .. } => expr.contains_pipe_left(),
+            Self::Borrow(borrow) => borrow.operand().contains_pipe_left(),
+            Self::Deref(deref) => deref.operand().contains_pipe_left(),
             Self::Thread { block } => block.body().iter().any(flow_item_contains_pipe_left),
             Self::Range { start, end, .. } => {
                 start.as_deref().is_some_and(Self::contains_pipe_left)
@@ -162,6 +164,7 @@ fn stmts_contain_pipe_left(statements: &[Stmt]) -> bool {
 
 fn stmt_contains_pipe_left(stmt: &Stmt) -> bool {
     match stmt {
+        Stmt::Assertion(assertion) => assertion.conditions().iter().any(Expr::contains_pipe_left),
         Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             expr.contains_pipe_left()
         }

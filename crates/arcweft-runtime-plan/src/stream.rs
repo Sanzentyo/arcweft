@@ -125,7 +125,8 @@ fn lower_stream_stmt(
             }
             Ok(StreamOp::Return)
         }
-        Stmt::LetElse { .. }
+        Stmt::Assertion(_)
+        | Stmt::LetElse { .. }
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
         | Stmt::LetAwait { .. }

@@ -267,9 +267,7 @@ fn finish_type_check(
     checker.check_module(module);
     checker.apply_pending_higher_order_effect_calls();
     let effects = std::mem::take(&mut checker.effect_collector).finish();
-    checker
-        .errors
-        .extend(effects.errors().cloned().map(TypeCheckError::effect));
+    checker.extend_effect_diagnostics(&effects);
     checker
         .warnings
         .extend(effects.warnings().cloned().map(TypeCheckWarning::effect));
@@ -1607,7 +1605,8 @@ impl TypeChecker<'_> {
                 }
             }
             TypeRef::Projection { subject, .. } => self.check_type_ref_shape(subject),
-            TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => self.check_type_ref_shape(inner),
+            TypeRef::Reference(reference) => self.check_type_ref_shape(reference.referent()),
+            TypeRef::Slice(inner) => self.check_type_ref_shape(inner),
             TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => {}
         }
     }
@@ -1679,7 +1678,12 @@ impl TypeChecker<'_> {
                 key: Box::new(self.erase_aliases_with_seen(key, seen)),
                 value: Box::new(self.erase_aliases_with_seen(value, seen)),
             },
-            TypeKind::BorrowRef { lifetime, inner } => TypeKind::BorrowRef {
+            TypeKind::BorrowRef {
+                kind,
+                lifetime,
+                inner,
+            } => TypeKind::BorrowRef {
+                kind: *kind,
                 lifetime: lifetime.clone(),
                 inner: Box::new(self.erase_aliases_with_seen(inner, seen)),
             },
@@ -1873,7 +1877,8 @@ fn type_ref_contains_choice(ty: &TypeRef) -> bool {
                     .any(|binding| type_ref_contains_choice(binding.value()))
         }
         TypeRef::Projection { subject, .. } => type_ref_contains_choice(subject),
-        TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => type_ref_contains_choice(inner),
+        TypeRef::Reference(reference) => type_ref_contains_choice(reference.referent()),
+        TypeRef::Slice(inner) => type_ref_contains_choice(inner),
         TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => false,
     }
 }
@@ -2289,11 +2294,17 @@ fn type_ref_kind_for_impl(
                 error: Box::new(type_ref_kind_for_impl(&args[1], self_ty, generic_names)),
             }
         }
-        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
-            lifetime: lifetime
-                .as_ref()
+        TypeRef::Reference(reference) => TypeKind::BorrowRef {
+            kind: reference.kind(),
+            lifetime: reference
+                .region()
+                .name()
                 .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
-            inner: Box::new(type_ref_kind_for_impl(inner, self_ty, generic_names)),
+            inner: Box::new(type_ref_kind_for_impl(
+                reference.referent(),
+                self_ty,
+                generic_names,
+            )),
         },
         _ => type_ref_kind_with_generics(ty, generic_names),
     }

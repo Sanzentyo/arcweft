@@ -289,6 +289,7 @@ where
 
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
         match stmt {
+            Stmt::Assertion(assertion) => self.visit_assertion(assertion),
             Stmt::Let {
                 expr,
                 expr_source,
@@ -377,16 +378,28 @@ where
                 self.visit_authored_expr(source);
                 self.visit_stmts(body);
             }
-            Stmt::Match { expr, arms } => {
-                self.visit_authored_expr(expr);
-                for arm in arms {
-                    if let Some(guard) = arm.guard_authored() {
-                        self.visit_authored_expr(guard);
-                    }
-                    self.visit_stmts(arm.body());
-                }
-            }
+            Stmt::Match { expr, arms } => self.visit_match_stmt(expr, arms),
             Stmt::Break { expr: None, .. } | Stmt::Continue { .. } | Stmt::Raw(_) => {}
+        }
+    }
+
+    fn visit_assertion(&mut self, assertion: &'a arcweft_lang_syntax::assertion::AssertionStmt) {
+        for condition in assertion.conditions() {
+            self.visit_expr_owned_bodies(condition);
+        }
+    }
+
+    fn visit_match_stmt(
+        &mut self,
+        expression: &'a AuthoredExpr,
+        arms: &'a [arcweft_lang_syntax::ast::flow::StmtMatchArm],
+    ) {
+        self.visit_authored_expr(expression);
+        for arm in arms {
+            if let Some(guard) = arm.guard_authored() {
+                self.visit_authored_expr(guard);
+            }
+            self.visit_stmts(arm.body());
         }
     }
 
@@ -491,7 +504,7 @@ where
                 | LinePlanItem::Let { .. }
                 | LinePlanItem::Out(_)
                 | LinePlanItem::TimedCue { .. }
-                | LinePlanItem::Assert { .. }
+                | LinePlanItem::TimelineAssert(_)
                 | LinePlanItem::Expr(_)
                 | LinePlanItem::Raw(_) => {}
             }

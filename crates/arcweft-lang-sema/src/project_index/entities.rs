@@ -142,6 +142,11 @@ fn index_stmt_agent_actions(
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match stmt {
+        Stmt::Assertion(assertion) => {
+            for condition in assertion.conditions() {
+                index = index_expr_agent_actions(condition, index, source_name)?;
+            }
+        }
         Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             index = index_expr_agent_actions(expr, index, source_name)?;
         }
@@ -254,6 +259,8 @@ fn index_expr_agent_actions(
         Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. } => index_expr_agent_actions(target, index, source_name),
+        Expr::Borrow(borrow) => index_expr_agent_actions(borrow.operand(), index, source_name),
+        Expr::Deref(deref) => index_expr_agent_actions(deref.operand(), index, source_name),
         Expr::DialogueCall { callee, .. } | Expr::Closure { body: callee, .. } => {
             index_expr_agent_actions(callee, index, source_name)
         }
@@ -892,8 +899,12 @@ fn type_kind_stable_label(ty: &TypeKind) -> String {
             type_kind_stable_label(key),
             type_kind_stable_label(value)
         ),
-        TypeKind::BorrowRef { inner, .. } => {
-            format!("BorrowRef<{}>", type_kind_stable_label(inner))
+        TypeKind::BorrowRef { kind, inner, .. } => {
+            format!(
+                "BorrowRef<{},{}>",
+                kind.stable_label(),
+                type_kind_stable_label(inner)
+            )
         }
         TypeKind::Need { ready, error } => format!(
             "Need<{},{}>",

@@ -27,6 +27,16 @@ pub enum TypeCheckErrorKind {
     UnknownPresentationArgument { command: String, argument: String },
     /// An assignment target is not an executable lvalue in the current source grammar.
     UnsupportedAssignmentTarget { target: String, reason: String },
+    /// An assertion condition did not type as Boolean.
+    AssertionConditionNotBool {
+        index: usize,
+        actual: Option<TypeKind>,
+    },
+    /// An assertion condition inferred a runtime effect or nondeterministic operation.
+    AssertionConditionNotPure {
+        index: usize,
+        diagnostic: EffectDiagnostic,
+    },
     /// A method-call expression matched a data-last callable fallback shape,
     /// but used argument syntax that is not representable by the fallback
     /// lowering contract.
@@ -186,6 +196,28 @@ impl TypeCheckError {
         Self {
             message: format!("unsupported assignment target `{target}`: {reason}"),
             kind: TypeCheckErrorKind::UnsupportedAssignmentTarget { target, reason },
+        }
+    }
+
+    pub(crate) fn assertion_condition_not_bool(index: usize, actual: Option<TypeKind>) -> Self {
+        let actual_label = actual
+            .as_ref()
+            .map_or_else(|| "an unresolved type".to_owned(), TypeKind::source_label);
+        Self {
+            message: format!(
+                "assertion condition {index} must have type Bool, found {actual_label}"
+            ),
+            kind: TypeCheckErrorKind::AssertionConditionNotBool { index, actual },
+        }
+    }
+
+    pub(crate) fn assertion_condition_not_pure(index: usize, diagnostic: EffectDiagnostic) -> Self {
+        Self {
+            message: format!(
+                "assertion condition {index} must be pure and deterministic: {}",
+                diagnostic.message()
+            ),
+            kind: TypeCheckErrorKind::AssertionConditionNotPure { index, diagnostic },
         }
     }
 
@@ -470,13 +502,15 @@ impl TypeCheckError {
         let diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
             .with_code(self.stable_code());
         match &self.kind {
-            TypeCheckErrorKind::Effect { diagnostic: effect } => {
-                with_effect_trace_notes(diagnostic, effect)
-            }
+            TypeCheckErrorKind::Effect { diagnostic: effect }
+            | TypeCheckErrorKind::AssertionConditionNotPure {
+                diagnostic: effect, ..
+            } => with_effect_trace_notes(diagnostic, effect),
             TypeCheckErrorKind::Message
             | TypeCheckErrorKind::ArgumentTypeMismatch { .. }
             | TypeCheckErrorKind::UnknownPresentationArgument { .. }
             | TypeCheckErrorKind::UnsupportedAssignmentTarget { .. }
+            | TypeCheckErrorKind::AssertionConditionNotBool { .. }
             | TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. }
             | TypeCheckErrorKind::UnsupportedSignaturePartialCall { .. }
             | TypeCheckErrorKind::UnsupportedFunctionValueCall { .. }
@@ -510,6 +544,12 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedAssignmentTarget { .. } => {
             "sema.typecheck.unsupported_assignment_target".to_owned()
+        }
+        TypeCheckErrorKind::AssertionConditionNotBool { .. } => {
+            "sema.assert.condition_not_bool".to_owned()
+        }
+        TypeCheckErrorKind::AssertionConditionNotPure { .. } => {
+            "sema.assert.condition_not_pure".to_owned()
         }
         TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. } => {
             "sema.typecheck.unsupported_data_last_method_fallback".to_owned()

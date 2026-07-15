@@ -19,7 +19,7 @@ use arcweft_lang_hir::syntax::{
     ast::{
         flow::{FlowItem, Stmt, WaitTarget},
         ids::EntityRef,
-        line_plan::{DeferOutcome, LinePlan, LinePlanItem, TriggerPattern},
+        line_plan::{DeferOutcome, LinePlan, LinePlanItem, TimelineAssertPolicy, TriggerPattern},
         pattern::Pattern,
     },
     expr::{CallArg, Expr, parse_expr},
@@ -281,10 +281,10 @@ impl LinePlanGraphLowerer {
                 });
                 Vec::new()
             }
-            LinePlanItem::Assert { debug, expr } => {
+            LinePlanItem::TimelineAssert(assertion) => {
                 group.assertions.push(LineAssertionRequest {
-                    debug: *debug,
-                    expr: expr_label(expr),
+                    debug: assertion.policy() == TimelineAssertPolicy::DebugOnly,
+                    expr: expr_label(assertion.condition()),
                 });
                 Vec::new()
             }

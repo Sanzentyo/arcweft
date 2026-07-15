@@ -620,6 +620,11 @@ fn collect_contract_clause(contract: &ContractClause, uses: &mut Vec<SymbolUse>)
 
 fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
     match stmt {
+        Stmt::Assertion(assertion) => {
+            for condition in assertion.conditions() {
+                collect_expr(condition, uses);
+            }
+        }
         Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
             collect_expr(expr, uses);
         }
@@ -796,7 +801,8 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
             collect_expr(body, uses);
         }
         LinePlanItem::CancelRule(rule) => collect_stmt_block(rule.action(), uses),
-        LinePlanItem::Assert { expr, .. } | LinePlanItem::Expr(expr) => collect_expr(expr, uses),
+        LinePlanItem::TimelineAssert(assertion) => collect_expr(assertion.condition(), uses),
+        LinePlanItem::Expr(expr) => collect_expr(expr, uses),
         LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
             for item in items {
                 collect_line_plan_item(item, uses);
@@ -905,6 +911,8 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         Expr::Unary { expr, .. } | Expr::Try { expr } | Expr::Await { expr, .. } => {
             collect_expr(expr, uses);
         }
+        Expr::Borrow(borrow) => collect_expr(borrow.operand(), uses),
+        Expr::Deref(deref) => collect_expr(deref.operand(), uses),
         Expr::Thread { block } => collect_syntax_flow_block(block.body(), uses),
         Expr::Range { start, end, .. } => {
             if let Some(start) = start {

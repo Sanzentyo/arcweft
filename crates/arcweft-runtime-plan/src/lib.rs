@@ -1,3 +1,4 @@
+pub mod assertion;
 pub mod audio;
 pub mod awbc_lower;
 pub mod errors;

@@ -313,8 +313,8 @@ fn collect_line_plan_item_source_ranges<'a>(
         LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
             collect_line_plan_group_source_ranges(items, source, base, ranges);
         }
-        LinePlanItem::Assert { expr, .. } => {
-            collect_assert_condition_source_ranges(expr, source, base, ranges);
+        LinePlanItem::TimelineAssert(assertion) => {
+            collect_assert_condition_source_ranges(assertion.condition(), source, base, ranges);
         }
         LinePlanItem::Expr(expr) => {
             collect_expr_source_ranges_inner(expr, source, base, ranges);

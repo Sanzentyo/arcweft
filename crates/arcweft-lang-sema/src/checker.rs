@@ -53,6 +53,7 @@ use arcweft_lang_syntax::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+mod assertion;
 pub mod borrow_state;
 mod canonicalization;
 pub mod choice;
@@ -441,6 +442,8 @@ struct TypeChecker<'a> {
     available_lifetimes: Vec<LifetimeScopeKind>,
     effect_capabilities: HashSet<String>,
     effect_collector: EffectCollector,
+    assertion_effect_conditions: BTreeMap<CallableId, usize>,
+    next_assertion_effect_scope: u64,
     expected_returns: Vec<Option<TypeKind>>,
     partial_placeholder_stack: Vec<TypeKind>,
     pipe_left_stack: Vec<PipeLeftBinding>,
@@ -756,6 +759,8 @@ impl<'a> TypeChecker<'a> {
                 .map(|capability| capability.as_str().to_owned())
                 .collect(),
             effect_collector: EffectCollector::new(available_effect_set(env)),
+            assertion_effect_conditions: BTreeMap::new(),
+            next_assertion_effect_scope: 0,
             expected_returns: Vec::new(),
             partial_placeholder_stack: Vec::new(),
             pipe_left_stack: Vec::new(),

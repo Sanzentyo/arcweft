@@ -5,6 +5,115 @@ use crate::check::{
 use arcweft_data::DataFormat;
 
 #[test]
+fn semantic_reference_types_preserve_borrow_kind() {
+    let shared = TypeKind::BorrowRef {
+        kind: BorrowKind::Shared,
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Named("State".to_owned())),
+    };
+    let mutable = TypeKind::BorrowRef {
+        kind: BorrowKind::Mutable,
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Named("State".to_owned())),
+    };
+
+    assert_ne!(shared, mutable);
+    assert_eq!(shared.source_label(), "&'asset State");
+    assert_eq!(mutable.source_label(), "&'asset mut State");
+}
+
+#[test]
+fn assignment_places_accept_mutable_deref_and_reject_borrow_expression() {
+    let mutable = parse_ok(
+        r"
+flow mutable_deref_assignment {
+    *target = 2i64
+}
+",
+    );
+    let mutable_hir = lower_to_hir(&mutable).expect("mutable deref assignment lowers");
+    let mutable_env = TypeCheckEnv::new().with_symbol(
+        "target",
+        TypeKind::BorrowRef {
+            kind: BorrowKind::Mutable,
+            lifetime: None,
+            inner: Box::new(TypeKind::I64),
+        },
+    );
+    typecheck_hir(&mutable_hir, &mutable_env)
+        .expect("mutable-reference dereference is an assignment place");
+
+    let borrow = parse_ok(
+        r"
+flow borrow_assignment {
+    &target = 2i64
+}
+",
+    );
+    let borrow_hir = lower_to_hir(&borrow).expect("borrow assignment fixture lowers");
+    let errors = typecheck_hir(&borrow_hir, &mutable_env)
+        .expect_err("borrow expression is not an assignment place");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            TypeCheckErrorKind::UnsupportedAssignmentTarget { target, .. }
+                if target == "&target"
+        ) && error.stable_code() == "sema.typecheck.unsupported_assignment_target"
+    }));
+}
+
+#[test]
+fn assertion_conditions_use_stable_bool_and_purity_diagnostics() {
+    let tree = parse_ok(
+        r"
+flow assertions
+effects { fs.read }
+{
+    assert.check(1)
+    assert.debug(adapter.ready())
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("assertion semantic fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_function_signature("adapter.ready", FunctionSignature::new(TypeKind::Bool, []))
+        .with_function_effects("adapter.ready", ["fs.read".to_owned()]);
+
+    let report = analyze_types(&hir, &env);
+    let codes = report
+        .diagnostics
+        .iter()
+        .map(crate::diagnostics::TypeCheckError::stable_code)
+        .collect::<Vec<_>>();
+
+    assert!(
+        codes
+            .iter()
+            .any(|code| code == "sema.assert.condition_not_bool")
+    );
+    assert!(
+        codes
+            .iter()
+            .any(|code| code == "sema.assert.condition_not_pure")
+    );
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.kind(),
+            TypeCheckErrorKind::AssertionConditionNotBool {
+                index: 0,
+                actual: Some(_)
+            }
+        )
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.kind(),
+            TypeCheckErrorKind::AssertionConditionNotPure { index: 0, .. }
+        )
+    }));
+}
+
+#[test]
 fn integer_literal_bounds_cover_expected_suffix_and_signed_minimum() {
     let tree = parse_ok(
         r"
@@ -3622,6 +3731,7 @@ flow @flow.borrow_escape borrow_escape {
             TypeKind::Named("ImageHandle".to_owned()),
             "pixels",
             TypeKind::BorrowRef {
+                kind: BorrowKind::Shared,
                 lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
                 inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
                     "Rgba8".to_owned(),
@@ -3655,6 +3765,7 @@ effects { state.write('flow) }
             TypeKind::Named("ImageHandle".to_owned()),
             "pixels",
             TypeKind::BorrowRef {
+                kind: BorrowKind::Shared,
                 lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
                 inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
                     "Rgba8".to_owned(),

@@ -20,6 +20,7 @@ use self::{
     },
     value_block::FlowValueBlock,
 };
+use crate::assertion::{AssertionLoweringDisposition, RuntimeAssertionBuildProfile};
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{
     LoweredRuntimeEffect, RuntimePureHelperLookup, lower_runtime_effect_strict_with_pure,
@@ -39,7 +40,7 @@ use crate::render_text::{
 use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
 use crate::typed_evidence::RuntimeTypedLoweringEvidence;
-use arcweft_core::effect::LineEffectRequest;
+use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr};
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
@@ -103,6 +104,7 @@ pub struct RuntimePlanLowerOptions {
     typed_lowering_evidence: Vec<RuntimeTypedLoweringEvidence>,
     closure_captures: Vec<RuntimeClosureCaptureInventory>,
     required_typed_lowering_evidence_len: Option<usize>,
+    assertion_build_profile: RuntimeAssertionBuildProfile,
 }
 
 impl RuntimePlanLowerOptions {
@@ -117,6 +119,7 @@ impl RuntimePlanLowerOptions {
             typed_lowering_evidence: Vec::new(),
             closure_captures: Vec::new(),
             required_typed_lowering_evidence_len: None,
+            assertion_build_profile: RuntimeAssertionBuildProfile::Debug,
         }
     }
 
@@ -171,6 +174,16 @@ impl RuntimePlanLowerOptions {
         self
     }
 
+    /// Selects whether debug assertion conditions are present in executable output.
+    #[must_use]
+    pub const fn with_assertion_build_profile(
+        mut self,
+        profile: RuntimeAssertionBuildProfile,
+    ) -> Self {
+        self.assertion_build_profile = profile;
+        self
+    }
+
     /// Selected dialogue defaults profile ID, if supplied by a launch profile.
     #[must_use]
     pub fn dialogue_defaults(&self) -> Option<&str> {
@@ -196,6 +209,11 @@ impl RuntimePlanLowerOptions {
 
     pub fn typed_lowering_evidence(&self) -> &[RuntimeTypedLoweringEvidence] {
         &self.typed_lowering_evidence
+    }
+
+    /// Returns the selected runtime assertion build profile.
+    pub const fn assertion_build_profile(&self) -> RuntimeAssertionBuildProfile {
+        self.assertion_build_profile
     }
 
     fn validate_typed_lowering_evidence(&self) -> Result<(), RuntimePlanLowerError> {
@@ -531,6 +549,7 @@ pub(crate) fn lower_runtime_flows(
         pure_helpers,
         for_iteration_evidence: options.for_iteration_evidence(),
         for_iteration_cursor: 0,
+        assertion_build_profile: options.assertion_build_profile(),
     };
     let flows = module
         .flows()
@@ -586,6 +605,7 @@ fn lower_agent_controller_flow(
         pure_helpers,
         for_iteration_evidence: &[],
         for_iteration_cursor: 0,
+        assertion_build_profile: options.assertion_build_profile(),
     };
     let id = agent.item().id().map_or_else(
         || {
@@ -630,6 +650,7 @@ struct FlowRuntimeLowerer<'hir, 'helpers, 'functions, 'evidence> {
     pure_helpers: RuntimePureHelperLookup<'helpers, 'functions, 'static>,
     for_iteration_evidence: &'evidence [RuntimeIteratorEvidence],
     for_iteration_cursor: usize,
+    assertion_build_profile: RuntimeAssertionBuildProfile,
 }
 
 #[derive(Clone)]
@@ -1234,6 +1255,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
             return binding;
         }
         match stmt {
+            Stmt::Assertion(assertion) => self.lower_assertion_stmt(assertion),
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr.expr()))],
             Stmt::Return { expr, .. } => {
                 vec![FlowOp::ReturnExpr(self.lower_runtime_expr(expr))]
@@ -1304,6 +1326,39 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
                 Vec::new()
             }
         }
+    }
+
+    fn lower_assertion_stmt(
+        &mut self,
+        assertion: &arcweft_lang_hir::syntax::assertion::AssertionStmt,
+    ) -> Vec<FlowOp> {
+        let profile = match self.assertion_build_profile.disposition(assertion.mode()) {
+            AssertionLoweringDisposition::CompileTimeProof => {
+                self.errors.push(RuntimePlanLowerError::unresolved_proof(
+                    &self.current_location,
+                    assertion,
+                ));
+                return Vec::new();
+            }
+            AssertionLoweringDisposition::RuntimeGuard(profile) => profile,
+            AssertionLoweringDisposition::Omit => return Vec::new(),
+        };
+
+        assertion
+            .conditions()
+            .iter()
+            .enumerate()
+            .map(|(index, condition)| {
+                FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
+                    condition: self.lower_runtime_expr(condition),
+                    message: RuntimeExpr::Value(RuntimeValue::String(format!(
+                        "assert.{} condition {index} failed",
+                        assertion.mode().keyword()
+                    ))),
+                    profile,
+                })
+            })
+            .collect()
     }
 
     fn lower_binding_flow_stmt(

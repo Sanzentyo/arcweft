@@ -1,8 +1,70 @@
 use arcweft_lang_syntax::{
-    ast::items::Item,
+    ast::{common::TextRange, items::Item},
     parser::parse_source,
+    reference::BorrowKind,
     types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature, parse_type_ref},
 };
+
+#[test]
+fn reference_types_preserve_shared_and_mutable_borrow_kinds() {
+    assert!(matches!(
+        parse_type_ref("&State").expect("shared reference parses"),
+        TypeRef::Reference(reference)
+            if reference.kind() == BorrowKind::Shared
+                && reference.region().name().is_none()
+                && reference.referent() == &TypeRef::Path("State".to_owned())
+    ));
+    assert!(matches!(
+        parse_type_ref("&'asset mut [Rgba8]").expect("mutable reference parses"),
+        TypeRef::Reference(reference)
+            if reference.kind() == BorrowKind::Mutable
+            && reference.region().name().is_some_and(|lifetime| lifetime.name() == "asset")
+            && matches!(reference.referent(), TypeRef::Slice(item)
+                if item.as_ref() == &TypeRef::Path("Rgba8".to_owned()))
+    ));
+    assert!(matches!(
+        parse_type_ref("& mut State").expect("token-separated mutable reference parses"),
+        TypeRef::Reference(reference) if reference.kind() == BorrowKind::Mutable
+    ));
+    let missing_referent =
+        parse_type_ref("&mut").expect_err("mutable reference without referent is rejected");
+    assert_eq!(
+        missing_referent.code(),
+        "syntax.type.reference_missing_referent"
+    );
+    assert_eq!(missing_referent.range(), Some(TextRange::new(4, 4)));
+    assert!(matches!(
+        parse_type_ref("&mutable").expect("identifier prefix remains a shared referent"),
+        TypeRef::Reference(reference)
+            if reference.kind() == BorrowKind::Shared
+                && reference.referent() == &TypeRef::Path("mutable".to_owned())
+    ));
+
+    let TypeRef::Reference(reference) =
+        parse_type_ref("&'asset mut State").expect("ranged reference parses")
+    else {
+        panic!("expected reference type");
+    };
+    assert_eq!(reference.amp_range().as_range(), 0..1);
+    assert_eq!(reference.region().range().as_range(), 1..7);
+    assert_eq!(reference.mut_range().unwrap().as_range(), 8..11);
+    assert_eq!(reference.range().as_range(), 0..17);
+}
+
+#[test]
+fn receiver_kinds_map_to_the_single_reference_borrow_kind() {
+    use arcweft_lang_syntax::types::FnReceiverKind;
+
+    assert_eq!(FnReceiverKind::Owned.borrow_kind(), None);
+    assert_eq!(
+        FnReceiverKind::SharedRef.borrow_kind(),
+        Some(BorrowKind::Shared)
+    );
+    assert_eq!(
+        FnReceiverKind::MutRef.borrow_kind(),
+        Some(BorrowKind::Mutable)
+    );
+}
 
 #[test]
 fn function_signatures_keep_generics_curried_groups_and_where_clauses() {

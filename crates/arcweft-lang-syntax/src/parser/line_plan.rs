@@ -4,7 +4,8 @@ use crate::ast::common::TextRange;
 use crate::ast::flow::{AuthoredExpr, FlowItem, Stmt, ThreadBlock, ThreadModifier};
 use crate::ast::items::RawSyntax;
 use crate::ast::line_plan::{
-    BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
+    BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TimelineAssert,
+    TimelineAssertPolicy, TriggerPattern,
 };
 use crate::cst::text::parse_flat_fence;
 use crate::cst::{
@@ -479,7 +480,9 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
         };
     }
     if let Ok(expr) = parse_expr(line) {
-        if let Some(assertion) = parse_assert_call(&expr) {
+        let start = base.unwrap_or(0);
+        if let Some(assertion) = parse_assert_call(&expr, TextRange::new(start, start + line.len()))
+        {
             return assertion;
         }
         return LinePlanItem::Expr(expr);
@@ -570,25 +573,26 @@ fn parse_line_plan_block_item(head: &str, body: &str) -> Option<LinePlanItem> {
     None
 }
 
-fn parse_assert_call(expr: &Expr) -> Option<LinePlanItem> {
+fn parse_assert_call(expr: &Expr, range: TextRange) -> Option<LinePlanItem> {
     let Expr::Call { callee, args } = expr else {
         return None;
     };
     let Expr::Path(name) = callee.as_ref() else {
         return None;
     };
-    let debug = match name.as_str() {
-        "assert" => false,
-        "debug_assert" => true,
+    let policy = match name.as_str() {
+        "assert" => TimelineAssertPolicy::Always,
+        "debug_assert" => TimelineAssertPolicy::DebugOnly,
         _ => return None,
     };
     let [condition] = args.as_slice() else {
         return None;
     };
-    Some(LinePlanItem::Assert {
-        debug,
-        expr: condition.value().clone(),
-    })
+    Some(LinePlanItem::TimelineAssert(TimelineAssert::new(
+        policy,
+        condition.value().clone(),
+        range,
+    )))
 }
 
 pub(super) fn parse_thread_block(head: &str, body: &str) -> ThreadBlock {

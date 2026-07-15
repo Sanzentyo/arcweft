@@ -13,6 +13,3 @@ pub use base::{
 pub use effects::{EffectCapability, EffectCapabilityParts};
 pub use enums::EnumVariantPayload;
 pub use registered::{RegisteredSemanticWorld, RegisteredTypeCheckEnv};
-
-#[cfg(test)]
-mod tests;

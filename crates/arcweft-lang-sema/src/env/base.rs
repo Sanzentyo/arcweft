@@ -1081,7 +1081,12 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
             key: Box::new(normalize_type_kind(*key)),
             value: Box::new(normalize_type_kind(*value)),
         },
-        TypeKind::BorrowRef { lifetime, inner } => TypeKind::BorrowRef {
+        TypeKind::BorrowRef {
+            kind,
+            lifetime,
+            inner,
+        } => TypeKind::BorrowRef {
+            kind,
             lifetime,
             inner: Box::new(normalize_type_kind(*inner)),
         },

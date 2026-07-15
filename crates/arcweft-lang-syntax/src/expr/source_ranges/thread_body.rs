@@ -119,6 +119,11 @@ fn collect_stmt_source_ranges<'a>(
     ranges: &mut Vec<ExprSourceRange<'a>>,
 ) {
     match stmt {
+        Stmt::Assertion(assertion) => {
+            for condition in assertion.conditions() {
+                collect_expr_source_ranges_inner(condition, fallback_source, fallback_base, ranges);
+            }
+        }
         Stmt::Let {
             expr,
             expr_source,

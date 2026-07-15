@@ -894,6 +894,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn collect_stmt(&mut self, stmt: &Stmt, state: &mut FlowState) {
         match stmt {
+            Stmt::Assertion(assertion) => self.collect_assertion(assertion, state),
             Stmt::LetElse {
                 expr, else_body, ..
             } => {
@@ -988,6 +989,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
                 raw.range().map(|range| format!("{range:?}")),
             ),
+        }
+    }
+
+    fn collect_assertion(
+        &mut self,
+        assertion: &arcweft_lang_syntax::assertion::AssertionStmt,
+        state: &mut FlowState,
+    ) {
+        for condition in assertion.conditions() {
+            self.collect_expr(condition, state);
         }
     }
 
@@ -1113,9 +1124,12 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             LinePlanItem::Let { expr, .. }
             | LinePlanItem::Option { value: expr, .. }
-            | LinePlanItem::Assert { expr, .. }
             | LinePlanItem::Expr(expr) => {
                 self.collect_expr(expr, &mut facts);
+                BlockFlow::from_fallthrough(facts)
+            }
+            LinePlanItem::TimelineAssert(assertion) => {
+                self.collect_expr(assertion.condition(), &mut facts);
                 BlockFlow::from_fallthrough(facts)
             }
             LinePlanItem::TimedCue { anchor, body } => {
@@ -1209,6 +1223,8 @@ impl<'a> SemanticAnalyzer<'a> {
             Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Unary { expr, .. } => {
                 self.collect_expr(expr, state);
             }
+            Expr::Borrow(borrow) => self.collect_expr(borrow.operand(), state),
+            Expr::Deref(deref) => self.collect_expr(deref.operand(), state),
             Expr::Thread { block } => self.collect_thread(block),
             Expr::Range { start, end, .. } => {
                 if let Some(start) = start {
