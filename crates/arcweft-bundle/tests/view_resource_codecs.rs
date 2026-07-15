@@ -180,7 +180,7 @@ fn emit_text_transcript_requires_the_text_block_reference() {
 }
 
 #[test]
-fn view_program_rejects_removed_string_style_fields() {
+fn view_program_rejects_unknown_resource_fields() {
     let bytes = arcweft_bundle::standard_view::dialogue_program()
         .encode_canonical_section()
         .expect("standard View program encodes");
@@ -204,17 +204,17 @@ fn view_program_rejects_removed_string_style_fields() {
             .as_object_mut()
             .expect("standard View record is an object")
             .insert(
-                "style".to_owned(),
-                serde_json::Value::String("legacy.string.style".to_owned()),
+                "unexpected_resource_field".to_owned(),
+                serde_json::Value::Bool(true),
             );
         let payload = serde_json::to_vec(&tampered).expect("tampered transcript encodes");
         let bytes = envelope_with_replaced_field_payload(&envelope, FieldId(1), &payload);
 
         assert_eq!(
             ViewProgramResource::decode_canonical_section(&bytes)
-                .expect_err("removed string Style field must not disappear during decode"),
+                .expect_err("unknown resource field must not disappear during decode"),
             arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable("view_program"),
-            "removed `{table}[0].style` must reject",
+            "unknown `{table}[0]` field must reject",
         );
     }
 }

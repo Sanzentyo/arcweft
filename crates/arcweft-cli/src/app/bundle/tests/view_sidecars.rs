@@ -94,36 +94,6 @@ fn direct_json_sidecars_accept_current_view_program_and_style_resources() {
 }
 
 #[test]
-fn direct_json_style_sidecar_rejects_legacy_flat_fields_mixed_with_owned_resources() {
-    let root = unique_root("mixed-flat-style");
-    fs::create_dir_all(&root).expect("sidecar fixture root creates");
-    let mut transcript =
-        serde_json::to_value(ViewStyleResource::default()).expect("Style sidecar encodes");
-    let object = transcript
-        .as_object_mut()
-        .expect("Style resource encodes as an object");
-    object.insert(
-        "style_program_id".to_owned(),
-        serde_json::json!("legacy.flat"),
-    );
-    object.insert("tokens".to_owned(), serde_json::json!([]));
-    object.insert("rules".to_owned(), serde_json::json!([]));
-    object.insert("part_rules".to_owned(), serde_json::json!([]));
-    fs::write(
-        root.join("view.style.json"),
-        serde_json::to_vec(&transcript).expect("mixed Style sidecar encodes"),
-    )
-    .expect("mixed Style sidecar writes");
-
-    assert!(
-        collect_bundle_view_sidecars(&root).is_err(),
-        "direct JSON ingestion must reject removed flat Style fields"
-    );
-
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn direct_json_program_sidecar_rejects_unknown_fields_in_d2_product_records() {
     let mut root_record =
         serde_json::to_value(ViewProgramResource::default()).expect("program sidecar encodes");
@@ -172,10 +142,10 @@ fn direct_json_program_sidecar_rejects_unknown_fields_in_d2_product_records() {
 }
 
 #[test]
-fn direct_json_program_sidecar_rejects_removed_style_on_every_node_producer() {
+fn direct_json_program_sidecar_rejects_unknown_fields_on_every_node_producer() {
     let instructions = [
         (
-            "OpenElement.style",
+            "OpenElement unknown field",
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::Panel,
                 target: None,
@@ -186,7 +156,7 @@ fn direct_json_program_sidecar_rejects_removed_style_on_every_node_producer() {
             },
         ),
         (
-            "EmitText.style",
+            "EmitText unknown field",
             ViewProgramInstruction::EmitText {
                 text_source: "text.strict".to_owned(),
                 text_block: "text.block.strict".to_owned(),
@@ -196,7 +166,7 @@ fn direct_json_program_sidecar_rejects_removed_style_on_every_node_producer() {
             },
         ),
         (
-            "EmitImage.style",
+            "EmitImage unknown field",
             ViewProgramInstruction::EmitImage {
                 image: "image.strict".to_owned(),
                 target: None,
@@ -206,7 +176,7 @@ fn direct_json_program_sidecar_rejects_removed_style_on_every_node_producer() {
             },
         ),
         (
-            "EmitCustom.style",
+            "EmitCustom unknown field",
             ViewProgramInstruction::EmitCustom {
                 element: "strict-custom".to_owned(),
                 styles: Vec::new(),
@@ -215,7 +185,7 @@ fn direct_json_program_sidecar_rejects_removed_style_on_every_node_producer() {
             },
         ),
         (
-            "CallView.style",
+            "CallView unknown field",
             ViewProgramInstruction::CallView {
                 view: "view.strict.child".to_owned(),
                 arguments: Vec::new(),
@@ -238,7 +208,10 @@ fn direct_json_program_sidecar_rejects_removed_style_on_every_node_producer() {
             .expect("instruction has one variant payload")
             .as_object_mut()
             .expect("node producer has an object payload")
-            .insert("style".to_owned(), serde_json::json!("legacy.string.style"));
+            .insert(
+                "unexpected_instruction_field".to_owned(),
+                serde_json::json!(true),
+            );
 
         let mut transcript =
             serde_json::to_value(ViewProgramResource::default()).expect("program sidecar encodes");
@@ -273,9 +246,9 @@ fn direct_json_style_sidecar_rejects_unknown_native_program_fields() {
 }
 
 #[test]
-fn direct_json_program_sidecar_rejects_removed_resource_style_fields() {
+fn direct_json_program_sidecar_rejects_unknown_resource_fields() {
     let action_button = ViewActionButtonResource {
-        public_id: "button.legacy".to_owned(),
+        public_id: "button.strict".to_owned(),
         view: None,
         containing_scroll_region: None,
         label_text_source: "text.button.label".to_owned(),
@@ -290,7 +263,7 @@ fn direct_json_program_sidecar_rejects_removed_resource_style_fields() {
         source: None,
     };
     let text_block = ViewTextBlockResource::new(
-        "text.legacy",
+        "text.strict",
         None,
         None,
         "text.body",
@@ -302,7 +275,7 @@ fn direct_json_program_sidecar_rejects_removed_resource_style_fields() {
         },
     );
     let surface = ViewSurfaceResource::new(
-        "surface.legacy",
+        "surface.strict",
         None,
         None,
         ViewElementKind::Panel,
@@ -334,7 +307,10 @@ fn direct_json_program_sidecar_rejects_removed_resource_style_fields() {
         resource
             .as_object_mut()
             .expect("View resource encodes as an object")
-            .insert("style".to_owned(), serde_json::json!("legacy.string.style"));
+            .insert(
+                "unexpected_resource_field".to_owned(),
+                serde_json::json!(true),
+            );
         let mut transcript =
             serde_json::to_value(ViewProgramResource::default()).expect("program sidecar encodes");
         transcript
@@ -343,13 +319,13 @@ fn direct_json_program_sidecar_rejects_removed_resource_style_fields() {
             .insert(collection.to_owned(), serde_json::json!([resource]));
         fs::write(
             root.join("view.program.json"),
-            serde_json::to_vec(&transcript).expect("legacy program sidecar encodes"),
+            serde_json::to_vec(&transcript).expect("program sidecar encodes"),
         )
-        .expect("legacy program sidecar writes");
+        .expect("program sidecar writes");
 
         assert!(
             collect_bundle_view_sidecars(&root).is_err(),
-            "direct JSON ingestion must reject removed `{collection}.style`"
+            "direct JSON ingestion must reject unknown `{collection}` fields"
         );
 
         let _ = fs::remove_dir_all(root);
