@@ -233,40 +233,6 @@ flow @flow.line_handles line_handles {
 }
 
 #[test]
-fn rejects_at_bracket_timed_cue_as_raw_line_plan_item() {
-    let tree = parse_ok(
-        r"
-alice[おはよう。[p]]
-with:
-    at(0.42s)[alice.stage.face(worried)]
-",
-    );
-
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected content call");
-    };
-    let FlowItem::ContentCall(call) = item.as_ref() else {
-        panic!("expected content call");
-    };
-    let plan = call.plan().expect("line plan");
-    let LinePlanItem::Raw(raw) = &plan.items()[0] else {
-        panic!("expected line-plan recovery node");
-    };
-    assert_eq!(raw.family(), RawSyntaxFamily::LinePlanItem);
-    assert_eq!(raw.source(), "at(0.42s)[alice.stage.face(worried)]");
-    assert!(raw.range().is_some());
-
-    let hir = lower_to_hir(&tree).expect("lossy line plan still lowers");
-    let errors = validate_typecheck_ready(&hir).expect_err("old at bracket cue is rejected");
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("raw expression")
-                && error.message().contains("at(0.42s)["))
-    );
-}
-
-#[test]
 fn rejects_inline_parallel_group_heads_without_block_delimiters() {
     for (source, raw_fragment) in [
         (

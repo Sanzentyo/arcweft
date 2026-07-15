@@ -138,9 +138,9 @@ fn style_parser_reports_missing_equals_and_malformed_combinators_with_ranges() {
 }
 
 #[test]
-fn non_native_named_style_heads_use_ordinary_parser_recovery() {
-    let source = r"pub style imported: .Css { Button { color: red; } }
-pub style explicit: .Arcweft { Button { color = rgba(1, 2, 3, 255) } }
+fn unexpected_named_style_head_suffixes_use_ordinary_parser_recovery() {
+    let source = r"pub style imported: .ForeignDialect { Button { color = red; } }
+pub style explicit: .UnknownDialect { Button { color = rgba(1, 2, 3, 255) } }
 ";
     let parsed = parse_source(source);
     let head_errors = parsed
@@ -159,12 +159,12 @@ pub style explicit: .Arcweft { Button { color = rgba(1, 2, 3, 255) } }
 }
 
 #[test]
-fn non_native_property_assignments_use_the_existing_missing_equals_recovery() {
+fn named_and_inline_style_assignments_without_equals_use_parser_recovery() {
     let source = r#"pub style broken {
-    Button { color: red; }
+    Button { color red }
 }
 pub view Example() {
-    Button("OK").style { opacity: 0.9; }
+    Button("OK").style { opacity 0.9 }
 }
 "#;
     let parsed = parse_source(source);
@@ -176,7 +176,10 @@ pub view Example() {
     assert_eq!(diagnostics.len(), 2);
     for diagnostic in diagnostics {
         assert_eq!(diagnostic.code(), "syntax.parse");
-        assert!(source[diagnostic.range().as_range()].contains(':'));
+        assert!(matches!(
+            &source[diagnostic.range().as_range()],
+            "color red" | "opacity 0.9"
+        ));
     }
 }
 
@@ -262,7 +265,7 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
 }
 
 #[test]
-fn non_native_inline_style_head_uses_ordinary_view_modifier_recovery() {
+fn unknown_inline_style_head_uses_ordinary_view_modifier_recovery() {
     let source = r#"pub view ExactRanges() {
     Button("One")
         .style {
@@ -272,8 +275,8 @@ fn non_native_inline_style_head_uses_ordinary_view_modifier_recovery() {
         .style {
             opacity = 900milli
         }
-        .style(.Css) {
-            color: white;
+        .style(.UnknownDialect) {
+            opacity = 500milli
         }
 }
 "#;

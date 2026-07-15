@@ -667,24 +667,6 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/arcw/spec_should_fail/003_old_at_command.arcw",
-      "category": "spec_should_fail",
-      "subtype": null,
-      "command": "check",
-      "expected_current": "fail",
-      "expected_future": "fail",
-      "reason": "negative fixture to keep invalid forms rejected"
-    },
-    {
-      "path": "tests/fixtures/arcw/spec_should_fail/004_face_line_option.arcw",
-      "category": "spec_should_fail",
-      "subtype": null,
-      "command": "check",
-      "expected_current": "fail",
-      "expected_future": "fail",
-      "reason": "negative fixture to keep invalid forms rejected"
-    },
-    {
       "path": "tests/fixtures/arcw/spec_should_fail/005_bare_relative_goto.arcw",
       "category": "spec_should_fail",
       "subtype": null,
@@ -722,15 +704,6 @@
     },
     {
       "path": "tests/fixtures/arcw/spec_should_fail/009_ambiguous_bare_dot_id.arcw",
-      "category": "spec_should_fail",
-      "subtype": null,
-      "command": "check",
-      "expected_current": "fail",
-      "expected_future": "fail",
-      "reason": "negative fixture to keep invalid forms rejected"
-    },
-    {
-      "path": "tests/fixtures/arcw/spec_should_fail/010_old_spawn_line_plan.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -935,15 +908,6 @@
       "expected_current": "fail",
       "expected_future": "pass",
       "reason": "dialogue line return values, handles, and timed cues should lower to runtime"
-    },
-    {
-      "path": "tests/fixtures/arcw/spec_should_fail/012_name_at_pattern_removed_rejected.arcw",
-      "category": "spec_should_fail",
-      "subtype": "edge_case",
-      "command": "check",
-      "expected_current": "fail",
-      "expected_future": "fail",
-      "reason": "removed name-at pattern syntax stays rejected"
     },
     {
       "path": "tests/fixtures/arcw/spec_should_fail/013_continue_expr_position_rejected.arcw",

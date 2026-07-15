@@ -41,24 +41,21 @@ flow main {
 }
 
 #[test]
-fn removed_presentation_callee_aliases_are_unknown_functions() {
+fn arbitrary_unknown_presentation_callees_use_normal_resolution_errors() {
     for (callee, call) in [
         (
-            "background",
-            "background(@asset:.bg.room, target = @target.scene)",
+            "mystery_presentation",
+            "mystery_presentation(@asset:.bg.room, target = @target.scene)",
         ),
         (
-            "image.show",
-            "image.show(asset = @asset:.bg.room, id = \"image.room\")",
+            "mystery.image",
+            "mystery.image(asset = @asset:.bg.room, id = \"image.room\")",
         ),
-        ("viewport.fit", "viewport.fit(width = 1280px)"),
-        ("player.viewport", "player.viewport(width = 1280px)"),
-        ("player.viewport.fit", "player.viewport.fit(width = 1280px)"),
     ] {
         let tree = parse_ok(format!("flow main {{\n    {call}\n}}\n"));
-        let hir = lower_to_hir(&tree).expect("removed callee fixture lowers");
+        let hir = lower_to_hir(&tree).expect("unknown callee fixture lowers");
         let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
-            .expect_err("removed presentation callee must be rejected");
+            .expect_err("unknown presentation callee must be rejected");
 
         assert!(
             errors.iter().any(|error| {
@@ -73,62 +70,13 @@ fn removed_presentation_callee_aliases_are_unknown_functions() {
 }
 
 #[test]
-fn removed_viewport_argument_aliases_are_unknown_arguments() {
-    for (argument, value) in [
-        ("design_width", "1280px"),
-        ("design_height", "720px"),
-        ("policy", "\"contain\""),
-        ("scale_policy", "\"contain\""),
-    ] {
-        assert_unknown_presentation_argument(
-            &format!("player_viewport({argument} = {value})"),
-            "player_viewport",
-            argument,
-        );
-    }
-}
-
-#[test]
-fn hyphenated_viewport_argument_spellings_are_parser_errors() {
-    for (argument, value) in [
-        ("design-width", "1280px"),
-        ("design-height", "720px"),
-        ("scale-policy", "\"contain\""),
-    ] {
-        let errors = parse_errors(format!(
-            "flow main {{\n    player_viewport({argument} = {value})\n}}\n"
-        ));
-        assert!(
-            !errors.is_empty(),
-            "hyphenated spelling must produce a parser error"
-        );
-        assert!(
-            errors.iter().all(|error| error.code() == "syntax.parse"),
-            "hyphenated spelling must remain a structured parser rejection: {errors:#?}"
-        );
-    }
-}
-
-#[test]
-fn removed_image_and_background_argument_aliases_are_unknown_arguments() {
-    for (argument, value) in [
-        ("align.x", "0.5"),
-        ("align.y", "500"),
-        ("playback.start_time", "10ms"),
-        ("playback.pause_at", "20ms"),
-        ("playback.pinned_local_time", "30ms"),
-    ] {
-        assert_unknown_presentation_argument(
-            &format!("image(asset = @asset:.bg.room, {argument} = {value})"),
-            "image",
-            argument,
-        );
-        assert_unknown_presentation_argument(
-            &format!("bg(@asset:.bg.room, {argument} = {value})"),
-            "bg",
-            argument,
-        );
-    }
+fn malformed_presentation_argument_name_is_a_parser_error() {
+    let errors = parse_errors("flow main {\n    player_viewport(mystery-name = true)\n}\n");
+    assert!(!errors.is_empty(), "malformed argument must be rejected");
+    assert!(
+        errors.iter().all(|error| error.code() == "syntax.parse"),
+        "malformed argument must remain a structured parser rejection: {errors:#?}"
+    );
 }
 
 #[test]

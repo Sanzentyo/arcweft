@@ -197,7 +197,7 @@ flow main {
 }
 
 #[test]
-fn rejects_removed_view_handle_close_alias() {
+fn rejects_unknown_view_handle_method() {
     let tree = parse_ok(
         r#"
 view Panel() {
@@ -206,19 +206,19 @@ view Panel() {
 
 flow main {
   let panel = view(@view:.Panel)
-  panel.close()
+  panel.mystery()
 }
 "#,
     );
     let hir = lower_to_hir(&tree).expect("view handle fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir))
         .expect("view handle references resolve");
-    let errors =
-        typecheck_hir(&hir, &TypeCheckEnv::standard()).expect_err("removed close alias rejects");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())
+        .expect_err("unknown ViewHandle method rejects");
     assert!(
         errors
             .iter()
-            .any(|error| error.message().contains("unknown method `close`")),
+            .any(|error| error.message().contains("unknown method `mystery`")),
         "{errors:#?}"
     );
 }

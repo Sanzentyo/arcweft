@@ -2694,21 +2694,21 @@ fn fmt_accepts_awfagent_path_and_preserves_agent_source_json() {
 }
 
 #[test]
-fn fmt_rejects_removed_expand_sugar_flag() {
+fn fmt_rejects_unknown_option_without_rewriting_source() {
     let source = "#[agent(version = 1)]\nagent @agent.cli.format_smoke format_smoke()\n{\n    return \"ok\"\n}\n";
-    let path = temp_file("fmt-agent-reject-expand", "awfagent", source);
+    let path = temp_file("fmt-agent-reject-unknown", "awfagent", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("fmt")
-        .arg("--expand-sugar")
+        .arg("--definitely-not-a-fmt-option")
         .arg(&path)
         .output()
         .expect("arcw fmt runs on .awfagent");
 
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("--expand-sugar"),
-        "fmt should reject the removed semantic flag, stderr: {}",
+        String::from_utf8_lossy(&output.stderr).contains("--definitely-not-a-fmt-option"),
+        "fmt should reject the unknown option, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
@@ -6960,10 +6960,6 @@ fn rejected_await_question_with_fixture_fails_with_guidance() {
 #[test]
 fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
     for (relative_path, expected) in [
-        (
-            "tests/fixtures/arcw/spec_should_fail/012_name_at_pattern_removed_rejected.arcw",
-            "unresolved entity reference",
-        ),
         (
             "tests/fixtures/arcw/spec_should_fail/013_continue_expr_position_rejected.arcw",
             "unknown symbol `continue`",

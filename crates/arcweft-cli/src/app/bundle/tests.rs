@@ -2213,9 +2213,9 @@ fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
 }
 
 #[test]
-fn static_image_asset_refs_ignore_removed_image_call_alias() {
+fn static_image_asset_refs_ignore_unknown_calls() {
     let plan = plan_with_ops(vec![image_effect_call(
-        "image.show",
+        "mystery_present",
         "asset = @asset:.view.logo",
     )]);
 
@@ -2367,19 +2367,17 @@ image @image.sample.pulse {
 }
 
 #[test]
-fn bundle_image_objects_ignore_removed_presentation_argument_aliases() {
+fn bundle_image_objects_ignore_unknown_declaration_fields() {
     let declarations = parse_declared_image_objects(
         r"
-image @image.sample.aliases {
+image @image.sample.unknown_fields {
     asset = @asset:.bg.poster
     x = 12px
     y = 34px
     width = 56px
     height = 78px
-    align.x = right
-    align.y = bottom
-    playback.start_time = 25ms
-    playback.pinned_local_time = 50ms
+    mystery.alignment = right
+    mystery.playback = 25ms
 }
 ",
     );

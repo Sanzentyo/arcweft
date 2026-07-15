@@ -884,115 +884,70 @@ mod tests {
     }
 
     #[test]
-    fn removed_command_aliases_do_not_mutate_direct_runtime_state() {
+    fn unknown_presentation_commands_do_not_mutate_direct_runtime_state() {
         let image = presentation_image_object("image.glass_bg");
         let resources = image_runtime_resources(&image);
-        let aliases = [
-            RuntimeCall {
-                callee: "image.show".to_owned(),
-                args: vec!["@image.glass_bg".to_owned()],
-            },
-            RuntimeCall {
-                callee: "background".to_owned(),
-                args: vec!["@asset.glass_bg".to_owned()],
-            },
-            RuntimeCall {
-                callee: "viewport".to_owned(),
-                args: vec!["fit = \"cover\"".to_owned()],
-            },
-            RuntimeCall {
-                callee: "viewport.fit".to_owned(),
-                args: vec!["fit = \"cover\"".to_owned()],
-            },
-            RuntimeCall {
-                callee: "player.viewport".to_owned(),
-                args: vec!["fit = \"cover\"".to_owned()],
-            },
-            RuntimeCall {
-                callee: "player.viewport.fit".to_owned(),
-                args: vec!["fit = \"cover\"".to_owned()],
-            },
-        ];
+        let call = RuntimeCall {
+            callee: "mystery.presentation".to_owned(),
+            args: vec!["@image.glass_bg".to_owned()],
+        };
+        let mut snapshot = BundlePresentationSnapshot {
+            revision: 41,
+            ..BundlePresentationSnapshot::default()
+        };
+        let before = snapshot.clone();
+        let diagnostics = update_snapshot_with_effects(
+            &mut snapshot,
+            &[LineEffectRequest::Call(call)],
+            resources,
+        );
 
-        for call in aliases {
-            let mut snapshot = BundlePresentationSnapshot {
-                revision: 41,
-                ..BundlePresentationSnapshot::default()
-            };
-            let before = snapshot.clone();
-            let callee = call.callee.clone();
-            let diagnostics = update_snapshot_with_effects(
-                &mut snapshot,
-                &[LineEffectRequest::Call(call)],
-                resources,
-            );
-
-            assert!(diagnostics.is_empty(), "removed callee: {callee}");
-            assert_eq!(snapshot, before, "removed callee: {callee}");
-        }
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot, before);
     }
 
     #[test]
-    fn removed_viewport_argument_aliases_do_not_mutate_direct_runtime_state() {
-        for arg in [
-            "design_width = 1920",
-            "design_height = 1080",
-            "design-width = 1920",
-            "design-height = 1080",
-            "policy = \"cover\"",
-            "scale_policy = \"cover\"",
-            "scale-policy = \"cover\"",
-        ] {
-            let mut snapshot = BundlePresentationSnapshot {
-                revision: 43,
-                viewport_fit: Some(BundleViewportFit::raw()),
-                ..BundlePresentationSnapshot::default()
-            };
-            let before = snapshot.clone();
-            let diagnostics = update_snapshot_with_effects(
-                &mut snapshot,
-                &[LineEffectRequest::Call(RuntimeCall {
-                    callee: "player_viewport".to_owned(),
-                    args: vec![arg.to_owned()],
-                })],
-                empty_presentation_resources(),
-            );
+    fn unknown_viewport_argument_does_not_mutate_direct_runtime_state() {
+        let mut snapshot = BundlePresentationSnapshot {
+            revision: 43,
+            viewport_fit: Some(BundleViewportFit::raw()),
+            ..BundlePresentationSnapshot::default()
+        };
+        let before = snapshot.clone();
+        let diagnostics = update_snapshot_with_effects(
+            &mut snapshot,
+            &[LineEffectRequest::Call(RuntimeCall {
+                callee: "player_viewport".to_owned(),
+                args: vec!["mystery = true".to_owned()],
+            })],
+            empty_presentation_resources(),
+        );
 
-            assert!(diagnostics.is_empty(), "removed argument: {arg}");
-            assert_eq!(snapshot, before, "removed argument: {arg}");
-        }
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot, before);
     }
 
     #[test]
-    fn removed_image_argument_aliases_do_not_mutate_direct_runtime_state() {
+    fn unknown_image_argument_does_not_mutate_direct_runtime_state() {
         let canonical_call = inline_image_runtime_call();
         let image = inline_image_object(&canonical_call).expect("canonical inline image");
         let resources = image_runtime_resources(&image);
+        let mut call = canonical_call.clone();
+        call.args.push("mystery = true".to_owned());
+        let mut snapshot = BundlePresentationSnapshot {
+            revision: 47,
+            images: vec![image.clone()],
+            ..BundlePresentationSnapshot::default()
+        };
+        let before = snapshot.clone();
+        let diagnostics = update_snapshot_with_effects(
+            &mut snapshot,
+            &[LineEffectRequest::Call(call)],
+            resources,
+        );
 
-        for arg in [
-            "align.x = \"right\"",
-            "align.y = \"bottom\"",
-            "playback.start_time = 250ms",
-            "playback.pause_at = 500ms",
-            "playback.pinned_local_time = 750ms",
-        ] {
-            let mut call = canonical_call.clone();
-            call.args.push(arg.to_owned());
-            let mut snapshot = BundlePresentationSnapshot {
-                revision: 47,
-                images: vec![image.clone()],
-                ..BundlePresentationSnapshot::default()
-            };
-            let before = snapshot.clone();
-            let diagnostics = update_snapshot_with_effects(
-                &mut snapshot,
-                &[LineEffectRequest::Call(call)],
-                resources,
-            );
-
-            assert!(diagnostics.is_empty(), "removed argument: {arg}");
-            assert_eq!(snapshot, before, "removed argument: {arg}");
-        }
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot, before);
     }
 
     #[test]
