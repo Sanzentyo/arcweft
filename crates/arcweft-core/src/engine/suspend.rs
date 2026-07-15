@@ -83,8 +83,9 @@ impl Engine {
             self.fiber.status = FlowFiberStatus::Running;
             return;
         }
+        state.elapsed = state.elapsed.saturating_add(input.dt);
         self.merge_step_output(
-            progress_live_line_task_group(&group, input, &mut state.started_nodes),
+            progress_live_line_task_group(&group, input, state.elapsed, &mut state.started_nodes),
             output,
             pure_backend,
         );

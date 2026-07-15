@@ -182,6 +182,8 @@ pub struct DialogueState {
     pub task_group: usize,
     pub resume: Option<FlowCursor>,
     pub started_nodes: std::collections::BTreeSet<usize>,
+    /// Logical time accumulated while this line has been active.
+    pub elapsed: crate::time::LogicalDuration,
 }
 
 /// String presentation style for high-level runtime flow status.

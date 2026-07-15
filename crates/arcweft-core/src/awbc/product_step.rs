@@ -51,6 +51,7 @@ use crate::task::{
     AwaitManyTarget, AwaitTarget, HostTaskRequestTemplate, NeedId, TaskEvent, TaskEventKind,
     TaskId, TaskKey, TaskSequence, normalize_task_events,
 };
+use crate::time::LogicalDuration;
 use crate::value::{
     RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimePayload, RuntimeValue,
     runtime_sequence_from_literal_values, runtime_sequence_values, runtime_value_label,
@@ -2009,6 +2010,11 @@ impl AwbcProductStepExecutor {
                             .collect()
                     })
                     .unwrap_or_default(),
+                elapsed: LogicalDuration::from_nanos(
+                    self.active_dialogue
+                        .as_ref()
+                        .map_or(0, |active| active.elapsed_nanos),
+                ),
             }),
             FiberSuspensionReason::Choice { .. } => {
                 let active = self.active_choice.as_ref();

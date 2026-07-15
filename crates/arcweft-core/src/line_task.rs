@@ -227,10 +227,12 @@ pub(crate) fn run_line_task_group_for_input(
 /// Starts or progresses a live dialogue line task group without running the
 /// line-scope completion cleanup. `started_nodes` makes repeated host steps
 /// idempotent while still allowing mark/delay-triggered children to become
-/// ready on later steps.
+/// ready on later steps. `elapsed` is the accumulated logical duration since
+/// line activation, not only the current step delta.
 pub(crate) fn progress_live_line_task_group(
     group: &LineTaskGroup,
     input: &RuntimeStepInput,
+    elapsed: LogicalDuration,
     started_nodes: &mut BTreeSet<usize>,
 ) -> RuntimeStepOutput {
     let mut output = RuntimeStepOutput::default();
@@ -238,6 +240,7 @@ pub(crate) fn progress_live_line_task_group(
     run_live_node(
         &group.root.node,
         input,
+        elapsed,
         started_nodes,
         &mut ordinal,
         &mut output,
@@ -331,6 +334,7 @@ fn run_node(node: &LineTaskNode, input: &RuntimeStepInput, output: &mut RuntimeS
 fn run_live_node(
     node: &LineTaskNode,
     input: &RuntimeStepInput,
+    elapsed: LogicalDuration,
     started_nodes: &mut BTreeSet<usize>,
     ordinal: &mut usize,
     output: &mut RuntimeStepOutput,
@@ -338,18 +342,18 @@ fn run_live_node(
     match node {
         LineTaskNode::Seq(nodes) | LineTaskNode::Start(nodes) => {
             for node in nodes {
-                run_live_node(node, input, started_nodes, ordinal, output);
+                run_live_node(node, input, elapsed, started_nodes, ordinal, output);
             }
         }
         LineTaskNode::Parallel { children, .. } => {
             for child in children {
-                run_live_node(child, input, started_nodes, ordinal, output);
+                run_live_node(child, input, elapsed, started_nodes, ordinal, output);
             }
         }
         LineTaskNode::Child(task) => {
             let current = *ordinal;
             *ordinal = ordinal.saturating_add(1);
-            if trigger_is_ready(&task.trigger, input) && started_nodes.insert(current) {
+            if trigger_is_ready(&task.trigger, input, elapsed) && started_nodes.insert(current) {
                 output.requests.tasks.push(task_spec(task));
                 run_scope(&task.scope, input, ScopeExit::Completed, output);
             }
@@ -365,14 +369,18 @@ fn run_live_node(
 }
 
 fn run_child_task(task: &LineChildTask, input: &RuntimeStepInput, output: &mut RuntimeStepOutput) {
-    if !trigger_is_ready(&task.trigger, input) {
+    if !trigger_is_ready(&task.trigger, input, input.dt) {
         return;
     }
     output.requests.tasks.push(task_spec(task));
     run_scope(&task.scope, input, ScopeExit::Completed, output);
 }
 
-fn trigger_is_ready(trigger: &LineTaskTrigger, input: &RuntimeStepInput) -> bool {
+fn trigger_is_ready(
+    trigger: &LineTaskTrigger,
+    input: &RuntimeStepInput,
+    elapsed: LogicalDuration,
+) -> bool {
     match trigger {
         LineTaskTrigger::Immediate => true,
         LineTaskTrigger::Mark(name) => input.input_events.iter().any(|event| {
@@ -381,7 +389,7 @@ fn trigger_is_ready(trigger: &LineTaskTrigger, input: &RuntimeStepInput) -> bool
             (event_name == Some("mark") && payload == Some(name.as_str()))
                 || event_name == Some(format!("mark:{name}").as_str())
         }),
-        LineTaskTrigger::Delay(duration) => input.dt.as_nanos() >= duration.as_nanos(),
+        LineTaskTrigger::Delay(duration) => elapsed.as_nanos() >= duration.as_nanos(),
     }
 }
 

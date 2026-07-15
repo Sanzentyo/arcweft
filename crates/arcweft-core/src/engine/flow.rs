@@ -14,6 +14,7 @@ use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
 use crate::task::{
     CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
+use crate::time::LogicalDuration;
 use std::sync::Arc;
 
 impl Engine {
@@ -85,8 +86,9 @@ impl Engine {
                     return;
                 };
                 let mut started_nodes = std::collections::BTreeSet::new();
+                let elapsed = LogicalDuration::default();
                 self.merge_step_output(
-                    progress_live_line_task_group(group, input, &mut started_nodes),
+                    progress_live_line_task_group(group, input, elapsed, &mut started_nodes),
                     output,
                     pure_backend,
                 );
@@ -96,6 +98,7 @@ impl Engine {
                         task_group,
                         resume: self.resume_cursor(next_op_index),
                         started_nodes,
+                        elapsed,
                     });
                 }
             }

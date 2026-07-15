@@ -40,6 +40,12 @@ impl LogicalDuration {
     pub const fn as_nanos(self) -> u64 {
         self.nanos
     }
+
+    /// Adds logical elapsed time without wrapping at the representation limit.
+    #[must_use]
+    pub const fn saturating_add(self, other: Self) -> Self {
+        Self::from_nanos(self.nanos.saturating_add(other.nanos))
+    }
 }
 
 impl Default for LogicalDuration {

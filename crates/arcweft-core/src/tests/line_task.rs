@@ -1,5 +1,5 @@
 use super::call;
-use crate::{effect::*, engine::*, line_task::*, plan::*, step::*, task::*};
+use crate::{effect::*, engine::*, line_task::*, plan::*, step::*, task::*, time::LogicalDuration};
 
 #[test]
 fn engine_steps_line_task_groups_as_sans_io_effects() {
@@ -116,4 +116,99 @@ fn child_task_triggers_emit_task_request_and_scoped_body() {
         output.effects.line,
         vec![call("handler"), call("handler_defer")]
     );
+}
+
+#[test]
+fn live_delay_uses_accumulated_time_since_line_activation() {
+    let line = super::line_id("say.delayed.001");
+    let task_id = TaskId("line.task.delayed".to_owned());
+    let group = LineTaskGroup {
+        root: LineTaskScope {
+            node: LineTaskNode::Seq(vec![LineTaskNode::Child(LineChildTask {
+                id: task_id.clone(),
+                key: None,
+                name: Some("delayed".to_owned()),
+                trigger: LineTaskTrigger::Delay(LogicalDuration::from_nanos(10)),
+                priority: TaskPriority::default(),
+                join_policy: ChildJoinPolicy::default(),
+                cancel_policy: ChildCancelPolicy::default(),
+                scope: Box::default(),
+            })]),
+            ..LineTaskScope::default()
+        },
+        ..LineTaskGroup::default()
+    };
+    let flow = super::flow_id("flow.delayed");
+    let plan = RuntimePlan::new(
+        Some(flow.clone()),
+        vec![RuntimeFlow {
+            id: flow,
+            ops: vec![FlowOp::Dialogue {
+                line,
+                task_group: 0,
+            }],
+        }],
+        vec![group],
+    )
+    .expect("delayed line plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let activated = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            dt: LogicalDuration::from_nanos(100),
+            ..RuntimeStepInput::default()
+        },
+    );
+    assert!(activated.requests.tasks.is_empty());
+    assert!(matches!(
+        &engine.fiber().status,
+        FlowFiberStatus::Dialogue(state)
+            if state.elapsed == LogicalDuration::default()
+    ));
+
+    for elapsed in [4, 4] {
+        let pending = super::runtime_step(
+            &mut engine,
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(elapsed),
+                ..RuntimeStepInput::default()
+            },
+        );
+        assert!(pending.requests.tasks.is_empty());
+    }
+    assert!(matches!(
+        &engine.fiber().status,
+        FlowFiberStatus::Dialogue(state)
+            if state.elapsed == LogicalDuration::from_nanos(8)
+    ));
+
+    let ready = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            dt: LogicalDuration::from_nanos(2),
+            ..RuntimeStepInput::default()
+        },
+    );
+    assert_eq!(ready.requests.tasks.len(), 1);
+    assert_eq!(ready.requests.tasks[0].id, task_id);
+    assert!(matches!(
+        &engine.fiber().status,
+        FlowFiberStatus::Dialogue(state)
+            if state.elapsed == LogicalDuration::from_nanos(10)
+    ));
+
+    let repeated = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            dt: LogicalDuration::from_nanos(u64::MAX),
+            ..RuntimeStepInput::default()
+        },
+    );
+    assert!(repeated.requests.tasks.is_empty());
+    assert!(matches!(
+        &engine.fiber().status,
+        FlowFiberStatus::Dialogue(state)
+            if state.elapsed == LogicalDuration::from_nanos(u64::MAX)
+    ));
 }
