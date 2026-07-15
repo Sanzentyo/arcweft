@@ -57,8 +57,6 @@ alice(id=@say.opening.greeting, view=@view.SideDialogue, voice=auto, look=smile)
 
 `with` is reserved for attaching a line plan to dialogue calls. Parentheses `(...)` are for options; brackets `[...]` are player-facing dialogue content; canonical `with { ... }` or indentation sugar `with:` attaches the line plan. A bare trailing `{ ... }` after `]` is a separate lexical scope, not a line plan attachment.
 
-Older compact option styles without parentheses are not part of the stable grammar and must be rejected by parser and tooling.
-
 ---
 
 ## Speaker presets
@@ -442,7 +440,7 @@ Supported anchors:
 | `at(word(3))` | word/token reveal index |
 
 The line-plan cue form is `at(...) { ... }` or the indentation sugar
-`at(...):`. `at(...)[...]` is not part of the stable grammar.
+`at(...):`.
 
 ---
 

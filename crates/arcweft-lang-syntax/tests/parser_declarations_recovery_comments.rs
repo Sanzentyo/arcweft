@@ -278,8 +278,8 @@ pub character @character.alice Alice as alice {}
 
 #[test]
 fn invalid_entity_block_header_is_not_an_ast_node_and_recovers_after_its_block() {
-    let source = r#"pub asset set foo {
-    file = "obsolete.png"
+    let source = r#"pub asset unexpected extra {
+    file = "unused.png"
 }
 pub character bob {}
 "#;
@@ -291,8 +291,8 @@ pub character bob {}
         error.message(),
         "unexpected token in entity declaration header"
     );
-    assert_eq!(error.found(), Some("foo"));
-    assert_eq!(&source[error.range().as_range()], "foo");
+    assert_eq!(error.found(), Some("extra"));
+    assert_eq!(&source[error.range().as_range()], "extra");
     assert!(matches!(
         parsed.typed_tree().items(),
         [Item::EntityDecl(item)]

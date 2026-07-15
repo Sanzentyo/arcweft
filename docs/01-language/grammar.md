@@ -185,7 +185,7 @@ generic parameters. `Ident EntityRef` retains relation headers such as
 `parent @bus.master`; whether a particular relation or typed tail is meaningful
 for an entity kind is a semantic rule. A second unstructured identifier after
 a compact declaration name is not a header extension. For example,
-`asset set extra { ... }` is a syntax error at `extra`, does not produce an
+`asset unexpected extra { ... }` is a syntax error at `extra`, does not produce an
 entity declaration AST node, and recovery resumes after that declaration's
 line or balanced block.
 
@@ -734,7 +734,7 @@ ev .ChoiceSelected { id }
 
 Whole-pattern binding uses `Ident Pattern` only where the second token clearly
 starts a non-binding pattern, such as a variant, tuple, record, list, literal, or
-entity reference. `name @ pattern` is not part of Arcweft grammar.
+entity reference.
 
 ## Expression operators and postfixes
 

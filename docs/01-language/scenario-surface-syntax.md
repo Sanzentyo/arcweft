@@ -109,8 +109,7 @@ alice.say(
 ```
 
 `@` is the entity-reference marker. `#` is reserved for Rust-like attributes
-such as `#[derive(...)]`. Older compact option styles without parentheses are
-not part of the stable grammar.
+such as `#[derive(...)]`.
 
 Line IDs may also be relative in the `id` option. Relative line IDs are resolved
 using the current flow, speaker, and named-scope path.
@@ -428,9 +427,9 @@ with:
 
 ---
 
-## No separate script item
+## Scenario declarations
 
-The `script` keyword is not part of Arcweft's scenario grammar.
+Scenario code is declared with ordinary `flow` items.
 
 ```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
@@ -452,8 +451,8 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 ```
 
-`include` targets a flow reference; there is no separate `FlowFragment` surface
-type or `fragment` declaration keyword.
+`include` targets a flow reference, so reusable scenario snippets remain
+ordinary `flow` declarations.
 
 ---
 
@@ -586,9 +585,8 @@ view = "view.NarrationDialogue"
 
 ## Staging calls in flow bodies
 
-Scenario staging is expressed as ordinary effectful calls inside `flow` and
-`fragment` bodies. The older `@bg` / `@show` command family is not part of the
-stable grammar; `@` is reserved for entity references.
+Scenario staging is expressed as ordinary effectful calls inside `flow` bodies.
+Presentation targets are passed as entity-reference arguments.
 
 ```arcw
 bg(@asset:.bg.school_evening, fade = 600ms)
