@@ -21,6 +21,7 @@ pub mod project;
 pub mod reference;
 pub mod style;
 pub mod symbol;
+pub mod view_part;
 
 /// Syntax types intentionally exposed through a namespace instead of flat
 /// crate-root re-exports, so downstream crates can see which layer owns a type.

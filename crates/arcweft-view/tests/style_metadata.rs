@@ -3,9 +3,10 @@ use arcweft_view::geometry::{ViewGeometryPropertySupport, ViewRepresentedGeometr
 use arcweft_view::{
     ViewAlignment, ViewBlendMode, ViewDisplay, ViewElementKind, ViewElementState,
     ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList, ViewFontStyle,
-    ViewFontWeight, ViewInteractionSelector, ViewOverflow, ViewPartName, ViewPosition,
-    ViewPropertyExpansion, ViewPropertyKind, ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue,
-    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleCombinator,
+    ViewFontWeight, ViewInteractionSelector, ViewLocalPartName, ViewOverflow, ViewPartName,
+    ViewPosition, ViewPropertyExpansion, ViewPropertyKind, ViewRatioMilli, ViewScalarMilli,
+    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts,
+    ViewStyleCombinator,
     ViewStyleInvalidationSet, ViewStylePatchId, ViewStylePredicate, ViewStyleScopeId,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheetId, ViewStyleTokenId,
     ViewStyleValueKind, ViewSystemFontFamily,
@@ -177,20 +178,18 @@ fn typed_ids_and_applications_preserve_scope_order_and_boundaries() {
     assert_eq!(application.application_order(), 11);
     assert!(application.boundary().allows_selector_traversal());
     assert!(!application.boundary().allows_inherited_root());
-    assert_eq!(
+    let private = ViewLocalPartName::try_new("part.private").unwrap();
+    let public = ViewPartName::try_new("part.public").unwrap();
+    assert!(
         application
             .boundary()
-            .selector_part(Some("part.private"), Some("part.public")),
-        Some("part.public")
+            .matches_part(&public, Some(&private), Some(&public))
     );
 
     let transitive_export = ViewStyleBoundaryFacts::nested_view(2, true, false);
     assert_eq!(transitive_export.crossed_view_boundaries(), 2);
     assert!(!transitive_export.allows_selector_traversal());
-    assert_eq!(
-        transitive_export.selector_part(Some("part.private"), Some("part.public")),
-        None
-    );
+    assert!(!transitive_export.matches_part(&public, Some(&private), Some(&public)));
 
     let inline = ViewStyleApplicationTarget::inline(ViewStylePatchId::new(9));
     assert!(matches!(

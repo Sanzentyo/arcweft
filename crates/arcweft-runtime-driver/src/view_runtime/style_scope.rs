@@ -1,12 +1,15 @@
 //! Ordered Style application scopes retained during View evaluation.
 
 use super::BundleViewInstancePath;
-use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramResource};
+use arcweft_bundle::resource_codec::view::ViewElementKind;
 use arcweft_view::{
-    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleScopeId,
+    ViewLocalPartName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewStyleBoundaryFacts, ViewStyleScopeId,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use super::part::ViewPartRuntimeCatalog;
 
 /// One node producer whose effective ordered Style applications were retained.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -17,12 +20,12 @@ pub struct BundleViewStyleNode {
     pub parent: Option<BundleViewStyleNodeId>,
     pub kind: BundleViewStyleNodeKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub part: Option<String>,
+    pub part: Option<ViewLocalPartName>,
     /// Public part identity exposed to a Style application crossing the
     /// direct owning View boundary. This is distinct from the private
     /// implementation `part` identity above.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exported_part: Option<String>,
+    pub exported_part: Option<ViewPartName>,
     pub applications: Vec<ViewStyleApplication>,
 }
 
@@ -96,12 +99,12 @@ pub(crate) struct ViewStyleScopeRuntime {
 
 /// One node-producer evaluation at the Style scope boundary.
 pub(crate) struct ViewStyleNodeInput<'a> {
-    pub(crate) program: &'a ViewProgramResource,
+    pub(crate) parts: &'a ViewPartRuntimeCatalog,
     pub(crate) view: &'a str,
     pub(crate) path: &'a BundleViewInstancePath,
     pub(crate) instruction: u32,
     pub(crate) kind: BundleViewStyleNodeKind,
-    pub(crate) part: Option<&'a str>,
+    pub(crate) part: Option<&'a ViewLocalPartName>,
     pub(crate) local: &'a [ViewStyleApplicationTarget],
     pub(crate) root: bool,
 }
@@ -147,14 +150,9 @@ impl ViewStyleScopeRuntime {
         input: ViewStyleNodeInput<'_>,
         allocator: &mut ViewStyleScopeAllocator,
     ) -> Result<LocalStyleApplications, ViewStyleScopeError> {
-        let exported_part = input.part.and_then(|part| {
-            input
-                .program
-                .exported_parts
-                .iter()
-                .find(|export| export.view == input.view && export.part_id == part)
-                .map(|export| export.public_name.as_str())
-        });
+        let exported_part = input
+            .part
+            .and_then(|part| input.parts.public_name(input.view, part).cloned());
         let mut local = self.stack.applications_for_node(
             input.local,
             input.root,
@@ -171,8 +169,8 @@ impl ViewStyleScopeRuntime {
             instruction: input.instruction,
             parent: self.node_ancestry.last().cloned(),
             kind: input.kind,
-            part: input.part.map(str::to_owned),
-            exported_part: exported_part.map(str::to_owned),
+            part: input.part.cloned(),
+            exported_part,
             applications: local.applications.clone(),
         });
         Ok(local)

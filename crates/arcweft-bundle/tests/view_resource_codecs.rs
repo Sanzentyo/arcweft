@@ -3,27 +3,30 @@ use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, SystemColorOverride,
     TextAssistPolicy, TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
-    ViewDefinitionResource, ViewElementKind, ViewExportedPart, ViewFocusAutoScrollPolicy,
-    ViewFxArgumentBindingRef, ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose,
-    ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource, ViewLocalizedTextResource,
-    ViewLogicalRect, ViewObserveClassification, ViewParameterResource, ViewProgramInstruction,
-    ViewProgramResource, ViewProgramStyleResources, ViewResourceBudget, ViewResourceCompatibility,
-    ViewScrollAxis, ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy,
-    ViewScrollOverscrollPolicy, ViewScrollRegionResource, ViewSecureInputPolicy,
-    ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStyleApplicationTarget, ViewStyleAssignOp,
-    ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleResource,
-    ViewStyleRule, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken,
-    ViewStyleTokenId, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
-    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
-    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeEnvironmentDefaults,
-    ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
-    migrated_view_section_compatibility,
+    ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewExportValidationError,
+    ViewExportedPart, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewHandlerRef,
+    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewInstructionSpan,
+    ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
+    ViewObserveClassification, ViewOwnedPartRef, ViewParameterResource, ViewPartExportSourceRef,
+    ViewProgramInstruction, ViewProgramResource, ViewProgramStyleResources, ViewResourceBudget,
+    ViewResourceCompatibility, ViewScrollAxis, ViewScrollIndicatorsPolicy,
+    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
+    ViewSecureInputPolicy, ViewSecureRedactionMetadata, ViewSemanticTarget,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStylePatch,
+    ViewStylePatchId, ViewStyleProgram, ViewStyleResource, ViewStyleRule, ViewStyleSheet,
+    ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId, ViewTextBlockBounds,
+    ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    ViewThemeEnvironmentDefaults, ViewThemeResource, ViewValueInputNamespace,
+    ViewValueInputResource, ViewValueInputSource, migrated_view_section_compatibility,
 };
 use arcweft_render_text::{RichTextDocument, RichTextNode};
 
+use arcweft_bundle::BundleSource;
 use arcweft_bundle::resource_codec::{
     FieldId, ProductResourceEnvelope, ProductSectionCodecKind, PublicIdRef, PublicIdTable,
-    ResourceField, ResourceWireType, SectionCodecBudget, SourceRangeRef,
+    ResourceField, ResourceWireType, SectionCodecBudget, SourceMapIndex, SourceMapSourceId,
+    SourceRangeRef,
 };
 use arcweft_presentation::appearance::{
     ColorSchemePreference, ContrastPreference, PresentationColor, SystemColor,
@@ -35,6 +38,7 @@ use arcweft_view::style::{
     ViewColorValue, ViewElementState, ViewPropertyKind, ViewSpecifiedValue, ViewStylePredicate,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleValueKind,
 };
+use arcweft_view::{ViewLocalPartName, ViewPartName};
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
 const MALFORMED_RESOURCE_IDENTITIES: [&str; 4] =
@@ -492,22 +496,18 @@ fn exported_part_identity_is_scoped_to_its_owning_view() {
     );
 
     let mut duplicate_local = program.clone();
-    duplicate_local.exported_parts.push(ViewExportedPart {
-        view: "view.Left".to_owned(),
-        part_id: "part.shared".to_owned(),
-        public_name: "part.other-public".to_owned(),
-    });
+    let mut duplicate = duplicate_local.exported_parts[0].clone();
+    duplicate.public_name = part_public("part.other-public");
+    duplicate_local.exported_parts.push(duplicate);
     assert!(
         duplicate_local.encode_canonical_section().is_err(),
         "one View may not export the same local part twice",
     );
 
     let mut duplicate_public = program;
-    duplicate_public.exported_parts.push(ViewExportedPart {
-        view: "view.Left".to_owned(),
-        part_id: "part.other".to_owned(),
-        public_name: "part.public".to_owned(),
-    });
+    let mut duplicate = duplicate_public.exported_parts[0].clone();
+    duplicate.target.part = local_part("part.other");
+    duplicate_public.exported_parts.push(duplicate);
     assert!(
         duplicate_public.encode_canonical_section().is_err(),
         "one View may not bind one public part name to multiple local parts",
@@ -517,24 +517,111 @@ fn exported_part_identity_is_scoped_to_its_owning_view() {
 #[test]
 fn exported_part_references_are_validated_by_the_program_codec() {
     let mut missing_view = exported_part_program();
-    missing_view.exported_parts[0].view = "view.Missing".to_owned();
+    missing_view.exported_parts[0].target.view = view_ref("view.Missing");
     assert_eq!(
         missing_view
             .encode_canonical_section()
             .expect_err("an exported part must name an owning View"),
-        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-            "view_exported_part_views",
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::UnknownOwner,
         ),
     );
 
     let mut missing_target = exported_part_program();
-    missing_target.exported_parts[0].part_id = "part.missing".to_owned();
+    missing_target.exported_parts[0].target.part = local_part("part.missing");
     assert_eq!(
         missing_target
             .encode_canonical_section()
             .expect_err("an exported part must name a part inside its owning View"),
-        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-            "view_exported_part_targets",
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::MissingTarget,
+        ),
+    );
+}
+
+#[test]
+fn exported_part_source_provenance_is_validated_without_source_io() {
+    let sources = SourceMapIndex::from_source(&BundleSource {
+        label: "main.arcw".to_owned(),
+        text: "x".repeat(128),
+    })
+    .expect("source-map index");
+    exported_part_program()
+        .validate_export_sources(&sources)
+        .expect("canonical export ranges fit encoded source metadata");
+
+    let mut unknown = exported_part_program();
+    unknown.exported_parts[0].source.source_id =
+        SourceMapSourceId::try_new("other.arcw").expect("source identity");
+    assert_eq!(
+        unknown
+            .validate_export_sources(&sources)
+            .expect_err("unknown encoded source identity must fail"),
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::UnknownSource,
+        ),
+    );
+
+    let mut out_of_bounds = exported_part_program();
+    out_of_bounds.exported_parts[0].source.declaration.end_byte = 129;
+    assert_eq!(
+        out_of_bounds
+            .validate_export_sources(&sources)
+            .expect_err("range outside encoded normalized extent must fail"),
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::SourceOutOfBounds,
+        ),
+    );
+}
+
+#[test]
+fn exported_part_source_ranges_reject_structural_tampering() {
+    let mut empty = exported_part_program();
+    empty.exported_parts[0].source.local_name.end_byte =
+        empty.exported_parts[0].source.local_name.start_byte;
+    assert_eq!(
+        empty
+            .encode_canonical_section()
+            .expect_err("empty source range must fail"),
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::InvalidSourceRange,
+        ),
+    );
+
+    let mut outside = exported_part_program();
+    outside.exported_parts[0].source.local_name.start_byte =
+        outside.exported_parts[0].source.declaration.end_byte;
+    outside.exported_parts[0].source.local_name.end_byte =
+        outside.exported_parts[0].source.declaration.end_byte + 1;
+    assert_eq!(
+        outside
+            .encode_canonical_section()
+            .expect_err("name outside declaration must fail"),
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::SourceNotContained,
+        ),
+    );
+
+    let mut overlap = exported_part_program();
+    overlap.exported_parts[0].source.public_name.start_byte =
+        overlap.exported_parts[0].source.local_name.end_byte - 1;
+    assert_eq!(
+        overlap
+            .encode_canonical_section()
+            .expect_err("local and public ranges must not overlap"),
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::SourceOverlap,
+        ),
+    );
+
+    let mut cross_source = exported_part_program();
+    cross_source.exported_parts[0].source.public_name.source = PublicIdRef(u32::MAX);
+    assert_eq!(
+        cross_source
+            .encode_canonical_section()
+            .expect_err("all provenance ranges must resolve to one source"),
+        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
+            ViewExportValidationError::UnknownSource,
         ),
     );
 }
@@ -555,7 +642,6 @@ fn view_program_identities_reject_malformed_resource_ids() {
 
         let mut invalid_view = exported_part_program();
         invalid_view.definitions[0].public_id = malformed.to_owned();
-        invalid_view.exported_parts[0].view = malformed.to_owned();
         assert_eq!(
             invalid_view
                 .encode_canonical_section()
@@ -570,118 +656,33 @@ fn view_program_identities_reject_malformed_resource_ids() {
 #[test]
 fn exported_part_identities_reject_malformed_resource_ids() {
     for malformed in MALFORMED_RESOURCE_IDENTITIES {
-        let mut invalid_view = exported_part_program();
-        invalid_view.exported_parts[0].view = malformed.to_owned();
-        assert_eq!(
-            invalid_view
-                .encode_canonical_section()
-                .expect_err("an exported-part View must follow resource identity rules"),
-            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-                "view_exported_part_identities",
-            ),
-        );
-
-        let mut invalid_part = exported_part_program();
-        invalid_part.exported_parts[0].part_id = malformed.to_owned();
-        let ViewProgramInstruction::EmitCustom { part, .. } = &mut invalid_part.instructions[0]
-        else {
-            unreachable!("exported-part fixture begins with EmitCustom")
-        };
-        *part = Some(malformed.to_owned());
-        assert_eq!(
-            invalid_part
-                .encode_canonical_section()
-                .expect_err("an exported part ID must follow resource identity rules"),
-            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-                "view_exported_part_identities",
-            ),
-        );
-
-        let mut invalid_public_name = exported_part_program();
-        invalid_public_name.exported_parts[0].public_name = malformed.to_owned();
-        assert_eq!(
-            invalid_public_name
-                .encode_canonical_section()
-                .expect_err("an exported part public name must follow resource identity rules"),
-            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-                "view_exported_part_identities",
-            ),
-        );
+        assert!(ViewDefinitionRef::try_new(malformed).is_err());
+        assert!(ViewLocalPartName::try_new(malformed).is_err());
+        assert!(ViewPartName::try_new(malformed).is_err());
     }
+}
+
+#[test]
+fn exported_part_old_flat_record_has_no_compatibility_reader() {
+    let old = serde_json::json!({
+        "view": "view.Card",
+        "part_id": "part.header",
+        "public_name": "card.heading"
+    });
+
+    assert!(
+        serde_json::from_value::<ViewExportedPart>(old).is_err(),
+        "the provisional flat string record must not remain decodable",
+    );
 }
 
 #[test]
 fn instruction_parts_reject_malformed_resource_ids() {
     for malformed in MALFORMED_RESOURCE_IDENTITIES {
-        let instructions = [
-            (
-                "open_element",
-                ViewProgramInstruction::OpenElement {
-                    element: ViewElementKind::Panel,
-                    target: None,
-                    styles: Vec::new(),
-                    part: Some(malformed.to_owned()),
-                    key: None,
-                    source: None,
-                },
-            ),
-            (
-                "emit_text",
-                ViewProgramInstruction::EmitText {
-                    text_source: "text.body".to_owned(),
-                    text_block: "text.block.body".to_owned(),
-                    styles: Vec::new(),
-                    part: Some(malformed.to_owned()),
-                    source: None,
-                },
-            ),
-            (
-                "emit_image",
-                ViewProgramInstruction::EmitImage {
-                    image: "image.hero".to_owned(),
-                    target: None,
-                    styles: Vec::new(),
-                    part: Some(malformed.to_owned()),
-                    source: None,
-                },
-            ),
-            (
-                "emit_custom",
-                ViewProgramInstruction::EmitCustom {
-                    element: "element.custom".to_owned(),
-                    styles: Vec::new(),
-                    part: Some(malformed.to_owned()),
-                    source: None,
-                },
-            ),
-            (
-                "call_view",
-                ViewProgramInstruction::CallView {
-                    view: "view.Left".to_owned(),
-                    arguments: Vec::new(),
-                    styles: Vec::new(),
-                    part: Some(malformed.to_owned()),
-                    key: None,
-                    source: None,
-                },
-            ),
-        ];
-
-        for (kind, instruction) in instructions {
-            let mut program = exported_part_program();
-            program.exported_parts.clear();
-            program.instructions[0] = instruction;
-            let error = program
-                .encode_canonical_section()
-                .expect_err("an instruction part must follow resource identity rules");
-            assert_eq!(
-                error,
-                arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-                    "view_instruction_parts",
-                ),
-                "{kind} accepted malformed part identity {malformed:?}",
-            );
-        }
+        assert!(
+            ViewLocalPartName::try_new(malformed).is_err(),
+            "node-producing instructions accept only typed local part identities",
+        );
     }
 }
 
@@ -1161,7 +1162,7 @@ fn view_program_bytes_without_scroll_region_field(field_name: &str) -> Vec<u8> {
 }
 
 fn exported_part_program() -> ViewProgramResource {
-    ViewProgramResource {
+    let mut program = ViewProgramResource {
         program_id: "program.exported-parts".to_owned(),
         definitions: vec![
             ViewDefinitionResource {
@@ -1183,36 +1184,76 @@ fn exported_part_program() -> ViewProgramResource {
             ViewProgramInstruction::EmitCustom {
                 element: "element.left.shared".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.shared".to_owned()),
+                part: Some(local_part("part.shared")),
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
                 element: "element.left.other".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.other".to_owned()),
+                part: Some(local_part("part.other")),
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
                 element: "element.right.shared".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.shared".to_owned()),
+                part: Some(local_part("part.shared")),
                 source: None,
             },
         ],
         exported_parts: vec![
-            ViewExportedPart {
-                view: "view.Left".to_owned(),
-                part_id: "part.shared".to_owned(),
-                public_name: "part.public".to_owned(),
-            },
-            ViewExportedPart {
-                view: "view.Right".to_owned(),
-                part_id: "part.shared".to_owned(),
-                public_name: "part.public".to_owned(),
-            },
+            exported_part("view.Left", "part.shared", "part.public", 0),
+            exported_part("view.Right", "part.shared", "part.public", 40),
         ],
         ..ViewProgramResource::default()
+    };
+    let source = program
+        .public_id_table()
+        .expect("exported-part public IDs")
+        .id_for("main.arcw")
+        .expect("source identity is retained in the View table");
+    for exported in &mut program.exported_parts {
+        for range in exported.source.ranges_mut() {
+            range.source = source;
+        }
     }
+    program
+}
+
+fn exported_part(owner: &str, local: &str, public: &str, start: u32) -> ViewExportedPart {
+    ViewExportedPart {
+        target: ViewOwnedPartRef::new(view_ref(owner), local_part(local)),
+        public_name: part_public(public),
+        source: ViewPartExportSourceRef {
+            source_id: SourceMapSourceId::try_new("main.arcw").expect("valid source identity"),
+            declaration: SourceRangeRef {
+                source: PublicIdRef(0),
+                start_byte: start,
+                end_byte: start + 32,
+            },
+            local_name: SourceRangeRef {
+                source: PublicIdRef(0),
+                start_byte: start + 12,
+                end_byte: start + 20,
+            },
+            public_name: SourceRangeRef {
+                source: PublicIdRef(0),
+                start_byte: start + 24,
+                end_byte: start + 31,
+            },
+        },
+    }
+}
+
+fn view_ref(value: &str) -> ViewDefinitionRef {
+    ViewDefinitionRef::try_new(value).expect("valid View definition identity")
+}
+
+fn local_part(value: &str) -> ViewLocalPartName {
+    ViewLocalPartName::try_new(value).expect("valid local part identity")
+}
+
+fn part_public(value: &str) -> ViewPartName {
+    ViewPartName::try_new(value).expect("valid public part identity")
 }
 
 fn sourced_program(view_id: &str) -> ViewProgramResource {
@@ -1276,7 +1317,7 @@ fn fixture_program() -> ViewProgramResource {
                 element: ViewElementKind::Column,
                 target: None,
                 styles: vec![ViewStyleApplicationTarget::inline(ViewStylePatchId::new(7))],
-                part: Some("part.root".to_owned()),
+                part: Some(local_part("part.root")),
                 key: Some(7),
                 source: None,
             },
@@ -1284,7 +1325,7 @@ fn fixture_program() -> ViewProgramResource {
                 text_source: "text.dialogue.title".to_owned(),
                 text_block: "text.block.dialogue.title".to_owned(),
                 styles: vec![named_style("style.dialogue.secondary")],
-                part: Some("part.title".to_owned()),
+                part: Some(local_part("part.title")),
                 source: None,
             },
             ViewProgramInstruction::Await {

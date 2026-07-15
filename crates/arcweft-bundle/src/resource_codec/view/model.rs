@@ -10,10 +10,15 @@ use arcweft_presentation::fx::{FxId, FxRuntimeType};
 use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
-use arcweft_view::{DialogueAdvanceTarget, ViewValueProgram, ViewValueProgramId};
+use arcweft_view::{
+    DialogueAdvanceTarget, ViewLocalPartName, ViewValueProgram, ViewValueProgramId,
+};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+mod part;
+pub use part::*;
 
 mod style;
 pub use style::*;
@@ -56,7 +61,7 @@ pub enum ViewProgramInstruction {
         target: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<String>,
+        part: Option<ViewLocalPartName>,
         key: Option<u64>,
         source: Option<SourceRangeRef>,
     },
@@ -66,7 +71,7 @@ pub enum ViewProgramInstruction {
         text_block: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<String>,
+        part: Option<ViewLocalPartName>,
         source: Option<SourceRangeRef>,
     },
     EmitImage {
@@ -75,14 +80,14 @@ pub enum ViewProgramInstruction {
         target: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<String>,
+        part: Option<ViewLocalPartName>,
         source: Option<SourceRangeRef>,
     },
     EmitCustom {
         element: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<String>,
+        part: Option<ViewLocalPartName>,
         source: Option<SourceRangeRef>,
     },
     CallView {
@@ -90,7 +95,7 @@ pub enum ViewProgramInstruction {
         arguments: Vec<ViewCallArgumentBindingRef>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<String>,
+        part: Option<ViewLocalPartName>,
         key: Option<u64>,
         source: Option<SourceRangeRef>,
     },
@@ -179,13 +184,13 @@ impl ViewProgramInstruction {
     }
 
     /// Authored part attached to a node-producing instruction, if present.
-    pub fn part(&self) -> Option<&str> {
+    pub fn part(&self) -> Option<&ViewLocalPartName> {
         match self {
             Self::OpenElement { part, .. }
             | Self::EmitText { part, .. }
             | Self::EmitImage { part, .. }
             | Self::EmitCustom { part, .. }
-            | Self::CallView { part, .. } => part.as_deref(),
+            | Self::CallView { part, .. } => part.as_ref(),
             Self::CloseElement
             | Self::Branch { .. }
             | Self::RepeatKeyed { .. }
@@ -334,14 +339,6 @@ pub struct ViewHandlerRef {
     pub awbc_function_index: u32,
     pub handler_abi: BundleDigest,
     pub function_binding: Option<CrossSectionRef>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ViewExportedPart {
-    pub view: String,
-    pub part_id: String,
-    pub public_name: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -11,6 +11,7 @@ use arcweft_view::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::resource_codec::SourceMapIndex;
 use crate::resource_codec::budget::{SectionCodecBudget, check_budget};
 use crate::resource_codec::error::SectionCodecError;
 use crate::resource_codec::kind::ProductSectionCodecKind;
@@ -24,7 +25,10 @@ use super::model::{
     ViewThemeResource, ViewValueInputNamespace, ViewValueInputSource,
 };
 
+mod part;
 mod transcript;
+
+pub use part::ViewExportValidationError;
 
 use self::transcript::{
     decode_view_section, encode_view_section, export_json_bytes, validate_canonical_view_transcript,
@@ -196,6 +200,28 @@ impl ViewProgramResource {
         PublicIdTable::new(self.public_ids())
     }
 
+    /// Validates mandatory export provenance against the decoded product source map.
+    pub fn validate_export_sources(
+        &self,
+        sources: &SourceMapIndex,
+    ) -> Result<(), SectionCodecError> {
+        part::validate_export_source_extents(self, sources).map_err(Into::into)
+    }
+
+    /// Binds authored export ranges to this section's canonical source-ID table.
+    pub fn bind_export_source_refs(&mut self) -> Result<(), SectionCodecError> {
+        let table = self.public_id_table()?;
+        for exported in &mut self.exported_parts {
+            let source = table
+                .id_for(exported.source.source_id.as_str())
+                .ok_or(ViewExportValidationError::UnknownSource)?;
+            for range in exported.source.ranges_mut() {
+                range.source = source;
+            }
+        }
+        Ok(())
+    }
+
     fn canonicalize(&mut self) {
         self.value_programs
             .sort_by_key(arcweft_view::ViewValueProgram::id);
@@ -217,10 +243,11 @@ impl ViewProgramResource {
         self.handlers
             .sort_by(|left, right| left.handler_id.cmp(&right.handler_id));
         self.exported_parts.sort_by(|left, right| {
-            left.view
-                .cmp(&right.view)
+            left.target
+                .view
+                .cmp(&right.target.view)
                 .then(left.public_name.cmp(&right.public_name))
-                .then(left.part_id.cmp(&right.part_id))
+                .then(left.target.part.cmp(&right.target.part))
         });
         self.semantic_targets
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
@@ -270,25 +297,6 @@ impl ViewProgramResource {
         {
             return Err(SectionCodecError::NonCanonicalTable(
                 "view_program_identities",
-            ));
-        }
-        if self.exported_parts.iter().any(|exported| {
-            [&exported.view, &exported.part_id, &exported.public_name]
-                .into_iter()
-                .any(|identity| !valid_resource_identity(identity))
-        }) {
-            return Err(SectionCodecError::NonCanonicalTable(
-                "view_exported_part_identities",
-            ));
-        }
-        if self
-            .instructions
-            .iter()
-            .filter_map(ViewProgramInstruction::part)
-            .any(|part| !valid_resource_identity(part))
-        {
-            return Err(SectionCodecError::NonCanonicalTable(
-                "view_instruction_parts",
             ));
         }
         Ok(())
@@ -614,33 +622,7 @@ impl ViewProgramResource {
     }
 
     fn validate_exported_parts(&self) -> Result<(), SectionCodecError> {
-        for exported in &self.exported_parts {
-            let definition = self
-                .definitions
-                .iter()
-                .find(|definition| definition.public_id == exported.view)
-                .ok_or(SectionCodecError::NonCanonicalTable(
-                    "view_exported_part_views",
-                ))?;
-            let instructions = self
-                .instructions
-                .get(
-                    definition.body.start_instruction as usize
-                        ..definition.body.end_instruction as usize,
-                )
-                .ok_or(SectionCodecError::NonCanonicalTable(
-                    "view_exported_part_definition_spans",
-                ))?;
-            if !instructions
-                .iter()
-                .any(|instruction| instruction.part() == Some(exported.part_id.as_str()))
-            {
-                return Err(SectionCodecError::NonCanonicalTable(
-                    "view_exported_part_targets",
-                ));
-            }
-        }
-        Ok(())
+        part::validate_exports(self).map_err(Into::into)
     }
 
     fn validate_control_flow_spans(&self) -> Result<(), SectionCodecError> {
@@ -709,13 +691,13 @@ impl ViewProgramResource {
         reject_duplicate_keys(
             self.exported_parts
                 .iter()
-                .map(|part| (&part.view, &part.part_id)),
+                .map(|part| (&part.target.view, &part.target.part)),
             "view_exported_part_targets",
         )?;
         reject_duplicate_keys(
             self.exported_parts
                 .iter()
-                .map(|part| (&part.view, &part.public_name)),
+                .map(|part| (&part.target.view, &part.public_name)),
             "view_exported_part_public_names",
         )?;
         reject_duplicates(
@@ -1031,6 +1013,11 @@ impl ViewProgramResource {
                     .iter()
                     .chain(item.edges.iter().filter_map(|edge| edge.source.as_ref()))
             }))
+            .chain(
+                self.exported_parts
+                    .iter()
+                    .flat_map(|part| part.source.ranges()),
+            )
     }
 
     fn validate_source_refs(&self) -> Result<(), SectionCodecError> {
@@ -1061,9 +1048,10 @@ impl ViewProgramResource {
                 )
                 .chain(self.exported_parts.iter().flat_map(|part| {
                     [
-                        part.view.clone(),
-                        part.part_id.clone(),
-                        part.public_name.clone(),
+                        part.target.view.public_id().as_str().to_owned(),
+                        part.target.part.public_id().as_str().to_owned(),
+                        part.public_name.public_id().as_str().to_owned(),
+                        part.source.source_id.as_str().to_owned(),
                     ]
                 }))
                 .chain(
@@ -2189,8 +2177,10 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
             styles,
             part,
             ..
-        } => option_ids([target, part])
-            .into_iter()
+        } => target
+            .iter()
+            .cloned()
+            .chain(part.iter().map(|part| part.public_id().as_str().to_owned()))
             .chain(style_apply_public_ids(styles))
             .collect(),
         ViewProgramInstruction::CloseElement
@@ -2208,7 +2198,8 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         } => [
             Some(text_source.clone()),
             Some(text_block.clone()),
-            part.clone(),
+            part.as_ref()
+                .map(|part| part.public_id().as_str().to_owned()),
         ]
         .into_iter()
         .flatten()
@@ -2220,28 +2211,41 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
             styles,
             part,
             ..
-        } => [Some(image.clone()), target.clone(), part.clone()]
-            .into_iter()
-            .flatten()
-            .chain(style_apply_public_ids(styles))
-            .collect(),
+        } => [
+            Some(image.clone()),
+            target.clone(),
+            part.as_ref()
+                .map(|part| part.public_id().as_str().to_owned()),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(style_apply_public_ids(styles))
+        .collect(),
         ViewProgramInstruction::EmitCustom {
             element,
             styles,
             part,
             ..
-        } => [Some(element.clone()), part.clone()]
-            .into_iter()
-            .flatten()
-            .chain(style_apply_public_ids(styles))
-            .collect(),
+        } => [
+            Some(element.clone()),
+            part.as_ref()
+                .map(|part| part.public_id().as_str().to_owned()),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(style_apply_public_ids(styles))
+        .collect(),
         ViewProgramInstruction::CallView {
             view, styles, part, ..
-        } => [Some(view.clone()), part.clone()]
-            .into_iter()
-            .flatten()
-            .chain(style_apply_public_ids(styles))
-            .collect(),
+        } => [
+            Some(view.clone()),
+            part.as_ref()
+                .map(|part| part.public_id().as_str().to_owned()),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(style_apply_public_ids(styles))
+        .collect(),
         ViewProgramInstruction::BindHandler { event, handler, .. } => {
             vec![event.clone(), handler.clone()]
         }
@@ -2263,10 +2267,6 @@ fn style_apply_public_ids(
         ViewStyleApplicationTarget::Named { sheet } => Some(sheet.public_id().as_str().to_owned()),
         ViewStyleApplicationTarget::Inline { .. } => None,
     })
-}
-
-fn option_ids<const N: usize>(values: [&Option<String>; N]) -> Vec<String> {
-    values.iter().filter_map(|value| (*value).clone()).collect()
 }
 
 fn action_payload_refs(

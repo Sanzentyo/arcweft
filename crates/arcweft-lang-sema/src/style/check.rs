@@ -7,12 +7,11 @@ use arcweft_lang_hir::{
     style::{HirStyleAssignOp, HirStyleDecl, HirStylePatch, HirStyleSelector},
 };
 use arcweft_view::{
-    ViewElementKind,
+    ViewElementKind, ViewPartName,
     style::{
-        ViewAlignment, ViewElementState, ViewInteractionSelector, ViewOverflow, ViewPartName,
-        ViewPropertyKind, ViewSpecifiedValue, ViewStyleCombinator, ViewStylePatchId,
-        ViewStylePredicate, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheetId,
-        ViewStyleTokenId,
+        ViewAlignment, ViewElementState, ViewInteractionSelector, ViewOverflow, ViewPropertyKind,
+        ViewSpecifiedValue, ViewStyleCombinator, ViewStylePatchId, ViewStylePredicate,
+        ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheetId, ViewStyleTokenId,
     },
 };
 

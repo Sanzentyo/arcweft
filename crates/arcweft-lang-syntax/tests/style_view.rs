@@ -1137,6 +1137,6 @@ pub view DialoguePanel() {
     let panel = find_element(view.value(), "Panel").expect("expected root Panel");
     assert!(matches!(
         panel.modifiers(),
-        [ViewModifier::Part(part)] if part == "dialogue_panel"
+        [ViewModifier::Part(part)] if part.name().text() == "dialogue_panel"
     ));
 }

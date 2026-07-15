@@ -30,6 +30,7 @@ pub mod style;
 pub mod symbols;
 pub mod traits;
 pub mod types;
+pub mod view_part;
 
 #[cfg(test)]
 mod tests;

@@ -278,12 +278,7 @@ impl ArcweftLspSession {
         match request.method.as_str() {
             Completion::METHOD => {
                 let (id, params) = extract::<CompletionParams>(request, Completion::METHOD)?;
-                let profile =
-                    self.profile_for_uri(&params.text_document_position.text_document.uri);
-                let document =
-                    self.document_for_params(&params.text_document_position.text_document.uri);
-                let items = features::completion::completions(profile, document);
-                Ok(Response::new_ok(id, Some(CompletionResponse::Array(items))))
+                Ok(self.completion_response(id, &params))
             }
             HoverRequest::METHOD => {
                 let (id, params) = extract::<HoverParams>(request, HoverRequest::METHOD)?;
@@ -374,6 +369,16 @@ impl ArcweftLspSession {
                 format!("unsupported request `{}`", request.method),
             )),
         }
+    }
+
+    fn completion_response(&self, id: RequestId, params: &CompletionParams) -> Response {
+        let uri = &params.text_document_position.text_document.uri;
+        let items = features::completion::completions_at(
+            self.profile_for_uri(uri),
+            self.document_for_params(uri),
+            params.text_document_position.position,
+        );
+        Response::new_ok(id, Some(CompletionResponse::Array(items)))
     }
 
     fn handle_repl_command_request(

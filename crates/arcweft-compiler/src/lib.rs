@@ -19,6 +19,7 @@ pub mod source;
 pub mod style;
 pub mod trait_methods;
 pub mod types;
+pub mod view_part;
 
 #[cfg(test)]
 mod tests;

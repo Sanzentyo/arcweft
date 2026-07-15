@@ -1,8 +1,7 @@
 //! Canonical native Style selector state inventory.
 
 use super::value::{ViewLengthMilli, ViewRatioMilli};
-use crate::ViewElementKind;
-use arcweft_id::{IdError, PublicId};
+use crate::{ViewElementKind, ViewPartName};
 use arcweft_presentation::appearance::{ColorScheme, ContrastPreference};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::interaction::InteractionState;
@@ -37,9 +36,6 @@ pub enum ViewStyleCombinator {
     Descendant,
     Child,
 }
-
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewPartName(PublicId);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -166,20 +162,6 @@ impl ViewElementState {
             .iter()
             .copied()
             .find(|state| state.source_name() == value)
-    }
-}
-
-impl ViewPartName {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
-        PublicId::try_new(value).map(Self)
-    }
-
-    pub const fn from_public_id(id: PublicId) -> Self {
-        Self(id)
-    }
-
-    pub const fn public_id(&self) -> &PublicId {
-        &self.0
     }
 }
 

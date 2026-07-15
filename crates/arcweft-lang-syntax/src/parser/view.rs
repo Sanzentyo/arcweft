@@ -21,6 +21,8 @@ use super::recovery::ParseError;
 use super::style::parse_inline_native_style;
 use super::{parse_expr_lossy, split_top_level_binding};
 
+mod part;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ViewHead {
     Element {
@@ -123,9 +125,23 @@ pub(super) fn parse_view_body(
         return None;
     }
 
+    let export_count = lines
+        .iter()
+        .take_while(|line| part::is_export_candidate(line.trim()))
+        .count();
+    let exports = expanded_lines[..export_count]
+        .iter()
+        .filter_map(|line| part::parse_export(line, errors))
+        .collect();
     let range = TextRange::new(base, base.saturating_add(body.len()));
-    let value = parse_view_exprs(&lines, base, module_path, &source_map, errors);
-    Some(ViewBody::new(Vec::new(), Vec::new(), value, range))
+    let value = parse_view_exprs(
+        &lines[export_count..],
+        base,
+        module_path,
+        &source_map,
+        errors,
+    );
+    Some(ViewBody::new(Vec::new(), Vec::new(), exports, value, range))
 }
 
 fn mapped_view_lines(body: &str, base: usize) -> Vec<ViewSourceLine> {
@@ -206,6 +222,22 @@ fn parse_view_exprs(
     while index < lines.len() {
         let line = lines[index].trim();
         if line == "}" {
+            index += 1;
+            continue;
+        }
+        if part::is_export_candidate(line) {
+            let range = source_map
+                .location(lines[index])
+                .unwrap_or_else(|| TextRange::new(base, base.saturating_add(line.len())));
+            errors.push(
+                simple_error(
+                    range.start(),
+                    range.end().saturating_sub(range.start()),
+                    "View part exports must form the leading declaration block",
+                    "export part local as public before the View expression",
+                )
+                .with_code("view::export_part_misplaced"),
+            );
             index += 1;
             continue;
         }
@@ -754,7 +786,23 @@ fn parse_view_modifiers(
             if matches!(modifier, ViewModifier::Fx(_)) {
                 fx_ordinal = fx_ordinal.saturating_add(1);
             }
-            modifiers.push(modifier);
+            if let ViewModifier::Part(part) = &modifier
+                && modifiers
+                    .iter()
+                    .any(|existing| matches!(existing, ViewModifier::Part(_)))
+            {
+                errors.push(
+                    simple_error(
+                        part.range().start(),
+                        part.range().end().saturating_sub(part.range().start()),
+                        "View expression has more than one `.part(...)` modifier",
+                        "one .part(local_name) modifier",
+                    )
+                    .with_code("view::duplicate_part_modifier"),
+                );
+            } else {
+                modifiers.push(modifier);
+            }
             index += consumed.max(1);
         } else {
             if errors.len() == error_count {
@@ -910,7 +958,26 @@ fn parse_view_modifier(
         return Some((ViewModifier::style_inline(patch), consumed));
     }
     if let Some(part) = call_arg(line, ".part") {
-        return Some((ViewModifier::Part(part.trim().to_owned()), 1));
+        let range = source_map
+            .location(lines[0])
+            .unwrap_or_else(|| TextRange::new(base, base.saturating_add(line.len())));
+        return part::parse_label(part, line, range, errors)
+            .map(|label| (ViewModifier::Part(label), 1));
+    }
+    if line.starts_with(".export_part") {
+        let range = source_map
+            .location(lines[0])
+            .unwrap_or_else(|| TextRange::new(base, base.saturating_add(line.len())));
+        errors.push(
+            simple_error(
+                range.start(),
+                range.end().saturating_sub(range.start()),
+                "attached View part exports are not supported",
+                "export part local as public in the leading View declaration block",
+            )
+            .with_code("view::unsupported_export_spelling"),
+        );
+        return Some((ViewModifier::Raw(line.to_owned()), 1));
     }
     if let Some(value) = call_arg(line, ".agent_target")
         && let Some(target) = entity_ref_expr(&parse_expr_lossy(value))

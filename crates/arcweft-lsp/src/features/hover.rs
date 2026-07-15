@@ -2,6 +2,7 @@ use crate::documents::DocumentSnapshot;
 use crate::features::cascade::effective_dialogue_cascade_at;
 use crate::features::character_metadata::character_hover_markdown;
 use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
+use crate::features::view_part_metadata::ViewPartMetadataIndex;
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
@@ -35,6 +36,14 @@ pub fn hover(
     position: Position,
 ) -> Option<Hover> {
     let offset = document.line_index().byte_offset_from_position(position);
+    if let Some(text) = ViewPartMetadataIndex::for_document(profile, document)
+        .and_then(|metadata| metadata.hover(offset))
+    {
+        return Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::String(text)),
+            range: None,
+        });
+    }
     if let Some(hover) = dialogue_defaults_hover(document, offset) {
         return Some(hover);
     }

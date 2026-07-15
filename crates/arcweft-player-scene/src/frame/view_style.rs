@@ -20,7 +20,7 @@ use arcweft_runtime_driver::view_runtime::{
 use arcweft_view::ViewMountId;
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewElementState, ViewElementStateSet,
-    ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet, ViewPartName,
+    ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet,
     ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleNodeFacts, ViewStyleNodeKey,
     ViewStyleProgram, ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError,
     ViewStyleResolver, ViewStyleRevisionSet, ViewStyleTraceMode,
@@ -275,7 +275,7 @@ impl PlayerViewStyleState {
             composing: false,
             placeholder_shown: false,
         });
-        let facts = node_facts(context.input, node, &primary_binding)?;
+        let facts = node_facts(context.input, node, &primary_binding);
         let computed = self.resolve_node(
             context.program,
             context.presentation,
@@ -317,7 +317,7 @@ impl PlayerViewStyleState {
         output: &mut ResolvedViewStyleFrame,
     ) -> Result<(), PlayerFrameError> {
         for binding in &primary.bindings {
-            let facts = node_facts(context.input, node, binding)?;
+            let facts = node_facts(context.input, node, binding);
             let computed = if facts == primary.facts {
                 primary.computed.clone()
             } else {
@@ -570,7 +570,7 @@ fn node_facts(
     input: &InputController,
     node: &BundleViewStyleNode,
     binding: &NodeBinding,
-) -> Result<ViewStyleNodeFacts, PlayerFrameError> {
+) -> ViewStyleNodeFacts {
     let element = match node.kind {
         BundleViewStyleNodeKind::Element { element, .. } => Some(element),
         BundleViewStyleNodeKind::Text { .. }
@@ -578,22 +578,8 @@ fn node_facts(
         | BundleViewStyleNodeKind::Custom { .. }
         | BundleViewStyleNodeKind::CallView { .. } => None,
     };
-    let implementation_part = node
-        .part
-        .as_deref()
-        .map(ViewPartName::try_new)
-        .transpose()
-        .map_err(|_| PlayerFrameError::InvalidId {
-            value: node.part.clone().unwrap_or_default(),
-        })?;
-    let exported_part = node
-        .exported_part
-        .as_deref()
-        .map(ViewPartName::try_new)
-        .transpose()
-        .map_err(|_| PlayerFrameError::InvalidId {
-            value: node.exported_part.clone().unwrap_or_default(),
-        })?;
+    let implementation_part = node.part.clone();
+    let exported_part = node.exported_part.clone();
     let interactions = interaction_states(
         input.interaction(),
         binding.target.as_ref(),
@@ -629,11 +615,11 @@ fn node_facts(
             }
             scopes
         });
-    Ok(ViewStyleNodeFacts::new(element)
+    ViewStyleNodeFacts::new(element)
         .with_parts(implementation_part, exported_part)
         .with_interactions(interactions)
         .with_element_states(element_states)
-        .with_active_scopes(active_scopes))
+        .with_active_scopes(active_scopes)
 }
 
 fn interaction_states(
@@ -659,9 +645,9 @@ fn node_bindings(
     mount: &BundleViewMountOutput,
     node: &BundleViewStyleNode,
 ) -> Result<Vec<NodeBinding>, PlayerFrameError> {
-    let part_key = node.part.as_deref().map(|part| StyleTargetKey {
+    let part_key = node.part.as_ref().map(|part| StyleTargetKey {
         kind: StyleTargetKind::Part,
-        id: mount.scoped_id(part),
+        id: mount.scoped_id(part.public_id().as_str()),
     });
     let mut bindings = match &node.kind {
         BundleViewStyleNodeKind::Element { target, .. } => target

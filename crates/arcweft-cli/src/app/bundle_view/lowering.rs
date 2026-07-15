@@ -33,21 +33,25 @@ use arcweft_bundle::{
         ViewSurfaceResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
         view::{
             CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, TextAssistPolicy,
-            TextCapitalization, ViewElementKind, ViewFocusAutoScrollPolicy, ViewInputKind,
-            ViewInputOptions, ViewInputPurpose, ViewParameterRole, ViewProgramInstruction,
-            ViewSecureInputPolicy, ViewSemanticTarget, ViewStyleApplicationTarget,
-            ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
-            ViewTextSourceRecord, ViewTextSurface, ViewTextTabPolicy,
+            TextCapitalization, ViewDefinitionRef, ViewElementKind, ViewExportedPart,
+            ViewFocusAutoScrollPolicy, ViewInputKind, ViewInputOptions, ViewInputPurpose,
+            ViewParameterRole, ViewProgramInstruction, ViewSecureInputPolicy, ViewSemanticTarget,
+            ViewStyleApplicationTarget, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+            ViewTextSourceKind, ViewTextSourceRecord, ViewTextSurface, ViewTextTabPolicy,
             ViewTextVerticalNavigationPolicy,
         },
     },
 };
 use arcweft_compiler::style::ViewStyleApplicationLookup;
+use arcweft_compiler::view_part::{
+    ViewPartLowerError, ViewPartSourceContext, lower_view_part_exports,
+};
 use arcweft_id::{IdError, PublicId};
 use arcweft_lang_sema::dialogue_view::{
     DialogueViewModel, DialogueViewModelRegistry,
     DialogueViewProjection as SemanticDialogueViewProjection,
 };
+use arcweft_lang_sema::view_part::CheckedViewPartCatalog;
 use arcweft_lang_syntax::{
     ast::{
         common::TextRange,
@@ -67,6 +71,7 @@ use arcweft_lang_syntax::{
 };
 use arcweft_presentation::fx::{FxDefinition, FxId, FxRuntimeType};
 use arcweft_view::ViewElementLayoutKind;
+use arcweft_view::ViewLocalPartName;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -94,12 +99,18 @@ pub(in crate::app) enum ViewSidecarError {
     UnsupportedScrollBothAxis { element: String, value: String },
     #[error(transparent)]
     ValueProgram(#[from] ViewValueCompileError),
+    #[error(transparent)]
+    ViewPart(#[from] ViewPartLowerError),
+    #[error(transparent)]
+    ViewCodec(#[from] arcweft_bundle::resource_codec::SectionCodecError),
     #[error("View call has more than 65,536 arguments")]
     TooManyViewCallArguments,
     #[error("View `{view}` has an invalid parameter signature: {message}")]
     InvalidViewSignature { view: String, message: String },
     #[error("View `{value}` has an invalid public ID: {source}")]
     InvalidViewPublicId { value: String, source: IdError },
+    #[error("View part `{value}` has an invalid local identity: {source}")]
+    InvalidViewPartId { value: String, source: IdError },
     #[error("View `{view}` parameter {ordinal} must use one identifier binding")]
     UnsupportedViewParameter { view: String, ordinal: usize },
     #[error("View call references unknown definition `{view}`")]
@@ -126,6 +137,7 @@ struct ViewLoweringState {
     definitions: Vec<ViewDefinitionResource>,
     value_compiler: ViewValueProgramCompiler,
     instructions: Vec<ViewProgramInstruction>,
+    exported_parts: Vec<ViewExportedPart>,
     text_sources: Vec<ViewTextSourceRecord>,
     input_options: Vec<ViewInputOptions>,
     semantic_targets: Vec<ViewSemanticTarget>,
@@ -191,6 +203,8 @@ pub(in crate::app) fn view_sidecars(
     style_applications: &ViewStyleApplicationLookup,
     source_image_objects: &[BundleImageObject],
     fx_definitions: &[FxDefinition],
+    view_part_catalog: &CheckedViewPartCatalog,
+    source_context: &ViewPartSourceContext,
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
         fx_definitions: view_fx_definitions(fx_definitions),
@@ -255,6 +269,20 @@ pub(in crate::app) fn view_sidecars(
             });
         }
     }
+    let emitted_owners = state
+        .definitions
+        .iter()
+        .map(|definition| {
+            ViewDefinitionRef::try_new(definition.public_id.clone()).map_err(|source| {
+                ViewSidecarError::InvalidViewPublicId {
+                    value: definition.public_id.clone(),
+                    source,
+                }
+            })
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    state.exported_parts =
+        lower_view_part_exports(view_part_catalog, &emitted_owners, source_context)?;
     finish_view_sidecars(first, state)
 }
 
@@ -274,29 +302,32 @@ fn finish_view_sidecars(
         && state.action_buttons.is_empty()
         && state.focus_groups.is_empty()
         && state.focus_navigation.is_empty()
+        && state.exported_parts.is_empty()
         && state.image_objects.is_empty()
     {
         return Ok(ViewBundleSidecars::default());
     }
+    let mut program = ViewProgramResource {
+        program_id: format!("view.program.{}", first.id().body()),
+        definitions: state.definitions,
+        value_programs: compiled_values.programs,
+        value_inputs: compiled_values.inputs,
+        instructions: state.instructions,
+        handlers: Vec::new(),
+        exported_parts: state.exported_parts,
+        semantic_targets: state.semantic_targets,
+        layout_bounds: state.layout_bounds,
+        scroll_regions: state.scroll_regions,
+        surfaces: state.surfaces,
+        text_blocks: state.text_blocks,
+        action_buttons: state.action_buttons,
+        focus_groups: state.focus_groups,
+        focus_navigation: state.focus_navigation,
+        adapter_requirements: Vec::new(),
+    };
+    program.bind_export_source_refs()?;
     Ok(ViewBundleSidecars {
-        program: Some(ViewProgramResource {
-            program_id: format!("view.program.{}", first.id().body()),
-            definitions: state.definitions,
-            value_programs: compiled_values.programs,
-            value_inputs: compiled_values.inputs,
-            instructions: state.instructions,
-            handlers: Vec::new(),
-            exported_parts: Vec::new(),
-            semantic_targets: state.semantic_targets,
-            layout_bounds: state.layout_bounds,
-            scroll_regions: state.scroll_regions,
-            surfaces: state.surfaces,
-            text_blocks: state.text_blocks,
-            action_buttons: state.action_buttons,
-            focus_groups: state.focus_groups,
-            focus_navigation: state.focus_navigation,
-            adapter_requirements: Vec::new(),
-        }),
+        program: Some(program),
         text: (!state.text_sources.is_empty()).then(|| ViewTextResource {
             sources: state.text_sources,
             ..ViewTextResource::default()
@@ -575,7 +606,7 @@ fn lower_nested_view_call(
         view,
         arguments,
         styles,
-        part: first_part(call.modifiers()),
+        part: first_part(call.modifiers())?,
         key: None,
         source: None,
     });
@@ -836,7 +867,7 @@ fn lower_element(
             y_milli: named_layout_length_i32(element.args(), &["y"]).unwrap_or(layout.y_milli),
         };
         let target = next_element_id(view_id, state);
-        let part = element_part(element);
+        let part = element_part(element)?;
         let styles = state.producer_styles(element.range());
         let open_instruction = state.instructions.len();
         state
@@ -899,7 +930,7 @@ fn lower_element(
         state.instructions.push(ViewProgramInstruction::EmitCustom {
             element: element.callee().to_owned(),
             styles,
-            part: first_part(element.modifiers()),
+            part: first_part(element.modifiers())?,
             source: None,
         });
         lower_modifiers(view_id, element.modifiers(), state)?;
@@ -913,8 +944,8 @@ fn next_element_id(view_id: &str, state: &mut ViewLoweringState) -> String {
     id
 }
 
-fn element_part(element: &ViewElement) -> Option<String> {
-    first_part(element.modifiers()).or_else(|| named_arg(element.args(), "part").map(expr_source))
+fn element_part(element: &ViewElement) -> Result<Option<ViewLocalPartName>, ViewSidecarError> {
+    first_part(element.modifiers())
 }
 
 fn lower_layout_column(
@@ -1007,11 +1038,22 @@ fn usize_to_u32_saturating(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-fn first_part(modifiers: &[ViewModifier]) -> Option<String> {
-    modifiers.iter().find_map(|modifier| match modifier {
-        ViewModifier::Part(part) => Some(part.clone()),
-        _ => None,
-    })
+fn first_part(modifiers: &[ViewModifier]) -> Result<Option<ViewLocalPartName>, ViewSidecarError> {
+    modifiers
+        .iter()
+        .find_map(|modifier| match modifier {
+            ViewModifier::Part(part) => Some(part.name().text()),
+            _ => None,
+        })
+        .map(|value| {
+            ViewLocalPartName::try_new(value.to_owned()).map_err(|source| {
+                ViewSidecarError::InvalidViewPartId {
+                    value: value.to_owned(),
+                    source,
+                }
+            })
+        })
+        .transpose()
 }
 
 fn next_focus_group_id(view_id: &str, state: &mut ViewLoweringState) -> String {

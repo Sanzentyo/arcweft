@@ -14,6 +14,7 @@ pub mod inspection;
 pub mod kind;
 pub mod product_catalog;
 pub mod runtime;
+pub mod source_map;
 pub mod table;
 pub mod types;
 pub mod view;
@@ -42,6 +43,7 @@ pub use runtime::{
     EntrypointsSection as CompactEntrypointsSection,
     RuntimeTypesSection as CompactRuntimeTypesSection,
 };
+pub use source_map::{SourceMapEntry, SourceMapIndex, SourceMapSourceId, SourceMapSourceIdError};
 pub use table::{EnumRegistry, EnumSymbol, PublicIdRef, PublicIdTable, StringId, StringTable};
 pub use types::{CrossSectionRef, DigestRef, SourceRangeRef, StableId};
 pub use view::{

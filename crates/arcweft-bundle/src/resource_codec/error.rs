@@ -6,6 +6,8 @@ use thiserror::Error;
 /// Compact resource section codec validation error.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum SectionCodecError {
+    #[error(transparent)]
+    ViewExport(#[from] crate::resource_codec::view::ViewExportValidationError),
     #[error("section codec budget exceeded: {0}")]
     BudgetExceeded(&'static str),
     #[error("section codec magic {actual:?} does not match {expected:?}")]

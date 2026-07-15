@@ -1,11 +1,13 @@
 use arcweft_bundle::resource_codec::view::{
-    DialogueTextProjection, ViewElementKind, ViewExportedPart, ViewObserveClassification,
-    ViewProgramInstruction, ViewSecureRedactionMetadata, ViewStyleApplicationTarget,
-    ViewStylePatchId, ViewStyleSheetId, ViewTextSourceKind, ViewTextSourceRecord,
+    DialogueTextProjection, ViewDefinitionRef, ViewElementKind, ViewExportedPart,
+    ViewObserveClassification, ViewOwnedPartRef, ViewPartExportSourceRef, ViewProgramInstruction,
+    ViewSecureRedactionMetadata, ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId,
+    ViewTextSourceKind, ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
-    ViewCallArgumentBindingRef, ViewDefinitionResource, ViewDisplayFrameResource,
-    ViewInstructionSpan, ViewLocalizedTextResource, ViewParameterResource, ViewProgramResource,
+    PublicIdRef, SourceMapSourceId, SourceRangeRef, ViewCallArgumentBindingRef,
+    ViewDefinitionResource, ViewDisplayFrameResource, ViewInstructionSpan,
+    ViewLocalizedTextResource, ViewParameterResource, ViewProgramResource,
     ViewRichTextDocumentResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
     ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
 };
@@ -31,6 +33,7 @@ use arcweft_runtime_driver::view_runtime::{
 };
 use arcweft_view::{
     DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex,
+    ViewLocalPartName, ViewPartName,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
@@ -72,6 +75,43 @@ fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
         )
         .is_err()
     );
+}
+
+fn local_part(value: &str) -> ViewLocalPartName {
+    ViewLocalPartName::try_new(value).expect("valid local part identity")
+}
+
+fn public_part(value: &str) -> ViewPartName {
+    ViewPartName::try_new(value).expect("valid public part identity")
+}
+
+fn exported_part(owner: &str, local: &str, public: &str) -> ViewExportedPart {
+    ViewExportedPart {
+        target: ViewOwnedPartRef::new(
+            ViewDefinitionRef::try_new(owner).expect("valid View owner"),
+            local_part(local),
+        ),
+        public_name: public_part(public),
+        source: ViewPartExportSourceRef {
+            source_id: SourceMapSourceId::try_new("view-runtime.arcw")
+                .expect("valid source identity"),
+            declaration: SourceRangeRef {
+                source: PublicIdRef(0),
+                start_byte: 0,
+                end_byte: 32,
+            },
+            local_name: SourceRangeRef {
+                source: PublicIdRef(0),
+                start_byte: 12,
+                end_byte: 20,
+            },
+            public_name: SourceRangeRef {
+                source: PublicIdRef(0),
+                start_byte: 24,
+                end_byte: 31,
+            },
+        },
+    }
 }
 
 fn value_program(
@@ -132,14 +172,14 @@ fn style_scope_follows_subtrees_without_leaking_to_siblings() {
                 element: ViewElementKind::Panel,
                 target: None,
                 styles: vec![ViewStyleApplicationTarget::named(first_sheet.clone())],
-                part: Some("part.first-root".to_owned()),
+                part: Some(local_part("part.first-root")),
                 key: None,
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
                 element: "FirstChild".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.first-child".to_owned()),
+                part: Some(local_part("part.first-child")),
                 source: None,
             },
             ViewProgramInstruction::CloseElement,
@@ -150,21 +190,21 @@ fn style_scope_follows_subtrees_without_leaking_to_siblings() {
                     ViewStyleApplicationTarget::named(second_sheet.clone()),
                     ViewStyleApplicationTarget::inline(inline_patch),
                 ],
-                part: Some("part.second-root".to_owned()),
+                part: Some(local_part("part.second-root")),
                 key: None,
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
                 element: "SecondChild".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.second-child".to_owned()),
+                part: Some(local_part("part.second-child")),
                 source: None,
             },
             ViewProgramInstruction::CloseElement,
             ViewProgramInstruction::EmitCustom {
                 element: "UnaffectedSibling".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.sibling".to_owned()),
+                part: Some(local_part("part.sibling")),
                 source: None,
             },
         ],
@@ -245,43 +285,43 @@ fn call_boundary_style_program(
                     ViewStyleApplicationTarget::named(external_sheet.clone()),
                     ViewStyleApplicationTarget::inline(inline_patch),
                 ],
-                part: Some("part.call".to_owned()),
+                part: Some(local_part("part.call")),
                 key: None,
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
                 element: "ParentSibling".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.parent-sibling".to_owned()),
+                part: Some(local_part("part.parent-sibling")),
                 source: None,
             },
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::Panel,
                 target: None,
                 styles: Vec::new(),
-                part: Some("part.child-root".to_owned()),
+                part: Some(local_part("part.child-root")),
                 key: None,
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
                 element: "PrivateChild".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.child-private".to_owned()),
+                part: Some(local_part("part.child-private")),
                 source: None,
             },
             ViewProgramInstruction::EmitCustom {
                 element: "ExportedChild".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.child-exported".to_owned()),
+                part: Some(local_part("part.child-exported")),
                 source: None,
             },
             ViewProgramInstruction::CloseElement,
         ],
-        exported_parts: vec![ViewExportedPart {
-            view: "view.Child".to_owned(),
-            part_id: "part.child-exported".to_owned(),
-            public_name: "part.public-child".to_owned(),
-        }],
+        exported_parts: vec![exported_part(
+            "view.Child",
+            "part.child-exported",
+            "part.public-child",
+        )],
         ..ViewProgramResource::default()
     }
 }
@@ -382,30 +422,29 @@ fn style_scope_enters_call_view_before_recursion_and_protects_private_parts() {
     assert!(private_boundary.is_nested_view_boundary());
     assert!(!private_boundary.allows_inherited_root());
     assert!(!private_boundary.allows_selector_traversal());
-    assert_eq!(
-        private_boundary.selector_part(
-            child.style_nodes[1].part.as_deref(),
-            child.style_nodes[1].exported_part.as_deref(),
-        ),
-        None
-    );
+    assert!(!private_boundary.matches_part(
+        &public_part("part.public-child"),
+        child.style_nodes[1].part.as_ref(),
+        child.style_nodes[1].exported_part.as_ref(),
+    ));
 
     let exported_boundary = child.style_nodes[2].applications[0].boundary();
     assert_eq!(
-        child.style_nodes[2].exported_part.as_deref(),
+        child.style_nodes[2]
+            .exported_part
+            .as_ref()
+            .map(|part| part.public_id().as_str()),
         Some("part.public-child")
     );
     assert!(exported_boundary.is_nested_view_boundary());
     assert!(exported_boundary.is_exported_part());
     assert!(!exported_boundary.allows_inherited_root());
     assert!(exported_boundary.allows_selector_traversal());
-    assert_eq!(
-        exported_boundary.selector_part(
-            child.style_nodes[2].part.as_deref(),
-            child.style_nodes[2].exported_part.as_deref(),
-        ),
-        Some("part.public-child")
-    );
+    assert!(exported_boundary.matches_part(
+        &public_part("part.public-child"),
+        child.style_nodes[2].part.as_ref(),
+        child.style_nodes[2].exported_part.as_ref(),
+    ));
 }
 
 #[test]
@@ -456,15 +495,11 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
             ViewProgramInstruction::EmitCustom {
                 element: "DeepExport".to_owned(),
                 styles: Vec::new(),
-                part: Some("part.c.exported".to_owned()),
+                part: Some(local_part("part.c.exported")),
                 source: None,
             },
         ],
-        exported_parts: vec![ViewExportedPart {
-            view: "view.C".to_owned(),
-            part_id: "part.c.exported".to_owned(),
-            public_name: "part.public-c".to_owned(),
-        }],
+        exported_parts: vec![exported_part("view.C", "part.c.exported", "part.public-c")],
         ..ViewProgramResource::default()
     };
     let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
@@ -478,7 +513,12 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
         .and_then(|mount| mount.style_nodes.first())
         .expect("the deep exported node retains the ancestor application");
     let boundary = deep.applications[0].boundary();
-    assert_eq!(deep.exported_part.as_deref(), Some("part.public-c"));
+    assert_eq!(
+        deep.exported_part
+            .as_ref()
+            .map(|part| part.public_id().as_str()),
+        Some("part.public-c")
+    );
     assert!(matches!(
         deep.applications[0].target(),
         ViewStyleApplicationTarget::Named { sheet } if sheet == &external_sheet
@@ -486,10 +526,11 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
     assert_eq!(boundary.crossed_view_boundaries(), 2);
     assert!(boundary.is_exported_part());
     assert!(!boundary.allows_selector_traversal());
-    assert_eq!(
-        boundary.selector_part(deep.part.as_deref(), deep.exported_part.as_deref()),
-        None
-    );
+    assert!(!boundary.matches_part(
+        &public_part("part.public-c"),
+        deep.part.as_ref(),
+        deep.exported_part.as_ref(),
+    ));
 }
 
 #[test]

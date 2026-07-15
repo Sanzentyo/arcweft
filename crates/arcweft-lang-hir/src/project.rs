@@ -182,6 +182,9 @@ impl HirModule {
                 source.bind_project_module(path);
             }
         }
+        self.view_parts
+            .iter_mut()
+            .for_each(|owner| owner.assign_module(path));
         assign_flow_item_modules(&mut self.top_level_items, path);
     }
 
@@ -214,6 +217,7 @@ impl HirModule {
         self.agents.append(&mut module.agents);
         self.declarations.append(&mut module.declarations);
         self.style_patches.append(&mut module.style_patches);
+        self.view_parts.append(&mut module.view_parts);
         self.top_level_items.append(&mut module.top_level_items);
     }
 }

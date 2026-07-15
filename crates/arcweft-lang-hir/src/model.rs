@@ -27,6 +27,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::style::{HirStyleDecl, HirStylePatch};
+use crate::view_part::HirViewPartOwner;
 
 /// HIR-facing module produced from parsed surface syntax.
 ///
@@ -45,6 +46,7 @@ pub struct HirModule {
     pub(crate) agents: Vec<HirAgent>,
     pub(crate) declarations: Vec<HirTopLevelDecl>,
     pub(crate) style_patches: Vec<HirStylePatch>,
+    pub(crate) view_parts: Vec<HirViewPartOwner>,
     pub(crate) top_level_items: Vec<HirFlowItem>,
     pub(crate) source_map: Option<HirSourceMap>,
 }
@@ -464,6 +466,11 @@ impl HirModule {
     /// Inline style patches in deterministic source order.
     pub fn style_patches(&self) -> &[HirStylePatch] {
         &self.style_patches
+    }
+
+    /// Owner-qualified private/public View-part declarations.
+    pub fn view_parts(&self) -> &[HirViewPartOwner] {
+        &self.view_parts
     }
 
     pub fn top_level_items(&self) -> &[HirFlowItem] {

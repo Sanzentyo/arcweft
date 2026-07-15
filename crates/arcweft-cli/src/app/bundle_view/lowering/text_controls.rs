@@ -128,7 +128,7 @@ pub(super) fn lower_text_field(
             element: view_element_kind_for_text_field(field.mode()),
             target: Some(public_id.clone()),
             styles,
-            part: first_part(field.modifiers()),
+            part: first_part(field.modifiers())?,
             key: None,
             source: None,
         });

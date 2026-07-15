@@ -363,6 +363,8 @@ pub struct TypeCheckReport {
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
     pub trait_catalog: TraitCatalog,
     pub style_catalog: crate::style::CheckedViewStyleCatalog,
+    pub view_part_catalog: crate::view_part::CheckedViewPartCatalog,
+    pub view_part_diagnostics: Vec<crate::view_part::ViewPartDiagnostic>,
     pub canonicalization_inventories: Vec<CheckedCanonicalizationInventory>,
 }
 

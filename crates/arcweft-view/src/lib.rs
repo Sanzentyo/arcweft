@@ -11,6 +11,7 @@ pub mod handler;
 pub mod image;
 pub mod layout;
 pub mod motion;
+pub mod part;
 pub mod presentation_image;
 pub mod program;
 pub mod reactive;
@@ -57,12 +58,16 @@ pub use motion::{
     ViewMotionSample, ViewReducedMotionPolicy, ViewStepPosition, ViewTimelineMillis,
     ViewTransition, ViewTransitionSpec,
 };
+pub use part::{
+    ViewLocalPartName, ViewPartExport, ViewPartId, ViewPartInstructionKind, ViewPartName,
+    ViewProgramBuildError,
+};
 pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{
     ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind,
     ViewElementSpec, ViewElementTextInputKind, ViewEventBindingSpec, ViewHandlerProgram,
-    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewPartExport, ViewPartId, ViewProgram,
-    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewProgram, ViewProgramBuilder,
+    ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{
@@ -80,21 +85,20 @@ pub use style::{
     ViewEnvironmentPredicate, ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily,
     ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewInheritedBoxAxes,
     ViewInteractionSelector, ViewInteractionStateSet, ViewLengthMilli, ViewMask, ViewOverflow,
-    ViewPartName, ViewPhysicalAxis, ViewPhysicalBoxStyle, ViewPhysicalContainerStyle,
-    ViewPhysicalEdges, ViewPhysicalFlow, ViewPhysicalSide, ViewPosition, ViewPropertyExpansion,
-    ViewPropertyId, ViewPropertyKind, ViewPropertyResolution, ViewPropertyValueTransform,
-    ViewRatioMilli, ViewResolvedAxis, ViewResolvedBoxAxes, ViewScalarMilli, ViewShadow,
-    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
-    ViewStyleBoundaryFacts, ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution,
-    ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleInvalidationSet,
-    ViewStyleModelError, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId,
-    ViewStylePredicate, ViewStylePriority, ViewStyleProgram, ViewStyleResolution,
-    ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver, ViewStyleResolverLimits,
-    ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-    ViewStyleSpecificity, ViewStyleToken, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry,
-    ViewStyleTraceMode, ViewStyleTraceRejection, ViewStyleTransition, ViewStyleValueKind,
-    ViewSystemFontFamily,
+    ViewPhysicalAxis, ViewPhysicalBoxStyle, ViewPhysicalContainerStyle, ViewPhysicalEdges,
+    ViewPhysicalFlow, ViewPhysicalSide, ViewPosition, ViewPropertyExpansion, ViewPropertyId,
+    ViewPropertyKind, ViewPropertyResolution, ViewPropertyValueTransform, ViewRatioMilli,
+    ViewResolvedAxis, ViewResolvedBoxAxes, ViewScalarMilli, ViewShadow, ViewSpecifiedValue,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
+    ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution, ViewStyleContributionSource,
+    ViewStyleDeclaration, ViewStyleInvalidationSet, ViewStyleModelError, ViewStyleNodeFacts,
+    ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStylePriority,
+    ViewStyleProgram, ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError,
+    ViewStyleResolver, ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule,
+    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
+    ViewStyleSheetId, ViewStyleSourceId, ViewStyleSpecificity, ViewStyleToken, ViewStyleTokenId,
+    ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode, ViewStyleTraceRejection,
+    ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,

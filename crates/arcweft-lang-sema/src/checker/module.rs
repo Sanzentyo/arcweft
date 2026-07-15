@@ -24,6 +24,7 @@ use crate::effect_model::{
 };
 use crate::effects::EffectSet;
 use crate::style::check_view_styles;
+use crate::view_part::{ViewPartDiagnostic, check_view_parts};
 use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
 use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_hir::style::HirStyleDecl;
@@ -101,8 +102,16 @@ impl TypeCheckReport {
 /// Analyzes lowered HIR with an explicit symbol/method environment.
 pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
     let (style_catalog, style_diagnostics) = check_view_styles(module);
+    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module, None);
     let mut checker = TypeChecker::new(env);
-    finish_type_check(module, style_catalog, style_diagnostics, &mut checker)
+    finish_type_check(
+        module,
+        style_catalog,
+        style_diagnostics,
+        view_part_catalog,
+        view_part_diagnostics,
+        &mut checker,
+    )
 }
 
 /// Analyzes linked project HIR through the sole registered semantic boundary.
@@ -259,11 +268,18 @@ fn finish_type_check(
     module: &HirModule,
     style_catalog: crate::style::CheckedViewStyleCatalog,
     style_diagnostics: Vec<crate::style::StyleDiagnostic>,
+    view_part_catalog: crate::view_part::CheckedViewPartCatalog,
+    view_part_diagnostics: Vec<ViewPartDiagnostic>,
     checker: &mut TypeChecker<'_>,
 ) -> TypeCheckReport {
     checker
         .errors
         .extend(style_diagnostics.into_iter().map(TypeCheckError::style));
+    checker.errors.extend(
+        view_part_diagnostics
+            .iter()
+            .map(|diagnostic| TypeCheckError::new(diagnostic.message().to_owned())),
+    );
     checker.check_module(module);
     checker.apply_pending_higher_order_effect_calls();
     let effects = std::mem::take(&mut checker.effect_collector).finish();
@@ -284,6 +300,8 @@ fn finish_type_check(
         for_iteration_evidence: std::mem::take(&mut checker.for_iteration_evidence),
         trait_catalog: std::mem::take(&mut checker.trait_catalog),
         style_catalog,
+        view_part_catalog,
+        view_part_diagnostics,
         canonicalization_inventories,
     }
 }

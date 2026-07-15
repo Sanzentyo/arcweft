@@ -52,6 +52,7 @@ use arcweft_bundle::{
     },
 };
 use arcweft_compiler::style::CompiledViewStyleArtifact;
+use arcweft_compiler::view_part::ViewPartSourceContext;
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
@@ -334,6 +335,9 @@ pub(in crate::app) fn compile_bundle_for_selection(
             &compiled.style,
             &image_objects,
             &package,
+            &compiled.typecheck_report.view_part_catalog,
+            &source_label,
+            &source,
         )?,
     )?;
     image_objects.extend(view_sidecars.image_objects.iter().cloned());
@@ -511,6 +515,9 @@ fn collect_bundle_dsl_view_resources_for_package(
         &style_artifact,
         image_objects,
         package,
+        &typecheck.view_part_catalog,
+        "test.arcw",
+        &source,
     )
 }
 
@@ -519,6 +526,9 @@ fn collect_bundle_dsl_view_resources_with_style_for_package(
     style_artifact: &CompiledViewStyleArtifact,
     image_objects: &[BundleImageObject],
     package: &str,
+    view_part_catalog: &arcweft_lang_sema::view_part::CheckedViewPartCatalog,
+    source_id: &str,
+    source: &str,
 ) -> Result<BundleViewSidecars, ExitCode> {
     let mounted_views = mounted_view_ids(module);
     let views = module
@@ -547,12 +557,20 @@ fn collect_bundle_dsl_view_resources_with_style_for_package(
         eprintln!("error: failed to compile View-visible Fx definitions: {error}");
         ExitCode::FAILURE
     })?;
+    let source_id =
+        arcweft_bundle::resource_codec::SourceMapSourceId::try_new(source_id).map_err(|error| {
+            eprintln!("error: invalid View source-map identity: {error}");
+            ExitCode::FAILURE
+        })?;
+    let source_context = ViewPartSourceContext::from_source(source_id, source);
     let view_sidecars = view_sidecars(
         &views,
         &dialogue_view_models,
         style_artifact.applications(),
         image_objects,
         &fx_definitions,
+        view_part_catalog,
+        &source_context,
     )
     .map_err(|error| {
         eprintln!("{error}");

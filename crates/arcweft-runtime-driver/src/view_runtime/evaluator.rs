@@ -13,6 +13,7 @@ use super::style_scope::{
     ViewStyleScopeRuntime, ViewStyleScopeStack,
 };
 
+use super::part::ViewPartRuntimeCatalog;
 use super::value::{fx_placeholder, fx_to_runtime, runtime_to_fx};
 use super::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewFrame, BundleViewFxApplication,
@@ -138,6 +139,7 @@ impl MountRenderBuilder {
 
 struct ViewEvaluator<'a> {
     program: &'a ViewProgramResource,
+    parts: &'a ViewPartRuntimeCatalog,
     text: Option<&'a ViewTextResource>,
     definitions: &'a BTreeMap<String, usize>,
     inventory: &'a ViewValueProgramInventory,
@@ -257,7 +259,7 @@ impl BundleViewRuntime {
                 .insert(binding.name.clone(), binding.value.clone());
         }
         let mut axis_diagnostics = self.discard_invalid_axis_seed_reservations(handles);
-        let Some(program) = self.program.as_ref() else {
+        let Some(accepted) = self.program.as_ref() else {
             self.mounts.clear();
             self.axis_seeds.retain_mounts(&BTreeSet::new());
             return BundleViewFrame {
@@ -265,6 +267,7 @@ impl BundleViewRuntime {
                 diagnostics: axis_diagnostics,
             };
         };
+        let program = accepted.resource();
 
         let (all_handles, dialogue_inputs, collisions) = reconcile_root_handles(handles, dialogue);
         let live_handles = all_handles
@@ -285,6 +288,7 @@ impl BundleViewRuntime {
 
         let mut evaluator = ViewEvaluator {
             program,
+            parts: accepted.parts(),
             text: self.text.as_ref(),
             definitions: &self.definitions,
             inventory: &self.inventory,
@@ -1028,12 +1032,12 @@ impl ViewEvaluator<'_> {
                         .style_scopes
                         .retain_node(
                             ViewStyleNodeInput {
-                                program: self.program,
+                                parts: self.parts,
                                 view: &definition.public_id,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::CallView { view: view.clone() },
-                                part: part.as_deref(),
+                                part: part.as_ref(),
                                 local: styles,
                                 root,
                             },
@@ -1234,7 +1238,7 @@ impl ViewEvaluator<'_> {
                         .style_scopes
                         .retain_node(
                             ViewStyleNodeInput {
-                                program: self.program,
+                                parts: self.parts,
                                 view: &definition.public_id,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
@@ -1242,7 +1246,7 @@ impl ViewEvaluator<'_> {
                                     element: *element,
                                     target: target.clone(),
                                 },
-                                part: part.as_deref(),
+                                part: part.as_ref(),
                                 local: styles,
                                 root,
                             },
@@ -1284,14 +1288,14 @@ impl ViewEvaluator<'_> {
                         .style_scopes
                         .retain_node(
                             ViewStyleNodeInput {
-                                program: self.program,
+                                parts: self.parts,
                                 view: &definition.public_id,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Text {
                                     text_source: text_source.clone(),
                                 },
-                                part: part.as_deref(),
+                                part: part.as_ref(),
                                 local: styles,
                                 root,
                             },
@@ -1323,7 +1327,7 @@ impl ViewEvaluator<'_> {
                         .style_scopes
                         .retain_node(
                             ViewStyleNodeInput {
-                                program: self.program,
+                                parts: self.parts,
                                 view: &definition.public_id,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
@@ -1331,7 +1335,7 @@ impl ViewEvaluator<'_> {
                                     image: image.clone(),
                                     target: target.clone(),
                                 },
-                                part: part.as_deref(),
+                                part: part.as_ref(),
                                 local: styles,
                                 root,
                             },
@@ -1376,14 +1380,14 @@ impl ViewEvaluator<'_> {
                         .style_scopes
                         .retain_node(
                             ViewStyleNodeInput {
-                                program: self.program,
+                                parts: self.parts,
                                 view: &definition.public_id,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Custom {
                                     element: element.clone(),
                                 },
-                                part: part.as_deref(),
+                                part: part.as_ref(),
                                 local: styles,
                                 root,
                             },

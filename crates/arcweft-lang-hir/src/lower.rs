@@ -1,6 +1,7 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
 use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirSource, HirTopLevelDecl};
 use crate::style::{HirStyleDecl, HirStylePatch};
+use crate::view_part::HirViewPartOwner;
 use arcweft_lang_syntax::ast::{
     items::{AgentItem, Attribute, FunctionItem, Item, TypedSyntaxTree},
     module_path::CanonicalModulePath,
@@ -68,6 +69,7 @@ struct HirLoweringState {
     agents: Vec<HirAgent>,
     declarations: Vec<HirTopLevelDecl>,
     style_patches: Vec<HirStylePatch>,
+    view_parts: Vec<HirViewPartOwner>,
     top_level_items: Vec<crate::model::HirFlowItem>,
     errors: Vec<HirLowerError>,
 }
@@ -117,6 +119,11 @@ impl HirLoweringState {
             }
             Item::EntityDecl(item) => {
                 if let Some(view) = item.view_body().and_then(|body| body.view()) {
+                    self.view_parts.push(HirViewPartOwner::from_syntax(
+                        self.module_path.clone(),
+                        item,
+                        view,
+                    ));
                     for patch in view.style_patches() {
                         let Ok(ordinal) = u32::try_from(self.style_patches.len()) else {
                             self.errors.push(HirLowerError::new(
@@ -222,6 +229,7 @@ impl HirLoweringState {
                 agents: self.agents,
                 declarations: self.declarations,
                 style_patches: self.style_patches,
+                view_parts: self.view_parts,
                 top_level_items: self.top_level_items,
                 source_map: None,
             })

@@ -361,6 +361,7 @@ fn merge_programs(
 #[derive(Clone, Copy)]
 struct ProgramSourceSplits {
     instructions: usize,
+    exported_parts: usize,
     semantic_targets: usize,
     layout_bounds: usize,
     scroll_regions: usize,
@@ -375,6 +376,7 @@ impl ProgramSourceSplits {
     fn capture(program: &ViewProgramResource) -> Self {
         Self {
             instructions: program.instructions.len(),
+            exported_parts: program.exported_parts.len(),
             semantic_targets: program.semantic_targets.len(),
             layout_bounds: program.layout_bounds.len(),
             scroll_regions: program.scroll_regions.len(),
@@ -399,6 +401,9 @@ fn remap_program_source_refs(
         left,
         merged,
     )?;
+    let (left_exports, right_exports) = program.exported_parts.split_at_mut(splits.exported_parts);
+    remap_export_sources(left_exports, left, merged)?;
+    remap_export_sources(right_exports, right, merged)?;
     remap_instruction_sources(
         &mut program.instructions[splits.instructions..],
         right,
@@ -465,6 +470,20 @@ fn remap_program_source_refs(
         .split_at_mut(splits.focus_navigation);
     remap_focus_navigation_sources(left_navigation, left, merged)?;
     remap_focus_navigation_sources(right_navigation, right, merged)
+}
+
+fn remap_export_sources(
+    exports: &mut [super::model::ViewExportedPart],
+    old: &PublicIdTable,
+    merged: &PublicIdTable,
+) -> Result<(), ViewResourceMergeError> {
+    for source in exports
+        .iter_mut()
+        .flat_map(|export| export.source.ranges_mut())
+    {
+        remap_source_ref(source, old, merged)?;
+    }
+    Ok(())
 }
 
 fn remap_partitioned_sources<T>(

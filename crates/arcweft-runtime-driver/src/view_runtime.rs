@@ -7,6 +7,7 @@
 
 mod axis_seed;
 mod evaluator;
+mod part;
 mod style_scope;
 mod value;
 
@@ -42,6 +43,8 @@ pub use axis_seed::{
     BundleViewAxisSeedUpdateOutcome, BundleViewMountedAxisSeedSnapshot,
     BundleViewPendingAxisSeedSnapshot,
 };
+use self::part::AcceptedViewProgram;
+
 pub use style_scope::{BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind};
 pub use value::BundleViewValueConversionError;
 
@@ -310,7 +313,9 @@ pub struct BundleViewMountRuntimeSnapshot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewRuntimeError {
     #[error(transparent)]
-    AxisSeed(BundleViewAxisSeedError),
+    AxisSeed(#[from] BundleViewAxisSeedError),
+    #[error(transparent)]
+    Program(#[from] arcweft_bundle::resource_codec::SectionCodecError),
     #[error(transparent)]
     DialogueContract(#[from] DialogueViewContractError),
     #[error(transparent)]
@@ -375,7 +380,7 @@ struct MountedView {
 /// Sans I/O evaluator and persistent mount table for one active View program.
 #[derive(Clone, Debug)]
 pub struct BundleViewRuntime {
-    program: Option<ViewProgramResource>,
+    program: Option<AcceptedViewProgram>,
     style_program: Option<ViewStyleProgram>,
     text: Option<ViewTextResource>,
     definitions: BTreeMap<String, usize>,
@@ -443,13 +448,15 @@ impl BundleViewRuntime {
                 }
             }
         }
+        let program = program.map(AcceptedViewProgram::try_new).transpose()?;
         let inventory = ViewValueProgramInventory::from_programs(
-            program
-                .as_ref()
-                .map_or_else(Vec::new, |program| program.value_programs.clone()),
+            program.as_ref().map_or_else(Vec::new, |program| {
+                program.resource().value_programs.clone()
+            }),
         )?;
         let mut definitions = BTreeMap::new();
-        if let Some(program) = &program {
+        if let Some(accepted) = &program {
+            let program = accepted.resource();
             for (index, definition) in program.definitions.iter().enumerate() {
                 if definitions
                     .insert(definition.public_id.clone(), index)
@@ -673,7 +680,7 @@ impl BundleViewRuntime {
             program_id: self
                 .program
                 .as_ref()
-                .map(|program| program.program_id.clone()),
+                .map(|program| program.resource().program_id.clone()),
             logical_time: self.logical_time,
             next_mount_id: self.allocator.next(),
             root_bindings: self
@@ -723,7 +730,7 @@ impl BundleViewRuntime {
         let expected_program = self
             .program
             .as_ref()
-            .map(|program| program.program_id.clone());
+            .map(|program| program.resource().program_id.clone());
         if snapshot.program_id != expected_program {
             return Err(BundleViewRuntimeError::ProgramMismatch {
                 saved: snapshot.program_id.clone(),
@@ -947,6 +954,7 @@ impl BundleViewRuntime {
             .program
             .as_ref()
             .expect("a definition index requires a View program")
+            .resource()
             .definitions[index]
     }
 }

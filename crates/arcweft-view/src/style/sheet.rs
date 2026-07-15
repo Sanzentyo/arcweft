@@ -4,6 +4,7 @@ use super::{
     ViewAlignment, ViewPropertyKind, ViewSpecifiedValue, ViewStyleSelector, ViewStyleValueKind,
 };
 use crate::ViewElementKind;
+use crate::{ViewLocalPartName, ViewPartName};
 use arcweft_id::{IdError, PublicId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap};
@@ -364,22 +365,19 @@ impl ViewStyleBoundaryFacts {
             || (self.crossed_view_boundaries == 1 && self.exported_part)
     }
 
-    /// Part identity visible to selector matching for this application.
-    ///
-    /// Same-View applications see the implementation part. An application
-    /// crossing exactly one View boundary sees only the exported public name;
-    /// private and transitively nested parts are hidden.
-    pub const fn selector_part<'a>(
+    /// Matches in exactly one namespace selected by the crossed boundary.
+    pub fn matches_part(
         self,
-        implementation_part: Option<&'a str>,
-        exported_part: Option<&'a str>,
-    ) -> Option<&'a str> {
+        selector: &ViewPartName,
+        implementation_part: Option<&ViewLocalPartName>,
+        exported_part: Option<&ViewPartName>,
+    ) -> bool {
         if self.crossed_view_boundaries == 0 {
-            implementation_part
+            implementation_part.is_some_and(|part| part.matches_selector(selector))
         } else if self.crossed_view_boundaries == 1 && self.exported_part {
-            exported_part
+            exported_part == Some(selector)
         } else {
-            None
+            false
         }
     }
 }

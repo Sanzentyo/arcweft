@@ -11,11 +11,12 @@ use crate::resource_codec::view::{
 use crate::resource_codec::{SourceRangeRef, table::PublicIdRef};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_view::style::{
-    ViewColorValue, ViewLengthMilli, ViewPartName, ViewPropertyKind, ViewSpecifiedValue,
+    ViewColorValue, ViewLengthMilli, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleProgram,
     ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
     ViewStyleSourceId,
 };
+use arcweft_view::{ViewLocalPartName, ViewPartName};
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
 pub const DIALOGUE_PARAMETER: &str = "dialogue";
@@ -27,6 +28,10 @@ const CONTENT_PART: &str = "part.dialogue.content";
 const ACTION_PART: &str = "part.dialogue.primary_action";
 const SPEAKER_SOURCE: &str = "std.dialogue.text.speaker";
 const CONTENT_SOURCE: &str = "std.dialogue.text.content";
+
+fn local_part(value: &str) -> ViewLocalPartName {
+    ViewLocalPartName::try_new(value).expect("standard View part identities are canonical")
+}
 const ACTION_LABEL_SOURCE: &str = "std.dialogue.text.primary_action";
 const DIALOGUE_STYLE_SOURCE: &str = "standard dialogue style";
 
@@ -54,7 +59,7 @@ pub fn dialogue_program() -> ViewProgramResource {
                 element: ViewElementKind::Panel,
                 target: Some(PANEL_PART.to_owned()),
                 styles: Vec::new(),
-                part: Some(PANEL_PART.to_owned()),
+                part: Some(local_part(PANEL_PART)),
                 key: Some(0),
                 source: None,
             },
@@ -62,21 +67,21 @@ pub fn dialogue_program() -> ViewProgramResource {
                 text_source: SPEAKER_SOURCE.to_owned(),
                 text_block: SPEAKER_PART.to_owned(),
                 styles: Vec::new(),
-                part: Some(SPEAKER_PART.to_owned()),
+                part: Some(local_part(SPEAKER_PART)),
                 source: None,
             },
             ViewProgramInstruction::EmitText {
                 text_source: CONTENT_SOURCE.to_owned(),
                 text_block: CONTENT_PART.to_owned(),
                 styles: Vec::new(),
-                part: Some(CONTENT_PART.to_owned()),
+                part: Some(local_part(CONTENT_PART)),
                 source: None,
             },
             ViewProgramInstruction::OpenElement {
                 element: ViewElementKind::Button,
                 target: Some(ACTION_PART.to_owned()),
                 styles: Vec::new(),
-                part: Some(ACTION_PART.to_owned()),
+                part: Some(local_part(ACTION_PART)),
                 key: Some(1),
                 source: None,
             },

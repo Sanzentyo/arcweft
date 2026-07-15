@@ -187,7 +187,10 @@ pub(super) fn validate_supported_properties(
     let consumer = match &node.kind {
         BundleViewStyleNodeKind::Element { element, target } => {
             let scoped_target = target.as_deref().map(|target| mount.scoped_id(target));
-            let scoped_part = node.part.as_deref().map(|part| mount.scoped_id(part));
+            let scoped_part = node
+                .part
+                .as_ref()
+                .map(|part| mount.scoped_id(part.public_id().as_str()));
             let has_surface = presentation.surfaces.iter().any(|surface| {
                 scoped_target
                     .as_deref()

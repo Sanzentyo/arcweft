@@ -32,7 +32,7 @@ use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
     ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedGeneration,
     ViewColorValue, ViewElementState, ViewInheritedBoxAxes, ViewInteractionSelector,
-    ViewLengthMilli, ViewOverflow, ViewPartName, ViewPropertyKind, ViewScalarMilli,
+    ViewLengthMilli, ViewOverflow, ViewPropertyKind, ViewScalarMilli,
     ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
     ViewStyleBoundaryFacts, ViewStyleContribution, ViewStyleContributionSource,
     ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatchId,
@@ -40,7 +40,7 @@ use arcweft_view::style::{
     ViewStyleRule, ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
     ViewStyleSheetId, ViewStyleSourceId, ViewStyleTraceMode,
 };
-use arcweft_view::{ViewElementKind, ViewMountId};
+use arcweft_view::{ViewElementKind, ViewLocalPartName, ViewMountId, ViewPartName};
 
 #[test]
 fn node_path_encoding_distinguishes_all_segment_families_and_key_presence() {
@@ -169,7 +169,7 @@ fn placeholder_shown_is_retained_as_a_typed_element_state() {
         placeholder_shown: true,
     };
 
-    let facts = node_facts(&InputController::default(), &node, &binding).unwrap();
+    let facts = node_facts(&InputController::default(), &node, &binding);
 
     assert!(
         facts
@@ -229,7 +229,7 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
         kind: BundleViewStyleNodeKind::CallView {
             view: "view.Child".to_owned(),
         },
-        part: Some("part.call".to_owned()),
+        part: Some(ViewLocalPartName::try_new("part.call").unwrap()),
         exported_part: None,
         applications: vec![parent_application],
     }];

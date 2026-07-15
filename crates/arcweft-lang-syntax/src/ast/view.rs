@@ -12,13 +12,16 @@ use crate::ast::style::StylePatch;
 use crate::expr::{CallArg, Expr, Literal, MatchExprArm};
 
 mod fx;
+mod part;
 
 pub use fx::{ViewFxApplication, ViewFxApplicationOrdinal};
+pub use part::{ViewPartExportDecl, ViewPartLabelSyntax, ViewPartNameSyntax};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewBody {
     locals: Vec<ViewLocalState>,
     stylesheets: Vec<EntityRefSyntax>,
+    exports: Vec<ViewPartExportDecl>,
     value: ViewExpr,
     range: TextRange,
 }
@@ -215,7 +218,7 @@ pub enum ViewModifier {
     Style(ViewStyleModifier),
     /// Applies one typed `#[fx] fn -> Fx` call to the preceding View value.
     Fx(ViewFxApplication),
-    Part(String),
+    Part(ViewPartLabelSyntax),
     Label(Expr),
     AgentTarget(EntityRefSyntax),
     Placeholder(Expr),
@@ -320,12 +323,14 @@ impl ViewBody {
     pub const fn new(
         locals: Vec<ViewLocalState>,
         stylesheets: Vec<EntityRefSyntax>,
+        exports: Vec<ViewPartExportDecl>,
         value: ViewExpr,
         range: TextRange,
     ) -> Self {
         Self {
             locals,
             stylesheets,
+            exports,
             value,
             range,
         }
@@ -337,6 +342,10 @@ impl ViewBody {
 
     pub fn stylesheets(&self) -> &[EntityRefSyntax] {
         &self.stylesheets
+    }
+
+    pub fn exports(&self) -> &[ViewPartExportDecl] {
+        &self.exports
     }
 
     pub const fn value(&self) -> &ViewExpr {

@@ -1,10 +1,11 @@
 use crate::documents::DocumentSnapshot;
 use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
+use crate::features::view_part_metadata::ViewPartMetadataIndex;
 use crate::profiles::LspProfile;
 use arcweft_character::manifest::{CharacterManifest, CharacterPart, CharacterVariant};
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_verify_lsp::profile_completions;
-use lsp_types::{CompletionItem, CompletionItemKind, Documentation};
+use lsp_types::{CompletionItem, CompletionItemKind, Documentation, Position};
 use std::collections::BTreeSet;
 
 /// Computes completion items from resolved adapter, runtime-host, and character facts.
@@ -16,6 +17,22 @@ pub fn completions(
     items.extend(character_metadata_completions(profile));
     items.extend(enum_variant_completions(profile));
     items.extend(dialogue_view_completions(profile, document));
+    dedup_completion_items(items)
+}
+
+/// Computes completions including position-sensitive authored View-part syntax.
+pub fn completions_at(
+    profile: &LspProfile,
+    document: Option<&DocumentSnapshot>,
+    position: Position,
+) -> Vec<CompletionItem> {
+    let mut items = completions(profile, document);
+    if let Some(document) = document
+        && let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document)
+    {
+        let offset = document.line_index().byte_offset_from_position(position);
+        items.extend(metadata.completions(document.text(), offset));
+    }
     dedup_completion_items(items)
 }
 

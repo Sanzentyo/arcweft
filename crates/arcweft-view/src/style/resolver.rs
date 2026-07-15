@@ -8,14 +8,14 @@ use super::{
     ComputedViewAxes, ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
     ViewBoxAxisMode, ViewBoxAxisRevision, ViewBoxAxisSeedSource, ViewComputedPropertyKind,
     ViewElementState, ViewEnvironmentPredicate, ViewInheritedBoxAxes, ViewInteractionSelector,
-    ViewPartName, ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution,
-    ViewStyleContributionSource, ViewStylePatch, ViewStylePatchId, ViewStylePredicate,
-    ViewStylePriority, ViewStyleProgram, ViewStyleScopeId, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-    ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceMode, ViewStyleTraceRejection,
+    ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution, ViewStyleContributionSource,
+    ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStylePriority, ViewStyleProgram,
+    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
+    ViewStyleSheetId, ViewStyleSourceId, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceMode,
+    ViewStyleTraceRejection,
 };
-use crate::{ViewElementKind, ViewMountId};
+use crate::{ViewElementKind, ViewLocalPartName, ViewMountId, ViewPartName};
 use arcweft_presentation::appearance::{ColorScheme, ContrastPreference, PresentationEnvironment};
 use axis::{PendingViewStyleContribution, resolve_axes, resolve_contribution, resolve_transitions};
 use provider::{ViewAxisProviderIndex, ViewAxisProviderUpdatePlan};
@@ -42,7 +42,7 @@ pub struct ViewElementStateSet(u8);
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ViewStyleNodeFacts {
     element: Option<ViewElementKind>,
-    implementation_part: Option<ViewPartName>,
+    implementation_part: Option<ViewLocalPartName>,
     exported_part: Option<ViewPartName>,
     interactions: ViewInteractionStateSet,
     element_states: ViewElementStateSet,
@@ -356,7 +356,7 @@ impl ViewStyleNodeFacts {
     #[must_use]
     pub fn with_parts(
         mut self,
-        implementation_part: Option<ViewPartName>,
+        implementation_part: Option<ViewLocalPartName>,
         exported_part: Option<ViewPartName>,
     ) -> Self {
         self.implementation_part = implementation_part;
@@ -386,7 +386,7 @@ impl ViewStyleNodeFacts {
         self.element
     }
 
-    pub const fn implementation_part(&self) -> Option<&ViewPartName> {
+    pub const fn implementation_part(&self) -> Option<&ViewLocalPartName> {
         self.implementation_part.as_ref()
     }
 
@@ -841,14 +841,11 @@ fn selector_matches(
         let targets_inherited_root = application.boundary().allows_inherited_root();
         let targets_exported_part = application.boundary().is_exported_part()
             && target.part().is_some()
-            && application
-                .boundary()
-                .selector_part(
-                    node.implementation_part()
-                        .map(|part| part.public_id().as_str()),
-                    node.exported_part().map(|part| part.public_id().as_str()),
-                )
-                .is_some();
+            && application.boundary().matches_part(
+                target.part().expect("checked above"),
+                node.implementation_part(),
+                node.exported_part(),
+            );
         // A public part is one target capability, not permission to expose the
         // private child ancestry. Until facts carry explicit boundary segments,
         // structural selectors stop at every crossed View boundary.
@@ -943,30 +940,22 @@ fn match_sequence(
     {
         return Err(ViewStyleTraceRejection::SelectorMismatch);
     }
-    let visible_part = application.map_or_else(
-        || node.implementation_part(),
-        |application| {
-            application
-                .boundary()
-                .selector_part(
-                    node.implementation_part()
-                        .map(|part| part.public_id().as_str()),
-                    node.exported_part().map(|part| part.public_id().as_str()),
+    let part_matches = sequence.part().is_none_or(|part| {
+        application.map_or_else(
+            || {
+                node.implementation_part()
+                    .is_some_and(|local| local.matches_selector(part))
+            },
+            |application| {
+                application.boundary().matches_part(
+                    part,
+                    node.implementation_part(),
+                    node.exported_part(),
                 )
-                .and_then(|visible| {
-                    node.implementation_part()
-                        .filter(|part| part.public_id().as_str() == visible)
-                        .or_else(|| {
-                            node.exported_part()
-                                .filter(|part| part.public_id().as_str() == visible)
-                        })
-                })
-        },
-    );
-    if sequence
-        .part()
-        .is_some_and(|part| visible_part != Some(part))
-    {
+            },
+        )
+    });
+    if !part_matches {
         return Err(ViewStyleTraceRejection::SelectorMismatch);
     }
     for predicate in sequence.predicates() {
@@ -1150,13 +1139,19 @@ fn computed_revision(key: &ViewStyleCacheKey) -> ComputedViewStyleRevision {
             .unwrap_or(u64::MAX);
         revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
         for part in [
-            facts.implementation_part.as_ref(),
-            facts.exported_part.as_ref(),
+            facts
+                .implementation_part
+                .as_ref()
+                .map(|part| part.public_id().as_str()),
+            facts
+                .exported_part
+                .as_ref()
+                .map(|part| part.public_id().as_str()),
         ] {
             revision ^= u64::from(part.is_some());
             revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
             if let Some(part) = part {
-                for byte in part.public_id().as_str().bytes() {
+                for byte in part.bytes() {
                     revision ^= u64::from(byte);
                     revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
                 }

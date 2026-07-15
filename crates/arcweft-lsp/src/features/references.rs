@@ -1,5 +1,6 @@
 use crate::documents::DocumentSnapshot;
 use crate::features::cascade::{effective_dialogue_cascade_at, source_range};
+use crate::features::view_part_metadata::ViewPartMetadataIndex;
 use crate::positions::LineIndex;
 use crate::profiles::LspProfile;
 use arcweft_render_text::{RichTextCascadeLayer, RichTextStyleContribution};
@@ -15,6 +16,23 @@ pub fn references(
     position: Position,
 ) -> Vec<Location> {
     let offset = document.line_index().byte_offset_from_position(position);
+    if let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document) {
+        let locations = metadata
+            .references(offset)
+            .into_iter()
+            .map(|range| {
+                Location::new(
+                    uri.clone(),
+                    document
+                        .line_index()
+                        .range_from_byte_span(range.start(), range.end()),
+                )
+            })
+            .collect::<Vec<_>>();
+        if !locations.is_empty() {
+            return locations;
+        }
+    }
     let Some(cascade) =
         effective_dialogue_cascade_at(document, offset, profile.dialogue_defaults())
     else {

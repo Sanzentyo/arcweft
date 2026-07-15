@@ -9,10 +9,12 @@
 use crate::style::ViewStyleApplicationTarget;
 use crate::{
     CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, TextSourceId, ViewId,
-    ViewProgramId, ViewValueProgramId, ViewValueProgramInventory,
+    ViewPartExport, ViewPartId, ViewPartInstructionKind, ViewProgramBuildError, ViewProgramId,
+    ViewValueProgramId, ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewProgram {
@@ -57,15 +59,6 @@ pub struct ViewElementSpec {
     pub styles: Vec<ViewStyleApplicationTarget>,
     pub part: Option<ViewPartId>,
     pub key: Option<ViewStableKey>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewPartId(pub u32);
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewPartExport {
-    pub id: ViewPartId,
-    pub public_name: String,
 }
 
 /// Canonical inventory of built-in Arcweft View elements.
@@ -310,15 +303,6 @@ impl ViewInstructionRange {
     }
 }
 
-impl ViewPartExport {
-    pub fn new(id: ViewPartId, public_name: impl Into<String>) -> Self {
-        Self {
-            id,
-            public_name: public_name.into(),
-        }
-    }
-}
-
 impl ViewProgramBuilder {
     pub fn new(id: ViewProgramId, view: ViewId, state_schema_hash: u64) -> Self {
         Self {
@@ -332,73 +316,64 @@ impl ViewProgramBuilder {
         }
     }
 
-    pub fn push(&mut self, instruction: ViewInstruction) -> u32 {
-        let index = u32::try_from(self.instructions.len()).unwrap_or(u32::MAX);
+    pub fn push(&mut self, instruction: ViewInstruction) -> Result<u32, ViewProgramBuildError> {
+        let index = u32::try_from(self.instructions.len()).map_err(|_| {
+            ViewProgramBuildError::InstructionOverflow {
+                actual: self.instructions.len(),
+            }
+        })?;
         self.instructions.push(instruction);
-        index
+        Ok(index)
     }
 
     pub fn set_value_programs(&mut self, value_programs: ViewValueProgramInventory) {
         self.value_programs = value_programs;
     }
 
-    pub fn export_part(&mut self, export: ViewPartExport) {
-        self.exported_parts.push(export);
+    pub fn export_part(
+        &mut self,
+        id: ViewPartId,
+        public_name: crate::ViewPartName,
+    ) -> Result<(), ViewProgramBuildError> {
+        if self.exported_parts.iter().any(|export| export.id() == id) {
+            return Err(ViewProgramBuildError::DuplicateExportTarget { part: id });
+        }
+        if self
+            .exported_parts
+            .iter()
+            .any(|export| export.public_name() == &public_name)
+        {
+            return Err(ViewProgramBuildError::DuplicatePublicName { name: public_name });
+        }
+        self.exported_parts
+            .push(ViewPartExport::new(id, public_name));
+        Ok(())
     }
 
     pub fn push_handler_program(&mut self, handler: ViewHandlerProgram) {
         self.handler_programs.push(handler);
     }
 
-    pub fn finish(self) -> ViewProgram {
-        ViewProgram::new(
-            self.id,
-            self.view,
-            self.state_schema_hash,
-            self.instructions,
-        )
-        .with_value_programs(self.value_programs)
-        .with_exported_parts(self.exported_parts)
-        .with_handler_programs(self.handler_programs)
+    pub fn finish(mut self) -> Result<ViewProgram, ViewProgramBuildError> {
+        validate_exports(&self.instructions, &self.exported_parts)?;
+        self.exported_parts.sort_by(|left, right| {
+            left.id()
+                .cmp(&right.id())
+                .then_with(|| left.public_name().cmp(right.public_name()))
+        });
+        Ok(ViewProgram {
+            id: self.id,
+            view: self.view,
+            value_programs: self.value_programs,
+            instructions: self.instructions,
+            exported_parts: self.exported_parts,
+            handler_programs: self.handler_programs,
+            state_schema_hash: self.state_schema_hash,
+        })
     }
 }
 
 impl ViewProgram {
-    pub fn new(
-        id: ViewProgramId,
-        view: ViewId,
-        state_schema_hash: u64,
-        instructions: Vec<ViewInstruction>,
-    ) -> Self {
-        Self {
-            id,
-            view,
-            value_programs: ViewValueProgramInventory::default(),
-            instructions,
-            exported_parts: Vec::new(),
-            handler_programs: Vec::new(),
-            state_schema_hash,
-        }
-    }
-
-    #[must_use]
-    pub fn with_value_programs(mut self, value_programs: ViewValueProgramInventory) -> Self {
-        self.value_programs = value_programs;
-        self
-    }
-
-    #[must_use]
-    pub fn with_exported_parts(mut self, exported_parts: Vec<ViewPartExport>) -> Self {
-        self.exported_parts = exported_parts;
-        self
-    }
-
-    #[must_use]
-    pub fn with_handler_programs(mut self, handler_programs: Vec<ViewHandlerProgram>) -> Self {
-        self.handler_programs = handler_programs;
-        self
-    }
-
     pub const fn id(&self) -> ViewProgramId {
         self.id
     }
@@ -428,33 +403,102 @@ impl ViewProgram {
     }
 }
 
+impl ViewInstruction {
+    pub fn part_target(&self) -> Option<(ViewPartId, ViewPartInstructionKind)> {
+        match self {
+            Self::OpenElement(spec) => spec
+                .part
+                .map(|part| (part, ViewPartInstructionKind::Element)),
+            Self::EmitText(spec) => spec.part.map(|part| (part, ViewPartInstructionKind::Text)),
+            Self::EmitImage(spec) => spec.part.map(|part| (part, ViewPartInstructionKind::Image)),
+            Self::EmitCustom(spec) => spec
+                .part
+                .map(|part| (part, ViewPartInstructionKind::Custom)),
+            Self::CallView(call) => call
+                .part
+                .map(|part| (part, ViewPartInstructionKind::ViewCall)),
+            Self::CloseElement
+            | Self::Branch(_)
+            | Self::RepeatKeyed(_)
+            | Self::BindEvent(_)
+            | Self::AttachSemantic(_) => None,
+        }
+    }
+}
+
+fn validate_exports(
+    instructions: &[ViewInstruction],
+    exports: &[ViewPartExport],
+) -> Result<(), ViewProgramBuildError> {
+    let mut targets = BTreeMap::new();
+    for (part, kind) in instructions.iter().filter_map(ViewInstruction::part_target) {
+        if targets.insert(part, kind).is_some() {
+            return Err(ViewProgramBuildError::DuplicateLocalTarget { part });
+        }
+    }
+
+    let mut public_names = BTreeSet::new();
+    for export in exports {
+        if !public_names.insert(export.public_name()) {
+            return Err(ViewProgramBuildError::DuplicatePublicName {
+                name: export.public_name().clone(),
+            });
+        }
+        match targets.get(&export.id()) {
+            None => {
+                return Err(ViewProgramBuildError::UnknownExportTarget { part: export.id() });
+            }
+            Some(ViewPartInstructionKind::ViewCall) => {
+                return Err(ViewProgramBuildError::UnsupportedViewCallExport { part: export.id() });
+            }
+            Some(
+                ViewPartInstructionKind::Element
+                | ViewPartInstructionKind::Text
+                | ViewPartInstructionKind::Image
+                | ViewPartInstructionKind::Custom,
+            ) => {}
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ViewCall, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
-        ViewElementTextInputKind, ViewImageSpec, ViewInstruction, ViewPartExport, ViewPartId,
-        ViewProgramBuilder, ViewTextSpec,
+        ViewElementTextInputKind, ViewImageSpec, ViewInstruction, ViewPartId, ViewProgramBuilder,
+        ViewTextSpec,
     };
     use crate::style::{ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId};
-    use crate::{CustomElementId, ImageId, TextSourceId, ViewId, ViewProgramId};
+    use crate::{CustomElementId, ImageId, TextSourceId, ViewId, ViewPartName, ViewProgramId};
     use std::collections::BTreeSet;
 
     #[test]
     fn view_program_builder_preserves_instruction_order_before_fragment_lowering() {
         let mut builder = ViewProgramBuilder::new(ViewProgramId(1), ViewId(2), 0xCAFE);
-        builder.push(ViewInstruction::OpenElement(ViewElementSpec {
-            kind: ViewElementKind::TextField,
-            styles: Vec::new(),
-            part: Some(ViewPartId(1)),
-            key: None,
-        }));
-        builder.push(ViewInstruction::CloseElement);
-        builder.export_part(ViewPartExport::new(ViewPartId(1), "field"));
+        builder
+            .push(ViewInstruction::OpenElement(ViewElementSpec {
+                kind: ViewElementKind::TextField,
+                styles: Vec::new(),
+                part: Some(ViewPartId(1)),
+                key: None,
+            }))
+            .unwrap();
+        builder.push(ViewInstruction::CloseElement).unwrap();
+        builder
+            .export_part(ViewPartId(1), ViewPartName::try_new("field").unwrap())
+            .unwrap();
 
-        let program = builder.finish();
+        let program = builder.finish().unwrap();
 
         assert_eq!(program.instructions().len(), 2);
-        assert_eq!(program.exported_parts()[0].public_name, "field");
+        assert_eq!(
+            program.exported_parts()[0]
+                .public_name()
+                .public_id()
+                .as_str(),
+            "field"
+        );
         assert_eq!(program.state_schema_hash(), 0xCAFE);
     }
 

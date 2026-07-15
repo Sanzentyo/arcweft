@@ -46,8 +46,8 @@ pub use resolver::{
 };
 pub use selector::{
     ViewContainerAxis, ViewContainerPredicate, ViewElementState, ViewEnvironmentPredicate,
-    ViewInteractionSelector, ViewPartName, ViewStyleCombinator, ViewStyleComparison,
-    ViewStylePredicate, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSpecificity,
+    ViewInteractionSelector, ViewStyleCombinator, ViewStyleComparison, ViewStylePredicate,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSpecificity,
 };
 pub use sheet::{
     ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,

@@ -24,6 +24,7 @@ arcweft-source = { path = "../arcweft-source" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-lsp = { path = "../arcweft-verify-lsp" }
+arcweft-view = { path = "../arcweft-view" }
 crossbeam-channel.workspace = true
 lsp-server.workspace = true
 lsp-types.workspace = true

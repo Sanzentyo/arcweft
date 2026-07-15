@@ -33,7 +33,7 @@ pub(super) fn lower_text(
         text_source: id.clone(),
         text_block: text_block_id.clone(),
         styles,
-        part: first_part(text.modifiers()),
+        part: first_part(text.modifiers())?,
         source: None,
     });
     lower_text_modifiers(view_id, text.modifiers(), state)?;
@@ -180,7 +180,7 @@ pub(super) fn lower_button(
             element: ViewElementKind::Button,
             target: Some(button_id.clone()),
             styles,
-            part: first_part(button.modifiers()),
+            part: first_part(button.modifiers())?,
             key: None,
             source: None,
         });
@@ -283,7 +283,7 @@ pub(super) fn lower_image(
         image: image_source,
         target,
         styles,
-        part: first_part(image.modifiers()),
+        part: first_part(image.modifiers())?,
         source: None,
     });
     lower_modifiers(view_id, image.modifiers(), state)?;
