@@ -1,4 +1,5 @@
 use arcweft_character::id::CharacterId;
+use arcweft_lang_sema::types::CharacterNominalType;
 use arcweft_lsp::profiles::LspProfileResolver;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use std::{
@@ -13,6 +14,9 @@ fn profile_loads_character_manifest_into_completion_type_environment() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-character-manifest"
+
 [profiles.game]
 kind = "game"
 source = "src/main.arcw"
@@ -57,11 +61,20 @@ character_manifests = ["assets/akane.awchar"]
         profile.diagnostics()
     );
     assert_eq!(profile.characters().len(), 1);
+    let character = CharacterId::try_new("character.akane").expect("character");
+    let accepted = profile
+        .accepted_environment()
+        .expect("source-backed project registration must be accepted");
     assert_eq!(
-        profile
-            .typecheck_env()
-            .character_look_variants(&CharacterId::try_new("character.akane").expect("character")),
-        Some(vec!["normal".to_owned(), "smile".to_owned()])
+        accepted
+            .world()
+            .environment()
+            .character_enum_variants(&CharacterNominalType::Look { character })
+            .expect("registered look variants")
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec!["normal", "smile"]
     );
 }
 

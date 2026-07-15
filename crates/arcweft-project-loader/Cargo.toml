@@ -8,14 +8,17 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-character = { path = "../arcweft-character" }
 arcweft-core = { path = "../arcweft-core" }
+arcweft-lang-hir = { path = "../arcweft-lang-hir" }
+arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-project = { path = "../arcweft-project" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
+arcweft-source = { path = "../arcweft-source" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

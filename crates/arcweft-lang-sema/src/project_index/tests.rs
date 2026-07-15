@@ -2,10 +2,29 @@ use super::agent_prelude::{agent_prelude_callables, agent_result};
 use super::*;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_source::{SourceAnchor, SourceName};
+use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 fn public_id(value: &str) -> PublicId {
     PublicId::try_new(value).expect("valid public id")
+}
+
+fn document_for_hir(hir: &arcweft_lang_hir::model::HirModule, path: &str) -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new(path).expect("test document id"),
+        SourceName::path(path),
+        " ".repeat(hir.source_len().unwrap_or_default()),
+    )
+    .expect("test source document")
+}
+
+fn test_source_anchor() -> SourceAnchor {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("generated://arcweft/sema-test").expect("test document id"),
+        SourceName::Generated,
+        "",
+    )
+    .expect("test source document");
+    SourceAnchor::from_span(document.span(SourceRange::new(0, 0)).expect("empty span"))
 }
 
 #[test]
@@ -13,7 +32,7 @@ fn project_index_preserves_entity_payload_type() {
     let signal = EntitySymbol::new(
         public_id("signal.ready"),
         EntityType::new(EntityKind::Signal, Some(TypeKind::Bool)),
-        SourceAnchor::generated(),
+        test_source_anchor(),
         SemanticHash::new("shape.signal.ready.v1"),
     );
     let index =
@@ -65,12 +84,9 @@ flow @flow.listen listen {
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers");
-    let index = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-test"),
-        &SourceName::path("test.arcw"),
-    )
-    .expect("project index builds");
+    let document = document_for_hir(&hir, "test.arcw");
+    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
+        .expect("project index builds");
 
     let relations = index
         .relations()
@@ -119,12 +135,9 @@ flow chapter_two {
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers");
-    let index = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-test"),
-        &SourceName::path("test.arcw"),
-    )
-    .expect("project index builds");
+    let document = document_for_hir(&hir, "test.arcw");
+    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
+        .expect("project index builds");
 
     let relations = index
         .relations()
@@ -148,7 +161,7 @@ fn project_index_projects_entities_and_agent_prelude_to_env() {
         ProjectSemanticIndex::new(ProgramHash::new("program-a")).with_entity(EntitySymbol::new(
             public_id("choice.opening.listen"),
             EntityType::new(EntityKind::ChoiceOption, None),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.choice.opening.listen.v1"),
         ));
     let env = index.typecheck_env();
@@ -221,12 +234,9 @@ flow @flow.opening opening {
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let index = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-a"),
-        &SourceName::path("game.arcw"),
-    )
-    .expect("HIR indexes for Agent Script");
+    let document = document_for_hir(&hir, "game.arcw");
+    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
+        .expect("HIR indexes for Agent Script");
 
     assert_eq!(
         index.typecheck_env().symbol_type("flow.opening"),
@@ -252,12 +262,9 @@ view FeedbackForm() {
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let index = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-a"),
-        &SourceName::path("game.arcw"),
-    )
-    .expect("HIR indexes for Agent Script");
+    let document = document_for_hir(&hir, "game.arcw");
+    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
+        .expect("HIR indexes for Agent Script");
 
     assert_eq!(
         index.typecheck_env().symbol_type("input.feedback"),
@@ -292,12 +299,9 @@ flow @flow.done done {
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let index = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-a"),
-        &SourceName::path("game.arcw"),
-    )
-    .expect("HIR indexes project callables");
+    let document = document_for_hir(&hir, "game.arcw");
+    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
+        .expect("HIR indexes project callables");
 
     assert!(
         index
@@ -378,12 +382,9 @@ flow @flow.opening opening {
         )
         .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let index = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-a"),
-        &SourceName::path("game.arcw"),
-    )
-    .expect("HIR indexes inline image actions");
+    let document = document_for_hir(&hir, "game.arcw");
+    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
+        .expect("HIR indexes inline image actions");
     let env = index.typecheck_env();
 
     assert_eq!(
@@ -408,12 +409,9 @@ flow @flow.opening opening {
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("unknown call lowers to HIR");
-    let index = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-a"),
-        &SourceName::path("game.arcw"),
-    )
-    .expect("invalid call remains indexable without projecting image metadata");
+    let document = document_for_hir(&hir, "game.arcw");
+    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
+        .expect("invalid call remains indexable without projecting image metadata");
 
     assert!(
         index
@@ -429,7 +427,7 @@ fn project_index_projects_agent_action_signatures() {
         EntitySymbol::new(
             public_id("activity.inventory"),
             EntityType::new(EntityKind::Activity, None),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.activity.inventory.v1"),
         )
         .with_agent_action(AgentActionSignature::new(

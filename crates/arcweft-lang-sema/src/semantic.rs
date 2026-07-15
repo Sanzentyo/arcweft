@@ -430,7 +430,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 HirTopLevelDecl::MemoFn(item) => self.collect_stmt_list(item.body_statements()),
                 HirTopLevelDecl::Parser(item) => self.collect_stmt_list(item.body_statements()),
-                HirTopLevelDecl::Source(item) => self.collect_stmt_list(item.body_statements()),
+                HirTopLevelDecl::Source(source) => {
+                    self.collect_stmt_list(source.item().body_statements());
+                }
                 _ => {}
             }
         }

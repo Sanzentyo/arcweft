@@ -1078,11 +1078,13 @@ source @source:. metrics() {
     ));
     assert!(matches!(
         &hir.declarations()[6],
-        HirTopLevelDecl::Source(item) if item.id().is_some_and(|id| id.body() == "source.events")
+        HirTopLevelDecl::Source(source)
+            if source.item().id().is_some_and(|id| id.body() == "source.events")
     ));
     assert!(matches!(
         &hir.declarations()[7],
-        HirTopLevelDecl::Source(item) if item.id().is_some_and(|id| id.body() == "source.metrics")
+        HirTopLevelDecl::Source(source)
+            if source.item().id().is_some_and(|id| id.body() == "source.metrics")
     ));
 }
 

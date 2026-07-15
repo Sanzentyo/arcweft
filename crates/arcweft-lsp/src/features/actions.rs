@@ -44,7 +44,7 @@ pub fn actions(
 ) -> Result<Vec<CodeAction>, ToolingError> {
     let mut actions = source_code_actions_with_mapper(
         uri,
-        document.text(),
+        document.source_document(),
         document.line_index(),
         analysis.canonicalization_input(),
     )?;
@@ -90,7 +90,7 @@ fn effect_contract_actions(
                     diagnostic.callable(),
                     &effects,
                 )
-                .map(|edit| {
+                .and_then(|edit| {
                     quickfix_code_action(
                         uri,
                         document,
@@ -147,7 +147,7 @@ fn line_override_actions(
         .iter()
         .filter(|contribution| extractable_line_override(contribution))
         .take(8)
-        .map(|contribution| {
+        .filter_map(|contribution| {
             let option = format!("{}={}", contribution.path, contribution.value);
             let edit = insertion.edit_for_option(&option);
             extraction_code_action(
@@ -176,7 +176,7 @@ fn character_override_actions(
                 &contribution.path,
                 &contribution.value,
             )?;
-            Some(extraction_code_action(
+            extraction_code_action(
                 uri,
                 document,
                 format!(
@@ -184,7 +184,7 @@ fn character_override_actions(
                     contribution.path
                 ),
                 &edit,
-            ))
+            )
         })
         .collect()
 }
@@ -205,12 +205,12 @@ fn speaker_preset_actions(
                 &contribution.path,
                 &contribution.value,
             )?;
-            Some(extraction_code_action(
+            extraction_code_action(
                 uri,
                 document,
                 format!("Extract `{}` override to speaker preset", contribution.path),
                 &edit,
-            ))
+            )
         })
         .collect()
 }
@@ -232,7 +232,7 @@ fn dialogue_defaults_actions(
                 &contribution.path,
                 &contribution.value,
             )?;
-            Some(extraction_code_action(
+            extraction_code_action(
                 uri,
                 document,
                 format!(
@@ -240,7 +240,7 @@ fn dialogue_defaults_actions(
                     contribution.path
                 ),
                 &edit,
-            ))
+            )
         })
         .collect()
 }
@@ -250,17 +250,21 @@ fn extraction_code_action(
     document: &DocumentSnapshot,
     title: String,
     edit: &TextEdit,
-) -> CodeAction {
-    CodeAction {
+) -> Option<CodeAction> {
+    Some(CodeAction {
         title,
         kind: Some(CodeActionKind::REFACTOR_EXTRACT),
-        edit: Some(workspace_edit_from_tooling_edit(
-            uri,
-            edit,
-            document.line_index(),
-        )),
+        edit: Some(
+            workspace_edit_from_tooling_edit(
+                uri,
+                edit,
+                document.source_document(),
+                document.line_index(),
+            )
+            .ok()?,
+        ),
         ..CodeAction::default()
-    }
+    })
 }
 
 fn quickfix_code_action(
@@ -268,17 +272,21 @@ fn quickfix_code_action(
     document: &DocumentSnapshot,
     title: String,
     edit: &TextEdit,
-) -> CodeAction {
-    CodeAction {
+) -> Option<CodeAction> {
+    Some(CodeAction {
         title,
         kind: Some(CodeActionKind::QUICKFIX),
-        edit: Some(workspace_edit_from_tooling_edit(
-            uri,
-            edit,
-            document.line_index(),
-        )),
+        edit: Some(
+            workspace_edit_from_tooling_edit(
+                uri,
+                edit,
+                document.source_document(),
+                document.line_index(),
+            )
+            .ok()?,
+        ),
         ..CodeAction::default()
-    }
+    })
 }
 
 fn effect_set_edit(

@@ -14,7 +14,6 @@ use super::{
 };
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
-    SemanticDocumentId, SemanticSourceIdentity,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::dialogue_view::{
@@ -41,6 +40,8 @@ use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{
     FnParam, FnSignature, TypeRef, parse_fn_signature, parse_type_ref,
 };
+use arcweft_source::SourceDocumentId;
+use arcweft_source::SourceDocumentIdentity;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 impl TypeCheckReport {
@@ -88,11 +89,12 @@ impl TypeCheckReport {
     /// Returns canonicalization evidence for one exact registered source identity.
     pub fn canonicalization_inventory(
         &self,
-        source: &SemanticSourceIdentity,
+        module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
+        source: &SourceDocumentIdentity,
     ) -> Option<&CheckedCanonicalizationInventory> {
         self.canonicalization_inventories
             .iter()
-            .find(|inventory| inventory.source() == source)
+            .find(|inventory| inventory.module() == module && inventory.source() == source)
     }
 }
 
@@ -103,16 +105,106 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
     finish_type_check(module, style_catalog, style_diagnostics, &mut checker)
 }
 
+/// Analyzes linked project HIR through the sole registered semantic boundary.
+pub fn analyze_registered_project_types(
+    module: &HirModule,
+    registered: &crate::registration::RegisteredSemanticWorld,
+) -> TypeCheckReport {
+    let (style_catalog, style_diagnostics) = check_view_styles(module);
+    let mut checker = TypeChecker::new_with_project(
+        registered.environment().base(),
+        None,
+        Some(registered.symbols()),
+        Some(registered.environment()),
+    );
+    finish_type_check(module, style_catalog, style_diagnostics, &mut checker)
+}
+
+/// Analyzes a registered project while retaining exact-source speaker-line evidence.
+pub fn analyze_registered_project_types_for_canonicalization(
+    project: &HirProject,
+    registered: &crate::registration::RegisteredSemanticWorld,
+    sources: &CanonicalizationSourceSet,
+) -> Result<TypeCheckReport, SemanticDataUnavailable> {
+    validate_canonicalization_sources(project, sources)?;
+    let module = project.linked_module();
+    let (style_catalog, style_diagnostics) = check_view_styles(&module);
+    let mut checker = TypeChecker::new_with_project(
+        registered.environment().base(),
+        Some(sources),
+        Some(registered.symbols()),
+        Some(registered.environment()),
+    );
+    Ok(finish_type_check(
+        &module,
+        style_catalog,
+        style_diagnostics,
+        &mut checker,
+    ))
+}
+
 /// Analyzes one linked project while retaining exact-source speaker-line evidence.
 pub fn analyze_project_types_for_canonicalization(
     project: &HirProject,
     env: &TypeCheckEnv,
     sources: &CanonicalizationSourceSet,
 ) -> Result<TypeCheckReport, SemanticDataUnavailable> {
-    let document = sources
-        .first_document()
-        .cloned()
-        .unwrap_or_else(|| SemanticDocumentId::new("<project>"));
+    validate_canonicalization_sources(project, sources)?;
+    let document = canonicalization_diagnostic_document(project, sources);
+    let root_source = project
+        .source(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+        .ok_or_else(|| {
+            SemanticDataUnavailable::new(
+                document.clone(),
+                "HIR project has no root source identity",
+            )
+        })?;
+    let world = arcweft_lang_hir::symbol::ProjectSymbolWorldId::try_new(
+        project.package().clone(),
+        root_source.id().clone(),
+        "canonicalization",
+    )
+    .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
+    let revision = arcweft_lang_hir::symbol::ProjectSymbolRevision::try_for_documents(
+        project
+            .modules()
+            .filter_map(|(path, _)| project.source(path)),
+    )
+    .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
+    let externals =
+        arcweft_lang_hir::symbol::ProjectExternalDeclarations::try_new(world, revision, Vec::new())
+            .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
+    let project_symbols = project
+        .project_symbols(&externals)
+        .map_err(|report| {
+            SemanticDataUnavailable::new(
+                document,
+                report
+                    .diagnostics()
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )
+        })?
+        .into_table();
+    let module = project.linked_module();
+    let (style_catalog, style_diagnostics) = check_view_styles(&module);
+    let mut checker =
+        TypeChecker::new_with_project(env, Some(sources), Some(&project_symbols), None);
+    Ok(finish_type_check(
+        &module,
+        style_catalog,
+        style_diagnostics,
+        &mut checker,
+    ))
+}
+
+fn validate_canonicalization_sources(
+    project: &HirProject,
+    sources: &CanonicalizationSourceSet,
+) -> Result<(), SemanticDataUnavailable> {
+    let document = canonicalization_diagnostic_document(project, sources);
     if sources.project() != project.package() {
         return Err(SemanticDataUnavailable::new(
             document,
@@ -123,26 +215,44 @@ pub fn analyze_project_types_for_canonicalization(
             ),
         ));
     }
-    let callable_symbols = project.callable_symbols().map_err(|errors| {
-        SemanticDataUnavailable::new(
-            document,
-            errors
-                .into_iter()
-                .map(|error| error.to_string())
-                .collect::<Vec<_>>()
-                .join("; "),
-        )
-    })?;
-    let module = project.linked_module();
-    let (style_catalog, style_diagnostics) = check_view_styles(&module);
-    let mut checker =
-        TypeChecker::new_with_canonicalization(env, Some(sources), Some(&callable_symbols));
-    Ok(finish_type_check(
-        &module,
-        style_catalog,
-        style_diagnostics,
-        &mut checker,
-    ))
+    for (module, _) in project.modules() {
+        let Some(expected) = project.source(module) else {
+            continue;
+        };
+        let Some(actual) = sources.source(module) else {
+            return Err(SemanticDataUnavailable::new(
+                document,
+                format!("module `{module}` has no canonicalization source identity"),
+            ));
+        };
+        if actual != expected {
+            return Err(SemanticDataUnavailable::new(
+                actual.id().clone(),
+                format!("module `{module}` canonicalization source is stale"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn canonicalization_diagnostic_document(
+    project: &HirProject,
+    sources: &CanonicalizationSourceSet,
+) -> SourceDocumentId {
+    sources
+        .first_document()
+        .cloned()
+        .or_else(|| {
+            project
+                .source(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+                .map(|identity| identity.id().clone())
+        })
+        .or_else(|| {
+            project.modules().find_map(|(module, _)| {
+                project.source(module).map(|identity| identity.id().clone())
+            })
+        })
+        .unwrap_or_else(|| SourceDocumentId::try_new("<project>").expect("non-empty document id"))
 }
 
 fn finish_type_check(
@@ -636,9 +746,12 @@ impl TypeChecker<'_> {
             } else {
                 signature_type
             };
-            if let Some(symbols) = self.callable_symbols {
-                let declaration = CallableDeclarationId::for_function(symbols.package(), function)
-                    .expect("linked callable functions must retain canonical module provenance");
+            if let Some(symbols) = self.project_symbols {
+                let declaration =
+                    CallableDeclarationId::for_function(symbols.world().package(), function)
+                        .expect(
+                            "linked callable functions must retain canonical module provenance",
+                        );
                 self.project_functions
                     .insert(declaration.clone(), signature_type.return_type().clone());
                 self.project_function_signatures
@@ -742,6 +855,10 @@ impl TypeChecker<'_> {
         true
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive match keeps every HIR top-level declaration family visible at the checker dispatch boundary"
+    )]
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
             HirTopLevelDecl::DialogueDefaults(item) => self.check_dialogue_defaults(item),
@@ -830,7 +947,8 @@ impl TypeChecker<'_> {
                 self.yield_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
             }
-            HirTopLevelDecl::Source(item) => {
+            HirTopLevelDecl::Source(source) => {
+                let item = source.item();
                 self.clear_borrow_state();
                 self.locals.clear();
                 self.reset_semantic_root_scope(None);

@@ -1,0 +1,5 @@
+error[E0599]: no method named `with_character_manifest` found for struct `TypeCheckEnv` in the current scope
+ --> tests/ui/typecheck_env_character_builder_removed.rs:5:25
+  |
+5 |     let _ = environment.with_character_manifest(manifest);
+  |                         ^^^^^^^^^^^^^^^^^^^^^^^ method not found in `TypeCheckEnv`

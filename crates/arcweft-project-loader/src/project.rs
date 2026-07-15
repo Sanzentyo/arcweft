@@ -1,19 +1,27 @@
 //! Filesystem adapter for Arcweft package discovery and module graph loading.
 
 use arcweft_lang_syntax::{
-    ast::module_path::{CanonicalModulePath, ModulePath, ModulePathError, ModuleSegment},
+    ast::{
+        common::UseTreeKind,
+        module_path::{CanonicalModulePath, ModulePath, ModulePathError, ModuleSegment},
+        symbol_path::ProjectSymbolPath,
+    },
     parser::parse_source,
 };
-use arcweft_launch::LaunchProfileManifest;
+use arcweft_launch::SourceBackedLaunchManifest;
 use arcweft_project::{
     graph::ModuleDependency,
     manifest::{AuthoredResourceRoots, ProjectManifest, ResourceManifest},
     sources::{ProjectSourceFile, ProjectSources},
 };
+use arcweft_source::{
+    SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
+};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 use thiserror::Error;
 
@@ -23,7 +31,9 @@ pub const PROJECT_MANIFEST_FILE: &str = "arcw.toml";
 #[derive(Clone, Debug)]
 pub struct LoadedProject {
     sources: ProjectSources,
-    launch: LaunchProfileManifest,
+    manifest_document: Arc<SourceDocument>,
+    module_documents: BTreeMap<CanonicalModulePath, Arc<SourceDocument>>,
+    launch: SourceBackedLaunchManifest,
 }
 
 /// Project discovery, source loading, or module resolution failure.
@@ -47,8 +57,21 @@ pub enum ProjectLoadError {
     ProjectManifest(#[from] arcweft_project::manifest::ProjectManifestError),
     #[error("failed to parse launch profiles: {0}")]
     LaunchManifest(#[from] arcweft_launch::LaunchProfileError),
+    #[error("failed to parse source-backed launch manifest: {0}")]
+    LaunchDocument(#[from] arcweft_launch::LaunchDocumentError),
     #[error("source file `{path}` is outside source root `{source_root}`")]
     OutsideSourceRoot { path: PathBuf, source_root: PathBuf },
+    #[error("project document `{path}` is outside project root `{project_root}`")]
+    OutsideProjectRoot {
+        path: PathBuf,
+        project_root: PathBuf,
+    },
+    #[error("project-relative document path `{path}` is not valid UTF-8")]
+    NonUtf8ProjectPath { path: PathBuf },
+    #[error(transparent)]
+    DocumentId(#[from] SourceDocumentIdError),
+    #[error(transparent)]
+    Document(#[from] SourceDocumentError),
     #[error("`mod.arcw` is not a supported module layout; use `{suggested}`")]
     ModFileLayout { suggested: PathBuf },
     #[error(transparent)]
@@ -84,8 +107,22 @@ impl LoadedProject {
         &self.sources
     }
 
-    pub const fn launch(&self) -> &LaunchProfileManifest {
+    pub const fn launch(&self) -> &SourceBackedLaunchManifest {
         &self.launch
+    }
+
+    pub fn manifest_document(&self) -> &Arc<SourceDocument> {
+        &self.manifest_document
+    }
+
+    pub fn module_documents(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&CanonicalModulePath, &Arc<SourceDocument>)> {
+        self.module_documents.iter()
+    }
+
+    pub fn module_document(&self, module: &CanonicalModulePath) -> Option<&Arc<SourceDocument>> {
+        self.module_documents.get(module)
     }
 
     pub fn into_sources(self) -> ProjectSources {
@@ -141,89 +178,93 @@ pub fn load_project_manifest(manifest_path: &Path) -> Result<ProjectManifest, Pr
 pub fn load(manifest_path: &Path) -> Result<LoadedProject, ProjectLoadError> {
     let manifest_source = read_to_string(manifest_path)?;
     let manifest = ProjectManifest::parse_toml(&manifest_source)?;
-    let launch = LaunchProfileManifest::parse_toml(&manifest_source)?;
     let project_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    let package = manifest.package().name().as_str();
+    let manifest_document = Arc::new(SourceDocument::try_new(
+        project_document_id(package, project_root, manifest_path)?,
+        SourceName::path(manifest_path.display().to_string()),
+        manifest_source,
+    )?);
+    let launch = SourceBackedLaunchManifest::parse_document(&manifest_document)?;
     let source_root = manifest.source_root(project_root);
     let source_paths = collect_arcw_files(&source_root)?;
     let scanned = source_paths
         .into_iter()
-        .map(|path| scan_source(&source_root, path))
+        .map(|path| scan_source(package, project_root, &source_root, path))
         .collect::<Result<Vec<_>, _>>()?;
     let module_paths = scanned
         .iter()
         .map(|source| source.module.clone())
         .collect::<BTreeSet<_>>();
-    let modules = scanned
+    let loaded_modules = scanned
         .into_iter()
         .map(|source| source.finish(&module_paths))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
+    let mut modules = Vec::with_capacity(loaded_modules.len());
+    let mut module_documents = BTreeMap::new();
+    for (module, document) in loaded_modules {
+        module_documents.insert(module.module().clone(), document);
+        modules.push(module);
+    }
     let sources = ProjectSources::new(
         manifest_path.to_path_buf(),
         project_root.to_path_buf(),
         manifest,
         modules,
     )?;
-    Ok(LoadedProject { sources, launch })
+    Ok(LoadedProject {
+        sources,
+        manifest_document,
+        module_documents,
+        launch,
+    })
 }
 
 #[derive(Clone, Debug)]
 struct ScannedSource {
     path: PathBuf,
-    source: String,
+    document: Arc<SourceDocument>,
     module: CanonicalModulePath,
     imports: Vec<PendingImport>,
 }
 
 #[derive(Clone, Debug)]
 struct PendingImport {
-    spelling: String,
-    path: ModulePath,
-    exact_module_prefix: bool,
+    path: ProjectSymbolPath,
 }
 
 impl ScannedSource {
     fn finish(
         self,
         modules: &BTreeSet<CanonicalModulePath>,
-    ) -> Result<ProjectSourceFile, ProjectLoadError> {
+    ) -> (ProjectSourceFile, Arc<SourceDocument>) {
         let dependencies = self
             .imports
             .into_iter()
             .filter_map(|import| {
-                let resolved = match import.path.resolve_from(&self.module) {
-                    Ok(path) => path,
-                    Err(error) => return Some(Err(ProjectLoadError::ModulePath(error))),
-                };
-                let target = if import.exact_module_prefix {
-                    modules.contains(&resolved).then_some(resolved)
-                } else {
-                    resolved
-                        .ancestors_inclusive()
-                        .find(|candidate| modules.contains(candidate))
-                };
-                match target {
-                    Some(target) if target != self.module => {
-                        Some(Ok(ModuleDependency::new(target)))
-                    }
-                    Some(_) => None,
-                    None => Some(Err(ProjectLoadError::UnresolvedImport {
-                        path: self.path.clone(),
-                        module: self.module.clone(),
-                        import: import.spelling,
-                    })),
-                }
+                longest_known_module_prefix(&import.path, &self.module, modules)
+                    .filter(|target| target != &self.module)
+                    .map(ModuleDependency::new)
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(ProjectSourceFile::new(
-            self.module,
-            self.path,
-            self.source,
-            dependencies,
-        ))
+            .collect::<Vec<_>>();
+        (
+            ProjectSourceFile::new(
+                self.module,
+                self.path,
+                Arc::clone(&self.document),
+                dependencies,
+            ),
+            self.document,
+        )
     }
 }
 
-fn scan_source(source_root: &Path, path: PathBuf) -> Result<ScannedSource, ProjectLoadError> {
+fn scan_source(
+    package: &str,
+    project_root: &Path,
+    source_root: &Path,
+    path: PathBuf,
+) -> Result<ScannedSource, ProjectLoadError> {
     let source = read_to_string(&path)?;
     let parsed = parse_source(&source);
     if !parsed.errors().is_empty() {
@@ -263,19 +304,84 @@ fn scan_source(source_root: &Path, path: PathBuf) -> Result<ScannedSource, Proje
     let imports = tree
         .uses()
         .iter()
-        .map(|item| {
-            Ok(PendingImport {
-                spelling: item.tree().source().to_owned(),
-                path: item.tree().module_path_prefix().clone(),
-                exact_module_prefix: item.tree().module_path_is_exact(),
-            })
+        .map(|item| PendingImport {
+            path: match item.tree().kind() {
+                UseTreeKind::Path { path, .. } => path.path(),
+                UseTreeKind::Glob { module } | UseTreeKind::Group { module, .. } => module.path(),
+            }
+            .clone(),
         })
-        .collect::<Result<Vec<_>, ModulePathError>>()?;
+        .collect();
+    let document = Arc::new(SourceDocument::try_new(
+        project_document_id(package, project_root, &path)?,
+        SourceName::path(path.display().to_string()),
+        source,
+    )?);
     Ok(ScannedSource {
         path,
-        source,
+        document,
         module,
         imports,
+    })
+}
+
+pub(crate) fn project_document_id(
+    package: &str,
+    project_root: &Path,
+    path: &Path,
+) -> Result<SourceDocumentId, ProjectLoadError> {
+    let relative =
+        path.strip_prefix(project_root)
+            .map_err(|_| ProjectLoadError::OutsideProjectRoot {
+                path: path.to_path_buf(),
+                project_root: project_root.to_path_buf(),
+            })?;
+    let mut segments = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(segment) => {
+                let segment =
+                    segment
+                        .to_str()
+                        .ok_or_else(|| ProjectLoadError::NonUtf8ProjectPath {
+                            path: path.to_path_buf(),
+                        })?;
+                segments.push(segment);
+            }
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(ProjectLoadError::OutsideProjectRoot {
+                    path: path.to_path_buf(),
+                    project_root: project_root.to_path_buf(),
+                });
+            }
+        }
+    }
+    SourceDocumentId::try_new(format!(
+        "arcweft-project://{package}/{}",
+        segments.join("/")
+    ))
+    .map_err(ProjectLoadError::from)
+}
+
+fn longest_known_module_prefix(
+    path: &ProjectSymbolPath,
+    importer: &CanonicalModulePath,
+    modules: &BTreeSet<CanonicalModulePath>,
+) -> Option<CanonicalModulePath> {
+    let mut module_segments = Vec::new();
+    for segment in path.segments() {
+        let Ok(segment) = segment.try_as_module_segment() else {
+            break;
+        };
+        module_segments.push(segment);
+    }
+    (1..=module_segments.len()).rev().find_map(|length| {
+        ModulePath::new(path.root(), module_segments[..length].iter().cloned())
+            .ok()?
+            .resolve_from(importer)
+            .ok()
+            .filter(|candidate| modules.contains(candidate))
     })
 }
 
@@ -378,7 +484,9 @@ fn read_to_string(path: &Path) -> Result<String, ProjectLoadError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProjectLoadError, inferred_module_path, load_project_manifest};
+    use super::{
+        ProjectLoadError, inferred_module_path, load_project_manifest, project_document_id,
+    };
     use std::{fs, path::Path};
 
     #[test]
@@ -434,5 +542,28 @@ source = "demo.arcw"
         assert_eq!(manifest.package().name().as_str(), "launch-only");
 
         fs::remove_dir_all(root).expect("fixture root removes");
+    }
+
+    #[test]
+    fn project_document_ids_are_package_relative_and_separator_stable() {
+        let root = Path::new("D:/workspace/game");
+        assert_eq!(
+            project_document_id(
+                "story-game",
+                root,
+                Path::new("D:/workspace/game/src/routes/opening.arcw"),
+            )
+            .expect("project-relative id")
+            .as_str(),
+            "arcweft-project://story-game/src/routes/opening.arcw"
+        );
+        assert!(matches!(
+            project_document_id(
+                "story-game",
+                root,
+                Path::new("D:/workspace/other/main.arcw"),
+            ),
+            Err(ProjectLoadError::OutsideProjectRoot { .. })
+        ));
     }
 }

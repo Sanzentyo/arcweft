@@ -82,9 +82,14 @@ fn verifier_action_source_edit_becomes_diagnostic_suggestion() {
         "\nproof @proof.todo {\n    prove _\n}\n",
         ToolActionApplicability::HasPlaceholders,
     );
-    let source_name = arcweft_source::SourceName::path("game.arcw");
+    let document = arcweft_source::SourceDocument::try_new(
+        arcweft_source::SourceDocumentId::try_new("game.arcw").expect("document id"),
+        arcweft_source::SourceName::path("game.arcw"),
+        "",
+    )
+    .expect("source document");
     let suggestion = action
-        .diagnostic_suggestion(&source_name)
+        .diagnostic_suggestion(&document)
         .expect("source edit produces suggestion");
 
     assert_eq!(
@@ -110,7 +115,13 @@ fn verifier_host_action_becomes_diagnostic_command() {
         related_ids: Vec::new(),
         actions: vec![ToolAction::show_obligation()],
     };
-    let source = diagnostic.source_diagnostic(&arcweft_source::SourceName::path("game.arcw"));
+    let document = arcweft_source::SourceDocument::try_new(
+        arcweft_source::SourceDocumentId::try_new("game.arcw").expect("document id"),
+        arcweft_source::SourceName::path("game.arcw"),
+        "",
+    )
+    .expect("source document");
+    let source = diagnostic.source_diagnostic(&document);
 
     assert!(source.suggestions().is_empty());
     assert_eq!(source.commands().len(), 1);

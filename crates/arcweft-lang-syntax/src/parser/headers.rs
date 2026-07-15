@@ -10,7 +10,6 @@ use crate::cst::{
     starts_leading_entity_ref, starts_leading_relative_entity_ref, starts_leading_relative_id,
 };
 use crate::types::parse_fn_signature;
-use arcweft_source::{SourceAnchor, SourceName};
 
 use super::parse_expr_lossy;
 use super::recovery::{ParseError, RecoverySuggestion};
@@ -282,7 +281,6 @@ fn push_unexpected_entity_header_tail(
         vec![RecoverySuggestion::new(
             "remove the unexpected token or use a typed declaration-header tail",
         )],
-        SourceAnchor::new(SourceName::path("<memory>"), range.as_range()),
     ));
 }
 
@@ -882,7 +880,6 @@ pub(super) fn simple_error(base: usize, len: usize, message: &str, expected: &st
         None,
         message.to_owned(),
         vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
-        SourceAnchor::new(SourceName::path("<memory>"), base..base + len),
     )
 }
 

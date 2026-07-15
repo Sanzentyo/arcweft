@@ -1,6 +1,7 @@
 //! Character manifest metadata helpers for LSP completion and hover.
 
 use crate::profiles::LspProfile;
+use arcweft_character::id::CharacterId;
 use arcweft_character::manifest::{
     CharacterLook, CharacterManifest, CharacterPart, CharacterVariant,
 };
@@ -18,7 +19,10 @@ pub fn character_hover_markdown(
     expected: Option<&TypeKind>,
 ) -> Option<String> {
     let character = word.strip_prefix('@').unwrap_or(word);
-    if let Some(manifest) = profile.characters().get_by_str(character) {
+    if let Some(manifest) = CharacterId::try_new(character)
+        .ok()
+        .and_then(|character| profile.characters().get(&character))
+    {
         return Some(character_manifest_hover(manifest));
     }
     let local = word.strip_prefix('.')?;
@@ -44,9 +48,7 @@ fn expected_member_hover(
     local: &str,
     nominal: &CharacterNominalType,
 ) -> Option<String> {
-    let manifest = profile
-        .characters()
-        .get_by_str(nominal.character().as_str())?;
+    let manifest = profile.characters().get(nominal.character())?;
     match nominal {
         CharacterNominalType::Look { .. } => manifest
             .looks()

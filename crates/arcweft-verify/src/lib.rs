@@ -31,8 +31,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_source::{
     Diagnostic as SourceDiagnostic, DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel,
-    DiagnosticSeverity, DiagnosticSuggestion, SourceEdit, SourceName as DiagnosticSourceName,
-    SourceRange, SourceSpan as DiagnosticSourceSpan,
+    DiagnosticSeverity, DiagnosticSuggestion, SourceDocument, SourceEdit, SourceRange,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -358,15 +357,11 @@ impl ToolAction {
         })
     }
 
-    pub fn diagnostic_suggestion(
-        &self,
-        source_name: &DiagnosticSourceName,
-    ) -> Option<DiagnosticSuggestion> {
+    pub fn diagnostic_suggestion(&self, document: &SourceDocument) -> Option<DiagnosticSuggestion> {
         let edit = self.source_edit.as_ref()?;
-        let span = DiagnosticSourceSpan::new(
-            source_name.clone(),
-            SourceRange::new(edit.span.start, edit.span.end),
-        );
+        let span = document
+            .span(SourceRange::new(edit.span.start, edit.span.end))
+            .ok()?;
         Some(
             DiagnosticSuggestion::new(self.label.clone(), edit.applicability.into())
                 .with_edit(SourceEdit::new(span, edit.replacement.clone())),
@@ -439,14 +434,12 @@ impl From<Severity> for DiagnosticSeverity {
 }
 
 impl VerificationDiagnostic {
-    pub fn source_diagnostic(&self, source_name: &DiagnosticSourceName) -> SourceDiagnostic {
+    pub fn source_diagnostic(&self, document: &SourceDocument) -> SourceDiagnostic {
         let mut diagnostic = SourceDiagnostic::new(self.severity.into(), self.message.clone())
             .with_code(self.id.clone());
-        if let Some(span) = self.source {
-            let span = DiagnosticSourceSpan::new(
-                source_name.clone(),
-                SourceRange::new(span.start, span.end),
-            );
+        if let Some(span) = self.source
+            && let Ok(span) = document.span(SourceRange::new(span.start, span.end))
+        {
             diagnostic = diagnostic.with_label(DiagnosticLabel::primary(
                 span,
                 Some("verifier diagnostic".to_owned()),
@@ -459,7 +452,7 @@ impl VerificationDiagnostic {
             diagnostic = diagnostic.with_note(format!("related: {related}"));
         }
         for action in &self.actions {
-            if let Some(suggestion) = action.diagnostic_suggestion(source_name) {
+            if let Some(suggestion) = action.diagnostic_suggestion(document) {
                 diagnostic = diagnostic.with_suggestion(suggestion);
             }
             if let Some(command) = action.diagnostic_command(self.obligation.as_deref()) {
@@ -550,10 +543,10 @@ pub fn verify_module_with_env(
 }
 
 impl VerificationReport {
-    pub fn source_diagnostics(&self, source_name: &DiagnosticSourceName) -> Vec<SourceDiagnostic> {
+    pub fn source_diagnostics(&self, document: &SourceDocument) -> Vec<SourceDiagnostic> {
         self.diagnostics
             .iter()
-            .map(|diagnostic| diagnostic.source_diagnostic(source_name))
+            .map(|diagnostic| diagnostic.source_diagnostic(document))
             .collect()
     }
 
@@ -990,7 +983,9 @@ impl ObligationCollector {
                 HirTopLevelDecl::Hook(hook) => self.collect_stmts(hook.body_statements()),
                 HirTopLevelDecl::MemoFn(item) => self.collect_stmts(item.body_statements()),
                 HirTopLevelDecl::Parser(item) => self.collect_stmts(item.body_statements()),
-                HirTopLevelDecl::Source(item) => self.collect_stmts(item.body_statements()),
+                HirTopLevelDecl::Source(source) => {
+                    self.collect_stmts(source.item().body_statements());
+                }
                 _ => {}
             }
         }

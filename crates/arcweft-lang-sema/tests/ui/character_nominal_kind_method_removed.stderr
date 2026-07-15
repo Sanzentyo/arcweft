@@ -1,0 +1,5 @@
+error[E0599]: no method named `kind` found for reference `&CharacterNominalType` in the current scope
+ --> tests/ui/character_nominal_kind_method_removed.rs:4:21
+  |
+4 |     let _ = nominal.kind();
+  |                     ^^^^ method not found in `&CharacterNominalType`

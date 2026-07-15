@@ -17,6 +17,9 @@ fn tooling_preserves_cross_character_nominal_provenance() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-character-nominal-identity"
+
 [profiles.game]
 kind = "game"
 source = "src/main.arcw"

@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 
 use arcweft_lang_hir::model::HirDialogue;
 use arcweft_lang_hir::symbol::{CallableDeclarationId, CallableSymbol};
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::ast::{
+    module_path::CanonicalModulePath,
+    symbol_path::{ProjectSymbolPath, SymbolPath},
+};
 
 use super::{TypeChecker, is_character_entity_literal};
 use crate::canonicalization::{
@@ -115,6 +118,13 @@ impl TypeChecker<'_> {
             return Some(ty.clone());
         }
         if let Some(module) = self.current_module.as_ref()
+            && self
+                .resolve_project_character_in(module, reference)
+                .is_some()
+        {
+            return Some(TypeKind::entity_ref(EntityKind::Character));
+        }
+        if let Some(module) = self.current_module.as_ref()
             && let Some(declaration) = self.resolve_project_callable_in(module, reference)
             && let Some(ty) = self.project_functions.get(declaration)
         {
@@ -152,6 +162,12 @@ impl TypeChecker<'_> {
                 Some(ty),
             );
         }
+        if let Some(owner) = self.resolve_project_character_in(module, reference) {
+            return (
+                Some(SemanticSymbolIdentity::Character { owner }),
+                Some(TypeKind::entity_ref(EntityKind::Character)),
+            );
+        }
         if let Some(declaration) = self.resolve_project_callable_in(module, reference) {
             return (
                 Some(SemanticSymbolIdentity::Callable {
@@ -184,10 +200,29 @@ impl TypeChecker<'_> {
         module: &CanonicalModulePath,
         reference: &str,
     ) -> Option<&CallableDeclarationId> {
-        self.callable_symbols?
-            .resolve(module, reference)
+        let symbols = self.project_symbols?;
+        let source = symbols.callable_symbols().next()?.source();
+        let path = reference.parse::<ProjectSymbolPath>().ok()?;
+        let path = SymbolPath::try_from(&path).ok()?;
+        symbols
+            .resolve_callable(module, &path, source)
             .ok()
             .map(CallableSymbol::declaration)
+    }
+
+    fn resolve_project_character_in(
+        &self,
+        module: &CanonicalModulePath,
+        reference: &str,
+    ) -> Option<arcweft_character::id::CharacterId> {
+        let symbols = self.project_symbols?;
+        let registered = self.registered_environment?;
+        let source = self.canonicalization_sources?.resolution_span(module)?;
+        let path = reference.parse::<ProjectSymbolPath>().ok()?;
+        let path = SymbolPath::try_from(&path).ok()?;
+        registered
+            .resolve_character_owner(symbols, module, &path, source)
+            .ok()
     }
 
     pub(super) fn finish_canonicalization_inventories(
@@ -206,10 +241,9 @@ impl TypeChecker<'_> {
         }
         sources
             .sources()
-            .cloned()
-            .map(|source| {
-                let lines = by_module.remove(source.module()).unwrap_or_default();
-                CheckedCanonicalizationInventory::new(source, lines)
+            .map(|(module, source)| {
+                let lines = by_module.remove(module).unwrap_or_default();
+                CheckedCanonicalizationInventory::new(module.clone(), source.clone(), lines)
             })
             .collect()
     }

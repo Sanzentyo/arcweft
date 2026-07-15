@@ -143,17 +143,30 @@ fn verify_inventory_revision(
     inventory: &CheckedCanonicalizationInventory,
 ) -> Result<(), ToolingError> {
     let expected = inventory.source();
-    let actual = arcweft_lang_sema::canonicalization::SemanticSourceRevision::from_source(source);
-    if expected.revision() == actual && expected.source_len() == source.len() {
+    let actual = arcweft_source::SourceRevision::for_utf8(source);
+    let actual_len = u64::try_from(source.len()).expect("an in-memory source length fits u64");
+    if expected.revision() == actual && expected.source_len() == actual_len {
         return Ok(());
     }
     Err(ToolingError::StaleSemanticInventory {
-        document: expected.document().as_str().to_owned(),
-        expected_revision: expected.revision().to_string(),
-        actual_revision: actual.to_string(),
-        expected_len: expected.source_len(),
+        document: expected.id().as_str().to_owned(),
+        expected_revision: revision_hex(expected.revision()),
+        actual_revision: revision_hex(actual),
+        expected_len: usize::try_from(expected.source_len())
+            .expect("an accepted source document length fits usize"),
         actual_len: source.len(),
     })
+}
+
+fn revision_hex(revision: arcweft_source::SourceRevision) -> String {
+    revision
+        .as_bytes()
+        .iter()
+        .fold(String::with_capacity(64), |mut output, byte| {
+            use core::fmt::Write as _;
+            write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+            output
+        })
 }
 
 enum ExactSpeakerRecord<'a> {
@@ -167,12 +180,11 @@ fn exact_speaker_record<'a>(
     line: &SpeakerLine,
 ) -> ExactSpeakerRecord<'a> {
     let surface = line.surface();
-    let source_identity = inventory.source();
     let matches = inventory
         .speaker_lines()
         .iter()
         .filter(|record| {
-            record.id().module() == source_identity.module()
+            record.id().module() == inventory.module()
                 && record.id().head_range() == surface.head_range()
         })
         .collect::<Vec<_>>();

@@ -101,11 +101,15 @@ pub(super) fn native_player_runtime_state_for_options(
 ) -> Result<NativeAgentRuntimeState, ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let project_context = agent_mcp_project_context_from_hir(&checked.hir, selection.path())
-        .map_err(|error| {
-            eprintln!("error: failed to build native project context: {error}");
-            ExitCode::FAILURE
-        })?;
+    let project_context = agent_mcp_project_context_from_hir(
+        &checked.hir,
+        selection.path(),
+        &checked.source_document,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to build native project context: {error}");
+        ExitCode::FAILURE
+    })?;
     let fonts = PlayerFontSet::bundled_default();
     let mut shared_capture = pollster::block_on(SharedOffscreenCapture::new(
         wgpu::TextureFormat::Rgba8UnormSrgb,

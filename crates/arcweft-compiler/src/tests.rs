@@ -26,7 +26,7 @@ use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{RichTextColor, RichTextStyle};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceAnchor, SourceName};
+use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use crate::{
     agent::{
@@ -45,6 +45,24 @@ use crate::{
 
 fn public_id(value: &str) -> PublicId {
     PublicId::try_new(value).expect("valid public id")
+}
+
+fn test_source_document(path: &str, source_len: usize) -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new(path).expect("test document id"),
+        SourceName::path(path),
+        " ".repeat(source_len),
+    )
+    .expect("test source document")
+}
+
+fn test_source_anchor() -> SourceAnchor {
+    let document = test_source_document("generated://arcweft/compiler-test", 0);
+    SourceAnchor::from_span(
+        document
+            .span(SourceRange::new(0, 0))
+            .expect("empty test span"),
+    )
 }
 
 fn runtime_apply_arg_counts(expr: &RuntimeExpr) -> Vec<usize> {
@@ -109,7 +127,7 @@ fn project_with_typed_entity(
     ProjectSemanticIndex::new(ProgramHash::new("program-test")).with_entity(EntitySymbol::new(
         public_id(id),
         EntityType::new(kind, value),
-        SourceAnchor::generated(),
+        test_source_anchor(),
         SemanticHash::new(format!("shape.{id}.v1")),
     ))
 }
@@ -120,13 +138,13 @@ fn agent_project_graph_snapshot_preserves_project_relations() {
         .with_entity(EntitySymbol::new(
             public_id("entry.main"),
             EntityType::new(EntityKind::Entry, None),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.entry.main.v1"),
         ))
         .with_entity(EntitySymbol::new(
             public_id("flow.opening"),
             EntityType::new(EntityKind::Flow, None),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.flow.opening.v1"),
         ))
         .with_relation(ProjectGraphRelation::new(
@@ -172,7 +190,7 @@ fn agent_project_graph_snapshot_preserves_project_callables() {
                         FunctionParam::required("event", TypeKind::Named("GameEvent".to_owned())),
                     ],
                 ),
-                SourceAnchor::generated(),
+                test_source_anchor(),
                 SemanticHash::new("hir:callable:reducer:update_route:(state: GameState)"),
             ),
         )
@@ -181,7 +199,7 @@ fn agent_project_graph_snapshot_preserves_project_callables() {
             ProjectCallableSymbol::new(
                 ProjectCallableKind::View,
                 FunctionSignature::new(TypeKind::entity_ref(EntityKind::Flow), []),
-                SourceAnchor::generated(),
+                test_source_anchor(),
                 SemanticHash::new("hir:callable:view:current_route:(state: GameState)"),
             ),
         )
@@ -244,12 +262,10 @@ return "done"
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let project = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-test"),
-        &SourceName::path("game.arcw"),
-    )
-    .expect("project indexes flow control");
+    let document = test_source_document("game.arcw", hir.source_len().unwrap_or_default());
+    let project =
+        project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
+            .expect("project indexes flow control");
 
     let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
     let project_summary = graph
@@ -286,7 +302,7 @@ fn project_with_agent_action(
         EntitySymbol::new(
             public_id(id),
             EntityType::new(kind, None),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new(format!("shape.{id}.v1")),
         )
         .with_agent_action(AgentActionSignature::new(
@@ -4229,7 +4245,7 @@ fn compile_agent_source_with_project_checks_statement_wait_entity_probe() {
     .with_entity(EntitySymbol::new(
         public_id("flow.opening"),
         EntityType::new(EntityKind::Flow, None),
-        SourceAnchor::generated(),
+        test_source_anchor(),
         SemanticHash::new("shape.flow.opening.v1"),
     ));
     let compiled = compile_agent_source_with_project(
@@ -4348,7 +4364,7 @@ fn compile_agent_source_with_project_checks_composite_predicates() {
             .with_entity(EntitySymbol::new(
                 public_id("metric.fps"),
                 EntityType::new(EntityKind::Metric, Some(TypeKind::F32)),
-                SourceAnchor::generated(),
+                test_source_anchor(),
                 SemanticHash::new("shape.metric.fps.v1"),
             ));
     let compiled = compile_agent_source_with_project(
@@ -4559,13 +4575,13 @@ fn compile_agent_source_with_project_checks_opening_smoke_try_surface() {
                 EntityKind::Signal,
                 Some(TypeKind::entity_ref(EntityKind::Flow)),
             ),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.signal.current_flow.v1"),
         ))
         .with_entity(EntitySymbol::new(
             public_id("flow.alice_intro"),
             EntityType::new(EntityKind::Flow, None),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.flow.alice_intro.v1"),
         ));
     let source = r#"
@@ -4645,13 +4661,13 @@ fn compile_agent_source_with_project_checks_failure_investigation_surface() {
                 EntityKind::Signal,
                 Some(TypeKind::entity_ref(EntityKind::Flow)),
             ),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.signal.current_flow.v1"),
         ))
         .with_entity(EntitySymbol::new(
             public_id("flow.alice_intro"),
             EntityType::new(EntityKind::Flow, None),
-            SourceAnchor::generated(),
+            test_source_anchor(),
             SemanticHash::new("shape.flow.alice_intro.v1"),
         ));
     let compiled = compile_agent_source_with_project(
@@ -4768,12 +4784,10 @@ let pulse = image(asset = @asset:.bg.pulse, target = "target.sample.pulse", laye
     )
     .into_typed_tree();
     let hir = lower_to_hir(&project_source).expect("project source lowers");
-    let project = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-test"),
-        &arcweft_source::SourceName::path("game.arcw"),
-    )
-    .expect("project source indexes image action");
+    let document = test_source_document("game.arcw", hir.source_len().unwrap_or_default());
+    let project =
+        project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
+            .expect("project source indexes image action");
     let compiled = compile_agent_source_with_project(
         r#"
 #[agent(version = 1)]
@@ -5231,12 +5245,10 @@ return "ok"
     )
     .into_typed_tree();
     let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let project = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new("program-test"),
-        &SourceName::path("game.arcw"),
-    )
-    .expect("project indexes HIR entities");
+    let document = test_source_document("game.arcw", hir.source_len().unwrap_or_default());
+    let project =
+        project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
+            .expect("project indexes HIR entities");
     let compiled = compile_agent_bundle_with_project(
         r"
 #[agent(version = 1)]

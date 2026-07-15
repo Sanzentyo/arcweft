@@ -8,14 +8,11 @@ use crate::{
     },
 };
 use arcweft_lang_hir::{
-    lower::lower_to_hir,
+    lower::lower_document_to_hir,
     project::{HirProject, HirProjectModule},
 };
 use arcweft_lang_sema::{
-    canonicalization::{
-        CanonicalizationSourceSet, SemanticDataUnavailable, SemanticDocumentId,
-        SemanticSourceIdentity,
-    },
+    canonicalization::{CanonicalizationSourceSet, SemanticDataUnavailable},
     check::analyze_project_types_for_canonicalization,
     env::TypeCheckEnv,
     types::{EntityKind, TypeKind},
@@ -24,6 +21,7 @@ use arcweft_lang_syntax::{
     ast::module_path::{CanonicalModulePath, ModuleSegment},
     parser::{SourceDialect, parse_source},
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 fn with_checked_inventory<T>(
     source: &str,
@@ -42,22 +40,37 @@ fn with_checked_project_inventory<T>(
         &arcweft_lang_sema::canonicalization::CheckedCanonicalizationInventory,
     ) -> T,
 ) -> T {
-    let lowered = modules.iter().map(|(module, source)| {
-        let parsed = parse_source(*source);
-        let hir = lower_to_hir(parsed.typed_tree()).expect("tooling fixture must lower to HIR");
-        HirProjectModule::new(module.clone(), hir)
-    });
-    let project = HirProject::new("tooling-tests", lowered).expect("tooling fixture project");
-    let identities = modules
+    let lowered = modules
         .iter()
         .map(|(module, source)| {
-            SemanticSourceIdentity::from_source(
-                project.package().clone(),
-                SemanticDocumentId::new(format!("memory:///{module}.arcw")),
-                module.clone(),
-                source,
+            let document = SourceDocument::try_new(
+                SourceDocumentId::try_new(format!("memory:///{module}.arcw"))
+                    .expect("non-empty document id"),
+                SourceName::path(format!("{module}.arcw")),
+                *source,
+            )
+            .expect("tooling fixture source document");
+            let parsed = parse_source(*source);
+            let hir = lower_document_to_hir(&document, parsed.typed_tree())
+                .expect("tooling fixture must lower to HIR");
+            let identity = document.identity().clone();
+            let source_span = document
+                .span(SourceRange::new(0, document.text().len()))
+                .expect("tooling fixture document owns its complete UTF-8 range");
+            (
+                HirProjectModule::new(module.clone(), identity.clone(), hir),
+                (module.clone(), source_span),
             )
         })
+        .collect::<Vec<_>>();
+    let project = HirProject::new(
+        "tooling-tests",
+        lowered.iter().map(|(module, _)| module.clone()),
+    )
+    .expect("tooling fixture project");
+    let identities = lowered
+        .iter()
+        .map(|(_, source)| source.clone())
         .collect::<Vec<_>>();
     let sources = CanonicalizationSourceSet::try_new(project.package().clone(), identities)
         .expect("exact source set");
@@ -67,7 +80,7 @@ fn with_checked_project_inventory<T>(
         .expect("checked project inventory");
     let identity = sources.source(selected).expect("selected source identity");
     let inventory = report
-        .canonicalization_inventory(identity)
+        .canonicalization_inventory(selected, identity)
         .expect("module inventory");
     use_inventory(inventory)
 }
@@ -686,7 +699,7 @@ fn stale_and_unavailable_semantics_are_hard_errors() {
     });
 
     let unavailable = SemanticDataUnavailable::new(
-        SemanticDocumentId::new("memory:///unavailable.arcw"),
+        SourceDocumentId::try_new("memory:///unavailable.arcw").expect("non-empty document id"),
         "project analysis failed",
     );
     let error = canonicalize_source(source, CanonicalizationInput::Unavailable(&unavailable))

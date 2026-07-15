@@ -4,11 +4,12 @@ use super::bundle::{
     build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_for_selection,
     write_bundle_artifact, write_patch_bundle_artifact,
 };
-use super::diagnostics::emit_diagnostics_for_path;
+use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, load_and_check_selection, print_project_compile_error,
-    resolve_source_selection, runtime_plan_options_for_selection, typecheck_env_for_selection,
+    project_compilation_context, resolve_source_selection, runtime_plan_options_for_selection,
+    semantic_context_for_selection,
 };
 use super::runtime::run::watch_inputs;
 use super::shared::print_json;
@@ -57,7 +58,7 @@ use arcweft_project_loader::cache::{
 };
 use arcweft_project_loader::project::{LoadedProject, ProjectLoadError};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::SourceName;
+use arcweft_source::SourceDocument;
 use arcweft_verify::{
     BackendKind, Severity, VerificationDiagnostic, VerificationMode, VerificationPolicy,
     VerificationReport, verify_module_with_env,
@@ -68,6 +69,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::ExitCode,
+    sync::Arc,
     thread,
     time::Duration,
 };
@@ -132,6 +134,7 @@ enum ProjectBuildMode {
 struct ProjectCommandState {
     loaded: LoadedProject,
     selection: SourceSelection,
+    source_document: Arc<SourceDocument>,
     compiled: CompiledProject,
     verification: VerificationReport,
     snapshot: BuildSnapshot,
@@ -416,7 +419,7 @@ pub(super) fn project_check_command(options: &ProjectCheckOptions) -> Result<(),
     if options.json {
         print_json(&report)?;
     } else {
-        emit_verification_diagnostics(&state.selection, &state.verification);
+        emit_verification_diagnostics(&state.source_document, &state.verification);
         println!(
             "{}: {} ({} module(s), {} compile unit(s), {} warning(s), {} obligation(s))",
             report.status,
@@ -441,7 +444,7 @@ pub(super) fn project_build_command(options: &ProjectBuildOptions) -> Result<(),
     let state = compile_project_build_state(options, mode, &mut compile_cache, progress)?;
     let report = ProjectCommandReport::from_state(&state);
     if report.status != "ok" {
-        emit_verification_diagnostics(&state.selection, &state.verification);
+        emit_verification_diagnostics(&state.source_document, &state.verification);
         if options.json {
             print_json(&report)?;
         }
@@ -1934,7 +1937,10 @@ fn project_build_watch_loop(
             Ok(next_state) => {
                 let report = ProjectCommandReport::from_state(&next_state);
                 if report.status != "ok" {
-                    emit_verification_diagnostics(&next_state.selection, &next_state.verification);
+                    emit_verification_diagnostics(
+                        &next_state.source_document,
+                        &next_state.verification,
+                    );
                     eprintln!("watch: rebuild failed verification; keeping previous bundle active");
                     if max_iterations.is_some() {
                         return Err(ExitCode::FAILURE);
@@ -2018,7 +2024,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         },
     )?;
     if verification.has_blocking_runtime_safety_gaps() {
-        emit_verification_diagnostics(&selection, &verification);
+        emit_verification_diagnostics(&checked.source_document, &verification);
         return Err(ExitCode::FAILURE);
     }
 
@@ -2113,23 +2119,34 @@ where
         }
     };
     let mut phases = Vec::new();
-    let env = typecheck_env_for_selection(&selection, None, &mut phases)?;
+    let source_document = Arc::clone(
+        loaded
+            .module_document(loaded.sources().root_module().module())
+            .expect("loaded projects retain their root source document"),
+    );
+    let semantic = semantic_context_for_selection(&selection, None, &mut phases)?;
     let runtime_options = runtime_plan_options_for_selection(&selection)?;
+    let context = project_compilation_context(&loaded, &selection, &semantic)?;
     let compiled =
-        compile_project_with_cache(loaded.sources(), &env, &runtime_options, compile_cache)
+        compile_project_with_cache(loaded.sources(), &context, &runtime_options, compile_cache)
             .map_err(|error| {
                 print_project_compile_error(&error);
                 ExitCode::FAILURE
             })?;
     let mut verification = verify_module_with_env(
         compiled.linked_hir(),
-        &env,
+        semantic.base(),
         VerificationPolicy {
             mode: verification_mode,
             backend: BackendKind::Emit,
         },
     );
-    append_release_dynamic_goto_diagnostics(&mut verification, &compiled, verification_mode);
+    append_release_dynamic_goto_diagnostics(
+        &mut verification,
+        &compiled,
+        &source_document,
+        verification_mode,
+    );
     let snapshot = snapshot_compiled_project(
         loaded.sources(),
         &compiled,
@@ -2148,6 +2165,7 @@ where
     Ok(ProjectCommandState {
         loaded,
         selection,
+        source_document,
         compiled,
         verification,
         snapshot,
@@ -2181,6 +2199,7 @@ fn selected_snapshot_entries(selection: &SourceSelection) -> Vec<String> {
 fn append_release_dynamic_goto_diagnostics(
     verification: &mut VerificationReport,
     compiled: &CompiledProject,
+    document: &SourceDocument,
     verification_mode: VerificationMode,
 ) {
     if verification_mode != VerificationMode::Release {
@@ -2189,7 +2208,7 @@ fn append_release_dynamic_goto_diagnostics(
     let Ok(index) = project_semantic_index_from_hir(
         compiled.linked_hir(),
         ProgramHash::new("project.release"),
-        &SourceName::path("project.arcw"),
+        document,
     ) else {
         verification.diagnostics.push(VerificationDiagnostic {
             id: "diagnostic.release.dynamic_control_index".to_owned(),
@@ -2252,10 +2271,9 @@ fn print_project_load_error(error: &ProjectLoadError) -> ExitCode {
     ExitCode::FAILURE
 }
 
-fn emit_verification_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
-    let source_name = SourceName::path(selection.path().display().to_string());
-    let diagnostics = report.source_diagnostics(&source_name);
-    emit_diagnostics_for_path(selection.path(), &diagnostics);
+fn emit_verification_diagnostics(document: &SourceDocument, report: &VerificationReport) {
+    let diagnostics = report.source_diagnostics(document);
+    emit_diagnostics(document, &diagnostics);
 }
 
 fn status_result(status: &str) -> Result<(), ExitCode> {

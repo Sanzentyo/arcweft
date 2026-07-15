@@ -13,6 +13,9 @@ use arcweft_runtime_host::{
     RuntimeHostRunnerKind,
 };
 use arcweft_rust_abi::{ArcweftRustTypeDecl, ArcweftRustTypeKind};
+use arcweft_source::{
+    SourceDocument, SourceDocumentId, SourceRange, SourceRevision, SourceSpan, SourceSpanError,
+};
 use arcweft_verify::{
     Severity as VerifySeverity, ToolAction, ToolActionKind, ToolActionSourceEdit,
     VerificationDiagnostic, VerificationReport,
@@ -24,6 +27,7 @@ use lsp_types::{
     TextEdit, Uri, WorkspaceEdit,
 };
 use std::collections::HashMap;
+use thiserror::Error;
 
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
 pub struct ArcweftLspContext<'a> {
@@ -53,6 +57,53 @@ pub enum AdapterManifestRequirement {
 pub trait LspPositionMapper {
     /// Converts a UTF-8 byte span in the current source document into an LSP range.
     fn range_from_byte_span(&self, start: usize, end: usize) -> Range;
+}
+
+/// One source edit permanently bound to the exact document revision that
+/// produced it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RevisionBoundTextEdit {
+    span: SourceSpan,
+    replacement: String,
+}
+
+impl RevisionBoundTextEdit {
+    /// Binds a tooling byte range to an immutable source document.
+    pub fn try_from_tooling(
+        document: &SourceDocument,
+        edit: &arcweft_tooling::model::TextEdit,
+    ) -> Result<Self, SourceSpanError> {
+        Ok(Self {
+            span: document.span(SourceRange::new(edit.start, edit.end))?,
+            replacement: edit.replacement.clone(),
+        })
+    }
+
+    /// Exact revision-bound source span for this edit.
+    pub const fn span(&self) -> &SourceSpan {
+        &self.span
+    }
+
+    /// Replacement text supplied by Arcweft tooling.
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
+}
+
+/// A revision-bound edit does not belong to the document currently being
+/// published.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RevisionBoundWorkspaceEditError {
+    #[error("workspace edit belongs to `{actual}`, not current document `{expected}`")]
+    WrongDocument {
+        expected: SourceDocumentId,
+        actual: SourceDocumentId,
+    },
+    #[error("workspace edit belongs to a stale source revision")]
+    WrongRevision {
+        expected: SourceRevision,
+        actual: SourceRevision,
+    },
 }
 
 impl<'a> ArcweftLspContext<'a> {
@@ -640,34 +691,51 @@ pub fn source_code_actions(
 /// Converts source-level Arcweft tooling actions into edit-bearing LSP code actions.
 pub fn source_code_actions_with_mapper(
     uri: &Uri,
-    source: &str,
+    document: &SourceDocument,
     mapper: &impl LspPositionMapper,
     canonicalization: arcweft_tooling::model::CanonicalizationInput<'_>,
 ) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
-    Ok(
-        arcweft_tooling::code_actions::source_code_actions(source, canonicalization)?
-            .into_iter()
-            .map(|action| {
-                let edit = action
-                    .edit
-                    .as_ref()
-                    .map(|edit| workspace_edit_from_tooling_edit(uri, edit, mapper));
-                let diagnostics = action
-                    .diagnostics
-                    .iter()
-                    .map(|diagnostic| tooling_diagnostic_with_mapper(diagnostic, mapper))
-                    .collect::<Vec<_>>();
-                CodeAction {
-                    title: action.label,
-                    kind: Some(CodeActionKind::REFACTOR_REWRITE),
-                    diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
-                    edit,
-                    command: None,
-                    ..CodeAction::default()
-                }
+    arcweft_tooling::code_actions::source_code_actions(document.text(), canonicalization)?
+        .into_iter()
+        .map(|action| {
+            let edit = action
+                .edit
+                .as_ref()
+                .map(|edit| {
+                    workspace_edit_from_tooling_edit(uri, edit, document, mapper).map_err(|error| {
+                        match error {
+                            SourceSpanError::Reversed | SourceSpanError::OutOfBounds => {
+                                arcweft_tooling::model::ToolingError::RangeOutOfBounds {
+                                    start: edit.start,
+                                    end: edit.end,
+                                    len: document.text().len(),
+                                }
+                            }
+                            SourceSpanError::NotUtf8Boundary => {
+                                arcweft_tooling::model::ToolingError::InvalidCharBoundary {
+                                    start: edit.start,
+                                    end: edit.end,
+                                }
+                            }
+                        }
+                    })
+                })
+                .transpose()?;
+            let diagnostics = action
+                .diagnostics
+                .iter()
+                .map(|diagnostic| tooling_diagnostic_with_mapper(diagnostic, mapper))
+                .collect::<Vec<_>>();
+            Ok(CodeAction {
+                title: action.label,
+                kind: Some(CodeActionKind::REFACTOR_REWRITE),
+                diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
+                edit,
+                command: None,
+                ..CodeAction::default()
             })
-            .collect(),
-    )
+        })
+        .collect()
 }
 
 fn tooling_diagnostic(diagnostic: &arcweft_tooling::model::ToolingDiagnostic) -> Diagnostic {
@@ -696,13 +764,50 @@ fn tooling_diagnostic_with_mapper(
 pub fn workspace_edit_from_tooling_edit(
     uri: &Uri,
     edit: &arcweft_tooling::model::TextEdit,
+    document: &SourceDocument,
     mapper: &impl LspPositionMapper,
-) -> WorkspaceEdit {
+) -> Result<WorkspaceEdit, SourceSpanError> {
+    let edit = RevisionBoundTextEdit::try_from_tooling(document, edit)?;
+    let span = edit.span();
     let text_edit = TextEdit::new(
-        mapper.range_from_byte_span(edit.start, edit.end),
-        edit.replacement.clone(),
+        mapper.range_from_byte_span(span.range().start(), span.range().end()),
+        edit.replacement().to_owned(),
     );
-    WorkspaceEdit::new(HashMap::from([(uri.clone(), vec![text_edit])]))
+    Ok(WorkspaceEdit::new(HashMap::from([(
+        uri.clone(),
+        vec![text_edit],
+    )])))
+}
+
+/// Converts an already-bound edit only when it still belongs to the current
+/// source document revision.
+pub fn workspace_edit_from_revision_bound_edit(
+    uri: &Uri,
+    edit: &RevisionBoundTextEdit,
+    current: &SourceDocument,
+    mapper: &impl LspPositionMapper,
+) -> Result<WorkspaceEdit, RevisionBoundWorkspaceEditError> {
+    if edit.span().source().id() != current.identity().id() {
+        return Err(RevisionBoundWorkspaceEditError::WrongDocument {
+            expected: current.identity().id().clone(),
+            actual: edit.span().source().id().clone(),
+        });
+    }
+    if edit.span().source().revision() != current.identity().revision() {
+        return Err(RevisionBoundWorkspaceEditError::WrongRevision {
+            expected: current.identity().revision(),
+            actual: edit.span().source().revision(),
+        });
+    }
+    let span = edit.span();
+    let text_edit = TextEdit::new(
+        mapper.range_from_byte_span(span.range().start(), span.range().end()),
+        edit.replacement().to_owned(),
+    );
+    Ok(WorkspaceEdit::new(HashMap::from([(
+        uri.clone(),
+        vec![text_edit],
+    )])))
 }
 
 /// Converts one verifier-owned source edit into an LSP workspace edit.
@@ -1170,13 +1275,75 @@ mod tests {
     }
 
     #[test]
+    fn revision_bound_workspace_edit_rejects_stale_and_wrong_documents() {
+        let uri = "file:///game/routes/opening.arcw"
+            .parse::<Uri>()
+            .expect("uri");
+        let source_id = SourceDocumentId::try_new(uri.to_string()).expect("source id");
+        let producing = SourceDocument::try_new(
+            source_id.clone(),
+            arcweft_source::SourceName::path(uri.to_string()),
+            "alice",
+        )
+        .expect("producing document");
+        let unchanged = SourceDocument::try_new(
+            source_id.clone(),
+            arcweft_source::SourceName::path(uri.to_string()),
+            "alice",
+        )
+        .expect("unchanged document");
+        let changed = SourceDocument::try_new(
+            source_id,
+            arcweft_source::SourceName::path(uri.to_string()),
+            "alicia",
+        )
+        .expect("changed document");
+        let wrong_document = SourceDocument::try_new(
+            SourceDocumentId::try_new("file:///game/routes/other.arcw").expect("source id"),
+            arcweft_source::SourceName::path("other.arcw"),
+            "alice",
+        )
+        .expect("other document");
+        let edit = arcweft_tooling::model::TextEdit {
+            start: 1,
+            end: 4,
+            replacement: "LIC".to_owned(),
+        };
+        let bound = RevisionBoundTextEdit::try_from_tooling(&producing, &edit)
+            .expect("revision-bound edit");
+
+        let workspace =
+            workspace_edit_from_revision_bound_edit(&uri, &bound, &unchanged, &TestMapper)
+                .expect("same revision edit");
+        let converted = &workspace.changes.expect("changes")[&uri][0];
+        assert_eq!(converted.range.start, Position::new(0, 1));
+        assert_eq!(converted.range.end, Position::new(0, 4));
+        assert_eq!(converted.new_text, "LIC");
+
+        assert_eq!(
+            workspace_edit_from_revision_bound_edit(&uri, &bound, &changed, &TestMapper),
+            Err(RevisionBoundWorkspaceEditError::WrongRevision {
+                expected: changed.identity().revision(),
+                actual: producing.identity().revision(),
+            })
+        );
+        assert_eq!(
+            workspace_edit_from_revision_bound_edit(&uri, &bound, &wrong_document, &TestMapper),
+            Err(RevisionBoundWorkspaceEditError::WrongDocument {
+                expected: wrong_document.identity().id().clone(),
+                actual: producing.identity().id().clone(),
+            })
+        );
+    }
+
+    #[test]
     fn exposes_source_actions_and_inlay_hints() {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
         let source = "flow @.opening opening {\n    alice: [.shake amp=2px]hi[/][p]\n}\n";
         let unavailable = arcweft_lang_sema::canonicalization::SemanticDataUnavailable::new(
-            arcweft_lang_sema::canonicalization::SemanticDocumentId::new(uri.to_string()),
+            arcweft_source::SourceDocumentId::try_new(uri.to_string()).expect("URI is non-empty"),
             "standalone test document",
         );
         let input = arcweft_tooling::model::CanonicalizationInput::Unavailable(&unavailable);
@@ -1198,7 +1365,13 @@ mod tests {
                 .iter()
                 .any(|action| action.title == "Materialize inferred Arcweft ID")
         );
-        let mapped_actions = source_code_actions_with_mapper(&uri, source, &TestMapper, input)
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(uri.to_string()).expect("source id"),
+            arcweft_source::SourceName::path(uri.to_string()),
+            source,
+        )
+        .expect("source document");
+        let mapped_actions = source_code_actions_with_mapper(&uri, &document, &TestMapper, input)
             .expect("mapped source code actions");
         assert!(mapped_actions.iter().any(|action| {
             action.title == "Canonicalize inferred rich-text tags" && action.edit.is_some()

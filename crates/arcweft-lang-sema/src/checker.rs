@@ -13,7 +13,7 @@ use crate::dialogue_view::DialogueViewModelRegistry;
 use crate::effect_analysis::EffectAnalysisReport;
 use crate::effect_collector::EffectCollector;
 use crate::effect_model::{CallableId, CallableKind, EffectContract, EffectSite, Visibility};
-use crate::effect_row::{EffectRow, EffectRowTail};
+use crate::effect_row::EffectRow;
 use crate::effects::{EffectId, EffectSet};
 use crate::env::{
     AgentActionEnvParam, DebugPathKind, EffectCapability, EnumVariantPayload, FunctionParam,
@@ -31,7 +31,7 @@ use crate::traits::{
 use crate::types::{EntityKind, MapKind, TypeKind};
 use arcweft_lang_hir::{
     model::{HirFlowItem, HirModule, HirTopLevelDecl},
-    symbol::{CallableDeclarationId, CallableSymbolTable},
+    symbol::{CallableDeclarationId, ProjectSymbolTable},
 };
 use arcweft_lang_syntax::{
     ast::{
@@ -66,12 +66,17 @@ pub mod lifetime_access;
 pub mod line_plan;
 pub mod module;
 pub mod presentation;
+mod signature;
 pub mod source;
 pub mod source_ranges;
 pub mod stmt;
 pub mod suspension;
+mod type_compatibility;
 
-pub use module::{analyze_project_types_for_canonicalization, analyze_types};
+pub use module::{
+    analyze_project_types_for_canonicalization, analyze_registered_project_types,
+    analyze_registered_project_types_for_canonicalization, analyze_types,
+};
 
 use fx::FxCatalog;
 use helpers::{
@@ -83,6 +88,12 @@ use helpers::{
     source_return_types, stmts_diverge, stream_return_types, type_ref_kind,
     type_ref_kind_with_generics, unify_loop_break_types, variant_payload_type_for_name,
 };
+use signature::{
+    available_effect_set, enum_variant_payload_type_for_name, function_param_higher_order_bindings,
+    function_signature_type, function_signature_type_with_nominal_types,
+    selected_higher_order_argument,
+};
+use type_compatibility::types_compatible;
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
 ///
@@ -460,7 +471,8 @@ struct TypeChecker<'a> {
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
     canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
-    callable_symbols: Option<&'a CallableSymbolTable>,
+    project_symbols: Option<&'a ProjectSymbolTable>,
+    registered_environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
     project_functions: BTreeMap<CallableDeclarationId, TypeKind>,
     project_function_signatures: BTreeMap<CallableDeclarationId, FunctionSignature>,
     local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
@@ -694,15 +706,16 @@ struct LoopContext {
 
 impl TypeChecker<'_> {
     fn new(env: &TypeCheckEnv) -> TypeChecker<'_> {
-        TypeChecker::new_with_canonicalization(env, None, None)
+        TypeChecker::new_with_project(env, None, None, None)
     }
 }
 
 impl<'a> TypeChecker<'a> {
-    fn new_with_canonicalization(
+    fn new_with_project(
         env: &'a TypeCheckEnv,
         canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
-        callable_symbols: Option<&'a CallableSymbolTable>,
+        project_symbols: Option<&'a ProjectSymbolTable>,
+        registered_environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
     ) -> Self {
         TypeChecker {
             env,
@@ -772,7 +785,8 @@ impl<'a> TypeChecker<'a> {
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
             canonicalization_sources,
-            callable_symbols,
+            project_symbols,
+            registered_environment,
             project_functions: BTreeMap::new(),
             project_function_signatures: BTreeMap::new(),
             local_symbol_identities: HashMap::new(),
@@ -1735,745 +1749,4 @@ impl<'a> TypeChecker<'a> {
             entity.body()
         )));
     }
-}
-
-fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
-    env.available_effects().map(|available| {
-        available
-            .iter()
-            .filter_map(|capability| EffectId::parse(capability.as_str()).ok())
-            .collect::<EffectSet>()
-    })
-}
-
-fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
-    function_signature_type_with_nominal_types(signature, NominalTypeContext::empty())
-}
-
-fn function_signature_type_with_nominal_types(
-    signature: &FnSignature,
-    nominal_types: NominalTypeContext<'_>,
-) -> FunctionSignature {
-    let return_type = curried_signature_return_type(signature);
-    let params = signature
-        .param_groups()
-        .first()
-        .into_iter()
-        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(|param| function_param_type(param, nominal_types))
-        .collect::<Vec<_>>();
-    let remaining_param_groups = signature
-        .param_groups()
-        .iter()
-        .skip(1)
-        .map(|group| {
-            group
-                .params()
-                .iter()
-                .map(|param| function_param_type(param, nominal_types))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    FunctionSignature::new(return_type, params).with_remaining_param_groups(remaining_param_groups)
-}
-
-fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
-    let return_type = signature
-        .return_type()
-        .map_or(TypeKind::Unit, type_ref_kind);
-    signature
-        .param_groups()
-        .iter()
-        .skip(1)
-        .rev()
-        .fold(return_type, |return_type, group| {
-            TypeKind::function(
-                group.params().iter().map(|param| type_ref_kind(param.ty())),
-                return_type,
-            )
-        })
-}
-
-fn function_param_type(param: &FnParam, nominal_types: NominalTypeContext<'_>) -> FunctionParam {
-    let ty = type_ref_kind(param.ty());
-    FunctionParam::new(
-        pattern_param_name(param.pattern()),
-        ty.clone(),
-        param.kind(),
-        param.default().is_some(),
-        function_param_higher_order_bindings(param.pattern(), &ty, nominal_types),
-    )
-}
-
-fn function_param_higher_order_bindings(
-    pattern: &Pattern,
-    ty: &TypeKind,
-    nominal_types: NominalTypeContext<'_>,
-) -> Vec<FunctionParamHigherOrderBinding> {
-    let mut bindings = Vec::new();
-    collect_function_param_higher_order_bindings(
-        pattern,
-        ty,
-        FunctionParamSelector::Root,
-        nominal_types,
-        &mut bindings,
-    );
-    bindings
-}
-
-fn collect_function_param_higher_order_bindings(
-    pattern: &Pattern,
-    ty: &TypeKind,
-    selector: FunctionParamSelector,
-    nominal_types: NominalTypeContext<'_>,
-    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
-) {
-    match pattern {
-        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. }
-            if is_local_ident(name) && matches!(ty, TypeKind::Function { .. }) =>
-        {
-            bindings.push(FunctionParamHigherOrderBinding::new(
-                name.clone(),
-                ty.clone(),
-                selector,
-            ));
-        }
-        Pattern::Tuple(items) => {
-            let TypeKind::Tuple(item_types) = ty else {
-                return;
-            };
-            collect_tuple_function_param_higher_order_bindings(
-                items,
-                item_types,
-                &selector,
-                nominal_types,
-                bindings,
-            );
-        }
-        Pattern::Whole { name, pattern } => {
-            if is_local_ident(name) && matches!(ty, TypeKind::Function { .. }) {
-                bindings.push(FunctionParamHigherOrderBinding::new(
-                    name.clone(),
-                    ty.clone(),
-                    selector.clone(),
-                ));
-            }
-            collect_function_param_higher_order_bindings(
-                pattern,
-                ty,
-                selector,
-                nominal_types,
-                bindings,
-            );
-        }
-        Pattern::Record { fields, .. } => {
-            collect_record_function_param_higher_order_bindings(
-                pattern,
-                fields,
-                ty,
-                &selector,
-                nominal_types,
-                bindings,
-            );
-        }
-        Pattern::Variant {
-            payload: Some(VariantPatternPayload::Record { fields, rest: _ }),
-            name,
-            ..
-        } => {
-            collect_variant_record_function_param_higher_order_bindings(
-                name,
-                fields,
-                pattern,
-                ty,
-                &selector,
-                nominal_types,
-                bindings,
-            );
-        }
-        Pattern::BracketSeq { items, .. }
-        | Pattern::Variant {
-            payload: Some(VariantPatternPayload::Tuple(items)),
-            name: _,
-            ..
-        } => {
-            if let Pattern::Variant { name, .. } = pattern {
-                collect_variant_tuple_function_param_higher_order_bindings(
-                    name,
-                    items,
-                    ty,
-                    &selector,
-                    nominal_types,
-                    bindings,
-                );
-            } else {
-                collect_bracket_seq_function_param_higher_order_bindings(
-                    items,
-                    &selector,
-                    nominal_types,
-                    bindings,
-                );
-            }
-        }
-        Pattern::Ident(_)
-        | Pattern::MutIdent(_)
-        | Pattern::Typed { .. }
-        | Pattern::Literal(_)
-        | Pattern::Entity(_)
-        | Pattern::Discard
-        | Pattern::Raw(_)
-        | Pattern::Variant { payload: None, .. } => {}
-    }
-}
-
-fn collect_tuple_function_param_higher_order_bindings(
-    items: &[Pattern],
-    item_types: &[TypeKind],
-    selector: &FunctionParamSelector,
-    nominal_types: NominalTypeContext<'_>,
-    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
-) {
-    for (index, (item, item_ty)) in items.iter().zip(item_types).enumerate() {
-        collect_function_param_higher_order_bindings(
-            item,
-            item_ty,
-            selector_with_tuple_index(selector, index),
-            nominal_types,
-            bindings,
-        );
-    }
-}
-
-fn collect_record_function_param_higher_order_bindings(
-    pattern: &Pattern,
-    fields: &[RecordPatternField],
-    ty: &TypeKind,
-    selector: &FunctionParamSelector,
-    nominal_types: NominalTypeContext<'_>,
-    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
-) {
-    for field in fields {
-        let Some(field_ty) = pattern_type_hint(field.pattern())
-            .or_else(|| record_pattern_field_type(pattern, ty, field.name(), nominal_types.fields))
-        else {
-            continue;
-        };
-        collect_function_param_higher_order_bindings(
-            field.pattern(),
-            &field_ty,
-            selector_with_record_field(selector, field.name()),
-            nominal_types,
-            bindings,
-        );
-    }
-}
-
-fn collect_variant_record_function_param_higher_order_bindings(
-    variant: &str,
-    fields: &[RecordPatternField],
-    pattern: &Pattern,
-    ty: &TypeKind,
-    selector: &FunctionParamSelector,
-    nominal_types: NominalTypeContext<'_>,
-    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
-) {
-    let payload_ty = variant_payload_type_for_name(variant, Some(ty));
-    let nominal_payload = enum_variant_payload_type_for_name(
-        variant,
-        ty,
-        nominal_types.variant_payloads,
-        nominal_types.env,
-    );
-    let payload_selector = selector_with_variant_payload(selector, variant);
-    for field in fields {
-        let Some(field_ty) = pattern_type_hint(field.pattern()).or_else(|| {
-            nominal_payload
-                .as_ref()
-                .and_then(|payload| payload.record_field_type(field.name()))
-                .or_else(|| {
-                    payload_ty.as_ref().and_then(|payload_ty| {
-                        record_pattern_field_type(
-                            pattern,
-                            payload_ty,
-                            field.name(),
-                            nominal_types.fields,
-                        )
-                    })
-                })
-        }) else {
-            continue;
-        };
-        collect_function_param_higher_order_bindings(
-            field.pattern(),
-            &field_ty,
-            selector_with_record_field(&payload_selector, field.name()),
-            nominal_types,
-            bindings,
-        );
-    }
-}
-
-fn collect_variant_tuple_function_param_higher_order_bindings(
-    variant: &str,
-    items: &[Pattern],
-    ty: &TypeKind,
-    selector: &FunctionParamSelector,
-    nominal_types: NominalTypeContext<'_>,
-    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
-) {
-    let nominal_payload = enum_variant_payload_type_for_name(
-        variant,
-        ty,
-        nominal_types.variant_payloads,
-        nominal_types.env,
-    );
-    let Some(payload_ty) = nominal_payload
-        .as_ref()
-        .and_then(EnumVariantPayload::single_type)
-        .or_else(|| {
-            nominal_payload
-                .is_none()
-                .then(|| variant_payload_type_for_name(variant, Some(ty)))
-                .flatten()
-        })
-    else {
-        return;
-    };
-    let payload_selector = selector_with_variant_payload(selector, variant);
-    if items.len() == 1 {
-        collect_function_param_higher_order_bindings(
-            &items[0],
-            &payload_ty,
-            payload_selector,
-            nominal_types,
-            bindings,
-        );
-        return;
-    }
-    let item_types = match payload_ty {
-        TypeKind::Tuple(item_types) => item_types,
-        _ => nominal_payload
-            .as_ref()
-            .and_then(EnumVariantPayload::tuple_items)
-            .unwrap_or_default(),
-    };
-    if item_types.is_empty() {
-        return;
-    }
-    collect_tuple_function_param_higher_order_bindings(
-        items,
-        &item_types,
-        &payload_selector,
-        nominal_types,
-        bindings,
-    );
-}
-
-fn collect_bracket_seq_function_param_higher_order_bindings(
-    items: &[Pattern],
-    selector: &FunctionParamSelector,
-    nominal_types: NominalTypeContext<'_>,
-    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
-) {
-    for item in items {
-        collect_function_param_higher_order_bindings(
-            item,
-            &TypeKind::Unit,
-            selector.clone(),
-            nominal_types,
-            bindings,
-        );
-    }
-}
-
-fn selector_with_tuple_index(
-    selector: &FunctionParamSelector,
-    index: usize,
-) -> FunctionParamSelector {
-    match selector {
-        FunctionParamSelector::Root => FunctionParamSelector::TupleIndex(vec![index]),
-        FunctionParamSelector::TupleIndex(path) => {
-            let mut path = path.clone();
-            path.push(index);
-            FunctionParamSelector::TupleIndex(path)
-        }
-        FunctionParamSelector::Path(path) => {
-            let mut path = path.clone();
-            path.push(FunctionParamSelectorSegment::TupleIndex(index));
-            FunctionParamSelector::Path(path)
-        }
-    }
-}
-
-fn selector_with_record_field(
-    selector: &FunctionParamSelector,
-    field: &str,
-) -> FunctionParamSelector {
-    let segment = FunctionParamSelectorSegment::RecordField(field.to_owned());
-    match selector {
-        FunctionParamSelector::Root => FunctionParamSelector::Path(vec![segment]),
-        FunctionParamSelector::TupleIndex(path) => {
-            let mut path = path
-                .iter()
-                .copied()
-                .map(FunctionParamSelectorSegment::TupleIndex)
-                .collect::<Vec<_>>();
-            path.push(segment);
-            FunctionParamSelector::Path(path)
-        }
-        FunctionParamSelector::Path(path) => {
-            let mut path = path.clone();
-            path.push(segment);
-            FunctionParamSelector::Path(path)
-        }
-    }
-}
-
-fn selector_with_variant_payload(
-    selector: &FunctionParamSelector,
-    variant: &str,
-) -> FunctionParamSelector {
-    let segment = FunctionParamSelectorSegment::VariantPayload(normalize_variant_name(variant));
-    match selector {
-        FunctionParamSelector::Root => FunctionParamSelector::Path(vec![segment]),
-        FunctionParamSelector::TupleIndex(path) => {
-            let mut path = path
-                .iter()
-                .copied()
-                .map(FunctionParamSelectorSegment::TupleIndex)
-                .collect::<Vec<_>>();
-            path.push(segment);
-            FunctionParamSelector::Path(path)
-        }
-        FunctionParamSelector::Path(path) => {
-            let mut path = path.clone();
-            path.push(segment);
-            FunctionParamSelector::Path(path)
-        }
-    }
-}
-
-fn selected_higher_order_argument<'a>(
-    selector: &FunctionParamSelector,
-    value: &'a Expr,
-    actual: &'a TypeKind,
-    fallback_ty: &'a TypeKind,
-) -> Option<(&'a Expr, &'a TypeKind)> {
-    match selector {
-        FunctionParamSelector::Root => Some((value, actual)),
-        FunctionParamSelector::TupleIndex(path) => {
-            let mut value = value;
-            let mut actual = actual;
-            for index in path {
-                let (Expr::Tuple(values), TypeKind::Tuple(types)) = (value, actual) else {
-                    return None;
-                };
-                value = values.get(*index)?;
-                actual = types.get(*index)?;
-            }
-            Some((value, actual))
-        }
-        FunctionParamSelector::Path(path) => {
-            let mut value = value;
-            let mut actual = Some(actual);
-            for segment in path {
-                match segment {
-                    FunctionParamSelectorSegment::TupleIndex(index) => {
-                        let Expr::Tuple(values) = value else {
-                            return None;
-                        };
-                        value = values.get(*index)?;
-                        actual = match actual {
-                            Some(TypeKind::Tuple(types)) => types.get(*index),
-                            _ => None,
-                        };
-                    }
-                    FunctionParamSelectorSegment::RecordField(field) => {
-                        let (Expr::Record { fields, .. } | Expr::RecordLiteral(fields)) = value
-                        else {
-                            return None;
-                        };
-                        value = fields
-                            .iter()
-                            .find_map(|(name, value)| (name == field).then_some(value))?;
-                        actual = None;
-                    }
-                    FunctionParamSelectorSegment::VariantPayload(variant) => match value {
-                        Expr::Call { callee, args } => {
-                            let callee = expr_path_label(callee)?;
-                            if !variant_constructor_matches(&callee, variant) {
-                                return None;
-                            }
-                            let [CallArg::Positional(payload)] = args.as_slice() else {
-                                return None;
-                            };
-                            value = payload;
-                            actual = None;
-                        }
-                        Expr::Record { path, .. } if variant_constructor_matches(path, variant) => {
-                            actual = None;
-                        }
-                        _ => return None,
-                    },
-                }
-            }
-            Some((value, actual.unwrap_or(fallback_ty)))
-        }
-    }
-}
-
-fn normalize_variant_name(name: &str) -> String {
-    name.strip_prefix('.').unwrap_or(name).to_owned()
-}
-
-fn variant_constructor_matches(path: &str, variant: &str) -> bool {
-    let path = normalize_variant_name(path);
-    path == variant
-        || path
-            .rsplit_once('.')
-            .is_some_and(|(_, name)| name == variant)
-}
-
-fn pattern_type_hint(pattern: &Pattern) -> Option<TypeKind> {
-    match pattern {
-        Pattern::Typed { ty, .. } => Some(type_ref_kind(ty)),
-        Pattern::Tuple(items) => items
-            .iter()
-            .map(pattern_type_hint)
-            .collect::<Option<Vec<_>>>()
-            .map(TypeKind::Tuple),
-        Pattern::Whole { pattern, .. } => pattern_type_hint(pattern),
-        _ => None,
-    }
-}
-
-fn record_pattern_field_type(
-    pattern: &Pattern,
-    ty: &TypeKind,
-    field: &str,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
-) -> Option<TypeKind> {
-    let Pattern::Record { path, .. } = pattern else {
-        return None;
-    };
-    let record_name = path.as_deref().or_else(|| match ty {
-        TypeKind::Named(name) => Some(name.as_str()),
-        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
-            nominal_record_type_name(inner)
-        }
-        _ => None,
-    })?;
-    nominal_fields?
-        .get(record_name)
-        .and_then(|fields| fields.get(field))
-        .cloned()
-}
-
-fn enum_variant_payload_type_for_name(
-    variant: &str,
-    ty: &TypeKind,
-    nominal_variant_payloads: Option<&HashMap<String, HashMap<String, EnumVariantPayload>>>,
-    env: Option<&TypeCheckEnv>,
-) -> Option<EnumVariantPayload> {
-    let variant = normalize_variant_name(variant);
-    let variant = variant
-        .rsplit_once('.')
-        .map_or(variant.as_str(), |(_, name)| name);
-    nominal_record_type_name(ty)
-        .and_then(|enum_name| {
-            nominal_variant_payloads?
-                .get(enum_name)?
-                .get(variant)
-                .cloned()
-        })
-        .or_else(|| env_variant_payload_type_for_name(ty, variant, env))
-}
-
-fn env_variant_payload_type_for_name(
-    ty: &TypeKind,
-    variant: &str,
-    env: Option<&TypeCheckEnv>,
-) -> Option<EnumVariantPayload> {
-    match ty {
-        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
-            env_variant_payload_type_for_name(inner, variant, env)
-        }
-        ty => env?.enum_variant_payload(ty, variant).cloned(),
-    }
-}
-
-fn nominal_record_type_name(ty: &TypeKind) -> Option<&str> {
-    match ty {
-        TypeKind::Named(name) => Some(name),
-        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
-            nominal_record_type_name(inner)
-        }
-        _ => None,
-    }
-}
-
-fn pattern_param_name(pattern: &Pattern) -> Option<String> {
-    match pattern {
-        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
-            Some(name.clone())
-        }
-        _ => None,
-    }
-}
-
-fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
-    if expected == actual || matches!(expected, TypeKind::Named(name) if name == "_") {
-        return true;
-    }
-    if matches!(actual, TypeKind::Never) {
-        return true;
-    }
-    match (expected, actual) {
-        (TypeKind::Bytes, TypeKind::Vec(inner) | TypeKind::Slice(inner) | TypeKind::Seq(inner)) => {
-            matches!(inner.as_ref(), TypeKind::U8)
-        }
-        (TypeKind::ActionName, TypeKind::String | TypeKind::Named(_)) => true,
-        (TypeKind::AgentValue, actual) => is_agent_value_type(actual),
-        (TypeKind::Choice(alternatives), TypeKind::Choice(actual_alternatives)) => {
-            actual_alternatives
-                .iter()
-                .all(|actual| choice_injection_target(alternatives, actual).is_some())
-        }
-        (TypeKind::Choice(alternatives), actual) => {
-            choice_injection_target(alternatives, actual).is_some()
-        }
-        (expected, TypeKind::Choice(alternatives)) => alternatives
-            .iter()
-            .all(|actual| types_compatible(expected, actual)),
-        (
-            TypeKind::Result {
-                ok: expected_ok,
-                error: expected_error,
-            },
-            TypeKind::Result {
-                ok: actual_ok,
-                error: actual_error,
-            },
-        ) => {
-            types_compatible(expected_ok, actual_ok)
-                && (types_compatible(expected_error, actual_error)
-                    || matches!(actual_error.as_ref(), TypeKind::Named(name) if name == "_"))
-        }
-        (TypeKind::Option(expected), TypeKind::Option(actual)) => {
-            types_compatible(expected, actual)
-                || matches!(actual.as_ref(), TypeKind::Named(name) if name == "_")
-        }
-        (TypeKind::Vec(expected), TypeKind::Vec(actual))
-        | (TypeKind::Seq(expected), TypeKind::Seq(actual))
-        | (TypeKind::Slice(expected), TypeKind::Slice(actual)) => {
-            types_compatible(expected, actual)
-        }
-        (
-            TypeKind::Array {
-                item: expected_item,
-                len: expected_len,
-            },
-            TypeKind::Array {
-                item: actual_item,
-                len: actual_len,
-            },
-        ) => expected_len == actual_len && types_compatible(expected_item, actual_item),
-        (TypeKind::Range(expected), TypeKind::Range(actual)) => types_compatible(expected, actual),
-        (TypeKind::Tuple(expected), TypeKind::Tuple(actual)) => {
-            expected.len() == actual.len()
-                && expected
-                    .iter()
-                    .zip(actual)
-                    .all(|(expected, actual)| types_compatible(expected, actual))
-        }
-        (
-            TypeKind::Function {
-                params: expected_params,
-                return_type: expected_return,
-                effects: expected_effects,
-            },
-            TypeKind::Function {
-                params: actual_params,
-                return_type: actual_return,
-                effects: actual_effects,
-            },
-        ) => {
-            expected_params.len() == actual_params.len()
-                && expected_params
-                    .iter()
-                    .zip(actual_params.iter())
-                    .all(|(expected, actual)| types_compatible(expected, actual))
-                && types_compatible(expected_return, actual_return)
-                && effect_rows_compatible(expected_effects, actual_effects)
-        }
-        _ => false,
-    }
-}
-
-fn effect_rows_compatible(expected: &EffectRow, actual: &EffectRow) -> bool {
-    match (expected.tail(), actual.tail()) {
-        (EffectRowTail::Unknown, _) | (_, EffectRowTail::Unknown) => true,
-        (EffectRowTail::Closed, EffectRowTail::Closed)
-        | (EffectRowTail::Variable(_), EffectRowTail::Closed | EffectRowTail::Variable(_)) => {
-            actual
-                .concrete()
-                .effects_not_covered_by(expected.concrete())
-                .is_empty()
-        }
-        (EffectRowTail::Closed, EffectRowTail::Variable(_)) => false,
-    }
-}
-
-fn is_agent_value_type(ty: &TypeKind) -> bool {
-    match ty {
-        TypeKind::Bool
-        | TypeKind::I8
-        | TypeKind::I16
-        | TypeKind::I32
-        | TypeKind::I64
-        | TypeKind::I128
-        | TypeKind::ISize
-        | TypeKind::U8
-        | TypeKind::U16
-        | TypeKind::U32
-        | TypeKind::U64
-        | TypeKind::U128
-        | TypeKind::USize
-        | TypeKind::F32
-        | TypeKind::F64
-        | TypeKind::String
-        | TypeKind::Char
-        | TypeKind::Bytes
-        | TypeKind::Duration
-        | TypeKind::DisplayText
-        | TypeKind::ActionName
-        | TypeKind::AgentValue
-        | TypeKind::ObservedObject
-        | TypeKind::AgentBBox
-        | TypeKind::Ref(_)
-        | TypeKind::CaptureRef
-        | TypeKind::AgentResource
-        | TypeKind::AgentResourceBody => true,
-        TypeKind::Vec(inner)
-        | TypeKind::Array { item: inner, .. }
-        | TypeKind::Slice(inner)
-        | TypeKind::Range(inner)
-        | TypeKind::Option(inner) => is_agent_value_type(inner),
-        TypeKind::Map { key, value, .. } => {
-            types_compatible(&TypeKind::String, key) && is_agent_value_type(value)
-        }
-        TypeKind::Choice(alternatives) => alternatives.iter().all(is_agent_value_type),
-        _ => false,
-    }
-}
-
-fn choice_injection_target<'a>(
-    alternatives: &'a [TypeKind],
-    actual: &TypeKind,
-) -> Option<&'a TypeKind> {
-    let mut compatible_alternatives = alternatives
-        .iter()
-        .filter(|alternative| types_compatible(alternative, actual));
-    let selected = compatible_alternatives.next()?;
-    compatible_alternatives.next().is_none().then_some(selected)
 }

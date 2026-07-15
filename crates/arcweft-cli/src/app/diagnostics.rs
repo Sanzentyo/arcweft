@@ -1,10 +1,9 @@
 use annotate_snippets::{Annotation, AnnotationKind, Group, Level, Patch, Renderer, Snippet};
 use arcweft_source::{
     Diagnostic, DiagnosticCommand, DiagnosticLabel, DiagnosticLabelStyle, DiagnosticSeverity,
-    SourceName, SourceSpan,
+    SourceDocument, SourceDocumentIdentity, SourceSpan,
 };
 use std::io::{self, IsTerminal};
-use std::path::Path;
 
 /// Terminal diagnostic renderer for source-backed Arcweft diagnostics.
 pub(in crate::app) struct DiagnosticEmitter {
@@ -13,8 +12,7 @@ pub(in crate::app) struct DiagnosticEmitter {
 
 /// Source text and display path used while rendering one direct-source diagnostic batch.
 pub(in crate::app) struct DiagnosticSource<'a> {
-    path: String,
-    text: &'a str,
+    document: &'a SourceDocument,
 }
 
 impl DiagnosticEmitter {
@@ -56,39 +54,24 @@ impl DiagnosticEmitter {
     }
 }
 
-pub(in crate::app) fn emit_diagnostics_for_path(path: &Path, diagnostics: &[Diagnostic]) {
+pub(in crate::app) fn emit_diagnostics(document: &SourceDocument, diagnostics: &[Diagnostic]) {
     let emitter = DiagnosticEmitter::stderr();
-    match std::fs::read_to_string(path) {
-        Ok(source_text) => {
-            let source = DiagnosticSource::new(path, &source_text);
-            emitter.emit_all(diagnostics, &source);
-        }
-        Err(_) => {
-            for diagnostic in diagnostics {
-                emitter.emit_without_source(diagnostic);
-            }
-        }
-    }
+    let source = DiagnosticSource::new(document);
+    emitter.emit_all(diagnostics, &source);
 }
 
 impl<'a> DiagnosticSource<'a> {
-    pub(in crate::app) fn new(path: &Path, text: &'a str) -> Self {
-        Self::from_display_path(path.display().to_string(), text)
+    pub(in crate::app) const fn new(document: &'a SourceDocument) -> Self {
+        Self { document }
     }
 
-    pub(in crate::app) fn from_display_path(path: impl Into<String>, text: &'a str) -> Self {
-        Self {
-            path: path.into(),
-            text,
-        }
+    fn text(&self) -> &'a str {
+        self.document.text()
     }
 
-    fn path_for(&self, source_name: &SourceName) -> String {
-        match source_name {
-            SourceName::Path(path) if path == "<memory>" => self.path.clone(),
-            SourceName::Path(path) => path.clone(),
-            SourceName::Generated => "<generated>".to_owned(),
-        }
+    fn path_for(&self, identity: &SourceDocumentIdentity) -> Option<String> {
+        (identity == self.document.identity())
+            .then(|| self.document.display_name().display_name().to_owned())
     }
 }
 
@@ -117,11 +100,19 @@ fn diagnostic_groups_with_optional_source<'source>(
         let labels = diagnostic.labels();
         if labels.is_empty() {
             if let Some(span) = diagnostic.span() {
-                group = group.element(snippet_for_span(source, span));
+                if let Some(snippet) = snippet_for_span(source, span) {
+                    group = group.element(snippet);
+                } else {
+                    group = group.element(stale_span_note());
+                }
             }
         } else {
             for label in labels {
-                group = group.element(snippet_for_label(source, label));
+                if let Some(snippet) = snippet_for_label(source, label) {
+                    group = group.element(snippet);
+                } else {
+                    group = group.element(stale_span_note());
+                }
             }
         }
     } else if diagnostic.span().is_some() || !diagnostic.labels().is_empty() {
@@ -142,14 +133,16 @@ fn diagnostic_groups_with_optional_source<'source>(
         );
         if let Some(source) = source {
             for edit in suggestion.edits() {
-                suggestion_group = suggestion_group.element(
-                    Snippet::source(source.text)
-                        .path(source.path_for(edit.span().source()))
-                        .patch(Patch::new(
+                if let Some(path) = source.path_for(edit.span().source()) {
+                    suggestion_group = suggestion_group.element(
+                        Snippet::source(source.text()).path(path).patch(Patch::new(
                             edit.span().range().as_range(),
                             edit.replacement().to_owned(),
                         )),
-                );
+                    );
+                } else {
+                    suggestion_group = suggestion_group.element(stale_span_note());
+                }
             }
         } else if !suggestion.edits().is_empty() {
             suggestion_group = suggestion_group.element(
@@ -184,27 +177,36 @@ fn command_title(command: &DiagnosticCommand) -> String {
 fn snippet_for_span<'source>(
     source: &'source DiagnosticSource<'source>,
     span: &SourceSpan,
-) -> Snippet<'source, Annotation<'source>> {
-    Snippet::source(source.text)
-        .path(source.path_for(span.source()))
-        .annotation(AnnotationKind::Primary.span(span.range().as_range()))
+) -> Option<Snippet<'source, Annotation<'source>>> {
+    Some(
+        Snippet::source(source.text())
+            .path(source.path_for(span.source())?)
+            .annotation(AnnotationKind::Primary.span(span.range().as_range())),
+    )
 }
 
 fn snippet_for_label<'source>(
     source: &'source DiagnosticSource<'source>,
     label: &DiagnosticLabel,
-) -> Snippet<'source, Annotation<'source>> {
+) -> Option<Snippet<'source, Annotation<'source>>> {
     let annotation_kind = match label.style() {
         DiagnosticLabelStyle::Primary => AnnotationKind::Primary,
         DiagnosticLabelStyle::Secondary => AnnotationKind::Context,
     };
     let annotation = annotation_kind.span(label.span().range().as_range());
-    let snippet = Snippet::source(source.text).path(source.path_for(label.span().source()));
+    let snippet = Snippet::source(source.text()).path(source.path_for(label.span().source())?);
     if let Some(message) = label.message() {
-        snippet.annotation(annotation.label(message.to_owned()))
+        Some(snippet.annotation(annotation.label(message.to_owned())))
     } else {
-        snippet.annotation(annotation)
+        Some(snippet.annotation(annotation))
     }
+}
+
+fn stale_span_note() -> annotate_snippets::Message<'static> {
+    Level::NOTE.message(
+        "diagnostic span belongs to a different source revision; source excerpt was omitted"
+            .to_owned(),
+    )
 }
 
 fn level_for(severity: DiagnosticSeverity) -> Level<'static> {
@@ -221,13 +223,24 @@ mod tests {
     use super::*;
     use arcweft_source::{
         DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel, DiagnosticSuggestion,
-        SourceEdit, SourceRange, SourceSpan,
+        SourceDocumentId, SourceEdit, SourceName, SourceRange,
     };
+
+    fn document(text: &str) -> SourceDocument {
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://game/game.arcw")
+                .expect("test document id"),
+            SourceName::path("game.arcw"),
+            text,
+        )
+        .expect("test source document")
+    }
 
     #[test]
     fn plain_renderer_includes_code_label_and_patch() {
         let source = "flow @flow.opening {\n}\n";
-        let span = SourceSpan::new(SourceName::path("game.arcw"), SourceRange::new(5, 18));
+        let document = document(source);
+        let span = document.span(SourceRange::new(5, 18)).expect("test span");
         let diagnostic = Diagnostic::new(DiagnosticSeverity::Hint, "explicit id")
             .with_code("AWF0103")
             .with_label(DiagnosticLabel::primary(
@@ -245,7 +258,7 @@ mod tests {
                 DiagnosticCommand::new("arcweft.verify.showObligation", "Show proof obligation")
                     .with_argument("obligation.0001"),
             );
-        let source = DiagnosticSource::new(Path::new("game.arcw"), source);
+        let source = DiagnosticSource::new(&document);
         let groups = diagnostic_groups(&diagnostic, &source);
         let rendered = Renderer::plain().render(&groups);
         assert!(rendered.contains("hint[AWF0103]: explicit id"));
@@ -258,10 +271,10 @@ mod tests {
     #[test]
     fn plain_renderer_includes_verifier_proof_stub_patch_preview() {
         let source = "flow @flow.opening opening {\n}\n";
-        let span = SourceSpan::new(
-            SourceName::path("game.arcw"),
-            SourceRange::new(source.len(), source.len()),
-        );
+        let document = document(source);
+        let span = document
+            .span(SourceRange::new(source.len(), source.len()))
+            .expect("test insertion span");
         let diagnostic = Diagnostic::new(
             DiagnosticSeverity::Warning,
             "lifetime promotion requires proof",
@@ -277,7 +290,7 @@ mod tests {
                 "\n\nproof @proof.obligation_0001 {\n    // TODO: prove it\n    check _\n}\n",
             )),
         );
-        let source = DiagnosticSource::new(Path::new("game.arcw"), source);
+        let source = DiagnosticSource::new(&document);
         let groups = diagnostic_groups(&diagnostic, &source);
         let rendered = Renderer::plain().render(&groups);
 
@@ -292,10 +305,10 @@ mod tests {
         let source = "flow audit_demo {\n    unsafe lifetime @unsafe.cache_last_line {\n        let summary = promote_unchecked('flow)\n    }\n}\n";
         let marker = "@unsafe.cache_last_line {";
         let start = source.find(marker).expect("unsafe lifetime marker") + marker.len() - 1;
-        let span = SourceSpan::new(
-            SourceName::path("game.arcw"),
-            SourceRange::new(start, start + 1),
-        );
+        let document = document(source);
+        let span = document
+            .span(SourceRange::new(start, start + 1))
+            .expect("test replacement span");
         let diagnostic = Diagnostic::new(
             DiagnosticSeverity::Warning,
             "unsafe lifetime audit `unsafe.cache_last_line` must include string reason and SAFETY docs",
@@ -311,7 +324,7 @@ mod tests {
                 " reason = _\n{\n    /// SAFETY: TODO: justify this unsafe lifetime block.",
             )),
         );
-        let source = DiagnosticSource::new(Path::new("game.arcw"), source);
+        let source = DiagnosticSource::new(&document);
         let groups = diagnostic_groups(&diagnostic, &source);
         let rendered = Renderer::plain().render(&groups);
 

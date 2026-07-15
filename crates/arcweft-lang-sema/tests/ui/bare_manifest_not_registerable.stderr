@@ -1,0 +1,5 @@
+error[E0308]: mismatched types
+ --> tests/ui/bare_manifest_not_registerable.rs:8:64
+  |
+8 |     let _ = SourceBackedCharacterCatalog::try_new(source, vec![manifest]);
+  |                                                                ^^^^^^^^ expected `SourceBackedCharacterManifest`, found `CharacterManifest`

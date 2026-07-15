@@ -1,5 +1,6 @@
 use crate::env::TypeCheckEnv;
 use crate::project_index::ProjectSemanticIndex;
+use crate::registration::RegisteredSemanticWorld;
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::{EntityKind, TypeKind};
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
@@ -48,7 +49,7 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
     for declaration in module.declarations() {
         match declaration {
             HirTopLevelDecl::Source(source) => {
-                if let Some(id) = source.id() {
+                if let Some(id) = source.item().id() {
                     registry.insert(id.body(), EntityKind::Source);
                 }
             }
@@ -92,6 +93,15 @@ pub fn registry_from_hir_and_env(module: &HirModule, env: &TypeCheckEnv) -> Name
         }
     }
     registry
+}
+
+/// Builds a registry through the committed project semantic world.
+#[must_use]
+pub fn registry_from_hir_and_registered(
+    module: &HirModule,
+    registered: &RegisteredSemanticWorld,
+) -> NameRegistry {
+    registry_from_hir_and_env(module, registered.environment().base())
 }
 
 /// Builds a registry from one HIR module plus an Agent project semantic index.

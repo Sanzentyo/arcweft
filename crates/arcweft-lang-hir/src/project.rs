@@ -2,16 +2,19 @@
 
 use crate::model::{HirFlowItem, HirModule};
 use crate::symbol::{
-    CallableLinkError, CallablePackageId, CallablePackageIdError, CallableSymbolTable,
+    CallablePackageId, CallablePackageIdError, ProjectExternalDeclarations,
+    ProjectSymbolLinkOutput, ProjectSymbolLinkReport, ProjectSymbolTable,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_source::SourceDocumentIdentity;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// One canonical module and its independently lowered HIR.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirProjectModule {
-    path: CanonicalModulePath,
+    module: CanonicalModulePath,
+    source: SourceDocumentIdentity,
     hir: HirModule,
 }
 
@@ -20,6 +23,7 @@ pub struct HirProjectModule {
 pub struct HirProject {
     package: CallablePackageId,
     modules: BTreeMap<CanonicalModulePath, HirModule>,
+    sources: BTreeMap<CanonicalModulePath, SourceDocumentIdentity>,
 }
 
 /// Invalid module-preserving HIR project.
@@ -34,21 +38,46 @@ pub enum HirProjectError {
 }
 
 impl HirProjectModule {
-    pub fn new(path: CanonicalModulePath, mut hir: HirModule) -> Self {
-        hir.assign_declaration_module(&path);
-        Self { path, hir }
+    /// Binds one lowered HIR module to its canonical module and source identity.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `hir` was not lowered from a revision-bound source document or when that
+    /// document identity differs from `source`.
+    pub fn new(
+        module: CanonicalModulePath,
+        source: SourceDocumentIdentity,
+        mut hir: HirModule,
+    ) -> Self {
+        let bound_source = hir
+            .bound_source_identity()
+            .expect("project HIR must be lowered from a revision-bound source document");
+        assert_eq!(
+            bound_source, &source,
+            "project HIR source identity must match its module identity"
+        );
+        hir.assign_declaration_module(&module);
+        Self {
+            module,
+            source,
+            hir,
+        }
     }
 
-    pub const fn path(&self) -> &CanonicalModulePath {
-        &self.path
+    pub const fn module(&self) -> &CanonicalModulePath {
+        &self.module
+    }
+
+    pub const fn source(&self) -> &SourceDocumentIdentity {
+        &self.source
     }
 
     pub const fn hir(&self) -> &HirModule {
         &self.hir
     }
 
-    pub fn into_parts(self) -> (CanonicalModulePath, HirModule) {
-        (self.path, self.hir)
+    pub fn into_parts(self) -> (CanonicalModulePath, SourceDocumentIdentity, HirModule) {
+        (self.module, self.source, self.hir)
     }
 }
 
@@ -59,11 +88,13 @@ impl HirProject {
     ) -> Result<Self, HirProjectError> {
         let package = CallablePackageId::try_new(package)?;
         let mut module_map = BTreeMap::new();
+        let mut sources = BTreeMap::new();
         for module in modules {
-            let (path, hir) = module.into_parts();
+            let (path, source, hir) = module.into_parts();
             if module_map.insert(path.clone(), hir).is_some() {
                 return Err(HirProjectError::DuplicateModule { module: path });
             }
+            sources.insert(path, source);
         }
         if !module_map.contains_key(&CanonicalModulePath::crate_root()) {
             return Err(HirProjectError::MissingRootModule);
@@ -71,6 +102,7 @@ impl HirProject {
         Ok(Self {
             package,
             modules: module_map,
+            sources,
         })
     }
 
@@ -86,9 +118,16 @@ impl HirProject {
         self.modules.get(path)
     }
 
-    /// Builds the package's ordinary/Fx callable alias table.
-    pub fn callable_symbols(&self) -> Result<CallableSymbolTable, Vec<CallableLinkError>> {
-        CallableSymbolTable::build(self)
+    pub fn source(&self, path: &CanonicalModulePath) -> Option<&SourceDocumentIdentity> {
+        self.sources.get(path)
+    }
+
+    /// Links project declarations, imports, and typed external declarations.
+    pub fn project_symbols(
+        &self,
+        externals: &ProjectExternalDeclarations,
+    ) -> Result<ProjectSymbolLinkOutput, ProjectSymbolLinkReport> {
+        ProjectSymbolTable::link(self, externals)
     }
 
     /// Builds the current crate-global semantic-pass view.
@@ -120,6 +159,7 @@ impl HirProject {
 
 impl HirModule {
     fn assign_declaration_module(&mut self, path: &CanonicalModulePath) {
+        self.bind_project_module(path);
         for flow in &mut self.flows {
             flow.module_path = Some(path.clone());
             assign_flow_item_modules(&mut flow.body, path);
@@ -129,6 +169,11 @@ impl HirModule {
         }
         for agent in &mut self.agents {
             agent.module_path = Some(path.clone());
+        }
+        for declaration in &mut self.declarations {
+            if let crate::model::HirTopLevelDecl::Source(source) = declaration {
+                source.bind_project_module(path);
+            }
         }
         assign_flow_item_modules(&mut self.top_level_items, path);
     }
@@ -150,6 +195,7 @@ impl HirModule {
     pub fn append_module_body(&mut self, mut module: Self) {
         self.source_len = None;
         self.top_level_ranges.clear();
+        self.merge_project_sources(&mut module);
         let style_patch_base = u32::try_from(self.style_patches.len())
             .expect("linked HIR contains more inline style patches than u32 can identify");
         module
@@ -217,7 +263,7 @@ fn assign_flow_item_module(item: &mut HirFlowItem, path: &CanonicalModulePath) {
 #[cfg(test)]
 mod tests {
     use super::{HirProject, HirProjectModule};
-    use crate::lower::lower_to_hir;
+    use crate::lower::lower_document_to_hir;
     use crate::model::HirFlowItem;
     use crate::style::HirStylePatch;
     use arcweft_lang_syntax::{
@@ -227,6 +273,7 @@ mod tests {
         },
         parser::parse_source,
     };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::collections::BTreeSet;
 
     struct LinkedStyleProject {
@@ -237,38 +284,23 @@ mod tests {
     }
 
     fn linked_style_project() -> LinkedStyleProject {
-        let root = lower_to_hir(
-            &parse_source(
-                r#"pub view Root() {
+        let root_source = r#"pub view Root() {
     Button("root").style { opacity = 100milli }
 }
-"#,
-            )
-            .into_typed_tree(),
-        )
-        .unwrap();
-        let alpha = lower_to_hir(
-            &parse_source(
-                r#"pub view Alpha() {
+"#;
+        let (root_document, root) = lower_bound("root", root_source);
+        let alpha_source = r#"pub view Alpha() {
     Button("alpha")
         .style { outline-width = 2px }
         .style { opacity = 200milli }
 }
-"#,
-            )
-            .into_typed_tree(),
-        )
-        .unwrap();
-        let omega = lower_to_hir(
-            &parse_source(
-                r#"pub view Omega() {
+"#;
+        let (alpha_document, alpha) = lower_bound("alpha", alpha_source);
+        let omega_source = r#"pub view Omega() {
     Button("omega").style { width = 3px }
 }
-"#,
-            )
-            .into_typed_tree(),
-        )
-        .unwrap();
+"#;
+        let (omega_document, omega) = lower_bound("omega", omega_source);
         let patch_ranges = [
             root.style_patches()[0].range(),
             alpha.style_patches()[0].range(),
@@ -282,9 +314,13 @@ mod tests {
         let project = HirProject::new(
             "game",
             [
-                HirProjectModule::new(omega_path.clone(), omega),
-                HirProjectModule::new(CanonicalModulePath::crate_root(), root),
-                HirProjectModule::new(alpha_path.clone(), alpha),
+                HirProjectModule::new(omega_path.clone(), omega_document.identity().clone(), omega),
+                HirProjectModule::new(
+                    CanonicalModulePath::crate_root(),
+                    root_document.identity().clone(),
+                    root,
+                ),
+                HirProjectModule::new(alpha_path.clone(), alpha_document.identity().clone(), alpha),
             ],
         )
         .unwrap();
@@ -298,21 +334,21 @@ mod tests {
 
     #[test]
     fn linked_view_preserves_root_attributes_and_appends_child_body() {
-        let root = lower_to_hir(
-            &parse_source("#![generated(tool)]\nflow @root root {}").into_typed_tree(),
-        )
-        .unwrap();
-        let child = lower_to_hir(
-            &parse_source("flow @child child {}\npub fn helper() -> i32 { 1 }").into_typed_tree(),
-        )
-        .unwrap();
+        let root_source = "#![generated(tool)]\nflow @root root {}";
+        let (root_document, root) = lower_bound("root-linked", root_source);
+        let child_source = "flow @child child {}\npub fn helper() -> i32 { 1 }";
+        let (child_document, child) = lower_bound("child-linked", child_source);
         let child_path =
             CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
         let project = HirProject::new(
             "game",
             [
-                HirProjectModule::new(CanonicalModulePath::crate_root(), root),
-                HirProjectModule::new(child_path, child),
+                HirProjectModule::new(
+                    CanonicalModulePath::crate_root(),
+                    root_document.identity().clone(),
+                    root,
+                ),
+                HirProjectModule::new(child_path, child_document.identity().clone(), child),
             ],
         )
         .unwrap();
@@ -343,10 +379,12 @@ mod tests {
 ";
         let parsed = parse_source(source);
         assert_eq!(parsed.errors(), &[]);
-        let hir = lower_to_hir(parsed.typed_tree()).expect("nested flow lowers");
+        let document = source_document("nested-flow", source);
+        let hir =
+            lower_document_to_hir(&document, parsed.typed_tree()).expect("nested flow lowers");
         let child_path =
             CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
-        let module = HirProjectModule::new(child_path.clone(), hir);
+        let module = HirProjectModule::new(child_path.clone(), document.identity().clone(), hir);
 
         let HirFlowItem::Scope(scope) = &module.hir().flows()[0].body()[0] else {
             panic!("outer scope must lower");
@@ -412,6 +450,22 @@ mod tests {
             linked.style_patches().len(),
             "downstream ordinal-based patch references must remain collision-free"
         );
+    }
+
+    fn source_document(label: &str, source: &str) -> SourceDocument {
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!("memory:///{label}.arcw")).unwrap(),
+            SourceName::Generated,
+            source,
+        )
+        .expect("source document")
+    }
+
+    fn lower_bound(label: &str, source: &str) -> (SourceDocument, crate::model::HirModule) {
+        let document = source_document(label, source);
+        let parsed = parse_source(source);
+        let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("source lowers");
+        (document, hir)
     }
 
     #[test]

@@ -135,53 +135,41 @@ fn namespace_separator_is_rejected_in_module_paths() {
 }
 
 #[test]
-fn use_tree_exposes_typed_module_prefixes() {
-    let tree = parse_ok(
-        r"
+fn use_tree_exposes_typed_symbol_paths_and_token_ranges() {
+    let source = r"
 use parent.shared.{alpha, beta}
 pub use crate.game.routes.opening as opening_route
 use self.prelude.*
-",
-    );
+";
+    let tree = parse_ok(source);
 
     assert_eq!(tree.uses().len(), 3);
     assert_eq!(tree.uses()[0].tree().source(), "super.shared.{alpha, beta}");
-    assert_eq!(
-        tree.uses()[0].tree().module_path_prefix().to_string(),
-        "super.shared"
-    );
-    assert!(tree.uses()[0].tree().module_path_is_exact());
     let UseTreeKind::Group { module, names } = tree.uses()[0].tree().kind() else {
         panic!("expected grouped use tree");
     };
-    assert_eq!(module.to_string(), "super.shared");
+    assert_eq!(module.path().to_string(), "super.shared");
+    assert_eq!(&source[module.range().as_range()], "parent.shared");
     assert_eq!(names.len(), 2);
     assert_eq!(names[0].name().as_str(), "alpha");
-    assert_eq!(names[0].binding_name().as_str(), "alpha");
-    assert_eq!(
-        tree.uses()[1].tree().module_path_prefix().to_string(),
-        "crate.game.routes.opening"
-    );
-    assert!(!tree.uses()[1].tree().module_path_is_exact());
+    assert_eq!(names[0].binding_name(), "alpha");
+    assert_eq!(&source[names[1].name_range().as_range()], "beta");
     let UseTreeKind::Path { path, alias } = tree.uses()[1].tree().kind() else {
         panic!("expected aliased path use tree");
     };
-    assert_eq!(path.to_string(), "crate.game.routes.opening");
+    assert_eq!(path.path().to_string(), "crate.game.routes.opening");
     assert_eq!(
-        alias
-            .as_ref()
-            .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str),
+        alias.as_ref().map(|alias| alias.name().as_str()),
         Some("opening_route")
     );
     assert_eq!(
-        tree.uses()[2].tree().module_path_prefix().to_string(),
-        "self.prelude"
+        &source[alias.as_ref().unwrap().range().as_range()],
+        "opening_route"
     );
-    assert!(tree.uses()[2].tree().module_path_is_exact());
     let UseTreeKind::Glob { module } = tree.uses()[2].tree().kind() else {
         panic!("expected glob use tree");
     };
-    assert_eq!(module.to_string(), "self.prelude");
+    assert_eq!(module.path().to_string(), "self.prelude");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 use arcweft_character::{
     id::{CharacterId, CharacterLookId},
-    manifest::{CharacterManifest, CharacterManifestCodecError, CharacterManifestError},
+    manifest::{CharacterManifest, CharacterManifestError, CharacterRuntimeDecodeError},
     package::CharacterPackage,
 };
 use arcweft_character_view::{
@@ -59,7 +59,7 @@ pub enum BundleCharacterCatalogError {
     #[error("character `{0}` is not present in the decoded catalog")]
     MissingCharacter(String),
     #[error("failed to decode character manifest: {0}")]
-    ManifestDecode(#[from] CharacterManifestCodecError),
+    ManifestDecode(#[from] CharacterRuntimeDecodeError),
     #[error(transparent)]
     Manifest(#[from] CharacterManifestError),
     #[error(transparent)]

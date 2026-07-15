@@ -101,9 +101,11 @@ pub(super) fn parse_use_line(
     let Some(tree) = rest.strip_prefix("use ") else {
         return Ok(None);
     };
+    let tree = tree.trim();
+    let tree_offset = tree.as_ptr() as usize - trimmed.as_ptr() as usize;
     Ok(Some(UseItem::new(
         visibility,
-        UseTree::parse(tree.trim())?,
+        UseTree::parse_at(tree, range.start() + tree_offset)?,
         range,
     )))
 }

@@ -5,7 +5,7 @@ use super::options::ScriptBenchOptions;
 use super::profile::{compile_profile_runtime_plan, report_path};
 use crate::app::project::{
     SourceSelection, native_host_policy_for_selection, require_profile_kind,
-    resolve_source_selection, runtime_pure_config_for_selection, typecheck_env_for_selection,
+    resolve_source_selection, runtime_pure_config_for_selection, semantic_context_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::output::{
@@ -53,8 +53,8 @@ pub(in crate::app) fn script_bench_selection(
         options.math_wgpu_min_elements,
     )?;
     let mut phases = Vec::new();
-    let env = typecheck_env_for_selection(selection, None, &mut phases)?;
-    let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
+    let semantic = semantic_context_for_selection(selection, None, &mut phases)?;
+    let compiled = compile_profile_runtime_plan(selection, &semantic, &mut phases)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let file_roots = selection.native_file_roots()?;
     let manifest = collect_script_tests(&compiled.hir);

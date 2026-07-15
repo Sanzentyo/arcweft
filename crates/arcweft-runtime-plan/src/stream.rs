@@ -16,6 +16,7 @@ use arcweft_lang_hir::syntax::{
 
 /// Lowers a HIR stream function into a Sans I/O stream plan.
 pub(crate) fn lower_stream_function(
+    module: &arcweft_lang_hir::model::HirModule,
     function: &arcweft_lang_hir::model::HirFunction,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Result<StreamPlan, Vec<RuntimePlanLowerError>> {
@@ -29,7 +30,7 @@ pub(crate) fn lower_stream_function(
             "{owner} requires `Stream<T, E>` return type"
         ))]);
     };
-    let location = ExecutableLoweringLocation::root(owner);
+    let location = ExecutableLoweringLocation::in_module(owner, module, function.module_path());
     let mut errors = Vec::new();
     let ops = match lower_stream_stmt_list(function.statements(), pure_helpers, &location) {
         Ok(ops) => ops,
@@ -62,7 +63,7 @@ pub(crate) fn lower_stream_function(
 fn lower_stream_stmt_list(
     statements: &[Stmt],
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<Vec<StreamOp>, Vec<RuntimePlanLowerError>> {
     let mut ops = Vec::new();
     let mut errors = Vec::new();
@@ -82,7 +83,7 @@ fn lower_stream_stmt_list(
 fn lower_stream_stmt(
     stmt: &Stmt,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<StreamOp, Vec<RuntimePlanLowerError>> {
     match stmt {
         Stmt::Let { .. } => lower_stream_let(stmt, pure_helpers, location),
@@ -155,7 +156,7 @@ fn lower_stream_stmt(
 fn lower_stream_let(
     statement: &Stmt,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<StreamOp, Vec<RuntimePlanLowerError>> {
     let Stmt::Let {
         pattern,
@@ -185,7 +186,7 @@ fn lower_stream_let(
 fn lower_stream_for(
     statement: &Stmt,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<StreamOp, Vec<RuntimePlanLowerError>> {
     let Stmt::For {
         pattern,
@@ -213,7 +214,7 @@ fn lower_stream_for(
 fn lower_stream_if(
     statement: &Stmt,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<StreamOp, Vec<RuntimePlanLowerError>> {
     let Stmt::If {
         condition,
@@ -240,7 +241,7 @@ fn lower_stream_if(
 fn lower_stream_match(
     statement: &Stmt,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<StreamOp, Vec<RuntimePlanLowerError>> {
     let Stmt::Match { expr, arms } = statement else {
         unreachable!("stream match lowering requires a match statement");
@@ -287,7 +288,7 @@ fn lower_stream_expr(
     expr: &arcweft_lang_hir::syntax::expr::Expr,
     source_range: Option<TextRange>,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<RuntimeExpr, Vec<RuntimePlanLowerError>> {
     lower_runtime_expr_strict_with_pure(expr, pure_helpers)
         .map_err(|reason| vec![location.expression_error(statement, role, source_range, reason)])
@@ -300,7 +301,7 @@ fn lower_stream_expr_with_expected_type(
     expected_ty: Option<&TypeRef>,
     source_range: Option<TextRange>,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<RuntimeExpr, Vec<RuntimePlanLowerError>> {
     lower_runtime_expr_strict_with_expected_type(expr, expected_ty, pure_helpers)
         .map_err(|reason| vec![location.expression_error(statement, role, source_range, reason)])

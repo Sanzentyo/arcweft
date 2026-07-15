@@ -1,13 +1,11 @@
-use arcweft_agent_protocol::artifact::{
-    RequiredEntity, RequiredEntitySourceAnchor, RequiredEntitySourcePosition,
-};
+use arcweft_agent_protocol::artifact::{RequiredEntity, RequiredEntitySourceAnchor};
 use arcweft_agent_protocol::ids::{PublicId as AgentPublicId, StableHash};
 use arcweft_agent_protocol::protocol::{
     AgentProjectFlowControlSummary, AgentProjectGraph, AgentProjectGraphEdge,
     AgentProjectGraphSummary, AgentProjectGraphSymbol,
 };
 use arcweft_lang_sema::project_index::ProjectSemanticIndex;
-use arcweft_source::{SourceAnchor, SourceName, SourcePosition};
+use arcweft_source::SourceAnchor;
 
 use crate::agent_effects::entity_kind_label;
 
@@ -312,22 +310,12 @@ fn usize_to_u32_saturating(value: usize) -> u32 {
 }
 
 fn required_entity_source_anchor(source: &SourceAnchor) -> Option<RequiredEntitySourceAnchor> {
-    let SourceName::Path(path) = source.source() else {
-        return None;
-    };
     let range = source.byte_range();
     Some(RequiredEntitySourceAnchor {
-        path: path.clone(),
+        path: source.source().id().as_str().to_owned(),
         start_byte: u64::try_from(range.start).ok()?,
         end_byte: u64::try_from(range.end).ok()?,
-        start: source.start().map(required_entity_source_position),
-        end: source.end().map(required_entity_source_position),
+        start: None,
+        end: None,
     })
-}
-
-fn required_entity_source_position(position: SourcePosition) -> RequiredEntitySourcePosition {
-    RequiredEntitySourcePosition {
-        line: position.line,
-        column: position.column,
-    }
 }

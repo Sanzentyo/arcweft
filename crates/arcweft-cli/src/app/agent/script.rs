@@ -17,8 +17,7 @@ use super::{
 
 #[cfg(feature = "native-capture")]
 use super::{
-    SourceName, load_and_check_selection, native, project_semantic_index_from_hir,
-    resolve_source_selection,
+    load_and_check_selection, native, project_semantic_index_from_hir, resolve_source_selection,
 };
 
 pub(super) fn agent_script_command(
@@ -142,7 +141,7 @@ pub(super) fn agent_script_compile_project_index(
         let mut project = project_semantic_index_from_hir(
             &checked.hir,
             ProgramHash::new(format!("native-source:{}", selection.path().display())),
-            &SourceName::path(selection.path().display().to_string()),
+            &checked.source_document,
         )
         .map_err(|error| error.to_string())?;
         for signal in &options.signals {
@@ -1699,10 +1698,25 @@ pub(super) fn agent_script_signal_symbol(
     signal: &AgentScriptSignalArg,
     id: SemaPublicId,
 ) -> EntitySymbol {
+    let document = arcweft_source::SourceDocument::try_new(
+        arcweft_source::SourceDocumentId::try_new(format!(
+            "arcweft-generated://cli-agent-signal/{}",
+            signal.id
+        ))
+        .expect("validated signal ids form generated document ids"),
+        arcweft_source::SourceName::Generated,
+        "",
+    )
+    .expect("empty generated source fits a source document");
+    let source = SourceAnchor::from_span(
+        document
+            .span(arcweft_source::SourceRange::new(0, 0))
+            .expect("the empty range belongs to the generated document"),
+    );
     EntitySymbol::new(
         id,
         EntityType::new(EntityKind::Signal, Some(signal.ty.clone())),
-        SourceAnchor::generated(),
+        source,
         SemanticHash::new(format!("cli-signal:{}", signal.id)),
     )
 }

@@ -1,9 +1,8 @@
 use super::headers::slice_offset;
 use super::{
-    CstLine, FlowItem, ParseError, Parser, RecoverySuggestion, SourceAnchor, SourceName, Stmt,
-    SyntaxParseStats, TextRange, find_matching_punctuation, indentation, parse_expr_lossy,
-    parse_pattern, parse_stmt, source_line_iter, split_top_level_binding,
-    split_top_level_keyword_once,
+    CstLine, FlowItem, ParseError, Parser, RecoverySuggestion, Stmt, SyntaxParseStats, TextRange,
+    find_matching_punctuation, indentation, parse_expr_lossy, parse_pattern, parse_stmt,
+    source_line_iter, split_top_level_binding, split_top_level_keyword_once,
 };
 use crate::ast::flow::{AuthoredExpr, AwaitBranch, AwaitBranchKind, AwaitWith};
 use crate::cst::{
@@ -415,7 +414,6 @@ fn push_ambiguous_await_question_error(
             vec![RecoverySuggestion::new(
                 "move `?` before `await` as `try await`",
             )],
-            SourceAnchor::new(SourceName::path("<memory>"), range.start()..range.end()),
         ));
     }
 }

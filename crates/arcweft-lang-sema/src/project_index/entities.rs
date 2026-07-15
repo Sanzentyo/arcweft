@@ -31,7 +31,7 @@ fn index_flow_item_entities(
                     id,
                     EntityKind::DialogueLine,
                     None,
-                    source_name.clone(),
+                    source_name,
                     "dialogue line",
                 )?);
             }
@@ -40,7 +40,7 @@ fn index_flow_item_entities(
                     text_key,
                     EntityKind::Text,
                     None,
-                    source_name.clone(),
+                    source_name,
                     "text",
                 )?);
             }
@@ -51,7 +51,7 @@ fn index_flow_item_entities(
                     id,
                     EntityKind::Choice,
                     None,
-                    source_name.clone(),
+                    source_name,
                     "choice",
                 )?);
             }
@@ -61,7 +61,7 @@ fn index_flow_item_entities(
                         id,
                         EntityKind::ChoiceOption,
                         None,
-                        source_name.clone(),
+                        source_name,
                         "choice option",
                     )?);
                 }
@@ -491,7 +491,7 @@ fn index_call_arg_agent_actions(
 fn index_image_call_agent_actions(
     args: &[CallArg],
     mut index: ProjectSemanticIndex,
-    _source_name: &SourceName,
+    source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     let Some(target) = image_call_target(args) else {
         return Ok(index);
@@ -512,7 +512,11 @@ fn index_image_call_agent_actions(
         EntitySymbol::new(
             target_id,
             EntityType::new(EntityKind::Target, None),
-            SourceAnchor::generated(),
+            SourceAnchor::from_span(
+                source_name
+                    .span(arcweft_source::SourceRange::new(0, 0))
+                    .expect("the start of a source document is a valid synthetic site"),
+            ),
             SemanticHash::new(format!("hir:image-target:{target}")),
         )
     });
@@ -589,7 +593,7 @@ pub(super) fn entity_symbol(
     id: &EntityRef,
     kind: EntityKind,
     value: Option<TypeKind>,
-    source_name: SourceName,
+    source_name: &SourceName,
     kind_label: &'static str,
 ) -> Result<EntitySymbol, ProjectSemanticIndexError> {
     let public_id = PublicId::try_new(id.body()).map_err(|error| {
@@ -599,7 +603,14 @@ pub(super) fn entity_symbol(
             message: error.to_string(),
         }
     })?;
-    let source = SourceAnchor::new(source_name, id.range().as_range());
+    let source = SourceAnchor::from_span(
+        source_name
+            .span(arcweft_source::SourceRange::new(
+                id.range().start(),
+                id.range().end(),
+            ))
+            .expect("an entity range belongs to the source document that was lowered"),
+    );
     let semantic_hash = SemanticHash::new(format!(
         "hir:{kind_label}:{}:{}",
         id.body(),
@@ -617,11 +628,18 @@ pub(super) fn entity_symbol(
 
 pub(super) fn project_callable_symbol(
     item: &CallableItem,
-    source_name: SourceName,
+    source_name: &SourceName,
 ) -> Result<ProjectCallableSymbol, ProjectSemanticIndexError> {
     let signature = project_callable_signature(item)?;
     let kind = project_callable_kind(item.kind());
-    let source = SourceAnchor::new(source_name, item.range().as_range());
+    let source = SourceAnchor::from_span(
+        source_name
+            .span(arcweft_source::SourceRange::new(
+                item.range().start(),
+                item.range().end(),
+            ))
+            .expect("a callable range belongs to the source document that was lowered"),
+    );
     let semantic_hash = SemanticHash::new(format!(
         "hir:callable:{}:{}:{}",
         kind.as_str(),

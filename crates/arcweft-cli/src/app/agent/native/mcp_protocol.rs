@@ -192,11 +192,12 @@ impl AgentMcpProjectContext {
 pub(super) fn agent_mcp_project_context_from_hir(
     hir: &arcweft_lang_hir::model::HirModule,
     source_path: &Path,
+    document: &arcweft_source::SourceDocument,
 ) -> Result<AgentMcpProjectContext, String> {
     let project = project_semantic_index_from_hir(
         hir,
         ProgramHash::new(format!("native-source:{}", source_path.display())),
-        &SourceName::path(source_path.display().to_string()),
+        document,
     )
     .map_err(|error| error.to_string())?;
     let project_entities =

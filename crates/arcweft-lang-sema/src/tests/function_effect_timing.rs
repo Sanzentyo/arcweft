@@ -1367,11 +1367,13 @@ effects { }
     );
     let hir = lower_to_hir(&tree).expect("env enum tuple variant fixture lowers");
     validate_typecheck_ready(&hir).expect("env enum tuple variant fixture is structured");
-    let env = read_text_env().with_enum_variant_payload(
-        TypeKind::Named("ExternalLoaderSpec".to_owned()),
-        "WithLoad",
-        EnumVariantPayload::tuple([TypeKind::function([TypeKind::String], TypeKind::String)]),
-    );
+    let env = read_text_env()
+        .try_with_enum_variant_payload(
+            TypeKind::Named("ExternalLoaderSpec".to_owned()),
+            "WithLoad",
+            EnumVariantPayload::tuple([TypeKind::function([TypeKind::String], TypeKind::String)]),
+        )
+        .expect("ordinary enum payload");
 
     let errors = typecheck_hir(&hir, &env)
         .expect_err("env enum tuple variant destructured callback must compose body effects");
@@ -1404,14 +1406,16 @@ effects { }
     );
     let hir = lower_to_hir(&tree).expect("env enum record variant fixture lowers");
     validate_typecheck_ready(&hir).expect("env enum record variant fixture is structured");
-    let env = read_text_env().with_enum_variant_payload(
-        TypeKind::Named("ExternalLoaderRecordSpec".to_owned()),
-        "WithLoad",
-        EnumVariantPayload::record([(
-            "load",
-            TypeKind::function([TypeKind::String], TypeKind::String),
-        )]),
-    );
+    let env = read_text_env()
+        .try_with_enum_variant_payload(
+            TypeKind::Named("ExternalLoaderRecordSpec".to_owned()),
+            "WithLoad",
+            EnumVariantPayload::record([(
+                "load",
+                TypeKind::function([TypeKind::String], TypeKind::String),
+            )]),
+        )
+        .expect("ordinary enum payload");
 
     let errors = typecheck_hir(&hir, &env)
         .expect_err("env enum record variant destructured callback must compose body effects");

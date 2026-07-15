@@ -5,9 +5,12 @@ use crate::diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis};
 use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore};
 use crate::features;
 use crate::positions::PositionEncoding;
-use crate::profiles::{LspProfile, LspProfileResolver};
+use crate::profiles::{
+    LspProfile, LspProfileResolver,
+    cache::{AcceptedEnvironmentGeneration, LspProfileState},
+};
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
-use arcweft_lang_sema::canonicalization::SemanticSourceRevision;
+use arcweft_source::SourceRevision;
 use arcweft_tooling::model::ToolingError;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response};
@@ -44,7 +47,6 @@ pub struct ArcweftLspSession {
     default_profile: LspProfile,
     profiles_by_uri: BTreeMap<String, LspProfile>,
     analyses_by_uri: BTreeMap<String, CachedDocumentAnalysis>,
-    profile_epoch: u64,
     profile_resolver: LspProfileResolver,
     workspace_edit_policy: WorkspaceEditPolicy,
     position_encoding: PositionEncoding,
@@ -54,8 +56,8 @@ pub struct ArcweftLspSession {
 #[derive(Debug)]
 struct CachedDocumentAnalysis {
     version: Option<i32>,
-    revision: SemanticSourceRevision,
-    profile_epoch: u64,
+    revision: SourceRevision,
+    profile_generation: Option<AcceptedEnvironmentGeneration>,
     analysis: Arc<DocumentAnalysis>,
 }
 
@@ -93,7 +95,6 @@ impl ArcweftLspSession {
             default_profile,
             profiles_by_uri: BTreeMap::new(),
             analyses_by_uri: BTreeMap::new(),
-            profile_epoch: 0,
             profile_resolver,
             workspace_edit_policy: WorkspaceEditPolicy::default(),
             position_encoding: PositionEncoding::default(),
@@ -208,8 +209,12 @@ impl ArcweftLspSession {
                     DidCloseTextDocument::METHOD,
                     notification.params,
                 )?;
-                self.profiles_by_uri
-                    .remove(&params.text_document.uri.to_string());
+                if let Some(profile) = self
+                    .profiles_by_uri
+                    .remove(&params.text_document.uri.to_string())
+                {
+                    profile.state().shutdown();
+                }
                 self.analyses_by_uri
                     .remove(&params.text_document.uri.to_string());
                 self.documents.close(&params.text_document.uri);
@@ -428,7 +433,14 @@ impl ArcweftLspSession {
         let Some(document) = self.document_for_params(&uri) else {
             return Value::Null;
         };
-        let edit = workspace_edit_from_tooling_edit(&uri, &edit, document.line_index());
+        let Ok(edit) = workspace_edit_from_tooling_edit(
+            &uri,
+            &edit,
+            document.source_document(),
+            document.line_index(),
+        ) else {
+            return Value::Null;
+        };
         let edit = self
             .workspace_edit_policy
             .normalize(edit, document.uri(), document.version());
@@ -436,8 +448,14 @@ impl ArcweftLspSession {
     }
 
     fn refresh_profile_for_uri(&mut self, uri: &lsp_types::Uri) {
-        self.profiles_by_uri
-            .insert(uri.to_string(), self.profile_resolver.resolve_for_uri(uri));
+        let state = self.profiles_by_uri.get(&uri.to_string()).map_or_else(
+            || Arc::new(LspProfileState::new()),
+            |profile| Arc::clone(profile.state()),
+        );
+        self.profiles_by_uri.insert(
+            uri.to_string(),
+            self.profile_resolver.resolve_for_uri_with_state(uri, state),
+        );
     }
 
     fn refresh_profile_for_open_documents(&mut self) -> Vec<Notification> {
@@ -469,12 +487,15 @@ impl ArcweftLspSession {
             &profile,
             snapshot.uri(),
         ));
+        let profile_generation = profile
+            .accepted_environment()
+            .map(|environment| environment.generation());
         self.analyses_by_uri.insert(
             snapshot.uri().to_string(),
             CachedDocumentAnalysis {
                 version: snapshot.version(),
                 revision: analysis.source_revision(),
-                profile_epoch: self.profile_epoch,
+                profile_generation,
                 analysis: Arc::clone(&analysis),
             },
         );
@@ -482,19 +503,22 @@ impl ArcweftLspSession {
     }
 
     fn cached_analysis(&self, snapshot: &DocumentSnapshot) -> Option<Arc<DocumentAnalysis>> {
-        let revision = SemanticSourceRevision::from_source(snapshot.text());
+        let revision = SourceRevision::for_utf8(snapshot.text());
+        let profile_generation = self
+            .profile_for_uri(snapshot.uri())
+            .accepted_environment()
+            .map(|environment| environment.generation());
         self.analyses_by_uri
             .get(&snapshot.uri().to_string())
             .filter(|cached| {
                 cached.version == snapshot.version()
                     && cached.revision == revision
-                    && cached.profile_epoch == self.profile_epoch
+                    && cached.profile_generation == profile_generation
             })
             .map(|cached| Arc::clone(&cached.analysis))
     }
 
     fn invalidate_analysis_cache(&mut self) {
-        self.profile_epoch = self.profile_epoch.wrapping_add(1);
         self.analyses_by_uri.clear();
     }
 

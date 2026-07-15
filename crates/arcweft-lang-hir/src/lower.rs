@@ -1,10 +1,11 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
-use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
+use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirSource, HirTopLevelDecl};
 use crate::style::{HirStyleDecl, HirStylePatch};
 use arcweft_lang_syntax::ast::{
     items::{AgentItem, Attribute, FunctionItem, Item, TypedSyntaxTree},
     module_path::CanonicalModulePath,
 };
+use arcweft_source::SourceDocument;
 
 /// Lowers a parsed syntax tree into HIR-facing structures.
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
@@ -36,6 +37,23 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
         state.lower_item(item);
     }
     state.finish()
+}
+
+/// Lowers one exact source document and retains revision-bound project spans.
+pub fn lower_document_to_hir(
+    document: &SourceDocument,
+    tree: &TypedSyntaxTree,
+) -> Result<HirModule, Vec<HirLowerError>> {
+    if tree.source() != document.text() {
+        return Err(vec![HirLowerError::new(
+            "typed syntax tree does not belong to the supplied source document",
+            None,
+        )]);
+    }
+    let mut hir = lower_to_hir(tree)?;
+    hir.bind_source_document(document)
+        .map_err(|error| vec![error])?;
+    Ok(hir)
 }
 
 #[derive(Default)]
@@ -158,7 +176,10 @@ impl HirLoweringState {
             }
             Item::Source(item) => {
                 self.declarations
-                    .push(HirTopLevelDecl::Source(item.clone()));
+                    .push(HirTopLevelDecl::Source(HirSource::new(
+                        item.clone(),
+                        self.module_path.clone(),
+                    )));
             }
             Item::Style(item) => {
                 self.declarations
@@ -199,6 +220,7 @@ impl HirLoweringState {
                 declarations: self.declarations,
                 style_patches: self.style_patches,
                 top_level_items: self.top_level_items,
+                source_map: None,
             })
         } else {
             Err(self.errors)

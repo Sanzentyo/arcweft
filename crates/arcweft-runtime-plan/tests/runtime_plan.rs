@@ -11,7 +11,10 @@ use arcweft_core::{
     time::LogicalDuration,
     value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue},
 };
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::{
+    lower::{lower_document_to_hir, lower_to_hir},
+    model::HirModule,
+};
 use arcweft_lang_sema::{
     check::{
         ForIterationEvidenceFamily, StandardIteratorFamily, analyze_types, validate_typecheck_ready,
@@ -31,6 +34,7 @@ use arcweft_runtime_plan::{
     },
     line_task::lower_line_task_groups,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 fn parse_ok(source: impl Into<String>) -> TypedSyntaxTree {
     let parsed = parse_source(source);
@@ -40,6 +44,17 @@ fn parse_ok(source: impl Into<String>) -> TypedSyntaxTree {
         parsed.errors()
     );
     parsed.into_typed_tree()
+}
+
+fn lower_bound(source: &str) -> HirModule {
+    let tree = parse_ok(source);
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft-test://runtime-plan/source").expect("document ID"),
+        SourceName::Generated,
+        source,
+    )
+    .expect("source document");
+    lower_document_to_hir(&document, &tree).expect("revision-bound source lowers to HIR")
 }
 
 fn parse_agent_ok(source: impl Into<String>) -> TypedSyntaxTree {
@@ -1283,8 +1298,7 @@ flow @flow.main main {
     return "done"
 }
 "#;
-    let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("source header fixture lowers to HIR");
+    let hir = lower_bound(source);
 
     let errors = lower_runtime_plan(&hir).expect_err("unsupported source header is rejected");
     let error = errors
@@ -1341,8 +1355,7 @@ flow @flow.main main {
     return "done"
 }
 "#;
-    let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("source handler fixture lowers to HIR");
+    let hir = lower_bound(source);
 
     let errors = lower_runtime_plan(&hir).expect_err("source handler await is rejected");
     let error = errors
@@ -1728,7 +1741,7 @@ flow @flow.loading loading {
     try await fs.read_text(try next) with { pending p => progress.set(p.ratio) }
 }
 ";
-    let hir = lower_to_hir(&parse_ok(source)).expect("invalid host argument fixture lowers");
+    let hir = lower_bound(source);
 
     let errors = lower_runtime_plan(&hir).expect_err("try argument is not a pure host value");
     let error = errors

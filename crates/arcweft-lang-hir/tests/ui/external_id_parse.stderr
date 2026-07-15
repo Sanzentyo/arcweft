@@ -1,0 +1,21 @@
+error[E0277]: the trait bound `ExternalDeclarationId: FromStr` is not satisfied
+ --> tests/ui/external_id_parse.rs:4:40
+  |
+4 |     let _: ExternalDeclarationId = "7".parse().unwrap();
+  |                                        ^^^^^ the trait `FromStr` is not implemented for `ExternalDeclarationId`
+  |
+  = help: the following other types implement trait `FromStr`:
+            ByteString
+            CString
+            IpAddr
+            Ipv4Addr
+            Ipv6Addr
+            NonZero<i128>
+            NonZero<i16>
+            NonZero<i32>
+          and $N others
+note: required by a bound in `core::str::<impl str>::parse`
+ --> $RUST/core/src/str/mod.rs
+  |
+  |     pub fn parse<F: FromStr>(&self) -> Result<F, F::Err> {
+  |                     ^^^^^^^ required by this bound in `core::str::<impl str>::parse`

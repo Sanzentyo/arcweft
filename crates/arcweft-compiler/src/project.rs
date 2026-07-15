@@ -5,13 +5,27 @@
 //! through syntax/HIR, and retains a module-preserving `HirProject` alongside
 //! the transitional crate-global semantic-pass view.
 
+mod cache_batch;
+mod registration;
+
+pub(crate) use cache_batch::PendingProjectCompileStores;
+#[cfg(test)]
+use cache_batch::PendingStoreTransitionError;
+pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, ProjectCompileCache};
+pub use registration::ProjectCompilationContext;
+
 use crate::{hir, lower, parse, style};
 use arcweft_lang_hir::{
     model::HirModule,
     project::{HirProject, HirProjectModule},
-    symbol::CallableSymbolTable,
+    symbol::ProjectSymbolTable,
 };
-use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
+#[cfg(test)]
+use arcweft_lang_sema::env::TypeCheckEnv;
+use arcweft_lang_sema::{
+    check::TypeCheckReport,
+    registration::{ProjectRegistrationFacts, RegisteredSemanticWorld, RegisteredTypeCheckEnv},
+};
 use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath, cst::SyntaxParseStats, lint::SyntaxLintSeverity,
 };
@@ -23,8 +37,12 @@ use arcweft_runtime_plan::{
     flow::{RuntimePlanLowerOptions, RuntimePlanLowerReport},
     line_task::LoweredLineTaskGroup,
 };
-use arcweft_source::{Diagnostic, DiagnosticSeverity, SourceName};
-use std::{collections::BTreeMap, fmt::Write as _};
+#[cfg(test)]
+use arcweft_source::SourceDocumentId;
+use arcweft_source::{
+    Diagnostic, DiagnosticSeverity, SourceDocument, SourceDocumentIdentity, SourceName,
+};
+use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 use thiserror::Error;
 
 /// Stable project compilation phase used by diagnostics and profiles.
@@ -34,6 +52,7 @@ pub enum ProjectCompileStage {
     Lint,
     HirLower,
     HirProject,
+    Registration,
     Resolve,
     Readiness,
     TypeCheck,
@@ -62,8 +81,7 @@ pub struct ProjectCompileDiagnostic {
 /// Source snapshot attached to diagnostics produced from one loaded project file.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectDiagnosticSource {
-    name: SourceName,
-    text: Option<String>,
+    document: SourceDocument,
 }
 
 /// Independently parsed and lowered source module.
@@ -72,6 +90,7 @@ pub struct CompiledProjectModule {
     module: CanonicalModulePath,
     compile_unit: CompileUnitId,
     source_hash: ModuleSourceHash,
+    source: SourceDocumentIdentity,
     syntax_warnings: usize,
     syntax_stats: SyntaxParseStats,
     hir: HirModule,
@@ -96,40 +115,12 @@ pub struct CompiledProject {
     modules: Vec<CompiledProjectModule>,
     units: Vec<ProjectCompileUnitSummary>,
     hir_project: HirProject,
-    callable_symbols: CallableSymbolTable,
+    registered_world: Arc<RegisteredSemanticWorld>,
     linked_hir: HirModule,
     typecheck_report: TypeCheckReport,
     style: style::CompiledViewStyleArtifact,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     runtime_plan: RuntimePlanLowerReport,
-}
-
-/// In-process cache boundary for independently lowered compile units.
-///
-/// A persistent cache adapter should store a stable serialized unit format, not
-/// `HirModule` directly. This trait deliberately covers only the current
-/// in-process vertical slice.
-pub trait ProjectCompileCache {
-    fn load(
-        &mut self,
-        fingerprint: ProjectCompileUnitFingerprint,
-    ) -> Option<Vec<CompiledProjectModule>>;
-
-    fn store(
-        &mut self,
-        fingerprint: ProjectCompileUnitFingerprint,
-        modules: &[CompiledProjectModule],
-    );
-}
-
-/// No-op cache used by the simple compiler entry point.
-#[derive(Default)]
-pub struct NoProjectCompileCache;
-
-/// Deterministic in-memory unit cache for watch mode and tests.
-#[derive(Default)]
-pub struct InMemoryProjectCompileCache {
-    units: BTreeMap<ProjectCompileUnitFingerprint, Vec<CompiledProjectModule>>,
 }
 
 /// Project compilation failure.
@@ -147,6 +138,7 @@ impl ProjectCompileStage {
             Self::Lint => "lint",
             Self::HirLower => "hir-lower",
             Self::HirProject => "hir-project",
+            Self::Registration => "registration",
             Self::Resolve => "resolve",
             Self::Readiness => "readiness",
             Self::TypeCheck => "type-check",
@@ -190,19 +182,20 @@ impl ProjectCompileDiagnostic {
 }
 
 impl ProjectDiagnosticSource {
-    pub fn new(name: SourceName, text: impl Into<String>) -> Self {
-        Self {
-            name,
-            text: Some(text.into()),
-        }
+    pub fn new(document: SourceDocument) -> Self {
+        Self { document }
     }
 
     pub const fn name(&self) -> &SourceName {
-        &self.name
+        self.document.display_name()
+    }
+
+    pub const fn document(&self) -> &SourceDocument {
+        &self.document
     }
 
     pub fn text(&self) -> Option<&str> {
-        self.text.as_deref()
+        Some(self.document.text())
     }
 }
 
@@ -252,6 +245,10 @@ impl CompiledProjectModule {
         self.source_hash
     }
 
+    pub const fn source(&self) -> &SourceDocumentIdentity {
+        &self.source
+    }
+
     pub const fn syntax_warnings(&self) -> usize {
         self.syntax_warnings
     }
@@ -278,8 +275,16 @@ impl CompiledProject {
         &self.hir_project
     }
 
-    pub const fn callable_symbols(&self) -> &CallableSymbolTable {
-        &self.callable_symbols
+    pub fn project_symbols(&self) -> &ProjectSymbolTable {
+        self.registered_world.symbols()
+    }
+
+    pub fn registered_world(&self) -> &RegisteredSemanticWorld {
+        &self.registered_world
+    }
+
+    pub fn registered_environment(&self) -> &RegisteredTypeCheckEnv {
+        self.registered_world.environment()
     }
 
     pub const fn linked_hir(&self) -> &HirModule {
@@ -310,46 +315,18 @@ impl CompiledProject {
     }
 }
 
-impl ProjectCompileCache for NoProjectCompileCache {
-    fn load(
-        &mut self,
-        _fingerprint: ProjectCompileUnitFingerprint,
-    ) -> Option<Vec<CompiledProjectModule>> {
-        None
-    }
-
-    fn store(
-        &mut self,
-        _fingerprint: ProjectCompileUnitFingerprint,
-        _modules: &[CompiledProjectModule],
-    ) {
-    }
-}
-
-impl ProjectCompileCache for InMemoryProjectCompileCache {
-    fn load(
-        &mut self,
-        fingerprint: ProjectCompileUnitFingerprint,
-    ) -> Option<Vec<CompiledProjectModule>> {
-        self.units.get(&fingerprint).cloned()
-    }
-
-    fn store(
-        &mut self,
-        fingerprint: ProjectCompileUnitFingerprint,
-        modules: &[CompiledProjectModule],
-    ) {
-        self.units.insert(fingerprint, modules.to_vec());
-    }
-}
-
 /// Compiles a project without retaining reusable unit artifacts.
-pub fn compile_project_with_env(
+pub fn compile_project(
     project: &ProjectSources,
-    env: &TypeCheckEnv,
+    context: &ProjectCompilationContext,
     runtime_options: &RuntimePlanLowerOptions,
 ) -> Result<CompiledProject, ProjectCompileError> {
-    compile_project_with_cache(project, env, runtime_options, &mut NoProjectCompileCache)
+    compile_project_with_cache(
+        project,
+        context,
+        runtime_options,
+        &mut NoProjectCompileCache,
+    )
 }
 
 /// Compiles all project modules in deterministic compile-unit order.
@@ -363,113 +340,140 @@ pub fn compile_project_with_env(
 ///
 /// Panics only if the module graph inside `ProjectSources` references a module
 /// that is absent from the same validated `ProjectSources` inventory.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function owns the explicit pending-cache transaction through every project-wide stage"
+)]
 pub fn compile_project_with_cache<C>(
     project: &ProjectSources,
-    env: &TypeCheckEnv,
+    context: &ProjectCompilationContext,
     runtime_options: &RuntimePlanLowerOptions,
     cache: &mut C,
 ) -> Result<CompiledProject, ProjectCompileError>
 where
     C: ProjectCompileCache,
 {
-    let (modules, summaries) = compile_project_units(project, cache)?;
+    let source_documents = project_source_documents(project, context.facts())?;
+    let (modules, summaries, mut pending_stores) =
+        compile_project_units(project, &source_documents, cache)?;
 
-    let hir_project = HirProject::new(
-        project.manifest().package().name().as_str(),
-        modules
-            .iter()
-            .map(|module| HirProjectModule::new(module.module.clone(), module.hir.clone())),
-    )
-    .map_err(|error| {
-        linked_error(
-            ProjectCompileStage::HirProject,
-            [
-                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                    .with_code("hir.project"),
-            ],
-        )
-    })?;
-    let callable_symbols = hir_project.callable_symbols().map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::HirProject,
-            errors.into_iter().map(|error| {
-                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                    .with_code("hir.callable_symbol")
+    let result = (|| {
+        let hir_project = HirProject::new(
+            project.manifest().package().name().as_str(),
+            modules.iter().map(|module| {
+                HirProjectModule::new(
+                    module.module.clone(),
+                    module.source.clone(),
+                    module.hir.clone(),
+                )
             }),
         )
-    })?;
-    let linked_hir = hir_project.linked_module();
-    hir::resolve_hir_references_with_env(&linked_hir, env).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::Resolve,
-            errors.into_iter().map(|error| error.diagnostic()),
+        .map_err(|error| {
+            linked_error(
+                ProjectCompileStage::HirProject,
+                [
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("hir.project"),
+                ],
+            )
+        })?;
+        let registered_world = registration::register(&hir_project, context)?;
+        let linked_hir = hir_project.linked_module();
+        hir::resolve_registered_hir_references(&linked_hir, &registered_world).map_err(
+            |errors| {
+                linked_error(
+                    ProjectCompileStage::Resolve,
+                    errors.into_iter().map(|error| error.diagnostic()),
+                )
+            },
+        )?;
+        hir::validate_hir_typecheck_ready(&linked_hir).map_err(|errors| {
+            linked_error(
+                ProjectCompileStage::Readiness,
+                errors.into_iter().map(|error| error.diagnostic()),
+            )
+        })?;
+        let typecheck_report = hir::typecheck_registered_project(&linked_hir, &registered_world)
+            .map_err(|errors| {
+                linked_error(
+                    ProjectCompileStage::TypeCheck,
+                    errors.into_iter().map(|error| error.diagnostic()),
+                )
+            })?;
+        let style = style::lower_project_view_styles(
+            &hir_project,
+            &linked_hir,
+            &typecheck_report.style_catalog,
+            project,
         )
-    })?;
-    hir::validate_hir_typecheck_ready(&linked_hir).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::Readiness,
-            errors.into_iter().map(|error| error.diagnostic()),
+        .map_err(|error| {
+            linked_error(
+                ProjectCompileStage::StyleLower,
+                [
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("style.lower"),
+                ],
+            )
+        })?;
+        let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
+            linked_error(
+                ProjectCompileStage::LineTaskLower,
+                errors.into_iter().map(|error| error.diagnostic()),
+            )
+        })?;
+        let runtime_options = runtime_options
+            .clone()
+            .with_package_identity(project.manifest().package().name().as_str());
+        let runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
+            &linked_hir,
+            &typecheck_report,
+            &runtime_options,
         )
-    })?;
-    let typecheck_report = hir::typecheck_hir_with_env(&linked_hir, env).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::TypeCheck,
-            errors.into_iter().map(|error| error.diagnostic()),
-        )
-    })?;
-    let style = style::lower_project_view_styles(
-        &hir_project,
-        &linked_hir,
-        &typecheck_report.style_catalog,
-        project,
-    )
-    .map_err(|error| {
-        linked_error(
-            ProjectCompileStage::StyleLower,
-            [
-                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                    .with_code("style.lower"),
-            ],
-        )
-    })?;
-    let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::LineTaskLower,
-            errors.into_iter().map(|error| error.diagnostic()),
-        )
-    })?;
-    let runtime_options = runtime_options
-        .clone()
-        .with_package_identity(project.manifest().package().name().as_str());
-    let runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &linked_hir,
-        &typecheck_report,
-        &runtime_options,
-    )
-    .map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::RuntimePlanLower,
-            errors.into_iter().map(|error| error.diagnostic()),
-        )
-    })?;
+        .map_err(|errors| {
+            linked_error(
+                ProjectCompileStage::RuntimePlanLower,
+                errors.into_iter().map(|error| error.diagnostic()),
+            )
+        })?;
 
-    Ok(CompiledProject {
-        modules,
-        units: summaries,
-        hir_project,
-        callable_symbols,
-        linked_hir,
-        typecheck_report,
-        style,
-        line_task_groups,
-        runtime_plan,
-    })
+        Ok(CompiledProject {
+            modules,
+            units: summaries,
+            hir_project,
+            registered_world,
+            linked_hir,
+            typecheck_report,
+            style,
+            line_task_groups,
+            runtime_plan,
+        })
+    })();
+    match result {
+        Ok(compiled) => {
+            pending_stores
+                .flush(cache)
+                .expect("pending compiler stores are finalized exactly once after assembly");
+            Ok(compiled)
+        }
+        Err(error) => {
+            pending_stores.discard();
+            Err(error)
+        }
+    }
 }
 
 fn compile_project_units<C>(
     project: &ProjectSources,
+    source_documents: &BTreeMap<CanonicalModulePath, Arc<SourceDocument>>,
     cache: &mut C,
-) -> Result<(Vec<CompiledProjectModule>, Vec<ProjectCompileUnitSummary>), ProjectCompileError>
+) -> Result<
+    (
+        Vec<CompiledProjectModule>,
+        Vec<ProjectCompileUnitSummary>,
+        PendingProjectCompileStores,
+    ),
+    ProjectCompileError,
+>
 where
     C: ProjectCompileCache,
 {
@@ -477,6 +481,7 @@ where
     let incremental = project.manifest().build().incremental();
     let mut modules = Vec::with_capacity(project.modules().len());
     let mut summaries = Vec::with_capacity(project.graph().compile_units().len());
+    let mut pending_stores = PendingProjectCompileStores::new();
 
     for &unit_id in project.graph().compile_order() {
         let unit = project.graph().compile_unit(unit_id);
@@ -484,7 +489,7 @@ where
         let cached = incremental
             .then(|| cache.load(fingerprint))
             .flatten()
-            .filter(|cached| cached_unit_matches(project, unit_id, cached));
+            .filter(|cached| cached_unit_matches(project, source_documents, unit_id, cached));
         let (compiled, cache_status) = if let Some(cached) = cached {
             (cached, ProjectCompileCacheStatus::Hit)
         } else {
@@ -495,11 +500,13 @@ where
                     let source = project
                         .module(module)
                         .expect("module graph only references loaded project sources");
-                    compile_module(source, unit_id)
+                    compile_module(source, &source_documents[module], unit_id)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             if incremental {
-                cache.store(fingerprint, &compiled);
+                pending_stores
+                    .push(fingerprint, compiled.clone())
+                    .expect("pending stores remain collecting during unit lowering");
             }
             let status = if incremental {
                 ProjectCompileCacheStatus::Miss
@@ -516,23 +523,58 @@ where
         });
         modules.extend(compiled);
     }
-    Ok((modules, summaries))
+    Ok((modules, summaries, pending_stores))
+}
+
+fn project_source_documents(
+    project: &ProjectSources,
+    facts: &ProjectRegistrationFacts,
+) -> Result<BTreeMap<CanonicalModulePath, Arc<SourceDocument>>, ProjectCompileError> {
+    project
+        .modules()
+        .map(|source| {
+            let candidate = source.document();
+            let document = facts
+                .documents()
+                .find(|document| document.identity().id() == candidate.identity().id())
+                .filter(|document| {
+                    document.identity() == candidate.identity()
+                        && document.text() == candidate.text()
+                })
+                .cloned()
+                .ok_or_else(|| {
+                    linked_error(
+                        ProjectCompileStage::HirProject,
+                        [Diagnostic::new(
+                            DiagnosticSeverity::Error,
+                            format!(
+                                "registration facts do not contain the accepted source document for `{}`",
+                                source.path().display()
+                            ),
+                        )
+                        .with_code("source.project_document")],
+                    )
+                })?;
+            Ok((source.module().clone(), document))
+        })
+        .collect()
 }
 
 fn compile_module(
     source: &ProjectSourceFile,
+    document: &SourceDocument,
     compile_unit: CompileUnitId,
 ) -> Result<CompiledProjectModule, ProjectCompileError> {
-    let source_name = module_source_name(source);
     let parsed = parse::parse_source_text(source.source().to_owned());
     if !parsed.errors().is_empty() {
         return Err(module_error(
             source,
+            document,
             ProjectCompileStage::Parse,
             parsed
                 .errors()
                 .iter()
-                .map(|error| error.diagnostic(&source_name)),
+                .map(|error| error.diagnostic(document)),
         ));
     }
     let syntax_stats = parsed.syntax_stats();
@@ -541,27 +583,28 @@ fn compile_module(
     if parse::has_error_lints(&lints) {
         return Err(module_error(
             source,
+            document,
             ProjectCompileStage::Lint,
             lints
                 .iter()
                 .filter(|lint| lint.severity() == SyntaxLintSeverity::Error)
-                .map(|lint| lint.diagnostic(&source_name)),
+                .map(|lint| lint.diagnostic(document)),
         ));
     }
     let syntax_warnings = parse::count_warning_lints(&lints);
-    let hir = hir::lower_source_tree(&tree).map_err(|errors| {
+    let hir = hir::lower_source_document(document, &tree).map_err(|errors| {
         module_error(
             source,
+            document,
             ProjectCompileStage::HirLower,
-            errors
-                .into_iter()
-                .map(|error| error.diagnostic(&source_name)),
+            errors.into_iter().map(|error| error.diagnostic(document)),
         )
     })?;
     Ok(CompiledProjectModule {
         module: source.module().clone(),
         compile_unit,
         source_hash: source.source_hash(),
+        source: document.identity().clone(),
         syntax_warnings,
         syntax_stats,
         hir,
@@ -597,6 +640,7 @@ fn build_unit_fingerprints(
 
 fn cached_unit_matches(
     project: &ProjectSources,
+    source_documents: &BTreeMap<CanonicalModulePath, Arc<SourceDocument>>,
     unit_id: CompileUnitId,
     cached: &[CompiledProjectModule],
 ) -> bool {
@@ -605,24 +649,23 @@ fn cached_unit_matches(
         && cached.iter().zip(unit.modules()).all(|(cached, expected)| {
             cached.module() == expected
                 && cached.compile_unit() == unit_id
+                && source_documents
+                    .get(expected)
+                    .is_some_and(|document| document.identity() == cached.source())
                 && project
                     .module(expected)
                     .is_some_and(|source| source.source_hash() == cached.source_hash())
         })
 }
 
-fn module_source_name(source: &ProjectSourceFile) -> SourceName {
-    SourceName::path(source.path().display().to_string())
-}
-
 fn module_error(
-    source: &ProjectSourceFile,
+    module_source: &ProjectSourceFile,
+    document: &SourceDocument,
     stage: ProjectCompileStage,
     diagnostics: impl IntoIterator<Item = Diagnostic>,
 ) -> ProjectCompileError {
-    let module = source.module().clone();
-    let source =
-        ProjectDiagnosticSource::new(module_source_name(source), source.source().to_owned());
+    let module = module_source.module().clone();
+    let source = ProjectDiagnosticSource::new(document.clone());
     ProjectCompileError {
         stage: stage.as_str(),
         diagnostics: diagnostics
@@ -655,6 +698,33 @@ fn linked_error(
     }
 }
 
+fn linked_error_with_registration_sources(
+    stage: ProjectCompileStage,
+    facts: &ProjectRegistrationFacts,
+    diagnostics: impl IntoIterator<Item = Diagnostic>,
+) -> ProjectCompileError {
+    ProjectCompileError {
+        stage: stage.as_str(),
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| {
+                let source = diagnostic.span().and_then(|span| {
+                    facts
+                        .documents()
+                        .find(|document| document.identity() == span.source())
+                        .map(|document| ProjectDiagnosticSource::new(document.as_ref().clone()))
+                });
+                ProjectCompileDiagnostic {
+                    module: None,
+                    stage,
+                    source,
+                    diagnostic,
+                }
+            })
+            .collect(),
+    }
+}
+
 impl ProjectCompileError {
     pub const fn stage(&self) -> &'static str {
         self.stage
@@ -668,23 +738,44 @@ impl ProjectCompileError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-    use arcweft_project::sources::ProjectSourceFile;
-    use arcweft_source::{DiagnosticLabel, SourceRange, SourceSpan};
+    use arcweft_lang_hir::symbol::{
+        CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
+    };
+    use arcweft_lang_sema::registration::{
+        EnvironmentBindingId, ExternalRegistrationFact, RegisteredExternalOwner,
+    };
+    use arcweft_lang_syntax::ast::{
+        common::Visibility,
+        module_path::{CanonicalModulePath, ModulePathRoot},
+        symbol_path::SymbolPath,
+    };
+    use arcweft_project::{manifest::ProjectManifest, sources::ProjectSourceFile};
+    use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange};
     use std::path::PathBuf;
 
     #[test]
     fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
         let source_text = "flow @flow.opening start {\n}\n";
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("src/main.arcw").expect("document id"),
+                SourceName::path("src/main.arcw"),
+                source_text,
+            )
+            .expect("source document"),
+        );
         let source = ProjectSourceFile::new(
             CanonicalModulePath::crate_root(),
             PathBuf::from("src/main.arcw"),
-            source_text.to_owned(),
+            Arc::clone(&document),
             [],
         );
-        let span = SourceSpan::new(module_source_name(&source), SourceRange::new(5, 18));
+        let span = document
+            .span(SourceRange::new(5, 18))
+            .expect("diagnostic span");
         let error = module_error(
             &source,
+            &document,
             ProjectCompileStage::Parse,
             [Diagnostic::new(DiagnosticSeverity::Error, "parse failed")
                 .with_code("syntax.parse")
@@ -712,5 +803,222 @@ mod tests {
             diagnostic.source().expect("source").name().display_name(),
             "src/main.arcw"
         );
+    }
+
+    #[test]
+    fn pending_store_state_is_one_way() {
+        #[derive(Default)]
+        struct RecordingCache {
+            stores: Vec<(ProjectCompileUnitFingerprint, usize)>,
+        }
+
+        impl ProjectCompileCache for RecordingCache {
+            fn load(
+                &mut self,
+                _fingerprint: ProjectCompileUnitFingerprint,
+            ) -> Option<Vec<CompiledProjectModule>> {
+                None
+            }
+
+            fn store(
+                &mut self,
+                fingerprint: ProjectCompileUnitFingerprint,
+                modules: &[CompiledProjectModule],
+            ) {
+                self.stores.push((fingerprint, modules.len()));
+            }
+        }
+
+        let fingerprint = ProjectCompileUnitFingerprint([7; 32]);
+        let mut pending = PendingProjectCompileStores::new();
+        pending
+            .push(fingerprint, Vec::new())
+            .expect("collecting accepts stores");
+        let mut cache = RecordingCache::default();
+        pending.flush(&mut cache).expect("first flush succeeds");
+        assert_eq!(cache.stores, vec![(fingerprint, 0)]);
+        assert_eq!(
+            pending.push(fingerprint, Vec::new()),
+            Err(PendingStoreTransitionError::AlreadyFinalized)
+        );
+        assert_eq!(
+            pending.flush(&mut cache),
+            Err(PendingStoreTransitionError::AlreadyFinalized)
+        );
+        assert_eq!(cache.stores, vec![(fingerprint, 0)]);
+
+        let mut discarded = PendingProjectCompileStores::new();
+        discarded.discard();
+        discarded.discard();
+        assert_eq!(
+            discarded.push(fingerprint, Vec::new()),
+            Err(PendingStoreTransitionError::AlreadyFinalized)
+        );
+        assert_eq!(
+            discarded.flush(&mut cache),
+            Err(PendingStoreTransitionError::AlreadyFinalized)
+        );
+    }
+
+    #[test]
+    fn registration_diagnostic_retains_accepted_source_document() {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-project://compiler-registration/src/main.arcw")
+                    .expect("document id"),
+                SourceName::path("src/main.arcw"),
+                "fn main() -> Unit { () }\n",
+            )
+            .expect("document"),
+        );
+        let world = ProjectSymbolWorldId::try_new(
+            CallablePackageId::try_new("compiler-registration").expect("package"),
+            document.identity().id().clone(),
+            "test",
+        )
+        .expect("world");
+        let facts = ProjectRegistrationFacts::try_new(
+            world,
+            vec![Arc::clone(&document)],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("facts");
+        let span = document.span(SourceRange::new(0, 2)).expect("span");
+        let error = linked_error_with_registration_sources(
+            ProjectCompileStage::Registration,
+            &facts,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, "registration failed")
+                    .with_code("aw.character.registration.unknown_owner")
+                    .with_span(span),
+            ],
+        );
+
+        let diagnostic = error.diagnostics().first().expect("diagnostic");
+        let source = diagnostic.source().expect("accepted source document");
+        assert_eq!(source.document().identity(), document.identity());
+        assert_eq!(source.document().text(), document.text());
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the cache-rollback test retains every stage input and the zero-store assertion in one scenario"
+    )]
+    fn pending_stores_discard_on_registration_error() {
+        #[derive(Default)]
+        struct RecordingCache {
+            stores: usize,
+        }
+
+        impl ProjectCompileCache for RecordingCache {
+            fn load(
+                &mut self,
+                _fingerprint: ProjectCompileUnitFingerprint,
+            ) -> Option<Vec<CompiledProjectModule>> {
+                None
+            }
+
+            fn store(
+                &mut self,
+                _fingerprint: ProjectCompileUnitFingerprint,
+                _modules: &[CompiledProjectModule],
+            ) {
+                self.stores += 1;
+            }
+        }
+
+        let source_text = "fn main() -> Unit { () }\n";
+        let source_path = PathBuf::from("src/main.arcw");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-project://compiler-registration/src/main.arcw")
+                    .expect("document id"),
+                SourceName::path(source_path.display().to_string()),
+                source_text,
+            )
+            .expect("document"),
+        );
+        let project = ProjectSources::new(
+            PathBuf::from("arcw.toml"),
+            PathBuf::new(),
+            ProjectManifest::parse_toml("[package]\nname = \"compiler-registration\"\n")
+                .expect("manifest"),
+            [ProjectSourceFile::new(
+                CanonicalModulePath::crate_root(),
+                source_path.clone(),
+                Arc::clone(&document),
+                [],
+            )],
+        )
+        .expect("project");
+        let declaration = document.span(SourceRange::new(0, 2)).expect("span");
+        let owner = EnvironmentBindingId::try_new("environment.missing").expect("environment id");
+        let direct_bindings = [owner.as_str()]
+            .into_iter()
+            .map(|name| {
+                ProjectDirectBinding::try_new(
+                    CanonicalModulePath::crate_root(),
+                    name,
+                    Some(Visibility::Public),
+                    declaration.clone(),
+                    false,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .expect("direct bindings");
+        let seed = ExternalDeclarationSeed::try_new(
+            SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), owner.as_str())
+                .expect("symbol path"),
+            Some(Visibility::Public),
+            declaration.clone(),
+            direct_bindings,
+        )
+        .expect("external seed");
+        let world = ProjectSymbolWorldId::try_new(
+            CallablePackageId::try_new("compiler-registration").expect("package"),
+            document.identity().id().clone(),
+            "test",
+        )
+        .expect("world");
+        let facts = ProjectRegistrationFacts::try_new(
+            world,
+            vec![document],
+            vec![ExternalRegistrationFact::new(
+                seed,
+                RegisteredExternalOwner::Environment(owner),
+                declaration,
+            )],
+            Vec::new(),
+        )
+        .expect("facts");
+        let context = ProjectCompilationContext::new(
+            Arc::new(TypeCheckEnv::standard()),
+            Arc::new(facts),
+            None,
+        );
+        let mut cache = RecordingCache::default();
+
+        let error = compile_project_with_cache(
+            &project,
+            &context,
+            &RuntimePlanLowerOptions::default(),
+            &mut cache,
+        )
+        .expect_err("unknown character owner rejects project");
+        assert_eq!(error.stage(), ProjectCompileStage::Registration.as_str());
+        assert_eq!(cache.stores, 0);
+        assert!(error.diagnostics().iter().any(|diagnostic| {
+            diagnostic
+                .diagnostic()
+                .code()
+                .is_some_and(|code| code.as_str() == "aw.character.registration.unknown_owner")
+        }));
+    }
+
+    #[test]
+    fn registration_failure_discards_project() {
+        pending_stores_discard_on_registration_error();
     }
 }

@@ -22,6 +22,7 @@ pub mod env;
 pub mod fact_layer;
 pub mod lifetime;
 pub mod project_index;
+pub mod registration;
 pub mod resolve;
 pub mod semantic;
 pub mod style;

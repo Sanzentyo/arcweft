@@ -27,7 +27,7 @@ use arcweft_lang_syntax::{
         parse_type_ref,
     },
 };
-use arcweft_source::{SourceAnchor, SourceName};
+use arcweft_source::{SourceAnchor, SourceDocument};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -35,6 +35,8 @@ mod agent_prelude;
 mod entities;
 mod flow_control;
 mod relations;
+
+type SourceName = SourceDocument;
 
 #[cfg(test)]
 mod tests;
@@ -866,7 +868,7 @@ fn debug_path_from_query_name(name: &str) -> Option<(DebugPathKind, &str)> {
 pub fn project_semantic_index_from_hir(
     module: &HirModule,
     program_hash: ProgramHash,
-    source_name: &SourceName,
+    document: &SourceDocument,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     let mut index = ProjectSemanticIndex::new(program_hash);
     for flow in module.flows() {
@@ -875,11 +877,11 @@ pub fn project_semantic_index_from_hir(
                 id,
                 EntityKind::Flow,
                 None,
-                source_name.clone(),
+                document,
                 "flow",
             )?);
         }
-        index = entities::index_flow_items(flow.body(), index, source_name)?;
+        index = entities::index_flow_items(flow.body(), index, document)?;
         index = relations::index_flow_item_relations(flow.id(), flow.body(), index)?;
         if let Some(id) = flow.id() {
             index = index.with_flow_control_summary(
@@ -894,13 +896,13 @@ pub fn project_semantic_index_from_hir(
                 id,
                 EntityKind::Agent,
                 None,
-                source_name.clone(),
+                document,
                 "agent",
             )?);
         }
     }
     for declaration in module.declarations() {
-        index = index_top_level_declaration(declaration, index, source_name)?;
+        index = index_top_level_declaration(declaration, index, document)?;
     }
     index = relations::index_project_symbol_dependency_relations(module, index)?;
     Ok(index)
@@ -909,16 +911,16 @@ pub fn project_semantic_index_from_hir(
 fn index_top_level_declaration(
     declaration: &HirTopLevelDecl,
     mut index: ProjectSemanticIndex,
-    source_name: &SourceName,
+    document: &SourceDocument,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match declaration {
         HirTopLevelDecl::Source(source) => {
-            if let Some(id) = source.id() {
+            if let Some(id) = source.item().id() {
                 index = index.with_entity(entities::entity_symbol(
                     id,
                     EntityKind::Source,
                     None,
-                    source_name.clone(),
+                    document,
                     "source",
                 )?);
             }
@@ -933,10 +935,10 @@ fn index_top_level_declaration(
                 item.id(),
                 entities::entity_decl_kind(item.kind()),
                 value,
-                source_name.clone(),
+                document,
                 entities::entity_decl_kind_label(item.kind()),
             )?);
-            index = index_view_text_control_inputs(index, item, source_name)?;
+            index = index_view_text_control_inputs(index, item, document)?;
             if let Some(content) = item.content_body() {
                 index = relations::index_content_root_relations(item.id(), content.roots(), index)?;
             }
@@ -946,7 +948,7 @@ fn index_top_level_declaration(
                 item.id(),
                 EntityKind::Entry,
                 None,
-                source_name.clone(),
+                document,
                 "entry",
             )?);
             index = relations::index_entry_relations(item.id(), item.items(), index)?;
@@ -957,7 +959,7 @@ fn index_top_level_declaration(
                     id,
                     EntityKind::Test,
                     None,
-                    source_name.clone(),
+                    document,
                     "test",
                 )?);
             }
@@ -968,7 +970,7 @@ fn index_top_level_declaration(
                     id,
                     EntityKind::Bench,
                     None,
-                    source_name.clone(),
+                    document,
                     "bench",
                 )?);
             }
@@ -976,11 +978,11 @@ fn index_top_level_declaration(
         HirTopLevelDecl::Callable(item) => {
             index = index.with_project_callable(
                 QualifiedName::new(item.name()),
-                entities::project_callable_symbol(item, source_name.clone())?,
+                entities::project_callable_symbol(item, document)?,
             );
         }
         HirTopLevelDecl::Style(item) => {
-            index = index_view_style_entity(index, item, source_name)?;
+            index = index_view_style_entity(index, item, document)?;
         }
         HirTopLevelDecl::State(_)
         | HirTopLevelDecl::Trait(_)
@@ -1003,38 +1005,32 @@ fn index_top_level_declaration(
 fn index_view_style_entity(
     index: ProjectSemanticIndex,
     item: &HirStyleDecl,
-    source_name: &SourceName,
+    document: &SourceDocument,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    index_view_resource_entity(index, item.id(), EntityKind::Style, source_name, "style")
+    index_view_resource_entity(index, item.id(), EntityKind::Style, document, "style")
 }
 
 fn index_view_resource_entity(
     index: ProjectSemanticIndex,
     id: &EntityRef,
     kind: EntityKind,
-    source_name: &SourceName,
+    document: &SourceDocument,
     label: &'static str,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    Ok(index.with_entity(entities::entity_symbol(
-        id,
-        kind,
-        None,
-        source_name.clone(),
-        label,
-    )?))
+    Ok(index.with_entity(entities::entity_symbol(id, kind, None, document, label)?))
 }
 
 fn index_view_text_control_inputs(
     mut index: ProjectSemanticIndex,
     item: &EntityDeclItem,
-    source_name: &SourceName,
+    document: &SourceDocument,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     let Some(view) = item.view_body().and_then(|body| body.view()) else {
         return Ok(index);
     };
     for input in view.text_control_inputs() {
         let input = input.canonical_entity_ref();
-        index = index_view_resource_entity(index, &input, EntityKind::Input, source_name, "input")?;
+        index = index_view_resource_entity(index, &input, EntityKind::Input, document, "input")?;
     }
     Ok(index)
 }

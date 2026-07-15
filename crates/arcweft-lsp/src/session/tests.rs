@@ -180,9 +180,18 @@ fn assert_notification_rebuilds_analysis(
     previous: &Arc<DocumentAnalysis>,
     context: &str,
 ) -> Arc<DocumentAnalysis> {
-    let previous_epoch = session.profile_epoch;
+    let previous_generation = session
+        .profile_for_uri(uri)
+        .accepted_environment()
+        .map(|environment| environment.generation().get());
     session.handle_notification(notification).expect(context);
-    assert_eq!(session.profile_epoch, previous_epoch + 1);
+    let current_generation = session
+        .profile_for_uri(uri)
+        .accepted_environment()
+        .map(|environment| environment.generation().get());
+    if let (Some(previous), Some(current)) = (previous_generation, current_generation) {
+        assert!(current > previous);
+    }
     assert_eq!(session.analyses_by_uri.len(), 1);
     let current = Arc::clone(
         &session

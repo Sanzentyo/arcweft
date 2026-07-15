@@ -4,7 +4,7 @@ use arcweft_character::manifest::{CharacterAssetPath, CharacterManifest};
 use arcweft_character::package::{CharacterLayerPayload, CharacterPackage};
 
 fn package() -> CharacterPackage {
-    let manifest = CharacterManifest::from_json(include_str!(
+    let manifest = CharacterManifest::decode_runtime_json(include_str!(
         "fixtures/zundamon.awchar/character.awchar.json"
     ))
     .expect("manifest");

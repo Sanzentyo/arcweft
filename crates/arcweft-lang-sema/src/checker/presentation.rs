@@ -241,14 +241,6 @@ impl TypeChecker<'_> {
     }
 
     fn check_character_look_arg(&mut self, args: &[CallArg]) {
-        let character = args.iter().find_map(|arg| match arg {
-            CallArg::Positional(Expr::EntityRef(entity))
-                if entity.as_absolute().and_then(entity_kind) == Some(EntityKind::Character) =>
-            {
-                Some(entity.body())
-            }
-            CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
-        });
         let look = args
             .iter()
             .find_map(|arg| match arg {
@@ -266,13 +258,7 @@ impl TypeChecker<'_> {
         let Some(look) = look else {
             return;
         };
-        if let Some(character) = character
-            && let Some(expected) = self.env.character_look_type_for_symbol(character)
-        {
-            self.expect_expr_type(look, &expected, "show character look");
-        } else {
-            self.check_expr(look);
-        }
+        self.check_expr(look);
     }
 
     fn check_presentation_named_args(&mut self, args: &[CallArg], slot_family: &str) {

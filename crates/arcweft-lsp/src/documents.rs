@@ -1,4 +1,5 @@
 use crate::positions::{LineIndex, PositionEncoding};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams, Uri};
 use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
@@ -8,7 +9,7 @@ use thiserror::Error;
 pub struct DocumentSnapshot {
     uri: Uri,
     version: Option<i32>,
-    text: Arc<str>,
+    document: Arc<SourceDocument>,
     line_index: LineIndex,
 }
 
@@ -39,7 +40,12 @@ impl DocumentSnapshot {
 
     /// Current document text.
     pub fn text(&self) -> &str {
-        &self.text
+        self.document.text()
+    }
+
+    /// Exact revision-bound source document for this open snapshot.
+    pub fn source_document(&self) -> &SourceDocument {
+        self.document.as_ref()
     }
 
     /// Source-aware line index for this snapshot.
@@ -50,17 +56,31 @@ impl DocumentSnapshot {
 
 impl DocumentStore {
     /// Inserts an opened document and returns its snapshot.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if an already-validated LSP URI cannot form a source identity,
+    /// or if the in-memory document length cannot be represented by the source model.
     pub fn open(
         &mut self,
         params: DidOpenTextDocumentParams,
         encoding: PositionEncoding,
     ) -> DocumentSnapshot {
         let text: Arc<str> = Arc::from(params.text_document.text);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(params.text_document.uri.to_string())
+                    .expect("an LSP URI is a valid source document id"),
+                SourceName::path(params.text_document.uri.to_string()),
+                Arc::clone(&text),
+            )
+            .expect("an open LSP document length fits its source identity"),
+        );
         let snapshot = DocumentSnapshot {
             uri: params.text_document.uri,
             version: Some(params.text_document.version),
             line_index: LineIndex::new(Arc::clone(&text), encoding),
-            text,
+            document,
         };
         self.documents
             .insert(snapshot.uri.to_string(), snapshot.clone());
@@ -68,6 +88,11 @@ impl DocumentStore {
     }
 
     /// Applies a FULL document change and returns the new snapshot.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if an already-validated LSP URI cannot form a source identity,
+    /// or if the in-memory document length cannot be represented by the source model.
     pub fn change(
         &mut self,
         params: DidChangeTextDocumentParams,
@@ -81,11 +106,20 @@ impl DocumentStore {
             return Err(DocumentError::ExpectedFullSyncChange);
         }
         let text: Arc<str> = Arc::from(change.text);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(params.text_document.uri.to_string())
+                    .expect("an LSP URI is a valid source document id"),
+                SourceName::path(params.text_document.uri.to_string()),
+                Arc::clone(&text),
+            )
+            .expect("an open LSP document length fits its source identity"),
+        );
         let snapshot = DocumentSnapshot {
             uri: params.text_document.uri,
             version: Some(params.text_document.version),
             line_index: LineIndex::new(Arc::clone(&text), encoding),
-            text,
+            document,
         };
         self.documents
             .insert(snapshot.uri.to_string(), snapshot.clone());

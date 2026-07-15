@@ -5,7 +5,7 @@
 //! in adapter crates.
 
 use crate::manifest::{
-    CharacterAssetPath, CharacterManifest, CharacterManifestCodecError, CharacterManifestError,
+    CharacterAssetPath, CharacterManifest, CharacterManifestError, CharacterRuntimeDecodeError,
 };
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -36,7 +36,7 @@ pub enum CharacterPackageError {
     #[error("character package manifest is not UTF-8: {0}")]
     ManifestUtf8(#[from] std::str::Utf8Error),
     #[error("failed to decode character package manifest: {0}")]
-    ManifestDecode(#[from] CharacterManifestCodecError),
+    ManifestDecode(#[from] CharacterRuntimeDecodeError),
     #[error(transparent)]
     Manifest(#[from] CharacterManifestError),
     #[error("package contains duplicate layer payload `{0}`")]
@@ -88,7 +88,7 @@ impl CharacterPackage {
         payloads: impl IntoIterator<Item = CharacterLayerPayload>,
     ) -> Result<Self, CharacterPackageError> {
         let manifest_source = std::str::from_utf8(&manifest_bytes)?;
-        let manifest = CharacterManifest::from_json(manifest_source)?;
+        let manifest = CharacterManifest::decode_runtime_json(manifest_source)?;
         Self::from_validated_parts(manifest, manifest_bytes, payloads)
     }
 
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn package_rejects_unreferenced_payloads() {
-        let manifest = CharacterManifest::from_json(include_str!(
+        let manifest = CharacterManifest::decode_runtime_json(include_str!(
             "../tests/fixtures/zundamon.awchar/character.awchar.json"
         ))
         .expect("manifest");

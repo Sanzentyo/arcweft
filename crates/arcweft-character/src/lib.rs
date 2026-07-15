@@ -5,9 +5,12 @@
 //! decoding live in adapter crates.
 
 pub mod catalog;
+pub mod diagnostic;
 pub mod id;
 pub mod manifest;
 pub mod package;
+pub mod registration_catalog;
+pub mod symbol;
 
 /// Stable format identifier written to every character manifest.
 pub const CHARACTER_MANIFEST_FORMAT: &str = "arcweft.character";

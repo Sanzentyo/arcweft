@@ -1,9 +1,7 @@
 //! Diagnostics emitted while lowering HIR into core runtime plans.
 
 use arcweft_lang_hir::syntax::ast::common::TextRange;
-use arcweft_source::{
-    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceName, SourceRange, SourceSpan,
-};
+use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use std::fmt;
 use thiserror::Error;
 
@@ -38,6 +36,7 @@ pub struct RuntimePlanLowerError {
     message: String,
     reason: String,
     context: Option<Box<RuntimePlanLowerContext>>,
+    span: Option<SourceSpan>,
 }
 
 /// Authored executable location associated with a runtime-plan lowering error.
@@ -102,6 +101,7 @@ impl RuntimePlanLowerError {
             message: reason.clone(),
             reason,
             context: None,
+            span: None,
         }
     }
 
@@ -112,6 +112,7 @@ impl RuntimePlanLowerError {
             message: format!("{context}: {reason}"),
             reason,
             context: Some(Box::new(context)),
+            span: None,
         }
     }
 
@@ -130,24 +131,33 @@ impl RuntimePlanLowerError {
         self.context.as_deref()
     }
 
-    /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
-    pub fn diagnostic(&self) -> Diagnostic {
-        self.diagnostic_for_source(SourceName::Generated)
+    /// Exact authored source revision retained by this lowering failure.
+    pub const fn source(&self) -> Option<&SourceSpan> {
+        self.span.as_ref()
     }
 
-    /// Builds a diagnostic whose retained authored range is attached to the
-    /// source document that owns this lowering invocation.
-    pub fn diagnostic_for_source(&self, source: SourceName) -> Diagnostic {
+    pub(crate) fn with_source(mut self, source: Option<SourceSpan>) -> Self {
+        if let Some(source) = &source {
+            debug_assert_eq!(
+                self.context()
+                    .and_then(RuntimePlanLowerContext::source_range)
+                    .map(|range| (range.start(), range.end())),
+                Some((source.range().start(), source.range().end()))
+            );
+        }
+        self.span = source;
+        self
+    }
+
+    /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
+    pub fn diagnostic(&self) -> Diagnostic {
         let diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
             .with_code("runtime.plan.lower");
-        let Some(range) = self
-            .context()
-            .and_then(RuntimePlanLowerContext::source_range)
-        else {
+        let Some(source) = &self.span else {
             return diagnostic;
         };
         diagnostic.with_label(DiagnosticLabel::primary(
-            SourceSpan::new(source, SourceRange::new(range.start(), range.end())),
+            source.clone(),
             Some(self.reason.clone()),
         ))
     }

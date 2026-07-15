@@ -1,24 +1,51 @@
 //! Structured authored locations for executable runtime-plan lowering.
 
 use crate::errors::{RuntimePlanLowerContext, RuntimePlanLowerError};
-use arcweft_lang_hir::syntax::ast::{common::TextRange, flow::Stmt};
+use arcweft_lang_hir::{
+    model::HirModule,
+    syntax::ast::{common::TextRange, flow::Stmt, module_path::CanonicalModulePath},
+};
+use arcweft_source::SourceSpan;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutableLoweringLocation {
+pub(crate) struct ExecutableLoweringLocation<'hir> {
     owner: String,
     path: Vec<String>,
+    source: Option<ExecutableSource<'hir>>,
 }
 
-impl ExecutableLoweringLocation {
-    pub(crate) fn root(owner: impl Into<String>) -> Self {
+#[derive(Clone, Debug)]
+struct ExecutableSource<'hir> {
+    module: &'hir HirModule,
+    module_path: Option<CanonicalModulePath>,
+}
+
+impl<'hir> ExecutableLoweringLocation<'hir> {
+    pub(crate) fn in_module(
+        owner: impl Into<String>,
+        module: &'hir HirModule,
+        module_path: Option<&CanonicalModulePath>,
+    ) -> Self {
         Self {
             owner: owner.into(),
             path: Vec::new(),
+            source: Some(ExecutableSource {
+                module,
+                module_path: module_path.cloned(),
+            }),
         }
     }
 
     pub(crate) fn statement(&self, index: usize) -> Self {
         self.child(index.to_string())
+    }
+
+    pub(crate) fn with_owner(&self, owner: impl Into<String>) -> Self {
+        Self {
+            owner: owner.into(),
+            path: Vec::new(),
+            source: self.source.clone(),
+        }
     }
 
     pub(crate) fn child(&self, segment: impl Into<String>) -> Self {
@@ -27,6 +54,7 @@ impl ExecutableLoweringLocation {
         Self {
             owner: self.owner.clone(),
             path,
+            source: self.source.clone(),
         }
     }
 
@@ -40,15 +68,12 @@ impl ExecutableLoweringLocation {
 
     pub(crate) fn unsupported_statement(&self, statement: &Stmt) -> RuntimePlanLowerError {
         let kind = statement_kind(statement);
+        let source_range = statement_range(statement);
         RuntimePlanLowerError::in_context(
-            RuntimePlanLowerContext::statement(
-                &self.owner,
-                self.path.clone(),
-                kind,
-                statement_range(statement),
-            ),
+            RuntimePlanLowerContext::statement(&self.owner, self.path.clone(), kind, source_range),
             format!("`{kind}` is not executable in this runtime-plan owner"),
         )
+        .with_source(self.source_span(source_range))
     }
 
     pub(crate) fn expression_error(
@@ -78,6 +103,7 @@ impl ExecutableLoweringLocation {
             ),
             reason,
         )
+        .with_source(self.source_span(source_range))
     }
 
     pub(crate) fn pattern_error(
@@ -111,6 +137,24 @@ impl ExecutableLoweringLocation {
             ),
             reason,
         )
+        .with_source(self.source_span(source_range))
+    }
+
+    pub(crate) fn bind_error(&self, error: RuntimePlanLowerError) -> RuntimePlanLowerError {
+        let range = error
+            .context()
+            .and_then(RuntimePlanLowerContext::source_range);
+        error.with_source(self.source_span(range))
+    }
+
+    fn source_span(&self, range: Option<TextRange>) -> Option<SourceSpan> {
+        let source = self.source.as_ref()?;
+        let range = range?;
+        source
+            .module_path
+            .as_ref()
+            .and_then(|module| source.module.project_source_span(module, range))
+            .or_else(|| source.module.source_span(range))
     }
 }
 

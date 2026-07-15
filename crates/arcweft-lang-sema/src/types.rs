@@ -3,6 +3,12 @@ use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_syntax::expr::{IntSuffix, LifetimeScopeKind};
 use core::fmt;
 
+mod character_nominal;
+mod mismatch;
+
+pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
+pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
+
 /// Entity family used by semantic references and ID checks.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum EntityKind {
@@ -90,80 +96,6 @@ impl EntityKind {
             "Target" => Self::Target,
             _ => return None,
         })
-    }
-}
-
-/// Manifest-backed character enum family.
-///
-/// The discriminant is part of nominal identity: a look, a part, and a
-/// per-part variant are never interchangeable even when their member spellings
-/// happen to be equal.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum CharacterNominalKind {
-    Look,
-    Part,
-    Variant,
-}
-
-/// Structural identity of a manifest-derived character enum.
-///
-/// Identity is keyed by validated [`CharacterId`] and [`CharacterPartId`]
-/// values rather than by formatting a synthetic [`TypeKind::Named`] string.
-/// This keeps equality, hashing, expected-type enum shorthand, diagnostics,
-/// and tooling provenance on one canonical representation.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum CharacterNominalType {
-    Look {
-        character: CharacterId,
-    },
-    Part {
-        character: CharacterId,
-    },
-    Variant {
-        character: CharacterId,
-        part: CharacterPartId,
-    },
-}
-
-impl CharacterNominalType {
-    #[must_use]
-    pub const fn kind(&self) -> CharacterNominalKind {
-        match self {
-            Self::Look { .. } => CharacterNominalKind::Look,
-            Self::Part { .. } => CharacterNominalKind::Part,
-            Self::Variant { .. } => CharacterNominalKind::Variant,
-        }
-    }
-
-    /// Character manifest that owns this nominal enum.
-    #[must_use]
-    pub const fn character(&self) -> &CharacterId {
-        match self {
-            Self::Look { character }
-            | Self::Part { character }
-            | Self::Variant { character, .. } => character,
-        }
-    }
-
-    /// Owning part for a per-part variant enum.
-    #[must_use]
-    pub const fn part(&self) -> Option<&CharacterPartId> {
-        match self {
-            Self::Variant { part, .. } => Some(part),
-            Self::Look { .. } | Self::Part { .. } => None,
-        }
-    }
-
-    /// Canonical Arcweft surface spelling used by diagnostics and tooling.
-    #[must_use]
-    pub fn source_label(&self) -> String {
-        match self {
-            Self::Look { character } => format!("CharacterLook<{character}>"),
-            Self::Part { character } => format!("CharacterPart<{character}>"),
-            Self::Variant { character, part } => {
-                format!("CharacterVariant<{character},{part}>")
-            }
-        }
     }
 }
 

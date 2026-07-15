@@ -6,7 +6,7 @@ use crate::ast::items::{Attribute, Item, TypedSyntaxTree};
 use crate::ast::source::SourceItem;
 use arcweft_source::{
     Diagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticSeverity, DiagnosticSuggestion,
-    SourceEdit, SourceName, SourceRange, SourceSpan,
+    SourceDocument, SourceEdit, SourceRange,
 };
 
 /// Syntax-level lint emitted before full name resolution.
@@ -519,11 +519,15 @@ impl SyntaxLint {
     }
 
     /// Builds a structured diagnostic for CLI, LSP, and Agent tooling.
-    pub fn diagnostic(&self, source: &SourceName) -> Diagnostic {
-        let span = SourceSpan::new(
-            source.clone(),
-            SourceRange::new(self.range.start(), self.range.end()),
-        );
+    ///
+    /// # Panics
+    ///
+    /// Panics if `document` is not the exact source document from which this
+    /// lint diagnostic was produced.
+    pub fn diagnostic(&self, document: &SourceDocument) -> Diagnostic {
+        let span = document
+            .span(SourceRange::new(self.range.start(), self.range.end()))
+            .expect("a syntax lint range belongs to the document that was linted");
         self.suggestions.iter().fold(
             Diagnostic::new(self.severity().diagnostic_severity(), self.message.clone())
                 .with_code(self.code.stable_code())
@@ -531,7 +535,7 @@ impl SyntaxLint {
                     span,
                     Some(self.code.domain_name().to_owned()),
                 )),
-            |diagnostic, suggestion| diagnostic.with_suggestion(suggestion.diagnostic(source)),
+            |diagnostic, suggestion| diagnostic.with_suggestion(suggestion.diagnostic(document)),
         )
     }
 }
@@ -552,12 +556,11 @@ impl SyntaxLintEdit {
         &self.replacement
     }
 
-    fn source_edit(&self, source: SourceName) -> SourceEdit {
+    fn source_edit(&self, document: &SourceDocument) -> SourceEdit {
         SourceEdit::new(
-            SourceSpan::new(
-                source,
-                SourceRange::new(self.range.start(), self.range.end()),
-            ),
+            document
+                .span(SourceRange::new(self.range.start(), self.range.end()))
+                .expect("a syntax lint edit belongs to the document that was linted"),
             self.replacement.clone(),
         )
     }
@@ -584,10 +587,10 @@ impl SyntaxLintSuggestion {
         self.applicability
     }
 
-    fn diagnostic(&self, source: &SourceName) -> DiagnosticSuggestion {
+    fn diagnostic(&self, document: &SourceDocument) -> DiagnosticSuggestion {
         self.edits.iter().fold(
             DiagnosticSuggestion::new(self.message.clone(), self.applicability),
-            |suggestion, edit| suggestion.with_edit(edit.source_edit(source.clone())),
+            |suggestion, edit| suggestion.with_edit(edit.source_edit(document)),
         )
     }
 }

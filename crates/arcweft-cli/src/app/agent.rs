@@ -56,7 +56,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
 use arcweft_runtime_host::NativeAdapterRegistrar;
-use arcweft_source::{SourceAnchor, SourceName};
+use arcweft_source::SourceAnchor;
 use clap::{Args, ValueEnum};
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;

@@ -5,7 +5,7 @@ use super::profile::{compile_profile_runtime_plan, report_path, run_profile_phas
 use super::steps::{NativeRunHost, NativeRunSource, run_runtime_steps_with_executor};
 use crate::app::project::{
     native_host_policy_for_selection_with_adapter, resolve_source_selection,
-    runtime_pure_config_for_selection, typecheck_env_for_selection,
+    runtime_pure_config_for_selection, semantic_context_for_selection,
 };
 use crate::app::shared::{is_arcw_path, print_json};
 use crate::output::{
@@ -32,7 +32,8 @@ pub(in crate::app) fn runtime_profile_command(
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
-    let env = typecheck_env_for_selection(&selection, options.adapter.as_deref(), &mut phases)?;
+    let semantic =
+        semantic_context_for_selection(&selection, options.adapter.as_deref(), &mut phases)?;
     let host_policy =
         native_host_policy_for_selection_with_adapter(&selection, options.adapter.as_deref())?;
     if !is_arcw_path(selection.path()) {
@@ -43,7 +44,7 @@ pub(in crate::app) fn runtime_profile_command(
         return Err(ExitCode::from(2));
     }
 
-    let compiled = compile_profile_runtime_plan(&selection, &env, &mut phases)?;
+    let compiled = compile_profile_runtime_plan(&selection, &semantic, &mut phases)?;
     let mut plan = compiled.plan;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;

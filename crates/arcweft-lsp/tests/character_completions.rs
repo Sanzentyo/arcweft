@@ -14,6 +14,9 @@ fn completions_include_loaded_character_manifest_data() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-character-completions"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
@@ -51,6 +54,9 @@ fn hover_includes_psd_source_layer_names() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-character-hover"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
@@ -80,6 +86,9 @@ fn missing_character_manifest_uses_typed_profile_diagnostic() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-character-missing"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"

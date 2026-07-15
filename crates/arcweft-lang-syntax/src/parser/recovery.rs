@@ -1,6 +1,6 @@
 use arcweft_source::{
     Diagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticSeverity, DiagnosticSuggestion,
-    SourceEdit, SourceName, SourceRange, SourceSpan,
+    SourceDocument, SourceEdit, SourceRange,
 };
 use thiserror::Error;
 
@@ -16,7 +16,6 @@ pub struct ParseError {
     found: Option<String>,
     message: String,
     recovery: Vec<RecoverySuggestion>,
-    anchor: arcweft_source::SourceAnchor,
 }
 
 /// Suggested local edit or strategy for recovering from an error.
@@ -41,7 +40,6 @@ impl ParseError {
         found: Option<String>,
         message: String,
         recovery: Vec<RecoverySuggestion>,
-        anchor: arcweft_source::SourceAnchor,
     ) -> Self {
         Self {
             code: "syntax.parse".to_owned(),
@@ -50,7 +48,6 @@ impl ParseError {
             found,
             message,
             recovery,
-            anchor,
         }
     }
 
@@ -97,17 +94,15 @@ impl ParseError {
         &self.recovery
     }
 
-    /// Source anchor for tooling integrations.
-    pub const fn anchor(&self) -> &arcweft_source::SourceAnchor {
-        &self.anchor
-    }
-
     /// Builds the shared Arcweft diagnostic representation for CLI/LSP/Agent renderers.
-    pub fn diagnostic(&self, source: &SourceName) -> Diagnostic {
-        let span = SourceSpan::new(
-            source.clone(),
-            SourceRange::new(self.range.start(), self.range.end()),
-        );
+    ///
+    /// # Panics
+    ///
+    /// Panics if `document` is not the exact source document that was parsed.
+    pub fn diagnostic(&self, document: &SourceDocument) -> Diagnostic {
+        let span = document
+            .span(SourceRange::new(self.range.start(), self.range.end()))
+            .expect("a parser range belongs to the document that was parsed");
         let mut diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
             .with_code(self.code.clone())
             .with_label(DiagnosticLabel::primary(
@@ -120,7 +115,7 @@ impl ParseError {
             diagnostic = diagnostic.with_note(format!("expected: {}", self.expected.join(", ")));
         }
         for suggestion in &self.recovery {
-            diagnostic = diagnostic.with_suggestion(suggestion.diagnostic_suggestion(source));
+            diagnostic = diagnostic.with_suggestion(suggestion.diagnostic_suggestion(document));
         }
         diagnostic
     }
@@ -161,10 +156,10 @@ impl RecoverySuggestion {
         self.applicability
     }
 
-    fn diagnostic_suggestion(&self, source: &SourceName) -> DiagnosticSuggestion {
+    fn diagnostic_suggestion(&self, document: &SourceDocument) -> DiagnosticSuggestion {
         self.edits.iter().fold(
             DiagnosticSuggestion::new(self.message.clone(), self.applicability),
-            |suggestion, edit| suggestion.with_edit(edit.source_edit(source.clone())),
+            |suggestion, edit| suggestion.with_edit(edit.source_edit(document)),
         )
     }
 }
@@ -185,12 +180,11 @@ impl RecoveryEdit {
         &self.replacement
     }
 
-    fn source_edit(&self, source: SourceName) -> SourceEdit {
+    fn source_edit(&self, document: &SourceDocument) -> SourceEdit {
         SourceEdit::new(
-            SourceSpan::new(
-                source,
-                SourceRange::new(self.range.start(), self.range.end()),
-            ),
+            document
+                .span(SourceRange::new(self.range.start(), self.range.end()))
+                .expect("a parser recovery range belongs to the document that was parsed"),
             self.replacement.clone(),
         )
     }

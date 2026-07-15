@@ -1,18 +1,16 @@
 use super::commands::IdsCommand;
 use super::shared::{is_arcw_path, print_json};
 use arcweft_lang_hir::{
-    lower::lower_to_hir,
+    lower::lower_document_to_hir,
     project::{HirProject, HirProjectModule},
 };
 use arcweft_lang_sema::{
-    canonicalization::{
-        CanonicalizationSourceSet, SemanticDataUnavailable, SemanticDocumentId,
-        SemanticSourceIdentity, SemanticSourceRevision,
-    },
+    canonicalization::{CanonicalizationSourceSet, SemanticDataUnavailable},
     check::analyze_project_types_for_canonicalization,
     env::TypeCheckEnv,
 };
 use arcweft_lang_syntax::parser::SourceDialect;
+use arcweft_source::{SourceDocumentId, SourceRange};
 use arcweft_tooling::{
     canonicalize_source,
     format::format_source_with_dialect,
@@ -244,45 +242,44 @@ fn canonicalize_project_source(
         ));
     }
 
-    let modules = loaded
+    let lowered = loaded
         .sources()
         .modules()
         .map(|project_source| {
-            let parsed = arcweft_lang_syntax::parser::parse_source(project_source.source());
+            let document = loaded
+                .module_document(project_source.module())
+                .expect("loaded project retains one document per source module");
+            let parsed = arcweft_lang_syntax::parser::parse_source(document.text());
             if !parsed.errors().is_empty() {
                 return Err(semantic_data_unavailable(
                     project_source.path(),
                     format!("source has syntax errors: {:?}", parsed.errors()),
                 ));
             }
-            let hir = lower_to_hir(parsed.typed_tree()).map_err(|errors| {
+            let hir = lower_document_to_hir(document, parsed.typed_tree()).map_err(|errors| {
                 semantic_data_unavailable(
                     project_source.path(),
                     format!("HIR lowering failed: {errors:?}"),
                 )
             })?;
-            Ok(HirProjectModule::new(project_source.module().clone(), hir))
+            let identity = document.identity().clone();
+            let source_span = document
+                .span(SourceRange::new(0, document.text().len()))
+                .expect("loaded source document owns its complete UTF-8 range");
+            Ok((
+                HirProjectModule::new(project_source.module().clone(), identity.clone(), hir),
+                (project_source.module().clone(), source_span),
+            ))
         })
         .collect::<Result<Vec<_>, ToolingError>>()?;
     let hir_project = HirProject::new(
         loaded.sources().manifest().package().name().as_str(),
-        modules,
+        lowered.iter().map(|(module, _)| module.clone()),
     )
     .map_err(|error| semantic_data_unavailable(path, error.to_string()))?;
-    let identities = loaded
-        .sources()
-        .modules()
-        .map(|project_source| {
-            SemanticSourceIdentity::from_revision(
-                hir_project.package().clone(),
-                SemanticDocumentId::new(
-                    normalized_path(project_source.path()).display().to_string(),
-                ),
-                project_source.module().clone(),
-                SemanticSourceRevision::from_bytes(project_source.source_hash().as_bytes()),
-                project_source.source().len(),
-            )
-        })
+    let identities = lowered
+        .iter()
+        .map(|(_, source)| source.clone())
         .collect::<Vec<_>>();
     let sources = CanonicalizationSourceSet::try_new(hir_project.package().clone(), identities)
         .map_err(|error| semantic_data_unavailable(path, error.to_string()))?;
@@ -296,7 +293,7 @@ fn canonicalize_project_source(
         semantic_data_unavailable(path, "selected module has no semantic identity".to_owned())
     })?;
     let inventory = report
-        .canonicalization_inventory(selected_identity)
+        .canonicalization_inventory(selected.module(), selected_identity)
         .ok_or_else(|| {
             semantic_data_unavailable(
                 path,
@@ -312,7 +309,8 @@ fn normalized_path(path: &Path) -> PathBuf {
 
 fn semantic_data_unavailable(path: &Path, reason: String) -> ToolingError {
     let unavailable = SemanticDataUnavailable::new(
-        SemanticDocumentId::new(normalized_path(path).display().to_string()),
+        SourceDocumentId::try_new(normalized_path(path).display().to_string())
+            .expect("normalized source path is non-empty"),
         reason,
     );
     ToolingError::SemanticDataUnavailable {

@@ -10,4 +10,5 @@ pub mod pattern;
 pub mod proof;
 pub mod source;
 pub mod style;
+pub mod symbol_path;
 pub mod view;

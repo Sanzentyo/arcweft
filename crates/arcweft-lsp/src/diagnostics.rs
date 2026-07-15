@@ -1,12 +1,9 @@
 use crate::documents::DocumentSnapshot;
 use crate::positions::{LineIndex, PositionEncoding};
 use crate::profiles::LspProfile;
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
-    canonicalization::{
-        CheckedCanonicalizationInventory, SemanticDataUnavailable, SemanticDocumentId,
-        SemanticSourceRevision,
-    },
+    canonicalization::{CheckedCanonicalizationInventory, SemanticDataUnavailable},
     check::{analyze_types, validate_typecheck_ready},
     diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning},
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
@@ -16,8 +13,9 @@ use arcweft_lang_syntax::{
     parser::parse_source,
 };
 use arcweft_source::{
-    Diagnostic as ArcDiagnostic, DiagnosticApplicability, DiagnosticLabelStyle,
-    DiagnosticSeverity as ArcDiagnosticSeverity, SourceName, SourceSpan,
+    Diagnostic as ArcDiagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticLabelStyle,
+    DiagnosticSeverity as ArcDiagnosticSeverity, DiagnosticSuggestion, SourceDocument,
+    SourceDocumentId, SourceEdit, SourceName, SourceRevision, SourceSpan,
 };
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
@@ -38,41 +36,77 @@ pub struct DocumentAnalysis {
     line_index: LineIndex,
     verification_report: Option<VerificationReport>,
     canonicalization: Result<CheckedCanonicalizationInventory, SemanticDataUnavailable>,
-    source_revision: SemanticSourceRevision,
+    source_revision: SourceRevision,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum LspDiagnosticSourceError {
+    WrongDocument {
+        expected: SourceDocumentId,
+        actual: SourceDocumentId,
+    },
+    WrongRevision {
+        expected: SourceRevision,
+        actual: SourceRevision,
+    },
 }
 
 impl DocumentAnalysis {
     /// Runs syntax, HIR lowering, profile-aware type checking, and verifier diagnostics.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the current platform cannot represent the in-memory source length in a
+    /// revision-bound source identity.
     pub fn analyze(source: &str, encoding: PositionEncoding, profile: &LspProfile) -> Self {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-generated://lsp-document-analysis/0")
+                .expect("generated LSP document id is valid"),
+            SourceName::Generated,
+            source,
+        )
+        .expect("an in-memory LSP source fits the source document identity");
+        Self::analyze_document(&document, encoding, profile)
+    }
+
+    fn analyze_document(
+        document: &SourceDocument,
+        encoding: PositionEncoding,
+        profile: &LspProfile,
+    ) -> Self {
+        let source = document.text();
         let line_index = LineIndex::new(source.to_owned(), encoding);
-        let source_name = SourceName::path("<memory>");
         let mut verification_report = None;
         let parsed = parse_source(source.to_owned());
         let mut diagnostics = parsed
             .errors()
             .iter()
-            .map(|error| lsp_diagnostic_from_arcweft(&error.diagnostic(&source_name), &line_index))
+            .filter_map(|error| {
+                lsp_diagnostic_from_arcweft(&error.diagnostic(document), &line_index, document).ok()
+            })
             .collect::<Vec<_>>();
 
         if parsed.errors().is_empty() {
             diagnostics.extend(syntax_lint_diagnostics(
                 &lint_id_policy(parsed.typed_tree()),
                 &line_index,
-                &source_name,
+                document,
             ));
-            match lower_to_hir(parsed.typed_tree()) {
+            match lower_document_to_hir(document, parsed.typed_tree()) {
                 Ok(hir) => {
                     let env = profile.typecheck_env();
-                    let resolve = resolve_diagnostics(&hir, &line_index);
+                    let resolve = resolve_diagnostics(&hir, &line_index, document);
                     if resolve.is_empty() {
-                        let readiness = readiness_diagnostics(&hir, &line_index);
+                        let readiness = readiness_diagnostics(&hir, &line_index, document);
                         if readiness.is_empty() {
                             let typecheck_report = analyze_types(&hir, &env);
                             diagnostics.extend(typecheck_diagnostics(
                                 &typecheck_report.diagnostics,
                                 &line_index,
+                                document,
                             ));
-                            diagnostics.extend(typecheck_warnings(&typecheck_report.warnings));
+                            diagnostics
+                                .extend(typecheck_warnings(&typecheck_report.warnings, document));
                             if typecheck_report.diagnostics.is_empty() {
                                 let report = verify_module_with_env(
                                     &hir,
@@ -96,8 +130,13 @@ impl DocumentAnalysis {
                     }
                 }
                 Err(errors) => {
-                    diagnostics.extend(errors.into_iter().map(|error| {
-                        lsp_diagnostic_from_arcweft(&error.diagnostic(&source_name), &line_index)
+                    diagnostics.extend(errors.into_iter().filter_map(|error| {
+                        lsp_diagnostic_from_arcweft(
+                            &error.diagnostic(document),
+                            &line_index,
+                            document,
+                        )
+                        .ok()
                     }));
                 }
             }
@@ -108,26 +147,34 @@ impl DocumentAnalysis {
             line_index,
             verification_report,
             canonicalization: Err(SemanticDataUnavailable::new(
-                SemanticDocumentId::new("<memory>"),
+                document.identity().id().clone(),
                 "standalone document analysis has no checked project snapshot",
             )),
-            source_revision: SemanticSourceRevision::from_source(source),
+            source_revision: document.identity().revision(),
         }
     }
 
     /// Runs analysis against the containing project and exact open-document snapshot.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `uri` cannot form a non-empty, control-free source document identity or if the
+    /// current platform cannot represent the in-memory source length in that identity.
     pub fn analyze_project(
         source: &str,
         encoding: PositionEncoding,
         profile: &LspProfile,
         uri: &Uri,
     ) -> Self {
-        let mut analysis = Self::analyze(source, encoding, profile);
-        analysis.canonicalization = crate::canonicalization::checked_inventory_for_document(
-            uri,
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(uri.to_string()).expect("LSP URI is a valid document id"),
+            SourceName::path(uri.to_string()),
             source,
-            &profile.typecheck_env(),
-        );
+        )
+        .expect("an in-memory LSP source fits the source document identity");
+        let mut analysis = Self::analyze_document(&document, encoding, profile);
+        analysis.canonicalization =
+            crate::canonicalization::checked_inventory_for_document(uri, source, profile);
         analysis
     }
 
@@ -159,7 +206,7 @@ impl DocumentAnalysis {
     }
 
     /// BLAKE3 revision of the exact UTF-8 source analyzed here.
-    pub const fn source_revision(&self) -> SemanticSourceRevision {
+    pub const fn source_revision(&self) -> SourceRevision {
         self.source_revision
     }
 }
@@ -167,11 +214,13 @@ impl DocumentAnalysis {
 fn syntax_lint_diagnostics(
     lints: &[SyntaxLint],
     line_index: &LineIndex,
-    source_name: &SourceName,
+    document: &SourceDocument,
 ) -> Vec<Diagnostic> {
     lints
         .iter()
-        .map(|lint| lsp_diagnostic_from_arcweft(&lint.diagnostic(source_name), line_index))
+        .filter_map(|lint| {
+            lsp_diagnostic_from_arcweft(&lint.diagnostic(document), line_index, document).ok()
+        })
         .collect()
 }
 
@@ -202,6 +251,7 @@ pub fn publish_diagnostics_from_analysis(
 fn resolve_diagnostics(
     hir: &arcweft_lang_hir::model::HirModule,
     line_index: &LineIndex,
+    document: &SourceDocument,
 ) -> Vec<Diagnostic> {
     let registry = registry_from_hir(hir);
     validate_hir_references(hir, &registry).map_or_else(
@@ -209,7 +259,9 @@ fn resolve_diagnostics(
             errors
                 .iter()
                 .enumerate()
-                .map(|(index, error)| name_resolution_diagnostic(error, index + 1, line_index))
+                .filter_map(|(index, error)| {
+                    name_resolution_diagnostic(error, index + 1, line_index, document).ok()
+                })
                 .collect()
         },
         |()| Vec::new(),
@@ -219,13 +271,16 @@ fn resolve_diagnostics(
 fn readiness_diagnostics(
     hir: &arcweft_lang_hir::model::HirModule,
     line_index: &LineIndex,
+    document: &SourceDocument,
 ) -> Vec<Diagnostic> {
     validate_typecheck_ready(hir).map_or_else(
         |errors| {
             errors
                 .iter()
                 .enumerate()
-                .map(|(index, error)| readiness_diagnostic(error, index + 1, line_index))
+                .filter_map(|(index, error)| {
+                    readiness_diagnostic(error, index + 1, line_index, document).ok()
+                })
                 .collect()
         },
         |()| Vec::new(),
@@ -236,30 +291,40 @@ fn name_resolution_diagnostic(
     error: &NameResolutionError,
     _index: usize,
     line_index: &LineIndex,
-) -> Diagnostic {
-    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index)
+    document: &SourceDocument,
+) -> Result<Diagnostic, LspDiagnosticSourceError> {
+    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document)
 }
 
 fn readiness_diagnostic(
     error: &TypeCheckReadinessError,
     _index: usize,
     line_index: &LineIndex,
-) -> Diagnostic {
-    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index)
+    document: &SourceDocument,
+) -> Result<Diagnostic, LspDiagnosticSourceError> {
+    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document)
 }
 
-fn typecheck_diagnostics(errors: &[TypeCheckError], line_index: &LineIndex) -> Vec<Diagnostic> {
+fn typecheck_diagnostics(
+    errors: &[TypeCheckError],
+    line_index: &LineIndex,
+    document: &SourceDocument,
+) -> Vec<Diagnostic> {
     errors
         .iter()
-        .map(|error| lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index))
+        .filter_map(|error| {
+            lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document).ok()
+        })
         .collect()
 }
 
-fn typecheck_warnings(warnings: &[TypeCheckWarning]) -> Vec<Diagnostic> {
+fn typecheck_warnings(warnings: &[TypeCheckWarning], document: &SourceDocument) -> Vec<Diagnostic> {
     let line_index = LineIndex::new(String::new(), PositionEncoding::Utf16);
     warnings
         .iter()
-        .map(|warning| lsp_diagnostic_from_arcweft(&warning.diagnostic(), &line_index))
+        .filter_map(|warning| {
+            lsp_diagnostic_from_arcweft(&warning.diagnostic(), &line_index, document).ok()
+        })
         .collect()
 }
 
@@ -283,10 +348,15 @@ fn profile_diagnostics(profile: &LspProfile) -> Vec<Diagnostic> {
     diagnostics
 }
 
-fn lsp_diagnostic_from_arcweft(diagnostic: &ArcDiagnostic, line_index: &LineIndex) -> Diagnostic {
+fn lsp_diagnostic_from_arcweft(
+    diagnostic: &ArcDiagnostic,
+    line_index: &LineIndex,
+    document: &SourceDocument,
+) -> Result<Diagnostic, LspDiagnosticSourceError> {
+    validate_diagnostic_sources(diagnostic, document)?;
     let span = primary_span(diagnostic);
     let range = span.map_or_else(start_range, |span| range_for_span(span, line_index));
-    Diagnostic {
+    Ok(Diagnostic {
         range,
         severity: Some(lsp_severity(diagnostic.severity())),
         code: diagnostic
@@ -297,7 +367,43 @@ fn lsp_diagnostic_from_arcweft(diagnostic: &ArcDiagnostic, line_index: &LineInde
         related_information: related_information(diagnostic, line_index),
         data: suggestions_data(diagnostic, line_index),
         ..Diagnostic::default()
+    })
+}
+
+fn validate_diagnostic_sources(
+    diagnostic: &ArcDiagnostic,
+    document: &SourceDocument,
+) -> Result<(), LspDiagnosticSourceError> {
+    primary_span(diagnostic)
+        .into_iter()
+        .chain(diagnostic.labels().iter().map(DiagnosticLabel::span))
+        .chain(
+            diagnostic
+                .suggestions()
+                .iter()
+                .flat_map(DiagnosticSuggestion::edits)
+                .map(SourceEdit::span),
+        )
+        .try_for_each(|span| validate_span_source(span, document))
+}
+
+fn validate_span_source(
+    span: &SourceSpan,
+    document: &SourceDocument,
+) -> Result<(), LspDiagnosticSourceError> {
+    if span.source().id() != document.identity().id() {
+        return Err(LspDiagnosticSourceError::WrongDocument {
+            expected: document.identity().id().clone(),
+            actual: span.source().id().clone(),
+        });
     }
+    if span.source().revision() != document.identity().revision() {
+        return Err(LspDiagnosticSourceError::WrongRevision {
+            expected: document.identity().revision(),
+            actual: span.source().revision(),
+        });
+    }
+    Ok(())
 }
 
 fn primary_span(diagnostic: &ArcDiagnostic) -> Option<&SourceSpan> {
@@ -420,6 +526,42 @@ mod tests {
         AdapterFunctionParam, AdapterFunctionSignature, AdapterManifest, AdapterTypeKind,
     };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
+
+    #[test]
+    fn stale_span_is_not_published() {
+        let id = SourceDocumentId::try_new("file:///workspace/main.arcw").expect("document id");
+        let stale = SourceDocument::try_new(id.clone(), SourceName::path("main.arcw"), "old")
+            .expect("stale document");
+        let current = SourceDocument::try_new(id, SourceName::path("main.arcw"), "new")
+            .expect("current document");
+        let stale_span = stale
+            .span(arcweft_source::SourceRange::new(0, 3))
+            .expect("stale span");
+        let diagnostic = ArcDiagnostic::new(ArcDiagnosticSeverity::Error, "stale")
+            .with_span(stale_span.clone())
+            .with_suggestion(
+                arcweft_source::DiagnosticSuggestion::new(
+                    "replace",
+                    DiagnosticApplicability::MachineApplicable,
+                )
+                .with_edit(arcweft_source::SourceEdit::new(stale_span, "current")),
+            );
+        let line_index = LineIndex::new("new".to_owned(), PositionEncoding::Utf16);
+
+        assert!(matches!(
+            lsp_diagnostic_from_arcweft(&diagnostic, &line_index, &current),
+            Err(LspDiagnosticSourceError::WrongRevision { expected, actual })
+                if expected == current.identity().revision()
+                    && actual == stale.identity().revision()
+        ));
+        let published = [diagnostic]
+            .iter()
+            .filter_map(|diagnostic| {
+                lsp_diagnostic_from_arcweft(diagnostic, &line_index, &current).ok()
+            })
+            .collect::<Vec<_>>();
+        assert!(published.is_empty());
+    }
 
     #[test]
     fn diagnostics_use_profile_selected_adapter_environment() {

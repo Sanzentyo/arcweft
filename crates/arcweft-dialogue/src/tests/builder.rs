@@ -1,5 +1,6 @@
 use crate::*;
 use arcweft_id::PublicId;
+use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 use core::time::Duration;
 
 #[test]
@@ -9,13 +10,19 @@ fn builder_api_builds_dialogue_line_from_concise_call_shape()
         .voice(VoicePolicy::Auto)
         .look("smile")
         .view(view("side"));
+    let authored = "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]";
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft-generated://dialogue-tests/builder")?,
+        SourceName::Generated,
+        authored,
+    )?;
+    let source = SourceAnchor::from_span(document.span(SourceRange::new(0, authored.len()))?);
 
     let line = alice
         .say()
         .id(line_id("say.opening.dream_hint"))
-        .content(DialogueContent::parse_lossy(
-            "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]",
-        ))
+        .content(DialogueContent::parse_lossy(authored))
+        .source(source)
         .at(
             Duration::from_millis(420),
             Cue::Face {

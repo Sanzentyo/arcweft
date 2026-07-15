@@ -30,6 +30,12 @@ pub enum CharacterIdError {
     Public(#[from] IdError),
     #[error("character id must start with `character.`")]
     MissingCharacterPrefix,
+    #[error("character id `{value}` has an invalid owner component at index {component_index}")]
+    InvalidOwnerComponent { value: String, component_index: u32 },
+    #[error("character id `{value}` has too many owner components")]
+    OwnerComponentIndexOverflow { value: String },
+    #[error("character id `{value}` uses reserved compact root `{root}`")]
+    ReservedCompactRoot { value: String, root: String },
     #[error("{kind} id `{value}` must match [A-Za-z_][A-Za-z0-9_.-]*")]
     InvalidLocal { kind: &'static str, value: String },
 }
@@ -43,12 +49,44 @@ impl CharacterId {
             return Err(CharacterIdError::MissingCharacterPrefix);
         };
         validate_local_id("character", local.to_owned())?;
+        for (component_index, component) in local.split('.').enumerate() {
+            if component.is_empty()
+                || !component
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
+            {
+                let component_index = u32::try_from(component_index).map_err(|_| {
+                    CharacterIdError::OwnerComponentIndexOverflow {
+                        value: value.clone(),
+                    }
+                })?;
+                return Err(CharacterIdError::InvalidOwnerComponent {
+                    value,
+                    component_index,
+                });
+            }
+        }
+        let root = local.split('.').next().unwrap_or(local);
+        if matches!(root, "crate" | "self" | "super" | "parent" | "character") {
+            let root = root.to_owned();
+            return Err(CharacterIdError::ReservedCompactRoot { value, root });
+        }
         Ok(Self(value))
     }
 
     /// Source-visible identifier without an `@` reference marker.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Canonical owner path without the reserved `character.` namespace.
+    pub fn compact_str(&self) -> &str {
+        self.0.strip_prefix("character.").unwrap_or(&self.0)
+    }
+
+    /// Components of the canonical compact owner path.
+    pub fn compact_segments(&self) -> impl Iterator<Item = &str> {
+        self.compact_str().split('.')
     }
 
     /// Converts the format identifier into Arcweft's shared public-id type.
@@ -143,7 +181,7 @@ impl_text_id!(CharacterLookId, CharacterLookId::try_new);
 
 #[cfg(test)]
 mod tests {
-    use super::{CharacterId, CharacterLookId};
+    use super::{CharacterId, CharacterIdError, CharacterLookId};
 
     #[test]
     fn character_ids_require_the_character_family() {
@@ -156,5 +194,26 @@ mod tests {
         assert!(CharacterLookId::try_new("smile.open").is_ok());
         assert!(CharacterLookId::try_new("smile open").is_err());
         assert!(CharacterLookId::try_new("../smile").is_err());
+    }
+
+    #[test]
+    fn owner_components_and_compact_roots_are_unambiguous() {
+        assert!(matches!(
+            CharacterId::try_new("character.cast..alice"),
+            Err(CharacterIdError::InvalidOwnerComponent {
+                component_index: 1,
+                ..
+            })
+        ));
+        assert!(matches!(
+            CharacterId::try_new("character.self.alice"),
+            Err(CharacterIdError::ReservedCompactRoot { root, .. }) if root == "self"
+        ));
+        let id = CharacterId::try_new("character.cast.alice-2").expect("character id");
+        assert_eq!(id.compact_str(), "cast.alice-2");
+        assert_eq!(
+            id.compact_segments().collect::<Vec<_>>(),
+            ["cast", "alice-2"]
+        );
     }
 }

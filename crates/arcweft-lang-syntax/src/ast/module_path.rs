@@ -31,7 +31,7 @@ pub struct CanonicalModulePath {
 }
 
 /// Module path parse and resolution failure.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModulePathError {
     #[error("module path is empty")]
     Empty,

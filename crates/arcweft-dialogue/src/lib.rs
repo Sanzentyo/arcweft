@@ -207,7 +207,7 @@ pub struct DialogueLineBuilder {
     options: SayOptions,
     content: Option<DialogueContent>,
     plan: LinePlanBuilder,
-    source: SourceAnchor,
+    source: Option<SourceAnchor>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -228,6 +228,8 @@ pub struct DialogueBuildError {
 pub enum DialogueBuildErrorKind {
     #[error("dialogue line content is required")]
     MissingContent,
+    #[error("dialogue line source is required")]
+    MissingSource,
 }
 
 impl SpeakerRef {
@@ -668,7 +670,7 @@ impl DialogueLineBuilder {
             options: SayOptions::empty(),
             content: None,
             plan: LinePlanBuilder::new(),
-            source: SourceAnchor::generated(),
+            source: None,
         }
     }
 
@@ -702,6 +704,13 @@ impl DialogueLineBuilder {
         self
     }
 
+    /// Binds the line to an explicitly supplied revision-bound source span.
+    #[must_use]
+    pub fn source(mut self, source: SourceAnchor) -> Self {
+        self.source = Some(source);
+        self
+    }
+
     #[must_use]
     pub fn at(mut self, offset: Duration, cue: Cue<'_>) -> Self {
         self.plan = self.plan.at(offset, cue);
@@ -724,13 +733,16 @@ impl DialogueLineBuilder {
         let content = self
             .content
             .ok_or_else(|| DialogueBuildError::new(DialogueBuildErrorKind::MissingContent))?;
+        let source = self
+            .source
+            .ok_or_else(|| DialogueBuildError::new(DialogueBuildErrorKind::MissingSource))?;
 
         Ok(DialogueLine::from_preset(
             &self.preset,
             self.options,
             content,
             self.plan.build(),
-            self.source,
+            source,
         ))
     }
 }

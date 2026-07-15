@@ -23,7 +23,6 @@ use crate::expr::Expr;
 use crate::pattern::parse_pattern;
 use crate::source::ParsedSource;
 use crate::text::parse_dialogue_text;
-use arcweft_source::{SourceAnchor, SourceName};
 use std::borrow::Cow;
 use std::ops::Range;
 
@@ -610,7 +609,6 @@ impl<'a> Parser<'a> {
             found.map(str::to_owned),
             message.to_owned(),
             recovery.into_iter().map(RecoverySuggestion::new).collect(),
-            SourceAnchor::new(SourceName::path("<memory>"), 0..0),
         ));
     }
 

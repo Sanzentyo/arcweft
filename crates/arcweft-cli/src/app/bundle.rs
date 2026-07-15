@@ -1,5 +1,5 @@
 use super::bundle_view::view_sidecars;
-use super::diagnostics::emit_diagnostics_for_path;
+use super::diagnostics::emit_diagnostics;
 use super::image_declarations::{
     DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
     parse_declared_image_objects, public_asset_ref_arg, public_id_arg,
@@ -7,7 +7,7 @@ use super::image_declarations::{
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
-    typecheck_env_for_selection,
+    semantic_context_for_selection,
 };
 use super::runtime::options::{CliRuntimeExecutorTier, CliRuntimeStepMode};
 use super::runtime::parse::parse_runtime_binding_arg;
@@ -69,7 +69,7 @@ use arcweft_runtime_host::{
     run_bundle_with_native_adapters,
 };
 use arcweft_runtime_plan::fx::lower_fx_definitions_for_package;
-use arcweft_source::SourceName;
+use arcweft_source::SourceDocument;
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
 };
@@ -269,18 +269,18 @@ pub(in crate::app) fn compile_bundle_for_selection(
     include_spaces: Vec<BundleVirtualFileSpace>,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<CompiledBundleArtifact, ExitCode> {
-    let env = typecheck_env_for_selection(selection, None, phases)?;
-    let compiled = compile_profile_runtime_plan(selection, &env, phases)?;
+    let semantic = semantic_context_for_selection(selection, None, phases)?;
+    let compiled = compile_profile_runtime_plan(selection, &semantic, phases)?;
     let verification = verify_module_with_env(
         &compiled.hir,
-        &env,
+        semantic.base(),
         VerificationPolicy {
             mode: VerificationMode::Dev,
             backend: BackendKind::Emit,
         },
     );
     if verification.has_blocking_runtime_safety_gaps() {
-        emit_bundle_verification_diagnostics(selection, &verification);
+        emit_bundle_verification_diagnostics(&compiled.source_document, &verification);
         return Err(ExitCode::FAILURE);
     }
     let entry_kinds = compiled
@@ -368,10 +368,9 @@ pub(in crate::app) fn compile_bundle_for_selection(
     })
 }
 
-fn emit_bundle_verification_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
-    let source_name = SourceName::path(selection.path().display().to_string());
-    let diagnostics = report.source_diagnostics(&source_name);
-    emit_diagnostics_for_path(selection.path(), &diagnostics);
+fn emit_bundle_verification_diagnostics(document: &SourceDocument, report: &VerificationReport) {
+    let diagnostics = report.source_diagnostics(document);
+    emit_diagnostics(document, &diagnostics);
 }
 
 #[derive(Clone, Debug, Default)]

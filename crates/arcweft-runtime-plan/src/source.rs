@@ -14,12 +14,13 @@ use arcweft_core::source::{
     SourceOp, SourcePlan, SourcePolicy,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use arcweft_lang_hir::model::{HirModule, HirSource};
 use arcweft_lang_hir::syntax::{
     ast::{
         flow::Stmt,
         source::{
             SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeaderInventory,
-            SourceItem, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
+            SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
         },
     },
     expr::{Expr, Literal},
@@ -28,17 +29,20 @@ use arcweft_lang_hir::syntax::{
 
 /// Lowers a checked source declaration into a Sans I/O source plan.
 pub(crate) fn lower_source_plan(
-    source: &SourceItem,
+    module: &HirModule,
+    source: &HirSource,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Result<SourcePlan, Vec<RuntimePlanLowerError>> {
+    let source_item = source.item();
     let mut errors = Vec::new();
-    let id = source.id().map_or_else(
-        || SourceId(source.name().unwrap_or("anonymous").to_owned()),
+    let id = source_item.id().map_or_else(
+        || SourceId(source_item.name().unwrap_or("anonymous").to_owned()),
         |id| SourceId(id.body().to_owned()),
     );
     let owner = format!("source `{}`", id.0);
-    let location = ExecutableLoweringLocation::root(owner.clone());
-    for (index, statement) in source.body_statements().iter().enumerate() {
+    let location =
+        ExecutableLoweringLocation::in_module(owner.clone(), module, source.module_path());
+    for (index, statement) in source_item.body_statements().iter().enumerate() {
         errors.push(
             location
                 .child("body")
@@ -46,7 +50,7 @@ pub(crate) fn lower_source_plan(
                 .unsupported_statement(statement),
         );
     }
-    let header_inventory = match SourceHeaderInventory::try_from(source.headers()) {
+    let header_inventory = match SourceHeaderInventory::try_from(source_item.headers()) {
         Ok(inventory) => inventory,
         Err(duplicate) => {
             let header = duplicate.kind().as_str();
@@ -63,7 +67,7 @@ pub(crate) fn lower_source_plan(
             return Err(errors);
         }
     };
-    let (item_ty, error_ty) = source
+    let (item_ty, error_ty) = source_item
         .source_ty()
         .and_then(source_type_labels)
         .unwrap_or_else(|| {
@@ -108,8 +112,8 @@ pub(crate) fn lower_source_plan(
         }
     };
     let mut handlers = Vec::new();
-    for handler in source.handlers() {
-        match lower_source_handler(handler, pure_helpers, &owner) {
+    for handler in source_item.handlers() {
+        match lower_source_handler(handler, pure_helpers, &owner, &location) {
             Ok(handler) => handlers.push(handler),
             Err(mut handler_errors) => errors.append(&mut handler_errors),
         }
@@ -132,10 +136,11 @@ fn lower_source_handler(
     handler: &SourceHandler,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
     source_owner: &str,
+    source_location: &ExecutableLoweringLocation<'_>,
 ) -> Result<SourceHandlerPlan, Vec<RuntimePlanLowerError>> {
     let event = source_event_label(handler.event());
     let owner = format!("{source_owner} handler `{event}`");
-    let location = ExecutableLoweringLocation::root(owner.clone());
+    let location = source_location.with_owner(owner.clone());
     let ops = lower_source_stmt_list(handler.body(), pure_helpers, &location)?;
     Ok(match handler.event() {
         SourceEventPattern::Item(pattern) => SourceHandlerPlan::Item {
@@ -182,7 +187,7 @@ fn lower_source_handler(
 fn lower_source_stmt_list(
     statements: &[Stmt],
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<Vec<SourceOp>, Vec<RuntimePlanLowerError>> {
     let mut ops = Vec::new();
     let mut errors = Vec::new();
@@ -202,7 +207,7 @@ fn lower_source_stmt_list(
 fn lower_source_stmt(
     stmt: &Stmt,
     pure_helpers: RuntimePureHelperLookup<'_, '_, '_>,
-    location: &ExecutableLoweringLocation,
+    location: &ExecutableLoweringLocation<'_>,
 ) -> Result<SourceOp, RuntimePlanLowerError> {
     match stmt {
         Stmt::Yield(expr) => lower_runtime_expr_strict_with_pure(expr.expr(), pure_helpers)

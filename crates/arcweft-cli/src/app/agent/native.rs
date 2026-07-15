@@ -118,7 +118,6 @@ use arcweft_layout::{
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
 use arcweft_render_text::{LineDisplayFrame, RichTextRange};
 use arcweft_runtime_driver::session::BundleStepInput;
-use arcweft_source::SourceName;
 #[cfg(feature = "agent-repl")]
 use arcweft_tooling::agent_repl::AgentReplCellCompletionKind;
 use arcweft_tooling::agent_repl::{

@@ -1,151 +1,18 @@
 //! Narrow, source-revision-bound semantic evidence for source canonicalization.
 
-use std::collections::BTreeMap;
-use std::fmt;
-
 use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
 use arcweft_lang_syntax::ast::{
     common::TextRange, dialogue::SpeakerLineSurface, module_path::CanonicalModulePath,
 };
+use arcweft_source::{SourceDocumentId, SourceDocumentIdentity, SourceSpan};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::types::{EntityKind, TypeKind};
 
-/// Adapter-provided source document identity, usually a canonical URI or path.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SemanticDocumentId(String);
-
-impl SemanticDocumentId {
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for SemanticDocumentId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-/// BLAKE3 of the exact UTF-8 source bytes checked by sema.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SemanticSourceRevision([u8; 32]);
-
-impl SemanticSourceRevision {
-    #[must_use]
-    pub fn from_source(source: &str) -> Self {
-        Self(*blake3::hash(source.as_bytes()).as_bytes())
-    }
-
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-impl fmt::Debug for SemanticSourceRevision {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self, formatter)
-    }
-}
-
-impl fmt::Display for SemanticSourceRevision {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .iter()
-            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
-    }
-}
-
-/// Exact project/document/module snapshot represented by one inventory.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SemanticSourceIdentity {
-    project: CallablePackageId,
-    document: SemanticDocumentId,
-    module: CanonicalModulePath,
-    revision: SemanticSourceRevision,
-    source_len: usize,
-}
-
-impl SemanticSourceIdentity {
-    #[must_use]
-    pub fn from_source(
-        project: CallablePackageId,
-        document: SemanticDocumentId,
-        module: CanonicalModulePath,
-        source: &str,
-    ) -> Self {
-        Self {
-            project,
-            document,
-            module,
-            revision: SemanticSourceRevision::from_source(source),
-            source_len: source.len(),
-        }
-    }
-
-    #[must_use]
-    pub fn from_revision(
-        project: CallablePackageId,
-        document: SemanticDocumentId,
-        module: CanonicalModulePath,
-        revision: SemanticSourceRevision,
-        source_len: usize,
-    ) -> Self {
-        Self {
-            project,
-            document,
-            module,
-            revision,
-            source_len,
-        }
-    }
-
-    #[must_use]
-    pub const fn project(&self) -> &CallablePackageId {
-        &self.project
-    }
-
-    #[must_use]
-    pub const fn document(&self) -> &SemanticDocumentId {
-        &self.document
-    }
-
-    #[must_use]
-    pub const fn module(&self) -> &CanonicalModulePath {
-        &self.module
-    }
-
-    #[must_use]
-    pub const fn revision(&self) -> SemanticSourceRevision {
-        self.revision
-    }
-
-    #[must_use]
-    pub const fn source_len(&self) -> usize {
-        self.source_len
-    }
-}
-
 /// Invalid exact-source inventory supplied before checking begins.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CanonicalizationSourceSetError {
-    #[error("canonicalization source set mixes project `{expected}` with `{actual}`")]
-    MixedProject {
-        expected: CallablePackageId,
-        actual: CallablePackageId,
-    },
     #[error("canonicalization source set contains duplicate module `{module}")]
     DuplicateModule { module: CanonicalModulePath },
 }
@@ -154,23 +21,16 @@ pub enum CanonicalizationSourceSetError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalizationSourceSet {
     project: CallablePackageId,
-    sources: BTreeMap<CanonicalModulePath, SemanticSourceIdentity>,
+    sources: BTreeMap<CanonicalModulePath, SourceSpan>,
 }
 
 impl CanonicalizationSourceSet {
     pub fn try_new(
         project: CallablePackageId,
-        sources: impl IntoIterator<Item = SemanticSourceIdentity>,
+        sources: impl IntoIterator<Item = (CanonicalModulePath, SourceSpan)>,
     ) -> Result<Self, CanonicalizationSourceSetError> {
         let mut source_map = BTreeMap::new();
-        for source in sources {
-            if source.project() != &project {
-                return Err(CanonicalizationSourceSetError::MixedProject {
-                    expected: project,
-                    actual: source.project().clone(),
-                });
-            }
-            let module = source.module().clone();
+        for (module, source) in sources {
             if source_map.insert(module.clone(), source).is_some() {
                 return Err(CanonicalizationSourceSetError::DuplicateModule { module });
             }
@@ -187,20 +47,25 @@ impl CanonicalizationSourceSet {
     }
 
     #[must_use]
-    pub fn source(&self, module: &CanonicalModulePath) -> Option<&SemanticSourceIdentity> {
+    pub fn source(&self, module: &CanonicalModulePath) -> Option<&SourceDocumentIdentity> {
+        self.sources.get(module).map(SourceSpan::source)
+    }
+
+    pub(crate) fn resolution_span(&self, module: &CanonicalModulePath) -> Option<&SourceSpan> {
         self.sources.get(module)
     }
 
-    pub fn sources(&self) -> impl ExactSizeIterator<Item = &SemanticSourceIdentity> {
-        self.sources.values()
+    pub fn sources(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&CanonicalModulePath, &SourceDocumentIdentity)> {
+        self.sources
+            .iter()
+            .map(|(module, span)| (module, span.source()))
     }
 
     #[must_use]
-    pub fn first_document(&self) -> Option<&SemanticDocumentId> {
-        self.sources
-            .values()
-            .next()
-            .map(SemanticSourceIdentity::document)
+    pub fn first_document(&self) -> Option<&SourceDocumentId> {
+        self.sources.values().next().map(|span| span.source().id())
     }
 }
 
@@ -245,6 +110,9 @@ pub enum SemanticSymbolIdentity {
     },
     Callable {
         declaration: CallableDeclarationId,
+    },
+    Character {
+        owner: arcweft_character::id::CharacterId,
     },
     ModuleValue {
         module: CanonicalModulePath,
@@ -341,13 +209,15 @@ impl CheckedSpeakerLine {
 /// Narrow sema-owned input consumed by tooling for one document/module.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCanonicalizationInventory {
-    source: SemanticSourceIdentity,
+    module: CanonicalModulePath,
+    source: SourceDocumentIdentity,
     speaker_lines: Vec<CheckedSpeakerLine>,
 }
 
 impl CheckedCanonicalizationInventory {
     pub(crate) fn new(
-        source: SemanticSourceIdentity,
+        module: CanonicalModulePath,
+        source: SourceDocumentIdentity,
         mut speaker_lines: Vec<CheckedSpeakerLine>,
     ) -> Self {
         speaker_lines.sort_by_key(|line| {
@@ -355,13 +225,19 @@ impl CheckedCanonicalizationInventory {
             (range.start(), range.end(), line.reference().to_owned())
         });
         Self {
+            module,
             source,
             speaker_lines,
         }
     }
 
     #[must_use]
-    pub const fn source(&self) -> &SemanticSourceIdentity {
+    pub const fn module(&self) -> &CanonicalModulePath {
+        &self.module
+    }
+
+    #[must_use]
+    pub const fn source(&self) -> &SourceDocumentIdentity {
         &self.source
     }
 
@@ -375,13 +251,13 @@ impl CheckedCanonicalizationInventory {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("semantic data is unavailable for `{document}`: {reason}")]
 pub struct SemanticDataUnavailable {
-    document: SemanticDocumentId,
+    document: SourceDocumentId,
     reason: String,
 }
 
 impl SemanticDataUnavailable {
     #[must_use]
-    pub fn new(document: SemanticDocumentId, reason: impl Into<String>) -> Self {
+    pub fn new(document: SourceDocumentId, reason: impl Into<String>) -> Self {
         Self {
             document,
             reason: reason.into(),
@@ -389,7 +265,7 @@ impl SemanticDataUnavailable {
     }
 
     #[must_use]
-    pub const fn document(&self) -> &SemanticDocumentId {
+    pub const fn document(&self) -> &SourceDocumentId {
         &self.document
     }
 

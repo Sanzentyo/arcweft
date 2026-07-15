@@ -7,10 +7,11 @@ use super::runtime::profile::run_profile_phase;
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
-use arcweft_character::catalog::CharacterCatalog;
 use arcweft_compiler::{
     hir, parse,
-    project::{ProjectCompileDiagnostic, ProjectCompileError, compile_project_with_env},
+    project::{
+        ProjectCompilationContext, ProjectCompileDiagnostic, ProjectCompileError, compile_project,
+    },
 };
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
@@ -19,6 +20,10 @@ use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
 use arcweft_project::manifest::AuthoredResourceRoots;
+use arcweft_project_loader::{
+    environment::{ProjectLoadRequest, load_project_registration_facts},
+    project::LoadedProject,
+};
 use arcweft_runtime_accelerator::{
     RuntimePureAcceleratorConfig, RuntimePureBackendMode, RuntimePureWorkerCount,
     math::RuntimeMathBackend,
@@ -26,12 +31,15 @@ use arcweft_runtime_accelerator::{
 use arcweft_runtime_host::{NativeFileRoots, NativeTaskBridge};
 use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
 use arcweft_rust_abi::ArcweftRustManifest;
-use arcweft_source::{Diagnostic, DiagnosticSeverity, SourceName};
+use arcweft_source::{
+    Diagnostic, DiagnosticSeverity, SourceDocument, SourceDocumentId, SourceName,
+};
 use clap::Args;
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 #[derive(Args, Clone, Debug, Default)]
 pub(in crate::app) struct ProfileOptions {
@@ -43,6 +51,21 @@ pub(in crate::app) struct ProfileOptions {
         default_value = "arcw.toml"
     )]
     pub(in crate::app) manifest: PathBuf,
+}
+
+pub(in crate::app) struct SelectionSemanticContext {
+    base: TypeCheckEnv,
+    adapter_manifests: Vec<AdapterManifest>,
+}
+
+impl SelectionSemanticContext {
+    pub(in crate::app) const fn base(&self) -> &TypeCheckEnv {
+        &self.base
+    }
+
+    pub(in crate::app) fn adapter_manifests(&self) -> &[AdapterManifest] {
+        &self.adapter_manifests
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -70,8 +93,8 @@ impl SourceSelection {
 
     pub(in crate::app) fn manifest(&self) -> Option<&Path> {
         match self {
-            Self::Project { manifest, .. } => Some(manifest),
-            Self::Direct { .. } | Self::Profile { .. } => None,
+            Self::Project { manifest, .. } | Self::Profile { manifest, .. } => Some(manifest),
+            Self::Direct { .. } => None,
         }
     }
 
@@ -418,16 +441,17 @@ pub(in crate::app) fn load_and_check_selection(
     adapter_override: Option<&str>,
 ) -> Result<CheckedModule, ExitCode> {
     let mut phases = Vec::new();
-    let env = typecheck_env_for_selection(selection, adapter_override, &mut phases)?;
+    let semantic = semantic_context_for_selection(selection, adapter_override, &mut phases)?;
     if let Some(manifest) = selection.manifest() {
-        return load_and_check_project_with_env(manifest, &env, phases);
+        return load_and_check_project_with_env(manifest, selection, &semantic, phases);
     }
-    load_and_check_with_env(selection.path(), &env, phases)
+    load_and_check_with_env(selection.path(), semantic.base(), phases)
 }
 
 fn load_and_check_project_with_env(
     manifest: &Path,
-    env: &TypeCheckEnv,
+    selection: &SourceSelection,
+    semantic: &SelectionSemanticContext,
     mut phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
     let loaded = run_profile_phase(&mut phases, "load_project", || {
@@ -437,20 +461,79 @@ fn load_and_check_project_with_env(
         })
     })?;
     let runtime_options = RuntimePlanLowerOptions::default();
+    let source_document = Arc::clone(
+        loaded
+            .module_document(loaded.sources().root_module().module())
+            .expect("loaded projects retain their root source document"),
+    );
+    let context = project_compilation_context(&loaded, selection, semantic)?;
     let compiled = run_profile_phase(&mut phases, "project_compile", || {
-        compile_project_with_env(loaded.sources(), env, &runtime_options).map_err(|error| {
+        compile_project(loaded.sources(), &context, &runtime_options).map_err(|error| {
             print_project_compile_error(&error);
             ExitCode::FAILURE
         })
     })?;
     Ok(CheckedModule {
         hir: compiled.linked_hir().clone(),
-        env: env.clone(),
+        env: semantic.base().clone(),
+        source_document,
         syntax_warnings: compiled.syntax_warnings(),
         line_task_groups: compiled.line_task_groups().to_vec(),
         typecheck_report: compiled.typecheck_report().clone(),
         phases,
     })
+}
+
+pub(in crate::app) fn project_compilation_context(
+    loaded: &LoadedProject,
+    selection: &SourceSelection,
+    semantic: &SelectionSemanticContext,
+) -> Result<ProjectCompilationContext, ExitCode> {
+    let request = ProjectLoadRequest::new(loaded, selection.profile(), Vec::new(), Vec::new())
+        .with_adapter_manifests(semantic.adapter_manifests().iter().cloned());
+    let facts = load_project_registration_facts(&request).map_err(|error| {
+        eprintln!("error: failed to load project registration facts: {error}");
+        ExitCode::FAILURE
+    })?;
+    Ok(ProjectCompilationContext::new(
+        Arc::new(semantic.base().clone()),
+        Arc::new(facts),
+        None,
+    ))
+}
+
+pub(in crate::app) fn source_document_for_path(
+    path: &Path,
+    text: impl Into<Arc<str>>,
+) -> Result<SourceDocument, ExitCode> {
+    let package = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .ok_or_else(|| {
+            eprintln!("error: source path has no valid package identity");
+            ExitCode::FAILURE
+        })?;
+    let relative = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            eprintln!("error: source path has no valid project-relative name");
+            ExitCode::FAILURE
+        })?;
+    let id = SourceDocumentId::try_new(format!("arcweft-project://{package}/{relative}")).map_err(
+        |error| {
+            eprintln!("error: invalid source document identity: {error}");
+            ExitCode::FAILURE
+        },
+    )?;
+    SourceDocument::try_new(id, SourceName::path(path.display().to_string()), text).map_err(
+        |error| {
+            eprintln!("error: failed to construct source document: {error}");
+            ExitCode::FAILURE
+        },
+    )
 }
 
 pub(in crate::app) fn print_project_compile_error(error: &ProjectCompileError) {
@@ -464,22 +547,19 @@ fn emit_project_compile_diagnostic(
     emitter: &DiagnosticEmitter,
     diagnostic: &ProjectCompileDiagnostic,
 ) {
-    if let Some(source) = diagnostic.source()
-        && let Some(text) = source.text()
-    {
-        let diagnostic_source =
-            DiagnosticSource::from_display_path(source.name().display_name().to_owned(), text);
+    if let Some(source) = diagnostic.source() {
+        let diagnostic_source = DiagnosticSource::new(source.document());
         emitter.emit(diagnostic.diagnostic(), &diagnostic_source);
         return;
     }
     emitter.emit_without_source(diagnostic.diagnostic());
 }
 
-pub(in crate::app) fn typecheck_env_for_selection(
+pub(in crate::app) fn semantic_context_for_selection(
     selection: &SourceSelection,
     adapter_override: Option<&str>,
     phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<TypeCheckEnv, ExitCode> {
+) -> Result<SelectionSemanticContext, ExitCode> {
     let mut manifest = adapter_manifest_for_selection(selection, adapter_override)?;
     if adapter_override.is_none() && selection.profile().is_some() {
         let manifests = run_profile_phase(phases, "rust_metadata", || {
@@ -489,25 +569,22 @@ pub(in crate::app) fn typecheck_env_for_selection(
             manifest = manifest.with_rust_manifest(&rust_manifest);
         }
     }
-    let characters = if selection.profile().is_some() {
-        run_profile_phase(phases, "character_manifests", || {
-            character_catalog_for_selection(selection)
-        })?
-    } else {
-        CharacterCatalog::new()
-    };
     let env = if adapter_override.is_some() || selection.profile().is_some() {
         manifest.apply_to_target_env(TypeCheckEnv::standard())
     } else {
         manifest.apply_to_env(TypeCheckEnv::standard())
     };
-    let env = characters.manifests().fold(
-        env,
-        arcweft_lang_sema::env::TypeCheckEnv::with_character_manifest,
-    );
-    Ok(arcweft_adapter_desktop::standard_desktop_manifests()
-        .into_iter()
-        .fold(env, |env, manifest| manifest.apply_to_env(env)))
+    let desktop = arcweft_adapter_desktop::standard_desktop_manifests();
+    let env = desktop
+        .iter()
+        .fold(env, |env, manifest| manifest.apply_to_env(env));
+    let mut adapter_manifests = Vec::with_capacity(desktop.len() + 1);
+    adapter_manifests.push(manifest);
+    adapter_manifests.extend(desktop);
+    Ok(SelectionSemanticContext {
+        base: env,
+        adapter_manifests,
+    })
 }
 
 pub(in crate::app) fn adapter_manifest_for_selection(
@@ -564,32 +641,6 @@ fn adapter_registry_for_selection(
         })
 }
 
-fn character_catalog_for_selection(
-    selection: &SourceSelection,
-) -> Result<CharacterCatalog, ExitCode> {
-    let Some(profile) = selection.profile() else {
-        return Ok(CharacterCatalog::new());
-    };
-    let mut catalog = CharacterCatalog::new();
-    for path in profile.character_manifests() {
-        let manifest = arcweft_project_loader::character_manifest::load(path).map_err(|error| {
-            eprintln!(
-                "error: failed to load character manifest {}: {error}",
-                path.display()
-            );
-            ExitCode::FAILURE
-        })?;
-        catalog.insert(manifest).map_err(|error| {
-            eprintln!(
-                "error: failed to register character manifest {}: {error}",
-                path.display()
-            );
-            ExitCode::FAILURE
-        })?;
-    }
-    Ok(catalog)
-}
-
 fn rust_metadata_for_selection(
     selection: &SourceSelection,
 ) -> Result<Vec<ArcweftRustManifest>, ExitCode> {
@@ -614,6 +665,7 @@ fn rust_metadata_for_selection(
 pub(crate) struct CheckedModule {
     pub(crate) hir: arcweft_lang_hir::model::HirModule,
     pub(crate) env: TypeCheckEnv,
+    pub(crate) source_document: Arc<SourceDocument>,
     pub(crate) syntax_warnings: usize,
     pub(crate) line_task_groups: Vec<LoweredLineTaskGroup>,
     pub(crate) typecheck_report: TypeCheckReport,
@@ -635,26 +687,26 @@ fn emit_phase_error_diagnostics(
 
 fn emit_parse_error_diagnostics(
     parsed: &ParsedSource,
-    source_name: &SourceName,
+    document: &SourceDocument,
     emitter: &DiagnosticEmitter,
     diagnostic_source: &DiagnosticSource<'_>,
 ) {
     let diagnostics = parsed
         .errors()
         .iter()
-        .map(|error| error.diagnostic(source_name))
+        .map(|error| error.diagnostic(document))
         .collect::<Vec<_>>();
     emitter.emit_all(&diagnostics, diagnostic_source);
 }
 
 fn emit_syntax_lint_diagnostics(
     lints: &[SyntaxLint],
-    source_name: &SourceName,
+    document: &SourceDocument,
     emitter: &DiagnosticEmitter,
     diagnostic_source: &DiagnosticSource<'_>,
 ) {
     for lint in lints {
-        emitter.emit(&lint.diagnostic(source_name), diagnostic_source);
+        emitter.emit(&lint.diagnostic(document), diagnostic_source);
     }
 }
 
@@ -673,19 +725,23 @@ pub(in crate::app) fn load_and_check_with_env(
             ExitCode::FAILURE
         })
     })?;
+    let document = Arc::new(source_document_for_path(path, source)?);
 
     let parsed = run_profile_phase(&mut phases, "parse", || {
-        catch_unwind(AssertUnwindSafe(|| parse::parse_source_text(source))).map_err(|_| {
+        catch_unwind(AssertUnwindSafe(|| {
+            parse::parse_source_text(document.text().to_owned())
+        }))
+        .map_err(|_| {
             eprintln!("error: parser panicked while checking {}", path.display());
             ExitCode::FAILURE
         })
     })?;
     let source_text = parsed.source().to_owned();
-    let source_name = SourceName::path(path.display().to_string());
-    let diagnostic_source = DiagnosticSource::new(path, &source_text);
+    debug_assert_eq!(source_text, document.text());
+    let diagnostic_source = DiagnosticSource::new(&document);
     let emitter = DiagnosticEmitter::stderr();
     if !parsed.errors().is_empty() {
-        emit_parse_error_diagnostics(&parsed, &source_name, &emitter, &diagnostic_source);
+        emit_parse_error_diagnostics(&parsed, &document, &emitter, &diagnostic_source);
         return Err(ExitCode::FAILURE);
     }
 
@@ -693,13 +749,13 @@ pub(in crate::app) fn load_and_check_with_env(
     let lints = run_profile_phase(&mut phases, "lint", || {
         Ok::<Vec<SyntaxLint>, ExitCode>(parse::lint_source_tree(&tree))
     })?;
-    emit_syntax_lint_diagnostics(&lints, &source_name, &emitter, &diagnostic_source);
+    emit_syntax_lint_diagnostics(&lints, &document, &emitter, &diagnostic_source);
     if parse::has_error_lints(&lints) {
         return Err(ExitCode::FAILURE);
     }
 
     let hir = run_profile_phase(&mut phases, "lower_hir", || {
-        hir::lower_source_tree(&tree).map_err(|errors| {
+        hir::lower_source_document(&document, &tree).map_err(|errors| {
             emit_phase_error_diagnostics(
                 &emitter,
                 &diagnostic_source,
@@ -759,6 +815,7 @@ pub(in crate::app) fn load_and_check_with_env(
     Ok(CheckedModule {
         hir,
         env: env.clone(),
+        source_document: document,
         syntax_warnings: parse::count_warning_lints(&lints),
         line_task_groups,
         typecheck_report,

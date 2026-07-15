@@ -3,7 +3,7 @@ use super::{
     ChunkId, ChunkSourceKind, DebugChunk, DebugGraphEdge, DebugGraphSymbol, DebugSourceAnchor,
     DebugSourceFile, EntitySymbol, Path, PathBuf, PrivacyClass, ProgramHash, ProjectCallableSymbol,
     ProjectSemanticIndex, QualifiedName, RagQuery, SearchChannel, SearchHit, SemaPublicId,
-    SessionId, SourceAnchor, SourceName, StableHash, agent_graph_edge_kind_counts,
+    SessionId, SourceAnchor, StableHash, agent_graph_edge_kind_counts,
     agent_graph_symbol_has_dynamic_control, agent_graph_symbol_kind_counts,
     agent_program_graph_summary, agent_trace_kind_name, fs, hir, parse,
     project_semantic_index_from_hir,
@@ -85,6 +85,8 @@ pub(in crate::app::agent) fn agent_source_rag_index(
 ) -> Result<AgentSourceRagIndex, String> {
     let source = fs::read_to_string(path)
         .map_err(|error| format!("agent rag query failed to read source: {error}"))?;
+    let document = crate::app::project::source_document_for_path(path, source.clone())
+        .map_err(|code| format!("agent rag source document is invalid: {code:?}"))?;
     let parsed = parse::parse_source_text(source.clone());
     if !parsed.errors().is_empty() {
         return Err(format!(
@@ -92,12 +94,11 @@ pub(in crate::app::agent) fn agent_source_rag_index(
             parsed.errors()
         ));
     }
-    let hir = hir::lower_source_tree(parsed.typed_tree())
+    let hir = hir::lower_source_document(&document, parsed.typed_tree())
         .map_err(|errors| format!("agent rag query source HIR errors: {errors:?}"))?;
     let source_hash = agent_content_hash(&source);
-    let source_name = SourceName::path(path.display().to_string());
     let project =
-        project_semantic_index_from_hir(&hir, ProgramHash::new(source_hash.clone()), &source_name)
+        project_semantic_index_from_hir(&hir, ProgramHash::new(source_hash.clone()), &document)
             .map_err(|error| format!("agent rag query failed to build project index: {error}"))?;
     let source_file = DebugSourceFile {
         program_hash: StableHash::new(project.program_hash().as_str())
@@ -1525,16 +1526,13 @@ pub(in crate::app::agent) fn agent_public_id_from_sema(
 pub(in crate::app::agent) fn debug_anchor_from_source_anchor(
     anchor: &SourceAnchor,
 ) -> Result<Option<DebugSourceAnchor>, String> {
-    match anchor.source() {
-        SourceName::Path(path) => Ok(Some(DebugSourceAnchor {
-            path: path.clone(),
-            start_byte: u64::try_from(anchor.byte_range().start)
-                .map_err(|_| "source anchor start byte overflowed u64".to_owned())?,
-            end_byte: u64::try_from(anchor.byte_range().end)
-                .map_err(|_| "source anchor end byte overflowed u64".to_owned())?,
-        })),
-        SourceName::Generated => Ok(None),
-    }
+    Ok(Some(DebugSourceAnchor {
+        path: anchor.source().id().as_str().to_owned(),
+        start_byte: u64::try_from(anchor.byte_range().start)
+            .map_err(|_| "source anchor start byte overflowed u64".to_owned())?,
+        end_byte: u64::try_from(anchor.byte_range().end)
+            .map_err(|_| "source anchor end byte overflowed u64".to_owned())?,
+    }))
 }
 
 pub(in crate::app::agent) fn debug_source_anchor(
@@ -1551,16 +1549,11 @@ pub(in crate::app::agent) fn debug_source_anchor(
 }
 
 pub(in crate::app::agent) fn source_anchor_json(anchor: &SourceAnchor) -> serde_json::Value {
-    match anchor.source() {
-        SourceName::Path(path) => serde_json::json!({
-            "path": path,
-            "start_byte": anchor.byte_range().start,
-            "end_byte": anchor.byte_range().end,
-        }),
-        SourceName::Generated => serde_json::json!({
-            "generated": true,
-        }),
-    }
+    serde_json::json!({
+        "document": anchor.source().id().as_str(),
+        "start_byte": anchor.byte_range().start,
+        "end_byte": anchor.byte_range().end,
+    })
 }
 
 pub(in crate::app::agent) fn agent_trace_record_privacy(record: &AgentTraceRecord) -> PrivacyClass {

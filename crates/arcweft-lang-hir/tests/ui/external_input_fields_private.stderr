@@ -1,0 +1,13 @@
+error[E0451]: fields `canonical_path`, `visibility`, `declaration` and `direct_bindings` of struct `ExternalDeclarationSeed` are private
+ --> tests/ui/external_input_fields_private.rs:5:9
+  |
+4 |     let ExternalDeclarationSeed {
+  |         ----------------------- in this type
+5 |         canonical_path,
+  |         ^^^^^^^^^^^^^^ private field
+6 |         visibility,
+  |         ^^^^^^^^^^ private field
+7 |         declaration,
+  |         ^^^^^^^^^^^ private field
+8 |         direct_bindings,
+  |         ^^^^^^^^^^^^^^^ private field

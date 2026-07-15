@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 arcweft-id = { path = "../arcweft-id" }
+arcweft-source = { path = "../arcweft-source" }
+blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

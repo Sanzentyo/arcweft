@@ -3,10 +3,12 @@ use crate::{
     manifest::ProjectManifest,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_source::SourceDocument;
 use std::{
     collections::BTreeMap,
     fmt::Write as _,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use thiserror::Error;
 
@@ -19,7 +21,7 @@ pub struct ModuleSourceHash([u8; 32]);
 pub struct ProjectSourceFile {
     module: CanonicalModulePath,
     path: PathBuf,
-    source: String,
+    document: Arc<SourceDocument>,
     source_hash: ModuleSourceHash,
     dependencies: Vec<ModuleDependency>,
 }
@@ -70,15 +72,15 @@ impl ProjectSourceFile {
     pub fn new(
         module: CanonicalModulePath,
         path: PathBuf,
-        source: String,
+        document: Arc<SourceDocument>,
         dependencies: impl IntoIterator<Item = ModuleDependency>,
     ) -> Self {
-        let source_hash = ModuleSourceHash::from_source(&source);
+        let source_hash = ModuleSourceHash::from_source(document.text());
         let dependencies = ModuleDependency::normalize(dependencies);
         Self {
             module,
             path,
-            source,
+            document,
             source_hash,
             dependencies,
         }
@@ -93,7 +95,11 @@ impl ProjectSourceFile {
     }
 
     pub fn source(&self) -> &str {
-        &self.source
+        self.document.text()
+    }
+
+    pub fn document(&self) -> &Arc<SourceDocument> {
+        &self.document
     }
 
     pub const fn source_hash(&self) -> ModuleSourceHash {

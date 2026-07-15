@@ -1,0 +1,11 @@
+error[E0432]: unresolved import `arcweft_compiler::project::compile_project_with_env`
+ --> tests/ui/compile_project_with_env_removed.rs:1:5
+  |
+1 | use arcweft_compiler::project::compile_project_with_env;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `compile_project_with_env` in `project`
+  |
+help: a similar name exists in the module
+  |
+1 - use arcweft_compiler::project::compile_project_with_env;
+1 + use arcweft_compiler::project::compile_project_with_cache;
+  |

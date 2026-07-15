@@ -1,0 +1,11 @@
+error[E0432]: unresolved import `arcweft_lang_sema::types::CharacterNominalKind`
+ --> tests/ui/character_nominal_kind_removed.rs:1:5
+  |
+1 | use arcweft_lang_sema::types::CharacterNominalKind;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `CharacterNominalKind` in `types`
+  |
+help: a similar name exists in the module
+  |
+1 - use arcweft_lang_sema::types::CharacterNominalKind;
+1 + use arcweft_lang_sema::types::CharacterNominalType;
+  |

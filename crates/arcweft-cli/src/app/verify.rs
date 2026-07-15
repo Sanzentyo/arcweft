@@ -1,4 +1,4 @@
-use super::diagnostics::emit_diagnostics_for_path;
+use super::diagnostics::emit_diagnostics;
 use super::project::{
     CheckedModule, ProfileOptions, SourceSelection, load_and_check_selection,
     native_host_policy_for_selection, resolve_source_selection, runtime_plan_options_for_selection,
@@ -27,7 +27,6 @@ use arcweft_core::{
     value::RuntimeBinding,
 };
 use arcweft_runtime_host::NativeAdapterRegistrar;
-use arcweft_source::SourceName;
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport,
     smt::{SmtBackend, SmtEmission},
@@ -69,7 +68,7 @@ pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     if options.json {
         print_json(&report)?;
     } else {
-        emit_verifier_diagnostics(&selection, &report);
+        emit_verifier_diagnostics(&checked.source_document, &report);
         let status = if report.has_errors() || report.has_solver_failures() {
             "failed"
         } else {
@@ -379,10 +378,12 @@ pub(in crate::app) struct UnsafeOptions {
     json: bool,
 }
 
-fn emit_verifier_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
-    let source_name = SourceName::path(selection.path().display().to_string());
-    let diagnostics = report.source_diagnostics(&source_name);
-    emit_diagnostics_for_path(selection.path(), &diagnostics);
+fn emit_verifier_diagnostics(
+    document: &arcweft_source::SourceDocument,
+    report: &VerificationReport,
+) {
+    let diagnostics = report.source_diagnostics(document);
+    emit_diagnostics(document, &diagnostics);
 }
 
 fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ExitCode> {

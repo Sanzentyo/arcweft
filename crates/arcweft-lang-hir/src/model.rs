@@ -20,8 +20,10 @@ use arcweft_lang_syntax::{
     types::FnSignature,
 };
 use arcweft_source::{
-    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceName, SourceRange, SourceSpan,
+    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceDocument, SourceDocumentIdentity,
+    SourceRange, SourceSpan,
 };
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::style::{HirStyleDecl, HirStylePatch};
@@ -43,6 +45,14 @@ pub struct HirModule {
     pub(crate) declarations: Vec<HirTopLevelDecl>,
     pub(crate) style_patches: Vec<HirStylePatch>,
     pub(crate) top_level_items: Vec<HirFlowItem>,
+    pub(crate) source_map: Option<HirSourceMap>,
+}
+
+/// Revision-bound spans created by the source document during lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HirSourceMap {
+    document: SourceDocument,
+    project_documents: BTreeMap<CanonicalModulePath, SourceDocument>,
 }
 
 /// HIR-facing flow.
@@ -102,8 +112,15 @@ pub enum HirTopLevelDecl {
     Test(TestItem),
     Bench(BenchItem),
     Parser(ParserItem),
-    Source(SourceItem),
+    Source(HirSource),
     Style(HirStyleDecl),
+}
+
+/// HIR-owned source declaration with its canonical project-module origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirSource {
+    module_path: Option<CanonicalModulePath>,
+    item: SourceItem,
 }
 
 /// HIR-facing flow item.
@@ -322,6 +339,66 @@ pub struct HirLowerError {
 }
 
 impl HirModule {
+    pub(crate) fn bind_source_document(
+        &mut self,
+        document: &SourceDocument,
+    ) -> Result<(), HirLowerError> {
+        if self.source_len != Some(document.text().len()) {
+            return Err(HirLowerError::new(
+                "HIR source length does not match the source document",
+                None,
+            ));
+        }
+        self.source_map = Some(HirSourceMap {
+            document: document.clone(),
+            project_documents: BTreeMap::new(),
+        });
+        Ok(())
+    }
+
+    pub(crate) fn bound_source_identity(&self) -> Option<&SourceDocumentIdentity> {
+        self.source_map
+            .as_ref()
+            .map(|source| source.document.identity())
+    }
+
+    pub(crate) fn bind_project_module(&mut self, module: &CanonicalModulePath) {
+        if let Some(source_map) = &mut self.source_map {
+            source_map
+                .project_documents
+                .insert(module.clone(), source_map.document.clone());
+        }
+    }
+
+    pub(crate) fn merge_project_sources(&mut self, appended: &mut Self) {
+        if let (Some(linked), Some(appended)) = (&mut self.source_map, appended.source_map.take()) {
+            linked.project_documents.extend(appended.project_documents);
+        }
+    }
+
+    /// Binds one authored HIR range to the exact document revision lowered into this module.
+    pub fn source_span(&self, range: TextRange) -> Option<SourceSpan> {
+        self.source_map
+            .as_ref()?
+            .document
+            .span(SourceRange::new(range.start(), range.end()))
+            .ok()
+    }
+
+    /// Binds one authored range through the canonical module that owns it in a linked project.
+    pub fn project_source_span(
+        &self,
+        module: &CanonicalModulePath,
+        range: TextRange,
+    ) -> Option<SourceSpan> {
+        self.source_map
+            .as_ref()?
+            .project_documents
+            .get(module)?
+            .span(SourceRange::new(range.start(), range.end()))
+            .ok()
+    }
+
     pub fn attributes(&self) -> &[Attribute] {
         &self.attributes
     }
@@ -384,6 +461,26 @@ impl HirModule {
 
     pub fn top_level_items(&self) -> &[HirFlowItem] {
         &self.top_level_items
+    }
+}
+
+impl HirSource {
+    pub(crate) fn new(item: SourceItem, module_path: Option<CanonicalModulePath>) -> Self {
+        Self { module_path, item }
+    }
+
+    /// Canonical project module that owns this declaration after project binding.
+    pub const fn module_path(&self) -> Option<&CanonicalModulePath> {
+        self.module_path.as_ref()
+    }
+
+    /// Parsed source declaration retained at the syntax-to-HIR boundary.
+    pub const fn item(&self) -> &SourceItem {
+        &self.item
+    }
+
+    pub(crate) fn bind_project_module(&mut self, module: &CanonicalModulePath) {
+        self.module_path = Some(module.clone());
     }
 }
 
@@ -948,12 +1045,18 @@ impl HirLowerError {
     }
 
     /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
-    pub fn diagnostic(&self, source: &SourceName) -> Diagnostic {
+    ///
+    /// # Panics
+    ///
+    /// Panics when the supplied document is not the revision-bound document from which this
+    /// lowering error was produced.
+    pub fn diagnostic(&self, document: &SourceDocument) -> Diagnostic {
         let mut diagnostic =
             Diagnostic::new(DiagnosticSeverity::Error, self.message.clone()).with_code("hir.lower");
         if let Some(range) = self.range.as_ref() {
-            let span =
-                SourceSpan::new(source.clone(), SourceRange::new(range.start(), range.end()));
+            let span = document
+                .span(SourceRange::new(range.start(), range.end()))
+                .expect("a HIR lowering range belongs to the document that was lowered");
             diagnostic = diagnostic.with_label(DiagnosticLabel::primary(
                 span,
                 Some("HIR lowering failed here".to_owned()),

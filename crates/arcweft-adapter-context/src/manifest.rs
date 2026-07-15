@@ -1,15 +1,39 @@
 //! Typed adapter manifest model shared by product adapters, CLI, LSP, and semantic checking.
 
 #[cfg(feature = "sema")]
+use arcweft_lang_hir::symbol::{
+    ExternalDeclarationSeed, ExternalDeclarationSeedError, ProjectDirectBinding,
+};
+#[cfg(feature = "sema")]
 use arcweft_lang_sema::env::{EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv};
 #[cfg(feature = "sema")]
+use arcweft_lang_sema::registration::{
+    EnvironmentBindingId, EnvironmentBindingIdError, ExternalRegistrationFact,
+    RegisteredExternalOwner,
+};
+#[cfg(feature = "sema")]
 use arcweft_lang_sema::types::TypeKind;
+#[cfg(feature = "sema")]
+use arcweft_lang_syntax::ast::{
+    common::Visibility,
+    module_path::{CanonicalModulePath, ModulePathRoot},
+    symbol_path::{SymbolPath, SymbolPathError},
+};
 #[cfg(feature = "sema")]
 use arcweft_rust_abi::ArcweftRustTypeKind;
 use arcweft_rust_abi::{
     ArcweftRustFunction, ArcweftRustManifest, ArcweftRustParam, ArcweftRustTypeDecl,
     ArcweftRustTypeRef,
 };
+#[cfg(feature = "sema")]
+use arcweft_source::{
+    SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
+    SourceRange, SourceSpanError,
+};
+#[cfg(feature = "sema")]
+use std::{fmt::Write as _, sync::Arc};
+#[cfg(feature = "sema")]
+use thiserror::Error;
 
 /// Stable adapter identifier used by launch profiles and tooling.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -171,6 +195,32 @@ pub struct AdapterManifest {
     rust_functions: Vec<AdapterRustFunction>,
     rust_types: Vec<AdapterRustType>,
     tooling_docs: Vec<AdapterToolingDoc>,
+}
+
+/// One adapter's deterministic generated source and typed external contributions.
+#[cfg(feature = "sema")]
+#[derive(Clone, Debug)]
+pub struct SourceBackedAdapterRegistrationFacts {
+    document: Arc<SourceDocument>,
+    externals: Vec<ExternalRegistrationFact>,
+}
+
+/// Failure while binding adapter facts to one generated source revision.
+#[cfg(feature = "sema")]
+#[derive(Debug, Error)]
+pub enum AdapterRegistrationFactsError {
+    #[error(transparent)]
+    DocumentId(#[from] SourceDocumentIdError),
+    #[error(transparent)]
+    Document(#[from] SourceDocumentError),
+    #[error(transparent)]
+    Span(#[from] SourceSpanError),
+    #[error(transparent)]
+    SymbolPath(#[from] SymbolPathError),
+    #[error(transparent)]
+    ExternalDeclaration(#[from] ExternalDeclarationSeedError),
+    #[error(transparent)]
+    EnvironmentBinding(#[from] EnvironmentBindingIdError),
 }
 
 /// Collection used to resolve launch-profile adapter ids.
@@ -472,6 +522,66 @@ impl AdapterManifest {
         &self.display_name
     }
 
+    /// Binds every registration-visible base fact to one deterministic generated document.
+    #[cfg(feature = "sema")]
+    pub fn source_backed_registration_facts(
+        &self,
+        ordinal: u64,
+    ) -> Result<SourceBackedAdapterRegistrationFacts, AdapterRegistrationFactsError> {
+        let mut source = String::new();
+        writeln!(&mut source, "adapter-manifest-v1 {self:#?}")
+            .expect("writing adapter facts to a String cannot fail");
+        let mut symbols = self.symbols.iter().collect::<Vec<_>>();
+        symbols.sort_by(|left, right| {
+            left.name()
+                .cmp(right.name())
+                .then_with(|| format!("{:?}", left.ty()).cmp(&format!("{:?}", right.ty())))
+        });
+        let mut symbol_ranges = Vec::with_capacity(symbols.len());
+        for symbol in symbols {
+            source.push_str("symbol ");
+            let start = source.len();
+            source.push_str(symbol.name());
+            let end = source.len();
+            source.push('\n');
+            symbol_ranges.push((symbol.name().to_owned(), SourceRange::new(start, end)));
+        }
+
+        let document = Arc::new(SourceDocument::try_new(
+            SourceDocumentId::try_new(format!("arcweft-generated://adapter-context/{ordinal}"))?,
+            SourceName::Generated,
+            source,
+        )?);
+        let mut externals = Vec::with_capacity(symbol_ranges.len());
+        for (name, range) in symbol_ranges {
+            let declaration = document.span(range)?;
+            let canonical_path =
+                SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), name.clone())?;
+            let direct_binding = ProjectDirectBinding::try_new(
+                CanonicalModulePath::crate_root(),
+                name.clone(),
+                Some(Visibility::Public),
+                declaration.clone(),
+                false,
+            )?;
+            let seed = ExternalDeclarationSeed::try_new(
+                canonical_path,
+                Some(Visibility::Public),
+                declaration.clone(),
+                vec![direct_binding],
+            )?;
+            externals.push(ExternalRegistrationFact::new(
+                seed,
+                RegisteredExternalOwner::Environment(EnvironmentBindingId::try_new(name)?),
+                declaration,
+            ));
+        }
+        Ok(SourceBackedAdapterRegistrationFacts {
+            document,
+            externals,
+        })
+    }
+
     /// Adds one injected symbol.
     #[must_use]
     pub fn with_symbol(mut self, name: impl Into<String>, ty: AdapterTypeKind) -> Self {
@@ -669,6 +779,21 @@ impl AdapterManifest {
     }
 }
 
+#[cfg(feature = "sema")]
+impl SourceBackedAdapterRegistrationFacts {
+    pub fn document(&self) -> &Arc<SourceDocument> {
+        &self.document
+    }
+
+    pub fn externals(&self) -> &[ExternalRegistrationFact] {
+        &self.externals
+    }
+
+    pub fn into_parts(self) -> (Arc<SourceDocument>, Vec<ExternalRegistrationFact>) {
+        (self.document, self.externals)
+    }
+}
+
 impl AdapterRegistry {
     /// Creates an empty registry.
     pub fn new() -> Self {
@@ -737,13 +862,15 @@ fn apply_rust_type_to_env(env: TypeCheckEnv, ty: &AdapterRustType) -> TypeCheckE
     let type_kind = TypeKind::Named(ty.decl.name.clone());
     let env = env.with_rust_type_export(ty.package.clone(), ty.decl.name.clone());
     match &ty.decl.kind {
-        ArcweftRustTypeKind::Enum { variants } => env.with_enum_variants(
-            type_kind,
-            variants
-                .iter()
-                .filter(|variant| variant.fields.is_empty())
-                .map(|variant| variant.name.clone()),
-        ),
+        ArcweftRustTypeKind::Enum { variants } => env
+            .try_with_enum_variants(
+                type_kind,
+                variants
+                    .iter()
+                    .filter(|variant| variant.fields.is_empty())
+                    .map(|variant| variant.name.clone()),
+            )
+            .expect("Rust adapter enum types are ordinary nominal types"),
         ArcweftRustTypeKind::Struct { .. } | ArcweftRustTypeKind::Newtype { .. } => env,
     }
 }
@@ -916,6 +1043,42 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "sema")]
+    #[test]
+    fn source_backed_adapter_facts_bind_exact_environment_keys_and_base_revision() {
+        let first_manifest = AdapterManifest::new("fixture", "Fixture")
+            .with_symbol("adapter.viewport", AdapterTypeKind::I32);
+        let changed_manifest = AdapterManifest::new("fixture", "Fixture")
+            .with_symbol("adapter.viewport", AdapterTypeKind::I64);
+        let first = first_manifest
+            .source_backed_registration_facts(7)
+            .expect("first source-backed facts");
+        let changed = changed_manifest
+            .source_backed_registration_facts(7)
+            .expect("changed source-backed facts");
+
+        assert_eq!(
+            first.document().identity().id().as_str(),
+            "arcweft-generated://adapter-context/7"
+        );
+        assert_ne!(
+            first.document().identity().revision(),
+            changed.document().identity().revision(),
+            "a base-environment type change must change the complete fact revision"
+        );
+        assert_eq!(first.externals().len(), 1);
+        assert!(matches!(
+            first.externals()[0].target(),
+            RegisteredExternalOwner::Environment(id)
+                if id.as_str() == "adapter.viewport"
+        ));
+        let base = first_manifest.apply_to_env(TypeCheckEnv::new());
+        let RegisteredExternalOwner::Environment(id) = first.externals()[0].target() else {
+            panic!("adapter symbol must register an environment owner");
+        };
+        assert_eq!(base.environment_binding(id), Some(&TypeKind::I32));
+    }
+
     #[test]
     fn rust_manifest_injects_full_function_signature() {
         let manifest = ArcweftRustManifest::new(ArcweftRustPackage {
@@ -1036,7 +1199,8 @@ mod tests {
                     )
                 )
                 .with_rust_type_export("truck_game", "Rank")
-                .with_enum_variants(TypeKind::Named("Rank".to_owned()), ["Bronze"])
+                .try_with_enum_variants(TypeKind::Named("Rank".to_owned()), ["Bronze"])
+                .expect("non-character Rust enum variants are accepted")
         );
     }
 }

@@ -502,7 +502,7 @@ mod tests {
             .to_json_pretty()
             .expect("json")
             .replace("\"blend\": \"normal\"", "\"blend\": \"overlay\"");
-        manifest = CharacterManifest::from_json(&json).expect("manifest");
+        manifest = CharacterManifest::decode_runtime_json(&json).expect("manifest");
         let render = CharacterRenderSpec::from_manifest_default(&manifest).expect("render");
         let mut images = CharacterImageSet::new();
         images.insert(

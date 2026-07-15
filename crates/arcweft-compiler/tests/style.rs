@@ -1,12 +1,13 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use arcweft_compiler::error::CompileSourceError;
-use arcweft_compiler::project::compile_project_with_env;
+use arcweft_compiler::project::{ProjectCompilationContext, compile_project};
 use arcweft_compiler::source::compile_source;
 use arcweft_compiler::style::ViewStyleLowerError;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
-use arcweft_lang_sema::env::TypeCheckEnv;
+use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use arcweft_lang_syntax::ast::view::{ViewExpr, ViewModifier};
@@ -14,7 +15,24 @@ use arcweft_project::graph::ModuleDependency;
 use arcweft_project::manifest::ProjectManifest;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId};
+
+fn project_context(project: &ProjectSources) -> ProjectCompilationContext {
+    let documents = project
+        .modules()
+        .map(|source| Arc::clone(source.document()))
+        .collect::<Vec<_>>();
+    let root = project.root_module().document();
+    let package = CallablePackageId::try_new(project.manifest().package().name().as_str())
+        .expect("package id");
+    let world =
+        ProjectSymbolWorldId::try_new(package, root.identity().id().clone(), "compiler-style-test")
+            .expect("symbol world");
+    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
+        .expect("registration facts");
+    ProjectCompilationContext::new(Arc::new(TypeCheckEnv::standard()), Arc::new(facts), None)
+}
 
 #[test]
 fn style_compiler_lowers_owned_sheets_patch_and_ordered_applications() {
@@ -149,24 +167,35 @@ name = "style-project"
             ProjectSourceFile::new(
                 CanonicalModulePath::crate_root(),
                 PathBuf::from("src/main.arcw"),
-                root_source,
+                Arc::new(
+                    SourceDocument::try_new(
+                        SourceDocumentId::try_new("src/main.arcw").expect("root document id"),
+                        SourceName::path("src/main.arcw"),
+                        root_source,
+                    )
+                    .expect("root document"),
+                ),
                 [ModuleDependency::new(child.clone())],
             ),
             ProjectSourceFile::new(
                 child.clone(),
                 PathBuf::from("src/child.arcw"),
-                child_source.to_owned(),
+                Arc::new(
+                    SourceDocument::try_new(
+                        SourceDocumentId::try_new("src/child.arcw").expect("child document id"),
+                        SourceName::path("src/child.arcw"),
+                        child_source,
+                    )
+                    .expect("child document"),
+                ),
                 [],
             ),
         ],
     )
     .expect("valid source inventory");
-    let compiled = compile_project_with_env(
-        &project,
-        &TypeCheckEnv::standard(),
-        &RuntimePlanLowerOptions::default(),
-    )
-    .expect("linked Style project compiles");
+    let context = project_context(&project);
+    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+        .expect("linked Style project compiles");
 
     let root_patch_range = compiled
         .hir_project()

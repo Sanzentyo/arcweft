@@ -1,12 +1,13 @@
 use super::expectations::{parse_goto_flow_in_text, parse_goto_flow_statement};
 use crate::app::diagnostics::{DiagnosticEmitter, DiagnosticSource};
 use crate::app::project::{
-    SourceSelection, print_project_compile_error, runtime_plan_options_for_selection,
+    SelectionSemanticContext, SourceSelection, print_project_compile_error,
+    project_compilation_context, runtime_plan_options_for_selection, source_document_for_path,
 };
 use crate::output::RuntimeProfilePhase;
 use arcweft_compiler::{
     hir, lower, parse,
-    project::compile_project_with_env,
+    project::compile_project,
     style::{CompiledViewStyleArtifact, lower_source_view_styles},
 };
 use arcweft_core::{
@@ -22,13 +23,14 @@ use arcweft_runtime_plan::{
     awbc_lower::{AwbcLowerError, AwbcLowerer},
     flow::{RuntimePlanLowerReport, RuntimePlanLowerStats},
 };
-use arcweft_source::SourceName;
+use arcweft_source::SourceDocument;
 use arcweft_test::collect_script_tests;
 use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Instant;
 
 pub(in crate::app) struct ProfileCompiledRuntimePlan {
@@ -46,10 +48,11 @@ pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) bytecode: BytecodeProgram,
     pub(in crate::app) bytecode_stats: BytecodeStats,
     pub(in crate::app) aot_stats: AotProgramStats,
+    pub(in crate::app) source_document: Arc<SourceDocument>,
 }
 
 struct ProfileParsedSource {
-    source_text: String,
+    document: Arc<SourceDocument>,
     tree: arcweft_lang_syntax::ast::items::TypedSyntaxTree,
     syntax_warnings: usize,
     syntax_stats: SyntaxParseStats,
@@ -64,12 +67,13 @@ struct ProfileCheckedSource {
 
 pub(in crate::app) fn compile_profile_runtime_plan(
     selection: &SourceSelection,
-    env: &TypeCheckEnv,
+    semantic: &SelectionSemanticContext,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
     if let Some(manifest) = selection.manifest() {
-        return compile_project_runtime_plan(manifest, selection, env, phases);
+        return compile_project_runtime_plan(manifest, selection, semantic, phases);
     }
+    let env = semantic.base();
     let parsed = profile_parse_single_source(selection, phases)?;
     let checked = profile_lower_checked_source(&parsed, env, phases)?;
     let runtime_plan_report =
@@ -117,6 +121,7 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         bytecode,
         bytecode_stats,
         aot_stats,
+        source_document: Arc::clone(&parsed.document),
     })
 }
 
@@ -133,8 +138,12 @@ fn profile_parse_single_source(
             ExitCode::FAILURE
         })
     })?;
+    let document = Arc::new(source_document_for_path(selection.path(), source)?);
     let parsed = run_profile_phase(phases, "parse", || {
-        catch_unwind(AssertUnwindSafe(|| parse::parse_source_text(source))).map_err(|_| {
+        catch_unwind(AssertUnwindSafe(|| {
+            parse::parse_source_text(document.text().to_owned())
+        }))
+        .map_err(|_| {
             eprintln!(
                 "error: parser panicked while profiling {}",
                 selection.path().display()
@@ -149,16 +158,15 @@ fn profile_parse_single_source(
         return Err(ExitCode::FAILURE);
     }
 
-    let source_text = parsed.source().to_owned();
-    let source_name = SourceName::path(selection.path().display().to_string());
-    let diagnostic_source = DiagnosticSource::new(selection.path(), &source_text);
+    debug_assert_eq!(parsed.source(), document.text());
+    let diagnostic_source = DiagnosticSource::new(&document);
     let emitter = DiagnosticEmitter::stderr();
     let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let syntax_warnings = run_profile_phase(phases, "lint", || {
         let lints = parse::lint_source_tree(&tree);
         for lint in &lints {
-            emitter.emit(&lint.diagnostic(&source_name), &diagnostic_source);
+            emitter.emit(&lint.diagnostic(&document), &diagnostic_source);
         }
         if parse::has_error_lints(&lints) {
             return Err(ExitCode::FAILURE);
@@ -167,7 +175,7 @@ fn profile_parse_single_source(
     })?;
 
     Ok(ProfileParsedSource {
-        source_text,
+        document,
         tree,
         syntax_warnings,
         syntax_stats,
@@ -179,14 +187,18 @@ fn profile_lower_checked_source(
     env: &TypeCheckEnv,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCheckedSource, ExitCode> {
-    let hir = profile_lower_hir(&parsed.tree, phases)?;
+    let hir = profile_lower_hir(&parsed.document, &parsed.tree, phases)?;
     let typecheck_report = profile_validate_hir(&hir, env, phases)?;
     let style = run_profile_phase(phases, "style_lower", || {
-        lower_source_view_styles(&hir, &typecheck_report.style_catalog, &parsed.source_text)
-            .map_err(|error| {
-                eprintln!("error: failed to lower checked View Style: {error}");
-                ExitCode::FAILURE
-            })
+        lower_source_view_styles(
+            &hir,
+            &typecheck_report.style_catalog,
+            parsed.document.text(),
+        )
+        .map_err(|error| {
+            eprintln!("error: failed to lower checked View Style: {error}");
+            ExitCode::FAILURE
+        })
     })?;
     let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
         lower::lower_source_line_tasks(&hir).map_err(|errors| {
@@ -280,7 +292,7 @@ fn script_manifest_goto_flow(hir: &arcweft_lang_hir::model::HirModule) -> Option
 fn compile_project_runtime_plan(
     manifest: &Path,
     selection: &SourceSelection,
-    env: &TypeCheckEnv,
+    semantic: &SelectionSemanticContext,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
     let loaded = run_profile_phase(phases, "load_project", || {
@@ -289,9 +301,15 @@ fn compile_project_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
+    let source_document = Arc::clone(
+        loaded
+            .module_document(loaded.sources().root_module().module())
+            .expect("loaded projects retain their root source document"),
+    );
     let runtime_options = runtime_plan_options_for_selection(selection)?;
+    let context = project_compilation_context(&loaded, selection, semantic)?;
     let compiled = run_profile_phase(phases, "project_compile", || {
-        compile_project_with_env(loaded.sources(), env, &runtime_options).map_err(|error| {
+        compile_project(loaded.sources(), &context, &runtime_options).map_err(|error| {
             print_project_compile_error(&error);
             ExitCode::FAILURE
         })
@@ -347,6 +365,7 @@ fn compile_project_runtime_plan(
         bytecode,
         bytecode_stats,
         aot_stats,
+        source_document,
     })
 }
 
@@ -386,11 +405,12 @@ fn profile_lower_runtime_plan(
 }
 
 pub(in crate::app) fn profile_lower_hir(
+    document: &SourceDocument,
     tree: &arcweft_lang_syntax::ast::items::TypedSyntaxTree,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<arcweft_lang_hir::model::HirModule, ExitCode> {
     run_profile_phase(phases, "lower_hir", || {
-        hir::lower_source_tree(tree).map_err(|errors| {
+        hir::lower_source_document(document, tree).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }

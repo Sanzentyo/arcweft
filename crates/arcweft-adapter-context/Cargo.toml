@@ -9,6 +9,9 @@ repository.workspace = true
 [dependencies]
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema", optional = true }
+arcweft-lang-hir = { path = "../arcweft-lang-hir", optional = true }
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax", optional = true }
+arcweft-source = { path = "../arcweft-source", optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
@@ -16,7 +19,12 @@ toml.workspace = true
 
 [features]
 default = []
-sema = ["dep:arcweft-lang-sema"]
+sema = [
+    "dep:arcweft-lang-hir",
+    "dep:arcweft-lang-sema",
+    "dep:arcweft-lang-syntax",
+    "dep:arcweft-source",
+]
 
 [lib]
 path = "src/lib.rs"

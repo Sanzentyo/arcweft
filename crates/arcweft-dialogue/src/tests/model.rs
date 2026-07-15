@@ -1,7 +1,7 @@
 use crate::*;
 use arcweft_id::{EntityId, PublicId};
 use arcweft_ref::{Id, Ref};
-use arcweft_source::SourceAnchor;
+use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 use core::time::Duration;
 
 #[test]
@@ -72,13 +72,19 @@ fn models_speaker_preset_and_line_plan_out() {
         ]),
     ]));
 
-    let line = DialogueLine::from_preset(
-        &alice2,
-        SayOptions::empty(),
-        content,
-        plan,
-        SourceAnchor::generated(),
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft-generated://dialogue-tests/0")
+            .expect("test document id"),
+        SourceName::Generated,
+        "",
+    )
+    .expect("test source document");
+    let source = SourceAnchor::from_span(
+        document
+            .span(SourceRange::new(0, 0))
+            .expect("empty generated span"),
     );
+    let line = DialogueLine::from_preset(&alice2, SayOptions::empty(), content, plan, source);
 
     assert_eq!(line.speaker().id().as_str(), "character.alice");
     assert_eq!(line.options().look.as_ref(), Some(&smile));

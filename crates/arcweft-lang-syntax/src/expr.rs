@@ -11,7 +11,6 @@ use crate::cst::{
     split_leading_relative_entity_ref,
 };
 use crate::types::{TypeRef, parse_type_ref};
-use arcweft_source::{SourceAnchor, SourceName};
 use std::{
     fmt,
     ops::{Add, Deref},
@@ -757,7 +756,6 @@ pub enum ComputationBlockKind {
 #[error("{message}")]
 pub struct ExprParseError {
     message: String,
-    anchor: SourceAnchor,
 }
 
 /// Path-free counters collected while parsing one expression.
@@ -2129,13 +2127,7 @@ impl ExprParseError {
     fn new(message: &str) -> Self {
         Self {
             message: message.to_owned(),
-            anchor: SourceAnchor::new(SourceName::path("<expr>"), 0..0),
         }
-    }
-
-    /// Source anchor for the expression parse failure.
-    pub const fn anchor(&self) -> &SourceAnchor {
-        &self.anchor
     }
 }
 

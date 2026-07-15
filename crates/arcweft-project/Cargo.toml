@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-source = { path = "../arcweft-source" }
 blake3.workspace = true
 serde.workspace = true
 thiserror.workspace = true

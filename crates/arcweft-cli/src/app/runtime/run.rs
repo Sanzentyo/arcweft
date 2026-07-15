@@ -12,7 +12,7 @@ use crate::app::bundle::{
     build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_for_selection,
     write_bundle_artifact, write_patch_bundle_artifact,
 };
-use crate::app::diagnostics::emit_diagnostics_for_path;
+use crate::app::diagnostics::emit_diagnostics;
 use crate::app::progress::{CliProgress, CliProgressStatus};
 use crate::app::project::ProfileOptions;
 use crate::app::project::{
@@ -34,7 +34,6 @@ use arcweft_launch::{LaunchKind, LaunchPlayerViewportFit, ResolvedLaunchProfile}
 use arcweft_layout::ScalePolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
-use arcweft_source::SourceName;
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
 };
@@ -146,7 +145,7 @@ fn runtime_run_headless_command(
     }
 
     let checked = load_and_check_selection(selection, None)?;
-    require_runtime_verification_safety(selection, &checked)?;
+    require_runtime_verification_safety(&checked)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let runtime_options = runtime_plan_options_for_selection(selection)?;
     let mut plan = lower_source_runtime_plan_with_typecheck_and_options(
@@ -216,10 +215,7 @@ fn print_runtime_run_report(
     Ok(())
 }
 
-fn require_runtime_verification_safety(
-    selection: &SourceSelection,
-    checked: &CheckedModule,
-) -> Result<(), ExitCode> {
+fn require_runtime_verification_safety(checked: &CheckedModule) -> Result<(), ExitCode> {
     let verification = verify_module_with_env(
         &checked.hir,
         &checked.env,
@@ -229,16 +225,18 @@ fn require_runtime_verification_safety(
         },
     );
     if verification.has_blocking_runtime_safety_gaps() {
-        emit_runtime_verification_diagnostics(selection, &verification);
+        emit_runtime_verification_diagnostics(&checked.source_document, &verification);
         return Err(ExitCode::FAILURE);
     }
     Ok(())
 }
 
-fn emit_runtime_verification_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
-    let source_name = SourceName::path(selection.path().display().to_string());
-    let diagnostics = report.source_diagnostics(&source_name);
-    emit_diagnostics_for_path(selection.path(), &diagnostics);
+fn emit_runtime_verification_diagnostics(
+    document: &arcweft_source::SourceDocument,
+    report: &VerificationReport,
+) {
+    let diagnostics = report.source_diagnostics(document);
+    emit_diagnostics(document, &diagnostics);
 }
 
 fn runtime_run_bench_selection(

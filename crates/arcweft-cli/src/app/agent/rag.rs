@@ -6,8 +6,8 @@ use super::{
     DebugSourceFile, DebugStore, EmbeddingModelDescriptor, EntitySymbol, ExitCode, FusionConfig,
     MAX_LOCAL_EMBEDDING_DIMENSIONS, Path, PathBuf, PrivacyClass, ProgramHash,
     ProjectCallableSymbol, ProjectSemanticIndex, QualifiedName, RagContextItem, RagContextPack,
-    RagQuery, SearchChannel, SearchHit, SemaPublicId, SessionId, SourceAnchor, SourceName,
-    StableHash, agent_trace_kind_name, fs, hir, local_hash_query_embedding, parse, print_json,
+    RagQuery, SearchChannel, SearchHit, SemaPublicId, SessionId, SourceAnchor, StableHash,
+    agent_trace_kind_name, fs, hir, local_hash_query_embedding, parse, print_json,
     project_semantic_index_from_hir, read_and_validate_agent_trace_records, reciprocal_rank_fusion,
     validate_agent_trace,
 };

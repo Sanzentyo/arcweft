@@ -1,0 +1,5 @@
+error[E0599]: no method named `index` found for struct `ExternalDeclarationId` in the current scope
+ --> tests/ui/external_id_raw_accessor.rs:4:8
+  |
+4 |     id.index()
+  |        ^^^^^ method not found in `ExternalDeclarationId`

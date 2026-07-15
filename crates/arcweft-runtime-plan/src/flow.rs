@@ -302,13 +302,15 @@ pub fn lower_runtime_plan_with_stats_and_options(
             .functions()
             .iter()
             .filter(|function| function.kind() == FunctionKind::Stream)
-            .map(|function| lower_stream_function(function, pure_lookup))
+            .map(|function| lower_stream_function(module, function, pure_lookup))
             .collect::<Result<Vec<_>, _>>()?;
         let source_plans = module
             .declarations()
             .iter()
             .filter_map(|decl| match decl {
-                HirTopLevelDecl::Source(source) => Some(lower_source_plan(source, pure_lookup)),
+                HirTopLevelDecl::Source(source) => {
+                    Some(lower_source_plan(module, source, pure_lookup))
+                }
                 _ => None,
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -515,6 +517,7 @@ pub(crate) fn lower_runtime_flows(
     )
     .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut lowerer = FlowRuntimeLowerer {
+        module,
         agent_controller: false,
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
@@ -523,7 +526,7 @@ pub(crate) fn lower_runtime_flows(
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
         function_local_scopes: Vec::new(),
-        current_location: ExecutableLoweringLocation::root("flow `<pending>`"),
+        current_location: ExecutableLoweringLocation::in_module("flow `<pending>`", module, None),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: options.for_iteration_evidence(),
@@ -565,6 +568,7 @@ fn lower_agent_controller_flow(
     )
     .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut lowerer = FlowRuntimeLowerer {
+        module,
         agent_controller: true,
         line_task_groups: Vec::new(),
         line_display_catalog: LineDisplayCatalog::default(),
@@ -573,7 +577,11 @@ fn lower_agent_controller_flow(
         speaker_preset_scopes: Vec::new(),
         presentation_handle_scopes: Vec::new(),
         function_local_scopes: Vec::new(),
-        current_location: ExecutableLoweringLocation::root("agent `<pending>`"),
+        current_location: ExecutableLoweringLocation::in_module(
+            "agent `<pending>`",
+            module,
+            agent.module_path(),
+        ),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: &[],
@@ -586,8 +594,11 @@ fn lower_agent_controller_flow(
         },
         flow_runtime_id,
     );
-    lowerer.current_location =
-        ExecutableLoweringLocation::root(format!("agent flow `{}`", id.canonical_label()));
+    lowerer.current_location = ExecutableLoweringLocation::in_module(
+        format!("agent flow `{}`", id.canonical_label()),
+        module,
+        agent.module_path(),
+    );
     let mut ops = lowerer.lower_flow_stmt_list(&id, 0, agent.item().body_statements());
     if let Some(value) = agent.item().body_value() {
         if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value.expr(), value.range())
@@ -604,7 +615,8 @@ fn lower_agent_controller_flow(
     }
 }
 
-struct FlowRuntimeLowerer<'helpers, 'functions, 'evidence> {
+struct FlowRuntimeLowerer<'hir, 'helpers, 'functions, 'evidence> {
+    module: &'hir HirModule,
     agent_controller: bool,
     line_task_groups: Vec<LineTaskGroup>,
     line_display_catalog: LineDisplayCatalog,
@@ -613,7 +625,7 @@ struct FlowRuntimeLowerer<'helpers, 'functions, 'evidence> {
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
     presentation_handle_scopes: Vec<BTreeMap<String, PresentationHandleBinding>>,
     function_local_scopes: Vec<BTreeMap<String, usize>>,
-    current_location: ExecutableLoweringLocation,
+    current_location: ExecutableLoweringLocation<'hir>,
     errors: Vec<RuntimePlanLowerError>,
     pure_helpers: RuntimePureHelperLookup<'helpers, 'functions, 'static>,
     for_iteration_evidence: &'evidence [RuntimeIteratorEvidence],
@@ -643,7 +655,7 @@ fn runtime_expr_function_arity(
     }
 }
 
-impl FlowRuntimeLowerer<'_, '_, '_> {
+impl FlowRuntimeLowerer<'_, '_, '_, '_> {
     fn lower_runtime_pattern(
         &mut self,
         pattern: &Pattern,
@@ -760,8 +772,11 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             },
             flow_runtime_id,
         );
-        self.current_location =
-            ExecutableLoweringLocation::root(format!("flow `{}`", id.canonical_label()));
+        self.current_location = ExecutableLoweringLocation::in_module(
+            format!("flow `{}`", id.canonical_label()),
+            self.module,
+            flow.module_path(),
+        );
         let ops = self.lower_flow_items(&id, flow.body(), index);
         RuntimeFlow { id, ops }
     }
@@ -1133,11 +1148,12 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
         let request = match lower_host_task_request(await_with.expr()) {
             Ok(request) => request,
             Err(error) => {
-                self.errors.push(error.into_runtime_error(
+                let error = error.into_runtime_error(
                     self.current_location.owner(),
                     self.current_location.path().to_vec(),
                     source_range,
-                ));
+                );
+                self.errors.push(self.current_location.bind_error(error));
                 return FlowOp::Noop;
             }
         };
@@ -1804,11 +1820,12 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             Ok(Some(request)) => request,
             Ok(None) => return None,
             Err(error) => {
-                self.errors.push(error.into_runtime_error(
+                let error = error.into_runtime_error(
                     self.current_location.owner(),
                     self.current_location.path().to_vec(),
                     source_range,
-                ));
+                );
+                self.errors.push(self.current_location.bind_error(error));
                 return Some(FlowOp::Noop);
             }
         };
@@ -1836,11 +1853,12 @@ impl FlowRuntimeLowerer<'_, '_, '_> {
             Ok(Some(request)) => request,
             Ok(None) => return None,
             Err(error) => {
-                self.errors.push(error.into_runtime_error(
+                let error = error.into_runtime_error(
                     self.current_location.owner(),
                     self.current_location.path().to_vec(),
                     source_range,
-                ));
+                );
+                self.errors.push(self.current_location.bind_error(error));
                 return Some(vec![FlowOp::Noop]);
             }
         };

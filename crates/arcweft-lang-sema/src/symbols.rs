@@ -168,7 +168,8 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                 collect_expr(value, uses);
             }
         }
-        HirTopLevelDecl::Source(item) => {
+        HirTopLevelDecl::Source(source) => {
+            let item = source.item();
             if let Some(id) = item.id() {
                 push_entity(uses, id);
             }

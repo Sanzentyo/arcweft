@@ -1,0 +1,24 @@
+error[E0599]: no associated function or constant named `from_json` found for struct `CharacterManifest` in the current scope
+ --> tests/ui/character_manifest_from_json_removed.rs:4:32
+  |
+4 |     let _ = CharacterManifest::from_json("{}");
+  |                                ^^^^^^^^^ associated function or constant not found in `CharacterManifest`
+  |
+note: if you're trying to build a new `CharacterManifest` consider using one of the following associated functions:
+      manifest::codec::<impl CharacterManifest>::decode_runtime_json
+      CharacterManifest::new
+ --> $WORKSPACE/crates/arcweft-character/src/manifest/codec.rs
+  |
+  |       pub fn decode_runtime_json(source: &str) -> Result<Self, CharacterRuntimeDecodeError> {
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+ ::: $WORKSPACE/crates/arcweft-character/src/manifest/model.rs
+  |
+  | /     pub fn new(
+  | |         character: CharacterId,
+  | |         canvas: CharacterCanvas,
+  | |         anchor: CharacterPoint,
+... |
+  | |         source: Option<CharacterSource>,
+  | |     ) -> Result<Self, CharacterManifestError> {
+  | |_____________________________________________^
