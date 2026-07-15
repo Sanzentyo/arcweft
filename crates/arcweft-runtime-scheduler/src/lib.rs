@@ -298,6 +298,9 @@ impl RuntimeScheduler {
     }
 
     fn complete_one(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
+        if matches!(event.kind, TaskEventKind::Progress(_)) {
+            return self.progress_joined_waiters(event);
+        }
         let Some(task) = self.in_flight.remove(&event.task_id) else {
             return Vec::new();
         };
@@ -317,6 +320,21 @@ impl RuntimeScheduler {
             }
         }
         self.complete_joined_waiters(event)
+    }
+
+    fn progress_joined_waiters(&self, event: &TaskEvent) -> Vec<TaskEvent> {
+        self.joined_waiters
+            .get(&event.task_id)
+            .into_iter()
+            .flatten()
+            .cloned()
+            .map(|task_id| TaskEvent {
+                logical_epoch: event.logical_epoch,
+                task_id,
+                sequence: event.sequence,
+                kind: event.kind.clone(),
+            })
+            .collect()
     }
 
     fn complete_joined_waiters(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
@@ -529,6 +547,60 @@ mod tests {
         assert_eq!(scheduler.stats().completion_events_out, 2);
         assert_eq!(scheduler.stats().completion_sort_performed_items, 2);
         assert_eq!(scheduler.stats().completion_sort_skipped_items, 0);
+    }
+
+    #[test]
+    fn progress_keeps_joined_work_in_flight_until_terminal_delivery() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.submit([task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0)]);
+        scheduler.dispatch(SchedulerBudget { max_events: 8 });
+        scheduler.submit([task("waiter-a", "asset.bg", TaskPolicy::JoinSameKey, 0)]);
+
+        let progress = scheduler.complete([event(
+            "owner",
+            1,
+            TaskEventKind::Progress(RuntimePayload::from("halfway")),
+        )]);
+
+        assert_eq!(
+            progress
+                .iter()
+                .map(|event| event.task_id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["owner", "waiter-a"]
+        );
+        assert!(progress.iter().all(|event| {
+            matches!(&event.kind, TaskEventKind::Progress(value) if value.label() == "halfway")
+        }));
+        assert_eq!(scheduler.stats().in_flight, 1);
+        assert_eq!(scheduler.stats().completed, 0);
+        assert_eq!(
+            scheduler.stats().completed_by_class,
+            TaskClassCounts::default()
+        );
+        assert_eq!(scheduler.stats().joined_completed, 0);
+        assert_eq!(scheduler.stats().joined_completion_events_emitted, 0);
+
+        scheduler.submit([task("waiter-b", "asset.bg", TaskPolicy::JoinSameKey, 0)]);
+        let terminal = scheduler.complete([event(
+            "owner",
+            2,
+            TaskEventKind::Ready(RuntimePayload::from("done")),
+        )]);
+
+        assert_eq!(
+            terminal
+                .iter()
+                .map(|event| event.task_id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["owner", "waiter-a", "waiter-b"]
+        );
+        assert_eq!(scheduler.stats().in_flight, 0);
+        assert_eq!(scheduler.stats().completed, 1);
+        assert_eq!(scheduler.stats().completed_by_class.io, 1);
+        assert_eq!(scheduler.stats().joined, 2);
+        assert_eq!(scheduler.stats().joined_completed, 2);
+        assert_eq!(scheduler.stats().joined_completion_events_emitted, 2);
     }
 
     #[test]
