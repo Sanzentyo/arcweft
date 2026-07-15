@@ -59,6 +59,14 @@ pub struct ViewStyleTrace {
     entries: Vec<ViewStyleTraceEntry>,
 }
 
+/// Resolver-owned collection state. The mode is selected once per resolve so
+/// a call site cannot turn an `Off` or `Winners` request into full collection.
+pub(super) enum ViewStyleTraceRecorder {
+    Off,
+    Winners,
+    Full(Vec<ViewStyleTraceEntry>),
+}
+
 impl ViewStyleTrace {
     pub fn entries(&self) -> &[ViewStyleTraceEntry] {
         &self.entries
@@ -67,30 +75,84 @@ impl ViewStyleTrace {
     pub const fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+}
 
-    pub(super) fn push(&mut self, mode: ViewStyleTraceMode, entry: ViewStyleTraceEntry) {
-        if mode == ViewStyleTraceMode::Full {
-            self.entries.push(entry);
+impl ViewStyleTraceRecorder {
+    pub(super) const fn new(mode: ViewStyleTraceMode) -> Self {
+        match mode {
+            ViewStyleTraceMode::Off => Self::Off,
+            ViewStyleTraceMode::Winners => Self::Winners,
+            ViewStyleTraceMode::Full => Self::Full(Vec::new()),
         }
     }
 
-    pub(super) fn finish_winners(
+    pub(super) const fn is_full(&self) -> bool {
+        matches!(self, Self::Full(_))
+    }
+
+    pub(super) fn contribution(
         &mut self,
-        mode: ViewStyleTraceMode,
-        computed: &ComputedViewStyle,
+        property: ViewPropertyKind,
+        priority: ViewStylePriority,
+        source: ViewStyleContributionSource,
+        accepted: bool,
     ) {
-        if mode != ViewStyleTraceMode::Winners {
+        let Self::Full(entries) = self else {
             return;
-        }
-        self.entries
-            .extend(
-                computed
-                    .properties()
-                    .map(|(property, value)| ViewStyleTraceEntry::Winner {
-                        property,
-                        priority: value.priority(),
-                        source: value.source().clone(),
-                    }),
-            );
+        };
+        entries.push(ViewStyleTraceEntry::Contribution {
+            property,
+            priority,
+            source,
+            accepted,
+        });
+    }
+
+    pub(super) fn rule_rejected(
+        &mut self,
+        sheet: &ViewStyleSheetId,
+        source_order: u32,
+        reason: ViewStyleTraceRejection,
+    ) {
+        let Self::Full(entries) = self else {
+            return;
+        };
+        entries.push(ViewStyleTraceEntry::RuleRejected {
+            sheet: sheet.clone(),
+            source_order,
+            reason,
+        });
+    }
+
+    pub(super) fn patch_rejected(
+        &mut self,
+        patch: ViewStylePatchId,
+        declaration: ViewStyleSourceId,
+        reason: ViewStyleTraceRejection,
+    ) {
+        let Self::Full(entries) = self else {
+            return;
+        };
+        entries.push(ViewStyleTraceEntry::PatchRejected {
+            patch,
+            declaration,
+            reason,
+        });
+    }
+
+    pub(super) fn finish(self, computed: &ComputedViewStyle) -> ViewStyleTrace {
+        let entries = match self {
+            Self::Off => Vec::new(),
+            Self::Winners => computed
+                .properties()
+                .map(|(property, value)| ViewStyleTraceEntry::Winner {
+                    property,
+                    priority: value.priority(),
+                    source: value.source().clone(),
+                })
+                .collect(),
+            Self::Full(entries) => entries,
+        };
+        ViewStyleTrace { entries }
     }
 }

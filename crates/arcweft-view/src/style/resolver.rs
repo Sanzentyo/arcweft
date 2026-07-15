@@ -3,6 +3,7 @@
 mod axis;
 mod provider;
 
+use super::trace::ViewStyleTraceRecorder;
 use super::{
     ComputedViewAxes, ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
     ViewBoxAxisMode, ViewBoxAxisRevision, ViewBoxAxisSeedSource, ViewComputedPropertyKind,
@@ -12,8 +13,7 @@ use super::{
     ViewStyleContributionSource, ViewStylePatch, ViewStylePatchId, ViewStylePredicate,
     ViewStylePriority, ViewStyleProgram, ViewStyleScopeId, ViewStyleSelector,
     ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-    ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
-    ViewStyleTraceRejection,
+    ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceMode, ViewStyleTraceRejection,
 };
 use crate::{ViewElementKind, ViewMountId};
 use arcweft_presentation::appearance::{ColorScheme, ContrastPreference, PresentationEnvironment};
@@ -466,7 +466,7 @@ impl ViewStyleResolver {
         program: &ViewStyleProgram,
         context: &ViewStyleResolveContext<'_>,
     ) -> Result<ViewStyleResolution, ViewStyleResolveError> {
-        let mut trace = ViewStyleTrace::default();
+        let mut trace = ViewStyleTraceRecorder::new(context.trace);
         let contributions = self.collect_contributions(program, context, &mut trace)?;
         let resolved_axes = resolve_axes(context.node_key, context.inherited_axes, &contributions);
         let provider_update = self.axis_providers.prepare(
@@ -479,7 +479,7 @@ impl ViewStyleResolver {
         if context.trace != ViewStyleTraceMode::Full
             && let Some(computed) = self.cache.get(&cache_key).cloned()
         {
-            trace.finish_winners(context.trace, &computed);
+            let trace = trace.finish(&computed);
             self.commit_provider_update(provider_update);
             self.insert_cache(cache_key, computed.clone());
             return Ok(ViewStyleResolution {
@@ -513,7 +513,7 @@ impl ViewStyleResolver {
             }
             resolved_contribution_count += contributions.len();
             for contribution in contributions {
-                apply_contribution(&mut builder, contribution, context.trace, &mut trace);
+                apply_contribution(&mut builder, contribution, &mut trace);
             }
         }
         let (transitions, usage) =
@@ -521,7 +521,7 @@ impl ViewStyleResolver {
         builder.include_axis_usage(usage);
         builder.set_transitions(transitions);
         let computed = builder.finish(revision);
-        trace.finish_winners(context.trace, &computed);
+        let trace = trace.finish(&computed);
         self.commit_provider_update(provider_update);
         if context.trace != ViewStyleTraceMode::Full {
             self.insert_cache(cache_key, computed.clone());
@@ -537,7 +537,7 @@ impl ViewStyleResolver {
         &self,
         program: &ViewStyleProgram,
         context: &ViewStyleResolveContext<'_>,
-        trace: &mut ViewStyleTrace,
+        trace: &mut ViewStyleTraceRecorder,
     ) -> Result<Vec<PendingViewStyleContribution>, ViewStyleResolveError> {
         if context.applications.len() > self.limits.max_applications {
             return Err(ViewStyleResolveError::ApplicationBudget {
@@ -595,7 +595,7 @@ impl ViewStyleResolver {
         patch: &ViewStylePatch,
         application: &ViewStyleApplication,
         context: &ViewStyleResolveContext<'_>,
-        trace: &mut ViewStyleTrace,
+        trace: &mut ViewStyleTraceRecorder,
         contributions: &mut Vec<PendingViewStyleContribution>,
     ) -> Result<(), ViewStyleResolveError> {
         for (declaration_order, declaration) in patch.declarations().iter().enumerate() {
@@ -604,13 +604,10 @@ impl ViewStyleResolver {
                 .element()
                 .is_some_and(|element| !declaration.property().applies_to(element))
             {
-                trace.push(
-                    context.trace,
-                    ViewStyleTraceEntry::PatchRejected {
-                        patch: patch.id(),
-                        declaration: declaration.source(),
-                        reason: ViewStyleTraceRejection::PropertyNotApplicable,
-                    },
+                trace.patch_rejected(
+                    patch.id(),
+                    declaration.source(),
+                    ViewStyleTraceRejection::PropertyNotApplicable,
                 );
                 continue;
             }
@@ -655,7 +652,7 @@ impl ViewStyleResolver {
         sheet: &ViewStyleSheet,
         application: &ViewStyleApplication,
         context: &ViewStyleResolveContext<'_>,
-        trace: &mut ViewStyleTrace,
+        trace: &mut ViewStyleTraceRecorder,
         budget: &mut ResolveBudget,
         contributions: &mut Vec<PendingViewStyleContribution>,
     ) -> Result<(), ViewStyleResolveError> {
@@ -696,14 +693,7 @@ impl ViewStyleResolver {
                 });
             }
             if let Err(reason) = matched {
-                trace.push(
-                    context.trace,
-                    ViewStyleTraceEntry::RuleRejected {
-                        sheet: sheet.id().clone(),
-                        source_order: rule.source_order(),
-                        reason,
-                    },
-                );
+                trace.rule_rejected(sheet.id(), rule.source_order(), reason);
                 continue;
             }
             for (declaration_order, declaration) in rule.declarations().iter().enumerate() {
@@ -712,13 +702,10 @@ impl ViewStyleResolver {
                     .element()
                     .is_some_and(|element| !declaration.property().applies_to(element))
                 {
-                    trace.push(
-                        context.trace,
-                        ViewStyleTraceEntry::RuleRejected {
-                            sheet: sheet.id().clone(),
-                            source_order: rule.source_order(),
-                            reason: ViewStyleTraceRejection::PropertyNotApplicable,
-                        },
+                    trace.rule_rejected(
+                        sheet.id(),
+                        rule.source_order(),
+                        ViewStyleTraceRejection::PropertyNotApplicable,
                     );
                     continue;
                 }
@@ -810,22 +797,17 @@ impl ViewStyleCacheKey {
 fn apply_contribution(
     builder: &mut ComputedViewStyleBuilder,
     contribution: ViewStyleContribution,
-    trace_mode: ViewStyleTraceMode,
-    trace: &mut ViewStyleTrace,
+    trace: &mut ViewStyleTraceRecorder,
 ) {
+    if !trace.is_full() {
+        builder.apply(contribution);
+        return;
+    }
     let property = contribution.property();
     let priority = contribution.priority();
     let source = contribution.source().clone();
     let accepted = builder.apply(contribution);
-    trace.push(
-        trace_mode,
-        ViewStyleTraceEntry::Contribution {
-            property,
-            priority,
-            source,
-            accepted,
-        },
-    );
+    trace.contribution(property, priority, source, accepted);
 }
 
 fn push_contribution(

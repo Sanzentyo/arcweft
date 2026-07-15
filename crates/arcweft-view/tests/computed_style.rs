@@ -456,6 +456,88 @@ fn inline_patch_uses_authored_application_layer_and_full_trace_is_deterministic(
 }
 
 #[test]
+fn trace_modes_keep_off_empty_reconstruct_winners_and_bypass_full_cache() {
+    let program = ViewStyleProgram::try_new(
+        vec![sheet(
+            "style.trace-modes",
+            vec![rule(1, Vec::new(), color(9, 8, 7))],
+        )],
+        Vec::new(),
+    )
+    .unwrap();
+    let applications = [application("style.trace-modes", 1, 0)];
+    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button));
+    let key = node_key(30, vec![1], 2);
+    let environment = PresentationEnvironment::new(ColorScheme::Light);
+    let mut resolver = ViewStyleResolver::default();
+
+    let off = resolver
+        .resolve(
+            &program,
+            &context(
+                &key,
+                &node,
+                &[],
+                &applications,
+                None,
+                &environment,
+                ViewStyleTraceMode::Off,
+            ),
+        )
+        .unwrap();
+    let winners = resolver
+        .resolve(
+            &program,
+            &context(
+                &key,
+                &node,
+                &[],
+                &applications,
+                None,
+                &environment,
+                ViewStyleTraceMode::Winners,
+            ),
+        )
+        .unwrap();
+    let full = resolver
+        .resolve(
+            &program,
+            &context(
+                &key,
+                &node,
+                &[],
+                &applications,
+                None,
+                &environment,
+                ViewStyleTraceMode::Full,
+            ),
+        )
+        .unwrap();
+
+    assert!(!off.cache_hit());
+    assert!(off.trace().is_empty());
+    assert!(winners.cache_hit());
+    assert!(matches!(
+        winners.trace().entries(),
+        [ViewStyleTraceEntry::Winner {
+            property: ViewPropertyKind::BackgroundColor,
+            ..
+        }]
+    ));
+    assert!(!full.cache_hit());
+    assert!(matches!(
+        full.trace().entries(),
+        [ViewStyleTraceEntry::Contribution {
+            property: ViewPropertyKind::BackgroundColor,
+            accepted: true,
+            ..
+        }]
+    ));
+    assert_eq!(off.computed(), winners.computed());
+    assert_eq!(off.computed(), full.computed());
+}
+
+#[test]
 fn inline_patch_rejects_a_property_that_does_not_apply_to_the_node_element() {
     let patch_id = ViewStylePatchId::new(8);
     let declaration_source = ViewStyleSourceId::new(80);
