@@ -84,7 +84,14 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - When parser, compiler, or language-surface work requires broad reshaping, move directly toward the final model instead of preserving temporary compatibility layers.
 - Do not preserve backward compatibility during internal parser/compiler/language-surface refactors. Replace the old model directly and let breakage expose every call site that must be updated.
 - Do not use `deprecated` APIs, compatibility aliases, compatibility modules, wrapper APIs, migration shims, or compatibility shims inside unfinished compiler/parser code.
-- Do not add parser/tooling branches that silently accept removed syntax. Removed syntax should fail through structured parser recovery/diagnostics unless the task explicitly targets an external one-shot migration tool.
+- Do not add parser/tooling branches that silently accept removed syntax. A
+  dedicated old-spelling recognizer or diagnostic may be introduced only as a
+  temporary migration instrument to prove that the removed form no longer
+  lowers or executes. Delete that recognizer, diagnostic code, and its
+  spelling-specific tests before completing the removal; the final parser must
+  reject the text through ordinary current-grammar parsing/recovery and must
+  retain no historical AST/CST kind. An explicitly requested external one-shot
+  migration tool is the only exception.
 - Prefer root-cause edits over transitional layers: remove obsolete variants/functions/types, run `cargo check` and `cargo clippy`, and fix all resulting call sites.
 - During internal refactors, existing API compatibility may be dropped when it
   conflicts with the target architecture. Prefer explicit `pub mod` namespaces
@@ -241,8 +248,11 @@ still appears in a particular `.rs` file.
 - Test behavior, serialization, and security invariants through public or
   crate-owned APIs, including positive, negative, round-trip, and tampered-input
   cases where relevant.
-- Test language removal through parser/compiler rejection and structured
-  diagnostics. Test API constraints with visibility, type checking, or
+- Test language removal through parser/compiler rejection and the absence of an
+  executable typed node. A spelling-specific removed-syntax diagnostic may be
+  used temporarily while deleting call sites, but remove that diagnostic and
+  replace its exact-code assertion with ordinary rejection evidence before the
+  final cut. Test API constraints with visibility, type checking, or
   compile-fail cases. Test architecture and crate layering from Cargo metadata
   or another structured dependency graph.
 - Deterministic generated-artifact comparison is acceptable when the generated
@@ -255,6 +265,10 @@ still appears in a particular `.rs` file.
   notes that ask for source gates. Translate those historical acceptance items
   into direct behavior, codec, compile, lint, or dependency evidence instead of
   reintroducing their prescribed source scans.
+- The temporary-diagnostic rule likewise supersedes historical package items
+  that prescribe a permanent diagnostic solely to recognize an unreleased,
+  removed language spelling. Preserve a dedicated diagnostic only when an
+  explicit released-compatibility or external migration requirement exists.
 
 This prohibition does not prevent normal code review or one-off source
 inspection. It prevents source spelling and file placement from becoming
