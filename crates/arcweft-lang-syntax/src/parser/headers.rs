@@ -369,14 +369,6 @@ pub(super) fn parse_flow_head(input: &str) -> Option<&str> {
     input.strip_prefix("flow").map(str::trim_start)
 }
 
-pub(super) fn find_header_value(lines: &[&str], prefix: &str) -> String {
-    lines
-        .iter()
-        .find_map(|line| line.strip_prefix(prefix).map(str::trim))
-        .unwrap_or_default()
-        .to_owned()
-}
-
 pub(super) fn parse_flow_signature(
     name: Option<&str>,
     signature_tail: &str,

@@ -26,7 +26,7 @@ pub(super) use arcweft_lang_syntax::{
         },
         items::{
             CallableKind, EntityDeclKind, ExternModMember, FunctionKind, ImplMember, Item,
-            RawSyntaxFamily, TraitMember,
+            MemoOption, RawSyntaxFamily, TraitMember,
         },
         line_plan::{DeferOutcome, LinePlanItem},
         pattern::{Pattern, VariantPatternPayload},

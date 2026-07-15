@@ -138,9 +138,9 @@ effects {
 }
 
 #[test]
-fn agent_dialect_rejects_removed_line_command_fallback() {
+fn agent_dialect_requires_an_agent_item() {
     let parsed = parse_document(
-        "observe\n",
+        "project_task\n",
         ParseOptions {
             source_dialect: SourceDialect::Agent,
         },

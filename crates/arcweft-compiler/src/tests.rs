@@ -3783,8 +3783,9 @@ observe()
 }
 
 #[test]
-fn compile_agent_source_rejects_removed_line_commands() {
-    let error = compile_agent_source("observe\n").expect_err("legacy command fails");
+fn compile_agent_source_requires_agent_item() {
+    let error = compile_agent_source("project_task\n")
+        .expect_err("top-level Agent source must declare an agent item");
 
     assert!(matches!(error, CompileAgentError::Parse(_)));
 }

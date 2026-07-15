@@ -35,6 +35,24 @@ pub(super) enum OptionalLabel {
     Some(String),
 }
 
+pub(super) fn trimmed_nonempty_lines_with_offsets(source: &str) -> Vec<(&str, usize)> {
+    let mut offset = 0;
+    source
+        .split_inclusive('\n')
+        .filter_map(|raw_line| {
+            let line_offset = offset;
+            offset += raw_line.len();
+            let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            let trimmed = line.trim();
+            (!trimmed.is_empty()).then(|| {
+                let leading = line.len() - line.trim_start().len();
+                (trimmed, line_offset + leading)
+            })
+        })
+        .collect()
+}
+
 #[derive(Default)]
 pub(super) struct PendingDocLines {
     start_line: Option<usize>,

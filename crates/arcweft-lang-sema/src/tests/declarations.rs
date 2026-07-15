@@ -17,6 +17,9 @@ effects signal.choice_visible
 
 memo fn route_title(route: Ref<Flow>) -> String
 scope = session
+key = route
+depends = registry.flows
+track = auto
 {
     registry.flow(route).title
 }
@@ -45,6 +48,15 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
     let Item::MemoFn(memo) = &tree.items()[1] else {
         panic!("expected memo item");
     };
+    assert!(matches!(
+        memo.options(),
+        [
+            MemoOption::Scope(Expr::Path(scope)),
+            MemoOption::Key(Expr::Path(key)),
+            MemoOption::Depends(Expr::Select(_)),
+            MemoOption::Track(Expr::Path(track)),
+        ] if scope == "session" && key == "route" && track == "auto"
+    ));
     assert!(memo.body_statements().is_empty());
     assert!(matches!(memo.body_value(), Some(Expr::Select(_))));
 
@@ -137,7 +149,7 @@ trusted axiom @axiom.resource_manifest_hashes {
 }
 
 #[test]
-fn rejects_unknown_top_level_sigil_and_invalid_memo_option() {
+fn rejects_unknown_top_level_sigil_and_unknown_memo_option() {
     let errors = parse_errors(
         r"
 @project_attribute(scope = scene)
@@ -146,7 +158,7 @@ fn route_title(route: Ref<Flow>) -> String {
 }
 
 memo fn route_graph(root: Ref<Flow>) -> RouteGraph
-cache session
+retention = session
 {
     build_route_graph(root)
 }
@@ -158,33 +170,37 @@ cache session
             .iter()
             .any(|error| error.message() == "`@` does not start a top-level item")
     );
-    assert!(errors.iter().any(|error| error.message().contains("cache")));
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message() == "unknown memo option")
+    );
 }
 
 #[test]
-fn rejects_old_hook_header_syntax() {
+fn rejects_unknown_and_malformed_hook_headers() {
     let errors = parse_errors(
         r"
 hook @hook.choice_click
-for @choice.opening.listen
-on input target PointerClick
-phase = input.target
+on @choice.opening.listen
+phase InputTarget
+channel pointer
+priority immediate
 {
     stop_propagation
 }
 ",
     );
 
-    assert!(errors.iter().any(|error| error.message().contains("for")));
     assert!(
         errors
             .iter()
-            .any(|error| error.message().contains("phase ="))
+            .any(|error| error.message() == "unknown hook header")
     );
     assert!(
         errors
             .iter()
-            .any(|error| error.message().contains("on input target"))
+            .any(|error| error.message() == "invalid hook header")
     );
 }
 
@@ -1015,9 +1031,10 @@ signal @signal:.current_flow: Watch<Ref<Flow>>
 
 signal @signal:. ready: Watch<bool>
 
-hook @.choice_visible {
-    on choice.visible
-    phase after
+hook @.choice_visible
+on @choice.visible
+phase after
+{
 }
 
 dialogue defaults @dialogue:.opening {

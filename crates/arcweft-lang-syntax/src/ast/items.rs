@@ -778,11 +778,24 @@ pub(crate) struct HookInit {
 pub struct MemoFn {
     visibility: Option<Visibility>,
     signature: String,
-    options: Vec<String>,
+    options: Vec<MemoOption>,
     body: String,
     body_statements: Vec<Stmt>,
     body_value: Option<Expr>,
     range: TextRange,
+}
+
+/// A validated option on a memoized function declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MemoOption {
+    /// Lifetime and invalidation scope for the memoized value.
+    Scope(Expr),
+    /// Explicit stable key expression.
+    Key(Expr),
+    /// Explicit dependency expression.
+    Depends(Expr),
+    /// Dependency tracking policy expression.
+    Track(Expr),
 }
 
 /// User-defined parser item.
@@ -1779,7 +1792,7 @@ impl MemoFn {
     pub(crate) const fn new(
         visibility: Option<Visibility>,
         signature: String,
-        options: Vec<String>,
+        options: Vec<MemoOption>,
         body: String,
         body_statements: Vec<Stmt>,
         body_value: Option<Expr>,
@@ -1804,7 +1817,7 @@ impl MemoFn {
         &self.signature
     }
 
-    pub fn options(&self) -> &[String] {
+    pub fn options(&self) -> &[MemoOption] {
         &self.options
     }
 
@@ -1822,6 +1835,27 @@ impl MemoFn {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl MemoOption {
+    /// Returns the current-grammar option name.
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Scope(_) => "scope",
+            Self::Key(_) => "key",
+            Self::Depends(_) => "depends",
+            Self::Track(_) => "track",
+        }
+    }
+
+    /// Returns the validated option value expression.
+    pub const fn value(&self) -> &Expr {
+        match self {
+            Self::Scope(value) | Self::Key(value) | Self::Depends(value) | Self::Track(value) => {
+                value
+            }
+        }
     }
 }
 

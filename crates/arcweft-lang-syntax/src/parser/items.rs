@@ -6,8 +6,8 @@ use crate::ast::items::{
     EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
     ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
     ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField, ImplItem,
-    ImplItemInit, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem,
-    TraitItem, TraitMember, TypeAliasItem, ViewDeclBody,
+    ImplItemInit, ImplMember, MemoFn, MemoOption, ParserItem, StateField, StateItem, StructField,
+    StructItem, TraitItem, TraitMember, TypeAliasItem, ViewDeclBody,
 };
 use crate::cst::{
     ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
@@ -15,6 +15,7 @@ use crate::cst::{
     split_top_level_arcweft_punctuation_once, split_top_level_punctuation,
     split_top_level_punctuation_once,
 };
+use crate::expr::parse_expr;
 use crate::types::{parse_fn_signature, parse_where_clause_list};
 
 use super::headers::{
@@ -24,6 +25,7 @@ use super::headers::{
     parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
     simple_error, split_function_header_lines, split_supertraits,
 };
+use super::helpers::trimmed_nonempty_lines_with_offsets;
 use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
@@ -46,17 +48,20 @@ impl Parser<'_> {
             );
             return None;
         }
-        let mut lines = head.lines().map(str::trim).filter(|line| !line.is_empty());
-        let first = lines.next()?;
+        let mut lines = trimmed_nonempty_lines_with_offsets(&head).into_iter();
+        let (first, _) = lines.next()?;
         let (visibility, after_visibility) = parse_visibility_prefix(first);
         let signature = after_visibility
             .trim_start()
             .strip_prefix("memo fn")?
             .trim()
             .to_owned();
+        let mut seen_options = [false; 4];
         let options = lines
-            .inspect(|line| self.reject_old_memo_option(line, start_line.start))
-            .map(str::to_owned)
+            .filter_map(|(line, offset)| {
+                let base = start_line.start + offset;
+                self.parse_memo_option(line, base, &mut seen_options)
+            })
             .collect();
         let (body_statements, body_value) = parse_scope_expr_body(&body);
         Some(MemoFn::new(
@@ -70,16 +75,58 @@ impl Parser<'_> {
         ))
     }
 
-    fn reject_old_memo_option(&mut self, line: &str, base: usize) {
-        if line.starts_with("cache ") {
-            self.push_error(
-                TextRange::new(base, base + line.len()),
-                "`cache` is not valid memo option syntax",
-                ["scope = MemoScope"],
-                Some(line),
-                ["replace `cache session` with `scope = session`"],
-            );
+    fn parse_memo_option(
+        &mut self,
+        line: &str,
+        base: usize,
+        seen_options: &mut [bool; 4],
+    ) -> Option<MemoOption> {
+        let Some((name, value)) = split_top_level_binding(line) else {
+            self.push_memo_option_error(base, line, "invalid memo option");
+            return None;
+        };
+        let name = name.trim();
+        let option_index = match name {
+            "scope" => 0,
+            "key" => 1,
+            "depends" => 2,
+            "track" => 3,
+            _ => {
+                self.push_memo_option_error(base, line, "unknown memo option");
+                return None;
+            }
+        };
+        if seen_options[option_index] {
+            self.push_memo_option_error(base, line, "duplicate memo option");
+            return None;
         }
+        let Ok(value) = parse_expr(value.trim()) else {
+            self.push_memo_option_error(base, line, "invalid memo option value");
+            return None;
+        };
+        seen_options[option_index] = true;
+        Some(match name {
+            "scope" => MemoOption::Scope(value),
+            "key" => MemoOption::Key(value),
+            "depends" => MemoOption::Depends(value),
+            "track" => MemoOption::Track(value),
+            _ => unreachable!("memo option name was validated above"),
+        })
+    }
+
+    fn push_memo_option_error(&mut self, base: usize, line: &str, message: &str) {
+        self.push_error(
+            TextRange::new(base, base + line.len()),
+            message,
+            [
+                "scope = expr",
+                "key = expr",
+                "depends = expr",
+                "track = expr",
+            ],
+            Some(line),
+            ["use one current memo option assignment"],
+        );
     }
 
     pub(super) fn parse_parser_item(&mut self) -> Option<ParserItem> {

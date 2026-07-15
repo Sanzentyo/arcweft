@@ -146,23 +146,6 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn rejects_unparenthesized_presentation_call() {
-    let errors = parse_errors(
-        r"
-flow @flow.opening opening {
-    bg @asset:.bg.room fade=300ms
-}
-",
-    );
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("canonical function-call syntax")),
-        "expected canonical call diagnostic, got {errors:?}"
-    );
-}
-
-#[test]
 fn parses_delimited_entity_refs_with_semantic_hashes() {
     let tree = parse_ok(
         r"
