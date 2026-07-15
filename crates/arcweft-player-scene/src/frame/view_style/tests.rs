@@ -18,21 +18,27 @@ use arcweft_presentation::hover::HoverPath;
 use arcweft_presentation::input::{InteractionTarget, PointerId};
 use arcweft_presentation::interaction::{FocusState, InteractionState};
 use arcweft_presentation::layer::LayerId;
+use arcweft_render_text::{
+    RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextStyle,
+};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewInstancePathSegment, BundleViewMountOutput,
-    BundleViewStyleNode, BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget,
-    BundleViewTextValue,
+    BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOutput,
+    BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_view::style::{
-    ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewColorValue,
-    ViewElementState, ViewInteractionSelector, ViewLengthMilli, ViewOverflow, ViewPartName,
-    ViewPropertyKind, ViewScalarMilli, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleContribution,
-    ViewStyleContributionSource, ViewStyleDeclaration, ViewStylePatchId, ViewStylePriority,
-    ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
+    ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedGeneration,
+    ViewColorValue, ViewElementState, ViewInheritedBoxAxes, ViewInteractionSelector,
+    ViewLengthMilli, ViewOverflow, ViewPartName, ViewPropertyKind, ViewScalarMilli,
+    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleBoundaryFacts, ViewStyleContribution, ViewStyleContributionSource,
+    ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatchId,
+    ViewStylePriority, ViewStyleProgram, ViewStyleResolveContext, ViewStyleRevisionSet,
+    ViewStyleRule, ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
+    ViewStyleSheetId, ViewStyleSourceId, ViewStyleTraceMode,
 };
 use arcweft_view::{ViewElementKind, ViewMountId};
 
@@ -196,15 +202,25 @@ fn hover_path_retains_ancestor_hover_and_simultaneous_child_focus() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the live call boundary test keeps inherited root, exported no-winner, exported local barrier, descendant propagation, and three-adapter parity in one frame"
+)]
 fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
     let expected = PresentationColor::rgb(17, 34, 51);
-    let (program, parent_application, child_application) = cross_mount_style_program(expected);
+    let (program, parent_application, child_application, exported_axis_application) =
+        cross_mount_style_program(expected);
     let child_path: BundleViewInstancePath = serde_json::from_value(serde_json::json!([
         { "kind": "call", "instruction": 0 }
     ]))
     .unwrap();
 
     let mut parent = empty_mount();
+    parent.host_axis_seed = Some(ViewInheritedBoxAxes::for_host_seed(
+        parent.mount,
+        ViewBoxAxisSeedGeneration::INITIAL,
+        ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::VerticalRl),
+    ));
     parent.view = "view.Parent".to_owned();
     parent.style_nodes = vec![BundleViewStyleNode {
         path: BundleViewInstancePath::default(),
@@ -219,12 +235,32 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
     }];
     let mut child = empty_mount();
     child.mount = ViewMountId::from_raw(2);
+    child.host_axis_seed = None;
     child.view = "view.Child".to_owned();
     child.path = child_path.clone();
-    child.text = vec![BundleViewTextOutput {
-        source_id: "text.child".to_owned(),
+    child.text = [
+        ("text.child", "text.child.target", "child"),
+        (
+            "text.child.exported",
+            "text.child.exported.target",
+            "exported",
+        ),
+        (
+            "text.child.exported.descendant",
+            "text.child.exported.descendant.target",
+            "descendant",
+        ),
+        (
+            "text.child.exported.inherited",
+            "text.child.exported.inherited.target",
+            "inherited exported part",
+        ),
+    ]
+    .into_iter()
+    .map(|(source_id, target, value)| BundleViewTextOutput {
+        source_id: source_id.to_owned(),
         targets: vec![BundleViewTextTarget {
-            public_id: "text.child.target".to_owned(),
+            public_id: target.to_owned(),
             containing_scroll_region: None,
             bounds: ViewTextBlockBounds {
                 x_milli: 0,
@@ -236,26 +272,264 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
             style: ViewRuntimeControlVisualStyle::default(),
         }],
         value: BundleViewTextValue::Plain {
-            value: "child".to_owned(),
+            value: value.to_owned(),
+        },
+        classification: ViewObserveClassification::default(),
+        replacement: None,
+    })
+    .collect();
+    child.style_nodes = vec![
+        BundleViewStyleNode {
+            path: child_path.clone(),
+            instruction: 0,
+            parent: None,
+            kind: BundleViewStyleNodeKind::Text {
+                text_source: "text.child".to_owned(),
+            },
+            part: None,
+            exported_part: None,
+            applications: vec![child_application.clone()],
+        },
+        BundleViewStyleNode {
+            path: child_path.clone(),
+            instruction: 1,
+            parent: Some(BundleViewStyleNodeId {
+                path: child_path.clone(),
+                instruction: 0,
+            }),
+            kind: BundleViewStyleNodeKind::Text {
+                text_source: "text.child.exported".to_owned(),
+            },
+            part: Some("part.child-exported".to_owned()),
+            exported_part: Some("part.public-child".to_owned()),
+            applications: vec![child_application.clone(), exported_axis_application],
+        },
+        BundleViewStyleNode {
+            path: child_path.clone(),
+            instruction: 2,
+            parent: Some(BundleViewStyleNodeId {
+                path: child_path.clone(),
+                instruction: 1,
+            }),
+            kind: BundleViewStyleNodeKind::Text {
+                text_source: "text.child.exported.descendant".to_owned(),
+            },
+            part: None,
+            exported_part: None,
+            applications: Vec::new(),
+        },
+        BundleViewStyleNode {
+            path: child_path.clone(),
+            instruction: 3,
+            parent: Some(BundleViewStyleNodeId {
+                path: child_path,
+                instruction: 0,
+            }),
+            kind: BundleViewStyleNodeKind::Text {
+                text_source: "text.child.exported.inherited".to_owned(),
+            },
+            part: Some("part.child-inherited-export".to_owned()),
+            exported_part: Some("part.public-inherited".to_owned()),
+            applications: vec![child_application],
+        },
+    ];
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.view.mounts = vec![parent, child];
+
+    let frames = ["native", "web", "headless"]
+        .into_iter()
+        .map(|_| {
+            super::PlayerViewStyleState::default()
+                .resolve(
+                    &InputController::default(),
+                    &presentation,
+                    Some(&program),
+                    &PresentationEnvironment::ENGINE_DEFAULT,
+                    &SystemPaletteSet::ENGINE_DEFAULT,
+                )
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    for frame in &frames {
+        for target in [
+            "view_mount_2.text.child.target",
+            "view_mount_2.text.child.exported.inherited.target",
+        ] {
+            assert_eq!(
+                frame.text(target).unwrap().physical_box().axes,
+                ViewBoxAxisMode::VerticalRl
+            );
+        }
+        for target in [
+            "view_mount_2.text.child.exported.target",
+            "view_mount_2.text.child.exported.descendant.target",
+        ] {
+            assert_eq!(frame.text(target).unwrap().visual().text, Some(expected));
+            assert_eq!(
+                frame.text(target).unwrap().physical_box().axes,
+                ViewBoxAxisMode::HorizontalRtl
+            );
+        }
+    }
+    for target in [
+        "view_mount_2.text.child.target",
+        "view_mount_2.text.child.exported.target",
+        "view_mount_2.text.child.exported.descendant.target",
+        "view_mount_2.text.child.exported.inherited.target",
+    ] {
+        assert_eq!(frames[0].text(target), frames[1].text(target));
+        assert_eq!(frames[0].text(target), frames[2].text(target));
+    }
+}
+
+#[test]
+fn top_level_host_seed_is_required_and_explicit_modes_reach_the_shared_player_path() {
+    let input = InputController::default();
+    for &mode in ViewBoxAxisMode::ALL {
+        let mut mount = empty_mount();
+        mount.host_axis_seed = Some(ViewInheritedBoxAxes::for_host_seed(
+            mount.mount,
+            ViewBoxAxisSeedGeneration::INITIAL,
+            ViewBoxAxisHostSeed::Explicit(mode),
+        ));
+        mount.style_nodes = vec![style_root_node(0, "control.axis")];
+        let mut presentation = BundlePresentationSnapshot::default();
+        presentation.view.mounts = vec![mount];
+        let frame = super::PlayerViewStyleState::default()
+            .resolve(
+                &input,
+                &presentation,
+                Some(&ViewStyleProgram::default()),
+                &PresentationEnvironment::ENGINE_DEFAULT,
+                &SystemPaletteSet::ENGINE_DEFAULT,
+            )
+            .unwrap();
+        assert_eq!(
+            frame
+                .control("view_mount_1.control.axis")
+                .unwrap()
+                .physical_box()
+                .axes,
+            mode
+        );
+    }
+
+    let mut missing = empty_mount();
+    missing.host_axis_seed = None;
+    missing.style_nodes = vec![style_root_node(7, "control.missing")];
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.view.mounts = vec![missing];
+    assert_eq!(
+        super::PlayerViewStyleState::default()
+            .resolve(
+                &input,
+                &presentation,
+                Some(&ViewStyleProgram::default()),
+                &PresentationEnvironment::ENGINE_DEFAULT,
+                &SystemPaletteSet::ENGINE_DEFAULT,
+            )
+            .unwrap_err(),
+        PlayerFrameError::MissingHostAxisSeed {
+            mount: ViewMountId::from_raw(1),
+            instruction: 7,
+        }
+    );
+}
+
+#[test]
+fn native_web_and_headless_style_states_match_for_default_and_every_explicit_seed() {
+    let seeds = std::iter::once(ViewBoxAxisHostSeed::Default)
+        .chain(
+            ViewBoxAxisMode::ALL
+                .iter()
+                .copied()
+                .map(ViewBoxAxisHostSeed::Explicit),
+        )
+        .collect::<Vec<_>>();
+    for seed in seeds {
+        let mut mount = empty_mount();
+        let inherited = ViewInheritedBoxAxes::for_host_seed(
+            mount.mount,
+            ViewBoxAxisSeedGeneration::INITIAL,
+            seed,
+        );
+        mount.host_axis_seed = Some(inherited);
+        mount.style_nodes = vec![style_root_node(0, "control.parity")];
+        let mut presentation = BundlePresentationSnapshot::default();
+        presentation.view.mounts = vec![mount];
+
+        let frames = ["native", "web", "headless"]
+            .into_iter()
+            .map(|_| {
+                super::PlayerViewStyleState::default()
+                    .resolve(
+                        &InputController::default(),
+                        &presentation,
+                        Some(&ViewStyleProgram::default()),
+                        &PresentationEnvironment::ENGINE_DEFAULT,
+                        &SystemPaletteSet::ENGINE_DEFAULT,
+                    )
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let target = "view_mount_1.control.parity";
+        assert_eq!(frames[0].control(target), frames[1].control(target));
+        assert_eq!(frames[0].control(target), frames[2].control(target));
+        assert_eq!(
+            frames[0].control(target).unwrap().physical_box().axes,
+            seed.mode()
+        );
+        assert_eq!(
+            serde_json::to_vec(&presentation.view.mounts[0].host_axis_seed).unwrap(),
+            serde_json::to_vec(&Some(inherited)).unwrap()
+        );
+    }
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the non-inference contract compares one retained node across rich-text, locale, and palette-only mutations before checking cache identity"
+)]
+fn locale_rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
+    let mut mount = empty_mount();
+    let inherited = mount.host_axis_seed.unwrap();
+    mount.text = vec![BundleViewTextOutput {
+        source_id: "text.no-axis-inference".to_owned(),
+        targets: vec![BundleViewTextTarget {
+            public_id: "text.no-axis-inference.target".to_owned(),
+            containing_scroll_region: None,
+            bounds: ViewTextBlockBounds {
+                x_milli: 0,
+                y_milli: 0,
+                width_milli: 100_000,
+                height_milli: 20_000,
+            },
+            selection_policy: ViewTextSelectionPolicy::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
+        }],
+        value: BundleViewTextValue::Plain {
+            value: "baseline".to_owned(),
         },
         classification: ViewObserveClassification::default(),
         replacement: None,
     }];
-    child.style_nodes = vec![BundleViewStyleNode {
-        path: child_path,
+    mount.style_nodes = vec![BundleViewStyleNode {
+        path: BundleViewInstancePath::default(),
         instruction: 0,
         parent: None,
         kind: BundleViewStyleNodeKind::Text {
-            text_source: "text.child".to_owned(),
+            text_source: "text.no-axis-inference".to_owned(),
         },
         part: None,
         exported_part: None,
-        applications: vec![child_application],
+        applications: Vec::new(),
     }];
     let mut presentation = BundlePresentationSnapshot::default();
-    presentation.view.mounts = vec![parent, child];
-
-    let frame = super::PlayerViewStyleState::default()
+    presentation.view.mounts = vec![mount];
+    let program = ViewStyleProgram::default();
+    let mut state = super::PlayerViewStyleState::default();
+    let baseline = state
         .resolve(
             &InputController::default(),
             &presentation,
@@ -265,14 +539,170 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
         )
         .unwrap();
 
-    assert_eq!(
-        frame
-            .text("view_mount_2.text.child.target")
-            .unwrap()
-            .visual()
-            .text,
-        Some(expected)
+    presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
+        document: Box::new(RichTextDocument::new(vec![
+            RichTextNode::StyleStart {
+                style: RichTextStyle::Layout {
+                    layout: RichTextLayout {
+                        direction: RichTextInlineDirection::Rtl,
+                        ..RichTextLayout::default()
+                    },
+                },
+            },
+            RichTextNode::Text {
+                text: "changed text and inline direction".to_owned(),
+            },
+        ])),
+    };
+    let changed_text = state
+        .resolve(
+            &InputController::default(),
+            &presentation,
+            Some(&program),
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+    let target = "view_mount_1.text.no-axis-inference.target";
+    assert_eq!(baseline.text(target), changed_text.text(target));
+
+    let localized_environment = PresentationEnvironment::ENGINE_DEFAULT
+        .with_locale(PublicId::try_new("locale.ja_jp").expect("locale identity is valid"));
+    let localized = state
+        .resolve(
+            &InputController::default(),
+            &presentation,
+            Some(&program),
+            &localized_environment,
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+    assert_eq!(baseline.text(target), localized.text(target));
+
+    let mut changed_theme = SystemPaletteSet::ENGINE_DEFAULT;
+    changed_theme.light.accent = PresentationColor::rgb(250, 17, 99);
+    changed_theme.dark.accent = PresentationColor::rgb(11, 222, 73);
+    let themed = state
+        .resolve(
+            &InputController::default(),
+            &presentation,
+            Some(&program),
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            &changed_theme,
+        )
+        .unwrap();
+    assert_eq!(baseline.text(target), themed.text(target));
+
+    let key = ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 0);
+    let facts = ViewStyleNodeFacts::new(None);
+    let cached = state
+        .resolver
+        .resolve(
+            &program,
+            &ViewStyleResolveContext {
+                node_key: &key,
+                node: &facts,
+                ancestors: &[],
+                applications: &[],
+                parent: None,
+                parent_node_key: None,
+                inherited_axes: inherited,
+                axis_provider_participation: ViewAxisProviderParticipation::ProjectionOnly,
+                environment: &PresentationEnvironment::ENGINE_DEFAULT,
+                revisions: ViewStyleRevisionSet {
+                    sheets: state.program_revision,
+                    patches: state.program_revision,
+                    tokens: state.program_revision,
+                    applications: presentation.revision,
+                    interactions: 0,
+                    containers: 0,
+                },
+                trace: ViewStyleTraceMode::Off,
+            },
+        )
+        .unwrap();
+    assert!(
+        cached.cache_hit(),
+        "locale, rich-text direction/content, and palette changes must not evict the typed axis provider entry"
     );
+    assert_eq!(cached.computed().axes().revision(), inherited.revision());
+}
+
+#[test]
+fn nested_mount_rejects_a_host_seed_before_style_resolution() {
+    let mut mount = empty_mount();
+    mount.mount = ViewMountId::from_raw(9);
+    mount.path = serde_json::from_value(serde_json::json!([
+        { "kind": "call", "instruction": 3 }
+    ]))
+    .unwrap();
+    mount.style_nodes = vec![style_root_node(3, "control.nested")];
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.view.mounts = vec![mount.clone()];
+
+    assert_eq!(
+        super::PlayerViewStyleState::default()
+            .resolve(
+                &InputController::default(),
+                &presentation,
+                Some(&ViewStyleProgram::default()),
+                &PresentationEnvironment::ENGINE_DEFAULT,
+                &SystemPaletteSet::ENGINE_DEFAULT,
+            )
+            .unwrap_err(),
+        PlayerFrameError::UnexpectedHostAxisSeed {
+            mount: ViewMountId::from_raw(9),
+        }
+    );
+
+    mount.host_axis_seed = None;
+    presentation.view.mounts = vec![mount];
+    assert_eq!(
+        super::PlayerViewStyleState::default()
+            .resolve(
+                &InputController::default(),
+                &presentation,
+                Some(&ViewStyleProgram::default()),
+                &PresentationEnvironment::ENGINE_DEFAULT,
+                &SystemPaletteSet::ENGINE_DEFAULT,
+            )
+            .unwrap_err(),
+        PlayerFrameError::MissingStyleParent {
+            mount: 9,
+            instruction: 3,
+        }
+    );
+}
+
+#[test]
+fn disappearing_mounts_are_removed_from_the_long_lived_provider_index() {
+    let mut mount = empty_mount();
+    let removed_mount = mount.mount;
+    mount.style_nodes = vec![style_root_node(0, "control.cleanup")];
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.view.mounts = vec![mount];
+    let mut state = super::PlayerViewStyleState::default();
+    state
+        .resolve(
+            &InputController::default(),
+            &presentation,
+            Some(&ViewStyleProgram::default()),
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+
+    state
+        .resolve(
+            &InputController::default(),
+            &BundlePresentationSnapshot::default(),
+            Some(&ViewStyleProgram::default()),
+            &PresentationEnvironment::ENGINE_DEFAULT,
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+    assert!(state.live_mounts.is_empty());
+    assert_eq!(state.resolver.invalidate_mount(removed_mount), 0);
 }
 
 #[test]
@@ -476,7 +906,12 @@ fn targetless_image_binds_its_mount_scoped_image_identity() {
 
 fn cross_mount_style_program(
     color: PresentationColor,
-) -> (ViewStyleProgram, ViewStyleApplication, ViewStyleApplication) {
+) -> (
+    ViewStyleProgram,
+    ViewStyleApplication,
+    ViewStyleApplication,
+    ViewStyleApplication,
+) {
     let source = ViewStyleSourceId::new(0);
     let sheet_id = ViewStyleSheetId::try_new("style.cross-mount").unwrap();
     let selector = ViewStyleSelector::new(vec![
@@ -500,7 +935,37 @@ fn cross_mount_style_program(
     .unwrap();
     let rule = ViewStyleRule::new(selector, vec![declaration], 0, source).unwrap();
     let sheet = ViewStyleSheet::new(sheet_id.clone(), Vec::new(), vec![rule]).unwrap();
-    let program = ViewStyleProgram::try_new(vec![sheet], Vec::new()).unwrap();
+    let axis_sheet_id = ViewStyleSheetId::try_new("style.exported-axis").unwrap();
+    let axis_selector = ViewStyleSelector::new(vec![
+        ViewStyleSelectorSequence::new(
+            None,
+            None,
+            Some(ViewPartName::try_new("part.child-exported").unwrap()),
+            Vec::new(),
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let axis_rule = ViewStyleRule::new(
+        axis_selector,
+        vec![
+            ViewStyleDeclaration::new(
+                ViewPropertyKind::BoxAxes,
+                ViewSpecifiedValue::BoxAxes {
+                    value: ViewBoxAxisMode::HorizontalRtl,
+                },
+                ViewStyleAssignOp::Replace,
+                ViewStyleSourceId::new(1),
+            )
+            .unwrap(),
+        ],
+        0,
+        ViewStyleSourceId::new(1),
+    )
+    .unwrap();
+    let axis_sheet =
+        ViewStyleSheet::new(axis_sheet_id.clone(), Vec::new(), vec![axis_rule]).unwrap();
+    let program = ViewStyleProgram::try_new(vec![sheet, axis_sheet], Vec::new()).unwrap();
     let scope = ViewStyleScopeId::new(1);
     let parent = ViewStyleApplication::new(
         ViewStyleApplicationTarget::named(sheet_id.clone()),
@@ -516,7 +981,14 @@ fn cross_mount_style_program(
         0,
         ViewStyleBoundaryFacts::nested_view(1, false, true),
     );
-    (program, parent, child)
+    let exported_axis = ViewStyleApplication::new(
+        ViewStyleApplicationTarget::named(axis_sheet_id),
+        ViewStyleScopeId::new(2),
+        0,
+        1,
+        ViewStyleBoundaryFacts::SAME_VIEW,
+    );
+    (program, parent, child, exported_axis)
 }
 
 fn projected_style(
@@ -615,7 +1087,7 @@ fn unsupported_consumer_value(property: ViewPropertyKind) -> ViewSpecifiedValue 
 
 fn runtime_node(instruction: u32) -> RuntimeNodeId {
     RuntimeNodeId {
-        mount: 1,
+        mount: ViewMountId::from_raw(1),
         path: Vec::new(),
         instruction,
     }
@@ -646,9 +1118,15 @@ fn surface(id: &str, y_milli: i32, height_milli: u32) -> ViewRuntimeSurface {
 }
 
 fn empty_mount() -> BundleViewMountOutput {
+    let mount = ViewMountId::from_raw(1);
     BundleViewMountOutput {
         handle: PresentationHandleId::try_new("handle.test").unwrap(),
-        mount: ViewMountId::from_raw(1),
+        mount,
+        host_axis_seed: Some(ViewInheritedBoxAxes::for_host_seed(
+            mount,
+            ViewBoxAxisSeedGeneration::INITIAL,
+            ViewBoxAxisHostSeed::Default,
+        )),
         view: "view.Test".to_owned(),
         path: BundleViewInstancePath::default(),
         dialogue: None,
@@ -658,6 +1136,21 @@ fn empty_mount() -> BundleViewMountOutput {
         text: Vec::new(),
         fx: Vec::new(),
         style_nodes: Vec::new(),
+    }
+}
+
+fn style_root_node(instruction: u32, target: &str) -> BundleViewStyleNode {
+    BundleViewStyleNode {
+        path: BundleViewInstancePath::default(),
+        instruction,
+        parent: None,
+        kind: BundleViewStyleNodeKind::Element {
+            element: ViewElementKind::Panel,
+            target: Some(target.to_owned()),
+        },
+        part: None,
+        exported_part: None,
+        applications: Vec::new(),
     }
 }
 

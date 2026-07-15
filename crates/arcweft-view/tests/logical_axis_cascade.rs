@@ -1,14 +1,15 @@
 use arcweft_presentation::appearance::{ColorScheme, PresentationEnvironment};
-use arcweft_view::ViewElementKind;
 use arcweft_view::style::{
-    ComputedViewStyle, ViewAxisUsageSet, ViewBoxAxisMode, ViewBoxAxisSource, ViewLengthMilli,
-    ViewOverflow, ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplication,
+    ComputedViewStyle, ViewAxisProviderParticipation, ViewAxisUsageSet, ViewBoxAxisHostSeed,
+    ViewBoxAxisMode, ViewBoxAxisSeedGeneration, ViewBoxAxisSource, ViewInheritedBoxAxes,
+    ViewLengthMilli, ViewOverflow, ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplication,
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleDeclaration,
     ViewStyleModelError, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId,
     ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver,
     ViewStyleRevisionSet, ViewStyleScopeId, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
     ViewStyleToken, ViewStyleTokenId, ViewStyleTraceMode, ViewStyleTransition, ViewStyleValueKind,
 };
+use arcweft_view::{ViewElementKind, ViewMountId};
 
 fn declaration(
     property: ViewPropertyKind,
@@ -61,7 +62,8 @@ fn resolve_program(
     );
     let applications = [application];
     let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
-    let key = ViewStyleNodeKey::new(1, vec![1], 1);
+    let key = ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![1], 1);
+    let parent_key = parent.map(|_| ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 0));
     let environment = PresentationEnvironment::new(ColorScheme::Light);
     ViewStyleResolver::default()
         .resolve(
@@ -72,6 +74,18 @@ fn resolve_program(
                 ancestors: &[],
                 applications: &applications,
                 parent,
+                parent_node_key: parent_key.as_ref(),
+                inherited_axes: parent.map_or_else(
+                    || {
+                        ViewInheritedBoxAxes::for_host_seed(
+                            key.mount(),
+                            ViewBoxAxisSeedGeneration::INITIAL,
+                            ViewBoxAxisHostSeed::Default,
+                        )
+                    },
+                    |parent| parent.axes().inherited_snapshot(),
+                ),
+                axis_provider_participation: ViewAxisProviderParticipation::ProjectionOnly,
                 environment: &environment,
                 revisions: ViewStyleRevisionSet::default(),
                 trace: ViewStyleTraceMode::Off,

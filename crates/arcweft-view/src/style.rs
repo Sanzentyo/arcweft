@@ -22,7 +22,8 @@ pub mod trace;
 pub mod value;
 
 pub use axis::{
-    ViewAxisSign, ViewAxisUsageSet, ViewBoxAxisMode, ViewBoxAxisModeError, ViewBoxAxisRevision,
+    ViewAxisSign, ViewAxisUsageSet, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisModeError,
+    ViewBoxAxisRevision, ViewBoxAxisSeedGeneration, ViewBoxAxisSeedGenerationError,
     ViewBoxAxisSeedSource, ViewBoxAxisSource, ViewInheritedBoxAxes, ViewPhysicalAxis,
     ViewPhysicalBoxStyle, ViewPhysicalEdges, ViewPhysicalSide, ViewResolvedAxis,
     ViewResolvedBoxAxes,
@@ -39,9 +40,9 @@ pub use property::{
     ViewPropertyValueTransform, ViewStyleInvalidationSet, ViewStyleValueKind,
 };
 pub use resolver::{
-    ViewElementStateSet, ViewInteractionStateSet, ViewStyleNodeFacts, ViewStyleNodeKey,
-    ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver,
-    ViewStyleResolverLimits, ViewStyleRevisionSet,
+    ViewAxisProviderParticipation, ViewElementStateSet, ViewInteractionStateSet,
+    ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleResolution, ViewStyleResolveContext,
+    ViewStyleResolveError, ViewStyleResolver, ViewStyleResolverLimits, ViewStyleRevisionSet,
 };
 pub use selector::{
     ViewContainerAxis, ViewContainerPredicate, ViewElementState, ViewEnvironmentPredicate,

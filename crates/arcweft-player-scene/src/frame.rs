@@ -17,6 +17,7 @@ use arcweft_render_wgpu::geometry::{
     SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
+use arcweft_view::ViewMountId;
 use arcweft_view::style::{ViewPropertyKind, ViewStyleProgram, ViewStyleResolveError};
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -74,6 +75,13 @@ pub enum PlayerFrameError {
     StyleProjection(ViewRuntimeStyleProjectionError),
     #[error("executed View Style applications have no canonical Style program")]
     MissingStyleProgram,
+    #[error("top-level View mount {mount:?} instruction {instruction} has no host axis seed")]
+    MissingHostAxisSeed {
+        mount: ViewMountId,
+        instruction: u32,
+    },
+    #[error("nested View mount {mount:?} unexpectedly contains a host axis seed")]
+    UnexpectedHostAxisSeed { mount: ViewMountId },
     #[error("View Style node target `{target}` is produced more than once in one frame")]
     DuplicateStyleTarget { target: String },
     #[error("View Style node identity repeats in mount {mount} at instruction {instruction}")]

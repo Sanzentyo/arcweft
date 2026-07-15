@@ -31,6 +31,7 @@ use crate::text_control_writeback::RuntimeTextControlWriteBack;
 use crate::view_projection::{ViewProjectionInput, project_view_resources};
 use crate::view_runtime::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewRuntime, BundleViewRuntimeError,
+    reconciled_root_handles_for_restore,
 };
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::fx_definitions::FxDefinitions;
@@ -82,6 +83,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use thiserror::Error;
 
+mod axis_seed;
 mod fx;
 mod virtualization;
 
@@ -853,9 +855,17 @@ impl BundleSession {
             }
         }
         if compatibility == SwapCompatibility::ContentOnly {
+            let dialogue = self.presentation.dialogue.view_inputs();
+            let reconciled_root_handles = reconciled_root_handles_for_restore(
+                &self.presentation.presentation_handles,
+                &dialogue,
+            )
+            .map_err(|error| BundleHotSwapError::ViewRuntime {
+                message: error.to_string(),
+            })?;
             next_runtime
                 .view_runtime
-                .restore(&self.view_runtime.snapshot())
+                .restore(&self.view_runtime.snapshot(), &reconciled_root_handles)
                 .map_err(|error| BundleHotSwapError::ViewRuntime {
                     message: error.to_string(),
                 })?;
@@ -1623,6 +1633,10 @@ impl BundleSession {
         self.restore_session_snapshot(snapshot)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "session restore validates every candidate subsystem before committing the facade state atomically"
+    )]
     pub fn restore_session_snapshot(
         &mut self,
         snapshot: BundleSessionSnapshot,
@@ -1678,8 +1692,16 @@ impl BundleSession {
             message: error.to_string(),
         })?;
         let mut restored_view_runtime = self.view_runtime.clone();
+        let dialogue = snapshot.presentation.dialogue.view_inputs();
+        let reconciled_root_handles = reconciled_root_handles_for_restore(
+            &snapshot.presentation.presentation_handles,
+            &dialogue,
+        )
+        .map_err(|error| BundleSessionSaveError::ViewRuntime {
+            message: error.to_string(),
+        })?;
         restored_view_runtime
-            .restore(&snapshot.view_runtime)
+            .restore(&snapshot.view_runtime, &reconciled_root_handles)
             .map_err(|error| BundleSessionSaveError::ViewRuntime {
                 message: error.to_string(),
             })?;

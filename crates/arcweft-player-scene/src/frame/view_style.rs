@@ -1,5 +1,6 @@
 //! Live native Style resolution for executed View node producers.
 
+mod axis_seed;
 mod consumer;
 mod layout;
 
@@ -16,15 +17,17 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewStyleNode,
     BundleViewStyleNodeKind,
 };
+use arcweft_view::ViewMountId;
 use arcweft_view::style::{
-    ComputedViewStyle, ViewElementState, ViewElementStateSet, ViewInteractionSelector,
-    ViewInteractionStateSet, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
-    ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleProgram, ViewStyleResolution,
-    ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver, ViewStyleRevisionSet,
-    ViewStyleTraceMode,
+    ComputedViewStyle, ViewAxisProviderParticipation, ViewElementState, ViewElementStateSet,
+    ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet, ViewPartName,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleNodeFacts, ViewStyleNodeKey,
+    ViewStyleProgram, ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError,
+    ViewStyleResolver, ViewStyleRevisionSet, ViewStyleTraceMode,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use axis_seed::{inherited_axes, validate_mount_seed_shape};
 use consumer::validate_supported_properties;
 pub(super) use consumer::{StyledViewResources, box_style};
 use layout::{ResolvedLayoutNode, resolve_layout_offsets};
@@ -48,7 +51,7 @@ struct StyleTargetKey {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RuntimeNodeId {
-    mount: u64,
+    mount: ViewMountId,
     path: Vec<u64>,
     instruction: u32,
 }
@@ -92,6 +95,7 @@ struct PrimaryNodeStyle {
     facts: ViewStyleNodeFacts,
     computed: ComputedViewStyle,
     projected: ViewRuntimeNodeStyle,
+    inherited_axes: ViewInheritedBoxAxes,
 }
 
 #[derive(Clone)]
@@ -116,6 +120,7 @@ pub(super) struct PlayerViewStyleState {
     resolver: ViewStyleResolver,
     program: Option<ViewStyleProgram>,
     program_revision: u64,
+    live_mounts: BTreeSet<ViewMountId>,
 }
 
 impl ResolvedViewStyleFrame {
@@ -178,6 +183,10 @@ impl PlayerViewStyleState {
         environment: &PresentationEnvironment,
         palettes: &SystemPaletteSet,
     ) -> Result<ResolvedViewStyleFrame, PlayerFrameError> {
+        self.synchronize_live_mounts(presentation);
+        for mount in &presentation.view.mounts {
+            validate_mount_seed_shape(mount)?;
+        }
         let has_applications = presentation
             .view
             .mounts
@@ -257,6 +266,7 @@ impl PlayerViewStyleState {
                 .collect()
         });
         let parent_computed = parent.map(|parent| parent.computed.clone());
+        let inherited_axes = inherited_axes(mount, node, parent)?;
         let bindings = node_bindings(context.presentation, context.input, mount, node)?;
         let primary_binding = bindings.first().cloned().unwrap_or(NodeBinding {
             keys: Vec::new(),
@@ -275,6 +285,9 @@ impl PlayerViewStyleState {
             &facts,
             &ancestors,
             parent_computed.as_ref(),
+            parent_id.as_ref(),
+            inherited_axes,
+            ViewAxisProviderParticipation::RetainedPrimary,
         )?;
         validate_supported_properties(context.presentation, mount, node, &bindings, &computed)?;
         let projected = ViewRuntimeNodeStyle::try_from_computed(
@@ -290,6 +303,7 @@ impl PlayerViewStyleState {
             facts,
             computed,
             projected,
+            inherited_axes,
         })
     }
 
@@ -316,6 +330,9 @@ impl PlayerViewStyleState {
                     &facts,
                     &primary.ancestors,
                     primary.parent_computed.as_ref(),
+                    primary.parent_id.as_ref(),
+                    primary.inherited_axes,
+                    ViewAxisProviderParticipation::ProjectionOnly,
                 )?
             };
             validate_supported_properties(
@@ -349,6 +366,19 @@ impl PlayerViewStyleState {
         }
     }
 
+    fn synchronize_live_mounts(&mut self, presentation: &BundlePresentationSnapshot) {
+        let current = presentation
+            .view
+            .mounts
+            .iter()
+            .map(|mount| mount.mount)
+            .collect::<BTreeSet<_>>();
+        for removed in self.live_mounts.difference(&current) {
+            self.resolver.invalidate_mount(*removed);
+        }
+        self.live_mounts = current;
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "live resolution keeps the canonical program, node identity, ancestry, and cache revisions explicit"
@@ -363,8 +393,12 @@ impl PlayerViewStyleState {
         facts: &ViewStyleNodeFacts,
         ancestors: &[ViewStyleNodeFacts],
         parent: Option<&ComputedViewStyle>,
+        parent_id: Option<&RuntimeNodeId>,
+        inherited_axes: ViewInheritedBoxAxes,
+        axis_provider_participation: ViewAxisProviderParticipation,
     ) -> Result<ComputedViewStyle, ViewStyleResolveError> {
-        let key = ViewStyleNodeKey::new(node_id.mount, node_id.path.clone(), node_id.instruction);
+        let key = node_id.style_key();
+        let parent_key = parent_id.map(RuntimeNodeId::style_key);
         self.resolver
             .resolve(
                 program,
@@ -374,6 +408,9 @@ impl PlayerViewStyleState {
                     ancestors,
                     applications: &node.applications,
                     parent,
+                    parent_node_key: parent_key.as_ref(),
+                    inherited_axes,
+                    axis_provider_participation,
                     environment,
                     revisions: ViewStyleRevisionSet {
                         sheets: self.program_revision,
@@ -405,6 +442,7 @@ fn retain_resolved_node(
         facts,
         computed,
         projected,
+        inherited_axes: _,
     } = primary;
     frame.layout_nodes.push(ResolvedLayoutNode {
         id: node_id.clone(),
@@ -454,7 +492,7 @@ fn parent_node_id(
 ) -> Result<Option<RuntimeNodeId>, PlayerFrameError> {
     let parent_id = if let Some(parent) = &node.parent {
         Some(RuntimeNodeId {
-            mount: mount.mount.get(),
+            mount: mount.mount,
             path: encode_path(parent.path.segments()),
             instruction: parent.instruction,
         })
@@ -493,9 +531,15 @@ fn parent_node_id(
 
 fn runtime_node_id(mount: &BundleViewMountOutput, node: &BundleViewStyleNode) -> RuntimeNodeId {
     RuntimeNodeId {
-        mount: mount.mount.get(),
+        mount: mount.mount,
         path: encode_path(node.path.segments()),
         instruction: node.instruction,
+    }
+}
+
+impl RuntimeNodeId {
+    fn style_key(&self) -> ViewStyleNodeKey {
+        ViewStyleNodeKey::new(self.mount, self.path.clone(), self.instruction)
     }
 }
 

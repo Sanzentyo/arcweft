@@ -1,8 +1,15 @@
 //! Closed logical-axis context and canonical physical box projection types.
 
+use super::resolver::ViewStyleNodeKey;
 use super::{ViewLengthMilli, ViewOverflow, ViewStyleContributionSource, ViewStylePriority};
+use crate::ViewMountId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+const AXIS_REVISION_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const AXIS_REVISION_PRIME: u64 = 0x0000_0100_0000_01b3;
+const HOST_AXIS_REVISION_DOMAIN: &[u8] = b"arcweft.view-axis.host.v1";
+const LOCAL_AXIS_REVISION_DOMAIN: &[u8] = b"arcweft.view-axis.local.v1";
 
 /// Closed axis progression accepted by native View Style.
 #[derive(
@@ -68,11 +75,45 @@ pub enum ViewBoxAxisModeError {
 }
 
 /// Stable revision of the effective axis provider for a node.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(transparent)]
 pub struct ViewBoxAxisRevision(u64);
 
+/// Host-owned intent used to seed one top-level View mount.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(
+    deny_unknown_fields,
+    tag = "kind",
+    content = "mode",
+    rename_all = "snake_case"
+)]
+pub enum ViewBoxAxisHostSeed {
+    #[default]
+    Default,
+    Explicit(ViewBoxAxisMode),
+}
+
+/// Monotonic identity generation owned by one root View mount.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(transparent)]
+pub struct ViewBoxAxisSeedGeneration(u64);
+
+/// Failure to allocate the next host-seed generation without wrapping.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum ViewBoxAxisSeedGenerationError {
+    #[error("View box-axis seed generation is exhausted")]
+    Exhausted,
+}
+
 /// Origin of an inherited axis seed before local Style wins are considered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewBoxAxisSeedSource {
     HostDefault,
     HostExplicit,
@@ -80,7 +121,8 @@ pub enum ViewBoxAxisSeedSource {
 }
 
 /// Typed axis seed propagated across a retained View parent boundary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViewInheritedBoxAxes {
     mode: ViewBoxAxisMode,
     revision: ViewBoxAxisRevision,
@@ -308,8 +350,68 @@ impl ViewResolvedBoxAxes {
 }
 
 impl ViewBoxAxisRevision {
-    pub const fn new(value: u64) -> Self {
+    pub(crate) const fn from_raw(value: u64) -> Self {
         Self(value)
+    }
+
+    /// Derives the stable provider identity for one root mount host seed.
+    pub fn for_host_seed(
+        mount: ViewMountId,
+        generation: ViewBoxAxisSeedGeneration,
+        seed: ViewBoxAxisHostSeed,
+    ) -> Self {
+        let mut transcript = AxisRevisionTranscript::new();
+        transcript.length_prefixed(HOST_AXIS_REVISION_DOMAIN);
+        transcript.u64(mount.get());
+        transcript.u64(generation.value());
+        transcript.u8(match seed {
+            ViewBoxAxisHostSeed::Default => 0,
+            ViewBoxAxisHostSeed::Explicit(_) => 1,
+        });
+        transcript.u8(seed.mode().canonical_tag());
+        Self(transcript.finish())
+    }
+
+    pub(crate) fn for_local_provider(
+        node: &ViewStyleNodeKey,
+        mode: ViewBoxAxisMode,
+        priority: ViewStylePriority,
+        source: &ViewStyleContributionSource,
+    ) -> Self {
+        let mut transcript = AxisRevisionTranscript::new();
+        transcript.length_prefixed(LOCAL_AXIS_REVISION_DOMAIN);
+        transcript.u64(node.mount().get());
+        transcript.u64(node.path().len() as u64);
+        for segment in node.path() {
+            transcript.u64(*segment);
+        }
+        transcript.u32(node.instruction());
+        transcript.u8(mode.canonical_tag());
+        transcript.u16(priority.scope_depth());
+        transcript.u32(priority.application_order());
+        transcript.u16(priority.specificity().0);
+        transcript.u16(priority.specificity().1);
+        transcript.u32(priority.rule_source_order());
+        transcript.u32(priority.declaration_order());
+        match source {
+            ViewStyleContributionSource::Inherited => transcript.u8(0),
+            ViewStyleContributionSource::Sheet {
+                sheet,
+                rule,
+                declaration,
+            } => {
+                transcript.u8(1);
+                transcript.length_prefixed(sheet.public_id().as_str().as_bytes());
+                transcript.u32(rule.value());
+                transcript.u32(declaration.value());
+            }
+            ViewStyleContributionSource::Patch { patch, declaration } => {
+                transcript.u8(2);
+                transcript.u32(patch.value());
+                transcript.u32(declaration.value());
+            }
+        }
+        Self(transcript.finish())
     }
 
     pub const fn value(self) -> u64 {
@@ -317,8 +419,39 @@ impl ViewBoxAxisRevision {
     }
 }
 
+impl ViewBoxAxisHostSeed {
+    pub const fn mode(self) -> ViewBoxAxisMode {
+        match self {
+            Self::Default => ViewBoxAxisMode::HorizontalLtr,
+            Self::Explicit(mode) => mode,
+        }
+    }
+
+    pub const fn source(self) -> ViewBoxAxisSeedSource {
+        match self {
+            Self::Default => ViewBoxAxisSeedSource::HostDefault,
+            Self::Explicit(_) => ViewBoxAxisSeedSource::HostExplicit,
+        }
+    }
+}
+
+impl ViewBoxAxisSeedGeneration {
+    pub const INITIAL: Self = Self(0);
+
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+
+    pub fn checked_next(self) -> Result<Self, ViewBoxAxisSeedGenerationError> {
+        self.0
+            .checked_add(1)
+            .map(Self)
+            .ok_or(ViewBoxAxisSeedGenerationError::Exhausted)
+    }
+}
+
 impl ViewInheritedBoxAxes {
-    pub const fn new(
+    pub(crate) const fn from_raw(
         mode: ViewBoxAxisMode,
         revision: ViewBoxAxisRevision,
         source: ViewBoxAxisSeedSource,
@@ -330,12 +463,20 @@ impl ViewInheritedBoxAxes {
         }
     }
 
-    pub const fn host_default() -> Self {
-        Self::new(
-            ViewBoxAxisMode::HorizontalLtr,
-            ViewBoxAxisRevision::new(0),
-            ViewBoxAxisSeedSource::HostDefault,
+    pub fn for_host_seed(
+        mount: ViewMountId,
+        generation: ViewBoxAxisSeedGeneration,
+        seed: ViewBoxAxisHostSeed,
+    ) -> Self {
+        Self::from_raw(
+            seed.mode(),
+            ViewBoxAxisRevision::for_host_seed(mount, generation, seed),
+            seed.source(),
         )
+    }
+
+    pub const fn from_parent(mode: ViewBoxAxisMode, revision: ViewBoxAxisRevision) -> Self {
+        Self::from_raw(mode, revision, ViewBoxAxisSeedSource::Parent)
     }
 
     pub const fn mode(self) -> ViewBoxAxisMode {
@@ -348,6 +489,50 @@ impl ViewInheritedBoxAxes {
 
     pub const fn source(self) -> ViewBoxAxisSeedSource {
         self.source
+    }
+}
+
+struct AxisRevisionTranscript {
+    value: u64,
+}
+
+impl AxisRevisionTranscript {
+    const fn new() -> Self {
+        Self {
+            value: AXIS_REVISION_OFFSET_BASIS,
+        }
+    }
+
+    fn bytes(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.value ^= u64::from(*byte);
+            self.value = self.value.wrapping_mul(AXIS_REVISION_PRIME);
+        }
+    }
+
+    fn length_prefixed(&mut self, bytes: &[u8]) {
+        self.u64(bytes.len() as u64);
+        self.bytes(bytes);
+    }
+
+    fn u8(&mut self, value: u8) {
+        self.bytes(&value.to_le_bytes());
+    }
+
+    fn u16(&mut self, value: u16) {
+        self.bytes(&value.to_le_bytes());
+    }
+
+    fn u32(&mut self, value: u32) {
+        self.bytes(&value.to_le_bytes());
+    }
+
+    fn u64(&mut self, value: u64) {
+        self.bytes(&value.to_le_bytes());
+    }
+
+    const fn finish(self) -> u64 {
+        self.value
     }
 }
 
@@ -392,5 +577,83 @@ impl Default for ViewPhysicalBoxStyle {
             overflow_x: ViewOverflow::Visible,
             overflow_y: ViewOverflow::Visible,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::style::{ViewStylePatchId, ViewStyleSheetId, ViewStyleSourceId};
+
+    #[test]
+    fn local_provider_revisions_match_the_canonical_transcript() {
+        let patch_node = ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 0);
+        let zero_priority = ViewStylePriority::new(0, 0, 0, 0, 0, 0);
+        let zero_patch = ViewStyleContributionSource::Patch {
+            patch: ViewStylePatchId::new(0),
+            declaration: ViewStyleSourceId::new(0),
+        };
+        let stable = ViewBoxAxisRevision::for_local_provider(
+            &patch_node,
+            ViewBoxAxisMode::HorizontalLtr,
+            zero_priority,
+            &zero_patch,
+        );
+        assert_eq!(stable.value(), 0xeb85_2c36_ca94_9613);
+        assert_eq!(
+            ViewBoxAxisRevision::for_local_provider(
+                &patch_node,
+                ViewBoxAxisMode::HorizontalLtr,
+                zero_priority,
+                &zero_patch,
+            ),
+            stable
+        );
+        assert_ne!(
+            ViewBoxAxisRevision::for_local_provider(
+                &ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 1),
+                ViewBoxAxisMode::HorizontalLtr,
+                zero_priority,
+                &zero_patch,
+            ),
+            stable
+        );
+        assert_ne!(
+            ViewBoxAxisRevision::for_local_provider(
+                &patch_node,
+                ViewBoxAxisMode::HorizontalLtr,
+                ViewStylePriority::new(0, 1, 0, 0, 0, 0),
+                &zero_patch,
+            ),
+            stable
+        );
+        assert_ne!(
+            ViewBoxAxisRevision::for_local_provider(
+                &patch_node,
+                ViewBoxAxisMode::HorizontalLtr,
+                zero_priority,
+                &ViewStyleContributionSource::Patch {
+                    patch: ViewStylePatchId::new(1),
+                    declaration: ViewStyleSourceId::new(0),
+                },
+            ),
+            stable
+        );
+
+        let sheet_node = ViewStyleNodeKey::new(ViewMountId::from_raw(7), vec![10, 20], 42);
+        assert_eq!(
+            ViewBoxAxisRevision::for_local_provider(
+                &sheet_node,
+                ViewBoxAxisMode::VerticalRl,
+                ViewStylePriority::new(1, 2, 3, 4, 5, 6),
+                &ViewStyleContributionSource::Sheet {
+                    sheet: ViewStyleSheetId::try_new("main-style").unwrap(),
+                    rule: ViewStyleSourceId::new(7),
+                    declaration: ViewStyleSourceId::new(8),
+                },
+            )
+            .value(),
+            0x6298_9f22_c1b5_63c5
+        );
     }
 }

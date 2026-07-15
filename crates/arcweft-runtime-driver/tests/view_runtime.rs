@@ -46,6 +46,34 @@ fn handle(id: &str, view: &str) -> PresentationHandleRecord {
     )
 }
 
+#[test]
+fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
+    assert_eq!(
+        arcweft_runtime_driver::session_save::BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+        1,
+        "the corrected unpublished payload remains the initial save schema"
+    );
+    let runtime = BundleViewRuntime::try_new(None, None, None).unwrap();
+    let snapshot = runtime.snapshot();
+    let mut missing = serde_json::to_value(&snapshot).unwrap();
+    missing.as_object_mut().unwrap().remove("axis_seeds");
+    assert!(
+        serde_json::from_value::<arcweft_runtime_driver::view_runtime::BundleViewRuntimeSnapshot>(
+            missing
+        )
+        .is_err()
+    );
+
+    let mut unknown = serde_json::to_value(snapshot).unwrap();
+    unknown["axis_seeds"]["unknown"] = serde_json::json!(true);
+    assert!(
+        serde_json::from_value::<arcweft_runtime_driver::view_runtime::BundleViewRuntimeSnapshot>(
+            unknown
+        )
+        .is_err()
+    );
+}
+
 fn value_program(
     id: u32,
     parameter_types: Vec<FxRuntimeType>,
@@ -794,7 +822,9 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
 
     let snapshot = runtime.snapshot();
     let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
-    restored.restore(&snapshot).unwrap();
+    restored
+        .restore(&snapshot, std::slice::from_ref(&first_handle))
+        .unwrap();
     assert_eq!(restored.snapshot(), snapshot);
     let after_restore = restored.evaluate(std::slice::from_ref(&first_handle), &[], false);
     assert_eq!(
@@ -1291,7 +1321,10 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
 
     let snapshot = runtime.snapshot();
     let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
-    restored.restore(&snapshot).expect("mount graph restores");
+    let restored_handle = handle("dialogue.40", "view.Dialogue");
+    restored
+        .restore(&snapshot, std::slice::from_ref(&restored_handle))
+        .expect("mount graph restores");
     let second_handle = PresentationHandleId::try_new("dialogue.41").unwrap();
     let two_inputs = [
         DialogueViewInput {

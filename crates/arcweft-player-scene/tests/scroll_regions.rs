@@ -39,6 +39,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_view::ViewMountId;
+use arcweft_view::style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes};
 
 fn assert_px(actual: f32, expected: f32) {
     assert!(
@@ -67,10 +68,16 @@ fn push_view_text(
     style: ViewRuntimeControlVisualStyle,
 ) {
     let source_id = format!("source.{target}");
+    let mount = ViewMountId::from_raw(0);
     presentation.view.mounts.push(BundleViewMountOutput {
         dialogue: None,
         handle: PresentationHandleId::try_new(format!("handle.{target}")).expect("handle id"),
-        mount: ViewMountId::from_raw(0),
+        mount,
+        host_axis_seed: Some(ViewInheritedBoxAxes::for_host_seed(
+            mount,
+            ViewBoxAxisSeedGeneration::INITIAL,
+            ViewBoxAxisHostSeed::Default,
+        )),
         view: view.to_owned(),
         path: BundleViewInstancePath::default(),
         active_targets: vec![target.to_owned()],

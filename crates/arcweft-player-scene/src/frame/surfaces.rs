@@ -650,7 +650,8 @@ mod tests {
     use arcweft_view::{
         ViewElementKind, ViewMountId,
         style::{
-            ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewColorValue, ViewLengthMilli,
+            ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewBoxAxisHostSeed,
+            ViewBoxAxisSeedGeneration, ViewColorValue, ViewInheritedBoxAxes, ViewLengthMilli,
             ViewOverflow, ViewPropertyKind, ViewScalarMilli, ViewSpecifiedValue, ViewStyleAssignOp,
             ViewStyleContribution, ViewStyleContributionSource, ViewStylePriority,
         },
@@ -841,6 +842,11 @@ mod tests {
             dialogue: None,
             handle: handle.clone(),
             mount: root_mount,
+            host_axis_seed: Some(ViewInheritedBoxAxes::for_host_seed(
+                root_mount,
+                ViewBoxAxisSeedGeneration::INITIAL,
+                ViewBoxAxisHostSeed::Default,
+            )),
             view: "view.Root".to_owned(),
             path: BundleViewInstancePath::default(),
             active_targets: Vec::new(),
@@ -864,6 +870,7 @@ mod tests {
             dialogue: None,
             handle,
             mount: child_mount,
+            host_axis_seed: None,
             view: "view.Child".to_owned(),
             path: BundleViewInstancePath::default(),
             active_targets: Vec::new(),

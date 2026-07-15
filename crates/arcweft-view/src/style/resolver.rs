@@ -1,28 +1,31 @@
 //! Single native computed-Style resolver for retained and control nodes.
 
 mod axis;
+mod provider;
 
 use super::{
     ComputedViewAxes, ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
-    ViewBoxAxisMode, ViewBoxAxisRevision, ViewComputedPropertyKind, ViewElementState,
-    ViewEnvironmentPredicate, ViewInteractionSelector, ViewPartName, ViewPropertyKind,
-    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleCombinator,
-    ViewStyleComparison, ViewStyleContribution, ViewStyleContributionSource, ViewStylePatch,
-    ViewStylePatchId, ViewStylePredicate, ViewStylePriority, ViewStyleProgram, ViewStyleScopeId,
-    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
-    ViewStyleSourceId, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
+    ViewBoxAxisMode, ViewBoxAxisRevision, ViewBoxAxisSeedSource, ViewComputedPropertyKind,
+    ViewElementState, ViewEnvironmentPredicate, ViewInheritedBoxAxes, ViewInteractionSelector,
+    ViewPartName, ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplication,
+    ViewStyleApplicationTarget, ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution,
+    ViewStyleContributionSource, ViewStylePatch, ViewStylePatchId, ViewStylePredicate,
+    ViewStylePriority, ViewStyleProgram, ViewStyleScopeId, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
     ViewStyleTraceRejection,
 };
-use crate::ViewElementKind;
+use crate::{ViewElementKind, ViewMountId};
 use arcweft_presentation::appearance::{ColorScheme, ContrastPreference, PresentationEnvironment};
 use axis::{PendingViewStyleContribution, resolve_axes, resolve_contribution, resolve_transitions};
-use std::collections::{BTreeMap, VecDeque};
+use provider::{ViewAxisProviderIndex, ViewAxisProviderUpdatePlan};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
 
 /// Stable runtime identity used by the bounded computed-style cache.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ViewStyleNodeKey {
-    mount: u64,
+    mount: ViewMountId,
     path: Vec<u64>,
     instruction: u32,
 }
@@ -67,9 +70,19 @@ pub struct ViewStyleResolverLimits {
     pub max_selector_steps: usize,
     pub max_token_depth: usize,
     pub max_cache_entries: usize,
+    pub max_axis_invalidation_nodes: usize,
 }
 
 /// Inputs for resolving one concrete retained node.
+/// The inherited axis snapshot is mandatory; ambient locale/text direction is not a fallback.
+/// ```compile_fail
+/// use arcweft_view::style::{ViewStyleResolveContext, ViewStyleTraceMode};
+/// let _context = ViewStyleResolveContext {
+///     node_key: todo!(), node: todo!(), ancestors: &[], applications: &[],
+///     parent: None, parent_node_key: None, environment: todo!(), axis_provider_participation:
+///     Default::default(), revisions: Default::default(), trace: ViewStyleTraceMode::Off,
+/// };
+/// ```
 pub struct ViewStyleResolveContext<'a> {
     pub node_key: &'a ViewStyleNodeKey,
     pub node: &'a ViewStyleNodeFacts,
@@ -77,9 +90,20 @@ pub struct ViewStyleResolveContext<'a> {
     pub ancestors: &'a [ViewStyleNodeFacts],
     pub applications: &'a [ViewStyleApplication],
     pub parent: Option<&'a ComputedViewStyle>,
+    pub parent_node_key: Option<&'a ViewStyleNodeKey>,
+    pub inherited_axes: ViewInheritedBoxAxes,
+    pub axis_provider_participation: ViewAxisProviderParticipation,
     pub environment: &'a PresentationEnvironment,
     pub revisions: ViewStyleRevisionSet,
     pub trace: ViewStyleTraceMode,
+}
+
+/// Whether one resolution owns retained provider state or is a projection of it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ViewAxisProviderParticipation {
+    #[default]
+    RetainedPrimary,
+    ProjectionOnly,
 }
 
 /// Computed result and optional deterministic trace.
@@ -96,6 +120,7 @@ pub struct ViewStyleResolver {
     limits: ViewStyleResolverLimits,
     cache: BTreeMap<ViewStyleCacheKey, ComputedViewStyle>,
     cache_order: VecDeque<ViewStyleCacheKey>,
+    axis_providers: ViewAxisProviderIndex,
 }
 
 /// Failure to resolve typed data within the configured hard bounds.
@@ -131,6 +156,56 @@ pub enum ViewStyleResolveError {
         authored_property: ViewPropertyKind,
         resolved_property: ViewComputedPropertyKind,
         mode: ViewBoxAxisMode,
+    },
+    #[error("root axis provider {node:?} cannot use seed source {seed_source:?}")]
+    AxisProviderInvalidRootSeed {
+        node: ViewStyleNodeKey,
+        seed_source: ViewBoxAxisSeedSource,
+    },
+    #[error("child axis provider {node:?} cannot use seed source {seed_source:?}")]
+    AxisProviderInvalidChildSeed {
+        node: ViewStyleNodeKey,
+        seed_source: ViewBoxAxisSeedSource,
+    },
+    #[error("axis provider {node:?} must supply both parent Style and parent node key, or neither")]
+    AxisProviderParentShape { node: ViewStyleNodeKey },
+    #[error("axis provider {node:?} references missing parent {parent:?}")]
+    AxisProviderMissingParent {
+        node: ViewStyleNodeKey,
+        parent: ViewStyleNodeKey,
+    },
+    #[error("axis provider edge from {node:?} to {parent:?} forms a cycle")]
+    AxisProviderCycle {
+        node: ViewStyleNodeKey,
+        parent: ViewStyleNodeKey,
+    },
+    #[error(
+        "axis provider {node:?} inherited mode {actual:?} does not match parent {parent:?} mode {expected:?}"
+    )]
+    AxisProviderModeMismatch {
+        node: ViewStyleNodeKey,
+        parent: ViewStyleNodeKey,
+        expected: ViewBoxAxisMode,
+        actual: ViewBoxAxisMode,
+    },
+    #[error(
+        "axis provider {node:?} inherited revision {actual:?} does not match parent {parent:?} revision {expected:?}"
+    )]
+    AxisProviderRevisionMismatch {
+        node: ViewStyleNodeKey,
+        parent: ViewStyleNodeKey,
+        expected: ViewBoxAxisRevision,
+        actual: ViewBoxAxisRevision,
+    },
+    #[error("axis provider invalidation from {node:?} exceeds the descendant maximum {limit}")]
+    AxisProviderInvalidationBudget {
+        node: ViewStyleNodeKey,
+        limit: usize,
+    },
+    #[error("axis provider child index edge {parent:?} -> {child:?} is corrupt")]
+    AxisProviderCorruptChildIndex {
+        parent: ViewStyleNodeKey,
+        child: ViewStyleNodeKey,
     },
 }
 
@@ -176,6 +251,7 @@ impl Default for ViewStyleResolverLimits {
             max_selector_steps: 262_144,
             max_token_depth: ViewStyleSheet::MAX_TOKEN_REFERENCE_DEPTH,
             max_cache_entries: 1_024,
+            max_axis_invalidation_nodes: 65_536,
         }
     }
 }
@@ -220,7 +296,7 @@ impl InlineTokenOwners {
 }
 
 impl ViewStyleNodeKey {
-    pub const fn new(mount: u64, path: Vec<u64>, instruction: u32) -> Self {
+    pub const fn new(mount: ViewMountId, path: Vec<u64>, instruction: u32) -> Self {
         Self {
             mount,
             path,
@@ -228,7 +304,7 @@ impl ViewStyleNodeKey {
         }
     }
 
-    pub const fn mount(&self) -> u64 {
+    pub const fn mount(&self) -> ViewMountId {
         self.mount
     }
 
@@ -355,6 +431,7 @@ impl ViewStyleResolver {
             limits,
             cache: BTreeMap::new(),
             cache_order: VecDeque::new(),
+            axis_providers: ViewAxisProviderIndex::default(),
         }
     }
 
@@ -365,6 +442,7 @@ impl ViewStyleResolver {
     pub fn clear(&mut self) {
         self.cache.clear();
         self.cache_order.clear();
+        self.axis_providers.clear();
     }
 
     pub fn invalidate_node(&mut self, node: &ViewStyleNodeKey) {
@@ -372,60 +450,38 @@ impl ViewStyleResolver {
         self.cache_order.retain(|key| &key.node != node);
     }
 
+    /// Removes retained provider and cache state owned by one dead View mount.
+    ///
+    /// The returned count is the number of provider records removed. Repeating
+    /// the operation for an already absent mount returns zero.
+    pub fn invalidate_mount(&mut self, mount: ViewMountId) -> usize {
+        let removed = self.axis_providers.invalidate_mount(mount);
+        self.cache.retain(|key, _| key.node.mount() != mount);
+        self.cache_order.retain(|key| key.node.mount() != mount);
+        removed
+    }
+
     pub fn resolve(
         &mut self,
         program: &ViewStyleProgram,
         context: &ViewStyleResolveContext<'_>,
     ) -> Result<ViewStyleResolution, ViewStyleResolveError> {
-        if context.applications.len() > self.limits.max_applications {
-            return Err(ViewStyleResolveError::ApplicationBudget {
-                actual: context.applications.len(),
-                limit: self.limits.max_applications,
-            });
-        }
-        let inline_token_owners = InlineTokenOwners::new(program, self.limits.max_token_inventory)?;
         let mut trace = ViewStyleTrace::default();
-        let mut budget = ResolveBudget::default();
-        let mut contributions = Vec::new();
-        for application in context.applications {
-            match application.target() {
-                ViewStyleApplicationTarget::Named { sheet } => {
-                    let sheet = program
-                        .sheet(sheet)
-                        .ok_or_else(|| ViewStyleResolveError::UnknownSheet(sheet.clone()))?;
-                    self.apply_sheet(
-                        program,
-                        sheet,
-                        application,
-                        context,
-                        &mut trace,
-                        &mut budget,
-                        &mut contributions,
-                    )?;
-                }
-                ViewStyleApplicationTarget::Inline { patch } => {
-                    let patch_resource = program
-                        .patch(*patch)
-                        .ok_or(ViewStyleResolveError::UnknownPatch(*patch))?;
-                    self.apply_patch(
-                        program,
-                        &inline_token_owners,
-                        patch_resource,
-                        application,
-                        context,
-                        &mut trace,
-                        &mut contributions,
-                    )?;
-                }
-            }
-        }
-        contributions.sort_by_key(|contribution| contribution.priority);
-        let axes = resolve_axes(context.parent, &contributions);
-        let cache_key = ViewStyleCacheKey::new(context, &axes);
+        let contributions = self.collect_contributions(program, context, &mut trace)?;
+        let resolved_axes = resolve_axes(context.node_key, context.inherited_axes, &contributions);
+        let provider_update = self.axis_providers.prepare(
+            context,
+            &resolved_axes.axes,
+            resolved_axes.local_barrier,
+            self.limits.max_axis_invalidation_nodes,
+        )?;
+        let cache_key = ViewStyleCacheKey::new(context, &resolved_axes.axes);
         if context.trace != ViewStyleTraceMode::Full
             && let Some(computed) = self.cache.get(&cache_key).cloned()
         {
             trace.finish_winners(context.trace, &computed);
+            self.commit_provider_update(provider_update);
+            self.insert_cache(cache_key, computed.clone());
             return Ok(ViewStyleResolution {
                 computed,
                 trace,
@@ -434,9 +490,8 @@ impl ViewStyleResolver {
         }
 
         let revision = computed_revision(&cache_key);
-        let mode = axes.mode();
-        let mut builder = ComputedViewStyleBuilder::inherit(context.parent);
-        builder.set_axes(axes);
+        let mode = resolved_axes.axes.mode();
+        let mut builder = ComputedViewStyleBuilder::inherit(context.parent, resolved_axes.axes);
         let mut resolved_contribution_count = 0_usize;
         for contribution in contributions {
             if contribution.property.is_axis_context() {
@@ -467,6 +522,7 @@ impl ViewStyleResolver {
         builder.set_transitions(transitions);
         let computed = builder.finish(revision);
         trace.finish_winners(context.trace, &computed);
+        self.commit_provider_update(provider_update);
         if context.trace != ViewStyleTraceMode::Full {
             self.insert_cache(cache_key, computed.clone());
         }
@@ -475,6 +531,57 @@ impl ViewStyleResolver {
             trace,
             cache_hit: false,
         })
+    }
+
+    fn collect_contributions(
+        &self,
+        program: &ViewStyleProgram,
+        context: &ViewStyleResolveContext<'_>,
+        trace: &mut ViewStyleTrace,
+    ) -> Result<Vec<PendingViewStyleContribution>, ViewStyleResolveError> {
+        if context.applications.len() > self.limits.max_applications {
+            return Err(ViewStyleResolveError::ApplicationBudget {
+                actual: context.applications.len(),
+                limit: self.limits.max_applications,
+            });
+        }
+        let inline_token_owners = InlineTokenOwners::new(program, self.limits.max_token_inventory)?;
+        let mut budget = ResolveBudget::default();
+        let mut contributions = Vec::new();
+        for application in context.applications {
+            match application.target() {
+                ViewStyleApplicationTarget::Named { sheet } => {
+                    let sheet = program
+                        .sheet(sheet)
+                        .ok_or_else(|| ViewStyleResolveError::UnknownSheet(sheet.clone()))?;
+                    self.apply_sheet(
+                        program,
+                        sheet,
+                        application,
+                        context,
+                        trace,
+                        &mut budget,
+                        &mut contributions,
+                    )?;
+                }
+                ViewStyleApplicationTarget::Inline { patch } => {
+                    let patch_resource = program
+                        .patch(*patch)
+                        .ok_or(ViewStyleResolveError::UnknownPatch(*patch))?;
+                    self.apply_patch(
+                        program,
+                        &inline_token_owners,
+                        patch_resource,
+                        application,
+                        context,
+                        trace,
+                        &mut contributions,
+                    )?;
+                }
+            }
+        }
+        contributions.sort_by_key(|contribution| contribution.priority);
+        Ok(contributions)
     }
 
     #[expect(
@@ -660,6 +767,19 @@ impl ViewStyleResolver {
             self.cache_order.push_back(key.clone());
         }
         self.cache.insert(key, computed);
+    }
+
+    fn commit_provider_update(&mut self, update: Option<ViewAxisProviderUpdatePlan>) {
+        let Some(plan) = update else {
+            return;
+        };
+        if plan.provider_changed() {
+            let invalidated: BTreeSet<_> = plan.invalidated_nodes().cloned().collect();
+            self.cache.retain(|key, _| !invalidated.contains(&key.node));
+            self.cache_order
+                .retain(|key| !invalidated.contains(&key.node));
+        }
+        self.axis_providers.commit(plan);
     }
 }
 
@@ -1010,7 +1130,7 @@ const fn contrast_rank(value: ContrastPreference) -> u8 {
 fn computed_revision(key: &ViewStyleCacheKey) -> ComputedViewStyleRevision {
     let mut revision = 0xcbf2_9ce4_8422_2325_u64;
     for value in [
-        key.node.mount,
+        key.node.mount.get(),
         u64::from(key.node.instruction),
         key.revisions.sheets,
         key.revisions.patches,

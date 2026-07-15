@@ -2,11 +2,13 @@
 
 use crate::{
     ComputedViewStyle, ContainerKind, CustomElementId, FragmentKind, ImageId, LayoutBox,
-    LayoutResults, NodeId, RichTextSourceId, SemanticSpecId, TextSourceId, ViewElementKind,
-    ViewError, ViewFragment, ViewInteractionSelector, ViewInteractionStateSet,
-    ViewSemanticFragment, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts,
-    ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleProgram, ViewStyleResolveContext,
-    ViewStyleResolver, ViewStyleRevisionSet, ViewStyleScopeId, ViewStyleTraceMode,
+    LayoutResults, NodeId, RichTextSourceId, SemanticSpecId, TextSourceId,
+    ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewElementKind,
+    ViewError, ViewFragment, ViewInheritedBoxAxes, ViewInteractionSelector,
+    ViewInteractionStateSet, ViewMountId, ViewSemanticFragment, ViewStyleApplication,
+    ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleNodeFacts, ViewStyleNodeKey,
+    ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolver, ViewStyleRevisionSet,
+    ViewStyleScopeId, ViewStyleTraceMode,
 };
 use arcweft_presentation::{
     appearance::PresentationEnvironment, interaction::InteractionState, semantic::SemanticRole,
@@ -143,7 +145,15 @@ impl DisplayList {
             .iter()
             .map(|node| style_facts(node, semantics, interaction))
             .collect::<Result<Vec<_>, ViewError>>()?;
-        let mut computed = vec![None; self.style_nodes.len()];
+        let mut computed: Vec<Option<ComputedViewStyle>> = vec![None; self.style_nodes.len()];
+        // Detached fragment rendering is projection-only. Mounted player paths
+        // supply their root's runtime-owned seed and participate in provider
+        // invalidation; this path deliberately does neither.
+        let detached_axes = ViewInheritedBoxAxes::for_host_seed(
+            ViewMountId::from_raw(0),
+            ViewBoxAxisSeedGeneration::INITIAL,
+            ViewBoxAxisHostSeed::Default,
+        );
 
         for node in &self.resolution_order {
             let index = node.0 as usize;
@@ -165,6 +175,17 @@ impl DisplayList {
                 .parent
                 .and_then(|parent| computed.get(parent.0 as usize))
                 .and_then(Option::as_ref);
+            let parent_node_key = style_node
+                .parent
+                .map(|parent| {
+                    self.style_nodes
+                        .get(parent.0 as usize)
+                        .map(|node| &node.key)
+                        .ok_or(ViewError::InvalidFragmentNode(parent))
+                })
+                .transpose()?;
+            let inherited_axes =
+                parent.map_or(detached_axes, |parent| parent.axes().inherited_snapshot());
             let resolution = resolver.resolve(
                 program,
                 &ViewStyleResolveContext {
@@ -173,6 +194,9 @@ impl DisplayList {
                     ancestors: &ancestors,
                     applications: &style_node.applications,
                     parent,
+                    parent_node_key,
+                    inherited_axes,
+                    axis_provider_participation: ViewAxisProviderParticipation::ProjectionOnly,
                     environment,
                     revisions,
                     trace: ViewStyleTraceMode::Off,
@@ -319,7 +343,7 @@ fn retain_style_node(
     let mut path = parent_style.map_or_else(Vec::new, |parent| parent.key.path().to_vec());
     path.push(source.key().0);
     Ok(DisplayStyleNode {
-        key: ViewStyleNodeKey::new(0, path, node.0),
+        key: ViewStyleNodeKey::new(ViewMountId::from_raw(0), path, node.0),
         parent,
         ancestors,
         element: fragment_element(source.kind()),

@@ -61,6 +61,7 @@ use arcweft_runtime_driver::dialogue::{
     DialogueStageAdvanceKind,
 };
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::{
     BundleEntryStart, BundleEntryStartError, BundleHotSwapError, BundlePatchReadiness,
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
@@ -68,11 +69,17 @@ use arcweft_runtime_driver::session::{
 };
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use arcweft_runtime_driver::swap::SwapCompatibility;
-use arcweft_runtime_driver::view_runtime::BundleViewTextValue;
+use arcweft_runtime_driver::view_runtime::{
+    BundleViewAxisSeedError, BundleViewAxisSeedUpdate, BundleViewAxisSeedUpdateOutcome,
+    BundleViewTextValue,
+};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
-use arcweft_view::{ViewValueProgram, ViewValueProgramId};
+use arcweft_view::{
+    ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedSource, ViewValueProgram,
+    ViewValueProgramId,
+};
 
 mod dialogue_restore;
 
@@ -1222,6 +1229,187 @@ fn session_save_restores_complete_per_mount_virtual_range_state() {
             .snapshot_session()
             .expect("failed restore is atomic"),
         before
+    );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the public session contract covers reservation, mount output, CAS, presentation revision, atomic failure, and restore together"
+)]
+fn session_axis_seed_api_is_shared_typed_cas_state_and_round_trips_pending_and_live_roots() {
+    let bundle = executable_view_fixture_bundle();
+    let options = BundleSessionOptions {
+        mode: arcweft_core::step::RuntimeStepMode::Drain,
+        ..BundleSessionOptions::default()
+    };
+    let mut session = BundleSession::new(&bundle, options.clone()).unwrap();
+    let main = PresentationHandleId::try_new("handle.main.root").unwrap();
+    let side = PresentationHandleId::try_new("handle.side.root").unwrap();
+    let cancelled = PresentationHandleId::try_new("handle.cancelled.root").unwrap();
+    session
+        .configure_next_view_axis_seed(
+            main.clone(),
+            ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::VerticalRl),
+        )
+        .unwrap();
+    session
+        .configure_next_view_axis_seed(
+            main.clone(),
+            ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::VerticalLr),
+        )
+        .unwrap();
+    session
+        .configure_next_view_axis_seed(
+            side.clone(),
+            ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::HorizontalLtr),
+        )
+        .unwrap();
+    session
+        .configure_next_view_axis_seed(cancelled.clone(), ViewBoxAxisHostSeed::Default)
+        .unwrap();
+    assert_eq!(
+        session.cancel_next_view_axis_seed(&cancelled),
+        Some(ViewBoxAxisHostSeed::Default)
+    );
+
+    let step = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).unwrap(),
+        BundleStepInput {
+            bindings: vec![RuntimeBinding {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(true),
+            }],
+            ..BundleStepInput::default()
+        },
+    );
+    let main_output = step
+        .presentation
+        .view
+        .mounts
+        .iter()
+        .find(|mount| mount.handle == main)
+        .unwrap();
+    let side_output = step
+        .presentation
+        .view
+        .mounts
+        .iter()
+        .find(|mount| mount.handle == side)
+        .unwrap();
+    let main_mount = main_output.mount;
+    let main_seed = main_output.host_axis_seed.unwrap();
+    let side_seed = side_output.host_axis_seed.unwrap();
+    assert_eq!(main_seed.mode(), ViewBoxAxisMode::VerticalLr);
+    assert_eq!(main_seed.source(), ViewBoxAxisSeedSource::HostExplicit);
+    assert_eq!(side_seed.mode(), ViewBoxAxisMode::HorizontalLtr);
+    assert_eq!(side_seed.source(), ViewBoxAxisSeedSource::HostExplicit);
+    assert_ne!(main_seed.revision(), side_seed.revision());
+    assert!(matches!(
+        session.configure_next_view_axis_seed(main.clone(), ViewBoxAxisHostSeed::Default),
+        Err(BundleViewAxisSeedError::HandleAlreadyMounted { handle, mount })
+            if handle == main && mount == main_mount
+    ));
+
+    let before_noop_revision = session.presentation().revision;
+    assert_eq!(
+        session
+            .update_view_axis_seed(BundleViewAxisSeedUpdate {
+                mount: main_mount,
+                expected_revision: main_seed.revision(),
+                seed: ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::VerticalLr),
+            })
+            .unwrap(),
+        BundleViewAxisSeedUpdateOutcome::Unchanged { seed: main_seed }
+    );
+    assert_eq!(session.presentation().revision, before_noop_revision);
+
+    let updated = session
+        .update_view_axis_seed(BundleViewAxisSeedUpdate {
+            mount: main_mount,
+            expected_revision: main_seed.revision(),
+            seed: ViewBoxAxisHostSeed::Default,
+        })
+        .unwrap();
+    let BundleViewAxisSeedUpdateOutcome::Updated { previous, current } = updated else {
+        panic!("identity-changing host update must advance the seed");
+    };
+    assert_eq!(previous, main_seed);
+    assert_eq!(current.source(), ViewBoxAxisSeedSource::HostDefault);
+    assert_eq!(
+        session.presentation().revision,
+        before_noop_revision.saturating_add(1)
+    );
+    assert_eq!(
+        session
+            .presentation()
+            .view
+            .mounts
+            .iter()
+            .find(|mount| mount.mount == main_mount)
+            .unwrap()
+            .host_axis_seed,
+        Some(current)
+    );
+    let before_stale = session.snapshot_session().unwrap();
+    assert!(matches!(
+        session.update_view_axis_seed(BundleViewAxisSeedUpdate {
+            mount: main_mount,
+            expected_revision: main_seed.revision(),
+            seed: ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::HorizontalRtl),
+        }),
+        Err(BundleViewAxisSeedError::RevisionMismatch { actual, .. })
+            if actual == current.revision()
+    ));
+    assert_eq!(session.snapshot_session().unwrap(), before_stale);
+
+    let future = PresentationHandleId::try_new("handle.future.root").unwrap();
+    let future_seed = ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::VerticalRl);
+    session
+        .configure_next_view_axis_seed(future.clone(), future_seed)
+        .unwrap();
+    let saved = session.snapshot_session().unwrap();
+    let mut parity_outcomes = Vec::new();
+    let mut parity_snapshots = Vec::new();
+    for _host in ["native", "web", "headless"] {
+        let mut host = BundleSession::new(&bundle, options.clone()).unwrap();
+        host.restore_session_snapshot(saved.clone()).unwrap();
+        parity_outcomes.push(
+            host.update_view_axis_seed(BundleViewAxisSeedUpdate {
+                mount: side_output.mount,
+                expected_revision: side_seed.revision(),
+                seed: ViewBoxAxisHostSeed::Default,
+            })
+            .unwrap(),
+        );
+        parity_snapshots.push(serde_json::to_vec(&host.snapshot_session().unwrap()).unwrap());
+    }
+    assert!(parity_outcomes.windows(2).all(|pair| pair[0] == pair[1]));
+    assert!(parity_snapshots.windows(2).all(|pair| pair[0] == pair[1]));
+
+    let mut tampered_presentation = saved.clone();
+    tampered_presentation
+        .presentation
+        .view
+        .mounts
+        .iter_mut()
+        .find(|output| output.mount == main_mount)
+        .unwrap()
+        .host_axis_seed = None;
+    let mut rejected = BundleSession::new(&bundle, options.clone()).unwrap();
+    let rejected_before = rejected.snapshot_session().unwrap();
+    assert!(matches!(
+        rejected.restore_session_snapshot(tampered_presentation),
+        Err(BundleSessionSaveError::ViewRuntime { .. })
+    ));
+    assert_eq!(rejected.snapshot_session().unwrap(), rejected_before);
+
+    let mut restored = BundleSession::new(&bundle, options).unwrap();
+    restored.restore_session_snapshot(saved.clone()).unwrap();
+    assert_eq!(restored.snapshot_session().unwrap(), saved);
+    assert_eq!(
+        restored.cancel_next_view_axis_seed(&future),
+        Some(future_seed)
     );
 }
 

@@ -1,10 +1,10 @@
 //! Logical-axis resolution and canonical physical-property lowering.
 
 use super::super::{
-    ComputedViewAxes, ComputedViewStyle, ComputedViewTransition, ViewAxisUsageSet, ViewBoxAxisMode,
-    ViewBoxAxisRevision, ViewPropertyKind, ViewPropertyValueTransform, ViewSpecifiedValue,
-    ViewStyleAssignOp, ViewStyleContribution, ViewStyleContributionSource, ViewStylePriority,
-    ViewStyleSourceId,
+    ComputedViewAxes, ComputedViewTransition, ViewAxisUsageSet, ViewBoxAxisMode,
+    ViewBoxAxisRevision, ViewInheritedBoxAxes, ViewPropertyKind, ViewPropertyValueTransform,
+    ViewSpecifiedValue, ViewStyleAssignOp, ViewStyleContribution, ViewStyleContributionSource,
+    ViewStyleNodeKey, ViewStylePriority, ViewStyleSourceId,
 };
 use super::ViewStyleResolveError;
 
@@ -17,29 +17,43 @@ pub(super) struct PendingViewStyleContribution {
     pub(super) source: ViewStyleContributionSource,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct ResolvedViewAxes {
+    pub(super) axes: ComputedViewAxes,
+    pub(super) local_barrier: bool,
+}
+
 pub(super) fn resolve_axes(
-    parent: Option<&ComputedViewStyle>,
+    node: &ViewStyleNodeKey,
+    inherited: ViewInheritedBoxAxes,
     contributions: &[PendingViewStyleContribution],
-) -> ComputedViewAxes {
-    let inherited = parent.map_or_else(ComputedViewAxes::host_default, |parent| {
-        ComputedViewAxes::inherited(parent.axes().mode(), parent.axes().revision())
-    });
+) -> ResolvedViewAxes {
+    let inherited = ComputedViewAxes::from_inherited_seed(inherited);
     let Some(winner) = contributions
         .iter()
         .rev()
         .find(|contribution| contribution.property.is_axis_context())
     else {
-        return inherited;
+        return ResolvedViewAxes {
+            axes: inherited,
+            local_barrier: false,
+        };
     };
     let ViewSpecifiedValue::BoxAxes { value: mode } = winner.value else {
-        return inherited;
+        return ResolvedViewAxes {
+            axes: inherited,
+            local_barrier: false,
+        };
     };
-    ComputedViewAxes::styled(
-        mode,
-        axis_provider_revision(mode, winner.priority, &winner.source),
-        winner.priority,
-        winner.source.clone(),
-    )
+    ResolvedViewAxes {
+        axes: ComputedViewAxes::styled(
+            mode,
+            ViewBoxAxisRevision::for_local_provider(node, mode, winner.priority, &winner.source),
+            winner.priority,
+            winner.source.clone(),
+        ),
+        local_barrier: true,
+    }
 }
 
 pub(super) fn resolve_contribution(
@@ -154,48 +168,4 @@ fn contribution_source_id(source: &ViewStyleContributionSource) -> ViewStyleSour
         ViewStyleContributionSource::Sheet { declaration, .. }
         | ViewStyleContributionSource::Patch { declaration, .. } => *declaration,
     }
-}
-
-fn axis_provider_revision(
-    mode: ViewBoxAxisMode,
-    priority: ViewStylePriority,
-    source: &ViewStyleContributionSource,
-) -> ViewBoxAxisRevision {
-    let mut revision = 0xcbf2_9ce4_8422_2325_u64;
-    for value in [
-        u64::from(mode.canonical_tag()),
-        u64::from(priority.scope_depth()),
-        u64::from(priority.application_order()),
-        u64::from(priority.specificity().0),
-        u64::from(priority.specificity().1),
-        u64::from(priority.rule_source_order()),
-        u64::from(priority.declaration_order()),
-    ] {
-        revision ^= value;
-        revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    match source {
-        ViewStyleContributionSource::Inherited => {}
-        ViewStyleContributionSource::Sheet {
-            sheet,
-            rule,
-            declaration,
-        } => {
-            for byte in sheet.public_id().as_str().bytes() {
-                revision ^= u64::from(byte);
-                revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-            }
-            for value in [rule.value(), declaration.value()] {
-                revision ^= u64::from(value);
-                revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-            }
-        }
-        ViewStyleContributionSource::Patch { patch, declaration } => {
-            for value in [patch.value(), declaration.value()] {
-                revision ^= u64::from(value);
-                revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-            }
-        }
-    }
-    ViewBoxAxisRevision::new(revision)
 }

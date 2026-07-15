@@ -5,6 +5,7 @@
 //! identities, persistent typed value slots, activation-relative logical time,
 //! exact save state, and renderer-neutral frame output.
 
+mod axis_seed;
 mod evaluator;
 mod style_scope;
 mod value;
@@ -36,6 +37,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use thiserror::Error;
 
+pub use axis_seed::{
+    BundleViewAxisSeedError, BundleViewAxisSeedRegistrySnapshot, BundleViewAxisSeedUpdate,
+    BundleViewAxisSeedUpdateOutcome, BundleViewMountedAxisSeedSnapshot,
+    BundleViewPendingAxisSeedSnapshot,
+};
 pub use style_scope::{BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind};
 pub use value::BundleViewValueConversionError;
 
@@ -223,6 +229,8 @@ pub struct BundleViewMountOutput {
     pub view: String,
     pub path: BundleViewInstancePath,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_axis_seed: Option<arcweft_view::ViewInheritedBoxAxes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dialogue: Option<DialogueViewState>,
     pub active_targets: Vec<String>,
     pub active_images: Vec<String>,
@@ -281,6 +289,7 @@ pub struct BundleViewRuntimeSnapshot {
     pub next_mount_id: u64,
     pub root_bindings: Vec<RuntimeBinding>,
     pub mounts: Vec<BundleViewMountRuntimeSnapshot>,
+    pub axis_seeds: BundleViewAxisSeedRegistrySnapshot,
 }
 
 /// Exact persisted state for one root or nested mounted View occurrence.
@@ -300,6 +309,8 @@ pub struct BundleViewMountRuntimeSnapshot {
 /// Fatal construction or snapshot restoration failure.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewRuntimeError {
+    #[error(transparent)]
+    AxisSeed(BundleViewAxisSeedError),
     #[error(transparent)]
     DialogueContract(#[from] DialogueViewContractError),
     #[error(transparent)]
@@ -373,6 +384,7 @@ pub struct BundleViewRuntime {
     allocator: ViewMountAllocator,
     root_bindings: BTreeMap<String, RuntimeValue>,
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
+    axis_seeds: axis_seed::BundleViewAxisSeedRegistry,
 }
 
 impl Default for BundleViewRuntime {
@@ -461,6 +473,7 @@ impl BundleViewRuntime {
             allocator: ViewMountAllocator::default(),
             root_bindings: BTreeMap::new(),
             mounts: BTreeMap::new(),
+            axis_seeds: axis_seed::BundleViewAxisSeedRegistry::default(),
         })
     }
 
@@ -693,13 +706,19 @@ impl BundleViewRuntime {
                         .collect(),
                 })
                 .collect(),
+            axis_seeds: self.axis_seeds.snapshot(),
         }
     }
 
     /// Restores an exact mount table atomically after validating every identity and slot.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "snapshot restore preflights the complete mount table, allocator, bindings, and axis registry before one atomic commit"
+    )]
     pub fn restore(
         &mut self,
         snapshot: &BundleViewRuntimeSnapshot,
+        reconciled_root_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
         let expected_program = self
             .program
@@ -795,13 +814,56 @@ impl BundleViewRuntime {
         }
 
         let greatest_live = mounts.values().map(|mount| mount.state.mount()).max();
+        let roots = mounts
+            .iter()
+            .filter(|(key, _)| key.path.segments().is_empty())
+            .map(|(key, mount)| (mount.state.mount(), key.handle.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let axis_seeds = axis_seed::BundleViewAxisSeedRegistry::restore(
+            &snapshot.axis_seeds,
+            &roots,
+            reconciled_root_handles,
+        )?;
         let mut allocator = ViewMountAllocator::default();
         allocator.restore_cursor(snapshot.next_mount_id, greatest_live)?;
         self.logical_time = snapshot.logical_time;
         self.allocator = allocator;
         self.root_bindings = root_bindings;
         self.mounts = mounts;
+        self.axis_seeds = axis_seeds;
         Ok(())
+    }
+
+    pub(crate) fn configure_next_axis_seed(
+        &mut self,
+        handle: PresentationHandleId,
+        seed: arcweft_view::ViewBoxAxisHostSeed,
+        handles: &[PresentationHandleRecord],
+    ) -> Result<(), BundleViewAxisSeedError> {
+        self.axis_seeds.configure_next(handle, seed, handles)
+    }
+
+    pub(crate) fn cancel_next_axis_seed(
+        &mut self,
+        handle: &PresentationHandleId,
+    ) -> Option<arcweft_view::ViewBoxAxisHostSeed> {
+        self.axis_seeds.cancel_next(handle)
+    }
+
+    pub(crate) fn update_axis_seed(
+        &mut self,
+        update: BundleViewAxisSeedUpdate,
+    ) -> Result<BundleViewAxisSeedUpdateOutcome, BundleViewAxisSeedError> {
+        if self.axis_seeds.mounted_seed(update.mount).is_none()
+            && self.mounts.iter().any(|(key, mounted)| {
+                mounted.state.mount() == update.mount && !key.path.segments().is_empty()
+            })
+        {
+            return Err(BundleViewAxisSeedError::NestedMount {
+                mount: update.mount,
+            });
+        }
+        self.axis_seeds.update(update)
     }
 
     pub(crate) fn validate_frame(
@@ -843,6 +905,31 @@ impl BundleViewRuntime {
                     ),
                 });
             }
+            if output.path.segments().is_empty() {
+                let expected = self.axis_seeds.mounted_seed(output.mount).ok_or_else(|| {
+                    BundleViewRuntimeError::PresentationFrameMismatch {
+                        message: format!(
+                            "root occurrence `{}` at mount {:?} has no retained host axis seed",
+                            output.handle, output.mount
+                        ),
+                    }
+                })?;
+                if output.host_axis_seed != Some(expected) {
+                    return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                        message: format!(
+                            "root occurrence `{}` at mount {:?} records host axis seed {:?}, expected {:?}",
+                            output.handle, output.mount, output.host_axis_seed, expected
+                        ),
+                    });
+                }
+            } else if output.host_axis_seed.is_some() {
+                return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                    message: format!(
+                        "nested occurrence `{}` at path {:?} unexpectedly records a host axis seed",
+                        output.handle, output.path
+                    ),
+                });
+            }
         }
         Ok(())
     }
@@ -862,6 +949,34 @@ impl BundleViewRuntime {
             .expect("a definition index requires a View program")
             .definitions[index]
     }
+}
+
+pub(crate) fn reconciled_root_handles_for_restore(
+    handles: &[PresentationHandleRecord],
+    dialogue: &[DialogueViewInput<'_>],
+) -> Result<Vec<PresentationHandleRecord>, BundleViewAxisSeedError> {
+    let mut reconciled = handles
+        .iter()
+        .cloned()
+        .map(|record| (record.id.clone(), record))
+        .collect::<BTreeMap<_, _>>();
+    for input in dialogue {
+        let record = PresentationHandleRecord::new(
+            input.handle.clone(),
+            crate::presentation_handles::PresentationHandleKind::View,
+            input.view.to_owned(),
+            Some("dialogue".to_owned()),
+            crate::presentation_handles::PresentationResourceState::Mounted,
+            None,
+            0,
+        );
+        if reconciled.insert(input.handle.clone(), record).is_some() {
+            return Err(BundleViewAxisSeedError::SnapshotRootHandleCollision {
+                handle: input.handle.clone(),
+            });
+        }
+    }
+    Ok(reconciled.into_values().collect())
 }
 
 fn validate_definition_span(

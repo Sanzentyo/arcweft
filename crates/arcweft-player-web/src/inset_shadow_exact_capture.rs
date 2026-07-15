@@ -20,11 +20,11 @@ use arcweft_runtime_driver::view_runtime::{
 };
 use arcweft_view::ViewMountId;
 use arcweft_view::style::{
-    ViewColorValue, ViewLengthMilli, ViewPartName, ViewPropertyKind, ViewShadow,
-    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
-    ViewStyleBoundaryFacts, ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule,
-    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSourceId,
+    ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewColorValue, ViewInheritedBoxAxes,
+    ViewLengthMilli, ViewPartName, ViewPropertyKind, ViewShadow, ViewSpecifiedValue,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
+    ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
@@ -282,6 +282,11 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
     let mount = BundleViewMountOutput {
         handle,
         mount: mount_id,
+        host_axis_seed: Some(ViewInheritedBoxAxes::for_host_seed(
+            mount_id,
+            ViewBoxAxisSeedGeneration::INITIAL,
+            ViewBoxAxisHostSeed::Default,
+        )),
         view: "view.InsetShadowExactFixture".to_owned(),
         path: BundleViewInstancePath::default(),
         dialogue: None,

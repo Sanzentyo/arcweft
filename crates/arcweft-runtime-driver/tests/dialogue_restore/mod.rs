@@ -4,7 +4,7 @@ use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::{BundleSessionSaveError, BundleSessionSnapshot};
 use arcweft_runtime_driver::view_runtime::BundleViewMountOutput;
-use arcweft_view::ViewMountId;
+use arcweft_view::{ViewInheritedBoxAxes, ViewMountId};
 
 fn append_orphan_dialogue_mount(
     snapshot: &mut BundleSessionSnapshot,
@@ -33,12 +33,31 @@ fn append_orphan_dialogue_mount(
         .find(|retained| retained.handle == output.handle && retained.path == output.path)
         .expect("dialogue root mount is retained")
         .clone();
+    let mut axis_seed = snapshot
+        .view_runtime
+        .axis_seeds
+        .mounted
+        .iter()
+        .find(|axis_seed| axis_seed.mount == output.mount)
+        .expect("dialogue root axis seed is retained")
+        .clone();
     retained.handle = handle.clone();
     retained.state.mount = mount;
     snapshot.view_runtime.mounts.push(retained);
 
+    axis_seed.handle = handle.clone();
+    axis_seed.mount = mount;
+    axis_seed.derived =
+        ViewInheritedBoxAxes::for_host_seed(mount, axis_seed.generation, axis_seed.seed);
+    snapshot
+        .view_runtime
+        .axis_seeds
+        .mounted
+        .push(axis_seed.clone());
+
     output.handle = handle;
     output.mount = mount;
+    output.host_axis_seed = Some(axis_seed.derived);
     output
 }
 
@@ -101,7 +120,7 @@ fn restore_requires_exact_store_mount_and_output_correspondence() {
         &mut session,
         &before,
         orphan_output_and_mount,
-        "has dialogue state but no presentation-store occurrence",
+        "references unknown or nested mount",
     );
 
     let mut orphan_retained_mount = before.clone();
@@ -113,7 +132,7 @@ fn restore_requires_exact_store_mount_and_output_correspondence() {
         &mut session,
         &before,
         orphan_retained_mount,
-        "has no live presentation owner",
+        "references unknown or nested mount",
     );
 
     let mut missing_output = before.clone();
@@ -134,6 +153,11 @@ fn restore_requires_exact_store_mount_and_output_correspondence() {
         .view_runtime
         .mounts
         .retain(|mount| mount.handle != dialogue_handle);
+    missing_retained_mount
+        .view_runtime
+        .axis_seeds
+        .mounted
+        .retain(|axis_seed| axis_seed.handle != dialogue_handle);
     assert_tamper_is_rejected_atomically(
         &mut session,
         &before,

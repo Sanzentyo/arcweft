@@ -186,7 +186,7 @@ impl ViewStyleContribution {
 }
 
 impl ComputedViewStyleBuilder {
-    pub fn inherit(parent: Option<&ComputedViewStyle>) -> Self {
+    pub(crate) fn inherit(parent: Option<&ComputedViewStyle>, axes: ComputedViewAxes) -> Self {
         let properties = parent.map_or_else(BTreeMap::new, |parent| {
             parent
                 .canonical_properties()
@@ -206,9 +206,6 @@ impl ComputedViewStyleBuilder {
                     )
                 })
                 .collect()
-        });
-        let axes = parent.map_or_else(ComputedViewAxes::host_default, |parent| {
-            ComputedViewAxes::inherited(parent.axes().mode(), parent.axes().revision())
         });
         Self {
             axes,

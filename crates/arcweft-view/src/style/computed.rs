@@ -2,9 +2,10 @@
 
 use super::cascade::{ViewStyleContributionSource, ViewStylePriority};
 use super::{
-    ViewAxisUsageSet, ViewBoxAxisMode, ViewBoxAxisRevision, ViewBoxAxisSource,
-    ViewComputedPropertyKind, ViewLengthMilli, ViewOverflow, ViewPhysicalBoxStyle,
-    ViewPropertyKind, ViewSpecifiedValue, ViewStyleInvalidationSet,
+    ViewAxisUsageSet, ViewBoxAxisMode, ViewBoxAxisRevision, ViewBoxAxisSeedSource,
+    ViewBoxAxisSource, ViewComputedPropertyKind, ViewInheritedBoxAxes, ViewLengthMilli,
+    ViewOverflow, ViewPhysicalBoxStyle, ViewPropertyKind, ViewSpecifiedValue,
+    ViewStyleInvalidationSet,
 };
 use std::collections::BTreeMap;
 
@@ -80,23 +81,30 @@ impl ComputedViewStyleRevision {
 }
 
 impl ComputedViewAxes {
-    pub const fn host_default() -> Self {
+    pub(crate) const fn host_default() -> Self {
         Self {
             mode: ViewBoxAxisMode::HorizontalLtr,
-            revision: ViewBoxAxisRevision::new(0),
+            revision: ViewBoxAxisRevision::from_raw(0),
             source: ViewBoxAxisSource::HostDefault,
         }
     }
 
-    pub const fn inherited(mode: ViewBoxAxisMode, parent: ViewBoxAxisRevision) -> Self {
+    pub(crate) const fn from_inherited_seed(seed: ViewInheritedBoxAxes) -> Self {
+        let source = match seed.source() {
+            ViewBoxAxisSeedSource::HostDefault => ViewBoxAxisSource::HostDefault,
+            ViewBoxAxisSeedSource::HostExplicit => ViewBoxAxisSource::HostExplicit,
+            ViewBoxAxisSeedSource::Parent => ViewBoxAxisSource::Inherited {
+                parent: seed.revision(),
+            },
+        };
         Self {
-            mode,
-            revision: parent,
-            source: ViewBoxAxisSource::Inherited { parent },
+            mode: seed.mode(),
+            revision: seed.revision(),
+            source,
         }
     }
 
-    pub const fn styled(
+    pub(crate) const fn styled(
         mode: ViewBoxAxisMode,
         revision: ViewBoxAxisRevision,
         priority: ViewStylePriority,
@@ -119,6 +127,10 @@ impl ComputedViewAxes {
 
     pub const fn source(&self) -> &ViewBoxAxisSource {
         &self.source
+    }
+
+    pub const fn inherited_snapshot(&self) -> ViewInheritedBoxAxes {
+        ViewInheritedBoxAxes::from_parent(self.mode, self.revision)
     }
 }
 

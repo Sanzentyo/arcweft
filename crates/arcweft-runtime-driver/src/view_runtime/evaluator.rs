@@ -147,6 +147,7 @@ struct ViewEvaluator<'a> {
     dialogue_inputs:
         BTreeMap<crate::presentation_handles::PresentationHandleId, DialogueTextInput<'a>>,
     mounts: &'a mut BTreeMap<ViewOccurrenceKey, MountedView>,
+    axis_seeds: &'a mut super::axis_seed::BundleViewAxisSeedRegistry,
     reduce_motion: bool,
     instruction_budget: u32,
     value_budget: FxEvaluationBudget,
@@ -240,6 +241,10 @@ impl BundleViewRuntime {
     }
 
     /// Reconciles ordinary handles together with typed dialogue View occurrences.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "frame reconciliation keeps ordered handle lifecycle, retained mounts, dialogue roots, and evaluation commit in one atomic orchestration"
+    )]
     pub fn evaluate_with_dialogue<'a>(
         &mut self,
         handles: &[PresentationHandleRecord],
@@ -251,9 +256,14 @@ impl BundleViewRuntime {
             self.root_bindings
                 .insert(binding.name.clone(), binding.value.clone());
         }
+        let mut axis_diagnostics = self.discard_invalid_axis_seed_reservations(handles);
         let Some(program) = self.program.as_ref() else {
             self.mounts.clear();
-            return BundleViewFrame::default();
+            self.axis_seeds.retain_mounts(&BTreeSet::new());
+            return BundleViewFrame {
+                mounts: Vec::new(),
+                diagnostics: axis_diagnostics,
+            };
         };
 
         let (all_handles, dialogue_inputs, collisions) = reconcile_root_handles(handles, dialogue);
@@ -265,6 +275,13 @@ impl BundleViewRuntime {
             .collect::<BTreeSet<_>>();
         self.mounts
             .retain(|key, _| live_handles.contains(&key.handle));
+        let live_root_mounts = self
+            .mounts
+            .iter()
+            .filter(|(key, _)| key.path.segments().is_empty())
+            .map(|(_, mounted)| mounted.state.mount())
+            .collect::<BTreeSet<_>>();
+        self.axis_seeds.retain_mounts(&live_root_mounts);
 
         let mut evaluator = ViewEvaluator {
             program,
@@ -276,12 +293,16 @@ impl BundleViewRuntime {
             root_bindings: &self.root_bindings,
             dialogue_inputs,
             mounts: &mut self.mounts,
+            axis_seeds: &mut self.axis_seeds,
             reduce_motion,
             instruction_budget: VIEW_FRAME_OPERATION_BUDGET,
             value_budget: FxEvaluationBudget::new(VIEW_VALUE_OPERATION_BUDGET),
             style_scope_allocator: ViewStyleScopeAllocator::default(),
             visited: BTreeSet::new(),
-            diagnostics: collisions,
+            diagnostics: {
+                axis_diagnostics.extend(collisions);
+                axis_diagnostics
+            },
         };
         let mut output = Vec::new();
         let mut evaluated_handles = BTreeSet::new();
@@ -344,6 +365,26 @@ impl BundleViewRuntime {
             diagnostics: evaluator.diagnostics,
         }
     }
+
+    fn discard_invalid_axis_seed_reservations(
+        &mut self,
+        handles: &[PresentationHandleRecord],
+    ) -> Vec<BundleViewDiagnostic> {
+        self.axis_seeds
+            .cleanup_known_handles(handles)
+            .into_iter()
+            .map(|handle| BundleViewDiagnostic {
+                code: BundleViewDiagnosticCode::InvalidControlFlow,
+                handle: Some(handle.clone()),
+                mount: None,
+                view: None,
+                instruction: None,
+                message: format!(
+                    "pending View axis seed for `{handle}` was discarded because the handle resolved to a non-View resource"
+                ),
+            })
+            .collect()
+    }
 }
 
 impl ViewEvaluator<'_> {
@@ -374,6 +415,19 @@ impl ViewEvaluator<'_> {
                     error.to_string(),
                 )
             })?;
+            let root_axis_seed = key
+                .path
+                .segments()
+                .is_empty()
+                .then(|| self.axis_seeds.prepare_root_mount(&key.handle, mount))
+                .transpose()
+                .map_err(|error| {
+                    EvaluationFailure::new(
+                        BundleViewDiagnosticCode::InvalidControlFlow,
+                        None,
+                        error.to_string(),
+                    )
+                })?;
             let parameters = self
                 .inventory
                 .parameter_types()
@@ -419,6 +473,16 @@ impl ViewEvaluator<'_> {
                     runtime_parameters: BTreeMap::new(),
                 },
             );
+            if let Some(plan) = root_axis_seed
+                && let Err(error) = self.axis_seeds.commit_root_mount(plan)
+            {
+                self.mounts.remove(key);
+                return Err(EvaluationFailure::new(
+                    BundleViewDiagnosticCode::InvalidControlFlow,
+                    None,
+                    error.to_string(),
+                ));
+            }
         }
 
         let mut mounted = self
@@ -655,6 +719,25 @@ impl ViewEvaluator<'_> {
         match result {
             Ok(()) => {
                 let mount_id = mounted.state.mount();
+                let host_axis_seed = if key.path.segments().is_empty() {
+                    let Some(seed) = self.axis_seeds.mounted_seed(mount_id) else {
+                        self.mounts.insert(key.clone(), mounted);
+                        self.record_failure(
+                            &key,
+                            &definition.public_id,
+                            Some(mount_id),
+                            EvaluationFailure::new(
+                                BundleViewDiagnosticCode::InvalidControlFlow,
+                                None,
+                                "root View mount has no host axis seed",
+                            ),
+                        );
+                        return Vec::new();
+                    };
+                    Some(seed)
+                } else {
+                    None
+                };
                 let dialogue = self
                     .dialogue_inputs
                     .get(&key.handle)
@@ -665,6 +748,7 @@ impl ViewEvaluator<'_> {
                     mount: mount_id,
                     view: definition.public_id,
                     path: key.path,
+                    host_axis_seed,
                     dialogue,
                     active_targets: builder.targets.into_iter().collect(),
                     active_images: builder.images.into_iter().collect(),
