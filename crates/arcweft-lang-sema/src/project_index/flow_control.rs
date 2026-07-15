@@ -74,9 +74,6 @@ fn summarize_flow_control_item(item: &HirFlowItem) -> ProjectFlowControlSummary 
             summary.record_loop();
             summary.merge(summarize_flow_control_items(block.body()));
         }
-        HirFlowItem::Borrow(block) => {
-            summary.merge(summarize_flow_control_items(block.body()));
-        }
         HirFlowItem::SourceLocale(block) => {
             summary.merge(summarize_flow_control_items(block.body()));
         }

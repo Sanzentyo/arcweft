@@ -3,8 +3,7 @@
 use super::helpers::let_else_bindings;
 use super::{
     BorrowStateDelta, EntityKind, HirFlowItem, Pattern, SelectBranchHead, SuspensionBoundary,
-    TypeCheckError, TypeChecker, TypeKind, entity_kind, ident_pattern_name, type_ref_kind,
-    typed_pattern_binding,
+    TypeCheckError, TypeChecker, TypeKind, entity_kind, ident_pattern_name,
 };
 
 impl TypeChecker<'_> {
@@ -65,9 +64,6 @@ impl TypeChecker<'_> {
             }
             HirFlowItem::Select(block) => {
                 self.check_select_block(block);
-            }
-            HirFlowItem::Borrow(block) => {
-                self.check_borrow_block(block);
             }
             HirFlowItem::SourceLocale(block) => {
                 self.check_flow_items(block.body());
@@ -169,22 +165,6 @@ impl TypeChecker<'_> {
                 self.check_flow_item(item);
             }
         }
-    }
-
-    fn check_borrow_block(&mut self, block: &arcweft_lang_hir::model::HirBorrow) {
-        self.check_expr(block.source());
-        let borrow_checkpoint = self.checkpoint_borrow_state();
-        self.with_local_mutation_scope(|this| {
-            if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
-                let ty = type_ref_kind(ty);
-                this.bind_local(name.to_owned(), ty.clone());
-                this.register_borrow_bindings(block.binding(), &ty);
-            }
-            for item in block.body() {
-                this.check_flow_item(item);
-            }
-        });
-        self.restore_borrow_state(borrow_checkpoint);
     }
 
     fn check_select_head(&mut self, head: &SelectBranchHead) {

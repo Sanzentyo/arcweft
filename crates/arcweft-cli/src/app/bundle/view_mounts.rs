@@ -122,10 +122,6 @@ fn collect_mounted_view_ids(items: &[HirFlowItem], ids: &mut BTreeSet<String>) {
                     collect_mounted_view_ids(branch.body(), ids);
                 }
             }
-            HirFlowItem::Borrow(block) => {
-                collect_mounted_view_ids_from_expr(block.source(), ids);
-                collect_mounted_view_ids(block.body(), ids);
-            }
             HirFlowItem::SourceLocale(block) => collect_mounted_view_ids(block.body(), ids),
             HirFlowItem::Scope(block) => collect_mounted_view_ids(block.body(), ids),
             HirFlowItem::Await(block)

@@ -1,14 +1,13 @@
 use super::SourceDialect;
 use super::helpers::LogicalBlockItem;
 use super::{
-    AuthoredExpr, BorrowBlock, CstBlockEvent, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock,
-    MatchArm, MatchBlock, ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
+    AuthoredExpr, CstBlockEvent, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
+    MatchBlock, ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
     StmtMatchArm, TextRange, WhileBlock, WhileLetBlock, binding_value_start_in_line,
     braced_expr_source, collect_logical_block_items, collect_logical_block_items_with_base,
     indentation, is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt,
     parse_stmt_for_dialect_with_stats_and_base, parse_stmt_with_base, raw_stmt, split_brace_item,
     split_optional_block_label, split_top_level_binding, split_top_level_keyword_once,
-    split_top_level_punctuation_once,
 };
 use crate::cst::{
     ArcweftPunctuation, CstPunctuationScan, split_top_level_arcweft_punctuation_once,
@@ -471,52 +470,6 @@ impl Parser<'_> {
             guard.map(|guard| authored_expr_in_source(&block.head, guard, head_base)),
             self.parse_flow_body_from_block(&block, body_base),
             else_body,
-            TextRange::new(start_line.start, block.end),
-        ))
-    }
-
-    pub(super) fn parse_borrow_block(&mut self) -> Option<BorrowBlock> {
-        let start_line = self.current().clone();
-        let block = self.take_brace_block_event();
-        if !block.ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing borrow",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the borrow block"],
-            );
-            return None;
-        }
-        let head = &block.head;
-        let rest = head.trim().strip_prefix("borrow")?.trim();
-        let (source, Some(binding)) = split_top_level_keyword_once(rest, "as") else {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "borrow block must bind a typed alias",
-                ["borrow expr as name: Type { ... }"],
-                Some(head.trim()),
-                ["write the borrow block as `borrow source as name: Type { ... }`"],
-            );
-            return None;
-        };
-        let Some((name, ty)) = split_top_level_punctuation_once(binding, ':') else {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "borrow binding must declare a type",
-                ["name: Type"],
-                Some(binding.trim()),
-                ["add the borrowed reference type after the alias name"],
-            );
-            return None;
-        };
-        let binding = parse_pattern(&format!("{}: {}", name.trim(), ty.trim()));
-        let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());
-
-        Some(BorrowBlock::new(
-            parse_expr_lossy(source.trim()),
-            binding,
-            body_items,
             TextRange::new(start_line.start, block.end),
         ))
     }

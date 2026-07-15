@@ -1010,7 +1010,6 @@ fn record_hir_flow_items(
                     record_hir_flow_items(branch.body(), counts, shape)?;
                 }
             }
-            HirFlowItem::Borrow(block) => record_hir_flow_items(block.body(), counts, shape)?,
             HirFlowItem::SourceLocale(block) => {
                 put_str(shape, block.locale())?;
                 record_hir_flow_items(block.body(), counts, shape)?;

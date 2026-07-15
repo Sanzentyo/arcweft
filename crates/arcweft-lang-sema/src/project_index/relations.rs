@@ -120,9 +120,6 @@ fn index_flow_items_symbol_dependency_relations(
             HirFlowItem::For(block) => {
                 index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
             }
-            HirFlowItem::Borrow(block) => {
-                index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
-            }
             HirFlowItem::SourceLocale(block) => {
                 index_flow_items_symbol_dependency_relations(parent, block.body(), index)?
             }
@@ -606,9 +603,6 @@ pub(super) fn index_flow_item_relations(
                 index = index_flow_item_relations(parent, block.body(), index)?;
             }
             HirFlowItem::For(block) => {
-                index = index_flow_item_relations(parent, block.body(), index)?;
-            }
-            HirFlowItem::Borrow(block) => {
                 index = index_flow_item_relations(parent, block.body(), index)?;
             }
             HirFlowItem::SourceLocale(block) => {

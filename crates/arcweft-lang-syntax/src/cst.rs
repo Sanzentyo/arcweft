@@ -244,7 +244,6 @@ pub(crate) enum CstStructuredFlowBlockKind {
     Select,
     Thread,
     Defer,
-    Borrow,
     UnsafeLifetime,
     SourceLocale,
     BareScope,

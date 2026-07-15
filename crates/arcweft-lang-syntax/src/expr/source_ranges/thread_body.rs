@@ -79,9 +79,6 @@ fn collect_flow_item_source_ranges<'a>(
                 collect_flow_item_list_source_ranges(branch.body(), source, base, ranges);
             }
         }
-        FlowItem::BorrowBlock(block) => {
-            collect_flow_item_list_source_ranges(block.body(), source, base, ranges);
-        }
         FlowItem::SourceLocale(block) => {
             collect_flow_item_list_source_ranges(block.body(), source, base, ranges);
         }

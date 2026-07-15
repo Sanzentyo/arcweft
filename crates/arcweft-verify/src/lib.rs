@@ -8,8 +8,8 @@
 use crate::smt::{SmtCheck, SmtError, SmtOutcome, SmtProblem};
 use arcweft_compiler::lower::lower_source_line_tasks;
 use arcweft_lang_hir::model::{
-    HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
-    HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
+    HirAwait, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop, HirMatch,
+    HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
 };
 use arcweft_lang_hir::syntax::{
     ast::{
@@ -1037,7 +1037,6 @@ impl ObligationCollector {
             HirFlowItem::WhileLet(block) => self.collect_while_let(block),
             HirFlowItem::For(block) => self.collect_for(block),
             HirFlowItem::Select(block) => self.collect_select(block),
-            HirFlowItem::Borrow(block) => self.collect_borrow(block),
             HirFlowItem::SourceLocale(block) => self.collect_flow_items(block.body()),
             HirFlowItem::Scope(block) => self.collect_scope(block),
             HirFlowItem::Thread(thread) => self.collect_flow_items(thread.body()),
@@ -1283,10 +1282,6 @@ impl ObligationCollector {
                     for branch in block.branches() {
                         self.collect_syntax_flow_items(branch.body());
                     }
-                }
-                FlowItem::BorrowBlock(block) => {
-                    self.collect_expr(block.source());
-                    self.collect_syntax_flow_items(block.body());
                 }
                 FlowItem::SourceLocale(block) => self.collect_syntax_flow_items(block.body()),
                 FlowItem::Scope(block) => self.collect_syntax_flow_items(block.body()),
@@ -1731,11 +1726,6 @@ impl ObligationCollector {
         for branch in block.branches() {
             self.collect_flow_items(branch.body());
         }
-    }
-
-    fn collect_borrow(&mut self, block: &HirBorrow) {
-        self.collect_expr(block.source());
-        self.collect_flow_items(block.body());
     }
 
     fn collect_await(&mut self, await_with: &HirAwait) {

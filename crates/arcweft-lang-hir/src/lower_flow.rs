@@ -5,14 +5,13 @@ use crate::lower_ids::{
     flow_slug_from_entity, normalize_entity_ref_syntax, normalize_flow_decl_id,
 };
 use crate::model::{
-    HirAwait, HirAwaitBranch, HirBorrow, HirFlow, HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop,
+    HirAwait, HirAwaitBranch, HirFlow, HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop,
     HirLowerError, HirMatch, HirMatchArm, HirScope, HirScopeExpr, HirSelect, HirSelectBranch,
     HirSourceLocale, HirThread, HirWhile, HirWhileLet,
 };
 use arcweft_lang_syntax::ast::flow::{
-    AwaitWith, BorrowBlock, Flow, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchBlock,
-    ScopeBlock, ScopeExprBlock, SelectBlock, SourceLocaleBlock, Stmt, ThreadBlock, WhileBlock,
-    WhileLetBlock,
+    AwaitWith, Flow, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchBlock, ScopeBlock,
+    ScopeExprBlock, SelectBlock, SourceLocaleBlock, Stmt, ThreadBlock, WhileBlock, WhileLetBlock,
 };
 
 pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
@@ -82,7 +81,6 @@ pub(crate) fn lower_flow_item_with_context(
         FlowItem::WhileLet(block) => lower_while_let(block, context).map(HirFlowItem::WhileLet),
         FlowItem::For(block) => lower_for(block, context).map(HirFlowItem::For),
         FlowItem::Select(block) => lower_select(block, context).map(HirFlowItem::Select),
-        FlowItem::BorrowBlock(block) => lower_borrow(block, context).map(HirFlowItem::Borrow),
         FlowItem::SourceLocale(block) => {
             lower_source_locale(block, context).map(HirFlowItem::SourceLocale)
         }
@@ -159,21 +157,6 @@ fn lower_scope_expr(scope: &ScopeExprBlock, context: &mut LowerContext) -> HirSc
         context.scopes.pop();
     }
     lowered
-}
-
-fn lower_borrow(
-    block: &BorrowBlock,
-    context: &mut LowerContext,
-) -> Result<HirBorrow, HirLowerError> {
-    Ok(HirBorrow {
-        source: block.source().clone(),
-        binding: block.binding().clone(),
-        body: block
-            .body()
-            .iter()
-            .map(|item| lower_flow_item_with_context(item, context))
-            .collect::<Result<Vec<_>, _>>()?,
-    })
 }
 
 fn lower_loop(block: &LoopBlock, context: &mut LowerContext) -> Result<HirLoop, HirLowerError> {

@@ -278,12 +278,6 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 }
             }
         }
-        HirFlowItem::Borrow(block) => {
-            collect_expr(block.source(), uses);
-            for item in block.body() {
-                collect_flow_item(item, uses);
-            }
-        }
         HirFlowItem::SourceLocale(block) => {
             for item in block.body() {
                 collect_flow_item(item, uses);
@@ -523,11 +517,6 @@ fn collect_syntax_flow_block(items: &[FlowItem], uses: &mut Vec<SymbolUse>) {
                     collect_select_head(branch.head(), uses);
                     collect_syntax_flow_block(branch.body(), uses);
                 }
-            }
-            FlowItem::BorrowBlock(block) => {
-                collect_expr(block.source(), uses);
-                collect_pattern(block.binding(), uses);
-                collect_syntax_flow_block(block.body(), uses);
             }
             FlowItem::SourceLocale(block) => collect_syntax_flow_block(block.body(), uses),
             FlowItem::Scope(block) => collect_syntax_flow_block(block.body(), uses),

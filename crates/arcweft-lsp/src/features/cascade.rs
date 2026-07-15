@@ -7,8 +7,8 @@ use arcweft_lang_syntax::ast::dialogue::{
     DialogueContent, DialogueTag, DialogueTagArg, DialogueToken, LineOptions,
 };
 use arcweft_lang_syntax::ast::flow::{
-    AwaitWith, BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
-    SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
+    AwaitWith, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock, SourceLocaleBlock,
+    Stmt, WhileBlock, WhileLetBlock,
 };
 use arcweft_lang_syntax::ast::items::Item;
 use arcweft_lang_syntax::parser::parse_source;
@@ -126,9 +126,6 @@ fn collect_syntax_dialogue_ranges_from_flow(items: &[FlowItem], ranges: &mut Vec
                     collect_syntax_dialogue_ranges_from_flow(branch.body(), ranges);
                 }
             }
-            FlowItem::BorrowBlock(block) => {
-                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
-            }
             FlowItem::SourceLocale(block) => {
                 collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
             }
@@ -201,7 +198,6 @@ fn style_path_from_flow_items(items: &[FlowItem], offset: usize) -> Option<Strin
             .branches()
             .iter()
             .find_map(|branch| style_path_from_flow_items(branch.body(), offset)),
-        FlowItem::BorrowBlock(block) => nested_style_path(block, offset),
         FlowItem::SourceLocale(block) => nested_style_path(block, offset),
         FlowItem::Scope(block) => nested_style_path(block, offset),
         FlowItem::AwaitWith(await_with) => style_path_from_await_with(await_with, offset),
@@ -244,12 +240,6 @@ impl HasFlowBody for WhileLetBlock {
 }
 
 impl HasFlowBody for ForBlock {
-    fn body(&self) -> &[FlowItem] {
-        self.body()
-    }
-}
-
-impl HasFlowBody for BorrowBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
@@ -770,7 +760,6 @@ fn collect_flow_item_dialogues<'a>(items: &'a [HirFlowItem], dialogues: &mut Vec
                     collect_flow_item_dialogues(branch.body(), dialogues);
                 }
             }
-            HirFlowItem::Borrow(block) => collect_flow_item_dialogues(block.body(), dialogues),
             HirFlowItem::SourceLocale(block) => {
                 collect_flow_item_dialogues(block.body(), dialogues);
             }

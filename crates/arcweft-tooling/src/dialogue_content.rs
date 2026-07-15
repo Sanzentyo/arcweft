@@ -236,7 +236,6 @@ where
                     self.visit_flow_items(branch.body());
                 }
             }
-            FlowItem::BorrowBlock(block) => self.visit_flow_items(block.body()),
             FlowItem::SourceLocale(block) => self.visit_flow_items(block.body()),
             FlowItem::Scope(block) => self.visit_flow_items(block.body()),
             FlowItem::AwaitWith(await_with) => {

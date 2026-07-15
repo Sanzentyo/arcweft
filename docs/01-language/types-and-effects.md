@@ -105,12 +105,14 @@ Ref<Flow>       // ID参照。lifetime不要。非null。
 
 ```arcw
 ImageHandle       // frameを跨げるowned handle
-&'asset [Rgba8]   // borrow block内だけ
+&'asset [Rgba8]   // 借用元とlexical scopeの範囲内だけ
 ```
 
 ```arcw
-borrow bg.pixels() as pixels: &'asset [Rgba8] {
+{
+    let pixels: &'asset [Rgba8] = bg.pixels()
     let average = pixels.average_color()
+    drop(pixels)
 }
 ```
 

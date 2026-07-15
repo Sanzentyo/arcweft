@@ -14,8 +14,8 @@ use arcweft_lang_syntax::{
         common::TextRange,
         dialogue::{ContentCall, SpeakerLine},
         flow::{
-            BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
-            SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
+            FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock, SourceLocaleBlock,
+            Stmt, WhileBlock, WhileLetBlock,
         },
         items::{AgentItem, EntityDeclItem, EntityDeclKind, FunctionItem, Item},
         pattern::Pattern,
@@ -545,7 +545,6 @@ fn flow_item_dialogue_option_insertion(
             .branches()
             .iter()
             .find_map(|branch| flow_item_dialogue_option_insertion(source, branch.body(), offset)),
-        FlowItem::BorrowBlock(block) => nested_body_insertion(source, block, offset),
         FlowItem::SourceLocale(block) => nested_body_insertion(source, block, offset),
         FlowItem::Scope(block) => nested_body_insertion(source, block, offset),
         FlowItem::AwaitWith(await_with) => await_with
@@ -596,12 +595,6 @@ impl HasFlowBody for WhileLetBlock {
 }
 
 impl HasFlowBody for ForBlock {
-    fn body(&self) -> &[FlowItem] {
-        self.body()
-    }
-}
-
-impl HasFlowBody for BorrowBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
@@ -907,9 +900,6 @@ fn speaker_preset_edit_from_flow_items(
         FlowItem::Select(block) => block.branches().iter().find_map(|branch| {
             speaker_preset_edit_from_flow_items(source, branch.body(), preset_name, option)
         }),
-        FlowItem::BorrowBlock(block) => {
-            nested_speaker_preset_edit(source, block, preset_name, option)
-        }
         FlowItem::SourceLocale(block) => {
             nested_speaker_preset_edit(source, block, preset_name, option)
         }

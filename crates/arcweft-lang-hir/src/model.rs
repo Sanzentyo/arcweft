@@ -137,7 +137,6 @@ pub enum HirFlowItem {
     WhileLet(HirWhileLet),
     For(HirFor),
     Select(HirSelect),
-    Borrow(HirBorrow),
     SourceLocale(HirSourceLocale),
     Scope(HirScope),
     Include(EntityRef),
@@ -288,14 +287,6 @@ pub struct HirSelect {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirSelectBranch {
     pub(crate) head: SelectBranchHead,
-    pub(crate) body: Vec<HirFlowItem>,
-}
-
-/// HIR-facing zero-copy borrow block.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HirBorrow {
-    pub(crate) source: Expr,
-    pub(crate) binding: Pattern,
     pub(crate) body: Vec<HirFlowItem>,
 }
 
@@ -891,20 +882,6 @@ impl HirSelect {
 impl HirSelectBranch {
     pub const fn head(&self) -> &SelectBranchHead {
         &self.head
-    }
-
-    pub fn body(&self) -> &[HirFlowItem] {
-        &self.body
-    }
-}
-
-impl HirBorrow {
-    pub const fn source(&self) -> &Expr {
-        &self.source
-    }
-
-    pub const fn binding(&self) -> &Pattern {
-        &self.binding
     }
 
     pub fn body(&self) -> &[HirFlowItem] {

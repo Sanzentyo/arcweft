@@ -197,7 +197,6 @@ fn assign_flow_item_module(item: &mut HirFlowItem, path: &CanonicalModulePath) {
             .branches
             .iter_mut()
             .for_each(|branch| assign_flow_item_modules(&mut branch.body, path)),
-        HirFlowItem::Borrow(block) => assign_flow_item_modules(&mut block.body, path),
         HirFlowItem::SourceLocale(block) => assign_flow_item_modules(&mut block.body, path),
         HirFlowItem::Scope(block) => assign_flow_item_modules(&mut block.body, path),
         HirFlowItem::Await(block)

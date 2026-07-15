@@ -672,9 +672,6 @@ impl<'a> Parser<'a> {
             CstStructuredFlowBlockKind::Select => self.parse_select_block().map(FlowItem::Select),
             CstStructuredFlowBlockKind::Thread => self.parse_thread_flow_stmt(),
             CstStructuredFlowBlockKind::Defer => self.parse_defer_flow_stmt(),
-            CstStructuredFlowBlockKind::Borrow => {
-                self.parse_borrow_block().map(FlowItem::BorrowBlock)
-            }
             CstStructuredFlowBlockKind::UnsafeLifetime => self.parse_unsafe_lifetime_flow_stmt(),
             CstStructuredFlowBlockKind::SourceLocale => {
                 self.parse_source_locale_block().map(FlowItem::SourceLocale)

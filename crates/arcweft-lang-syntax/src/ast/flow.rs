@@ -120,7 +120,6 @@ pub enum FlowItem {
     WhileLet(WhileLetBlock),
     For(ForBlock),
     Select(SelectBlock),
-    BorrowBlock(BorrowBlock),
     SourceLocale(SourceLocaleBlock),
     Scope(ScopeBlock),
     Include(EntityRefSyntax),
@@ -267,15 +266,6 @@ pub struct StmtMatchArm {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UnsafeAuditInsertion {
     replacement_range: TextRange,
-}
-
-/// `borrow expr as name: Type { ... }` zero-copy borrow block.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BorrowBlock {
-    source: Expr,
-    binding: Pattern,
-    body: Vec<FlowItem>,
-    range: TextRange,
 }
 
 /// Typed Arcweft statement inside a flow body.
@@ -960,38 +950,6 @@ impl StmtMatchArm {
 
     pub fn body(&self) -> &[Stmt] {
         &self.body
-    }
-}
-
-impl BorrowBlock {
-    pub(crate) const fn new(
-        source: Expr,
-        binding: Pattern,
-        body: Vec<FlowItem>,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            source,
-            binding,
-            body,
-            range,
-        }
-    }
-
-    pub const fn source(&self) -> &Expr {
-        &self.source
-    }
-
-    pub const fn binding(&self) -> &Pattern {
-        &self.binding
-    }
-
-    pub fn body(&self) -> &[FlowItem] {
-        &self.body
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
     }
 }
 

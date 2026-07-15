@@ -92,9 +92,6 @@ fn index_flow_item_entities(
         HirFlowItem::For(block) => {
             index = index_flow_items(block.body(), index, source_name)?;
         }
-        HirFlowItem::Borrow(block) => {
-            index = index_flow_items(block.body(), index, source_name)?;
-        }
         HirFlowItem::SourceLocale(block) => {
             index = index_flow_items(block.body(), index, source_name)?;
         }

@@ -56,7 +56,6 @@ fn visit_items(
                     visit_items(branch.body(), definitions)?;
                 }
             }
-            HirFlowItem::Borrow(block) => visit_items(block.body(), definitions)?,
             HirFlowItem::SourceLocale(block) => visit_items(block.body(), definitions)?,
             HirFlowItem::Scope(block) => visit_items(block.body(), definitions)?,
             HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {

@@ -214,11 +214,10 @@ Values borrowed inside a block cannot escape if their lifetime is shorter than t
 
 ```arcw
 let slice = {
-    borrow frame as pixels: &'frame [u8] {
-        pixels
-    }
+    let pixels: &'frame [u8] = &frame.bytes
+    pixels
 }
-// error: pixels cannot escape frame borrow scope
+// error: pixels cannot escape its lexical borrow scope
 ```
 
 The same rule applies to any region exit. Borrowed values cannot be returned,
@@ -255,9 +254,8 @@ Use owned values or handles:
 
 ```arcw
 let owned = {
-    borrow frame as pixels: &'frame [u8] {
-        pixels.to_owned()
-    }
+    let pixels: &'frame [u8] = &frame.bytes
+    pixels.to_owned()
 }
 ```
 

@@ -1228,44 +1228,6 @@ flow @flow.stream stream {
 }
 
 #[test]
-fn parses_borrow_block_with_lifetime_binding() {
-    let tree = parse_ok(
-        r"
-flow @flow.borrow borrow {
-    borrow bg.pixels() as pixels: &'asset [Rgba8] {
-        let average = pixels.average_color()
-    }
-}
-",
-    );
-
-    let Item::Flow(flow) = &tree.items()[0] else {
-        panic!("expected flow");
-    };
-    let FlowItem::BorrowBlock(block) = &flow.body()[0] else {
-        panic!("expected borrow block");
-    };
-    assert!(matches!(block.source(), Expr::Call { .. }));
-    assert!(matches!(
-        block.binding(),
-        Pattern::Typed {
-            name,
-            ty: TypeRef::Ref { .. }
-        } if name == "pixels"
-    ));
-    assert!(matches!(
-        &block.body()[0],
-        FlowItem::Stmt(Stmt::Let {
-            expr: Expr::Call { .. },
-            ..
-        })
-    ));
-
-    let hir = lower_to_hir(&tree).expect("borrow block lowers");
-    assert!(matches!(&hir.flows()[0].body()[0], HirFlowItem::Borrow(_)));
-}
-
-#[test]
 fn typecheck_rejects_borrow_across_yield_thread_and_defer_boundaries() {
     for boundary in [
         "yield frame",

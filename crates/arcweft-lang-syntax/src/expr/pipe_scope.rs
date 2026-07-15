@@ -146,9 +146,6 @@ fn flow_item_contains_pipe_left(item: &FlowItem) -> bool {
             .branches()
             .iter()
             .any(|branch| flow_items_contain_pipe_left(branch.body())),
-        FlowItem::BorrowBlock(block) => {
-            block.source().contains_pipe_left() || flow_items_contain_pipe_left(block.body())
-        }
         FlowItem::SourceLocale(block) => flow_items_contain_pipe_left(block.body()),
         FlowItem::Scope(block) => flow_items_contain_pipe_left(block.body()),
         FlowItem::Choice(_)

@@ -870,10 +870,9 @@ fn typecheck_report_counts_type_and_borrow_work() {
     let tree = parse_ok(
         r#"
 flow @flow.borrow_stats borrow_stats {
-    borrow pixels() as pixels: &'asset [Rgba8] {
-        let alias = pixels
-        drop(pixels)
-    }
+    let pixels: &'asset [Rgba8] = pixels()
+    let alias = pixels
+    drop(pixels)
     return "done"
 }
 "#,
@@ -882,10 +881,7 @@ flow @flow.borrow_stats borrow_stats {
     validate_typecheck_ready(&hir).expect("borrow stats fixture is typecheck-ready");
     let report = analyze_types(
         &hir,
-        &TypeCheckEnv::new().with_function(
-            "pixels",
-            TypeKind::Shared(Box::new(TypeKind::Named("Rgba8".to_owned()))),
-        ),
+        &TypeCheckEnv::new().with_function("pixels", pixel_borrow_ty()),
     );
     assert!(
         report.diagnostics.is_empty(),
@@ -1122,12 +1118,11 @@ fn borrow_branch_merge_records_delta_without_full_clone() {
     let tree = parse_ok(
         r#"
 flow @flow.borrow_branch_delta borrow_branch_delta {
-    borrow pixels() as pixels: &'asset [Rgba8] {
-        if ready {
-            drop(pixels)
-        }
+    let pixels: &'asset [Rgba8] = pixels()
+    if ready {
         drop(pixels)
     }
+    drop(pixels)
     return "done"
 }
 "#,
@@ -1138,10 +1133,7 @@ flow @flow.borrow_branch_delta borrow_branch_delta {
         &hir,
         &TypeCheckEnv::new()
             .with_symbol("ready", TypeKind::Bool)
-            .with_function(
-                "pixels",
-                TypeKind::Shared(Box::new(TypeKind::Named("Rgba8".to_owned()))),
-            ),
+            .with_function("pixels", pixel_borrow_ty()),
     );
     assert!(
         report

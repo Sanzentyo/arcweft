@@ -313,7 +313,6 @@ fn collect_flow_item_sites(items: &[FlowItem], source: &str, sites: &mut Vec<Let
                     collect_flow_item_sites(branch.body(), source, sites);
                 }
             }
-            FlowItem::BorrowBlock(block) => collect_flow_item_sites(block.body(), source, sites),
             FlowItem::SourceLocale(block) => collect_flow_item_sites(block.body(), source, sites),
             FlowItem::Scope(block) => collect_flow_item_sites(block.body(), source, sites),
             FlowItem::AwaitWith(await_with) => {

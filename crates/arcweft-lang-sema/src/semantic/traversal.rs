@@ -59,10 +59,6 @@ fn flow_item_contains_unchecked_promotion(item: &FlowItem) -> bool {
             .branches()
             .iter()
             .any(|branch| flow_items_contain_unchecked_promotion(branch.body())),
-        FlowItem::BorrowBlock(block) => {
-            expr_contains_unchecked_promotion(block.source())
-                || flow_items_contain_unchecked_promotion(block.body())
-        }
         FlowItem::SourceLocale(block) => flow_items_contain_unchecked_promotion(block.body()),
         FlowItem::Scope(block) => flow_items_contain_unchecked_promotion(block.body()),
         FlowItem::Choice(_)
@@ -364,12 +360,6 @@ fn collect_flow_item_write_accesses(item: &FlowItem, accesses: &mut BTreeSet<Res
                 for item in branch.body() {
                     collect_flow_item_write_accesses(item, accesses);
                 }
-            }
-        }
-        FlowItem::BorrowBlock(block) => {
-            collect_expr_write_accesses(block.source(), accesses);
-            for item in block.body() {
-                collect_flow_item_write_accesses(item, accesses);
             }
         }
         FlowItem::SourceLocale(block) => {
@@ -697,11 +687,6 @@ fn collect_flow_item_thread_result_type_labels(item: &FlowItem, labels: &mut BTr
                 for item in branch.body() {
                     collect_flow_item_thread_result_type_labels(item, labels);
                 }
-            }
-        }
-        FlowItem::BorrowBlock(block) => {
-            for item in block.body() {
-                collect_flow_item_thread_result_type_labels(item, labels);
             }
         }
         FlowItem::SourceLocale(block) => {

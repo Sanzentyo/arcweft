@@ -137,13 +137,6 @@ pub(super) fn is_character_entity_literal(source: &str) -> bool {
         )
 }
 
-pub(super) fn typed_pattern_binding(pattern: &Pattern) -> Option<(&str, &TypeRef)> {
-    match pattern {
-        Pattern::Typed { name, ty } => Some((name, ty)),
-        _ => None,
-    }
-}
-
 pub(super) fn ident_pattern_name(pattern: &Pattern) -> Option<&str> {
     match pattern {
         Pattern::Ident(name) => Some(name),

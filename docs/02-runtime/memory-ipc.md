@@ -66,11 +66,12 @@ pub enum AccessMode {
 
 ## zero-copy borrow
 
-```rust
-borrow lease as telemetry: &'lease [TruckTelemetry] {
+```arcw
+{
+    let telemetry: &'lease [TruckTelemetry] = &lease.telemetry
     let speed = telemetry.last()?.speed
+    drop(telemetry)
 }
 ```
 
-borrow は await/yield を跨げない。
-
+借用は await/yield を跨げない。

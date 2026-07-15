@@ -406,41 +406,6 @@ flow @flow.loading loading {
 }
 
 #[test]
-fn typecheck_rejects_borrow_block_across_await_boundary() {
-    let tree = parse_ok(
-        r"
-flow @flow.borrow borrow {
-    borrow bg.pixels() as pixels: &'asset [Rgba8] {
-        try await load_avatar() with { pending p => progress.set(p.ratio) }
-    }
-}
-",
-    );
-    let hir = lower_to_hir(&tree).expect("borrow block await fixture lowers");
-    let env = TypeCheckEnv::new()
-        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
-        .with_method(
-            TypeKind::Named("ImageHandle".to_owned()),
-            "pixels",
-            TypeKind::Named("&'asset [Rgba8]".to_owned()),
-        )
-        .with_function(
-            "load_avatar",
-            TypeKind::Need {
-                ready: Box::new(TypeKind::Unit),
-                error: Box::new(TypeKind::Named("AssetError".to_owned())),
-            },
-        );
-
-    let errors = typecheck_hir(&hir, &env).expect_err("borrow block cannot cross await");
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("suspension boundary"))
-    );
-}
-
-#[test]
 fn typecheck_rejects_borrow_across_await_boundary() {
     let tree = parse_ok(
         r"

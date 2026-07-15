@@ -380,7 +380,6 @@ fn collect_dialogue_starts(items: &[FlowItem], starts: &mut BTreeSet<usize>) {
                     collect_dialogue_starts(branch.body(), starts);
                 }
             }
-            FlowItem::BorrowBlock(block) => collect_dialogue_starts(block.body(), starts),
             FlowItem::SourceLocale(block) => collect_dialogue_starts(block.body(), starts),
             FlowItem::Scope(block) => collect_dialogue_starts(block.body(), starts),
             FlowItem::AwaitWith(await_with) => {

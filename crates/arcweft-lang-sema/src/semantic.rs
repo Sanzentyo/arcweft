@@ -5,8 +5,8 @@ use crate::fact_layer::{
     Capability, EffectScope, ProofFacts, ResourceAccess, write_capability_for_call,
 };
 use arcweft_lang_hir::model::{
-    HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
-    HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirThread, HirTopLevelDecl, HirWhile,
+    HirAwait, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop, HirMatch,
+    HirModule, HirScope, HirScopeExpr, HirSelect, HirThread, HirTopLevelDecl, HirWhile,
     HirWhileLet,
 };
 use arcweft_lang_hir::syntax::{
@@ -114,11 +114,6 @@ fn collect_hir_thread_result_type_labels(item: &HirFlowItem, labels: &mut BTreeS
                 }
             }
         }
-        HirFlowItem::Borrow(block) => {
-            for item in block.body() {
-                collect_hir_thread_result_type_labels(item, labels);
-            }
-        }
         HirFlowItem::SourceLocale(block) => {
             for item in block.body() {
                 collect_hir_thread_result_type_labels(item, labels);
@@ -192,9 +187,6 @@ fn write_accesses_in_hir_flow_items(items: &[HirFlowItem]) -> BTreeSet<ResourceA
                 for branch in block.branches() {
                     accesses.extend(write_accesses_in_hir_flow_items(branch.body()));
                 }
-            }
-            HirFlowItem::Borrow(block) => {
-                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
             }
             HirFlowItem::SourceLocale(block) => {
                 accesses.extend(write_accesses_in_hir_flow_items(block.body()));
@@ -651,7 +643,6 @@ impl<'a> SemanticAnalyzer<'a> {
             HirFlowItem::WhileLet(block) => self.collect_while_let(block, state),
             HirFlowItem::For(block) => self.collect_for(block, state),
             HirFlowItem::Select(block) => self.collect_select(block),
-            HirFlowItem::Borrow(block) => self.collect_borrow(block),
             HirFlowItem::SourceLocale(block) => self.collect_flow_items(block.body(), state),
             HirFlowItem::Scope(block) => self.collect_scope(block),
             HirFlowItem::Include(_) => {}
@@ -1822,13 +1813,6 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             self.collect_flow_items(branch.body(), &mut state);
         }
-        self.finish_scope(&state);
-    }
-
-    fn collect_borrow(&mut self, block: &HirBorrow) {
-        let mut state = FlowState::default();
-        self.collect_expr(block.source(), &mut state);
-        self.collect_flow_items(block.body(), &mut state);
         self.finish_scope(&state);
     }
 

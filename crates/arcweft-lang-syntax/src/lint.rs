@@ -398,7 +398,6 @@ fn lint_flow_item_ids(item: &FlowItem, lints: &mut Vec<SyntaxLint>) {
                 lint_flow_items(branch.body(), lints);
             }
         }
-        FlowItem::BorrowBlock(block) => lint_flow_items(block.body(), lints),
         FlowItem::SourceLocale(block) => lint_flow_items(block.body(), lints),
         FlowItem::Scope(block) => lint_flow_items(block.body(), lints),
         FlowItem::AwaitWith(await_with) => {

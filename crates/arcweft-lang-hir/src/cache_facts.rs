@@ -49,7 +49,6 @@ impl HirFlowItem {
             Self::WhileLet(_) => "while_let",
             Self::For(_) => "for",
             Self::Select(_) => "select",
-            Self::Borrow(_) => "borrow",
             Self::SourceLocale(_) => "source_locale",
             Self::Scope(_) => "scope",
             Self::Include(_) => "include",

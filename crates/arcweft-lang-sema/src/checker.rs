@@ -81,8 +81,7 @@ use helpers::{
     is_drop_callee, is_local_ident, iter_item_type, merge_line_output, normalize_choice_type,
     pattern_bindings_with_fallback, pattern_bindings_with_nominal_types, signature_generic_names,
     source_return_types, stmts_diverge, stream_return_types, type_ref_kind,
-    type_ref_kind_with_generics, typed_pattern_binding, unify_loop_break_types,
-    variant_payload_type_for_name,
+    type_ref_kind_with_generics, unify_loop_break_types, variant_payload_type_for_name,
 };
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.

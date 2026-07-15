@@ -333,8 +333,6 @@ fn classify_structured_flow_block(trimmed: &str) -> Option<CstStructuredFlowBloc
         Some(CstStructuredFlowBlockKind::Thread)
     } else if trimmed.starts_with("defer ") || matches!(trimmed, "defer" | "defer:") {
         Some(CstStructuredFlowBlockKind::Defer)
-    } else if trimmed.starts_with("borrow ") {
-        Some(CstStructuredFlowBlockKind::Borrow)
     } else if trimmed.starts_with("unsafe lifetime ") {
         Some(CstStructuredFlowBlockKind::UnsafeLifetime)
     } else if trimmed.starts_with("source locale ") {
