@@ -623,7 +623,7 @@ fn target_attr(attrs: &BTreeMap<String, String>) -> Result<FxTarget, RuntimePlan
         Some("glyph") => Ok(FxTarget::Glyph),
         Some("viewport") => Ok(FxTarget::Viewport),
         Some(target) => Err(RuntimePlanLowerError::new(format!(
-            "rich-text transform target `{target}` was removed; use node, content, background, line, glyph, or viewport"
+            "unknown rich-text transform target `{target}`; expected node, content, background, line, glyph, or viewport"
         ))),
     }
 }
@@ -647,4 +647,22 @@ fn transform_origin_attr(
 
 fn host_event(event: DialogueHostEvent) -> Vec<RichTextNode> {
     vec![RichTextNode::HostEvent { event }]
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::target_attr;
+
+    #[test]
+    fn transform_target_values_outside_the_current_set_fail() {
+        let attrs = BTreeMap::from([("target".to_owned(), "elsewhere".to_owned())]);
+        let error = target_attr(&attrs).expect_err("unknown target value must diagnose");
+        assert!(
+            error
+                .to_string()
+                .contains("unknown rich-text transform target")
+        );
+    }
 }

@@ -35,7 +35,6 @@ pub(crate) fn compile_builtin_rich_text_fx(
     if phase == BuiltinRichTextFxPhase::HostEvent {
         return Ok(CompiledBuiltinRichTextFx::HostEvent);
     }
-    reject_removed_state_scope(&attrs)?;
     let effect = selector.to_owned();
     let presentation_phase = presentation_phase(phase);
     let target = effect_target(&attrs, presentation_phase)?;
@@ -105,7 +104,7 @@ fn effect_target(
         Some("viewport") => FxTarget::Viewport,
         Some(value) => {
             return Err(fx_error(format!(
-                "rich-text effect target `{value}` was removed; use node, content, background, line, glyph, or viewport"
+                "rich-text effect target `{value}` is not in the closed Fx target set: node, content, background, line, glyph, viewport"
             )));
         }
     };
@@ -120,20 +119,6 @@ fn effect_target(
         ));
     }
     Ok(target)
-}
-
-fn reject_removed_state_scope(
-    attrs: &BTreeMap<String, String>,
-) -> Result<(), RuntimePlanLowerError> {
-    if let Some((name, _)) = attrs
-        .iter()
-        .find(|(name, _)| matches!(name.as_str(), "state" | "scope" | "state_scope"))
-    {
-        return Err(fx_error(format!(
-            "rich-text effect `{name}` was removed; Fx state is owned by the stable per-occurrence FxInstanceId"
-        )));
-    }
-    Ok(())
 }
 
 fn canonical_semantic_key(
@@ -203,18 +188,13 @@ mod tests {
     }
 
     #[test]
-    fn removed_target_and_state_scope_fail_instead_of_aliasing() {
+    fn target_values_outside_the_closed_current_set_fail() {
+        let error = compile_builtin_rich_text_fx("wave", "target=elsewhere")
+            .expect_err("unknown target value must diagnose");
         assert!(
-            compile_builtin_rich_text_fx("wave", "target=run")
-                .expect_err("run target was replaced")
+            error
                 .to_string()
-                .contains("target `run` was removed")
-        );
-        assert!(
-            compile_builtin_rich_text_fx("shake", "state_scope=glyph")
-                .expect_err("state scope was replaced by stable identity")
-                .to_string()
-                .contains("stable per-occurrence FxInstanceId")
+                .contains("not in the closed Fx target set")
         );
     }
 
