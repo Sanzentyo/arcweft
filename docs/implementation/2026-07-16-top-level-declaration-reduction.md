@@ -82,13 +82,13 @@ parallel without stopping the scaffold-removal cut:
 - [live source authoring](../reviews/requests/2026-07-16-lang-01.3-live-source-authoring-unification-final-contract.md)
 - [typed resource declaration surface](../reviews/requests/2026-07-16-lang-01.4-typed-resource-declaration-surface-final-contract.md)
 - [build/profile metadata extraction](../reviews/requests/2026-07-16-lang-01.5-build-profile-metadata-extraction-final-contract.md)
-- [trusted-axiom surface decision](../reviews/requests/2026-07-16-lang-01.6-trusted-axiom-surface-final-decision.md)
 
-The last request records one direct package conflict. The referenced language
-audit retains `proof` and `trusted axiom` as visible trust boundaries, while
-proof-concurrency v6.1.1 requires `TrustedAxiomItem` and its parser/docs to be
-deleted in Stage 4. Proof stages that do not depend on this choice continue;
-the repository will not guess which contradictory surface is final.
+Lang-01.6 is now
+[resolved](../reviews/requests/2026-07-16-lang-01.6-trusted-axiom-surface-final-decision.md):
+the trust boundary remains visible as `#[verify.trusted(...)]` metadata on an
+ordinary proof, while the separate `trusted axiom` declaration and
+`TrustedAxiomItem` are deleted. Proof-concurrency can therefore complete its
+typed proof migration without preserving the obsolete declaration family.
 
 ## Implementation order
 
