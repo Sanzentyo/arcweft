@@ -1,0 +1,126 @@
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+use super::document::parse_shadow_document;
+use crate::grammar::build::UnattachedGrammarEntry;
+use crate::grammar::kinds::SyntaxKind;
+
+fn document(source: &str) -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new("memory:item-families").unwrap(),
+        SourceName::Memory,
+        source,
+    )
+    .unwrap()
+}
+
+#[test]
+fn every_current_top_level_item_family_has_one_lossless_root() {
+    let source = concat!(
+        "mod story\n",
+        "use story::Thing\n",
+        "flow opening {}\n",
+        "fn value() {}\n",
+        "predicate current() = true\n",
+        "proof verify() {}\n",
+        "agent narrator {}\n",
+        "callable action() -> Unit\n",
+        "state Game {}\n",
+        "trait Render {}\n",
+        "impl Render for Game {}\n",
+        "enum Mood {}\n",
+        "struct Point {}\n",
+        "type Count = Int\n",
+        "entity actor: Character {}\n",
+        "entry start {}\n",
+        "extern capability audio\n",
+        "extern mod native\n",
+        "hook startup {}\n",
+        "dialogue defaults {}\n",
+        "memo fn cached() {}\n",
+        "test smoke {}\n",
+        "bench speed {}\n",
+        "parser arcw {}\n",
+        "source data {}\n",
+        "style theme {}\n",
+        "let top = true\n",
+        "???\n",
+    );
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .filter(|kind| is_item_kind(*kind))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds,
+        [
+            SyntaxKind::ModuleDeclaration,
+            SyntaxKind::UseDeclaration,
+            SyntaxKind::FlowItem,
+            SyntaxKind::FunctionItem,
+            SyntaxKind::PredicateItem,
+            SyntaxKind::ProofItem,
+            SyntaxKind::AgentItem,
+            SyntaxKind::CallableItem,
+            SyntaxKind::StateItem,
+            SyntaxKind::TraitItem,
+            SyntaxKind::ImplItem,
+            SyntaxKind::EnumItem,
+            SyntaxKind::StructItem,
+            SyntaxKind::TypeAliasItem,
+            SyntaxKind::EntityDeclarationItem,
+            SyntaxKind::EntryDeclarationItem,
+            SyntaxKind::ExternCapabilityItem,
+            SyntaxKind::ExternModuleItem,
+            SyntaxKind::HookItem,
+            SyntaxKind::DialogueDefaultsItem,
+            SyntaxKind::MemoFunctionItem,
+            SyntaxKind::TestItem,
+            SyntaxKind::BenchItem,
+            SyntaxKind::ParserItem,
+            SyntaxKind::SourceItem,
+            SyntaxKind::StyleItem,
+            SyntaxKind::TopLevelFlowItem,
+            SyntaxKind::ErrorItem,
+        ]
+    );
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+const fn is_item_kind(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::ModuleDeclaration
+            | SyntaxKind::UseDeclaration
+            | SyntaxKind::FlowItem
+            | SyntaxKind::FunctionItem
+            | SyntaxKind::PredicateItem
+            | SyntaxKind::ProofItem
+            | SyntaxKind::AgentItem
+            | SyntaxKind::CallableItem
+            | SyntaxKind::StateItem
+            | SyntaxKind::TraitItem
+            | SyntaxKind::ImplItem
+            | SyntaxKind::EnumItem
+            | SyntaxKind::StructItem
+            | SyntaxKind::TypeAliasItem
+            | SyntaxKind::EntityDeclarationItem
+            | SyntaxKind::EntryDeclarationItem
+            | SyntaxKind::ExternCapabilityItem
+            | SyntaxKind::ExternModuleItem
+            | SyntaxKind::HookItem
+            | SyntaxKind::DialogueDefaultsItem
+            | SyntaxKind::MemoFunctionItem
+            | SyntaxKind::TestItem
+            | SyntaxKind::BenchItem
+            | SyntaxKind::ParserItem
+            | SyntaxKind::SourceItem
+            | SyntaxKind::StyleItem
+            | SyntaxKind::TopLevelFlowItem
+            | SyntaxKind::ErrorItem
+    )
+}

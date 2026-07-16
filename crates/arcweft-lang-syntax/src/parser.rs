@@ -40,6 +40,9 @@ pub mod fragment;
 pub mod headers;
 pub mod helpers;
 pub mod hooks;
+mod item;
+#[cfg(test)]
+mod item_tests;
 pub mod items;
 mod lexer;
 pub mod line_plan;
