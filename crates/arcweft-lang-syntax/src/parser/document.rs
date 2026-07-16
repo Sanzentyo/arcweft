@@ -240,12 +240,22 @@ fn logical_token_ranges(source: &str, tokens: &[LexToken]) -> Vec<LogicalTokenRa
     let mut delimiter_depth = 0_usize;
     for (index, token) in tokens.iter().enumerate() {
         delimiter_depth = delimiter_depth_after(source, token.kind, token.range, delimiter_depth);
-        if token.kind == SyntaxKind::NewlineToken && delimiter_depth == 0 {
+        let header_angle_open = token.kind == SyntaxKind::NewlineToken
+            && delimiter_depth == 0
+            && declaration_header_angle_is_open(source, &tokens[start..=index]);
+        let nested_delimiter_open = delimiter_depth != 0 || header_angle_open;
+        let recovery_sync = token.kind == SyntaxKind::NewlineToken
+            && nested_delimiter_open
+            && begins_unindented_declaration(source, tokens, index + 1);
+        if token.kind == SyntaxKind::NewlineToken && (!nested_delimiter_open || recovery_sync) {
             ranges.push(LogicalTokenRange {
                 start,
                 end: index + 1,
             });
             start = index + 1;
+            if recovery_sync {
+                delimiter_depth = 0;
+            }
         }
     }
     if start < tokens.len() {
@@ -255,6 +265,71 @@ fn logical_token_ranges(source: &str, tokens: &[LexToken]) -> Vec<LogicalTokenRa
         });
     }
     ranges
+}
+
+fn begins_unindented_declaration(source: &str, tokens: &[LexToken], start: usize) -> bool {
+    let mut line = start;
+    loop {
+        let Some(first) = tokens.get(line) else {
+            return false;
+        };
+        if matches!(
+            first.kind,
+            SyntaxKind::WhitespaceToken | SyntaxKind::NewlineToken
+        ) {
+            return false;
+        }
+        let end = recovery_logical_line_end(source, tokens, line);
+        let line_tokens = &tokens[line..end];
+        if is_outer_prefix_line(source, line_tokens) {
+            line = end;
+            continue;
+        }
+        return classify_top_level_item(source, line_tokens).is_some_and(is_declaration_item_kind);
+    }
+}
+
+fn recovery_logical_line_end(source: &str, tokens: &[LexToken], start: usize) -> usize {
+    let mut delimiter_depth = 0_usize;
+    for (relative, token) in tokens[start..].iter().enumerate() {
+        delimiter_depth = delimiter_depth_after(source, token.kind, token.range, delimiter_depth);
+        if token.kind == SyntaxKind::NewlineToken && delimiter_depth == 0 {
+            return start + relative + 1;
+        }
+    }
+    tokens.len()
+}
+
+const fn is_declaration_item_kind(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::ModuleDeclaration
+            | SyntaxKind::UseDeclaration
+            | SyntaxKind::FlowItem
+            | SyntaxKind::FunctionItem
+            | SyntaxKind::PredicateItem
+            | SyntaxKind::ProofItem
+            | SyntaxKind::AgentItem
+            | SyntaxKind::CallableItem
+            | SyntaxKind::StateItem
+            | SyntaxKind::TraitItem
+            | SyntaxKind::ImplItem
+            | SyntaxKind::EnumItem
+            | SyntaxKind::StructItem
+            | SyntaxKind::TypeAliasItem
+            | SyntaxKind::EntityDeclarationItem
+            | SyntaxKind::EntryDeclarationItem
+            | SyntaxKind::ExternCapabilityItem
+            | SyntaxKind::ExternModuleItem
+            | SyntaxKind::HookItem
+            | SyntaxKind::DialogueDefaultsItem
+            | SyntaxKind::MemoFunctionItem
+            | SyntaxKind::TestItem
+            | SyntaxKind::BenchItem
+            | SyntaxKind::ParserItem
+            | SyntaxKind::SourceItem
+            | SyntaxKind::StyleItem
+    )
 }
 
 fn declaration_group_end(
@@ -303,13 +378,25 @@ fn declaration_has_body(source: &str, tokens: &[LexToken]) -> bool {
 }
 
 fn declaration_header_angle_is_open(source: &str, tokens: &[LexToken]) -> bool {
+    let keywords = tokens
+        .iter()
+        .filter(|token| token.kind == SyntaxKind::KeywordToken)
+        .map(|token| &source[token.range.as_range()])
+        .collect::<Vec<_>>();
+    if declaration_kind(&keywords).is_none() {
+        return false;
+    }
+
     let mut angle = 0_usize;
     for token in tokens {
+        let text = &source[token.range.as_range()];
+        if angle == 0 && matches!(text, "requires" | "ensures" | "=" | "{") {
+            return false;
+        }
         if token.kind != SyntaxKind::PunctuationToken {
             continue;
         }
-        match &source[token.range.as_range()] {
-            "(" if angle == 0 => return false,
+        match text {
             "<" => angle += 1,
             ">" => angle = angle.saturating_sub(1),
             _ => {}
@@ -325,7 +412,7 @@ fn declaration_continuation_line(source: &str, tokens: &[LexToken]) -> bool {
         .is_none_or(|token| {
             matches!(
                 &source[token.range.as_range()],
-                "where" | "requires" | "ensures" | "=" | "{" | "->"
+                "(" | "where" | "requires" | "ensures" | "=" | "{" | "->"
             )
         })
 }
@@ -356,6 +443,8 @@ fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut 
     let mut line_ordinal = 0_u32;
     let mut nested_depth = 0_usize;
     let mut delimiter_depth = 0_usize;
+    let mut header_angle_depth = 0_usize;
+    let mut in_declaration_header = true;
     let mut pending_boundary = false;
     let mut prewrapped_depth = 0_usize;
 
@@ -396,10 +485,26 @@ fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut 
             SyntaxEvent::StartNode { .. } => nested_depth += 1,
             SyntaxEvent::FinishNode => nested_depth = nested_depth.saturating_sub(1),
             SyntaxEvent::Token { kind, range } => {
+                let text = &source[range.as_range()];
+                if in_declaration_header {
+                    if matches!(text, "requires" | "ensures" | "=" | "{") {
+                        in_declaration_header = false;
+                        header_angle_depth = 0;
+                    } else if *kind == SyntaxKind::PunctuationToken {
+                        match text {
+                            "<" => header_angle_depth += 1,
+                            ">" => header_angle_depth = header_angle_depth.saturating_sub(1),
+                            _ => {}
+                        }
+                    }
+                }
                 if *kind == SyntaxKind::PunctuationToken {
                     delimiter_depth = delimiter_depth_after(source, *kind, *range, delimiter_depth);
                 }
-                if *kind == SyntaxKind::NewlineToken && delimiter_depth == 0 {
+                if *kind == SyntaxKind::NewlineToken
+                    && delimiter_depth == 0
+                    && header_angle_depth == 0
+                {
                     pending_boundary = true;
                 }
             }

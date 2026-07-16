@@ -100,6 +100,43 @@ fn canonical_multiline_contract_header_and_block_form_one_declaration() {
 }
 
 #[test]
+fn generic_header_angle_nesting_controls_logical_line_boundaries() {
+    let source = "proof generic<\n    T: Ord,\n    U,\n>\n(\n    value: Result<T, U>\n)\n-> Result<\n    T,\n    U\n>\n= ()\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ProofItem)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| {
+                matches!(
+                    **kind,
+                    SyntaxKind::LifetimeParameter | SyntaxKind::TypeParameter
+                )
+            })
+            .count(),
+        2
+    );
+    assert!(kinds.contains(&SyntaxKind::ReturnType));
+    assert!(kinds.contains(&SyntaxKind::GenericApplicationType));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::LogicalLine), 4);
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn documentation_and_outer_attributes_attach_to_the_following_proof() {
     let source = "/// Establishes the ordering lemma.\n/// Retains both documentation lines.\n#[verify]\n#[cfg(\n    debug\n)]\npub proof documented<T>(value: T)\nwhere T: Ord\n= ()\n";
     let built = parse_shadow_document(&document(source)).unwrap();
@@ -176,6 +213,134 @@ fn missing_body_does_not_consume_following_clean_declaration() {
             .diagnostics()
             .iter()
             .any(|diagnostic| diagnostic.code() == "syntax.predicate.missing_body")
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn missing_parameter_close_synchronizes_before_the_following_declaration() {
+    let source = "proof broken(value: Int\nproof next() = ()\n";
+    let next_start = source.find("proof next").unwrap();
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ProofItem)
+            .count(),
+        2
+    );
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(
+                |diagnostic| diagnostic.code() == "syntax.proof.missing_parameter_close"
+                    && diagnostic.range().start() == next_start
+                    && diagnostic.range().end() == next_start
+            )
+    );
+    assert!(
+        built
+            .missing_tokens()
+            .iter()
+            .any(|missing| missing.at() == next_start)
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn missing_block_close_synchronizes_before_the_following_declaration() {
+    let source = "proof broken() -> Int { let x = ;\nproof next() = ()\n";
+    let next_start = source.find("proof next").unwrap();
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ProofItem)
+            .count(),
+        2
+    );
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(
+                |diagnostic| diagnostic.code() == "syntax.proof.missing_block_close"
+                    && diagnostic.range().start() == next_start
+                    && diagnostic.range().end() == next_start
+            )
+    );
+    assert!(
+        built
+            .missing_tokens()
+            .iter()
+            .any(|missing| missing.at() == next_start)
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn missing_block_close_preserves_the_following_declarations_prefixes() {
+    let source = "predicate broken() { let x = true\n/// The next proof remains documented.\n#[verify]\nproof next() = ()\n";
+    let next_prefix_start = source.find("/// The next").unwrap();
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::PredicateItem)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ProofItem)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::DocBlock)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::OuterAttribute)
+            .count(),
+        1
+    );
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(
+                |diagnostic| diagnostic.code() == "syntax.predicate.missing_block_close"
+                    && diagnostic.range().start() == next_prefix_start
+            )
     );
     assert_eq!(built.green().to_string(), source);
 }
