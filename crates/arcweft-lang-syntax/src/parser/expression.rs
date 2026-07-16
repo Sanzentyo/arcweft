@@ -1,5 +1,7 @@
 //! Private Pratt expression grammar over the shared document cursor.
 
+mod control;
+
 use super::document::ShadowDocumentParser;
 use super::path::emit_path;
 use super::shadow_recovery::{
@@ -9,8 +11,8 @@ use super::shadow_recovery::{
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct CompletedNode {
-    start_event: usize,
+pub(super) struct CompletedNode {
+    pub(super) start_event: usize,
 }
 
 pub(super) fn emit_expression(
@@ -141,9 +143,9 @@ fn parse_prefix(
         "(" => emit_tuple(parser, end, role),
         "[" => emit_bracket_sequence(parser, end, role),
         "." => emit_short_variant(parser, end, role),
-        "{" => emit_flat(parser, end, SyntaxKind::BlockExpression, role),
-        "if" => emit_flat(parser, end, SyntaxKind::IfExpression, role),
-        "match" => emit_flat(parser, end, SyntaxKind::MatchExpression, role),
+        "{" => control::emit_block_expression(parser, end, role),
+        "if" => control::emit_if_expression(parser, end, role),
+        "match" => control::emit_match_expression(parser, end, role),
         "|" => emit_flat(parser, end, SyntaxKind::ClosureExpression, role),
         "_" => emit_single(parser, SyntaxKind::PlaceholderExpression, role),
         "true" | "false" => emit_single(parser, SyntaxKind::LiteralExpression, role),

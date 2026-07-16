@@ -40,7 +40,7 @@ pub(super) fn emit_block_body(
     parser.finish();
 }
 
-fn emit_braced_block(
+pub(super) fn emit_braced_block(
     parser: &mut ShadowDocumentParser<'_, '_>,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
@@ -68,7 +68,10 @@ fn emit_braced_block(
         let semicolon = terminator.is_some_and(|(_, semicolon)| semicolon);
         let later = terminator
             .is_some_and(|(index, _)| first_significant(parser, index + 1, close).is_some());
-        let statement_shaped = first.is_some_and(is_statement_head);
+        let unterminated_value_head = !semicolon
+            && !later
+            && first.is_some_and(|spelling| matches!(spelling, "if" | "loop" | "match" | "thread"));
+        let statement_shaped = first.is_some_and(is_statement_head) && !unterminated_value_head;
         if semicolon || later || statement_shaped {
             let end = if semicolon {
                 terminator.map_or(segment_end, |(index, _)| index + 1)

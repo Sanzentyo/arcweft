@@ -415,6 +415,71 @@ fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
 }
 
 #[test]
+fn control_expressions_emit_typed_conditions_patterns_branches_and_arms() {
+    let source = "proof choose(value: Option<Int>, ready: Bool) -> Int = if let .Some(x) = value when ready { x } else { match value { .Some(v) when v > 0 => v, .None => 0 } }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::IfLetExpression,
+        SyntaxKind::MatchExpression,
+        SyntaxKind::BlockExpression,
+        SyntaxKind::MatchArm,
+        SyntaxKind::VariantPattern,
+        SyntaxKind::BinaryExpression,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::BlockExpression)
+            .count(),
+        2
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::MatchArm)
+            .count(),
+        2
+    );
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn comparison_operator_does_not_hide_if_expression_branches() {
+    let source = "predicate less(a: Int, b: Int) = if a < b { true } else { false }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert!(kinds.contains(&SyntaxKind::IfExpression));
+    assert!(kinds.contains(&SyntaxKind::BinaryExpression));
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::BlockExpression)
+            .count(),
+        2
+    );
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn nested_type_and_pattern_families_have_independent_events() {
     let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8; 32]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
     let built = parse_shadow_document(&document(source)).unwrap();
