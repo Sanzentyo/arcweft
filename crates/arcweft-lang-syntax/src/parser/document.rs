@@ -171,15 +171,16 @@ fn emit_logical_lines(
     let mut line = 0_usize;
     let mut ordinal = 0_u32;
     while line < lines.len() {
-        let range = lines[line];
-        let line_tokens = &tokens[range.start..range.end];
-        let kind = classify_top_level_item(source, line_tokens);
-        if let Some(kind @ (SyntaxKind::PredicateItem | SyntaxKind::ProofItem)) = kind {
-            let last = declaration_group_end(source, tokens, &lines, line);
-            let grouped = &tokens[range.start..lines[last].end];
+        if let Some((declaration_line, kind)) =
+            predicate_or_proof_after_outer_prefixes(source, tokens, &lines, line)
+        {
+            let last = declaration_group_end(source, tokens, &lines, declaration_line);
+            let grouped = &tokens[lines[line].start..lines[last].end];
             emit_declaration_item(source, grouped, kind, ordinal, events);
             line = last + 1;
         } else {
+            let range = lines[line];
+            let line_tokens = &tokens[range.start..range.end];
             emit_logical_line(source, line_tokens, ordinal, events);
             line += 1;
         }
@@ -188,6 +189,43 @@ fn emit_logical_lines(
             .ok_or(GrammarBuildError::ChildIndexExhausted)?;
     }
     Ok(())
+}
+
+fn predicate_or_proof_after_outer_prefixes(
+    source: &str,
+    tokens: &[LexToken],
+    lines: &[LogicalTokenRange],
+    first: usize,
+) -> Option<(usize, SyntaxKind)> {
+    let mut declaration = first;
+    while let Some(range) = lines.get(declaration).copied() {
+        let line_tokens = &tokens[range.start..range.end];
+        if !is_outer_prefix_line(source, line_tokens) {
+            break;
+        }
+        declaration += 1;
+    }
+
+    let range = lines.get(declaration).copied()?;
+    let kind = classify_top_level_item(source, &tokens[range.start..range.end])?;
+    matches!(kind, SyntaxKind::PredicateItem | SyntaxKind::ProofItem).then_some((declaration, kind))
+}
+
+fn is_outer_prefix_line(source: &str, tokens: &[LexToken]) -> bool {
+    is_documentation_line(tokens)
+        || classify_top_level_item(source, tokens) == Some(SyntaxKind::OuterAttribute)
+}
+
+fn is_documentation_line(tokens: &[LexToken]) -> bool {
+    let mut saw_documentation = false;
+    for token in tokens {
+        match token.kind {
+            SyntaxKind::WhitespaceToken | SyntaxKind::NewlineToken => {}
+            SyntaxKind::DocCommentToken => saw_documentation = true,
+            _ => return false,
+        }
+    }
+    saw_documentation
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -319,8 +357,33 @@ fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut 
     let mut nested_depth = 0_usize;
     let mut delimiter_depth = 0_usize;
     let mut pending_boundary = false;
+    let mut prewrapped_depth = 0_usize;
 
     for event in inner {
+        if prewrapped_depth != 0 {
+            match &event {
+                SyntaxEvent::StartNode { .. } => prewrapped_depth += 1,
+                SyntaxEvent::FinishNode => prewrapped_depth -= 1,
+                SyntaxEvent::Token { .. }
+                | SyntaxEvent::MissingToken { .. }
+                | SyntaxEvent::Diagnostic(_) => {}
+            }
+            events.push(event);
+            continue;
+        }
+        if !line_open
+            && matches!(
+                &event,
+                SyntaxEvent::StartNode {
+                    kind: SyntaxKind::DocBlock | SyntaxKind::AttributeList,
+                    ..
+                }
+            )
+        {
+            prewrapped_depth = 1;
+            events.push(event);
+            continue;
+        }
         if !line_open && !matches!(event, SyntaxEvent::Diagnostic(_)) {
             events.push(SyntaxEvent::start(
                 SyntaxKind::LogicalLine,

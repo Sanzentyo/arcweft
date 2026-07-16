@@ -14,6 +14,17 @@ fn document(text: &str) -> SourceDocument {
     .unwrap()
 }
 
+fn green_kind_count(node: &rowan::GreenNodeData, kind: SyntaxKind) -> usize {
+    usize::from(node.kind() == rowan::SyntaxKind(kind as u16))
+        + node
+            .children()
+            .map(|child| match child {
+                rowan::NodeOrToken::Node(child) => green_kind_count(child, kind),
+                rowan::NodeOrToken::Token(_) => 0,
+            })
+            .sum::<usize>()
+}
+
 #[test]
 fn complete_headers_emit_distinct_typed_descendant_families_losslessly() {
     let source = "pub proof ordered<'a, T>((left, right): (T, T), cmp: Comparator<T>) -> Bool where T: Ord requires cmp.ready() ensures result = left == right\n";
@@ -84,6 +95,53 @@ fn canonical_multiline_contract_header_and_block_form_one_declaration() {
     }
     assert!(!kinds.contains(&SyntaxKind::ErrorItem));
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::LogicalLine), 6);
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn documentation_and_outer_attributes_attach_to_the_following_proof() {
+    let source = "/// Establishes the ordering lemma.\n/// Retains both documentation lines.\n#[verify]\n#[cfg(\n    debug\n)]\npub proof documented<T>(value: T)\nwhere T: Ord\n= ()\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ProofItem)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::DocBlock)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::OuterAttribute)
+            .count(),
+        2
+    );
+    for expected in [
+        SyntaxKind::Visibility,
+        SyntaxKind::GenericParameterGroup,
+        SyntaxKind::WhereClause,
+        SyntaxKind::ExpressionBody,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert!(!kinds.contains(&SyntaxKind::ErrorItem));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::LogicalLine), 7);
     assert_eq!(built.green().to_string(), source);
 }
 

@@ -29,6 +29,7 @@ pub(super) fn emit_declaration(
     ));
     let mut parser = ShadowDocumentParser::new(source, tokens, events);
     parser.start(kind, role);
+    emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
     emit_visibility(&mut parser);
     parser.bump_trivia();
@@ -100,6 +101,92 @@ pub(super) fn emit_declaration(
     emit_body(&mut parser, kind, keyword);
     while parser.bump().is_some() {}
     parser.finish();
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OuterPrefixKind {
+    Documentation,
+    Attribute,
+}
+
+fn emit_outer_prefixes(parser: &mut ShadowDocumentParser<'_, '_>) {
+    let mut attribute_ordinal = 0_u16;
+    loop {
+        match outer_prefix_kind(parser) {
+            Some(OuterPrefixKind::Documentation) => {
+                parser.start(SyntaxKind::DocBlock, SyntaxRole::Documentation);
+                let mut line_ordinal = 0_u32;
+                while outer_prefix_kind(parser) == Some(OuterPrefixKind::Documentation) {
+                    parser.start(SyntaxKind::LogicalLine, SyntaxRole::Element(line_ordinal));
+                    bump_outer_prefix_line(parser);
+                    parser.finish();
+                    line_ordinal = line_ordinal.saturating_add(1);
+                }
+                parser.finish();
+            }
+            Some(OuterPrefixKind::Attribute) => {
+                parser.start(SyntaxKind::AttributeList, SyntaxRole::Element(0));
+                let mut line_ordinal = 0_u32;
+                while outer_prefix_kind(parser) == Some(OuterPrefixKind::Attribute) {
+                    parser.start(SyntaxKind::LogicalLine, SyntaxRole::Element(line_ordinal));
+                    parser.start(
+                        SyntaxKind::OuterAttribute,
+                        SyntaxRole::Attribute(attribute_ordinal),
+                    );
+                    bump_outer_prefix_line(parser);
+                    parser.finish();
+                    parser.finish();
+                    attribute_ordinal = attribute_ordinal.saturating_add(1);
+                    line_ordinal = line_ordinal.saturating_add(1);
+                }
+                parser.finish();
+            }
+            None => break,
+        }
+    }
+}
+
+fn outer_prefix_kind(parser: &ShadowDocumentParser<'_, '_>) -> Option<OuterPrefixKind> {
+    let mut cursor = parser.cursor();
+    loop {
+        let token = parser.token_at(cursor)?;
+        match token.kind() {
+            SyntaxKind::WhitespaceToken => cursor += 1,
+            SyntaxKind::DocCommentToken => return Some(OuterPrefixKind::Documentation),
+            SyntaxKind::PunctuationToken if parser.text_of(token) == "#" => {
+                cursor += 1;
+                while parser
+                    .token_at(cursor)
+                    .is_some_and(|token| token.kind() == SyntaxKind::WhitespaceToken)
+                {
+                    cursor += 1;
+                }
+                return parser
+                    .token_at(cursor)
+                    .filter(|token| parser.text_of(*token) == "[")
+                    .map(|_| OuterPrefixKind::Attribute);
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn bump_outer_prefix_line(parser: &mut ShadowDocumentParser<'_, '_>) {
+    let mut delimiter_depth = 0_usize;
+    while let Some(token) = parser.current() {
+        let is_line_end = token.kind() == SyntaxKind::NewlineToken && delimiter_depth == 0;
+        if token.kind() == SyntaxKind::PunctuationToken {
+            match parser.text_of(token) {
+                "(" | "[" | "{" => delimiter_depth += 1,
+                ")" | "]" | "}" => delimiter_depth = delimiter_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        parser.bump();
+        if is_line_end {
+            break;
+        }
+    }
 }
 
 fn emit_visibility(parser: &mut ShadowDocumentParser<'_, '_>) {
