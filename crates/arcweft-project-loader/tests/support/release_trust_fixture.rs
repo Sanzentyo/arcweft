@@ -14,7 +14,10 @@ use arcweft_bundle::{
             AwfrPublicationMetadata, ExternalPayloadCarrier, ExternalPayloadMediaType,
             ReleaseChannel,
         },
-        signing_policy::{KeyEpochPolicy, SigningDigestTranscript, SigningPolicy},
+        signing_policy::{
+            KeyEpochPolicy, SigningDigestTranscript, SigningPolicy,
+            VerificationTrustGenerationPolicy,
+        },
     },
 };
 use arcweft_project_loader::cache::store::FilesystemCacheStore;
@@ -75,6 +78,7 @@ pub fn release_consume_policy() -> SigningPolicy {
             min: KEY_EPOCH,
             max: Some(KEY_EPOCH + 1),
         },
+        VerificationTrustGenerationPolicy::default(),
     )
 }
 
@@ -85,6 +89,7 @@ pub fn wrong_channel_policy() -> SigningPolicy {
             min: KEY_EPOCH,
             max: Some(KEY_EPOCH + 1),
         },
+        VerificationTrustGenerationPolicy::default(),
     )
 }
 

@@ -37,6 +37,8 @@ pub enum SigningSubjectKind {
     MaterializedTargetBundle,
     AwfrReleaseArchive,
     ExternalPayload,
+    VerificationTrustManifest,
+    VerificationTrustRevocations,
 }
 
 /// Key epoch acceptance window. `max` is exclusive when present.
@@ -48,6 +50,16 @@ pub struct KeyEpochPolicy {
     pub max: Option<u64>,
 }
 
+/// Minimum accepted generations for signed proof-trust policy and revocations.
+///
+/// Release adapters obtain these floors from operator-owned authority input;
+/// project source, manifests, and evaluated bundles cannot lower them.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct VerificationTrustGenerationPolicy {
+    pub minimum_policy_generation: u64,
+    pub minimum_revocation_generation: u64,
+}
+
 /// Typed release signing policy. The policy says which subject families require
 /// signatures and which inspection shortcuts are explicitly allowed.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -56,6 +68,7 @@ pub struct SigningPolicy {
     pub mode: SigningPolicyMode,
     pub channel: ReleaseChannel,
     pub key_epoch: KeyEpochPolicy,
+    pub verification_trust: VerificationTrustGenerationPolicy,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub required_subjects: BTreeSet<SigningSubjectKind>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -159,6 +172,7 @@ impl SigningPolicy {
             mode: SigningPolicyMode::LocalDev,
             channel,
             key_epoch: KeyEpochPolicy::default(),
+            verification_trust: VerificationTrustGenerationPolicy::default(),
             required_subjects: BTreeSet::new(),
             allow_unsigned_local_artifacts: true,
             allow_metadata_only_external_payloads: true,
@@ -170,6 +184,7 @@ impl SigningPolicy {
             SigningPolicyMode::Ci,
             channel,
             key_epoch,
+            VerificationTrustGenerationPolicy::default(),
             [
                 SigningSubjectKind::PatchV2Artifact,
                 SigningSubjectKind::MaterializedTargetBundle,
@@ -177,30 +192,44 @@ impl SigningPolicy {
         )
     }
 
-    pub fn release_publish(channel: ReleaseChannel, key_epoch: KeyEpochPolicy) -> Self {
+    pub fn release_publish(
+        channel: ReleaseChannel,
+        key_epoch: KeyEpochPolicy,
+        verification_trust: VerificationTrustGenerationPolicy,
+    ) -> Self {
         Self::strict(
             SigningPolicyMode::ReleasePublish,
             channel,
             key_epoch,
+            verification_trust,
             [
                 SigningSubjectKind::AwfbBundle,
                 SigningSubjectKind::PatchV2Artifact,
                 SigningSubjectKind::MaterializedTargetBundle,
                 SigningSubjectKind::AwfrReleaseArchive,
+                SigningSubjectKind::VerificationTrustManifest,
+                SigningSubjectKind::VerificationTrustRevocations,
             ],
         )
     }
 
-    pub fn release_consume(channel: ReleaseChannel, key_epoch: KeyEpochPolicy) -> Self {
+    pub fn release_consume(
+        channel: ReleaseChannel,
+        key_epoch: KeyEpochPolicy,
+        verification_trust: VerificationTrustGenerationPolicy,
+    ) -> Self {
         Self::strict(
             SigningPolicyMode::ReleaseConsume,
             channel,
             key_epoch,
+            verification_trust,
             [
                 SigningSubjectKind::AwfbBundle,
                 SigningSubjectKind::PatchV2Artifact,
                 SigningSubjectKind::MaterializedTargetBundle,
                 SigningSubjectKind::AwfrReleaseArchive,
+                SigningSubjectKind::VerificationTrustManifest,
+                SigningSubjectKind::VerificationTrustRevocations,
             ],
         )
     }
@@ -211,6 +240,7 @@ impl SigningPolicy {
             mode: SigningPolicyMode::OfflineInspection,
             channel,
             key_epoch: KeyEpochPolicy::default(),
+            verification_trust: VerificationTrustGenerationPolicy::default(),
             required_subjects: BTreeSet::new(),
             allow_unsigned_local_artifacts: false,
             allow_metadata_only_external_payloads: true,
@@ -223,6 +253,7 @@ impl SigningPolicy {
             mode: SigningPolicyMode::TestFixture,
             channel,
             key_epoch: KeyEpochPolicy::default(),
+            verification_trust: VerificationTrustGenerationPolicy::default(),
             required_subjects: [SigningSubjectKind::AwfbBundle].into_iter().collect(),
             allow_unsigned_local_artifacts: true,
             allow_metadata_only_external_payloads: true,
@@ -233,6 +264,7 @@ impl SigningPolicy {
         mode: SigningPolicyMode,
         channel: ReleaseChannel,
         key_epoch: KeyEpochPolicy,
+        verification_trust: VerificationTrustGenerationPolicy,
         required_subjects: impl IntoIterator<Item = SigningSubjectKind>,
     ) -> Self {
         Self {
@@ -240,6 +272,7 @@ impl SigningPolicy {
             mode,
             channel,
             key_epoch,
+            verification_trust,
             required_subjects: required_subjects.into_iter().collect(),
             allow_unsigned_local_artifacts: false,
             allow_metadata_only_external_payloads: false,
@@ -475,6 +508,68 @@ impl SigningDigestTranscript {
         Ok(transcript)
     }
 
+    pub fn verification_trust_manifest(
+        manifest_digest: BundleDigest,
+        signer_id: impl Into<String>,
+        channel: ReleaseChannel,
+        key_epoch: u64,
+    ) -> Result<Self, SigningPolicyError> {
+        Self::verification_trust_artifact(
+            SigningSubjectKind::VerificationTrustManifest,
+            manifest_digest,
+            signer_id,
+            channel,
+            key_epoch,
+        )
+    }
+
+    pub fn verification_trust_revocations(
+        manifest_digest: BundleDigest,
+        signer_id: impl Into<String>,
+        channel: ReleaseChannel,
+        key_epoch: u64,
+    ) -> Result<Self, SigningPolicyError> {
+        Self::verification_trust_artifact(
+            SigningSubjectKind::VerificationTrustRevocations,
+            manifest_digest,
+            signer_id,
+            channel,
+            key_epoch,
+        )
+    }
+
+    fn verification_trust_artifact(
+        subject: SigningSubjectKind,
+        manifest_digest: BundleDigest,
+        signer_id: impl Into<String>,
+        channel: ReleaseChannel,
+        key_epoch: u64,
+    ) -> Result<Self, SigningPolicyError> {
+        debug_assert!(matches!(
+            subject,
+            SigningSubjectKind::VerificationTrustManifest
+                | SigningSubjectKind::VerificationTrustRevocations
+        ));
+        let transcript = Self {
+            schema_version: SIGNING_TRANSCRIPT_SCHEMA_VERSION,
+            subject,
+            channel,
+            signer_id: signer_id.into(),
+            key_epoch,
+            bundle_kind: None,
+            artifact_identity: None,
+            target_artifact_identity: None,
+            content_root: None,
+            target_content_root: None,
+            manifest_digest: Some(manifest_digest),
+            whole_file_digest: None,
+            archive_identity_digest: None,
+            external_payloads_digest: None,
+        };
+        transcript.validate()?;
+        Ok(transcript)
+    }
+
     pub fn validate(&self) -> Result<(), SigningPolicyError> {
         if self.schema_version != SIGNING_TRANSCRIPT_SCHEMA_VERSION {
             return Err(SigningPolicyError::UnsupportedTranscriptSchema {
@@ -524,6 +619,28 @@ impl SigningDigestTranscript {
                 require("content_root", self.content_root.is_some())?;
                 require("whole_file_digest", self.whole_file_digest.is_some())?;
             }
+            SigningSubjectKind::VerificationTrustManifest
+            | SigningSubjectKind::VerificationTrustRevocations => {
+                self.validate_verification_trust_artifact()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_verification_trust_artifact(&self) -> Result<(), SigningPolicyError> {
+        require("manifest_digest", self.manifest_digest.is_some())?;
+        let has_unrelated_field = self.bundle_kind.is_some()
+            || self.artifact_identity.is_some()
+            || self.target_artifact_identity.is_some()
+            || self.content_root.is_some()
+            || self.target_content_root.is_some()
+            || self.whole_file_digest.is_some()
+            || self.archive_identity_digest.is_some()
+            || self.external_payloads_digest.is_some();
+        if has_unrelated_field {
+            return Err(SigningPolicyError::InvalidTranscript(
+                "verification trust transcripts must contain only manifest_digest".to_owned(),
+            ));
         }
         Ok(())
     }
@@ -558,6 +675,8 @@ impl SigningSubjectKind {
             Self::MaterializedTargetBundle => "materialized_target_bundle",
             Self::AwfrReleaseArchive => "awfr_release_archive",
             Self::ExternalPayload => "external_payload",
+            Self::VerificationTrustManifest => "verification_trust_manifest",
+            Self::VerificationTrustRevocations => "verification_trust_revocations",
         }
     }
 }
@@ -634,6 +753,10 @@ mod tests {
                 min: 2,
                 max: Some(8),
             },
+            VerificationTrustGenerationPolicy {
+                minimum_policy_generation: 3,
+                minimum_revocation_generation: 5,
+            },
         );
         policy.validate().expect("policy validates");
 
@@ -701,6 +824,7 @@ mod tests {
         let release = SigningPolicy::release_publish(
             ReleaseChannel::new("stable").expect("channel"),
             KeyEpochPolicy::default(),
+            VerificationTrustGenerationPolicy::default(),
         );
         let dev = SigningPolicy::local_dev(ReleaseChannel::local_dev());
 
@@ -716,5 +840,69 @@ mod tests {
             release.materialized_target_signature_disposition(false),
             SignatureDisposition::PreservedUnchangedTarget
         );
+    }
+
+    #[test]
+    fn release_policy_owns_verification_trust_generation_floors() {
+        let verification_trust = VerificationTrustGenerationPolicy {
+            minimum_policy_generation: 7,
+            minimum_revocation_generation: 11,
+        };
+        let policy = SigningPolicy::release_publish(
+            ReleaseChannel::new("stable").expect("channel"),
+            KeyEpochPolicy::default(),
+            verification_trust,
+        );
+
+        assert_eq!(policy.verification_trust, verification_trust);
+        assert!(policy.requires_signature(SigningSubjectKind::VerificationTrustManifest));
+        assert!(policy.requires_signature(SigningSubjectKind::VerificationTrustRevocations));
+    }
+
+    #[test]
+    fn verification_trust_transcripts_have_distinct_subject_digests() {
+        let manifest_digest = BundleDigest::of(b"verification trust policy");
+        let channel = ReleaseChannel::new("stable").expect("channel");
+        let manifest = SigningDigestTranscript::verification_trust_manifest(
+            manifest_digest,
+            "release-key",
+            channel.clone(),
+            4,
+        )
+        .expect("manifest transcript");
+        let revocations = SigningDigestTranscript::verification_trust_revocations(
+            manifest_digest,
+            "release-key",
+            channel,
+            4,
+        )
+        .expect("revocation transcript");
+
+        assert_ne!(
+            manifest.digest().expect("manifest digest"),
+            revocations.digest().expect("revocation digest")
+        );
+    }
+
+    #[test]
+    fn verification_trust_transcript_rejects_unrelated_fields() {
+        let mut transcript = SigningDigestTranscript::verification_trust_manifest(
+            BundleDigest::of(b"verification trust policy"),
+            "release-key",
+            ReleaseChannel::new("stable").expect("channel"),
+            4,
+        )
+        .expect("manifest transcript");
+        transcript.content_root = Some(BundleDigest::of(b"unrelated bundle"));
+
+        let error = transcript
+            .validate()
+            .expect_err("unrelated field must reject");
+
+        assert!(matches!(
+            error,
+            SigningPolicyError::InvalidTranscript(message)
+                if message.contains("only manifest_digest")
+        ));
     }
 }

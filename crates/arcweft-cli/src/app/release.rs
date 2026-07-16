@@ -1,7 +1,7 @@
 use super::shared::print_json;
 use arcweft_bundle::release::{
     archive::{ExternalPayloadMaterializationMode, ReleaseChannel},
-    signing_policy::{KeyEpochPolicy, SigningPolicy},
+    signing_policy::{KeyEpochPolicy, SigningPolicy, VerificationTrustGenerationPolicy},
 };
 use arcweft_project_loader::release_adapter::{
     consume::verify_release_archive,
@@ -351,8 +351,16 @@ fn signing_policy_for_options(options: &ReleaseVerifyOptions) -> Result<SigningP
     let policy = match options.policy {
         CliSigningPolicyMode::LocalDev => SigningPolicy::local_dev(channel),
         CliSigningPolicyMode::Ci => SigningPolicy::ci(channel, key_epoch),
-        CliSigningPolicyMode::ReleasePublish => SigningPolicy::release_publish(channel, key_epoch),
-        CliSigningPolicyMode::ReleaseConsume => SigningPolicy::release_consume(channel, key_epoch),
+        CliSigningPolicyMode::ReleasePublish => SigningPolicy::release_publish(
+            channel,
+            key_epoch,
+            VerificationTrustGenerationPolicy::default(),
+        ),
+        CliSigningPolicyMode::ReleaseConsume => SigningPolicy::release_consume(
+            channel,
+            key_epoch,
+            VerificationTrustGenerationPolicy::default(),
+        ),
         CliSigningPolicyMode::OfflineInspection => SigningPolicy::offline_inspection(channel),
         CliSigningPolicyMode::TestFixture => SigningPolicy::test_fixture(channel),
     };
