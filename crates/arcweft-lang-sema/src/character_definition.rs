@@ -1,5 +1,12 @@
 //! Request-scoped character references and Sans-I/O definition queries.
 
+mod request_budget;
+
+pub use request_budget::{
+    CharacterDefinitionBudgetCheckpoint, CharacterDefinitionRequestBudget,
+    CharacterDefinitionWorkKind, CharacterDefinitionWorkReceipt,
+};
+
 use arcweft_character::{
     id::{CharacterLookId, CharacterPartId, CharacterVariantId},
     symbol::CharacterSymbolDescriptor,
